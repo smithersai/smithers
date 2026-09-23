@@ -724,9 +724,10 @@
   },
   "dependencies": {
     "@clack/prompts": "1.7.0",
+    "@effect/platform-bun": "4.0.0-rc.115",
+    "@effect/platform-node": "4.0.0-rc.115",
     "@opentui/core": "0.5.11",
     "@opentui/react": "0.5.11",
-    "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/agent": "1.0.0-rc.1",
     "@smthrs/build-cli": "1.0.0-rc.1",
     "@smthrs/canonical": "1.0.0-rc.1",
@@ -764,7 +765,7 @@
     "effect": "4.0.0-rc.115",
     "incur": "0.5.1",
     "react": "19.2.8",
-    "@effect/platform-bun": "4.0.0-rc.115"
+    "typescript": "5.9.3"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -783,7 +784,6 @@
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
-    "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.0.0-rc.115",

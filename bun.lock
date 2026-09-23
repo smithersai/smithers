@@ -1213,6 +1213,7 @@
         "effect": "4.0.0-rc.115",
         "incur": "0.5.1",
         "react": "19.2.8",
+        "typescript": "5.9.3",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
@@ -1235,7 +1236,6 @@
         "eslint-plugin-unicorn": "65.0.0",
         "fast-check": "4.9.0",
         "madge": "8.0.0",
-        "typescript": "5.9.3",
         "typescript-eslint": "8.69.0",
         "vitest": "5.0.0",
       },
