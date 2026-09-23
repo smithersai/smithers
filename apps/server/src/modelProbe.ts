@@ -253,7 +253,9 @@ export const handleModelTest = (request: Request, account?: AccountCredentials):
     // The sample is cut with this deployment's key for the record's name; the words were already cut when read.
     const secret = deploymentModelSecret(config, parsed.data.model.credential)
     const result: ModelTestResult = "output" in outcome
-      ? { ok: true, latencyMs, sample: modelCallSample(outcome.output, secret === undefined ? "" : Redacted.value(secret)), output: outcome.output }
+      ? outcome.output.kind === "generation" && outcome.output.text.trim() === ""
+        ? failedModelTest({ code: "empty_output" }, latencyMs, "cloud")
+        : { ok: true, latencyMs, sample: modelCallSample(outcome.output, secret === undefined ? "" : Redacted.value(secret)), output: outcome.output }
       : failedModelTest(outcome.failure, latencyMs, "cloud")
     return json(200, result)
   })

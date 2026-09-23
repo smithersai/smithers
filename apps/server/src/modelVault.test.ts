@@ -1,6 +1,6 @@
 import { describe, expect, test, spyOn } from "bun:test"
 import { Effect } from "effect"
-import { bindingOf, ModelCatalogSchema, ModelCredentialReceiptSchema, ModelCredentialResultSchema, ModelTestResultSchema } from "@smthrs/rpc/ConfiguredModel"
+import { bindingOf, MODEL_TEST_MAX_TOKENS, ModelCatalogSchema, ModelCredentialReceiptSchema, ModelCredentialResultSchema, ModelTestResultSchema } from "@smthrs/rpc/ConfiguredModel"
 import { memoryStorage, type NativeNamespace } from "./DurableStorage"
 import { ExecutionContext, executionContextFrom, layersFromEnv, type WorkerEnv } from "./Environment"
 import { Transport, transportFrom } from "./Http"
@@ -72,6 +72,34 @@ const fixture = (key: string | undefined = VAULT_KEY) => {
 }
 
 describe("account credential vault through the Worker router", () => {
+  test("a reasoning model passes the fixed Test on its first call", async () => {
+    const f = fixture()
+    await f.mutate("enroll")
+    f.provider(async request => {
+      const sent = await request.json() as { max_tokens?: number; reasoning_effort?: string }
+      return sent.max_tokens === 128 && sent.reasoning_effort === "low"
+        ? completion("ok")
+        : Response.json({ choices: [{ finish_reason: "length", message: { content: "\n\n", reasoning: "thinking" } }] })
+    })
+    const tested = await f.request("/api/model/test", "alice", { model: { ...model, id: "video-demo-cerebras", modelId: "qwen-3.8-27b" } })
+    expect(ModelTestResultSchema.parse(tested.body)).toMatchObject({ ok: true, sample: "ok" })
+    expect(f.calls).toHaveLength(1)
+    expect(await f.calls[0]!.json()).toMatchObject({
+      model: "qwen-3.8-27b", max_tokens: MODEL_TEST_MAX_TOKENS, reasoning_effort: "low"
+    })
+  })
+
+  test("reasoning exhausted before text is distinct from a malformed protocol response", async () => {
+    const f = fixture()
+    await f.mutate("enroll")
+    f.provider(async () => Response.json({ choices: [{ finish_reason: "length", message: { content: "\n\n", reasoning: "thinking" } }] }))
+    expect((await f.request("/api/model/test", "alice", { model })).body.failure).toEqual({ code: "empty_output" })
+    f.provider(async () => Response.json({ choices: [{ finish_reason: "length", message: { content: null, reasoning: "thinking" } }] }))
+    expect((await f.request("/api/model/test", "alice", { model })).body.failure).toEqual({ code: "empty_output" })
+    f.provider(async () => Response.json({ choices: [{ unrelated: true }] }))
+    expect((await f.request("/api/model/test", "alice", { model })).body.failure).toEqual({ code: "invalid", field: "protocol" })
+  })
+
   test("enroll, metadata catalog, Test and Ask spend only the same account and pinned origin", async () => {
     const f = fixture()
     expect(ModelCredentialResultSchema.parse((await f.mutate("enroll")).body).ok).toBe(true)

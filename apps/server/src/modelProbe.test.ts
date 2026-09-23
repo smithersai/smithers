@@ -205,9 +205,9 @@ describe("POST /api/model/test, a generation model", () => {
     expect(calls.map((call) => call.url)).toEqual(["https://api.cerebras.ai/v2/chat/completions"])
   })
 
-  test("an empty completion is still a pass", async () => {
+  test("an empty completion is distinct from an invalid protocol", async () => {
     const { text } = await run({ model: chat }, { answer: async () => completion("") })
-    expect(resultOf(text)).toMatchObject({ ok: true, sample: "" })
+    expect(resultOf(text)).toMatchObject({ ok: false, failure: { code: "empty_output" }, fault: "dependency" })
   })
 
   test("a foreign origin is endpoint_forbidden and the key goes nowhere, set or unset", async () => {

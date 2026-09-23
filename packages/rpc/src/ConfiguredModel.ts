@@ -617,7 +617,7 @@ export const MODEL_TEST_BODY_MAX_BYTES = 64 * 1024
  * @since 1.0.0
  * @category constants
  */
-export const MODEL_TEST_MAX_TOKENS = 32
+export const MODEL_TEST_MAX_TOKENS = 128
 /**
  * The ceiling of the sample a passed test returns, in characters.
  *
@@ -1331,6 +1331,7 @@ export type ModelInvalidField = (typeof MODEL_INVALID_FIELDS)[number]
  */
 export const MODEL_TEST_FAILURE_CODES = [
   "unreachable",
+  "empty_output",
   "refused",
   "timeout",
   "invalid",
@@ -1354,6 +1355,7 @@ const HOST_REFUSAL_CODE = /^[A-Za-z][A-Za-z0-9_]{0,79}$/
  */
 export const ModelTestFailureSchema = z.discriminatedUnion("code", [
   z.strictObject({ code: z.literal("unreachable") }),
+  z.strictObject({ code: z.literal("empty_output") }),
   z.strictObject({ code: z.literal("refused"), status: z.number().int().min(300).max(599) }),
   z.strictObject({ code: z.literal("timeout"), deadlineMs: z.number().int().positive() }),
   z.strictObject({ code: z.literal("invalid"), field: z.enum(MODEL_INVALID_FIELDS) }),
@@ -1390,6 +1392,8 @@ export type ModelTestFailure = z.infer<typeof ModelTestFailureSchema>
 export const modelFailureFault = (failure: ModelTestFailure, host: ModelHost): PlueFault => {
   switch (failure.code) {
     case "unreachable":
+      return "dependency"
+    case "empty_output":
       return "dependency"
     case "timeout":
       return "dependency"
@@ -1428,6 +1432,8 @@ export const modelFailureRefusalCode = (failure: ModelTestFailure): WorkerFailur
       return "seam_not_configured"
     case "unreachable":
       return "upstream_unreachable"
+    case "empty_output":
+      return "upstream_refused"
     case "timeout":
       return "upstream_timeout"
     case "refused":

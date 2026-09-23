@@ -44,6 +44,7 @@ const failureText = (failure: ModelTestFailure): string => {
       return detail === null ? failure.code : `${failure.code} · ${detail}`
     }
     case "unreachable":
+    case "empty_output":
     case "endpoint_forbidden":
     case "model_not_allowed":
       return failure.code

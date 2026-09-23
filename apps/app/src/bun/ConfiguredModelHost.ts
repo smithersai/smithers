@@ -167,6 +167,7 @@ export const modelFailureLine = (failure: ModelTestFailure): string => {
     case "host_refused":
       return failure.status === null ? failure.code : `${failure.code} · ${failure.status}`
     case "unreachable":
+    case "empty_output":
     case "endpoint_forbidden":
     case "model_not_allowed":
       return failure.code

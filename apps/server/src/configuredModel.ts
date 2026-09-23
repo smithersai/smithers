@@ -53,6 +53,8 @@ export const modelRefusalMessage = (failure: ModelTestFailure): string => {
       return `The configured model did not answer within ${failure.deadlineMs}ms.`
     case "unreachable":
       return "The configured model's service is unreachable."
+    case "empty_output":
+      return "The configured model answered with no text."
     case "host_refused":
       return "The configured model was refused."
   }

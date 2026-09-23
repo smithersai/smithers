@@ -455,6 +455,7 @@ describe("the planner", () => {
 describe("the test result", () => {
   const every: Record<ModelTestFailure["code"], ModelTestFailure> = {
     unreachable: { code: "unreachable" },
+    empty_output: { code: "empty_output" },
     refused: { code: "refused", status: 401 },
     timeout: { code: "timeout", deadlineMs: MODEL_TEST_DEADLINE_MS },
     invalid: { code: "invalid", field: "baseUrl" },

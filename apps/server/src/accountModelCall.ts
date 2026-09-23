@@ -39,7 +39,8 @@ export const accountModelCall = (
     const turns = messages ?? [...(body.system.trim() ? [{ role: "system", content: body.system }] : []), { role: "user", content: body.prompt }]
     const temperature = body.temperature === undefined ? {} : { temperature: body.temperature }
     switch (plan.protocol) {
-      case "openai-chat": payload = { model: plan.modelId, stream: false, max_tokens: body.maxTokens, ...temperature, messages: turns }; break
+      case "openai-chat": payload = { model: plan.modelId, stream: false, max_tokens: body.maxTokens,
+        ...(input === undefined ? { reasoning_effort: "low" } : {}), ...temperature, messages: turns }; break
       case "openai-responses": payload = { model: plan.modelId, stream: false, max_output_tokens: body.maxTokens, ...temperature, input: turns }; break
       case "anthropic-messages":
         headers = { "content-type": "application/json", "x-api-key": value, "anthropic-version": "2023-06-01" }
@@ -69,11 +70,13 @@ export const accountModelCall = (
     if (serialized !== cutModelCredential(serialized, value) || serialized.includes(JSON.stringify(value).slice(1, -1))) return invalid
     return { output: { kind: "decision", answers: decoded.answers } } as Outcome
   }
-  const answer = raw as { choices?: Array<{ message?: { content?: unknown } }>; content?: Array<{ type?: string; text?: unknown }>;
+  const answer = raw as { choices?: Array<{ finish_reason?: unknown; message?: { content?: unknown; reasoning?: unknown } }>; content?: Array<{ type?: string; text?: unknown }>;
     output?: Array<{ content?: Array<{ type?: string; text?: unknown }> }> }
   const text = plan.protocol === "openai-chat" ? answer.choices?.[0]?.message?.content
     : plan.protocol === "anthropic-messages" && Array.isArray(answer.content) ? answer.content.filter(part => part?.type === "text" && typeof part.text === "string").map(part => part.text).join("")
     : plan.protocol === "openai-responses" && Array.isArray(answer.output) ? answer.output.flatMap(item => Array.isArray(item?.content) ? item.content : []).filter(part => part?.type === "output_text" && typeof part.text === "string").map(part => part.text).join("") : undefined
+  if (plan.protocol === "openai-chat" && typeof text !== "string" && answer.choices?.[0]?.finish_reason === "length" &&
+    typeof answer.choices[0]?.message?.reasoning === "string") return { failure: { code: "empty_output" } } as Outcome
   return typeof text === "string" ? { output: { kind: "generation", text: cutModelCredential(text, value).slice(0, MODEL_CALL_TEXT_MAX) } } as Outcome : invalid
 }).pipe(
   Effect.timeoutOrElse({ duration: MODEL_TEST_DEADLINE_MS, orElse: () => Effect.succeed<Outcome>({ failure: { code: "timeout", deadlineMs: MODEL_TEST_DEADLINE_MS } }) }),
