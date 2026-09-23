@@ -1,5 +1,5 @@
 import { type Dirent, existsSync, readdirSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, relative as relativePath, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
@@ -175,7 +175,7 @@ describe("console guard", () => {
     const offenders: string[] = []
     for (const root of packageSourceRoots()) {
       for (const file of sourceFiles(root)) {
-        const relative = file.slice(PACKAGES_DIR.length)
+        const relative = relativePath(PACKAGES_DIR, file).split(sep).join("/")
         if (relative === SANDBOX_TEACHING) continue
         const source = withoutLiterals(readFileSync(file, "utf8"))
         if (!CONSOLE_CALL.test(source)) continue
