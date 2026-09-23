@@ -20,7 +20,7 @@ const { write: tree, remove: removeTrees } = appTrees("smthrs-vite-")
 const unwritable: Array<string> = []
 
 afterEach(() => {
-  while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o700)
+  while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o600)
   removeTrees()
 })
 
@@ -240,8 +240,11 @@ describe("createApp", () => {
       const pane = join(root, "app/panes/balances.tsx")
       writeFileSync(pane, "export const Pane = {}\n")
       rmSync(join(root, "routes.gen.ts"))
-      unwritable.push(root)
-      chmodSync(root, 0o500)
+      // Windows honors a file's read-only bit, not a directory's mode bits.
+      const staging = join(root, "routes.gen.ts.tmp")
+      writeFileSync(staging, "reserved staging file")
+      unwritable.push(staging)
+      chmodSync(staging, 0o400)
 
       const written: Array<string> = []
       const original = process.stderr.write.bind(process.stderr)

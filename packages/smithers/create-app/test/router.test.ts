@@ -19,7 +19,7 @@ const { write: appTree, remove: removeTrees } = appTrees("smthrs-router-")
 const unwritable: Array<string> = []
 
 afterEach(() => {
-  while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o700)
+  while (unwritable.length > 0) chmodSync(unwritable.pop()!, 0o600)
   removeTrees()
 })
 
@@ -322,18 +322,23 @@ describe("name collisions", () => {
     }
   })
 
-  it("refuses a page directory that would close the generated import specifier", () => {
-    const root = appTree({
-      ...layers,
-      "app/x\";import \"./evil.ts\";/page.tsx": "export default () => null\n"
-    })
-    try {
-      discover({ root, dirs })
-      expect.unreachable("discover should have thrown")
-    } catch (error) {
-      expect((error as RouterError).code).toBe("invalid_name")
+  // Windows refuses a double quote in a filename before discovery can read it.
+  // The renderer's escaping case below exercises this payload on every host.
+  it.skipIf(process.platform === "win32")(
+    "refuses a page directory that would close the generated import specifier",
+    () => {
+      const root = appTree({
+        ...layers,
+        "app/x\";import \"./evil.ts\";/page.tsx": "export default () => null\n"
+      })
+      try {
+        discover({ root, dirs })
+        expect.unreachable("discover should have thrown")
+      } catch (error) {
+        expect((error as RouterError).code).toBe("invalid_name")
+      }
     }
-  })
+  )
 
   it("refuses an uppercase page directory segment at any depth", () => {
     const root = appTree({ ...layers, "app/operate/Logs/page.tsx": "export default () => null\n" })
@@ -589,8 +594,11 @@ describe("writeRoutes", () => {
 
       mkdirSync(join(root, "app/panes"), { recursive: true })
       writeFileSync(join(root, "app/panes/balances.tsx"), "export const Pane = {}\n")
-      unwritable.push(root)
-      chmodSync(root, 0o500)
+      // Windows honors a file's read-only bit, not a directory's mode bits.
+      const staging = join(root, "routes.gen.ts.tmp")
+      writeFileSync(staging, "reserved staging file")
+      unwritable.push(staging)
+      chmodSync(staging, 0o400)
 
       expect(() => writeRoutes({ root, dirs })).toThrow(/EACCES|EROFS|EPERM/)
       expect(readFileSync(join(root, "routes.gen.ts"), "utf8")).toBe(before["routes.gen.ts"])
