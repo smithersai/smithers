@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3134 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3143 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -327,6 +327,13 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **ci:** give cloud.sh a gate for every GitHub CI command ([7c0df69cc1](https://github.com/smithersai/smithers/commit/7c0df69cc115edb0ba245d147ef7625ede9ebcb2))
+- **native:** isolate backend credentials across target switches ([4aa37b6230](https://github.com/smithersai/smithers/commit/4aa37b6230f1404492aa593fcabdb4f3bfc27135))
+- **app:** fence repository create inventory by account owner revision ([306989594d](https://github.com/smithersai/smithers/commit/306989594d5a55c20e3a34b0763a486acdf13582))
+- **tui:** refuse Undo for unattributed Bash diffs ([06a89f1c02](https://github.com/smithersai/smithers/commit/06a89f1c0297929661c4595e4312f802b33f0d20))
+- **chat:** support proof-only remote turn erasure and preacceptance tombstones ([03505e1c50](https://github.com/smithersai/smithers/commit/03505e1c5058f92e2d082aa9545c5de2c030dfc2))
+- **backend:** fence agent Flow projection to owning run and task ([9efcca838c](https://github.com/smithersai/smithers/commit/9efcca838c256dd93d79db3c39301a478db726f7))
+- **app:** require executed mode matrix receipts ([bb4b095e9f](https://github.com/smithersai/smithers/commit/bb4b095e9fe1a26d82c2d4b2c41c3b516eec0833))
 - **testing:** query Windows processes without Unix ps ([de7db2945d](https://github.com/smithersai/smithers/commit/de7db2945d681c8e22468b151802443886f45111))
 - **evals:** keep Harbor's Trial-constructor refusals inside the trial ([6810d97e21](https://github.com/smithersai/smithers/commit/6810d97e21eeb1ac03aae845e0f060dac26d1345))
 - **flows:** use native path layer for host filesystem tests and runtime ([0183b80152](https://github.com/smithersai/smithers/commit/0183b80152be510ede76d843de155c6c5f6a5c30))
@@ -2541,6 +2548,8 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test:** use native host paths and OS-specific process assertions ([eac3e679ad](https://github.com/smithersai/smithers/commit/eac3e679ad71106ee95027d2c8817a437bc05b73))
+- **test(workspace):** cover simultaneous writes with matching basenames ([d2fdf6ada4](https://github.com/smithersai/smithers/commit/d2fdf6ada4679ad0aeb6db7e81fb6d4e48009b96))
 - **build(node):** require Node >= 26.4 ([94347eea11](https://github.com/smithersai/smithers/commit/94347eea111d27d8572e4eefd8b0f64687520faf))
 - **test(workspace):** reject planted temporary symlinks in conformance ([0c43ad7611](https://github.com/smithersai/smithers/commit/0c43ad7611ff71159243b10ddeef8b1e13a1acbd))
 - **test(app):** restore the maximized Models card after owner chat ([5e6b061f15](https://github.com/smithersai/smithers/commit/5e6b061f15dab40c8a3927a6905b7fcaf2a50f93))
