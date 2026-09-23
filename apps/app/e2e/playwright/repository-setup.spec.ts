@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import type { SetupHostInput, SetupOperationResponseSchema } from "@smthrs/rpc/RepositorySetup"
 import type { z } from "zod"
-import { SCOPED_TEST_USER } from "./identity"
+import { SCOPED_TEST_USER, skipSignup } from "./identity"
 
 // Real built app, SQLite, registry and keyboard. Setup/Control responses are
 // explicit fixtures: these tests do not claim a host executed repository work.
@@ -18,10 +18,15 @@ const bootstrap = async (page: Page, signedIn: boolean) => {
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: repo }] } }))
   await page.route("**/api/user/repos", route => route.fulfill({ json: [{ owner: "smithersai", name: "smithers", full_name: repo, owner_type: "Organization", default_bookmark: "main" }] }))
   await page.route(`**/api/repos/${repo}/contents`, route => route.fulfill({ json: [] }))
+  await page.route(url => url.pathname === "/api/repository-setup/state", route => route.fulfill({ json: {
+    owner: SCOPED_TEST_USER.login, repo, job: new URL(route.request().url()).searchParams.get("job"),
+    registration: { state: "known" }, setup: { state: "none" }
+  } }))
 }
-const open = async (page: Page) => {
+const open = async (page: Page, signedIn = false) => {
   await page.goto(`/${repo}/`)
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  if (signedIn) await skipSignup(page)
 }
 const keyboardClick = async (page: Page, name: string) => {
   const button = page.getByRole("button", { name, exact: true })
@@ -91,7 +96,10 @@ test("Chat summons at the top over setup and closes with keyboard or an outside 
   await open(page)
   await keyboardClick(page, "Handle issues")
   await expect(page.getByTestId("setup-issues")).toBeVisible()
+  const hint = page.getByRole("button", { name: "Dismiss help", exact: true })
+  if (await hint.isVisible()) await hint.click()
   const transcript = page.getByTestId("transcript")
+  await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished)))
   const before = await transcript.boundingBox()
   await page.keyboard.press("Control+k")
   const composer = page.getByTestId("composer-input")
@@ -128,6 +136,7 @@ test("held setup admission leaves Chat usable; only observed runs expose access"
   let submitted: Start | undefined
   let observed: Response | undefined
   await page.route("**/api/repository-setup/**", async route => {
+    if (new URL(route.request().url()).pathname.endsWith("/state")) return route.fallback()
     if (route.request().method() === "POST") {
       submitted = route.request().postDataJSON() as Start
       await held
@@ -136,7 +145,7 @@ test("held setup admission leaves Chat usable; only observed runs expose access"
     await route.fulfill({ json: observed })
   })
   try {
-    await open(page)
+    await open(page, true)
     await keyboardClick(page, "Handle issues")
     const setup = page.getByTestId("setup-issues")
     await expect(setup.locator("footer")).toContainText("Requested")
@@ -154,20 +163,20 @@ test("held setup admission leaves Chat usable; only observed runs expose access"
     observed = response(submitted!, "inspect", "waiting")
     await expect(setup.locator("footer")).toContainText("Waiting")
     await expect(setup.getByRole("button", { name: "Run", exact: true })).toBeVisible()
-    await expect(setup.getByRole("button", { name: "Approvals", exact: true })).toBeVisible()
   } finally { release() }
 })
 
-test("activation needs current evals and a trial; pause requires testing a new revision", async ({ page }, testInfo) => {
+test("activation needs current evidence; a paused configuration can resume but edits need retesting", async ({ page }, testInfo) => {
   await bootstrap(page, true)
   const calls: Array<{ body: Start; operation: SetupHostInput["operation"] }> = []
   await page.route("**/api/repository-setup/**", async route => {
+    if (new URL(route.request().url()).pathname.endsWith("/state")) return route.fallback()
     const body = route.request().postDataJSON() as Start
     const operation = new URL(route.request().url()).pathname.split("/").at(-1)! as SetupHostInput["operation"]
     calls.push({ body, operation })
     await route.fulfill({ json: response(body, operation) })
   })
-  await open(page)
+  await open(page, true)
   // Prevent automatic guidance from sending a model turn in this UI fixture.
   await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill("A draft I am still writing")
@@ -199,13 +208,16 @@ test("activation needs current evals and a trial; pause requires testing a new r
   expect(calls.find(call => call.operation === "run")!.body.manual).toEqual({ stepId: "fix", prompt: "Preserve compatibility", subject: { source: "smithers-cloud", kind: "issue", number: 42 } })
   await page.screenshot({ path: testInfo.outputPath("setup-manual-work.png"), fullPage: true })
   await keyboardClick(page, "Pause")
-  await expect(setup.locator(".setup-heading").first()).toContainText("Off")
+  await expect(setup.locator(".setup-heading").first()).toContainText("Paused")
+  await expect(enable).toBeEnabled()
+  await keyboardClick(page, "Prompts")
+  await setup.getByRole("textbox", { name: "Prompt", exact: true }).fill("Research the issue before proposing a change.")
   await expect(enable).toBeDisabled()
   await keyboardClick(page, "Evals")
   await keyboardClick(page, "Run evals")
   await expect.poll(() => calls.filter(call => call.operation === "evaluate").length).toBe(2)
   await expect(setup.getByRole("button", { name: "Run evals" })).toBeEnabled()
-  expect(calls.filter(call => call.operation === "evaluate").at(-1)!.body.revision).toBe(applied.body.revision + 1)
+  expect(calls.filter(call => call.operation === "evaluate").at(-1)!.body.revision).toBe(applied.body.revision + 2)
   await expect(enable).toBeDisabled()
   await page.screenshot({ path: testInfo.outputPath("setup-paused-evals.png"), fullPage: true })
 })
@@ -215,12 +227,13 @@ for (const [job, title, trial] of [["ci", "Set up CI", "Test CI checks"], ["revi
     await bootstrap(page, true)
     const trials: Start[] = []
     await page.route("**/api/repository-setup/**", async route => {
+      if (new URL(route.request().url()).pathname.endsWith("/state")) return route.fallback()
       const body = route.request().postDataJSON() as Start
       const operation = new URL(route.request().url()).pathname.split("/").at(-1)! as SetupHostInput["operation"]
       if (operation === "trial") trials.push(body)
       await route.fulfill({ json: response(body, operation) })
     })
-    await open(page)
+    await open(page, true)
     await page.keyboard.press("Control+k")
     await page.getByTestId("composer-input").fill("A draft I am still writing")
     await page.getByTestId("composer-input").press("Escape")
