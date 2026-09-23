@@ -1,63 +1,120 @@
-import type { PhaseId } from "@smthrs/gateway/RunTrace"
+/**
+ * The run scrubber docked above the composer, drawn the way the app's dock is
+ * (`apps/app` `ChatRunTimeline`): a pause button, phase segments to scale,
+ * milestone ticks with their labels, a playhead knob, and the phase and clock
+ * at the playhead. Clicks and drags jump; `Scrubber` does the geometry.
+ */
+import type { MouseEvent } from "@opentui/core"
+import { useRef, useState } from "react"
+import type { Milestone, PhaseId } from "@smthrs/gateway/RunTrace"
 import * as Activity from "./activity.ts"
+import * as Scrubber from "./scrubber.ts"
 import { color, mix } from "./theme.ts"
-import { duration } from "./transcript.ts"
 
 const tones: Record<PhaseId, keyof typeof color> = {
   researching: "info", implementing: "brand", testing: "success", stuck: "warning", blocked: "danger", unrecorded: "element"
 }
-const labels: Record<PhaseId, string> = {
-  researching: "Researching", implementing: "Implementing", testing: "Testing", stuck: "Stuck", blocked: "Blocked", unrecorded: "Running"
-}
+const tickTone = (tone: Milestone["tone"]): string =>
+  tone === "bad" ? color.danger : tone === "good" ? color.success : tone === "warn" ? color.warning : color.brand
 
-export function ActivityView({ activity, width, now, cursor, focused, title, onSelect }: {
+const fill = (phase: PhaseId, reached: boolean): string =>
+  phase === "unrecorded"
+    ? reached ? color.element : mix(color.element, 45, color.page)
+    : mix(color[tones[phase]], reached ? 26 : 9, color.page)
+
+const clip = (text: string, width: number): string =>
+  width <= 0 ? "" : text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`
+
+export function ActivityView({ activity, width, now, cursor, focused, title, onSelect, onPause }: {
   readonly activity: Activity.Activity
   readonly width: number
   readonly now: number
-  readonly cursor?: number
+  readonly cursor?: number | undefined
   readonly focused: boolean
   readonly title: string
+  /** Jump the playhead, and the chat with it, to a journal position. */
   readonly onSelect: (seq: number) => void
+  /** Stop following the live end, or resume it. */
+  readonly onPause: () => void
 }) {
+  const [hover, setHover] = useState<number | undefined>(undefined)
+  const [hoverTick, setHoverTick] = useState<number | undefined>(undefined)
+  const track = useRef<{ x: number } | null>(null)
   const model = Activity.model(activity)
   if (model.bands.length === 0 && model.milestones.length === 0) return null
-  const sizes = Activity.widths(model, width)
-  const pins = Activity.pins(model, width)
-  const owner = cursor === undefined ? undefined : Activity.owner(model, cursor)
-  const band = model.bands.find(band => band.frames.includes(owner ?? "")) ?? model.bands.at(-1)
-  const state = activity.status === "running" ? labels[band?.phase ?? "unrecorded"]
-    : activity.status === "completed" ? "Done" : activity.status === "cancelled" ? "Stopped" : "Failed"
-  const reading = cursor === undefined ? model : Activity.at(activity, cursor)
-  const line = reading.lines.find(line => line.spanId === owner)
-  const notes = reading.notes.filter(note => note.spanId === owner)
-  const pin = model.milestones.findLast(pin => pin.seq <= (cursor ?? Infinity))
-  return <box style={{ flexDirection: "column", flexShrink: 0, marginTop: 1 }}>
-    <box style={{ flexDirection: "row", justifyContent: "space-between", height: 1 }}>
-      <text fg={focused ? color.brand : color.muted} wrapMode="none" style={{ flexShrink: 1 }}>{title}{" · "}{state}{" · "}
-        {duration((activity.status === "running" ? now : model.extent.end) - model.extent.start)}</text>
-      <text fg={color.faint} wrapMode="none" style={{ flexShrink: 0 }}>{focused ? `#${cursor ?? activity.records.length}  ← →  esc live` : "ctrl+t timeline"}</text>
+  const layout = Scrubber.layout(activity, width, cursor, now)
+  const { lead, rows, tail } = layout
+  const mark = rows, bar = rows + 1
+  const columnOf = (event: MouseEvent) => Math.max(0, Math.min(layout.track - 1, event.x - (track.current?.x ?? 0)))
+  const jump = (event: MouseEvent) => {
+    event.stopPropagation()
+    onSelect(Scrubber.seqAt(layout, columnOf(event)))
+  }
+  const paused = cursor !== undefined
+  const button = lead >= 10 ? (paused ? "▶ Live" : "⏸ Pause") : lead > 0 ? (paused ? "▶" : "⏸") : ""
+  const legend = lead >= 10 ? (focused ? "←→ [ ]" : "ctrl+t") : ""
+  return (
+    <box style={{ height: rows + 2, width, flexShrink: 0, marginTop: 1 }}>
+      {layout.ticks.map((tick) => tick.label === "" ? null : (
+        <text key={`label:${tick.seq}`} wrapMode="none"
+          fg={hoverTick === tick.seq || tick.seq === cursor ? color.text : tick.reached ? tickTone(tick.tone) : color.faint}
+          style={{ position: "absolute", left: lead + tick.left, top: tick.row, width: tick.label.length, height: 1 }}
+          onMouseOver={() => setHoverTick(tick.seq)} onMouseOut={() => setHoverTick(undefined)}
+          onMouseDown={(event: MouseEvent) => { event.stopPropagation(); onSelect(tick.seq) }}>
+          {tick.label}
+        </text>
+      ))}
+      {legend === "" ? null : (
+        <text fg={color.faint} wrapMode="none" style={{ position: "absolute", left: 1, top: mark, height: 1 }}>{legend}</text>
+      )}
+      {button === "" ? null : (
+        <text fg={paused ? color.brand : color.muted} bg={color.element} wrapMode="none"
+          style={{ position: "absolute", left: 0, top: bar, width: Math.min(lead - 1, button.length + 2), height: 1 }}
+          onMouseDown={(event: MouseEvent) => { event.stopPropagation(); onPause() }}>
+          {` ${button} `}
+        </text>
+      )}
+      <box ref={track as never} style={{ position: "absolute", left: lead, top: mark, width: layout.track, height: 2 }}
+        onMouseDown={jump} onMouseDrag={jump}
+        onMouseMove={(event: MouseEvent) => setHover(columnOf(event))} onMouseOut={() => setHover(undefined)}>
+        {layout.segments.map((segment) => (
+          <box key={`${segment.seq}`} backgroundColor={fill(segment.phase, segment.reached)}
+            style={{ position: "absolute", left: segment.left, top: 1, width: segment.width, height: 1 }}>
+            <text wrapMode="none" fg={segment.reached ? color.text : color.muted}>
+              {segment.label === "" ? "" : segment.current ? <strong>{` ${segment.label}`}</strong> : ` ${segment.label}`}
+            </text>
+          </box>
+        ))}
+        {layout.ticks.map((tick) => tick.column === layout.knob ? null : (
+          <text key={`tick:${tick.seq}`} wrapMode="none" fg={tick.reached ? tickTone(tick.tone) : color.faint}
+            style={{ position: "absolute", left: tick.column, top: 0, width: 1, height: 1 }}
+            onMouseDown={(event: MouseEvent) => { event.stopPropagation(); onSelect(tick.seq) }}>
+            ╷
+          </text>
+        ))}
+        {hover === undefined || hover === layout.knob ? null : (
+          <text fg={color.muted} wrapMode="none" style={{ position: "absolute", left: hover, top: 0, width: 1, height: 1 }}>▾</text>
+        )}
+        <text fg={color.brand} wrapMode="none" style={{ position: "absolute", left: layout.knob, top: 0, width: 1, height: 1 }}>●</text>
+        <text fg={color.brand} wrapMode="none"
+          bg={fill(layout.segments.find((segment) => segment.left <= layout.knob && layout.knob < segment.left + segment.width)?.phase ?? "unrecorded", true)}
+          style={{ position: "absolute", left: layout.knob, top: 1, width: 1, height: 1 }}>┃</text>
+      </box>
+      {tail === 0 ? null : (
+        <>
+          {rows === 0 ? null : (
+            <text fg={color.faint} wrapMode="none" style={{ position: "absolute", left: width - tail + 2, top: mark - 1, height: 1 }}>
+              {clip(title, tail - 2)}
+            </text>
+          )}
+          <text fg={color.text} wrapMode="none" style={{ position: "absolute", left: width - tail + 2, top: mark, height: 1 }}>
+            <strong>{clip(layout.phase, tail - 2)}</strong>
+          </text>
+          <text fg={color.muted} wrapMode="none" style={{ position: "absolute", left: width - tail + 2, top: bar, height: 1 }}>
+            {layout.elapsed}
+          </text>
+        </>
+      )}
     </box>
-    {pins.length === 0 ? null : <box style={{ height: Math.max(...pins.map(pin => pin.row)) + 1, flexShrink: 0 }}>
-      {pins.map(pin => <text key={`${pin.milestone.seq}:${pin.milestone.label}`} wrapMode="none"
-        fg={pin.milestone.tone === "bad" ? color.danger : pin.milestone.tone === "good" ? color.success : color.warning}
-        style={{ position: "absolute", left: pin.left, top: pin.row, width: pin.label.length, height: 1 }}
-        onMouseDown={() => onSelect(pin.milestone.seq)}>{pin.label}</text>)}
-    </box>}
-    <box style={{ flexDirection: "row", height: 1 }}>
-      {model.bands.map((band, index) => sizes[index] === 0 ? null : <box key={band.seq}
-        onMouseDown={() => onSelect(band.seq)}
-        style={{ width: sizes[index], height: 1, backgroundColor: mix(color[tones[band.phase]], 25, color.page) }}>
-        <text fg={color.text} wrapMode="none">{band.frames.includes(owner ?? "") ? "│" : " "}{labels[band.phase]}</text>
-      </box>)}
-    </box>
-    {!focused || pin === undefined ? null : <text fg={pin.tone === "bad" ? color.danger : pin.tone === "good" ? color.success : color.warning}
-      wrapMode="none" onMouseDown={() => onSelect(pin.seq)}>↑ {pin.label}</text>}
-    {focused && line !== undefined ? <text fg={line.failed ? color.danger : color.text} wrapMode="word">
-      {line.frame}{"  "}{line.verb}{" "}{line.subject}{line.result === "" ? "" : ` · ${line.result}`}
-    </text> : null}
-    {focused ? <scrollbox style={{ maxHeight: 6, flexShrink: 0 }}>{notes.slice(-2).map(note => <box key={note.seq} style={{ flexDirection: "column" }}>
-      <text fg={note.tone === "good" ? color.success : note.tone === "bad" ? color.danger : color.warning} wrapMode="word">{note.title}{note.body === "" ? "" : ` · ${note.body}`}</text>
-      {note.evidence?.map((evidence, index) => <text key={index} fg={color.muted} wrapMode="word">{evidence}</text>)}
-    </box>)}</scrollbox> : null}
-  </box>
+  )
 }

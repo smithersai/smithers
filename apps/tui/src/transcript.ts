@@ -74,6 +74,10 @@ export type Item = (
     readonly error?: string
     readonly startedAt: number
     readonly endedAt?: number
+    /** The turn whose journal holds this cell: an index into `past`, or `past.length` for the current one. */
+    readonly turn?: number
+    /** The 1-based frame of that journal the cell was written in. */
+    readonly frame?: number
   }
   | { readonly kind: "answer"; readonly id: string; readonly text: string }
   | { readonly kind: "error"; readonly id: string; readonly text: string }
@@ -85,6 +89,8 @@ export type Item = (
 
 export interface Transcript {
   readonly activity?: Activity.Activity
+  /** Earlier turns' journals, so their steps keep their lines and callouts. */
+  readonly past?: ReadonlyArray<Activity.Activity>
   readonly items: ReadonlyArray<Item>
   /** Latest Jev reading for this run; absent when no context assessment exists. */
   readonly contextAssessment?: { readonly scope: string; readonly frame: number; readonly outdated: boolean; readonly irrelevant: boolean }
@@ -127,7 +133,15 @@ const withId = (transcript: Transcript, item: Unsaved, at?: number): Transcript 
 })
 
 export const user = (transcript: Transcript, text: string, queued = false, at?: number): Transcript =>
-  withId(queued ? transcript : { ...transcript, activity: Activity.empty }, queued ? { kind: "user", text, queued } : { kind: "user", text }, at)
+  withId(
+    queued ? transcript : {
+      ...transcript,
+      past: [...transcript.past ?? [], transcript.activity ?? Activity.empty],
+      activity: Activity.empty
+    },
+    queued ? { kind: "user", text, queued } : { kind: "user", text },
+    at
+  )
 
 /** The id the next added item will get. */
 export const nextId = (transcript: Transcript): string => String(transcript.nextId)
@@ -241,7 +255,9 @@ const streamInto = (transcript: Transcript, text: string, at: number): Transcrip
       status: "writing",
       calls: [],
       printed: "",
-      startedAt: transcript.requestedAt ?? at
+      startedAt: transcript.requestedAt ?? at,
+      turn: transcript.past?.length ?? 0,
+      frame: Activity.frames(transcript.activity ?? Activity.empty)
     }, transcript.requestedAt ?? at),
     cells: index
   }

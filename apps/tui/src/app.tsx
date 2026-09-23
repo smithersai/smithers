@@ -35,6 +35,7 @@ import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spin
 import * as Timeline from "./timeline.ts"
 import * as Activity from "./activity.ts"
 import { ActivityView } from "./activity-view.tsx"
+import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
@@ -378,8 +379,34 @@ export function App(props: AppProps) {
     ?? latestActivity.find(source => source.activity.status === "running") ?? latestActivity[0]
   const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
   const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
-  const inspectActivity = (seq: number) => {
-    if (monitored !== undefined) { setPanelFocus(false); setInspection({ source: monitored.id, seq, first: monitored.activity.records[0]! }) }
+  const transcriptOf = (source: string) => source === Timeline.chat ? transcript : workspace.transcript(source)
+  /** The chat row a scrubber position lands on. */
+  const jumpTarget = activeInspection === undefined ? undefined : (() => {
+    const id = Scrubber.target(transcriptOf(activeInspection.source), activeInspection.seq)
+    return id === undefined ? undefined : `${activeInspection.source}:${id}`
+  })()
+  const reveal = (key: string) => {
+    const box = scroll.current
+    const child = box?.content.findDescendantById(key)
+    if (box === null || box === undefined || child === undefined) return
+    box.scrollTop = Math.max(0, box.scrollTop + child.y - box.viewport.y - 1)
+  }
+  const inspectActivity = (seq: number, jump = true) => {
+    if (monitored === undefined) return
+    setPanelFocus(false)
+    setInspection({ source: monitored.id, seq, first: monitored.activity.records[0]! })
+    const id = Scrubber.target(transcriptOf(monitored.id), seq)
+    if (id === undefined || !jump) return
+    if (surface !== "chat") setSurface("chat")
+    const key = `${monitored.id}:${id}`
+    reveal(key)
+    // A surface switch mounts the chat first; lay it out, then aim again.
+    setTimeout(() => reveal(key), 60)
+  }
+  const followLive = () => {
+    setInspection(undefined)
+    const box = scroll.current
+    if (box !== null) box.scrollTop = box.scrollHeight
   }
   const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const composer = useRef<TextareaRenderable>(null)
@@ -1156,15 +1183,19 @@ export function App(props: AppProps) {
     const text = composer.current?.plainText ?? ""
     if (key.ctrl && key.name === "t" && showActivity && monitored !== undefined && open === undefined) {
       key.preventDefault()
-      if (activeInspection !== undefined) setInspection(undefined)
-      else inspectActivity(monitored.activity.records.at(-1)!.sequence!)
+      if (activeInspection !== undefined) followLive()
+      else inspectActivity(monitored.activity.records.at(-1)!.sequence!, false)
       return
     }
     if (activeInspection !== undefined && monitored !== undefined && open === undefined &&
-      !key.ctrl && !key.meta && !key.option && ["left", "right", "up", "down", "home", "end", "escape", "return"].includes(key.name)) {
+      !key.ctrl && !key.meta && !key.option &&
+      ["left", "right", "up", "down", "home", "end", "escape", "return", "[", "]"].includes(key.name)) {
       key.preventDefault()
-      if (key.name === "escape" || key.name === "return") setInspection(undefined)
-      else inspectActivity(Activity.move(monitored.activity, activeInspection.seq, key.name)!)
+      if (key.name === "escape" || key.name === "return") return followLive()
+      // Shift steps milestone to milestone, the way brackets do.
+      const name = key.shift && key.name === "left" ? "[" : key.shift && key.name === "right" ? "]" : key.name
+      const next = Scrubber.key(monitored.activity, activeInspection.seq, name)
+      if (next !== undefined) inspectActivity(next)
       return
     }
     if (key.ctrl && key.name === "c") {
@@ -1423,11 +1454,13 @@ export function App(props: AppProps) {
             >
               {timeline.map((row, index) => {
                 const worker = lanes.get(row.source)
-                const entry = <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} {...(worker === undefined ? {} : { tone: worker.tone })} />
+                const step = row.item.kind === "cell" ? Scrubber.step(transcriptOf(row.source), row.item) : undefined
+                const entry = <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} selected={row.key === jumpTarget}
+                  {...(step === undefined ? {} : { step })} {...(worker === undefined ? {} : { tone: worker.tone })} />
                 return worker === undefined
-                  ? <box key={row.key}>{entry}</box>
+                  ? <box key={row.key} id={row.key}>{entry}</box>
                   : (
-                    <View.Lane key={row.key} title={worker.title} tone={worker.tone} first={timeline[index - 1]?.source !== row.source}>
+                    <View.Lane key={row.key} id={row.key} title={worker.title} tone={worker.tone} first={timeline[index - 1]?.source !== row.source}>
                       {entry}
                     </View.Lane>
                   )
@@ -1439,7 +1472,8 @@ export function App(props: AppProps) {
           )}
         {!showActivity || monitored === undefined ? null :
           <ActivityView activity={monitored.activity} width={width} now={now} title={monitored.title}
-            focused={activeInspection !== undefined} cursor={activeInspection?.seq} onSelect={inspectActivity} />}
+            focused={activeInspection !== undefined} cursor={activeInspection?.seq} onSelect={inspectActivity}
+            onPause={() => activeInspection !== undefined ? followLive() : inspectActivity(monitored.activity.records.at(-1)!.sequence!, false)} />}
         {followUps.length === 0 ? null : (
           <box style={{ marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
             {followUps.map((text, index) => <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>)}

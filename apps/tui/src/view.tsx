@@ -6,9 +6,10 @@
  * instead of a boxed border, and a selected row filled with the brand color.
  */
 import { RGBA } from "@opentui/core"
-import type { ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 import * as Editor from "./editor.ts"
-import { color, syntax } from "./theme.ts"
+import * as Scrubber from "./scrubber.ts"
+import { color, mix, syntax } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
 
 type Cell = Extract<Transcript.Item, { kind: "cell" }>
@@ -71,13 +72,18 @@ export function Entry(props: {
   readonly expanded: boolean
   /** A worker lane's color for the message bar; the chat's own messages use the brand. */
   readonly tone?: string
+  /** The scrubber's playhead is on this row. */
+  readonly selected?: boolean
+  /** What the shared fold says about a cell's frame. */
+  readonly step?: Scrubber.Step
 }) {
   const { item } = props
   switch (item.kind) {
     case "user":
       return <UserMessage text={item.text} queued={item.queued === true} tone={props.tone ?? color.brand} />
     case "cell":
-      return <CellView cell={item} now={props.now} tick={props.tick} expanded={props.expanded} />
+      return <CellView cell={item} now={props.now} tick={props.tick} expanded={props.expanded}
+        selected={props.selected === true} step={props.step ?? { notes: [] }} />
     case "shell":
       return <ShellView item={item} tick={props.tick} expanded={props.expanded} />
     case "answer":
@@ -99,13 +105,14 @@ export function Entry(props: {
 
 /** A worker's rows in the chat: a rail in its lane color, titled where the lane starts. */
 export function Lane(props: {
+  readonly id?: string
   readonly title: string
   readonly tone: string
   readonly first: boolean
   readonly children: ReactNode
 }) {
   return (
-    <box style={{ border: ["left"], paddingLeft: 1 }} borderColor={props.tone} customBorderChars={bar}>
+    <box id={props.id} style={{ border: ["left"], paddingLeft: 1 }} borderColor={props.tone} customBorderChars={bar}>
       {props.first ? <text fg={props.tone} style={{ marginBottom: 1 }}>↳ {props.title}</text> : null}
       {props.children}
     </box>
@@ -159,8 +166,37 @@ function ShellView(props: { readonly item: ShellItem; readonly tick: string; rea
   )
 }
 
-function CellView(props: { readonly cell: Cell; readonly now: number; readonly tick: string; readonly expanded: boolean }) {
-  const { cell } = props
+/** A step with no call or prose to name it reads as its first line of code. */
+const firstLine = (source: string): string => source.split("\n").find((line) => line.trim() !== "")?.trim() ?? "cell"
+
+const noteTone = (tone: "warn" | "bad" | "good"): string =>
+  tone === "good" ? color.success : tone === "bad" ? color.danger : color.warning
+
+/** A discipline note as the app's callout card: a titled panel with its evidence lines. */
+function Callout(props: { readonly note: Scrubber.Step["notes"][number] }) {
+  const { note } = props
+  const tone = noteTone(note.tone)
+  return (
+    <box style={{ border: ["left"], marginTop: 1 }} borderColor={tone} customBorderChars={bar}>
+      <box style={{ paddingLeft: 1, paddingRight: 1 }} backgroundColor={mix(tone, 10, color.page)}>
+        <text fg={tone}><strong>{note.tone === "good" ? "✓" : "△"} {note.title}</strong></text>
+        {note.body === "" ? null : <text fg={color.text}>{note.body}</text>}
+        {note.evidence?.map((line, index) => <text key={index} fg={color.muted} wrapMode="char">{line}</text>)}
+      </box>
+    </box>
+  )
+}
+
+function CellView(props: {
+  readonly cell: Cell
+  readonly now: number
+  readonly tick: string
+  readonly expanded: boolean
+  readonly selected: boolean
+  readonly step: Scrubber.Step
+}) {
+  const { cell, step } = props
+  const [folded, setFolded] = useState(false)
   const live = cell.status === "writing" || cell.status === "running"
   const elapsed = (cell.endedAt ?? props.now) - cell.startedAt
   // A live cell streams its whole code. Once it ends, the call rows below say
@@ -170,34 +206,49 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
   const code = hiddenCode === 0 ? cell.source : lines.slice(0, codeLines).join("\n")
   const printed = cell.printed.trimEnd()
   const printedRows = printed === "" ? 0 : printed.split("\n").length
-  const tone = statusColor[cell.status]
-  const mark = live ? props.tick : cell.status === "done" ? "●" : "✗"
+  const tone = props.selected ? color.brand : statusColor[cell.status]
+  const line = step.line
+  const open = live || !folded
+  const mark = live ? props.tick : open ? "▾" : "▸"
+  const result = line === undefined ? "" : Scrubber.outcome(line)
   return (
     <box style={{ border: ["left"], paddingLeft: 1, marginBottom: 1 }} borderColor={tone} customBorderChars={bar}>
-      <box style={{ flexDirection: "row", justifyContent: "space-between" }}>
-        <text style={{ flexShrink: 1 }}>
-          <span fg={tone}>{mark} </span>
-          {cell.prose === ""
-            ? <span fg={color.muted}>{cell.status === "writing" ? "writing" : "cell"}</span>
-            : <span fg={color.text}>{cell.prose.split("\n")[0]}</span>}
+      <box style={{ flexDirection: "row", justifyContent: "space-between" }}
+        {...(props.selected ? { backgroundColor: color.element } : {})}
+        onMouseDown={() => setFolded(!folded)}>
+        <text style={{ flexShrink: 1 }} wrapMode="none">
+          <span fg={live ? tone : color.faint}>{mark} </span>
+          <span fg={props.selected ? color.brand : color.faint}>{String(cell.index).padStart(2)}  </span>
+          {line !== undefined
+            ? <><span fg={line.failed ? color.danger : color.text}>{line.verb} </span><span fg={color.muted}>{line.subject}</span></>
+            : cell.prose !== ""
+            ? <span fg={color.text}>{cell.prose.split("\n")[0]}</span>
+            : cell.status === "writing"
+            ? <span fg={color.muted}>writing</span>
+            : <span fg={color.muted}>{firstLine(cell.source)}</span>}
         </text>
-        <text fg={color.faint} style={{ flexShrink: 0 }}>{Transcript.duration(elapsed)}</text>
+        <text style={{ flexShrink: 0 }} wrapMode="none">
+          {result === "" ? null : <span fg={line?.failed === true ? color.danger : color.muted}>{result.split("\n")[0]!.slice(0, 24)}  </span>}
+          <span fg={color.faint}>{Transcript.duration(elapsed)}</span>
+        </text>
       </box>
-      {cell.prose.includes("\n") ? <text fg={color.muted}>{cell.prose.split("\n").slice(1).join("\n")}</text> : null}
-      {code === "" ? null : (
+      {!open ? null : line !== undefined && cell.prose !== ""
+        ? <text fg={color.muted} style={{ paddingLeft: 2 }}><em>“{cell.prose}”</em></text>
+        : cell.prose.includes("\n") ? <text fg={color.muted}>{cell.prose.split("\n").slice(1).join("\n")}</text> : null}
+      {!open || code === "" ? null : (
         <box style={{ paddingLeft: 1, paddingRight: 1, marginTop: 1 }} backgroundColor={color.page}>
           <code content={code} filetype="javascript" syntaxStyle={syntax} streaming={cell.status === "writing"} />
           {hiddenCode === 0 ? null : <text fg={color.faint}>… {hiddenCode} more lines</text>}
         </box>
       )}
-      {cell.calls.length === 0 ? null : (
+      {!open || cell.calls.length === 0 ? null : (
         <box>
           {cell.calls.map((call, index) => (
             <CallView key={index} call={call} now={props.now} tick={props.tick} expanded={props.expanded} />
           ))}
         </box>
       )}
-      {printed === "" ? null : props.expanded
+      {!open || printed === "" ? null : props.expanded
         ? (
           <box style={{ marginTop: 1, paddingLeft: 1, paddingRight: 1 }} backgroundColor={color.surface}>
             <text fg={color.muted}>{printed}</text>
@@ -205,6 +256,7 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
         )
         : <text fg={color.faint}>printed {printedRows} {printedRows === 1 ? "line" : "lines"} · ctrl+o</text>}
       {cell.error === undefined ? null : <text fg={cell.status === "rejected" ? color.warning : color.danger}>{cell.error}</text>}
+      {step.notes.map((note) => <Callout key={note.seq} note={note} />)}
     </box>
   )
 }

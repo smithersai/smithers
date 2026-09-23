@@ -20,6 +20,10 @@ const drawn = (screen: string) => /↑\S+ ↓\S+/.test(screen)
 const idle = (screen: string) =>
   drawn(screen) && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
+/** The scrubber's playhead column. */
+const knob = (screen: string): number =>
+  screen.split("\n").map((line) => [...line].indexOf("●")).find((column) => column >= 0) ?? -1
+
 let tui: Tui | undefined
 afterEach(async () => {
   await tui?.stop()
@@ -207,19 +211,19 @@ describe("turns", () => {
     const { tui, cwd } = await start({ cols })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
-    await tui.until((screen) => /[●⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] (writing|cell)/.test(screen), 20_000, "first cell")
+    await tui.until((screen) => /[▾▸⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] +\d+  /.test(screen), 20_000, "first cell")
     await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
-    await tui.until(screen => screen.includes("ctrl+t timeline"), 5_000, "recorded timeline")
+    const following = await tui.until(screen => screen.includes("⏸") && knob(screen) > 0, 5_000, "recorded timeline")
     await tui.press("\x14")
-    await tui.until(screen => screen.includes("esc live"), 5_000, "timeline focus")
+    await tui.until(screen => screen.includes("▶"), 5_000, "timeline paused")
     await tui.press("\x1b[H")
-    await tui.until(screen => screen.includes("#1 "), 5_000, "first journal position")
+    await tui.until(screen => knob(screen) < knob(following), 5_000, "first journal position")
     await tui.press("\x1b[F")
     await tui.press("\x13")
     await tui.until(screen => screen.includes("hjkl/"), 5_000, "summary keyboard focus")
     await tui.press(key.escape)
-    await tui.until(screen => screen.includes("esc live"), 5_000, "summary handles Escape and restores the chat timeline")
+    await tui.until(screen => screen.includes("▶"), 5_000, "summary handles Escape and restores the chat timeline")
     await tui.press(key.escape)
     await tui.type("keep the composer usable")
     const inspected = await tui.until(screen => /┃\s+keep the composer usable/.test(screen), 5_000, "chat after inspection")
@@ -412,6 +416,43 @@ describe("search palette", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Resumed") && screen.includes("remembered-output"), 5_000, "resumed")
   }, 90_000)
+})
+
+describe("timeline scrubber", () => {
+  /** A real worker session: 20 frames, an edit pin, and the verdict. */
+  const restored = (cols: number) => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+    process.env.SMITHERS_TUI_SESSION_DIR = sessions
+    mkdirSync(Session.directory(cwd), { recursive: true })
+    writeFileSync(join(Session.directory(cwd), "2026-09-23T20-05-36-811Z_timeline.jsonl"),
+      readFileSync(join(app, "test", "fixtures", "timeline-worker.jsonl")))
+    return start({ cwd, sessions, args: "-c", cols })
+  }
+
+  it("a click on a milestone jumps the chat to its numbered step; keys step and esc follows live", async () => {
+    const { tui } = await restored(120)
+    const screen = await tui.until((screen) => screen.includes("approvals.ts") && screen.includes("Pause"), 15_000, "scrubber")
+    const rows = screen.split("\n")
+    const row = rows.findIndex((line) => line.includes("approvals.ts") && !line.includes("┃"))
+    const column = rows[row]!.indexOf("approvals.ts")
+    await tui.press(`\x1b[<0;${column + 2};${row + 1}M\x1b[<0;${column + 2};${row + 1}m`)
+    const jumped = await tui.until((screen) => /▾ 10\s+patched approvals\.ts/.test(screen), 5_000, "jumped to step 10")
+    expect(jumped).toContain("Implementing")
+    expect(jumped).toContain("▶ Live")
+    await tui.press("\x1b[D")
+    await tui.until((screen) => /▾ \s?9\s/.test(screen) || /▾ \s?8\s/.test(screen), 5_000, "previous step")
+    await tui.press("]")
+    await tui.until((screen) => screen.includes("patched approvals.ts"), 5_000, "next milestone")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("⏸ Pause") && screen.includes("Done"), 5_000, "following live")
+  }, 60_000)
+
+  it("stays inside a narrow terminal", async () => {
+    const { tui } = await restored(40)
+    const screen = await tui.until((screen) => screen.includes("⏸") && screen.includes("●"), 15_000, "narrow scrubber")
+    for (const line of screen.split("\n")) expect([...line.trimEnd()].length).toBeLessThanOrEqual(40)
+  }, 60_000)
 })
 
 describe("fork", () => {

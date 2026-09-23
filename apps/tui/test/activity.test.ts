@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import * as Activity from "../src/activity.ts"
+import * as Scrubber from "../src/scrubber.ts"
 import * as Transcript from "../src/transcript.ts"
 import * as Session from "../src/session.ts"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
@@ -28,21 +29,13 @@ describe("the shared terminal monitor", () => {
     expect(Activity.model(restored.transcript.activity!)).toEqual(Activity.model(replay().activity!))
   })
 
-  test("scrubbing cannot show the future result of a call that was still open", () => {
-    const activity = replay().activity!
-    const start = activity.records.find(record => record.kind === "control.agent.cell-call-started")!
-    const selected = Activity.at(activity, start.sequence!)
-    expect(selected.lines[0]!.result).toBe("")
-    expect(selected.rows.find(span => span.kind === "call")!.status).toBe("running")
-  })
-
   test("every event is reachable, and a new turn cannot retain the previous verdict", () => {
     const transcript = replay(), activity = transcript.activity!
     const first = activity.records[0]!.sequence!, last = activity.records.at(-1)!.sequence!
-    expect(Activity.move(activity, undefined, "home")).toBe(first)
-    expect(Activity.move(activity, first, "left")).toBe(first)
-    expect(Activity.move(activity, last, "right")).toBe(last)
-    expect(Activity.move(activity, last, "escape")).toBeUndefined()
+    expect(Scrubber.key(activity, undefined, "home")).toBe(first)
+    expect(Scrubber.key(activity, first, "home")).toBe(first)
+    expect(Scrubber.key(activity, last, "right")).toBe(last)
+    expect(Scrubber.key(activity, last, "escape")).toBeUndefined()
     const next = Transcript.user(transcript, "next request", false, 100)
     expect(next.activity).toEqual(Activity.empty)
     expect(Transcript.user(transcript, "steer", true, 100).activity).toBe(activity)
@@ -54,14 +47,5 @@ describe("the shared terminal monitor", () => {
     expect(Activity.model(failed).root.status).toBe("failed")
     expect(Activity.model(stopped).root.status).toBe("cancelled")
     expect(Activity.finish(failed, "failed", 300, "broken")).toBe(failed)
-  })
-
-  test("bands stay within narrow and wide terminals", () => {
-    const model = Activity.model(replay().activity!)
-    for (const width of [1, 20, 40, 80, 120]) {
-      const sizes = Activity.widths(model, width)
-      expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(width)
-      expect(sizes.every(size => size >= 0)).toBe(true)
-    }
   })
 })
