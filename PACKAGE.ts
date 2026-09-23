@@ -159,7 +159,7 @@ const factoryProjection = Smithers.FactoryProjection({
 // rule, kinds, declared inputs and outputs, labeled dependencies, and the
 // declaring file, and nothing keyed on a host. The planner fills the rows
 // from the loaded declarations, so their content is key material and an edit
-// to any PACKAGE.ts re-keys the check. `build --write` writes the file and
+// to any PACKAGE.ts re-keys the check. `target --write` writes the file and
 // `lint` fails on drift; `smithers-build index '//...'` prints the same rows.
 const targetIndex = Smithers.TargetIndex({
   summary: "Regenerate and drift-check .smithers/target-index.json, the declaration-derived target index.",

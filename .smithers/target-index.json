@@ -29209,6 +29209,16 @@
         "path": "packages/smithers/scripts/compile-commonjs.mjs"
       },
       {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.tsx",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "packages/smithers/src/index.ts"
       },
