@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdirSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startNativeOwn } from "./mode-matrix/native-own"
@@ -31,13 +31,26 @@ const run = async (
   mkdirSync(directory, { recursive: true })
   const configPath = resolve(directory, "config.json")
   writeFileSync(configPath, `${JSON.stringify({ revision, modes: config ? [config] : [] } satisfies MatrixConfig, null, 2)}\n`, { mode: 0o600 })
+  const artifacts = ["real-e2e-artifacts", "real-e2e-results.json"]
+  if (command === "run") {
+    for (const name of artifacts) rmSync(resolve(appDir, "test-results", name), { recursive: true, force: true })
+  }
   const child = Bun.spawn([
     "bun", "scripts/run-mode-matrix.ts", command,
     "--modes", mode,
     "--config", configPath,
     "--report", resolve(directory, "report.json")
   ], { cwd: appDir, env: { ...process.env, ...environment }, stdin: "inherit", stdout: "inherit", stderr: "inherit" })
-  return child.exited
+  const code = await child.exited
+  // The next mode reuses Playwright's output paths. Preserve this mode's
+  // failures beside its receipt, where CI already uploads artifacts.
+  if (command === "run") {
+    for (const name of artifacts) {
+      const source = resolve(appDir, "test-results", name)
+      if (existsSync(source)) cpSync(source, resolve(directory, name), { recursive: true })
+    }
+  }
+  return code
 }
 
 let failed = false

@@ -63,7 +63,11 @@ export const startNativeOwn = async (
   const origin = `http://127.0.0.1:${await availablePort()}`
   let app: PackagedApp | undefined
   const close = async (): Promise<void> => {
-    try { await app?.cleanup() } finally { rmSync(root, { recursive: true, force: true }) }
+    try {
+      await app?.captureDiagnostics("matrix-final").catch(() => undefined)
+    } finally {
+      try { await app?.cleanup() } finally { rmSync(root, { recursive: true, force: true }) }
+    }
   }
   try {
     const gatewayApiKey = fixtureProtocolId(`matrix-flow-${randomUUID()}`)
