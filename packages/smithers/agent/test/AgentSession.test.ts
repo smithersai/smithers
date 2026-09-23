@@ -422,6 +422,7 @@ const moduleRun = (options: {
     const catalog: Executable.Catalog = {
       executables: [{
         descriptor: moduleDescriptor,
+        input: undefined,
         delegate: "test/Module",
         lowered: { cache: undefined, placement: undefined, priority: undefined },
         invocation: (input) => ({
@@ -1469,6 +1470,7 @@ describe("AgentSession", () => {
       const catalog: Executable.Catalog = {
         executables: [{
           descriptor: moduleDescriptor,
+          input: undefined,
           delegate,
           lowered: { cache: undefined, placement: undefined, priority: undefined },
           invocation: (input) => ({
@@ -1579,6 +1581,7 @@ describe("AgentSession", () => {
     const catalog: Executable.Catalog = {
       executables: [{
         descriptor: moduleDescriptor,
+        input: undefined,
         delegate: "test/Module",
         lowered: { cache: undefined, placement: undefined, priority: undefined },
         invocation: (input) => ({
@@ -1791,6 +1794,7 @@ describe("AgentSession", () => {
     const catalog: Executable.Catalog = {
       executables: [{
         descriptor: moduleDescriptor,
+        input: undefined,
         delegate: "test/Module",
         lowered: { cache: undefined, placement: undefined, priority: undefined },
         invocation: (input) => ({
