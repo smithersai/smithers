@@ -58,7 +58,6 @@ export const systemTemporaryDirectoryName = "<system-temp>"
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export const AtomicFileSystemTypeId = Symbol.for("@smthrs/kernel/AtomicFileSystem")
 
@@ -69,7 +68,6 @@ export const AtomicFileSystemTypeId = Symbol.for("@smthrs/kernel/AtomicFileSyste
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export interface AtomicRoot {
   readonly boundaryRoot?: string | undefined
@@ -87,7 +85,6 @@ export interface AtomicRoot {
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export type AtomicRequest =
   | (AtomicRoot & { readonly operation: "exists"; readonly path: string })
@@ -155,7 +152,6 @@ export type AtomicRequest =
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export interface AtomicResults {
   readonly exists: boolean
@@ -180,7 +176,6 @@ export interface AtomicResults {
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export type AtomicResult<R extends AtomicRequest> = AtomicResults[R["operation"]]
 
@@ -192,7 +187,6 @@ export type AtomicResult<R extends AtomicRequest> = AtomicResults[R["operation"]
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export type AtomicHandlers = {
   readonly [K in keyof AtomicResults]: (
@@ -204,7 +198,6 @@ export type AtomicHandlers = {
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export interface AtomicFileSystem {
   readonly execute: <R extends AtomicRequest>(
@@ -232,7 +225,6 @@ export interface AtomicFileSystem {
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export type AtomicHostFileSystem = EffectFileSystem.FileSystem & {
   readonly [AtomicFileSystemTypeId]: AtomicFileSystem
@@ -248,7 +240,6 @@ export type AtomicHostFileSystem = EffectFileSystem.FileSystem & {
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export const withAtomicFileSystem = (
   fileSystem: EffectFileSystem.FileSystem,
@@ -270,7 +261,6 @@ export const withAtomicFileSystem = (
  *
  * @since 1.0.0-rc.0
  * @category security
- * @slop
  */
 export const withIsolatedFileSystem = (
   fileSystem: EffectFileSystem.FileSystem
@@ -384,7 +374,6 @@ const identityOf = (info: EffectFileSystem.File.Info): Option.Option<string> =>
  *
  * @category security
  * @since 1.0.0-rc.0
- * @slop
  */
 export const canonicalResource = (
   fileSystem: EffectFileSystem.FileSystem,
@@ -459,7 +448,6 @@ export const canonicalResource = (
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer: Layer.Layer<
   EffectFileSystem.FileSystem,

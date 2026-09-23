@@ -12,10 +12,14 @@
  * **Redirects.** A redirect is a second network destination, so it needs a
  * second grant check. Two halves guarantee that:
  *
- *  1. Host bundles provide a client that does **not** follow redirects on its
- *     own — Effect's fetch layer with `RequestInit { redirect: "manual" }`,
- *     Undici without a redirect interceptor. Nothing below this layer can
- *     silently walk to another origin.
+ *  1. The client below this layer must **not** follow redirects on its own.
+ *     That is a precondition on the host: Undici without a redirect
+ *     interceptor, or Effect's fetch layer with `redirect: "manual"`. This
+ *     layer also forces `RequestInit { redirect: "manual" }` over the ambient
+ *     value for every request it executes, so a plain `FetchHttpClient.layer`,
+ *     which follows redirects by default, cannot walk to another origin below
+ *     the guard either. A custom client that ignores `RequestInit` must meet
+ *     the precondition itself.
  *  2. This layer composes Effect's own `HttpClient.followRedirects` *above*
  *     the guard. That combinator re-enters `postprocess` for every hop, and
  *     `postprocess` is the guarded one, so hop *n* is checked exactly like hop
@@ -38,6 +42,7 @@ import {
   type PermissionErrorPayload
 } from "@smthrs/capability/Permission"
 import { Context, Effect, Layer, Option } from "effect"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import * as Headers from "effect/unstable/http/Headers"
 import * as HttpBody from "effect/unstable/http/HttpBody"
 import * as EffectHttpClient from "effect/unstable/http/HttpClient"
@@ -130,7 +135,6 @@ export { make } from "effect/unstable/http/HttpClient"
  *
  * @category references
  * @since 1.0.0-rc.0
- * @slop
  */
 export const ModelCall: Context.Reference<string | undefined> = Context.Reference<string | undefined>(
   "@smthrs/kernel/HttpClient/ModelCall",
@@ -143,7 +147,6 @@ export const ModelCall: Context.Reference<string | undefined> = Context.Referenc
  *
  * @category references
  * @since 1.0.0-rc.0
- * @slop
  */
 export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.provideService(effect, ModelCall, modelId)
@@ -161,7 +164,6 @@ export const withModelCall = (modelId: string) => <A, E, R>(effect: Effect.Effec
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const toHttpClientError = (options: {
   readonly request: HttpClientRequest.HttpClientRequest
@@ -186,7 +188,6 @@ export const toHttpClientError = (options: {
  *
  * @category refinements
  * @since 1.0.0-rc.0
- * @slop
  */
 export const fromHttpClientError = (
   error: HttpClientError.HttpClientError
@@ -203,7 +204,6 @@ export const fromHttpClientError = (
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const makeNoop = (): EffectHttpClient.HttpClient =>
   EffectHttpClient.make((request) =>
@@ -222,7 +222,6 @@ export const makeNoop = (): EffectHttpClient.HttpClient =>
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layerNoop = (): Layer.Layer<EffectHttpClient.HttpClient> =>
   Layer.succeed(EffectHttpClient.HttpClient)(makeNoop())
@@ -261,6 +260,16 @@ const capabilityFor = (
 }
 
 /**
+ * Forces `redirect: "manual"` on the fetch options a fetch-backed client reads
+ * at execute time, keeping every other ambient field.
+ */
+const manualRedirects = (context: Context.Context<never>): Context.Context<never> =>
+  Context.add(context, FetchHttpClient.RequestInit, {
+    ...Context.getOrUndefined(context, FetchHttpClient.RequestInit),
+    redirect: "manual"
+  })
+
+/**
  * Decorates the HTTP client in place with a `net:get`/`net:post`/`model:call`
  * capability check, then follows redirects *through* that check.
  *
@@ -272,7 +281,6 @@ const capabilityFor = (
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer: Layer.Layer<
   EffectHttpClient.HttpClient,
@@ -298,7 +306,7 @@ export const layer: Layer.Layer<
           capabilityFor(request, fiber.getRef(ModelCall)).pipe(
             Effect.flatMap((capability) => grants.check(capability)),
             Effect.mapError((error: PermissionError) => toHttpClientError({ request, error })),
-            Effect.andThen(execute)
+            Effect.andThen(Effect.updateContext(execute, manualRedirects))
           )
         )
     )

@@ -18,7 +18,6 @@ import { Context, Layer } from "effect"
  *
  * @category models
  * @since 1.0.0-rc.0
- * @slop
  */
 export interface Service {
   readonly root: string
@@ -29,7 +28,6 @@ export interface Service {
  *
  * @category services
  * @since 1.0.0-rc.0
- * @slop
  */
 export class Workspace extends Context.Service<Workspace, Service>()("@smthrs/kernel/Workspace") {}
 
@@ -38,7 +36,6 @@ export class Workspace extends Context.Service<Workspace, Service>()("@smthrs/ke
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const make = (root: string): Service => Workspace.of({ root })
 
@@ -47,7 +44,6 @@ export const make = (root: string): Service => Workspace.of({ root })
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer = (root: string): Layer.Layer<Workspace> => Layer.succeed(Workspace, make(root))
 
@@ -56,7 +52,6 @@ export const layer = (root: string): Layer.Layer<Workspace> => Layer.succeed(Wor
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const makeNoop: Service = make(".")
 
@@ -65,6 +60,5 @@ export const makeNoop: Service = make(".")
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layerNoop: Layer.Layer<Workspace> = Layer.succeed(Workspace, makeNoop)

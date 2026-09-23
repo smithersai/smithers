@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `HttpClient.layer` forces `RequestInit { redirect: "manual" }` below its
+  guard, so composing it over a plain `FetchHttpClient.layer`, which follows
+  redirects by default, can no longer fetch a redirect target without a grant
+  check.
+- `JournalGrantStore` no longer tells an operator to compact a full policy
+  journal. Replay never reads a checkpoint, so compaction broke every later
+  construction; the message now says to start a new `policyRunId`.
+- The internal `@slop` review markers no longer ship in the published
+  declarations. Every export they marked already carries its prose.
+
 ## [1.0.0-rc.0] - 2026-08-31
 
 ### Changed

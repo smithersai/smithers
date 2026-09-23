@@ -170,8 +170,10 @@ any state or journal authority changes.
 **What to change.** Narrow the policy: one broad pattern replaces many exact
 ones. If the count is coming from replay, the message from
 `JournalGrantStore` names the policy run and the counts, and the fix is to
-compact that journal. Check against the exported constants
-(`GrantStore.maximumRules` and its siblings) rather than hardcoding numbers.
+start a new `policyRunId`. Do not compact the policy run: replay never reads a
+checkpoint, so compaction makes every later construction fail. Check against
+the exported constants (`GrantStore.maximumRules` and its siblings) rather
+than hardcoding numbers.
 
 ## journal_failed
 
@@ -203,7 +205,7 @@ failures are `"grant payload run mismatch"`, `"invalid grant payload"`,
 refusals. Sequences are per run and the store replays two runs, so every one
 of these names the run it was replaying and the sequence within it, for
 example `invalid grant payload in run kernel-policy at journal sequence 7`.
-That row is the one to inspect or compact.
+That row is the one to inspect.
 
 **What to change.** Check that `runId`, `policyRunId`, and `sourceId` are the
 ones this store has always used. Reusing an operational run id as a policy run

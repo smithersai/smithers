@@ -1102,9 +1102,11 @@ any other scheme it is `<scheme>//<lowercased host>`. In other words `https` is
 the implicit scheme: `https://EXAMPLE.test/x` names `example.test`, while
 `http://EXAMPLE.test/x` names `http://example.test`, so a host grant never
 authorizes a cleartext downgrade. Requests are snapshotted before any
-suspension. Redirects are followed **above** the guard, and platform clients do
-not follow redirects on their own, so every hop re-enters authorization
-independently.
+suspension. Redirects are followed **above** the guard, so every hop re-enters
+authorization independently. The client below the guard must not follow
+redirects on its own. The decorator forces `RequestInit { redirect: "manual" }`
+for each request it executes, which covers a plain `FetchHttpClient.layer`; a
+custom client that ignores `RequestInit` must meet that precondition itself.
 
 ## Jj
 

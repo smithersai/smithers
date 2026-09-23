@@ -2,7 +2,7 @@ import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { CapabilityPattern } from "@smthrs/capability/Capability"
 import { PermissionRequired, Rule } from "@smthrs/capability/Permission"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import * as EffectHttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
@@ -253,8 +253,11 @@ describe("HttpClient real redirect isolation", () => {
       expect(hits).toHaveLength(11)
     }))
 
-  it.effect("makes the redirect-isolation contract reject an auto-follow transport below the guard", () =>
+  it.effect("keeps redirect isolation over a fetch client that would auto-follow", () =>
     Effect.gen(function*() {
+      // Plain `FetchHttpClient.layer` follows redirects by default. The guard
+      // forces `redirect: "manual"` below itself, so composing it over that
+      // layer cannot hand the second origin a request without a grant check.
       const firstHits: Array<Hit> = []
       const secondHits: Array<Hit> = []
       const second = yield* Effect.promise(() =>
@@ -269,24 +272,17 @@ describe("HttpClient real redirect isolation", () => {
           response.writeHead(302, { location: `${second.url}/target` }).end()
         })
       )
-      const assertRedirectIsolation = Effect.gen(function*() {
-        const outcome = yield* runGuarded(
-          requestOutcome(`${first.url}/start`),
-          [allow("net:get", first.url)],
-          FetchHttpClient.layer
-        )
-        expect(outcome._tag).toBe("Failure")
-        if (outcome._tag !== "Failure") throw new Error("auto-follow bypassed the redirect guard")
-        expect(Option.getOrThrow(HttpClient.fromHttpClientError(outcome.failure))).toMatchObject({
-          capability: { resource: second.url }
-        })
-        expect(secondHits).toHaveLength(0)
+      const outcome = yield* runGuarded(
+        requestOutcome(`${first.url}/start`),
+        [allow("net:get", first.url)],
+        FetchHttpClient.layer
+      )
+      expect(outcome._tag).toBe("Failure")
+      if (outcome._tag !== "Failure") throw new Error("auto-follow bypassed the redirect guard")
+      expect(Option.getOrThrow(HttpClient.fromHttpClientError(outcome.failure))).toMatchObject({
+        capability: { resource: second.url }
       })
-
-      // The contract is expected to break here: the assertions inside die, and
-      // the surviving defect is what proves the auto-follow transport followed.
-      expect(Exit.isFailure(yield* Effect.exit(assertRedirectIsolation))).toBe(true)
       expect(firstHits).toHaveLength(1)
-      expect(secondHits).toHaveLength(1)
+      expect(secondHits).toHaveLength(0)
     }))
 })

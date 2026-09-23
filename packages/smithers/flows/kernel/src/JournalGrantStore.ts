@@ -35,7 +35,6 @@ import { Workspace } from "./Workspace.ts"
  *
  * @category models
  * @since 1.0.0-rc.0
- * @slop
  */
 export interface JournalGrantStoreOptions {
   readonly runId: string
@@ -100,7 +99,9 @@ const encodeGrantEvent = Schema.encodeSync(GrantEventSchema)
 
 // Replay reads two runs (`policyRunId` and `runId`) and journal sequences are
 // per run, so every refusal names the run it was replaying: the operator then
-// knows which journal run to inspect or compact.
+// knows which journal run to inspect. Replay always reads a run from its start
+// and never consults a checkpoint, so compacting a run it replays makes every
+// later construction fail `compacted`.
 const decodeTrustedEntry = (
   entry: JournalEvent.Entry,
   sourceId: string,
@@ -300,7 +301,6 @@ const replayRunRules = (
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const make = (options: JournalGrantStoreOptions) =>
   Effect.gen(function*() {
@@ -377,7 +377,7 @@ export const make = (options: JournalGrantStoreOptions) =>
       if (total > GrantStore.maximumRules) {
         return Effect.fail(
           invalidReplay(
-            `policy run ${policyRunId} replayed ${rememberedCount} remembered rules; configured rules (${configuredCount}) and replayed run rules (${runCount}) bring the total to ${total}, which exceeds the ${GrantStore.maximumRules}-rule ceiling, so compact the policy journal`
+            `policy run ${policyRunId} replayed ${rememberedCount} remembered rules; configured rules (${configuredCount}) and replayed run rules (${runCount}) bring the total to ${total}, which exceeds the ${GrantStore.maximumRules}-rule ceiling; remove configured rules or start a new policyRunId and grant again`
           )
         )
       }
@@ -385,14 +385,14 @@ export const make = (options: JournalGrantStoreOptions) =>
       // remembered rules do, and `GrantStore.make` refuses more than
       // `maximumRules` of them with a message that names neither the journal
       // nor the counts. Diagnose it here instead, so an operator reading the
-      // failure knows which run to compact rather than which field overflowed.
+      // failure knows which policy run filled rather than which field overflowed.
       const policySignatureCount = replayedPolicy.envelopeSignatures.size
       const runSignatureCount = replayedRun.envelopeSignatures.size
       const signatureTotal = policySignatureCount + runSignatureCount
       if (signatureTotal > GrantStore.maximumRules) {
         return Effect.fail(
           invalidReplay(
-            `policy run ${policyRunId} replayed ${policySignatureCount} remembered envelope signatures; replayed run envelope signatures (${runSignatureCount}) bring the total to ${signatureTotal}, which exceeds the ${GrantStore.maximumRules}-envelope-signature ceiling, so compact the policy journal`
+            `policy run ${policyRunId} replayed ${policySignatureCount} remembered envelope signatures; replayed run envelope signatures (${runSignatureCount}) bring the total to ${signatureTotal}, which exceeds the ${GrantStore.maximumRules}-envelope-signature ceiling; start a new policyRunId and grant again`
           )
         )
       }
@@ -456,6 +456,5 @@ export const make = (options: JournalGrantStoreOptions) =>
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer = (options: JournalGrantStoreOptions) => Layer.effect(GrantStore.GrantStore)(make(options))

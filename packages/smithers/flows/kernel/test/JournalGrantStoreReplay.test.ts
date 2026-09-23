@@ -841,7 +841,10 @@ describe("JournalGrantStore replayed rule limits", () => {
       )
       expect(failure.message).toContain("configured rules (1)")
       expect(failure.message).toContain(`${maximumRules}-rule ceiling`)
-      expect(failure.message).toContain("compact the policy journal")
+      // Compaction is not a remedy: replay reads from the start of the run and
+      // fails `compacted` below any floor, so the message must not advise it.
+      expect(failure.message).not.toContain("compact")
+      expect(failure.message).toContain("start a new policyRunId")
     }).pipe(
       Effect.provide(replayJournal(entries)),
       Effect.provide(Workspace.layer(workspaceRoot)),
@@ -851,7 +854,7 @@ describe("JournalGrantStore replayed rule limits", () => {
 })
 
 describe("JournalGrantStore replayed envelope limits", () => {
-  itEffect("names an oversized remembered envelope policy and requests compaction", () => {
+  itEffect("names an oversized remembered envelope policy and the real remedy", () => {
     const entries = Array.from({ length: maximumRules + 1 }, (_, index) =>
       entry(
         index + 1,
@@ -863,7 +866,8 @@ describe("JournalGrantStore replayed envelope limits", () => {
       const failure = yield* Effect.flip(JournalGrantStore.make(options))
       expect(failure.code).toBe("invalid_resolution")
       expect(failure.message).toContain(`policy run ${options.policyRunId}`)
-      expect(failure.message).toContain("compact")
+      expect(failure.message).not.toContain("compact")
+      expect(failure.message).toContain("start a new policyRunId")
       expect(failure.message).not.toContain("envelopeSignatures exceed")
     }).pipe(
       Effect.provide(replayJournal(entries)),

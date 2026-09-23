@@ -57,10 +57,12 @@ general. The reference is `HttpClient.ModelCall` if you need to read it.
 A redirect is a second network destination, so it needs a second grant check.
 Two halves guarantee it:
 
-1. Host bundles hand over a client that does **not** follow redirects on its
-   own: Effect's fetch layer with `redirect: "manual"`, Undici with no
-   redirect interceptor. Nothing below the decorator can silently walk to
-   another origin.
+1. The client below the decorator must **not** follow redirects on its own:
+   Undici with no redirect interceptor, or Effect's fetch layer with
+   `redirect: "manual"`. The decorator forces `redirect: "manual"` on the
+   `RequestInit` of every request it executes, so a plain
+   `FetchHttpClient.layer` cannot walk to another origin either. A custom
+   client that ignores `RequestInit` must meet the precondition itself.
 2. The decorator composes Effect's `followRedirects` **above** the guard, so
    every hop re-enters the guarded path and is checked exactly like hop zero.
 

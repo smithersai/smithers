@@ -28,7 +28,6 @@ const SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/
  *
  * @category rendering
  * @since 1.0.0-rc.0
- * @slop
  */
 export const quote = (token: string): string =>
   token !== "" && SAFE.test(token) ? token : `'${token.replaceAll("'", `'\\''`)}'`
@@ -61,7 +60,6 @@ export const quote = (token: string): string =>
  *
  * @category rendering
  * @since 1.0.0-rc.0
- * @slop
  */
 export const render = (command: ChildProcess.Command): string =>
   command._tag === "StandardCommand"
@@ -111,7 +109,6 @@ export const executable = (command: ChildProcess.Command): string =>
  *
  * @category rendering
  * @since 1.0.0-rc.0
- * @slop
  */
 export const cwd = (command: ChildProcess.Command): string | undefined =>
   command._tag === "StandardCommand" ? command.options.cwd : cwd(command.left)
@@ -122,7 +119,6 @@ export const cwd = (command: ChildProcess.Command): string | undefined =>
  *
  * @category rendering
  * @since 1.0.0-rc.0
- * @slop
  */
 export const env = (
   command: ChildProcess.Command

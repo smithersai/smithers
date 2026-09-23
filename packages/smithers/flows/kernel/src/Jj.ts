@@ -71,7 +71,6 @@ export { makeNoop } from "@smthrs/jj"
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer: Layer.Layer<
   Jj,

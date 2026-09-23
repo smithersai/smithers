@@ -208,7 +208,6 @@ export { make } from "effect/unstable/process/ChildProcessSpawner"
  *
  * @category constructors
  * @since 1.0.0-rc.0
- * @slop
  */
 export const makeNoop = (
   overrides: Partial<ChildProcessSpawner["Service"]> = {}
@@ -231,7 +230,6 @@ export const makeNoop = (
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layerNoop = (
   overrides: Partial<ChildProcessSpawner["Service"]> = {}
@@ -259,7 +257,6 @@ export const layerNoop = (
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer: Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | GrantStore> = Layer.effect(
   ChildProcessSpawner,

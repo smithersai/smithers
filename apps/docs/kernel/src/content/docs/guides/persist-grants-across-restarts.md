@@ -88,19 +88,24 @@ accepting it would double-apply them.
 Replayed rules are deduplicated by formatted pattern identity, so a capability
 granted a hundred times costs one rule.
 
-## Compact the policy journal before it fills
+## Start a new policy run when it fills
 
 A store retains at most `GrantStore.maximumRules` rules and the same number of
 envelope signatures. Because the policy run accumulates forever, that ceiling
 is a real operational limit, and `JournalGrantStore` fails closed when replay
-would exceed it. The failure names the policy run and the counts, so you know
-what to compact:
+would exceed it. The failure names the policy run and the counts:
 
 ```text
 policy run kernel-policy replayed 1024 remembered rules; configured rules (12)
 and replayed run rules (3) bring the total to 1039, which exceeds the
-1024-rule ceiling, so compact the policy journal
+1024-rule ceiling; remove configured rules or start a new policyRunId and
+grant again
 ```
+
+Do not compact the policy run. Replay reads it from the first entry and never
+consults a checkpoint, so a compacted policy run fails every later
+construction with `journal_failed`. Point the store at a fresh `policyRunId`
+instead; the old run stays intact for audit.
 
 The envelope-signature ceiling produces the matching message. A construction
 envelope is refused rather than persisted once the replayed signatures already

@@ -63,7 +63,6 @@ import * as Path from "./Path.ts"
  *
  * @category models
  * @since 1.0.0-rc.0
- * @slop
  */
 export type HostService =
   | EffectFileSystem.FileSystem
@@ -78,7 +77,6 @@ export type HostService =
  *
  * @category models
  * @since 1.0.0-rc.0
- * @slop
  */
 export const HostServiceTags = [
   EffectFileSystem.FileSystem,
@@ -100,7 +98,6 @@ export const HostServiceTags = [
  *
  * @category models
  * @since 1.0.0-rc.0
- * @slop
  */
 export const HostServiceIds = [
   "effect/FileSystem",
@@ -123,7 +120,6 @@ export const HostServiceIds = [
  *
  * @category layers
  * @since 1.0.0-rc.0
- * @slop
  */
 export const layer = Layer.mergeAll(
   FileSystem.layer,
