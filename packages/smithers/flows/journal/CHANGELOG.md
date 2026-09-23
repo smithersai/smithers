@@ -4,6 +4,13 @@
 
 ### Fixed
 
+- A lossy batch the writer fails to commit is logged and counted on the new
+  `flows_journal_lost` counter (`JournalMetrics.lostEntries`, `lost(code)`),
+  so telemetry lost with no `flush` caller is no longer silent. A final flush
+  that fails while the journal closes is logged instead of ignored.
+- Migration `0003_startup_index` lives in `src/migrations/` beside the other
+  migrations instead of `src/internal/`.
+
 - The migration modules `0001_initial` and `0002_checkpoints` export their
   Effect as a named binding (`initial`, `checkpoints`) instead of a default
   export, and `Migrations` imports them by name. The CommonJS build converts

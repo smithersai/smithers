@@ -2543,6 +2543,22 @@ export const layer = (
         }
       }
 
+      /**
+       * Makes a lost batch visible to an operator. `reportLoss` only reaches a
+       * flush caller or a live stream, and a telemetry producer usually has
+       * neither, so the loss is also logged and counted here.
+       */
+      const observeLoss = (cause: JournalError, batch: ReadonlyArray<QueuedEntry>): Effect.Effect<void> =>
+        batch.length === 0 ? Effect.void : Effect.andThen(
+          Metric.update(JournalMetrics.lost(cause.code), batch.length),
+          Effect.logWarning(
+            `journal lost ${batch.length} lossy entries (${cause.code}) for runs ${
+              [...new Set(batch.map((queued) => queued.runId))].join(", ")
+            }`,
+            cause
+          )
+        )
+
       // A failed transaction loses the whole batch. Release its per-run drain
       // counts before reporting the failure so a waiting compactor can retry
       // against the same database outage instead of waiting forever.
@@ -2578,24 +2594,31 @@ export const layer = (
               })
             }),
             Effect.tap((outcome) =>
-              Effect.sync(() => {
-                for (const loss of outcome.losses) {
-                  reportLoss(loss.cause, [loss.queued])
-                }
-                settle(outcome.commits.length)
-              })
+              // Observed before it is reported, so a flush the report wakes
+              // already sees the loss in the log and the registry.
+              Effect.uninterruptible(Effect.andThen(
+                Effect.forEach(outcome.losses, (loss) => observeLoss(loss.cause, [loss.queued]), { discard: true }),
+                Effect.sync(() => {
+                  for (const loss of outcome.losses) {
+                    reportLoss(loss.cause, [loss.queued])
+                  }
+                  settle(outcome.commits.length)
+                })
+              ))
             ),
-            Effect.catch((cause) => Effect.sync(() => failSink(cause, batch))),
+            Effect.catch((cause) =>
+              Effect.uninterruptible(
+                Effect.andThen(observeLoss(cause, batch), Effect.sync(() => failSink(cause, batch)))
+              )
+            ),
             // Defects only: an interruption is scope closure, and it must end
             // the writer rather than be reported as a lost batch.
-            Effect.catchDefect((defect) =>
-              Effect.sync(() =>
-                failSink(
-                  error("sink_failed", "journal writer failed", Cause.die(defect)),
-                  batch
-                )
+            Effect.catchDefect((defect) => {
+              const cause = error("sink_failed", "journal writer failed", Cause.die(defect))
+              return Effect.uninterruptible(
+                Effect.andThen(observeLoss(cause, batch), Effect.sync(() => failSink(cause, batch)))
               )
-            )
+            })
           )
         )
       )
@@ -2610,7 +2633,11 @@ export const layer = (
           yield* Effect.sync(() => {
             state.status = "closing"
           })
-          yield* Effect.ignore(flushInternal)
+          // The last flush is the last chance to say that queued entries were
+          // lost; nothing is left to report the failure to once this returns.
+          yield* flushInternal.pipe(
+            Effect.catch((cause) => Effect.logWarning("journal final flush failed while closing", cause))
+          )
           yield* Effect.sync(() => {
             state.status = "closed"
           })
@@ -2681,16 +2708,16 @@ export const layer = (
         emitDurableUnfenced,
         transact,
         whenCommitted: (update) =>
-          Effect.flatMap(Effect.serviceOption(sql.transactionService), (transaction) =>
-            Option.isNone(transaction) ? Effect.as(update, true) : afterCommit(update, sql)),
+          Effect.flatMap(
+            Effect.serviceOption(sql.transactionService),
+            (transaction) => Option.isNone(transaction) ? Effect.as(update, true) : afterCommit(update, sql)
+          ),
         stream,
         entries: readPage,
         changes: PubSub.subscribe(changes),
         project,
         flush: Effect.fn("Journal.flush")(() =>
-          Effect.suspend(() =>
-            Effect.annotateCurrentSpan({ pending: state.pending })
-          ).pipe(
+          Effect.suspend(() => Effect.annotateCurrentSpan({ pending: state.pending })).pipe(
             Effect.andThen(flushInternal)
           )
         )(),

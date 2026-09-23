@@ -15,9 +15,9 @@
  */
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
-import { startupIndex } from "./internal/startupIndex.ts"
 import { initial } from "./migrations/0001_initial.ts"
 import { checkpoints } from "./migrations/0002_checkpoints.ts"
+import { startupIndex } from "./migrations/0003_startup_index.ts"
 import { dedup } from "./migrations/0004_dedup.ts"
 import { runEventType } from "./migrations/0005_run_event_type.ts"
 

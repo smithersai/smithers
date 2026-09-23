@@ -1,7 +1,6 @@
 /**
  * Index for the bounded journal source-event startup window.
  *
- * @private
  * @since 0.1.0
  */
 import * as Effect from "effect/Effect"
@@ -10,7 +9,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient"
 /**
  * Preserves deterministic timestamp/run/sequence ordering without sorting the retained history.
  *
- * @private
+ * @category migrations
  * @since 0.1.0
  */
 export const startupIndex = Effect.gen(function*() {

@@ -58,3 +58,31 @@ export const lossy: {
   Duplicate: Metric.withAttributes(writes, { channel: "lossy", receipt: "duplicate" }),
   Dropped: Metric.withAttributes(writes, { channel: "lossy", receipt: "dropped" })
 }
+
+/**
+ * Counter over lossy entries the writer admitted and then failed to commit,
+ * dimensioned by `channel` (always `lossy`) and the `code` of the
+ * `JournalError` that lost them.
+ *
+ * **Details**
+ *
+ * A lossy producer rarely calls `flush`, so the failure `flush` reports is not
+ * where an operator learns about a lost batch. This counter moves by the number
+ * of entries lost the moment the writer gives them up, whether or not anyone
+ * is waiting on them.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const lostEntries = Metric.counter("flows_journal_lost", {
+  description: "Admitted lossy journal entries the writer failed to commit"
+})
+
+/**
+ * The {@link lostEntries} view for one `JournalError` code.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const lost = (code: string): Metric.Metric<number, Metric.CounterState<number>> =>
+  Metric.withAttributes(lostEntries, { channel: "lossy", code })

@@ -3,9 +3,9 @@
  * registry the caller provided, keyed by channel and receipt.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { DurableWriter, type Service as WriterService } from "@smthrs/database/DurableWriter"
+import { DatabaseError, DurableWriter, type Service as WriterService } from "@smthrs/database/DurableWriter"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Deferred, Effect, Layer, Metric } from "effect"
+import { Deferred, Effect, Layer, Logger, Metric } from "effect"
 import { TestClock } from "effect/testing"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
 import { Journal } from "../src/Journal.ts"
@@ -40,6 +40,25 @@ const gatedDatabase = (gate: Deferred.Deferred<void>): Layer.Layer<DurableWriter
     ),
     TestDatabase.layer
   )
+
+/** A writer whose every transaction fails, so each lossy batch is lost. */
+const failedDatabase: Layer.Layer<DurableWriter | SqlClient.SqlClient> = Layer.provideMerge(
+  Layer.succeed(DurableWriter)(
+    DurableWriter.of({
+      write: () => Effect.fail(new DatabaseError({ code: "io", cause: new Error("sink unavailable") })) as never
+    })
+  ),
+  TestDatabase.layer
+)
+
+/** Records every log message so a test can assert a loss was reported. */
+const capturedLogs = () => {
+  const lines: Array<string> = []
+  const logger = Logger.make<unknown, void>(({ message }) => {
+    lines.push((Array.isArray(message) ? message : [message]).map(String).join(" "))
+  })
+  return { lines, layer: Logger.layer([logger]) }
+}
 
 const journalLayer = (
   overrides: Partial<SqlJournal.SqlJournalOptions> = {},
@@ -111,5 +130,42 @@ describe("JournalMetrics", () => {
         { capacity: 1, overflow: "drop-newest", batchSize: 1 },
         gatedDatabase(gate)
       )
+    }))
+
+  it.effect("counts and logs a lossy batch the writer lost, with no flush caller", () =>
+    Effect.gen(function*() {
+      // A telemetry producer never flushes, so the flush-time failure is not
+      // an operator signal. The loss has to reach the registry and the log.
+      const logs = capturedLogs()
+      yield* withJournal(
+        Effect.gen(function*() {
+          const journal = yield* Journal
+          expect((yield* journal.emitLossy(input(0)))._tag).toBe("Accepted")
+          expect((yield* journal.emitLossy(input(1)))._tag).toBe("Accepted")
+          yield* Effect.flip(journal.flush)
+
+          expect(yield* count(JournalMetrics.lost("sink_failed"))).toBe(2)
+        }),
+        {},
+        failedDatabase
+      ).pipe(Effect.provide(logs.layer))
+      const loss = logs.lines.filter((line) => line.includes("journal lost"))
+      expect(loss.length).toBeGreaterThan(0)
+      expect(loss[0]).toContain("sink_failed")
+      expect(loss[0]).toContain("run-metrics")
+    }))
+
+  it.effect("logs a final flush that fails while the journal closes", () =>
+    Effect.gen(function*() {
+      const logs = capturedLogs()
+      yield* withJournal(
+        Effect.gen(function*() {
+          const journal = yield* Journal
+          yield* journal.emitLossy(input(0))
+        }),
+        {},
+        failedDatabase
+      ).pipe(Effect.provide(logs.layer))
+      expect(logs.lines.some((line) => line.includes("final flush"))).toBe(true)
     }))
 })

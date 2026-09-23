@@ -8,11 +8,12 @@
  * the ESM build kept working. A named export has one shape in both formats,
  * and the second case here fails as soon as a default export comes back.
  */
+import { readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as StartupIndex from "../src/internal/startupIndex.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as Initial from "../src/migrations/0001_initial.ts"
 import * as Checkpoints from "../src/migrations/0002_checkpoints.ts"
+import * as StartupIndex from "../src/migrations/0003_startup_index.ts"
 import * as Dedup from "../src/migrations/0004_dedup.ts"
 import * as RunEventType from "../src/migrations/0005_run_event_type.ts"
 
@@ -42,5 +43,10 @@ describe("migration modules", () => {
     expect(typeof Initial.initial.pipe).toBe("function")
     expect(typeof Checkpoints.checkpoints.pipe).toBe("function")
     expect(typeof StartupIndex.startupIndex.pipe).toBe("function")
+  })
+
+  it("keeps one src/migrations file per migration id, with no gaps", () => {
+    const files = readdirSync(new URL("../src/migrations/", import.meta.url)).filter((name) => name.endsWith(".ts"))
+    expect(files.sort()).toEqual(Object.keys(Migrations.set.migrations).map((id) => `${id}.ts`))
   })
 })

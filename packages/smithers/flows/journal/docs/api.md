@@ -310,17 +310,24 @@ without completing. See
 
 ## JournalMetrics
 
-| Export    | Type                                                                       |
-| --------- | -------------------------------------------------------------------------- |
-| `writes`  | the `flows_journal_writes` counter, dimensioned by `channel` and `receipt` |
-| `durable` | `writes` views keyed by `"Accepted" \| "Duplicate"`                        |
-| `lossy`   | `writes` views keyed by `"Accepted" \| "Duplicate" \| "Dropped"`           |
+| Export        | Type                                                                        |
+| ------------- | --------------------------------------------------------------------------- |
+| `writes`      | the `flows_journal_writes` counter, dimensioned by `channel` and `receipt`  |
+| `durable`     | `writes` views keyed by `"Accepted" \| "Duplicate"`                         |
+| `lossy`       | `writes` views keyed by `"Accepted" \| "Duplicate" \| "Dropped"`            |
+| `lostEntries` | the `flows_journal_lost` counter, dimensioned by `channel` and error `code` |
+| `lost(code)`  | the `lostEntries` view for one `JournalError` code                          |
 
 `SqlJournal` updates these once per emission receipt, so they measure
 admissions on the hot path rather than rows read back. A durable emission
 counts when its receipt is produced; under `transact` that is still inside the
 caller's transaction, so a receipt that later rolls back has already counted.
 The counter is throughput evidence, not commit evidence.
+
+`lostEntries` moves by the number of admitted lossy entries the writer failed
+to commit, when it gives them up, whether or not a `flush` is waiting. The
+writer also logs a warning naming the error code, the count, and the runs. A
+final flush that fails while the journal closes logs a warning too.
 
 No exporter ships in this package. Provide one, for example
 [`@smthrs/observability`](/api/observability), and these counters appear in it.
