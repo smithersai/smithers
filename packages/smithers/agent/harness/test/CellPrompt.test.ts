@@ -372,7 +372,17 @@ describe("cellPrompt", () => {
     // paying is the reason it was admitted; its own price is not measured yet.
     // A wave that reads this and finds it did not pay removes the rule and
     // puts the number back.
-    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_600)
+    //
+    // Raised to 2,760 on 2026-09-22 for the print budget in rule 4: +615
+    // characters, +159 estimated tokens. Will asked for it after a TUI run
+    // printed whole grep results into every later turn. Measured on the TUI
+    // host, three runs per arm of "How does the agent deal with context window?
+    // Does it support compaction?" over this repository: printed characters
+    // 64,178 / 63,005 / 69,455 before, 51,138 / 25,997 / 46,545 after, a 37 %
+    // smaller mean; the first cell's print fell from the 16 KiB frame cap in
+    // every run to 2.5 / 2.3 / 6.5 KB. Answer quality was not scored. A wave
+    // that finds it costs verdicts removes the sentences and the 159 tokens.
+    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_760)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(300)
   })
@@ -405,9 +415,12 @@ describe("the contract", () => {
     // enumerable judgments over many items with Jev in one call rather than by
     // reading them itself. The ceiling moved to 2,600 with it; see the token
     // budget test for the price and the condition under which it goes back.
-    expect(replText()).toHaveLength(10_138)
+    // It moved again the same day, 10,138 → 10,753, for rule 4's print
+    // budget: prints stay in context, about 40 lines a cell, counts and paths
+    // before rows. The token budget test carries its measurement.
+    expect(replText()).toHaveLength(10_753)
     expect(Digest.digest(replText()))
-      .toBe("feb47247037274bd7dab6dd24960ecf240bb708c4af37da4a48044c671d76512")
+      .toBe("966b883b23f42c764e7b3b163c85a760bbbf6f55942ded042e91b99b9d8e7450")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
