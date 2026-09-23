@@ -22,6 +22,22 @@ export const ZERO_BALANCE_EXHAUSTED_TEXT =
  */
 export const TOAST_SUPERSEDED: unique symbol = Symbol("toast.superseded")
 
+/** Readiness invalidates only the earlier "still preparing" notice for this workspace. */
+export const dismissReadyWorkspaceFailures = (
+  ctx: ControllerContext, repo: string, workspaceId?: string
+): void => {
+  const detail = `The workspace for ${repo} is still being prepared. Try again in a moment.`
+  const catalog = workspaceId === undefined ? `flow.catalog.workflow-list-${repo}`
+    : `flow.catalog.workflow-list@${encodeURIComponent(repo)}@${encodeURIComponent(workspaceId)}`
+  const keys = new Set([catalog, `flow.provision.${repo}.${workspaceId ?? "legacy"}`])
+  for (const toast of ctx.store.collections.toasts.values()) {
+    if (toast.status === "failed" && keys.has(toast.key) &&
+      (toast.detail === detail || toast.detail.startsWith("workspace_starting — "))) {
+      ctx.store.dispatch({ type: "toast.dismissed", actor: "system", id: toast.id })
+    }
+  }
+}
+
 /** Notices name registered acts in words; unrelated paths in seam errors stay intact. */
 export const humanCommandText = (commands: ControllerContext["commands"], text: string): string =>
   text.replace(/(^|[\s`(])\/([a-z][\w-]*(?:\.[\w-]+)*)(?![\w/-])/g,

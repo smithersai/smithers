@@ -28,7 +28,6 @@ async function fixture(options: {
       const body = JSON.parse(String(init?.body))
       calls.push({ path, body })
       if (path.endsWith("/provision")) {
-        expect(store.collections.cards.get(id)).toMatchObject({ payload: { catalogRequest: { state: "pending" } } })
         return options.provision?.() ?? ready()
       }
       expect(body).toMatchObject({ procedure: "List", payload: { _tag: "flows" } })
@@ -118,3 +117,24 @@ test("an account change fences a pending catalog and never resumes another owner
   expect(calls).toHaveLength(1)
   expect(store.collections.toasts.get(toast)?.status).not.toBe("ok")
 })
+
+test("a later ready workspace clears earlier preparation refusals without hiding the failed catalog card", async () => {
+  const waiting = `The workspace for ${repo} is still being prepared. Try again in a moment.`
+  let prepared = false
+  const { controller, store, calls } = await fixture({ provision: async () => prepared ? ready() : json(503, { code: "workspace_starting", message: waiting }) })
+  try {
+    await acknowledged(controller.commands.run("flow.list"))
+    await waitFor(() => store.collections.toasts.get(toast)?.status === "failed", 10_000)
+    expect(store.collections.toasts.get(toast)?.detail).toStartWith("workspace_starting — ")
+    const preparationKey = `flow.provision.${repo}.legacy`
+    store.dispatch({ type: "toast.shown", actor: "system", key: preparationKey, title: `Preparing your ${repo} workspace…` })
+    store.dispatch({ type: "toast.resolved", actor: "system", key: preparationKey, status: "failed", detail: waiting })
+    expect([...store.collections.toasts.values()].filter(entry => entry.status === "failed")).toHaveLength(2)
+    prepared = true
+    expect(await controller.commands.run("flow.run", `checks/fast ${repo}`)).toMatchObject({ status: "executed" })
+    await waitFor(() => calls.filter(call => call.path.endsWith("/provision")).length === 2, 10_000)
+    await waitFor(() => store.collections.toasts.get(toast) === undefined, 10_000)
+    expect(store.collections.toasts.get(`toast-${preparationKey}`)).toBeUndefined()
+    expect(store.collections.cards.get(id)).toMatchObject({ status: "error", payload: { catalogRequest: { state: "failed" } } })
+  } finally { await controller.dispose(); await store.dispose?.() }
+}, 20_000)

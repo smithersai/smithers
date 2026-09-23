@@ -8,6 +8,8 @@ import { TOAST_SUPERSEDED } from "./failures"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
 import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
 import { planCardSnapshot } from "../../cards/PlanNodes"
+import { runFailureOf } from "../RunFailure"
+import { digest } from "@smthrs/core/Digest"
 
 type RunCard = Extract<Card, { kind: "run-trace" }>
 type Refusal = { readonly message: string; readonly code?: string; readonly retryAfterSeconds?: number }
@@ -57,7 +59,9 @@ export const createWorkflowLaunchController = (
           input: { ...next.input, _workflowLaunch: next } } })
       } catch { throw new RequestPersistenceError() }
     }
-    const work = ctx.withToast(`flow.request.${request.id}`, request.workflow, `${request.workflow} completed`, async () => {
+    // A new request for the same work replaces its earlier failure on the shared stack.
+    const toastKey = `flow.request.${digest(canonicalStoredJsonValue([request.owner, request.repo, request.workspaceId ?? null, request.workflow, request.input]))}`
+    const work = ctx.withToast(toastKey, request.workflow, `${request.workflow} completed`, async () => {
       let stage: NonNullable<WorkflowLaunch["error"]>["stage"] = "preparation"
       const fail = async (failure: Refusal) => {
         if (!current()) return TOAST_SUPERSEDED
@@ -112,7 +116,11 @@ export const createWorkflowLaunchController = (
           const summary = store.committedRuntimeRun(runtimeRunKey(card.payload))?.summary
           if (summary !== undefined && terminal.has(summary.status)) {
             if (summary.status === "completed") return true
-            return summary.verdict ?? (summary.status === "cancelled" ? "Run cancelled." : "The run failed.")
+            if (summary.status === "cancelled") return summary.verdict ?? "Run cancelled."
+            return summary.verdict === "failed — no cause recorded in the journal"
+              ? runFailureOf({ workflow: request.workflow, error: summary.verdict,
+                events: store.committedRuntimeRun(runtimeRunKey(card.payload))?.events }).message
+              : summary.verdict ?? "The run failed."
           }
           await pause(ctx.workflowPollMs, controller.signal)
         }

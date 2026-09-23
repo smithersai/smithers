@@ -26,9 +26,11 @@ async function fixture() {
   let provision = async () => json(200, { status: "ready" })
   let run = async () => json(200, { ok: true, payload: { runId: "run-1" } })
   let status: RunSummaryRow["status"] = "running"
-  const summary = (): RunSummaryRow => ({ runId: "run-1", flowId: "review", status, createdAt: 1, updatedAt: status === "running" ? 2 : 3,
+  let summaryRunId = "run-1"
+  let failedVerdict = "The check failed."
+  const summary = (): RunSummaryRow => ({ runId: summaryRunId, flowId: "review", status, createdAt: 1, updatedAt: status === "running" ? 2 : 3,
     turns: 1, calls: 1, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 1, outputTokens: 1,
-    verdict: status === "failed" ? "The check failed." : status, diagnosis: status })
+    verdict: status === "failed" ? failedVerdict : status, diagnosis: status })
   const chat = scriptedToolAgent([() => [{ type: "delta", kind: "text", text: "Still here." }, { type: "done", reason: "stop" }]])
   const services = { workflowPollMs: 5, toastAutoDismissMs: 60_000, fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
@@ -47,8 +49,61 @@ async function fixture() {
   const toasts = () => [...store.collections.toasts.values()].filter(toast => toast.key.startsWith("flow.request."))
   return { store, storage, controller, services, calls, cards, toasts, chat,
     failNextWrite: () => { failNextWrite = true },
-    provision: (fn: typeof provision) => { provision = fn }, run: (fn: typeof run) => { run = fn }, status: (value: RunSummaryRow["status"]) => { status = value } }
+    provision: (fn: typeof provision) => { provision = fn }, run: (fn: typeof run) => { run = fn }, status: (value: RunSummaryRow["status"]) => { status = value },
+    summaryRunId: (value: string) => { summaryRunId = value }, failedVerdict: (value: string) => { failedVerdict = value } }
 }
+
+test("an unclassified journal failure keeps its raw verdict on the card and uses the existing failure wording in the toast", async () => {
+  const t = await fixture()
+  try {
+    t.failedVerdict("failed — no cause recorded in the journal")
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.toasts()[0]?.status === "running")
+    t.status("failed")
+    await waitFor(() => t.toasts()[0]?.status === "failed")
+    expect(t.cards()[0]?.payload.error).toBe("failed — no cause recorded in the journal")
+    expect(t.toasts()[0]?.detail).toBe("Something on Smithers' side failed. Not your fault, and nothing your request could have changed.")
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
+
+test("a successful new run replaces the prior failed toast for the same workflow and repository", async () => {
+  const t = await fixture()
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
+    await waitFor(() => t.toasts()[0]?.status === "running")
+    t.status("failed")
+    await waitFor(() => t.cards()[0]?.payload.phase === "failed" && t.toasts()[0]?.status === "failed")
+    const oldToast = t.toasts()[0]!.id
+    t.summaryRunId("run-2")
+    t.run(async () => json(200, { ok: true, payload: { runId: "run-2" } }))
+    t.status("completed")
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.cards().some(card => card.payload.runId === "run-2" && card.payload.phase === "completed"))
+    await waitFor(() => t.store.collections.toasts.get(oldToast)?.status === "ok")
+    expect(t.toasts()).toHaveLength(1)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
+
+test("repeated failed runs of the same work keep one retryable failure notice", async () => {
+  const t = await fixture()
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.toasts()[0]?.status === "running")
+    t.status("failed")
+    await waitFor(() => t.cards()[0]?.payload.phase === "failed" && t.toasts()[0]?.status === "failed")
+    const firstToast = t.toasts()[0]!.id
+    t.summaryRunId("run-2")
+    t.run(async () => json(200, { ok: true, payload: { runId: "run-2" } }))
+    t.status("running")
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.cards().some(card => card.payload.runId === "run-2"))
+    t.status("failed")
+    await waitFor(() => t.cards().some(card => card.payload.runId === "run-2" && card.payload.phase === "failed") && t.toasts()[0]?.status === "failed")
+    expect(t.toasts()).toHaveLength(1)
+    expect(t.toasts()[0]?.id).toBe(firstToast)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
 
 test("flow.run persists a request and returns during unresolved preparation; duplicate input and Chat stay usable", async () => {
   const t = await fixture()

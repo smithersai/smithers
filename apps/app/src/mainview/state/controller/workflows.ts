@@ -13,7 +13,7 @@ import { gatewayBindingFor, resolveTargetRepo, type GatewayBinding } from "../Re
 import { repositoryJobWorkspace } from "../RepositoryJobs"
 import { refusalSentence } from "@smthrs/rpc/RefusalCopy"
 import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
-import { ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
+import { dismissReadyWorkspaceFailures, ZERO_BALANCE_EXHAUSTED_TEXT } from "./failures"
 import { Schema } from "effect"
 import { declaredInput, formFieldsFor, draftFrom, missingFields } from "../../flows/FlowForms"
 import type { FormsController } from "./forms"
@@ -233,7 +233,10 @@ export const createWorkflowController = (
       } catch {
         return { code: "workspace_unreachable", message: "The workspace couldn't be prepared: the flow service didn't answer in time." }
       }
-      if (body?.status === "ready") return true
+      if (body?.status === "ready") {
+        dismissReadyWorkspaceFailures(ctx, repo, binding.workspaceId)
+        return true
+      }
       /*
        * Wave 12 §4 — the loaded set is a GITHUB set; a gateway needs a
        * Smithers Cloud repository. When they don't coincide the honest
