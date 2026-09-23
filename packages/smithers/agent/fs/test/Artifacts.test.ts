@@ -1,7 +1,18 @@
 import { execFileSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
-import { join, relative } from "node:path"
+import { dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
@@ -20,6 +31,22 @@ interface Scratch {
   readonly packageDir: string
 }
 
+const linkDependencies = (source: string, target: string): void => {
+  const link = (name: string): void => {
+    const installed = realpathSync(join(source, name))
+    const destination = join(target, name)
+    mkdirSync(dirname(destination), { recursive: true })
+    symlinkSync(installed, destination, statSync(installed).isDirectory() ? "junction" : "file")
+  }
+  for (const name of readdirSync(source)) {
+    if (name.startsWith("@")) {
+      for (const member of readdirSync(join(source, name))) link(join(name, member))
+    } else {
+      link(name)
+    }
+  }
+}
+
 const copyPackage = (source: string): Scratch => {
   const root = mkdtempSync(join(tmpdir(), "smithers-fs-artifacts-"))
   const packageDir = join(root, packagePath)
@@ -28,10 +55,11 @@ const copyPackage = (source: string): Scratch => {
       cpSync(join(source, path), join(packageDir, path), { recursive: true })
     }
     cpSync(join(repoRoot, buildHelperPath), join(root, buildHelperPath))
-    // Resolve dependencies from this worktree without copying the installed tree.
-    // pnpm can hoist shared build tools to the workspace root.
-    symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "junction")
-    symlinkSync(join(packageRoot, "node_modules"), join(packageDir, "node_modules"), "junction")
+    // Resolve each package before linking it: a junction over node_modules
+    // leaves pnpm's relative workspace links dependent on the scratch path.
+    // Include hoisted build tools from the repository root.
+    linkDependencies(join(repoRoot, "node_modules"), join(root, "node_modules"))
+    linkDependencies(join(packageRoot, "node_modules"), join(packageDir, "node_modules"))
     return { root, packageDir }
   } catch (error) {
     rmSync(root, { recursive: true, force: true })
