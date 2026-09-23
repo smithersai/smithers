@@ -43,7 +43,8 @@ import type * as Path from "@smthrs/kernel/Path"
 import * as MemoryFlows from "@smthrs/memory/Flows"
 import type * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
-import type * as Evaluator from "@smthrs/model/Evaluator"
+import * as Classifier from "@smthrs/model/Classifier"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
 import * as Bash from "@smthrs/std/Bash"
 import * as Container from "@smthrs/std/Container"
@@ -278,6 +279,177 @@ export const memory = (
       services
     )
   ])
+
+/**
+ * The largest `state` one `jev` call sends, in UTF-8 bytes of its JSON, when
+ * a host names no ceiling.
+ *
+ * Jev reads the whole state for every question, so the ceiling is what keeps
+ * one call's latency and cost bounded; a cell with more to judge splits the
+ * items across calls.
+ *
+ * @category constants
+ * @since 1.0.0-rc.0
+ */
+export const defaultMaxJevStateBytes = 262_144
+
+/**
+ * Input for the `jev` flow.
+ *
+ * `questions` decodes model-authored questions through `Classifier.Question`,
+ * the same ad-hoc path a typed classifier's declaration goes through, so a
+ * choice with one option or a score with a repeated rung is refused before any
+ * transport is asked.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const JevInput = Schema.Struct({
+  state: Schema.Json.annotate({
+    description:
+      "The JSON every question is about: the items to judge, each with whatever a question needs to read. At most 256 KiB as JSON."
+  }),
+  questions: Schema.Record(Schema.String, Classifier.Question).annotate({
+    description:
+      "Questions keyed by your own ids. Each is { type: \"boolean\", instructions, criteria?: { true, false } }, { type: \"choice\", instructions, criteria: { option: meaning, ... } } with 2 to 255 options, or { type: \"score\", instructions, criteria: [rung, ...] } with 2 or more distinct rungs ordered worst to best. All are answered in parallel in one request."
+  })
+})
+
+/**
+ * Output for the `jev` flow.
+ *
+ * `usage` and `latencyMs` are the metered cost of the call, journaled with the
+ * call's recorded result so a run's Jev spend is read back from the same
+ * record its other calls are.
+ *
+ * @category schemas
+ * @since 1.0.0-rc.0
+ */
+export const JevOutput = Schema.Struct({
+  answers: Schema.Record(Schema.String, Classifier.Answer).annotate({
+    description:
+      "One answer per question id. boolean: { value, probability }. choice: { value, probabilities, confidence }. score: { value, label, probabilities, confidence }."
+  }),
+  confidence: Schema.optional(Schema.Record(Schema.String, Schema.Number)).annotate({
+    description: "The provider's own per-question confidence, when it reported one"
+  }),
+  usage: Schema.optional(Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number })).annotate({
+    description: "Tokens the call cost, when the transport reported them"
+  }),
+  latencyMs: Schema.Number.annotate({ description: "Wall-clock milliseconds the evaluation took" })
+})
+
+/**
+ * The `jev` declaration.
+ *
+ * The description carries the details the doctrine only points at: what Jev
+ * is for, that fan-out belongs inside one call, and what it never does. The
+ * host settles a cell's calls one at a time and caps a cell at a fixed number
+ * of calls, so a call per item is both slow and finite; one call with one
+ * question per item is the shape that scales.
+ *
+ * `sealed` is the honest tier: the answer is a function of the state and the
+ * questions, holds nothing open, and writes nothing, so a replayed cell
+ * returns the recorded answers rather than asking again.
+ *
+ * @category flows
+ * @since 1.0.0-rc.0
+ */
+export const jevFlow = Flow.make({
+  name: "jev",
+  description:
+    "Ask Jev, a fast typed decision model, any number of boolean, choice or score questions about one JSON state, all answered in parallel in one request of about 300 ms, far cheaper than reading the items yourself. Answers are typed, never free text. Use it for every enumerable judgment over many items (classify, triage, rank, filter, yes/no, pick-one, score): put the items in state and write one question per item, keyed by your own ids; one call carries hundreds of questions. Calls from one cell settle one at a time and a cell's calls are capped, so pack the items into one call rather than firing a call per item. state is capped at 256 KiB of JSON. Not for generating text or code, and not for a question whose answer must be quoted. It never guesses: a judge that fails answers { ok: false } with the failure code first in error.message.",
+  input: JevInput,
+  output: JevOutput,
+  capabilities: [`model:call:${Evaluator.defaultModel}`],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" }
+})
+
+/** A `jev` refusal the binding turns into a catchable call result. */
+class JevRefused extends Schema.TaggedError<JevRefused>()(
+  "@smthrs/agent/StandardFlows/JevRefused",
+  { message: Schema.String }
+) {}
+
+/**
+ * The public text of a `jev` failure: the refusal's own message, or the
+ * evaluator's code first so a cell can branch on it. An `unreachable`
+ * transport message is the HTTP client's and may name hosts or URLs, so that
+ * one code carries a fixed sentence instead.
+ */
+const jevPublicError = (error: Evaluator.EvaluatorError | Classifier.ClassifierError | JevRefused): string => {
+  if (error instanceof JevRefused) return error.message
+  if (error.code === "unreachable") {
+    return "unreachable: the judge this host binds did not answer. Retry once; if it fails again, decide without it and say so."
+  }
+  return `${error.code}: ${error.message}`
+}
+
+/**
+ * Jev, as one ordinary flow.
+ *
+ * Bound only by a host that holds an `Evaluator`: the context is the whole
+ * requirement, so a composition without a judge cannot call this and the
+ * catalog it shows a cell has no `jev` in it. A judge that fails is the call's
+ * own typed failure, with the `EvaluatorError` code first in the message;
+ * nothing here falls back to another model or answers a default.
+ *
+ * `options.maxStateBytes` may only LOWER {@link defaultMaxJevStateBytes}, for
+ * the same reason `clock` clamps its ceiling: a non-finite or larger value
+ * would remove the bound without saying so.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const jev = (
+  services: Context.Context<Evaluator.Evaluator>,
+  options: { readonly maxStateBytes?: number | undefined } = {}
+): FlowBinding.Source => {
+  const requested = options.maxStateBytes
+  const maxStateBytes = requested === undefined || !Number.isFinite(requested) || requested > defaultMaxJevStateBytes
+    ? defaultMaxJevStateBytes
+    : requested
+  return FlowBinding.source("model/jev", [
+    FlowBinding.provide(
+      FlowBinding.make({
+        flow: jevFlow,
+        publicError: jevPublicError,
+        activity: "checks",
+        presentation: {
+          verb: { pending: "asking Jev", success: "asked Jev", failure: "failed to ask Jev" },
+          subject: "none",
+          result: "none"
+        },
+        handler: (input) =>
+          Effect.gen(function*() {
+            const questionCount = Object.keys(input.questions).length
+            if (questionCount === 0) {
+              return yield* Effect.fail(new JevRefused({ message: "jev needs at least one question." }))
+            }
+            const bytes = new TextEncoder().encode(JSON.stringify(input.state)).byteLength
+            if (bytes > maxStateBytes) {
+              return yield* Effect.fail(
+                new JevRefused({
+                  message:
+                    `jev refuses a state of ${bytes} bytes; this host's ceiling is ${maxStateBytes} bytes. Send shorter excerpts, or split the items across calls.`
+                })
+              )
+            }
+            const evaluator = yield* Evaluator.Evaluator
+            const response = yield* evaluator.evaluate({ state: input.state, questions: input.questions })
+            const answers = yield* Classifier.decodeAnswers(input.questions, response.answers)
+            return {
+              answers,
+              ...(response.confidence === undefined ? {} : { confidence: response.confidence }),
+              ...(response.usage === undefined ? {} : { usage: response.usage }),
+              latencyMs: response.latencyMs
+            }
+          })
+      }),
+      services
+    )
+  ])
+}
 
 /**
  * Input for the durable wait flow.

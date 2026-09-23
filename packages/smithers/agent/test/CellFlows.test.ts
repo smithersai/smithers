@@ -1648,3 +1648,118 @@ ctx.done(seen.note + "|" + other.note)`
     expect(serialized).toBe(await readFile(path, "utf8"))
   }, 60_000)
 })
+
+describe("jev is a flow", () => {
+  /** The output the run completed with, read off the applied transition. */
+  const completionOf = (outcome: Outcome): string | undefined => {
+    for (const event of eventsOf(outcome)) {
+      if (event._tag === "transition-applied" && event.transition._tag === "complete") return event.transition.output
+    }
+    return undefined
+  }
+
+  /** A judge that answers from the state it is shown and records each request. */
+  const judgeByState = () => {
+    const asked: Array<Evaluator.Request> = []
+    const services = Context.make(
+      Evaluator.Evaluator,
+      Effect.runSync(
+        Effect.provide(
+          Effect.service(Evaluator.Evaluator),
+          Evaluator.layerScripted((request) => {
+            asked.push(request)
+            const state = request.state as {
+              readonly files?: ReadonlyArray<{ readonly path: string }>
+              readonly i?: number
+            }
+            return Object.fromEntries(
+              Object.keys(request.questions).map((id) => {
+                if (state.files !== undefined) {
+                  return [id, { probability: state.files[Number(id)]!.path.includes("auth") ? 0.95 : 0.05 }]
+                }
+                return [id, { probability: (state.i ?? 0) % 2 === 0 ? 0.9 : 0.1 }]
+              })
+            )
+          })
+        )
+      )
+    )
+    return { asked, services }
+  }
+
+  it("answers a cell's questions about its own JSON through the one call boundary", async () => {
+    const judge = judgeByState()
+    const outcome = await drive(
+      collect({
+        flows: [StandardFlows.jev(judge.services)],
+        cells: [
+          `const files = [{ path: "src/auth/login.py" }, { path: "src/billing/invoice.py" }, { path: "src/auth/session.py" }]
+const judged = await ctx.call("jev", { state: { files }, questions: Object.fromEntries(files.map((f, i) => [String(i), { type: "boolean", instructions: "Does files[" + i + "], at " + f.path + ", implement or call authentication?" }])) })
+if (judged.ok === false) throw new Error(judged.error.message)
+ctx.done(files.filter((_, i) => judged.answers[String(i)].value).map((f) => f.path).join(","))`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(["jev"])
+    // One request carried every question, and the judge saw them as the cell
+    // wrote them.
+    expect(judge.asked).toHaveLength(1)
+    expect(Object.keys(judge.asked[0]!.questions)).toEqual(["0", "1", "2"])
+    const value = settled[0]?.result.value as { readonly answers: Record<string, { readonly value: boolean }> }
+    expect(Object.entries(value.answers).map(([id, answer]) => [id, answer.value])).toEqual([
+      ["0", true],
+      ["1", false],
+      ["2", true]
+    ])
+    expect(completionOf(outcome)).toBe("src/auth/login.py,src/auth/session.py")
+  })
+
+  it("settles many concurrent calls from one cell, each of which reaches the judge", async () => {
+    const judge = judgeByState()
+    const outcome = await drive(
+      collect({
+        flows: [StandardFlows.jev(judge.services)],
+        cells: [
+          `const results = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map((i) => ctx.call("jev", { state: { i }, questions: { even: { type: "boolean", instructions: "Is i even?" } } })))
+ctx.done(results.map((r) => r.ok === false ? "failed" : String(r.answers.even.value)).join(","))`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.flowName)).toEqual(Array.from({ length: 8 }, () => "jev"))
+    expect(settled.every((event) => event.result.outcome === "success")).toBe(true)
+    // Every call reached the judge with its own state, in dispatch order: the
+    // host settles a cell's calls one at a time, so eight promises awaited
+    // together are eight sequential evaluations, not one.
+    expect(judge.asked.map((request) => (request.state as { readonly i: number }).i)).toEqual([0, 1, 2, 3, 4, 5, 6, 7])
+    expect(completionOf(outcome)).toBe("true,false,true,false,true,false,true,false")
+  })
+
+  it("hands the cell the judge's failure code instead of an answer", async () => {
+    const outcome = await drive(
+      collect({
+        flows: [
+          StandardFlows.jev(
+            Context.make(
+              Evaluator.Evaluator,
+              Effect.runSync(Effect.provide(Effect.service(Evaluator.Evaluator), Evaluator.layerUnavailable()))
+            )
+          )
+        ],
+        cells: [
+          `const judged = await ctx.call("jev", { state: { i: 1 }, questions: { even: { type: "boolean", instructions: "Is i even?" } } })
+ctx.done(judged.ok === false ? judged.error.code + " " + judged.error.message : "answered " + JSON.stringify(judged.answers))`
+        ]
+      })
+    )
+    expect(outcome._tag).toBe("completed")
+    expect(completionOf(outcome)).toBe(
+      "flow_failed Flow jev failed: unreachable: the judge this host binds did not answer. Retry once; if it fails again, decide without it and say so."
+    )
+  })
+})

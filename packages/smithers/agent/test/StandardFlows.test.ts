@@ -16,7 +16,7 @@
  */
 import type { FlowRuntime } from "@smthrs/flow"
 import type * as Cell from "@smthrs/harness/Cell"
-import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -89,6 +89,7 @@ const promised: ReadonlyArray<{
   { source: StandardFlows.shell(shellServices), flows: ["bash"] },
   { source: StandardFlows.tests(testServices), flows: ["test"] },
   { source: StandardFlows.memory(memoryServices), flows: ["remember", "recall"] },
+  { source: StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable())), flows: ["jev"] },
   { source: StandardFlows.clock(clockServices), flows: ["wait"] },
   { source: StandardFlows.approval(StandardFlows.askerNoop()), flows: ["ask"] }
 ]
@@ -196,7 +197,8 @@ describe("the standard capability catalog", () => {
           StandardFlows.shell(shellServices),
           StandardFlows.tests(
             testServices
-          )
+          ),
+          StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable()))
         ],
         (source) => source.bindings()
       )
@@ -220,7 +222,8 @@ describe("the standard capability catalog", () => {
       ["glob", "reads", "listed", "pattern", "paths"],
       ["grep", "reads", "searched", "pattern", "matches"],
       ["bash", undefined, "ran", "command", "command"],
-      ["test", "tests", "ran", "selection", "tests"]
+      ["test", "tests", "ran", "selection", "tests"],
+      ["jev", "checks", "asked Jev", "none", "none"]
     ])
     // Display fields grant nothing: the identity a plan approves and a call
     // replays against is the same number with and without them.
@@ -237,6 +240,7 @@ describe("the standard capability catalog", () => {
       "std/shell",
       "std/tests",
       "memory",
+      "model/jev",
       "engine/clock",
       "host/approval"
     ])
@@ -276,5 +280,197 @@ describe("the standard capability catalog", () => {
     })
     expect(grepped).toMatchObject({ outcome: "success", value: { filesSearched: 1 } })
     expect(asked).toEqual(["glob *.md in /repo", "grep second in /repo"])
+  })
+})
+
+describe("the jev flow", () => {
+  /** A scripted judge that records every request it is asked. */
+  const recording = (
+    answer: Evaluator.Script
+  ): { readonly services: Context.Context<Evaluator.Evaluator>; readonly asked: Array<Evaluator.Request> } => {
+    const asked: Array<Evaluator.Request> = []
+    const services = evaluatorServices(
+      Evaluator.layerScripted((request) => {
+        asked.push(request)
+        return answer(request)
+      })
+    )
+    return { services, asked }
+  }
+
+  const bindingOf = async (source: FlowBinding.Source): Promise<FlowBinding.Binding> => {
+    const bindings = await Effect.runPromise(source.bindings())
+    return bindings.find((binding) => binding.descriptor.name === "jev")!
+  }
+
+  const questions = {
+    auth: { type: "boolean", instructions: "Does this file implement authentication?" },
+    area: { type: "choice", instructions: "Which area owns it?", criteria: { auth: "login", billing: "invoices" } },
+    risk: { type: "score", instructions: "How risky is changing it?", criteria: ["low", "high"] }
+  }
+
+  it("asks the bound evaluator the questions the cell wrote and answers with decoded, typed answers", async () => {
+    const judge = recording(() => ({
+      auth: { probability: 0.9 },
+      area: { choice: "auth", probabilities: { auth: 0.8, billing: 0.2 } },
+      risk: { score: 1 }
+    }))
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(binding.run(callOf("jev", { state: { path: "auth.py" }, questions })))
+
+    // The judge was CONTACTED, once, with the state and the questions as the
+    // cell wrote them: the wire form of the decoded questions is the literal.
+    expect(judge.asked).toHaveLength(1)
+    expect(judge.asked[0]!.state).toEqual({ path: "auth.py" })
+    expect(Evaluator.encodeQuestions(judge.asked[0]!.questions)).toEqual(questions)
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: {
+          auth: { value: true, probability: 0.9 },
+          area: { value: "auth", probabilities: { auth: 0.8, billing: 0.2 }, confidence: 0.8 },
+          risk: { value: 1, label: "high", probabilities: { low: 0, high: 1 }, confidence: 1 }
+        },
+        latencyMs: 0
+      }
+    })
+  })
+
+  it("passes the transport's usage and confidence through, so the call's cost is in its recorded result", async () => {
+    const services = Context.make(
+      Evaluator.Evaluator,
+      Evaluator.Evaluator.of({
+        evaluate: () =>
+          Effect.succeed({
+            answers: { auth: { type: "boolean" as const, probability: 0.2 } },
+            confidence: { auth: 0.6 },
+            usage: { inputTokens: 120, outputTokens: 4 },
+            latencyMs: 287
+          })
+      })
+    )
+    const binding = await bindingOf(StandardFlows.jev(services))
+    const result = await Effect.runPromise(
+      binding.run(callOf("jev", { state: "def login(): pass", questions: { auth: questions.auth } }))
+    )
+    expect(result).toMatchObject({
+      outcome: "success",
+      value: {
+        answers: { auth: { value: false, probability: 0.2 } },
+        confidence: { auth: 0.6 },
+        usage: { inputTokens: 120, outputTokens: 4 },
+        latencyMs: 287
+      }
+    })
+  })
+
+  it("refuses a malformed question before any transport is asked, with a message the cell can correct from", async () => {
+    const judge = recording(() => ({}))
+    const binding = await bindingOf(StandardFlows.jev(judge.services))
+    const result = await Effect.runPromise(
+      binding.run(
+        callOf("jev", {
+          state: { path: "auth.py" },
+          questions: { area: { type: "choice", instructions: "Which area?", criteria: { only: "one option" } } }
+        })
+      )
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "invalid_input" })
+    expect(result.message).toContain("A choice question offers between 2 and 255 options, not 1")
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it("refuses an empty question map and an oversized state without asking the judge", async () => {
+    const judge = recording(() => ({}))
+    const binding = await bindingOf(StandardFlows.jev(judge.services, { maxStateBytes: 32 }))
+    const none = await Effect.runPromise(binding.run(callOf("jev", { state: {}, questions: {} })))
+    const huge = await Effect.runPromise(
+      binding.run(callOf("jev", { state: { excerpt: "x".repeat(64) }, questions: { auth: questions.auth } }))
+    )
+    expect(none).toMatchObject({ outcome: "failure", code: "flow_failed" })
+    expect(none.message).toContain("at least one question")
+    expect(huge).toMatchObject({ outcome: "failure", code: "flow_failed" })
+    expect(huge.message).toContain("this host's ceiling is 32 bytes")
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it("only lowers the state ceiling: a larger or non-finite value keeps the default", async () => {
+    // The public contract is the description's 256 KiB; a host cannot raise it
+    // by passing a bigger number, and cannot remove it by passing NaN. A state
+    // one byte over the default is refused under every such request, and the
+    // refusal names the default ceiling rather than the one the host asked for.
+    const judge = recording(() => ({}))
+    const state = "x".repeat(StandardFlows.defaultMaxJevStateBytes - 1)
+    expect(new TextEncoder().encode(JSON.stringify(state)).byteLength).toBe(StandardFlows.defaultMaxJevStateBytes + 1)
+    for (const requested of [Number.POSITIVE_INFINITY, Number.NaN, StandardFlows.defaultMaxJevStateBytes * 4]) {
+      const binding = await bindingOf(StandardFlows.jev(judge.services, { maxStateBytes: requested }))
+      const result = await Effect.runPromise(binding.run(callOf("jev", { state, questions: { auth: questions.auth } })))
+      expect(result).toMatchObject({ outcome: "failure", code: "flow_failed" })
+      expect(result.message).toContain(`this host's ceiling is ${StandardFlows.defaultMaxJevStateBytes} bytes`)
+    }
+    expect(judge.asked).toHaveLength(0)
+  })
+
+  it.each([
+    {
+      label: "a refusing gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "The gateway answered 503" }))
+      ),
+      expected: "refused: The gateway answered 503"
+    },
+    {
+      label: "a timed-out gateway",
+      layer: Evaluator.layerScripted(() =>
+        Effect.fail(
+          new Evaluator.EvaluatorError({ code: "timeout", message: "The gateway did not answer within 1500 ms" })
+        )
+      ),
+      expected: "timeout: The gateway did not answer within 1500 ms"
+    },
+    {
+      label: "no transport at all",
+      layer: Evaluator.layerUnavailable(),
+      expected: "unreachable: the judge this host binds did not answer"
+    },
+    {
+      label: "an answer of the wrong shape",
+      layer: Evaluator.layerScripted(() => ({ auth: { choice: "yes" } })),
+      expected: "invalid_answer:"
+    }
+  ])("fails the call with the evaluator's code and no default answer for $label", async ({ expected, layer }) => {
+    const binding = await bindingOf(StandardFlows.jev(evaluatorServices(layer)))
+    const result = await Effect.runPromise(
+      binding.run(callOf("jev", { state: { path: "auth.py" }, questions: { auth: questions.auth } }))
+    )
+    expect(result).toMatchObject({ outcome: "failure", code: "flow_failed", value: null })
+    expect(result.message).toContain(`Flow jev failed: ${expected}`)
+    expect(JSON.stringify(result)).not.toContain("answers")
+  })
+
+  it("is absent from any catalog whose host bound no evaluator", async () => {
+    // Absence is structural: `jev` takes `Context<Evaluator>` and nothing
+    // else, so a composition without a judge has no way to construct it. The
+    // catalog a judgeless host composes is exactly the other helpers' flows.
+    const catalog = await Effect.runPromise(
+      FlowBinding.catalog([
+        StandardFlows.filesystem(filesystemServices),
+        StandardFlows.shell(shellServices),
+        StandardFlows.memory(memoryServices)
+      ])
+    )
+    expect(catalog.descriptors.map((entry) => entry.name)).not.toContain("jev")
+    const withJudge = await Effect.runPromise(
+      FlowBinding.catalog([
+        StandardFlows.memory(memoryServices),
+        StandardFlows.jev(evaluatorServices(Evaluator.layerUnavailable()))
+      ])
+    )
+    expect(withJudge.descriptors.map((entry) => entry.name)).toEqual(["remember", "recall", "jev"])
+    const jev = withJudge.descriptors.find((entry) => entry.name === "jev")!
+    expect(jev.modelInvocable).toBe(true)
+    expect(jev.capabilities).toEqual(["model:call:typesafe-ai/jev"])
+    expect(jev.effects.tier).toBe("sealed")
+    expect(jev.description).toContain("pack the items into one call")
   })
 })

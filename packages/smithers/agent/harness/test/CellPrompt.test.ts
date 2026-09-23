@@ -363,7 +363,16 @@ describe("cellPrompt", () => {
     // tokens, and against that +115 frames, +$9.47 and −3 verdicts. The number
     // is back at 2,400 with the contract, and the round says what the ceiling
     // is for — 131 estimated tokens of teaching bought a 43 % larger bill.
-    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_400)
+    //
+    // Raised to 2,600 on 2026-09-22 for rule 10, the `jev` flow: +874
+    // characters, +227 estimated tokens, landing the contract at exactly 2,600.
+    // The contract sat at 2,373 before it, so no rule of use fit under 2,400.
+    // Unlike the two r92 rules this one points the model at a tool rather
+    // than adding doctrine, and the same wave that measured every tool change
+    // paying is the reason it was admitted; its own price is not measured yet.
+    // A wave that reads this and finds it did not pay removes the rule and
+    // puts the number back.
+    expect(Tokens.estimate(contractText())).toBeLessThanOrEqual(2_600)
     expect(Tokens.estimate(sectionOf("cell-environment", {}, { locale: "C.UTF-8", absentTools: ["rg", "ruff"] })))
       .toBeLessThanOrEqual(300)
   })
@@ -390,10 +399,15 @@ describe("the contract", () => {
     // workspace changes: six opening probes complete the natural A request,
     // against four of six with the old contract. A seeded six-print loop
     // still fails to recover the exact answer, so this does not claim that
-    // every stalled run recovers. The 2,400-token ceiling stays unchanged.
-    expect(replText()).toHaveLength(9_264)
+    // every stalled run recovers. The 2,400-token ceiling stayed unchanged.
+    // It moved again on 2026-09-22, 9,264 → 10,138, for rule 10: the `jev`
+    // flow, one rule and one inline example telling the model to make its
+    // enumerable judgments over many items with Jev in one call rather than by
+    // reading them itself. The ceiling moved to 2,600 with it; see the token
+    // budget test for the price and the condition under which it goes back.
+    expect(replText()).toHaveLength(10_138)
     expect(Digest.digest(replText()))
-      .toBe("80c5ebc1ac4b6a02db4759197245839e426086f64a4790e9a53f46020418145b")
+      .toBe("feb47247037274bd7dab6dd24960ecf240bb708c4af37da4a48044c671d76512")
   })
 
   it("encourages the guard shape and leaves the unguarded completion legal", () => {
@@ -450,10 +464,15 @@ describe("the contract", () => {
     // `render`/`recall` pair, so a contract that still named any of them would
     // be teaching a mechanism the realm does not have. This is the assertion
     // that keeps the deleted surface from creeping back into the teaching.
+    // The bare word `state` is the deleted surface's vocabulary ("file JSON
+    // into state"). Since 2026-09-22 the `jev` flow's input field is also
+    // named `state`, after `Evaluator.Request`, so rule 10 may write it only
+    // as the code token `` `state` `` or the object key `state:`; the guard
+    // still refuses the word as prose.
     for (
       const absent of [
         /\bctx\.state\b/,
-        /\bstate\b/i,
+        /(?<!`)\bstate\b(?!`|:)/i,
         /\brender\b/i,
         /\brecall\b/i,
         /\bmanifest\b/i,

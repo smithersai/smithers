@@ -922,6 +922,11 @@ export const make = (
           StandardFlows.filesystem(filesystemServices, nativeSearch),
           StandardFlows.shell(shellServices, container),
           StandardFlows.memory(memoryServices),
+          // The same judge the completion brake and `test` use, offered to the
+          // cell directly. A host that starts runs always holds a live judge
+          // (`evaluatorFor` refuses to boot without one), so the flow is never
+          // a stub here; a judge that fails is the call's own typed failure.
+          StandardFlows.jev(judge),
           ...testFlows(Context.merge(shellServices, judge), container, runner),
           ...mcp
         ]

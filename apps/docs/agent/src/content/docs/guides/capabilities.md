@@ -1,6 +1,6 @@
 ---
 title: "Give a run capabilities"
-description: "Bind the standard capability flows (filesystem, shell, tests, memory, durable wait, and approval), order them with plugin contributions, and gate calls with authorize."
+description: "Bind the standard capability flows (filesystem, shell, tests, memory, Jev, durable wait, and approval), order them with plugin contributions, and gate calls with authorize."
 sidebar:
   order: 5
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/agent/docs/guides/capabilities.md"
@@ -29,6 +29,7 @@ const run = agent.run({
     StandardFlows.shell(shellServices), // ChildProcessSpawner | Path
     StandardFlows.tests(testServices), // ChildProcessSpawner | Evaluator | TestRunner
     StandardFlows.memory(memoryServices), // MemoryStore | Recall
+    StandardFlows.jev(judgeServices), // Evaluator
     ChildFlows.source(children)
   ]
 })
@@ -40,6 +41,7 @@ const run = agent.run({
 | `shell`      | `bash`                                                       | `ChildProcessSpawner \| Path`                    |
 | `tests`      | the project's test runner                                    | `ChildProcessSpawner \| Evaluator \| TestRunner` |
 | `memory`     | `remember`, `recall`                                         | `MemoryStore \| Recall`                          |
+| `jev`        | `jev`                                                        | `Evaluator`                                      |
 | `clock`      | `wait`                                                       | `Crypto \| FlowRuntime \| FlowInstance`          |
 | `approval`   | `ask`                                                        | an `Asker` port, not a context                   |
 
@@ -95,6 +97,45 @@ fixture: it checks named commands against the record and refuses other questions
 It is not a production default or a general language judge.
 
 See [the harness's completion brake](https://harness.smithers.sh/reference/api/#completionclaim).
+
+## Jev as a flow the cell can call
+
+`StandardFlows.jev(judgeServices)` binds the same evaluator as one ordinary
+flow named `jev`, so a cell can make its own typed judgments:
+
+```ts
+const judged = await ctx.call("jev", {
+  state: { files },
+  questions: Object.fromEntries(files.map((file, i) => [
+    String(i),
+    { type: "boolean", instructions: `Does files[${i}] implement or call authentication?` }
+  ]))
+})
+const authFiles = files.filter((_, i) => judged.answers[String(i)].value)
+```
+
+- `state` is any JSON up to 256 KiB (`defaultMaxJevStateBytes`; a host may
+  only lower it). `questions` is a map of boolean, choice or score questions,
+  decoded through `Classifier.Question`, so a malformed question is refused as
+  `invalid_input` before any transport is asked.
+- The result is `{ answers, confidence?, usage?, latencyMs }`. Answers are
+  `Classifier.Answer` values: a probability, a chosen option with its
+  distribution, or a score with its rung label. `usage` and `latencyMs` are the
+  call's metered cost and are journaled with the call's recorded result.
+- All questions in one call are answered in parallel by one request. The host
+  settles a cell's calls one at a time and caps a cell's calls, so fan-out
+  belongs inside one call: one question per item, not one call per item.
+- It never falls back. An evaluator failure is the call's own `flow_failed`
+  result, with the `EvaluatorError` code first in `error.message`
+  (`refused: The gateway answered 503`), and no default answer.
+- It is bound only where an `Evaluator` is bound: the helper takes
+  `Context<Evaluator>` and nothing else, so a composition without a judge has
+  no `jev` in its catalog rather than a stub. The native host binds it beside
+  `memory`, with the judge the completion brake already uses.
+
+The cell contract's rule 10 tells the model to prefer `jev` for every
+enumerable judgment over many items and never for text generation; the flow's
+catalog description carries the details.
 
 ## How the catalog is composed
 
