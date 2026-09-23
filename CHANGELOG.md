@@ -9,10 +9,18 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2887 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2914 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **tui:** condense runtime views and surface context assessments ([a02a48f2cd](https://github.com/smithersai/smithers/commit/a02a48f2cd5bcd6580f502774428f5bf1a0a64cb))
+- **tui:** persist selectable terminal themes ([606f3ed681](https://github.com/smithersai/smithers/commit/606f3ed681b3045c159365214da35441e194f7f1))
+- **evals:** replay supervisor judgments and account for their cost ([4bc18dd231](https://github.com/smithersai/smithers/commit/4bc18dd231ebcf3315b474cf54bc92e32788fdb3))
+- **agent:** add durable background supervision and memory ([4acc224189](https://github.com/smithersai/smithers/commit/4acc224189bc6b336efc98dabc56453b9d2746ce))
+- **harness:** teach a print budget so cells stop flooding context ([9b2bee7654](https://github.com/smithersai/smithers/commit/9b2bee7654c2348e287407a61f74740a8851bd61))
+- **harness:** print grep matches rg-style and failed calls on one line ([d5603993e3](https://github.com/smithersai/smithers/commit/d5603993e3e67fc39e49cc54a2f71f10c807cda2))
+- **agent:** bind Jev as the jev flow and teach the cell to fan judgments through it ([bd4db4a850](https://github.com/smithersai/smithers/commit/bd4db4a850814be3729b598db2e830f2128d675f))
+- **tui:** persist background agent tabs and runtime panels ([49fb5a8362](https://github.com/smithersai/smithers/commit/49fb5a8362c12399d69ce851591b60bb83959343))
 - **tui:** always show cell code; fold printed output behind ctrl+o ([6123a74d26](https://github.com/smithersai/smithers/commit/6123a74d264bd61c8991f42eb1264cc06ea77731))
 - **evals:** run the Harbor adapter on Smithers Cloud at max effort with a Codex account pool ([5d76b7d480](https://github.com/smithersai/smithers/commit/5d76b7d48021d86c300a76b3fa350e69b2a074d4))
 - **tui:** slash, argument and @file completion, filterable dialogs, Night Owl panels ([e1d2b0bccc](https://github.com/smithersai/smithers/commit/e1d2b0bccc12614d199b896519ae99ef92a2f737))
@@ -303,6 +311,17 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** clear RPC and Linux filesystem package gates ([e694115abc](https://github.com/smithersai/smithers/commit/e694115abc683b4783a37ad12b9fce838011e10d))
+- **cli:** probe revisions inside native registration scope ([f73f6a17b2](https://github.com/smithersai/smithers/commit/f73f6a17b21e025ad59ff73091999244d3671c8f))
+- **std:** a search root the host cannot inspect is reported as its own failure, not as a missing path ([312fbf65e3](https://github.com/smithersai/smithers/commit/312fbf65e33c1c37e1e9785854845a02b5cc0038))
+- **cli:** scope source revision probes to host startup ([d26e499ca5](https://github.com/smithersai/smithers/commit/d26e499ca556fc5f8d3fdeb1cb01b7f723a217e4))
+- **ci:** include coding bootstrap regressions in script gates ([ee7f9fbd15](https://github.com/smithersai/smithers/commit/ee7f9fbd155e7180088e85f218bc49cdc36841d5))
+- **build:** resolve Windows pnpm self-update shims without a shell ([f6f3d59a9f](https://github.com/smithersai/smithers/commit/f6f3d59a9f954f089f62ac3a73b229e5a52f30e6))
+- **testing:** mirror the max reasoning effort in ModelRequestLike and the fixture schema ([032f578f0e](https://github.com/smithersai/smithers/commit/032f578f0eb7d02164b333232abf0149474fe549))
+- **tui:** separate summary row markers from labels ([2392e32d77](https://github.com/smithersai/smithers/commit/2392e32d77589bd32bbac8737525c63155211417))
+- **model:** retry a provider that never starts its response ([a41ff97593](https://github.com/smithersai/smithers/commit/a41ff97593d40e0cbe72d1f3dfd1432f9d42c5e5))
+- **model-host:** validate protocol failures and enforce complete coverage ([d28eeae04e](https://github.com/smithersai/smithers/commit/d28eeae04eaa3f0a7beca5d047e8a04318f07fae))
+- **evals:** an infrastructure failure is never a score ([3a1a7804c3](https://github.com/smithersai/smithers/commit/3a1a7804c3de480e550f7de19dab7d91736ba4f1))
 - **release:** mirror CI helper toolchain and install its binary ([1ad9ce64e0](https://github.com/smithersai/smithers/commit/1ad9ce64e06b0b3e1c6fa996789d4ddc3556d094))
 - **release:** install filesystem helper at sandbox default path ([80ab794d9e](https://github.com/smithersai/smithers/commit/80ab794d9e129f8665f353a6671e6ebbd979b1b5))
 - **evals:** wait for the plan's concurrent-workspace slot like cluster capacity ([96eca7097b](https://github.com/smithersai/smithers/commit/96eca7097b51ac837623528f073350b989903956))
@@ -2095,6 +2114,9 @@ the release notes at
 
 ### 📝 Documentation
 
+- **tui:** describe the current message layout ([f5f8c7576e](https://github.com/smithersai/smithers/commit/f5f8c7576e2dc7572788a1889617f117ccbe9f2d))
+- **site:** re-sync api reference pages from package api.md sources ([cbaf740fbc](https://github.com/smithersai/smithers/commit/cbaf740fbc8f762f18bb9d4f878aaf16176c3dc9))
+- regenerate public copy from its canonical source ([7049f97b58](https://github.com/smithersai/smithers/commit/7049f97b5868538b71325d22a3510fa04d2b9c6b))
 - record revised shared backend implementation and mode matrix ([c057a47ebf](https://github.com/smithersai/smithers/commit/c057a47ebf0a599942269e33fe4e49cd3486aabe))
 - **site:** four generated API pages catch up with their packages ([9d0705e345](https://github.com/smithersai/smithers/commit/9d0705e345a2c0c296aa6144925f1775db8eca1f))
 - **site:** the published engine table lists @smthrs/plan-store ([8f17e012b1](https://github.com/smithersai/smithers/commit/8f17e012b128ff4b2552de16515f34415002ff9b))
@@ -2381,6 +2403,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- **targets:** index model host coverage inputs ([7afbcd943e](https://github.com/smithersai/smithers/commit/7afbcd943e0f2ae8a464fdb6821900f2922a63ba))
 - **targets:** index native backend and host contract inputs ([e8794c03ae](https://github.com/smithersai/smithers/commit/e8794c03ae2fa8bac259d46050c9223c811b49de))
 - delete the tutorial coordinator and executor apps ([2fce79a97c](https://github.com/smithersai/smithers/commit/2fce79a97cfe948963aba161b2b2183b502b48b5))
 - gitignore throwaway tmp and repro scripts ([cd60094355](https://github.com/smithersai/smithers/commit/cd600943559d2c62a7dd45781a80778d30313502))
@@ -2414,6 +2437,10 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(exports):** record landed runtime entrypoints ([158f59c27c](https://github.com/smithersai/smithers/commit/158f59c27c6f4c8e484811cc29975e14cadb83dc))
+- **test(ci):** align inventory contracts with declared runners ([baf2227ce8](https://github.com/smithersai/smithers/commit/baf2227ce8def0f4f54bd8828eb5b2b73a686ee3))
+- **test(app):** expect the native library for the current platform ([1becedbe43](https://github.com/smithersai/smithers/commit/1becedbe431ca688ae6c930ed3c9728fe74caad1))
+- **test(agent):** pin the reviewed offline judge export ([c663ddc339](https://github.com/smithersai/smithers/commit/c663ddc3395904820a6745b570a4d45b10760ae5))
 - **test(app):** wire complete runner inventory and classify harness metadata ([1fd84cc884](https://github.com/smithersai/smithers/commit/1fd84cc884281ca2f2535522d1f4d819278ecc9b))
 - **test(app):** migrate repository coverage after tutorial removal ([2105eebf95](https://github.com/smithersai/smithers/commit/2105eebf95039f5d66b45d14fe51165b43a614af))
 - **test(backend):** isolate system command failure fixtures ([c2723dd50a](https://github.com/smithersai/smithers/commit/c2723dd50a75dcca739eac13ae28b8c578d5b693))
