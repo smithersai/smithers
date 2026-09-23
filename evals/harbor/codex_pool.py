@@ -39,6 +39,29 @@ def usage_limit_in(output: str) -> str | None:
     return None
 
 
+def container_commands(output: str) -> dict[str, int]:
+    """Codex `command_execution` items the CLI completed inside the task
+    container, and how many exited 0. The CLI runs in the container, so every
+    command it ran is a container command."""
+    attempted = succeeded = 0
+    for line in output.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        item = event.get("item") if isinstance(event, dict) else None
+        if event.get("type") != "item.completed" or not isinstance(item, dict):
+            continue
+        if item.get("type") == "command_execution":
+            attempted += 1
+            if item.get("exit_code") == 0:
+                succeeded += 1
+    return {"attempted": attempted, "succeeded": succeeded}
+
+
 class PooledCodex(Codex):
     def __init__(self, logs_dir: Path, model_name: str | None = None, **kwargs: Any) -> None:
         super().__init__(logs_dir=logs_dir, model_name=model_name, **kwargs)
@@ -75,6 +98,7 @@ class PooledCodex(Codex):
             except Exception as error:  # a dry seat may surface as a failed command
                 failure = error
             output = self.logs_dir / self._OUTPUT_FILENAME
+            await self._fetch_output(environment, output)
             try:
                 text = output.read_text(errors="replace")
             except OSError:
@@ -99,6 +123,23 @@ class PooledCodex(Codex):
             self._write_account()
             with (self.logs_dir / "requeue.log").open("a", encoding="utf-8") as log:
                 log.write(f"{now} requeued as attempt {attempt + 1} on {self._account.label}\n")
-        self._write_account(attempt=attempt)
+        reached = container_commands(text)
+        self._write_account(attempt=attempt, containerCommands=reached)
         context.metadata = {**(context.metadata or {}), "account": self._account.label if self._account else None,
-                            "attempt": attempt, "requeues": self._requeues}
+                            "attempt": attempt, "requeues": self._requeues, "container_commands": reached}
+        if reached["succeeded"] == 0:
+            raise accounts.ContainerUnreachable(
+                f"codex ran no command with exit 0 in the task container ({reached['attempted']} attempted)")
+
+    async def _fetch_output(self, environment: BaseEnvironment, output: Path) -> None:
+        """On an environment that does not mount the logs directory (plue),
+        the CLI's output is still in the container when `run` returns; the
+        runner copies it only afterwards. Fetch it now so the usage-limit
+        check and the container gate read what the CLI printed."""
+        capabilities = getattr(environment, "capabilities", None)
+        if getattr(capabilities, "mounted", True):
+            return
+        try:
+            await environment.download_file(f"/logs/agent/{self._OUTPUT_FILENAME}", output)
+        except Exception:  # absent when the CLI never started; the gate then sees nothing
+            pass

@@ -7,15 +7,22 @@ The harness's `bash` flow delivers every containerised command as
 a workspace id, so `smithers_agent.py` puts this file first on the CLI's PATH
 under the name `docker` and every exec becomes one public CLI call:
 
-    smithers workspace exec <id> --repo $PLUE_REPO --user root [--cwd …]
+    <cli> workspace exec <id> --repo <repo> --user root [--cwd …]
         [--env KEY=VALUE …] --timeout 0 --format json --command 'exec <file> <args…>'
 
 Standard input is forwarded when `-i` was asked for, the command's stdout and
 stderr are replayed, and its exit code is this process's. Any other docker
 verb is refused with exit 125: nothing but exec is expected here.
 
-Environment: SMITHERS_CLI (the plue CLI), PLUE_REPO (owner/name), and whatever
-the CLI itself needs (SMITHERS_TOKEN, XDG_CONFIG_HOME).
+Configuration comes from `plue-docker.json` beside the invoked `docker` link,
+written per trial by `smithers_agent.shim_config`: `repo` (owner/name), `cli`
+(absolute path of the plue CLI) and `env` (what that CLI needs, such as
+SMITHERS_TOKEN and XDG_CONFIG_HOME). Never from the ambient environment: the
+harness spawns this shim with a least-authority environment (PATH, HOME, USER,
+LANG, TERM, TMPDIR, SHELL; `flows/kernel/src/ChildProcessEnvironment.ts`), so
+PLUE_REPO and SMITHERS_CLI never arrive, and `smithers` on PATH is the flows
+CLI, not the plue one. The ambient environment is read only for the `-e KEY`
+values the harness forwards on purpose.
 """
 
 from __future__ import annotations
@@ -25,6 +32,9 @@ import os
 import shlex
 import subprocess
 import sys
+from pathlib import Path
+
+CONFIG_NAME = "plue-docker.json"
 
 # Same as plue_env.EGRESS_PREFIX: the SSH session does not carry the
 # sandbox's egress proxy, so the command sources it first when it is there.
@@ -32,7 +42,22 @@ EGRESS_ENV = "/etc/smithers/egress.env"
 EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
 
 
-def translate(argv: list[str], environ: dict[str, str]) -> tuple[list[str], bool]:
+def load_config(invoked: str) -> dict:
+    """The per-trial configuration beside the `docker` link that was run.
+
+    `invoked` is the path this process was started as (`sys.argv[0]`), not its
+    symlink target, so each trial's shim directory carries its own file."""
+    path = Path(os.path.abspath(invoked)).parent / CONFIG_NAME
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"plue docker shim: no readable {path}: {error}") from error
+    if not isinstance(config, dict):
+        raise ValueError(f"plue docker shim: {path} is not an object")
+    return config
+
+
+def translate(argv: list[str], environ: dict[str, str], config: dict) -> tuple[list[str], bool]:
     """`docker exec …` argv to the plue CLI argv, and whether stdin is forwarded."""
     if not argv or argv[0] != "exec":
         raise ValueError(f"plue docker shim serves `docker exec` only, got: {argv[:1]}")
@@ -67,11 +92,14 @@ def translate(argv: list[str], environ: dict[str, str]) -> tuple[list[str], bool
     if len(command) < 2:
         raise ValueError("plue docker shim: expected <container> <file> [args…]")
     container, program = command[0], command[1:]
-    repo = environ.get("PLUE_REPO", "").strip()
+    repo = str(config.get("repo") or "").strip()
     if "/" not in repo:
-        raise ValueError("PLUE_REPO must be owner/name")
+        raise ValueError("plue docker shim: config `repo` must be owner/name")
+    cli = str(config.get("cli") or "")
+    if not os.path.isabs(cli) or not os.access(cli, os.X_OK):
+        raise ValueError(f"plue docker shim: config `cli` must be an executable absolute path, got {cli!r}")
     args = [
-        environ.get("SMITHERS_CLI", "smithers"),
+        cli,
         "workspace", "exec", container, "--repo", repo, "--user", "root",
         "--timeout", "0", "--format", "json",
     ]
@@ -91,14 +119,17 @@ def envelope(stdout: str) -> dict:
 
 def main(argv: list[str]) -> int:
     try:
-        args, stdin = translate(argv, dict(os.environ))
+        config = load_config(sys.argv[0])
+        args, stdin = translate(argv, dict(os.environ), config)
     except ValueError as error:
         sys.stderr.write(f"{error}\n")
         return 125
+    extra = config.get("env") or {}
     result = subprocess.run(
         args,
         stdin=None if stdin else subprocess.DEVNULL,
         capture_output=True,
+        env={**os.environ, **{str(k): str(v) for k, v in extra.items()}},
     )
     try:
         data = envelope(result.stdout.decode(errors="replace"))

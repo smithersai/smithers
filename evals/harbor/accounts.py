@@ -86,6 +86,11 @@ class ModelRouteError(Exception):
         self.cause = cause
 
 
+class ContainerUnreachable(Exception):
+    """The agent never ran a command inside the task container with exit 0:
+    the trial measured the transport, not the model. Retried, never scored."""
+
+
 class NoSeatLeft(Exception):
     """Every account is out of rotation and the pause wait ran out."""
 

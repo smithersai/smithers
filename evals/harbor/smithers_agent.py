@@ -75,9 +75,10 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from . import accounts
+    from . import accounts, plue_docker
 except ImportError:  # imported by file path (fixtures)
     import accounts  # type: ignore[no-redef]
+    import plue_docker  # type: ignore[no-redef]
 
 # Pier ships Harbor as a dependency, so under Pier both import; the runner
 # that calls `install_spec()` and `network_allowlist()` is Pier's, and its
@@ -182,16 +183,65 @@ def helper_binary(root: Path, base: dict[str, str]) -> Path | None:
     return None
 
 
-def shim_directory(workspace: Path) -> Path:
-    """A directory whose `docker` is `plue_docker.py`, to go first on PATH."""
-    directory = workspace / "bin"
+# What the plue CLI itself needs from the harness host's environment.
+SHIM_ENV_NAMES = ("SMITHERS_TOKEN", "XDG_CONFIG_HOME", "HOME")
+
+
+def shim_config(base: dict[str, str]) -> dict[str, Any]:
+    """Everything `plue_docker.py` needs, taken from the harness host's
+    environment now, because the harness spawns the shim with a
+    least-authority environment that drops PLUE_REPO, SMITHERS_CLI and the
+    token (`flows/kernel/src/ChildProcessEnvironment.ts`). The CLI is resolved
+    to an absolute path the same way `plue_env` runs it."""
+    repo = base.get("PLUE_REPO", "").strip()
+    if "/" not in repo:
+        raise RuntimeError("PLUE_REPO must be owner/name for a plue trial")
+    name = base.get("SMITHERS_CLI", "smithers")
+    cli = shutil.which(name, path=base.get("PATH"))
+    if cli is None:
+        raise RuntimeError(f"SMITHERS_CLI {name!r} does not resolve to an executable")
+    env = {key: base[key] for key in SHIM_ENV_NAMES if base.get(key)}
+    return {"repo": repo, "cli": os.path.abspath(cli), "env": env}
+
+
+def shim_directory(directory: Path, config: dict[str, Any]) -> Path:
+    """A directory whose `docker` is `plue_docker.py`, to go first on PATH,
+    with the shim's configuration beside it (owner-only: it holds the token).
+    Keep it outside the trial's kept workspace and delete it afterwards."""
+    directory = directory / "bin"
     directory.mkdir(parents=True, exist_ok=True)
     link = directory / "docker"
     if link.is_symlink() or link.exists():
         link.unlink()
     link.symlink_to(PLUE_SHIM)
     PLUE_SHIM.chmod(PLUE_SHIM.stat().st_mode | 0o111)
+    target = directory / plue_docker.CONFIG_NAME
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(config, handle)
     return directory
+
+
+def container_commands(events: list[dict[str, Any]], container: str) -> dict[str, int]:
+    """Commands the agent sent to the task container, and how many exited 0.
+
+    A `cell-call-started` whose input names the container, joined by call id
+    to its `cell-call-settled`. Zero successes means the agent never reached
+    the task: the trial measured the transport, not the model."""
+    targeted: set[str] = set()
+    attempted = succeeded = 0
+    for event in events:
+        payload = event["payload"]
+        if event["type"] == "control.agent.cell-call-started":
+            given = payload.get("input")
+            if isinstance(given, dict) and given.get("container") == container:
+                targeted.add(str(payload.get("callId")))
+        elif event["type"] == "control.agent.cell-call-settled" and str(payload.get("callId")) in targeted:
+            attempted += 1
+            value = payload.get("value")
+            if payload.get("outcome") == "success" and isinstance(value, dict) and value.get("exitCode") == 0:
+                succeeded += 1
+    return {"attempted": attempted, "succeeded": succeeded}
 
 
 def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None = None,
@@ -666,7 +716,8 @@ class SmithersAgent(BaseAgent):
                 render_prompt(instruction, seat=self.seat, container=container, cwd=cwd, commit=self._commit),
                 encoding="utf-8",
             )
-            shim = shim_directory(workspace) if self._plue else None
+            shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
+            shim = shim_directory(shim_home, shim_config(dict(os.environ))) if shim_home else None
             env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
                                   codex_home=self._account.home if self._account else None)
             record: dict[str, Any] = {
@@ -691,7 +742,11 @@ class SmithersAgent(BaseAgent):
             (self.logs_dir / "smithers-run.json").write_text(json.dumps(record, indent=2))
 
             started = time.monotonic()
-            exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget)
+            try:
+                exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget)
+            finally:
+                if shim_home is not None:
+                    shutil.rmtree(shim_home, ignore_errors=True)
             wall = time.monotonic() - started
             shutil.move(str(workspace), str(kept))
             workspace = kept
@@ -704,9 +759,11 @@ class SmithersAgent(BaseAgent):
             except OSError:
                 log_text = ""
             kind, cause = verdict(log_text, summary, events)
+            reached = container_commands(events, container)
             record.update({
                 "verdict": kind,
                 "cause": cause,
+                "containerCommands": reached,
                 "phase": phase,
                 "exitStatus": exit_status,
                 "wallSec": round(wall, 3),
@@ -775,12 +832,16 @@ class SmithersAgent(BaseAgent):
             "run_status": summary["status"],
             "frames": summary["frames"],
             "calls": summary["calls"],
+            "container_commands": reached,
         }
         self._summary = summary
         if kind == "infra":
             raise accounts.ModelRouteError(cause or "model route failed")
         if kind == "seat":
             raise accounts.SeatExhausted(record["account"] or "?", cause or "usage limit")
+        if reached["succeeded"] == 0:
+            raise accounts.ContainerUnreachable(
+                f"no command reached {container} with exit 0 ({reached['attempted']} attempted)")
 
     def _cli(self, *args: str) -> list[str]:
         return ["node", str(self.root / CLI_RELATIVE), "--json", *args]

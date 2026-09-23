@@ -183,13 +183,14 @@ def check_helper() -> None:
 
 
 def check_plue_shim() -> None:
-    environ = {"SMITHERS_CLI": "/opt/plue", "PLUE_REPO": "acme/bench", "TOKEN": "t0", "PATH": "/bin"}
+    environ = {"TOKEN": "t0", "PATH": "/bin"}
+    config = {"repo": "acme/bench", "cli": "/bin/sh"}
     args, stdin = plue_docker.translate(
         ["exec", "-i", "-w", "/app", "-e", "TOKEN", "-e", "MISSING", "--", "ws-1", "bash", "-lc", 'exec "$@"', "bash", "python3", "-"],
-        environ,
+        environ, config,
     )
     assert stdin is True
-    assert args[:4] == ["/opt/plue", "workspace", "exec", "ws-1"]
+    assert args[:4] == ["/bin/sh", "workspace", "exec", "ws-1"]
     assert args[4:10] == ["--repo", "acme/bench", "--user", "root", "--timeout", "0"]
     assert ["--cwd", "/app"] == args[args.index("--cwd"):args.index("--cwd") + 2]
     assert args[args.index("--env") + 1] == "TOKEN=t0" and args.count("--env") == 1, "unset names are not forwarded"
@@ -198,21 +199,23 @@ def check_plue_shim() -> None:
     assert args[-1].startswith("if [ -r /etc/smithers/egress.env ]"), "the sandbox egress proxy reaches the command"
     import plue_env
     assert plue_env.with_egress("ls") == plue_env.EGRESS_PREFIX + "ls" and plue_env.EGRESS_PREFIX == plue_docker.EGRESS_PREFIX
-    plain, stdin = plue_docker.translate(["exec", "--", "ws-1", "bash", "-lc", "ls"], environ)
+    plain, stdin = plue_docker.translate(["exec", "--", "ws-1", "bash", "-lc", "ls"], environ, config)
     assert stdin is False and "--cwd" not in plain and "--env" not in plain
     for bad in (["ps"], ["exec", "--", "ws-1"], ["exec", "-t", "--", "ws-1", "true"]):
         try:
-            plue_docker.translate(bad, environ)
+            plue_docker.translate(bad, environ, config)
         except ValueError:
             pass
         else:
             raise AssertionError(f"refused: {bad}")
-    try:
-        plue_docker.translate(["exec", "--", "ws-1", "true"], {"SMITHERS_CLI": "x"})
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("PLUE_REPO is required")
+    ambient = {"SMITHERS_CLI": "/bin/sh", "PLUE_REPO": "acme/bench"}
+    for partial in ({}, {"repo": "acme/bench"}, {"repo": "acme/bench", "cli": "sh"}, {"cli": "/bin/sh"}):
+        try:
+            plue_docker.translate(["exec", "--", "ws-1", "true"], ambient, partial)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"repo and an absolute cli come from the shim config, never ambient: {partial}")
     assert plue_docker.envelope('note\n{"data": {"exit_code": 3}}') == {"data": {"exit_code": 3}}
 
     class Plue:
@@ -231,13 +234,82 @@ def check_plue_shim() -> None:
     assert agent.plue_workspace_of(Docker()) is None
     assert agent.plue_workspace_of(object()) is None
     with tempfile.TemporaryDirectory() as directory:
-        shim = agent.shim_directory(Path(directory))
+        check_shim_reaches_cli(Path(directory))
+    with tempfile.TemporaryDirectory() as directory:
+        shim = agent.shim_directory(Path(directory), {"repo": "acme/bench", "cli": "/bin/sh", "env": {}})
         assert (shim / "docker").resolve() == agent.PLUE_SHIM.resolve() and os.access(shim / "docker", os.X_OK)
         env = agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt", shim=shim, codex_home=Path("/h/codex-2"))
         assert env["PATH"].startswith(str(shim) + os.pathsep) and env["CODEX_HOME"] == "/h/codex-2"
         assert "CODEX_HOME" not in agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt")
-    for name in ("SeatExhausted", "ModelRouteError", "NoSeatLeft"):
+    for name in ("SeatExhausted", "ModelRouteError", "NoSeatLeft", "ContainerUnreachable"):
         assert issubclass(getattr(accounts, name), Exception), name
+
+
+def check_shim_reaches_cli(root: Path) -> None:
+    """The regression of preflight-A 2026-09-22: the harness spawns `docker`
+    with only PATH/HOME/USER/LANG/TERM/TMPDIR/SHELL, so a shim that reads
+    PLUE_REPO, SMITHERS_CLI or SMITHERS_TOKEN from its environment exits 125
+    or runs the flows CLI. Run the real shim under exactly that environment
+    against a fake plue CLI and require the repo, CLI and token to arrive."""
+    import subprocess
+    fake = root / "plue"
+    record = root / "argv.json"
+    fake.write_text("#!/usr/bin/env python3\nimport json, os, sys\n"
+                    f"open({str(record)!r}, 'w').write(json.dumps({{'argv': sys.argv[1:], "
+                    "'token': os.environ.get('SMITHERS_TOKEN'), 'xdg': os.environ.get('XDG_CONFIG_HOME')}))\n"
+                    "print(json.dumps({'data': {'exit_code': 0, 'stdout': 'reached\\n', 'stderr': ''}}))\n")
+    fake.chmod(0o755)
+    host = {"PLUE_REPO": "acme/bench", "SMITHERS_CLI": str(fake), "SMITHERS_TOKEN": "pat-1",
+            "XDG_CONFIG_HOME": str(root / "xdg"), "PATH": os.environ["PATH"], "HOME": str(root)}
+    config = agent.shim_config(host)
+    assert config["repo"] == "acme/bench" and config["cli"] == str(fake), config
+    shim = agent.shim_directory(root / "trial", config)
+    assert (os.stat(shim / plue_docker.CONFIG_NAME).st_mode & 0o077) == 0, "the token file is owner-only"
+    scrubbed = {"PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "HOME": str(root)}
+    result = subprocess.run(["docker", "exec", "-w", "/app", "--", "ws-7", "bash", "-lc", "true"],
+                            env=scrubbed, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0 and result.stdout == "reached\n", (result.returncode, result.stderr)
+    seen = json.loads(record.read_text())
+    assert seen["argv"][:6] == ["workspace", "exec", "ws-7", "--repo", "acme/bench", "--user"], seen
+    assert seen["token"] == "pat-1" and seen["xdg"] == str(root / "xdg"), seen
+    (shim / plue_docker.CONFIG_NAME).unlink()
+    bare = subprocess.run(["docker", "exec", "--", "ws-7", "true"], env={**scrubbed, "PLUE_REPO": "acme/bench"},
+                          capture_output=True, text=True, timeout=30)
+    assert bare.returncode == 125 and plue_docker.CONFIG_NAME in bare.stderr, (bare.returncode, bare.stderr)
+    for broken in ({**host, "PLUE_REPO": ""}, {**host, "SMITHERS_CLI": str(root / "missing")}):
+        try:
+            agent.shim_config(broken)
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("a shim without a repo or a CLI is refused before the run")
+
+
+def check_container_gate() -> None:
+    """A trial is healthy only if a command reached the task container with
+    exit 0: preflight-A's 20 calls all failed (125) or ran on the host."""
+    def call(n: int, container: str | None, exit_code: int) -> list[dict]:
+        given = {"command": "ls", "mode": "unhermetic", **({"container": container} if container else {})}
+        return [{"type": "control.agent.cell-call-started", "payload": {"callId": f"c{n}", "input": given}},
+                {"type": "control.agent.cell-call-settled",
+                 "payload": {"callId": f"c{n}", "outcome": "success", "value": {"exitCode": exit_code}}}]
+    unreachable = call(1, "ws-1", 125) + call(2, None, 0) + call(3, "ws-other", 0)
+    assert agent.container_commands(unreachable, "ws-1") == {"attempted": 1, "succeeded": 0}
+    assert agent.container_commands(unreachable + call(4, "ws-1", 0), "ws-1") == {"attempted": 2, "succeeded": 1}
+    sys.path.insert(0, str(HERE.parent.parent.parent))
+    try:
+        from evals.harbor import codex_pool
+    except ImportError:
+        print("check_agent.py: harbor not importable; codex gate not checked")
+        return
+    lines = "\n".join([
+        '{"type":"item.completed","item":{"type":"command_execution","exit_code":127}}',
+        '{"type":"item.started","item":{"type":"command_execution"}}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"hi"}}',
+        '{"type":"item.completed","item":{"type":"command_execution","exit_code":0}}',
+    ])
+    assert codex_pool.container_commands(lines) == {"attempted": 2, "succeeded": 1}
+    assert codex_pool.container_commands(lines.splitlines()[0]) == {"attempted": 1, "succeeded": 0}
 
 
 def check_accounts() -> None:
@@ -360,6 +432,7 @@ if __name__ == "__main__":
     check_helper()
     check_names()
     check_plue_shim()
+    check_container_gate()
     check_accounts()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim and account pool hold; "
           f"trajectory {validation}.")
