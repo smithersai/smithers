@@ -35,7 +35,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | Alt+Up | Move queued follow-ups back to the editor |
 | Shift+Enter, Ctrl+J | Newline |
 | Esc | Stop the turn (queued messages return to the editor) or the shell command |
-| y, n, a | Approval waiting, editor empty: allow once, deny, allow for this session |
+| y, n, a | Approval row showing its keys (editor empty, 400 ms after the row appears and after the editor last changed): allow once, deny, and where the row offers `a all bash` or `a all edits`, allow for the session. Otherwise the key is text |
 | Ctrl+C | Clear the editor; twice within 500 ms to exit |
 | Ctrl+D | Exit when the editor is empty |
 | Up, Down | Prompt history |

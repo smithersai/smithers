@@ -20,9 +20,9 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Layer, Option } from "effect"
-import { resolve } from "node:path"
+import { lstatSync, readlinkSync, realpathSync } from "node:fs"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import * as Changes from "./changes.ts"
-import * as Transcript from "./transcript.ts"
 
 /** `ask` waits for y/n, `all` asks nothing, `deny` refuses every consequential call. */
 export type Mode = "ask" | "all" | "deny"
@@ -67,10 +67,55 @@ export const mode = (
 export const consequential = (capability: Capability.Capability, cwd: string): boolean =>
   capability.action.startsWith("net:") || Capability.tierOf(capability, { workspaceRoot: cwd }) !== "sealed"
 
+/**
+ * A path as the write will reach it: every symlink on the way is followed,
+ * including a dangling last one, which a write creates the target of.
+ * Components that do not exist yet are kept as written.
+ */
+export const real = (path: string): string => {
+  let head = resolve(path)
+  const rest: Array<string> = []
+  for (let hops = 0; hops < 64;) {
+    try {
+      return join(realpathSync(head), ...rest)
+    } catch {
+      try {
+        if (lstatSync(head).isSymbolicLink()) {
+          head = resolve(dirname(head), readlinkSync(head))
+          hops++
+          continue
+        }
+      } catch {
+        // Absent: keep its name and resolve its parent.
+      }
+      const parent = dirname(head)
+      if (parent === head) return join(head, ...rest)
+      rest.unshift(basename(head))
+      head = parent
+    }
+  }
+  return join(head, ...rest)
+}
+
+/** Keys that never change what a call does, per flow. */
+const inert: Record<string, ReadonlyArray<string>> = { bash: ["mode", "timeoutMs"] }
+
+/**
+ * What a row shows for a call: its lone string input as itself, otherwise the
+ * whole raw input. Never a chosen key, since the flow's decoder may strip that
+ * key while another one runs.
+ */
+export const shownInput = (flow: string, input: unknown): string => {
+  if (typeof input !== "object" || input === null) return input === undefined ? "" : JSON.stringify(input)
+  const keys = Object.keys(input).filter((key) => !(inert[flow] ?? []).includes(key))
+  const only = keys.length === 1 ? (input as Record<string, unknown>)[keys[0]!] : undefined
+  return typeof only === "string" ? only : JSON.stringify(input)
+}
+
 /** One request per consequential capability, narrowed to what this call touches. */
 export const requests = (call: Cell.Call, cwd: string, source: string): ReadonlyArray<Request> => {
   const found = new Map<string, Request>()
-  const subject = Transcript.subject(call.input).slice(0, 160)
+  const subject = shownInput(call.flowName, call.input)
   const add = (capability: Capability.Capability, shown: string) =>
     found.set(Capability.format(capability), { capability, meta: { flow: call.flowName, subject: shown, source } })
   for (const declared of call.capabilities) {
@@ -81,7 +126,16 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
       // `undefined` or nothing named: ask for everything the flow declares.
       const paths = Changes.touched(call.flowName, call.input) ?? []
       if (paths.length === 0) add(capability, subject)
-      for (const path of paths) add(Capability.make("fs:write", resolve(cwd, path)), path.slice(0, 160))
+      const root = real(cwd)
+      for (const path of paths) {
+        // The store classifies lexically, so hand it the path the write reaches.
+        const target = real(resolve(cwd, path))
+        const inside = relative(root, target)
+        add(
+          Capability.make("fs:write", target),
+          inside !== "" && !inside.startsWith("..") && !isAbsolute(inside) ? inside : target
+        )
+      }
     } else if (capability.action === "proc:spawn") {
       // The flow, not the command: `a` then means this flow for the session.
       add(Capability.make("proc:spawn", call.flowName), subject)
@@ -99,7 +153,8 @@ const denyAll = new Permission.Rule({
 
 export const layer = (cwd: string, approvals: Mode): Layer.Layer<GrantStore.GrantStore> =>
   GrantStore.layer({ attended: true, planDigest: "smithers-tui", rules: approvals === "deny" ? [denyAll] : [] }).pipe(
-    Layer.provide(Workspace.layer(cwd)),
+    // Real, like the resources `requests` asks for, so containment agrees.
+    Layer.provide(Workspace.layer(real(cwd))),
     Layer.orDie
   )
 
@@ -167,7 +222,7 @@ export const reply = (
     request.requestId,
     choice,
     choice === "run" && request.action === "fs:write"
-      ? new Capability.CapabilityPattern({ action: "fs:write", resource: `${cwd.replace(/\/+$/, "")}/**` })
+      ? new Capability.CapabilityPattern({ action: "fs:write", resource: `${real(cwd).replace(/\/+$/, "")}/**` })
       : undefined
   )
 
@@ -225,6 +280,13 @@ export const shown = (
   return { requestId: front, since: now, waiting: undefined }
 }
 
+/**
+ * The editor changed: sending, clearing or typing restarts the front row's
+ * delay, so the first letters of the next message are never an answer.
+ */
+export const edited = (arming: Arming, now: number): Arming =>
+  arming.requestId === undefined || arming.waiting !== undefined ? arming : { ...arming, since: now }
+
 /** A key answered `requestId`; the next row waits for a poll without it. */
 export const answered = (requestId: string): Arming => ({ requestId: undefined, since: 0, waiting: requestId })
 
@@ -234,6 +296,10 @@ export const failed = (arming: Arming, requestId: string): Arming =>
 
 export const armed = (arming: Arming, front: string | undefined, now: number): boolean =>
   front !== undefined && arming.waiting === undefined && arming.requestId === front && now - arming.since >= armMs
+
+/** Whether the front row shows its keys: exactly when `key` would take one. */
+export const ready = (arming: Arming, front: string | undefined, now: number, draft: string): boolean =>
+  draft === "" && armed(arming, front, now)
 
 /** The answer a key gives, or `undefined` so the key reaches the editor. */
 export const key = (

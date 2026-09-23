@@ -365,7 +365,7 @@ export function Approval(
     }
     /** What `a` grants, from `Approvals.scope`. */
     readonly scope: string
-    /** Keys show only once they answer; see `Approvals.armMs`. */
+    /** Keys show exactly when they answer; see `Approvals.ready`. */
     readonly armed: boolean
     readonly more: number
     readonly worker?: string
@@ -373,7 +373,8 @@ export function Approval(
 ) {
   return (
     <box style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
-      <text wrapMode="none" style={{ flexShrink: 1 }} fg={color.warning}>
+      {/* Wrapped, never clipped: `y` approves exactly the text shown. */}
+      <text wrapMode="char" style={{ flexShrink: 1 }} fg={color.warning}>
         {props.worker === undefined ? "" : `↳ ${props.worker} `}? {props.request.flow}{" "}
         {props.request.subject.replace(/\s+/g, " ")}
         {props.more > 0 ? ` +${props.more}` : ""}

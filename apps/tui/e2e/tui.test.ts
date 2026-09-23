@@ -943,9 +943,13 @@ describe("approvals", () => {
     const before = tui.screen().match(asking)![0]
     await tui.type("hy")
     const typed = await tui.until((screen) => /┃\s+hy/.test(screen), 5_000, "typed draft")
-    expect(typed.match(asking)?.[0]).toBe(before)
+    expect(typed).not.toMatch(asking)
+    expect(typed).toContain("? bash")
     await tui.press(key.ctrlC)
-    await tui.until((screen) => !/┃\s+hy/.test(screen), 5_000, "cleared draft")
+    const ready = await tui.until(
+      (screen) => !/┃\s+hy/.test(screen) && asking.test(screen), 5_000, "cleared draft and armed approval"
+    )
+    expect(ready.match(asking)?.[0]).toBe(before)
     await tui.press("y")
     await tui.until((screen) => screen.match(asking)?.[0] !== before, 30_000, "answered")
   }, 120_000)
@@ -958,6 +962,12 @@ describe("approvals", () => {
     await tui.type("later")
     await tui.press("\x1b\r")
     await tui.until((screen) => screen.includes("Follow-up: later"), 5_000, "queued")
+    // The first `a` after sending is text, even though the approval waited
+    // long enough to arm before the editor was cleared.
+    await tui.type("and also")
+    const typed = await tui.until((screen) => /┃\s+and also/.test(screen), 5_000, "next draft")
+    expect(typed).toContain("? bash")
+    expect(typed).not.toMatch(asking)
     await tui.press(key.escape)
     await tui.until((screen) => !asking.test(screen) && idle(screen), 5_000, "dropped approval")
   }, 120_000)

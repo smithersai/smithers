@@ -400,8 +400,9 @@ export function App(props: AppProps) {
   )
 
   // Key handlers read the latest values through these, never a stale render.
-  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals })
-  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals }
+  // `now` is the clock the approval row rendered with, so its keys and its hints agree.
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -507,6 +508,7 @@ export function App(props: AppProps) {
     input.setText(text)
     if (at === undefined) input.gotoBufferEnd()
     else input.cursorOffset = at
+    arming.current = Approvals.edited(arming.current, Date.now())
     setDraft(text)
     setCursor(input.cursorOffset)
   }, [])
@@ -1250,7 +1252,7 @@ export function App(props: AppProps) {
       shift: key.shift,
       ctrl: key.ctrl,
       meta: key.meta || key.option,
-      armed: Approvals.armed(arming.current, live.current.approvals[0]?.requestId, Date.now()),
+      armed: Approvals.armed(arming.current, live.current.approvals[0]?.requestId, live.current.now),
       pending: live.current.approvals
     })
     if (choice !== undefined && props.host.approvals !== undefined) {
@@ -1499,7 +1501,7 @@ export function App(props: AppProps) {
           <View.Approval
             request={approvals[0]}
             scope={Approvals.scope(approvals[0])}
-            armed={Approvals.armed(arming.current, approvals[0].requestId, now)}
+            armed={Approvals.ready(arming.current, approvals[0].requestId, now, draft)}
             more={approvals.length - 1}
             {...(approvals[0].source === "chat"
               ? {}
@@ -1527,6 +1529,7 @@ export function App(props: AppProps) {
               keyBindings={composerKeys}
               onSubmit={() => submit(false)}
               onContentChange={() => {
+                arming.current = Approvals.edited(arming.current, Date.now())
                 setDraft(composer.current?.plainText ?? "")
                 setCursor(composer.current?.cursorOffset ?? 0)
                 setMenuDismissed(false)
