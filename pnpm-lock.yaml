@@ -1721,51 +1721,6 @@ importers:
         specifier: ~5.9.3
         version: 5.9.3
 
-  apps/tutorial-coordinator:
-    dependencies:
-      '@effect/platform-node':
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1))
-      '@smthrs/agent':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent
-      '@smthrs/cli':
-        specifier: workspace:*
-        version: link:../../packages/smithers
-      '@smthrs/engine':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/engine
-      '@smthrs/engine-store':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/engine-store
-      '@smthrs/flow':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/flow
-      '@smthrs/flows':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows
-      '@smthrs/kernel':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/kernel
-      '@smthrs/model':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/model
-      '@smthrs/registry':
-        specifier: workspace:*
-        version: link:../../packages/smithers/agent/registry
-      '@smthrs/rpc':
-        specifier: workspace:*
-        version: link:../../packages/rpc
-      '@smthrs/run-store':
-        specifier: workspace:*
-        version: link:../../packages/smithers/flows/run-store
-      effect:
-        specifier: 4.0.0-rc.115
-        version: 4.0.0-rc.115
-      zod:
-        specifier: 4.5.4
-        version: 4.5.4
-
   evals/agent:
     dependencies:
       '@smthrs/agent':
