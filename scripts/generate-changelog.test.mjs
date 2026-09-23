@@ -24,6 +24,7 @@ import {
   endMarker,
   entryLabel,
   groupCommits,
+  hasRepository,
   main,
   parseBlock,
   parseSubject,
@@ -286,7 +287,7 @@ const git = (root, args) => execFileSync("git", args, { cwd: root, encoding: "ut
  * `--date` is pinned on every commit so the heading date this writes is a fact
  * about the fixture rather than about the day the suite runs.
  */
-const fixture = () => {
+const fixture = ({ history = true } = {}) => {
   const root = mkdtempSync(join(tmpdir(), "smthrs-changelog-"))
   mkdirSync(join(root, "packages", "smithers"), { recursive: true })
   writeFileSync(
@@ -295,6 +296,7 @@ const fixture = () => {
   )
   writeFileSync(join(root, "packages", "smithers", "package.json"), `${JSON.stringify({ name: "@smthrs/cli", version: "0.2.0" }, null, 2)}\n`)
   writeFileSync(join(root, "CHANGELOG.md"), changelog)
+  if (!history) return root
   git(root, ["init", "-q", "-b", "main"])
   git(root, ["config", "user.email", "release@smithers.sh"])
   git(root, ["config", "user.name", "Release"])
@@ -327,13 +329,27 @@ const fixture = () => {
   return root
 }
 
-const withFixture = (body) => {
-  const root = fixture()
+const withFixture = (body, options) => {
+  const root = fixture(options)
   try {
     body(root)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+}
+
+// A source export carries rendered bytes into a directory that has never
+// held Git metadata. Do not simulate it by deleting an active repository.
+const withGeneratedExport = (body) => {
+  withFixture((source) => {
+    main([], source)
+    const rendered = readFileSync(join(source, "CHANGELOG.md"), "utf8")
+    withFixture((root) => {
+      writeFileSync(join(root, "CHANGELOG.md"), rendered)
+      assert.equal(hasRepository(root), false)
+      body(root)
+    }, { history: false })
+  })
 }
 
 test("readCommits skips merges and previousTag skips a tag on the range end", () => {
@@ -406,10 +422,8 @@ test("a check fails on a stale section and on a missing one", () => {
 })
 
 test("a check with no repository still rejects a hand-edited block", () => {
-  withFixture((root) => {
+  withGeneratedExport((root) => {
     const changelogPath = join(root, "CHANGELOG.md")
-    main([], root)
-    rmSync(join(root, ".git"), { recursive: true, force: true })
 
     main(["--check"], root)
     assert.equal(process.exitCode, undefined, "the block this script wrote is its own canonical rendering")
@@ -425,11 +439,9 @@ test("a check with no repository still rejects a hand-edited block", () => {
 })
 
 test("a write with no repository re-renders the block, which is how the lint verb checks it", () => {
-  withFixture((root) => {
+  withGeneratedExport((root) => {
     const changelogPath = join(root, "CHANGELOG.md")
-    main([], root)
     const written = readFileSync(changelogPath, "utf8")
-    rmSync(join(root, ".git"), { recursive: true, force: true })
 
     // This is exactly what `smithers-build lint '//:changelog'` runs inside its
     // scratch copy: no history, write mode, and then a diff of CHANGELOG.md
@@ -447,9 +459,9 @@ test("a write with no repository re-renders the block, which is how the lint ver
 
 test("a write with no repository and no block refuses rather than inventing one", () => {
   withFixture((root) => {
-    rmSync(join(root, ".git"), { recursive: true, force: true })
+    assert.equal(hasRepository(root), false)
     assert.throws(() => main([], root), /carries no generated commit block for 0\.2\.0/)
-  })
+  }, { history: false })
 })
 
 test("the tag form of a version is refused, the way the version setter refuses it", () => {
