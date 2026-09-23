@@ -238,6 +238,32 @@ def check_image_tmp() -> None:
         assert len(calls.read_text().splitlines()) == 1, "one exec, no extra round trip"
 
 
+def check_sidecars() -> None:
+    """A task whose compose file adds services beside `main` cannot run on one
+    plue workspace: sidecars need their own filesystems (freight-dispatch-
+    shift's event feed hides future records from the agent) and container
+    networking plue workspaces do not have. It is unplaceable, never a 0."""
+    with tempfile.TemporaryDirectory() as directory:
+        env_dir = Path(directory)
+        assert plue_env.compose_sidecars(env_dir) == []
+        (env_dir / "docker-compose.yaml").write_text(
+            "services:\n  main:\n    environment:\n    - A=1\n"
+            "  event-feed:\n    image: x\n  kafka:\n    image: y\n")
+        assert plue_env.compose_sidecars(env_dir) == ["event-feed", "kafka"]
+        (env_dir / "docker-compose.yaml").write_text("services:\n  main:\n    cap_add: [SYS_PTRACE]\n")
+        assert plue_env.compose_sidecars(env_dir) == []
+        (env_dir / "docker-compose.yaml").write_text("services:\n  main:\n  loadgen:\n    image: z\n")
+        ops = plue_env._PlueOps()
+        ops.environment_dir = str(env_dir)
+        ops.task_env_config = types.SimpleNamespace(docker_image="img")
+        try:
+            ops._validate_definition()
+        except plue_env.PlueUnplaceable as error:
+            assert error.code == "sidecars" and "loadgen" in str(error), error
+        else:
+            raise AssertionError("a task with sidecars is unplaceable on plue")
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -393,7 +419,8 @@ if __name__ == "__main__":
     check_ledger()
     check_transport_and_containment()
     check_image_tmp()
+    check_sidecars()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
-    print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, "
+    print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "
           f"containment, requeue and health hold; {harbor_note}.")

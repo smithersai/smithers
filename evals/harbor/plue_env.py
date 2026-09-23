@@ -29,6 +29,8 @@ Configuration (environment variables of the harness host):
                      task that needs a GPU, a TPU or anything else the
                      workspace backend lacks: Harbor's constructor check is
                      deferred to reserve(), inside the trial.
+    A task whose docker-compose file adds services beside `main` is
+    unplaceable too (see compose_sidecars).
     PLUE_LEAK_LOG    where stop() records a workspace it could not delete
                      (default ~/.cache/plue-leaks.log); stop() never raises.
 
@@ -405,6 +407,23 @@ def parse_trivial_dockerfile(text: str) -> tuple[str, list[tuple[str, str]], lis
     return image, copies, chmods
 
 
+def compose_sidecars(environment_dir: Path | str) -> list[str]:
+    """Services the task's docker-compose file runs beside `main`.
+
+    Harbor's Docker environment starts them as separate containers on a
+    private network. A plue workspace is one guest: running a sidecar inside
+    it would hand the agent the sidecar's filesystem (freight-dispatch-shift's
+    event feed exists to hide future records), and plue has no network
+    between workspaces, so such a task is unplaceable here."""
+    for name in ("docker-compose.yaml", "docker-compose.yml", "compose.yaml", "compose.yml"):
+        path = Path(environment_dir) / name
+        if path.is_file():
+            import yaml
+            services = (yaml.safe_load(path.read_text()) or {}).get("services") or {}
+            return sorted(name for name in services if name != "main")
+    return []
+
+
 def _sanitize_name(value: str) -> str:
     name = re.sub(r"[^a-z0-9-]+", "-", value.lower()).strip("-")
     return (name or "trial")[:63]
@@ -447,6 +466,11 @@ class _PlueOps:
         return repo
 
     def _validate_definition(self) -> None:
+        sidecars = compose_sidecars(self.environment_dir)
+        if sidecars:
+            raise PlueUnplaceable(
+                f"task runs {len(sidecars)} sidecar container(s) ({', '.join(sidecars)}); "
+                "a plue workspace is one guest with no network to other workspaces", "sidecars")
         self._resolve_image()
 
     def _resolve_image(self) -> None:
