@@ -186,6 +186,14 @@ export class Workspace {
       this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: Date.now(), message: String(error) })
     }
   }
+  /** Records an undo of a tab's calls in its own file and transcript. */
+  undone = (id: string, calls: ReadonlyArray<string>, paths: ReadonlyArray<string>, at: number): void => {
+    const tab = this.tabs.get(id)
+    if (tab === undefined) throw new Error("Unknown tab")
+    Session.reopen(tab.file).append({ type: "undo", at, calls, paths })
+    this.transcripts.set(id, Transcript.undone(this.transcript(id), calls, paths, at))
+    this.changed()
+  }
   /** A worker's own transcript, for the chat timeline to interleave. */
   transcript = (id: string): Transcript.Transcript => this.transcripts.get(id) ?? Transcript.empty
   read = (id: string) => {

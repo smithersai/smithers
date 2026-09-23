@@ -3,6 +3,8 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
 import { Schema } from "effect"
+import { readFileSync, writeFileSync } from "node:fs"
+import * as Changes from "../src/changes.ts"
 import type * as Flows from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
 const host: Host.Host = {
@@ -11,6 +13,19 @@ const host: Host.Host = {
   compaction: async () => undefined,
   dispose: async () => {},
   run: (input) => {
+    if (input.role === "worker" && input.prompt === "Fix math.js.") {
+      // A worker cell whose `edit` call changes math.js, captured like the host's flows.
+      const identity = { session: "fixture", frame: 1, cell: 1, ordinal: 0 }
+      const before = readFileSync("math.js", "utf8")
+      const after = before.replace("a - b", "a + b")
+      input.onEvent({ _tag: "cell-produced", cell: { text: "await ctx.call(\"edit\")" } } as any)
+      input.onEvent({ _tag: "cell-call-started", call: { flowName: "edit", input: { path: "math.js" }, identity } } as any)
+      writeFileSync("math.js", after)
+      input.onPatch!({ call: Changes.identity(identity as any), patches: [Changes.patch("math.js", before, after)!] })
+      input.onEvent({ _tag: "cell-call-settled", flowName: "edit", identity, result: { outcome: "success", value: {} } } as any)
+      input.onEvent({ _tag: "cell-settled", outcome: { _tag: "settled" } } as any)
+      return { done: Promise.resolve({ _tag: "done", answer: "Fixed." }), cancel: () => {} }
+    }
     if (input.role === "worker") {
       return {
         done: new Promise((resolve) => {
@@ -20,6 +35,10 @@ const host: Host.Host = {
       }
     }
     let answer = "Still here."
+    if (input.prompt === "delegate fix") {
+      input.runtime!.delegate!({ id: "fixer", title: "Fixer", prompt: "Fix math.js." })
+      answer = "Requested the fix."
+    }
     if (input.prompt === "investigate") {
       const request = { id: "investigation", title: "Investigation", prompt: "Investigate the failing check." }
       const first = input.runtime!.delegate!(request)

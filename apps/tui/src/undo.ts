@@ -6,7 +6,7 @@
  */
 import { applyPatch, parsePatch, reversePatch, type StructuredPatch } from "diff"
 import { realpathSync } from "node:fs"
-import { mkdir, unlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, unlink, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import * as Changes from "./changes.ts"
 import type * as Transcript from "./transcript.ts"
@@ -34,6 +34,8 @@ export interface File {
   readonly path: string
   readonly current: string | null
   readonly next: string | null
+  /** Permission bits for a restored deletion, from the patch's `deleted file mode`. */
+  readonly mode?: number
 }
 export interface Plan {
   /** Identities of the reversed calls. */
@@ -134,6 +136,7 @@ export const plan = async (
   const seeded = new Map<string, string | null | undefined>()
   const state = new Map<string, string | null | undefined>()
   const poisoned = new Set<string>()
+  const modes = new Map<string, number>()
   const now = async (path: string) => {
     if (!state.has(path)) {
       const value = await read(resolve(cwd, path))
@@ -159,6 +162,7 @@ export const plan = async (
         poisoned.add(path)
         continue
       }
+      if (after === undefined && structured.oldMode !== undefined) modes.set(path, parseInt(structured.oldMode, 8) & 0o777)
       if (before === undefined) state.set(path, null)
       else if (before !== path) {
         if ((await now(before)) !== null) {
@@ -174,22 +178,29 @@ export const plan = async (
   const files: Array<File> = []
   for (const [path, next] of state) {
     const current = seeded.get(path)
-    if (current !== undefined && next !== undefined && current !== next) files.push({ path, current, next })
+    const mode = next === null ? undefined : modes.get(path)
+    if (current !== undefined && next !== undefined && current !== next) {
+      files.push({ path, current, next, ...(mode === undefined ? {} : { mode }) })
+    }
   }
+  // Every call nets to no change on disk: a→b then b→a.
+  if (files.length === 0) return { _tag: "NothingToUndo" }
   return { calls: target.calls.flatMap((call) => (call.identity === undefined ? [] : [call.identity])), files }
 }
 
-const put = async (path: string, content: string | null) => {
+export const put = async (path: string, content: string | null, mode?: number): Promise<void> => {
   if (content === null) return unlink(path)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, content)
+  if (mode !== undefined) await chmod(path, mode)
 }
 
 /** Writes the plan; refuses if a file moved since `plan` read it, and rolls back on an IO error. */
 export const commit = async (
   cwd: string,
   plan: Plan,
-  read: (path: string) => Promise<string | null | undefined> = Changes.read
+  read: (path: string) => Promise<string | null | undefined> = Changes.read,
+  write: typeof put = put
 ): Promise<Failure | undefined> => {
   const moved: Array<string> = []
   for (const file of plan.files) {
@@ -199,13 +210,14 @@ export const commit = async (
   const applied: Array<File> = []
   for (const file of plan.files) {
     try {
-      await put(resolve(cwd, file.path), file.next)
+      await write(resolve(cwd, file.path), file.next, file.mode)
       applied.push(file)
     } catch (error) {
       let restored = true
-      for (const done of applied.toReversed()) {
+      // The failed write may have truncated its file before throwing.
+      for (const done of [file, ...applied.toReversed()]) {
         try {
-          await put(resolve(cwd, done.path), done.current)
+          if ((await read(resolve(cwd, done.path))) !== done.current) await write(resolve(cwd, done.path), done.current)
         } catch {
           restored = false
         }

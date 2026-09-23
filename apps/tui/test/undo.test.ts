@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import { Effect } from "effect"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import * as Changes from "../src/changes.ts"
@@ -9,6 +9,7 @@ import * as Session from "../src/session.ts"
 import * as Summary from "../src/summary.ts"
 import * as Transcript from "../src/transcript.ts"
 import * as Undo from "../src/undo.ts"
+import { Workspace } from "../src/workspace.ts"
 
 const scratch = () => mkdtempSync(join(tmpdir(), "tui-undo-"))
 const put = (cwd: string, path: string, content: string) => {
@@ -322,6 +323,128 @@ describe("undo", () => {
     expect(get(cwd, "a.ts")).toBe("after\n")
   })
 
+  it("restores the failed file itself when its write truncated it before throwing", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "before a\n")
+    put(cwd, "b.ts", "before b\n")
+    const r = recorder(cwd)
+    r.prompt("edit")
+    r.cell()
+    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "after a\n"))
+    await r.call("write", { path: "b.ts" }, write(cwd, "b.ts", "after b\n"))
+    r.settle()
+    const plan = await Undo.plan(cwd, Undo.target(r.transcript(), cellRows(r.transcript())[0]!.id) as Undo.Target) as Undo.Plan
+    const failing = plan.files.at(-1)!
+    let failed = false
+    const failure = await Undo.commit(cwd, plan, undefined, async (path, content, mode) => {
+      if (!failed && path === join(cwd, failing.path)) {
+        failed = true
+        writeFileSync(path, "")
+        throw Object.assign(new Error("no space"), { code: "ENOSPC" })
+      }
+      return Undo.put(path, content, mode)
+    })
+    expect(failure).toMatchObject({ _tag: "WriteFailed", path: failing.path, message: "ENOSPC", restored: true })
+    expect(get(cwd, "a.ts")).toBe("after a\n")
+    expect(get(cwd, "b.ts")).toBe("after b\n")
+  })
+
+  it("reports files partly changed when the failed file cannot be put back", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "before\n")
+    const r = recorder(cwd)
+    r.prompt("edit")
+    r.cell()
+    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "after\n"))
+    r.settle()
+    const plan = await Undo.plan(cwd, Undo.target(r.transcript(), cellRows(r.transcript())[0]!.id) as Undo.Target) as Undo.Plan
+    const failure = await Undo.commit(cwd, plan, undefined, async (path) => {
+      writeFileSync(path, "")
+      throw Object.assign(new Error("io"), { code: "EIO" })
+    })
+    expect(failure).toMatchObject({ _tag: "WriteFailed", path: "a.ts", restored: false })
+  })
+
+  it("restores a deleted executable with its mode", async () => {
+    const cwd = scratch()
+    put(cwd, "run.sh", "echo hi\n")
+    chmodSync(join(cwd, "run.sh"), 0o755)
+    const r = recorder(cwd)
+    r.prompt("delete")
+    r.cell()
+    await r.call("apply_patch", { input: "*** Delete File: run.sh" }, () => unlinkSync(join(cwd, "run.sh")))
+    r.settle()
+    const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
+    expect("_tag" in result).toBe(false)
+    expect(get(cwd, "run.sh")).toBe("echo hi\n")
+    expect(statSync(join(cwd, "run.sh")).mode & 0o777).toBe(0o755)
+  })
+
+  it("restores a shell-deleted tracked executable with its mode", async () => {
+    const cwd = gitRepo()
+    put(cwd, "run.sh", "echo hi\n")
+    chmodSync(join(cwd, "run.sh"), 0o755)
+    gitCommit(cwd)
+    const r = recorder(cwd)
+    r.prompt("delete")
+    r.cell()
+    await r.call("bash", { command: "rm run.sh" }, () => unlinkSync(join(cwd, "run.sh")))
+    r.settle()
+    const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
+    expect("_tag" in result).toBe(false)
+    expect(statSync(join(cwd, "run.sh")).mode & 0o777).toBe(0o755)
+  })
+
+  it("has nothing to undo when a turn's edits net to no change", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "a\n")
+    const r = recorder(cwd)
+    r.prompt("round trip")
+    r.cell()
+    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "b\n"))
+    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "a\n"))
+    r.settle()
+    const target = Undo.target(r.transcript(), cellRows(r.transcript())[0]!.id) as Undo.Target
+    expect(await Undo.plan(cwd, target)).toEqual({ _tag: "NothingToUndo" })
+    expect(get(cwd, "a.ts")).toBe("a\n")
+  })
+
+  it("records a worker tab's undo in its own file, and the chat record only tells the context", async () => {
+    const cwd = scratch()
+    process.env.SMITHERS_TUI_SESSION_DIR = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+    put(cwd, "math.js", "a - b\n")
+    const r = recorder(cwd)
+    r.prompt("fix")
+    r.cell()
+    const edit = await r.call("edit", { path: "math.js" }, write(cwd, "math.js", "a + b\n"))
+    r.settle()
+    const worker = Session.create(cwd, "worker")
+    for (const record of r.records) worker.append(record)
+    const tab = { id: "fixer", title: "Fixer", prompt: "fix", seat: "w", file: worker.file, status: "done" as const, startedAt: 1 }
+    const host = { cwd, judged: false, compaction: async () => undefined, dispose: async () => {}, run: () => { throw new Error("no run") } }
+    const workspace = new Workspace({
+      host: host as never,
+      workerSeat: "w",
+      history: () => [],
+      persist: () => {},
+      restored: { tabs: [tab], panels: [] }
+    })
+    const cell = cellRows(workspace.transcript("fixer"))[0]!
+    const result = await undo(cwd, workspace.transcript("fixer"), cell.id)
+    expect("_tag" in result).toBe(false)
+    expect(get(cwd, "math.js")).toBe("a - b\n")
+    workspace.undone("fixer", [edit.identity], ["math.js"], 60)
+    expect(Undo.target(workspace.transcript("fixer"), cell.id)).toEqual({ _tag: "AlreadyUndone" })
+    const reloaded = Session.restore(Session.load(worker.file))
+    expect(Undo.target(reloaded.transcript, cell.id)).toEqual({ _tag: "AlreadyUndone" })
+    const chat = Session.restore([
+      { type: "user", at: 1, text: "delegate" },
+      { type: "undo", at: 60, calls: [edit.identity], paths: ["math.js"], tab: "fixer" }
+    ])
+    expect(chat.transcript.items.some((item) => item.kind === "note")).toBe(false)
+    expect(chat.entries).toEqual([{ kind: "undo", paths: ["math.js"] }])
+  })
+
   it("targets a prompt's whole turn from its user row, newest call first", async () => {
     const cwd = scratch()
     put(cwd, "a.ts", "a\n")
@@ -372,7 +495,7 @@ describe("undo", () => {
     expect(cell.kind === "cell" && cell.calls[0]!.undone).toBe(true)
     expect(state.transcript.items.at(-1)).toMatchObject({ kind: "note", text: "Undid math.js" })
     expect(state.entries.at(-1)).toEqual({ kind: "undo", paths: ["math.js"] })
-    expect(Context.system(cwd, state.entries).join("\n")).toContain("reverted your earlier edits to: math.js")
+    expect(Context.system(cwd, state.entries).join("\n")).toContain("reverted earlier edits to: math.js")
     const row = Summary.panel(state.transcript).rows.find((each) => each.id === cell.id)!
     expect(row.label).toBe("Undone: Updated math.js")
     expect(row.status).toBe("cancelled")
@@ -383,6 +506,7 @@ describe("undo", () => {
     expect(Changes.patch("n.ts", null, "x\n")!.patch).toContain("--- /dev/null")
     expect(Changes.patch("d.ts", "x\n", null)!.patch).toContain("+++ /dev/null")
     expect(Changes.patch("same", null, null)).toBeUndefined()
+    expect(Changes.patch("run.sh", "x\n", null, 0o755)!.patch).toStartWith("diff --git a/run.sh b/run.sh\ndeleted file mode 100755\n")
   })
 
   it("words failures in the fewest words", () => {

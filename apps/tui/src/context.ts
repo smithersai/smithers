@@ -53,7 +53,7 @@ export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string
           entry.kind === "exchange"
             ? `User: ${entry.user}\nYou answered: ${entry.answer}`
             : entry.kind === "undo"
-            ? `User reverted your earlier edits to: ${entry.paths.join(", ")}. Re-read them before editing.`
+            ? `User reverted earlier edits to: ${entry.paths.join(", ")}. Re-read them before editing.`
             : `User ran a shell command:\n${entry.text}`
         ).join("\n\n")
     )

@@ -29,20 +29,37 @@ export const read = async (path: string): Promise<string | null | undefined> => 
     return code === "ENOENT" || code === "ENOTDIR" ? null : undefined
   }
 }
-/** `null` is an absent file: its side of the patch is `/dev/null`, so creation and deletion reverse. */
-export const patch = (path: string, before: string | null, after: string | null): Patch | undefined =>
-  before === after ? undefined : ({
-    path,
-    patch: createTwoFilesPatch(
-      before === null ? "/dev/null" : `a/${path}`,
-      after === null ? "/dev/null" : `b/${path}`,
-      before ?? "",
-      after ?? "",
-      "",
-      "",
-      { context: 3, timeout: 100, maxEditLength: 10_000 }
-    ) ?? `Diff too large: ${path}`
-  })
+/** A file's permission bits; `undefined` when absent or unreadable. */
+export const mode = async (path: string): Promise<number | undefined> => {
+  try {
+    return (await stat(path)).mode & 0o777
+  } catch {
+    return undefined
+  }
+}
+/**
+ * `null` is an absent file: its side of the patch is `/dev/null`, so creation and deletion reverse.
+ * A deletion carries the file's `mode` as git's `deleted file mode` header, so undo restores it.
+ */
+export const patch = (path: string, before: string | null, after: string | null, deletedMode?: number): Patch | undefined => {
+  if (before === after) return undefined
+  const body = createTwoFilesPatch(
+    before === null ? "/dev/null" : `a/${path}`,
+    after === null ? "/dev/null" : `b/${path}`,
+    before ?? "",
+    after ?? "",
+    "",
+    "",
+    { context: 3, timeout: 100, maxEditLength: 10_000 }
+  )
+  if (body === undefined) return { path, patch: `Diff too large: ${path}` }
+  return after !== null || deletedMode === undefined
+    ? { path, patch: body }
+    : {
+      path,
+      patch: `diff --git a/${path} b/${path}\ndeleted file mode ${(0o100000 | deletedMode).toString(8)}\n${body.replace(/^=+\n/, "")}`
+    }
+}
 export const paths = (flow: string, input: unknown): string[] => {
   if (input === null || typeof input !== "object") return []
   const value = input as Record<string, unknown>
@@ -133,6 +150,11 @@ export const capture = (
                 Promise.all(files.slice(0, 200).map(async (path) => [path, await read(resolve(cwd, path))] as const))
               )
             )
+            const modes = new Map(
+              yield* Effect.promise(() =>
+                Promise.all(files.slice(0, 200).map(async (path) => [path, await mode(resolve(cwd, path))] as const))
+              )
+            )
             const result = yield* binding.run(call)
             if (jj) {
               const diff = yield* Effect.promise(() =>
@@ -160,7 +182,14 @@ export const capture = (
               if (old === undefined || next === undefined || (old !== null && old.length > maxBytes)) {
                 patches.push({ path, patch: `Binary or large file: ${path}` })
               } else {
-                const diff = patch(path, old, next)
+                const deleted = next !== null ? undefined : modes.has(path) || revision === undefined
+                  ? modes.get(path)
+                  : yield* Effect.promise(async () => {
+                    const entry = await git(cwd, ["ls-tree", revision, "--", path])
+                    const bits = entry === undefined ? Number.NaN : parseInt(entry, 8)
+                    return Number.isNaN(bits) ? undefined : bits & 0o777
+                  })
+                const diff = patch(path, old, next, deleted)
                 if (diff !== undefined) patches.push(diff)
               }
             }

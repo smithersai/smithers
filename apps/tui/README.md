@@ -52,7 +52,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 | hjkl or arrows | In a view: move between rows, collapse/expand details |
 | Enter | In a view: toggle the selected row's details |
 | d, v | In a view: toggle the selected turn's diff; toggle split/unified |
-| u | In the Summary view: undo the selected row's captured file changes (confirm first) |
+| u | In the Summary view or a worker tab: undo the selected row's captured file changes (confirm first) |
 | Tab | In a view: next tab |
 | Esc, i | In a view: focus the composer without stopping background work |
 | a | Activate the selected row's action, if present |
@@ -97,11 +97,13 @@ messages before a chosen one and puts that message back in the editor; the
 original stays resumable.
 
 Without `AI_GATEWAY_API_KEY` the completion brake that asks Jev is disarmed
-(`claimCap: 0`); you read every answer. **u** on a Summary row reverses its
-captured changes after a confirm, all or nothing. It refuses when a file
+(`claimCap: 0`); you read every answer. **u** on a Summary or worker tab row
+reverses its captured changes after a confirm, all or nothing; a deleted
+file comes back with its mode. It refuses when a file
 changed since, a change is binary or large, a shell change was not captured,
 or shell changes were captured from below the repository root. The session
-records the undo and the next turn is told.
+records the undo and the next turn is told. `/new`, `/resume` and `/fork` wait
+for it.
 
 ## Runtime UI and delegation
 

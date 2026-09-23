@@ -50,6 +50,8 @@ export type Record =
     readonly at: number
     readonly calls: ReadonlyArray<string>
     readonly paths: ReadonlyArray<string>
+    /** A worker tab's calls: that tab's file marks them; this record only tells the context. */
+    readonly tab?: string
   }
 
 export interface Summary {
@@ -258,7 +260,7 @@ export const restore = (records: ReadonlyArray<Record>): {
         }
         break
       case "undo":
-        transcript = Transcript.undone(transcript, record.calls, record.paths, record.at)
+        if (record.tab === undefined) transcript = Transcript.undone(transcript, record.calls, record.paths, record.at)
         entries.push({ kind: "undo", paths: record.paths })
         break
       case "session":

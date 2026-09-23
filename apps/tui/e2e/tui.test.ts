@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -610,6 +610,68 @@ describe("runtime views", () => {
     await tui.until((screen) => /› .*Undone: Updated math\.js/.test(screen), 5_000, "undone row")
     await tui.type("u")
     await tui.until((screen) => screen.includes("Already undone"), 5_000, "already undone")
+  }, 180_000)
+
+  it("u in a worker tab undoes the worker's edit and records it in the worker file", async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-worker-undo-"))
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.type("delegate fix")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Fixer · done"), 10_000, "worker done")
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    await tui.press(key.ctrlK)
+    await tui.type("tab:fix")
+    await tui.until((screen) => screen.includes("Search") && /Fixer\s+done/.test(screen), 5_000, "tab row")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("u undo"), 5_000, "worker tab")
+    for (let step = 0; step < 8 && !/› .*math\.js/.test(tui.screen()); step++) {
+      await tui.type("j")
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    await tui.until((screen) => /› .*math\.js/.test(screen), 5_000, "edit row")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => readFileSync(join(cwd, "math.js"), "utf8").includes("a - b") && screen.includes("Undid math.js"),
+      10_000,
+      "undone"
+    )
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const lines = (file: string) => readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    const chat = lines(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!))
+    expect(chat.filter((record) => record.type === "undo")).toMatchObject([{ tab: "fixer", paths: ["math.js"] }])
+    const worker = lines(join(folder, "workers", readdirSync(join(folder, "workers"))[0]!))
+    expect(worker.filter((record) => record.type === "undo")).toMatchObject([{ paths: ["math.js"] }])
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Already undone"), 5_000, "already undone")
+  }, 60_000)
+
+  it("/new waits for a running undo, which settles in its own session", async () => {
+    const { tui, cwd } = await editRow()
+    // A FIFO holds the undo's read of math.js open: a deliberately unresolved undo.
+    rmSync(join(cwd, "math.js"))
+    if (spawnSync("mkfifo", [join(cwd, "math.js")]).status !== 0) throw new Error("mkfifo failed")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.enter)
+    await tui.until((screen) => !screen.includes("Undo math.js?"), 5_000, "undo started")
+    await tui.press(key.escape)
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
+    const release = Bun.spawn(["sh", "-c", "printf x > math.js"], { cwd })
+    await tui.until((screen) => screen.includes("changed since: math.js"), 10_000, "undo settled")
+    await release.exited
+    await tui.type("/new")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("New session started"), 5_000, "new session")
   }, 180_000)
 
   it("renders agent-authored UI from a real cell and restores it after restart", async () => {

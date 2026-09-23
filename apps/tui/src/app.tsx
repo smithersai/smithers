@@ -96,7 +96,7 @@ type Picker =
     readonly selected: number
     readonly turns: ReadonlyArray<Session.Turn>
   }
-  | { readonly kind: "undo"; readonly query: ""; readonly selected: number; readonly target: Undo.Target }
+  | { readonly kind: "undo"; readonly query: ""; readonly selected: number; readonly target: Undo.Target; readonly tab?: string }
 
 /** A `text:` search in the palette, from launch through its real settlement. */
 interface TextSearch {
@@ -608,8 +608,8 @@ export function App(props: AppProps) {
     })
   }, [props.host.cwd, setStatus])
 
-  /** Reverses a Summary row's captured changes in the background; the composer stays usable. */
-  const runUndo = useCallback((target: Undo.Target) => {
+  /** Reverses a Summary or worker tab row's captured changes in the background; the composer stays usable. */
+  const runUndo = useCallback((target: Undo.Target, tab: string | undefined) => {
     const current = live.current
     if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
       return setStatus(Undo.message({ _tag: "Busy" }), "warning")
@@ -627,10 +627,15 @@ export function App(props: AppProps) {
         } else {
           const at = Date.now()
           const paths = settled.files.map((file) => file.path)
-          writer.current.append({ type: "undo", at, calls: settled.calls, paths })
-          entries.current.push({ kind: "undo", paths })
-          setTranscript((current) => Transcript.undone(current, settled.calls, paths, at))
-          setStatus(Undo.done(settled))
+          try {
+            if (tab !== undefined) workspace.undone(tab, settled.calls, paths, at)
+            writer.current.append({ type: "undo", at, calls: settled.calls, paths, ...(tab === undefined ? {} : { tab }) })
+            entries.current.push({ kind: "undo", paths })
+            if (tab === undefined) setTranscript((current) => Transcript.undone(current, settled.calls, paths, at))
+            setStatus(Undo.done(settled))
+          } catch (error) {
+            setStatus(`${Undo.done(settled)} · not recorded: ${error instanceof Error ? error.message : String(error)}`, "danger")
+          }
         }
         live.current.undoing = undefined
         setUndoing(undefined)
@@ -710,9 +715,10 @@ export function App(props: AppProps) {
     setStatus("Forked to new session")
   }, [adopt, setText, setStatus, props.host.cwd])
 
-  /** `/new`, `/resume` and `/fork` wait for a turn, a `!cmd`, workers and flow runs, from any door. */
+  /** `/new`, `/resume` and `/fork` wait for a turn, a `!cmd`, an undo, workers and flow runs, from any door. */
   const occupied = () =>
-    live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy
+    live.current.turn !== undefined || live.current.shell !== undefined || live.current.undoing !== undefined ||
+    workspace.busy || runs.busy
 
   const command = useCallback((text: string): boolean => {
     const parsed = Editor.parseCommand(text)
@@ -964,7 +970,7 @@ export function App(props: AppProps) {
     }
     setPicker(undefined)
     if (open.kind === "undo") {
-      if (value === "undo") runUndo(open.target)
+      if (value === "undo") runUndo(open.target, open.tab)
       return
     }
     if (open.kind === "fork") {
@@ -1195,20 +1201,23 @@ export function App(props: AppProps) {
         return
       }
       if (key.name === "a" && surface.startsWith("flow:")) return openForm(surface.slice(5))
-      if (key.name === "u" && surface === "summary") {
+      if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
         const current = live.current
         if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
           return setStatus(Undo.message({ _tag: "Busy" }), "warning")
         }
         const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
-        const found = row === undefined ? { _tag: "NothingToUndo" as const } : Undo.target(transcript, row.id)
+        const tab = surface.startsWith("tab:") ? surface.slice(4) : undefined
+        const found = row === undefined
+          ? { _tag: "NothingToUndo" as const }
+          : Undo.target(tab === undefined ? transcript : workspace.transcript(tab), row.id)
         if ("_tag" in found) {
           return setStatus(
             Undo.message(found),
             found._tag === "NothingToUndo" || found._tag === "AlreadyUndone" ? "warning" : "danger"
           )
         }
-        return setPicker({ kind: "undo", query: "", selected: 0, target: found })
+        return setPicker({ kind: "undo", query: "", selected: 0, target: found, ...(tab === undefined ? {} : { tab }) })
       }
       if (key.name === "a") {
         const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
@@ -1357,7 +1366,7 @@ export function App(props: AppProps) {
               width={width}
               focused={panelFocus}
               worker={surface.startsWith("tab:") || surface.startsWith("flow:")}
-              undo={surface === "summary"}
+              undo={surface === "summary" || surface.startsWith("tab:")}
               scrollRef={panelScroll}
             />
           ) :
