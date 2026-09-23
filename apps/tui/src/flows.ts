@@ -93,6 +93,7 @@ export class FlowRuns {
   private schemas = new Map<string, Schema.Top>()
   private watches = new Map<string, Watch>()
   private launching = new Map<string, AbortController>()
+  private launches = new Set<Promise<void>>()
   /** Bumped by every restart of a run; a continuation from an older attempt drops its result. */
   private attempts = new Map<string, number>()
   private loaded = new Set<string>()
@@ -241,7 +242,14 @@ export class FlowRuns {
     }
     await this.launch(id, attempt, card)
   }
-  private async launch(id: string, attempt: number, card: Card) {
+  private launch(id: string, attempt: number, card: Card): Promise<void> {
+    const task = this.start(id, attempt, card)
+    this.launches.add(task)
+    const settled = () => { this.launches.delete(task) }
+    void task.then(settled, settled)
+    return task
+  }
+  private async start(id: string, attempt: number, card: Card) {
     const controller = new AbortController()
     this.launching.set(id, controller)
     try {
@@ -426,10 +434,11 @@ export class FlowRuns {
         message: message?.slice(0, 500)
       }))
     )
-  dispose = (): void => {
+  dispose = async (): Promise<void> => {
     this.closed = true
     for (const controller of this.launching.values()) controller.abort()
     for (const watch of this.watches.values()) watch.close()
     this.watches.clear()
+    await Promise.allSettled(this.launches)
   }
 }

@@ -283,7 +283,7 @@ export function App(props: AppProps) {
   useEffect(() => runs.subscribe(() => setRevision((value) => value + 1)), [runs])
   useEffect(() => {
     runs.refresh()
-    return () => runs.dispose()
+    return () => { void runs.dispose() }
   }, [runs])
   const flowRuns = runs.snapshot()
   /** Opens a run's form: its missing input, or the approval its envelope needs. */
@@ -515,11 +515,11 @@ export function App(props: AppProps) {
 
   const quit = useCallback(() => {
     workspace.dispose()
-    runs.dispose()
+    const stopped = runs.dispose()
     live.current.turn?.handle.cancel()
     live.current.shell?.cancel()
     renderer.destroy()
-    void Promise.allSettled([props.host.dispose(), props.flows?.dispose()]).finally(() => process.exit(0))
+    void stopped.then(() => Promise.allSettled([props.host.dispose(), props.flows?.dispose()])).finally(() => process.exit(0))
   }, [renderer, props.host, props.flows, workspace, runs])
 
   const startTurn = useCallback((prompt: string) => {

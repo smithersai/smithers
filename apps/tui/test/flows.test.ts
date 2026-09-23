@@ -301,6 +301,22 @@ describe("flow runs", () => {
     expect(restored.calls).not.toContain("start")
   })
 
+  it("disposal drains a stopped launch before the control host can close", async () => {
+    const f = setup({ refuseCancel: true })
+    f.auto.start = false
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.runs.cancel("r1")
+    let closed = false
+    const disposal = Promise.resolve(f.runs.dispose()).then(() => { closed = true })
+    await tick()
+    expect(closed).toBe(false)
+    f.starts[0]!.resolve("run-1")
+    await disposal
+    expect(f.calls).toContain("cancel:run-1")
+    expect(f.runs.get("r1")).toMatchObject({ status: "failed", runId: "run-1", message: "Cancel refused" })
+  })
+
   it("the coordinator context bounds a run's message", async () => {
     const f = setup()
     f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })

@@ -92,7 +92,7 @@ export const real = (path: string): string => {
     }
     if (link === undefined) head = next
     else {
-      if (++hops > 64) throw new Error("Too many symlinks")
+      if (++hops > 64) throw new HarnessError({ code: "engine_failed", message: "Too many symlinks" })
       if (isAbsolute(link)) head = "/"
       rest.unshift(...link.split("/"))
     }
