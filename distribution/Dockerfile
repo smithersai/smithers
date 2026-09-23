@@ -54,7 +54,11 @@ RUN apt-get update \
 
 FROM oven/bun:1.4.0-debian AS bun-buildchain
 
-FROM node:22.22.0-bookworm AS web
+# Hutch's x64 devkit needs glibc 2.38+ to prepare the Vite aliases.
+# Keep the packaged Node binary on Bookworm for the Bookworm runtime image.
+FROM node:22.22.0-bookworm AS node-runtime
+
+FROM node:22.22.0-trixie AS web
 COPY --from=bun-buildchain /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.mjs tsconfig.json tsconfig.base.json ./
@@ -102,7 +106,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
   && install -d -o root -g root -m 0755 /opt/smithers /opt/smithers/bin /opt/smithers/lib /opt/smithers/web /opt/smithers/migrations /opt/smithers/licenses
 COPY --from=backend /out/smithers-backend /opt/smithers/bin/smithers-backend
 COPY --from=backend /out/smithers /opt/smithers/bin/smithers
-COPY --from=web /usr/local/bin/node /opt/smithers/bin/node
+COPY --from=node-runtime /usr/local/bin/node /opt/smithers/bin/node
 COPY --from=web /out/flow-hosts/ /opt/smithers/bin/
 COPY --from=web /usr/local/LICENSE /opt/smithers/licenses/node-LICENSE
 COPY --from=smithers-rust /out/bin/smithers-jj-export /opt/smithers/bin/smithers-jj-export

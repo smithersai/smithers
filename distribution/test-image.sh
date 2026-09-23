@@ -44,11 +44,12 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT INT TERM
+trap 'printf "test-image failed at line %s\n" "$LINENO" >&2' ERR
 
 wait_postgres() {
   local container=$1
   for _ in $(seq 1 90); do
-    if docker exec "$container" pg_isready -U "$database_user" -d "$database_name" >/dev/null 2>&1; then
+    if docker exec "$container" pg_isready -h 127.0.0.1 -U "$database_user" -d "$database_name" >/dev/null 2>&1; then
       return
     fi
     if [ "$(docker inspect -f '{{.State.Running}}' "$container")" != true ]; then
@@ -113,7 +114,7 @@ start_app() {
 }
 
 build_sha=${SMITHERS_BUILD_SHA:-}
-if [ -z "$build_sha" ] && command -v jj >/dev/null 2>&1; then
+if [ -z "$build_sha" ] && [ "${SMITHERS_DOCKER_SKIP_BUILD:-0}" != 1 ] && command -v jj >/dev/null 2>&1; then
   build_sha=$(cd "$root" && jj log -r @ --no-graph -T commit_id)
 fi
 if [ "${SMITHERS_DOCKER_SKIP_BUILD:-0}" != 1 ]; then
@@ -174,17 +175,21 @@ docker exec "$app" sh -eu -c '
   jj git init --colocate >/dev/null
   jj log --no-graph -r @ -T commit_id >/dev/null
 '
-curl -fsS "$origin/" | grep -q '<div id="root"'
-curl -fsS "$origin/api/bootstrap" | grep -q '"apiVersion":1'
+home_html=$(curl -fsS "$origin/")
+case "$home_html" in
+  *'<div id="root"'*) ;;
+  *) printf 'unexpected web index: %.200s\n' "$home_html" >&2; exit 1 ;;
+esac
+curl -fsS "$origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
 if [ -n "$build_sha" ]; then
-  curl -fsS "$origin/api/bootstrap" | grep -Fq "\"buildSha\":\"$build_sha\""
+  curl -fsS "$origin/api/bootstrap" | grep -F "\"buildSha\":\"$build_sha\"" >/dev/null
 fi
-curl -fsS "$origin/api/auth/local/status" | grep -q '"initialized":false'
+curl -fsS "$origin/api/auth/local/status" | grep '"initialized":false' >/dev/null
 curl -fsS -X POST "$origin/api/auth/local/bootstrap" \
   -H 'Content-Type: application/json' \
   -H "X-Smithers-Bootstrap-Token: $bootstrap_token" \
   --data "{\"username\":\"$owner_username\",\"email\":\"$owner_username@example.test\",\"password\":\"$owner_password\"}" \
-  | grep -q "\"username\":\"$owner_username\""
+  | grep "\"username\":\"$owner_username\"" >/dev/null
 token_response=$(curl -fsS -X POST "$origin/api/auth/local/token" \
   -H 'Content-Type: application/json' \
   --data "{\"username\":\"$owner_username\",\"password\":\"$owner_password\",\"name\":\"distribution-acceptance\"}")
@@ -194,10 +199,10 @@ created_repository=$(curl -fsS -X POST "$origin/api/user/repos" \
   -H 'Content-Type: application/json' \
   -H "Authorization: token $api_token" \
   --data "{\"name\":\"$repository_name\",\"description\":\"issue 12 image acceptance\",\"private\":true,\"auto_init\":true}")
-printf '%s' "$created_repository" | grep -q "\"full_name\":\"$owner_username/$repository_name\""
+printf '%s' "$created_repository" | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 curl -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name" \
-  | grep -q "\"full_name\":\"$owner_username/$repository_name\""
+  | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 session_response=$(curl -fsS -X POST "$origin/api/repos/$owner_username/$repository_name/agent/sessions" \
   -H 'Content-Type: application/json' -H "Authorization: token $api_token" \
   --data '{"title":"Container coding proof"}')
@@ -221,7 +226,7 @@ workspace_id=$(printf '%s' "$session_response" | sed -n 's/.*"workspace_id":"\([
 test -n "$workspace_id"
 curl -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name/workspaces/$workspace_id/files/content?path=flow-proof.txt" \
-  | grep -q '"content":"The coding Flow wrote this file through the packaged host.\\n"'
+  | grep '"content":"The coding Flow wrote this file through the packaged host.\\n"' >/dev/null
 docker exec "$app" test -s /var/lib/smithers/config/secrets.json
 secret_checksum=$(docker exec "$app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')
 table_count=$(docker exec "$postgres" psql -U "$database_user" -d "$database_name" -Atqc "select count(*) from pg_catalog.pg_tables where schemaname not in ('pg_catalog','information_schema')")
@@ -233,7 +238,7 @@ wait_http "$app" "$origin"
 test "$(docker exec "$app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')" = "$secret_checksum"
 curl -fsS -H "Authorization: token $api_token" \
   "$origin/api/repos/$owner_username/$repository_name" \
-  | grep -q "\"full_name\":\"$owner_username/$repository_name\""
+  | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 
 if docker run --rm --network "$network" \
   -e DATABASE_URL="$(database_url "$postgres")" \
@@ -268,10 +273,10 @@ start_app "$restored_app" "$restored_data_volume" "$restored_postgres"
 restored_origin=$(published_origin "$restored_app")
 wait_http "$restored_app" "$restored_origin"
 test "$(docker exec "$restored_app" sha256sum /var/lib/smithers/config/secrets.json | awk '{print $1}')" = "$secret_checksum"
-curl -fsS "$restored_origin/api/bootstrap" | grep -q '"apiVersion":1'
+curl -fsS "$restored_origin/api/bootstrap" | grep '"apiVersion":1' >/dev/null
 curl -fsS -H "Authorization: token $api_token" \
   "$restored_origin/api/repos/$owner_username/$repository_name" \
-  | grep -q "\"full_name\":\"$owner_username/$repository_name\""
+  | grep "\"full_name\":\"$owner_username/$repository_name\"" >/dev/null
 
 docker stop "$restored_app" >/dev/null
 docker run --rm -v "$restored_data_volume:/var/lib/smithers" --entrypoint /bin/sh "$image" -eu -c \
@@ -284,6 +289,6 @@ if docker run --name "$refusal_app" --network "$network" \
   printf 'container accepted a mismatched persisted distribution version\n' >&2
   exit 1
 fi
-docker logs "$refusal_app" 2>&1 | grep -q 'requires an explicit upgrade'
+docker logs "$refusal_app" 2>&1 | grep 'requires an explicit upgrade' >/dev/null
 
 printf 'IMAGE_ACCEPTANCE_OK image=%s origin=%s backup=%s\n' "$image" "$origin" "$backup_path"
