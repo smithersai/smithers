@@ -327,6 +327,18 @@ rm -rf -- "$JOURNAL"
 rm -f -- "$PATCH" "$PATCH.untracked" "$TIMINGS" "$LOG_PREFIX".*
 
 COST="$(node "$S/lib/run-cost.mjs" "$FB/journals/$ID" 2>/dev/null || printf '{}')"
+# A provider refusal can leave an exit status and an empty patch while serving
+# no model call. That is an infrastructure failure, not a graded agent attempt.
+# The stubbed dry run has no journal by design and exercises the pipeline only.
+if [ -z "${SWB_RUN_CMD:-}" ]; then
+  SERVED="$(node -e '
+    const c = JSON.parse(process.argv[1])
+    process.stdout.write(String(Number.isInteger(c.modelCalls) ? c.modelCalls : 0))
+  ' "$COST" 2>/dev/null || printf 0)"
+  if [ "$SERVED" -eq 0 ]; then
+    fail "no model call served; run exit $RUN_STATUS (see archived run.log)"
+  fi
+fi
 # What `docker inspect` said this instance's testbed container was on, taken off
 # the timings `run-instance.sh` wrote rather than off the driver's variable. The
 # variable is the request; this is the observation, and the flows arm records it

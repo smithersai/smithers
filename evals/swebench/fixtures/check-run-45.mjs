@@ -106,6 +106,7 @@ try {
       "set -eu",
       'ID="$1"',
       `printf 'start %s\\n' "$ID" >> ${JSON.stringify(trace)}`,
+      'if [ "${SWB_STUB_FAIL:-0}" = 1 ]; then exit 1; fi',
       "sleep 0.4",
       `printf 'end %s\\n' "$ID" >> ${JSON.stringify(trace)}`,
       'USD="${SWB_STUB_USD:-0.05}"',
@@ -213,6 +214,14 @@ try {
   assert.equal(read(join(limited, "manifest.jsonl")).states.size, 2)
   const remaining = drive(limited, ["--status"])
   assert.match(remaining.stdout, /2 of 5 instances re-run, 3 left/)
+
+  // One failed attempt must stop a one-slot wave before the next instance.
+  writeFileSync(trace, "")
+  const failed = join(temporary, "fb-failed")
+  const failure = drive(failed, [], { SWB_RERUN_JOBS: "1", SWB_STUB_FAIL: "1" })
+  assert.equal(failure.status, 0, failure.stderr)
+  assert.equal(readFileSync(trace, "utf8").trim().split("\n").length, 1)
+  assert.match(failure.stdout, /PAUSED: .* did not reach a valid graded attempt/u)
 
   // -----------------------------------------------------------------------
   // The budget gate pauses instead of spending past it.

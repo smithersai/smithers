@@ -199,31 +199,27 @@ fi
 mkdir -p "$FBC/patches" "$FBC/logs" "$FBC/timings" "$FBC/reports" "$FBC/claims" "$SLOT_ROOT"
 
 # ---------------------------------------------------------------------------
-# Auth, before anything else. The rig's own CODEX_HOME holds an API-key login,
-# and `codex exec` fails every request with 401 when it does not — even with
-# OPENAI_API_KEY exported, because the key reaches the API through that login.
+# Auth, before anything else. The selected CODEX_HOME must hold the login
+# requested by SWB_CODEX_AUTH. Subscription lanes use a ChatGPT login; older
+# API-key lanes retain the isolated rig home.
 # A backfill that discovers this per instance burns a pull, an extraction and a
 # claim on each one before failing, so it is checked once, loudly, up front.
 # ---------------------------------------------------------------------------
+source "$S/lib/codex-auth.sh"
 check_auth() {
   if [ -n "${SWB_CODEX_AUTH_CMD:-}" ]; then
     "$SWB_CODEX_AUTH_CMD" >/dev/null 2>&1
     return $?
   fi
-  if [ ! -d "$S/.codex-home" ]; then return 1; fi
-  CODEX_HOME="$S/.codex-home" codex login status >/dev/null 2>&1
+  swb_codex_auth
 }
 
 require_auth() {
   if check_auth; then
-    log backfill "codex auth ok ($S/.codex-home)"
+    log backfill "codex auth ok (${SWB_CODEX_AUTH:-api-key}, $CODEX_HOME)"
     return 0
   fi
-  echo "codex-backfill.sh: the rig's codex home at $S/.codex-home is not logged in." >&2
-  echo "  Log it in once, with the same key the flows runs billed:" >&2
-  echo "    printenv OPENAI_API_KEY | CODEX_HOME=$S/.codex-home codex login --with-api-key" >&2
-  echo "  Then check it with:" >&2
-  echo "    CODEX_HOME=$S/.codex-home codex login status" >&2
+  echo "codex-backfill.sh: the requested Codex auth is unavailable" >&2
   exit 1
 }
 

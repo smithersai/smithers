@@ -62,20 +62,9 @@ trap cleanup EXIT
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
 
-# The isolated CODEX_HOME must exist and hold an API-key login before
-# `codex exec` runs. The CLI refuses to start when CODEX_HOME names a missing
-# directory and does not create it, and a home with no auth record fails every
-# request with 401 even when OPENAI_API_KEY is exported — the key reaches the
-# API through this login, not through the environment. The directory is
-# gitignored, so a fresh checkout always starts without both.
-mkdir -p "$S/.codex-home"
-if ! CODEX_HOME="$S/.codex-home" codex login status >/dev/null 2>&1; then
-  if [ -z "${OPENAI_API_KEY:-}" ]; then
-    echo "[$RUN_ID] no OPENAI_API_KEY to log codex in with"; exit 1
-  fi
-  printenv OPENAI_API_KEY | CODEX_HOME="$S/.codex-home" codex login --with-api-key >/dev/null 2>&1 || {
-    echo "[$RUN_ID] codex login failed"; exit 1; }
-fi
+source "$S/lib/codex-auth.sh"
+swb_codex_auth || exit $?
+CODEX_AUTH="${SWB_CODEX_AUTH:-api-key}"
 
 echo "[$RUN_ID] image $IMAGE"
 if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
@@ -221,8 +210,8 @@ case "$NETWORK" in
 esac
 
 # Reasoning effort is a benchmark condition, like the network, and it is pinned
-# here rather than inherited: the isolated CODEX_HOME holds an API-key login and
-# no user config, so nothing in the host's config.toml reaches these runs.
+# here rather than inherited. Subscription lanes can select a signed-in Codex
+# home, whose user config must not decide this benchmark condition.
 #
 # It was pinned to the literal `medium` from 2026-08-19 to 2026-08-23, under a
 # comment saying medium "matches what our harness got as the API default". That
@@ -250,7 +239,6 @@ esac
 
 echo "[$RUN_ID] codex start ($MODEL, effort $EFFORT, ${BUDGET}s)"
 START=$(date +%s)
-export CODEX_HOME="$S/.codex-home"
 CODE=0
 timeout "$BUDGET" codex exec \
   -C "$WORK" \
@@ -271,8 +259,8 @@ echo "[$RUN_ID] codex done in $((END-START))s (exit $CODE)"
 # conditions with separate holes, so a run records both — and records what
 # `docker inspect` observed as well as what the lane asked for, because the
 # scoreboard asserts on the observation.
-printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "model": "%s",\n  "budgetSeconds": %s,\n  "network": "%s",\n  "effort": "%s",\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "exitCode": %s,\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s\n}\n' \
-  "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$MODEL" "$BUDGET" "$NETWORK" "$EFFORT" \
+printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "model": "%s",\n  "codexAuth": "%s",\n  "budgetSeconds": %s,\n  "network": "%s",\n  "effort": "%s",\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "exitCode": %s,\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s\n}\n' \
+  "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$MODEL" "$CODEX_AUTH" "$BUDGET" "$NETWORK" "$EFFORT" \
   "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$CODE" "$((START*1000))" "$((END*1000))" "$((END-START))" \
   > "$TIMINGS"
 

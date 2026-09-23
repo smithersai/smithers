@@ -215,7 +215,7 @@ console.log(
 
 // Exercise the actual runners with local command doubles: no Docker daemon,
 // evaluator environment or paid model calls. State files stand for containers.
-function runnerFixture(harness, scenario, check) {
+function runnerFixture(harness, scenario, check, overrideEnvironment = {}) {
   const dir = mkdtempSync(join(tmpdir(), "swebench-runner-"))
   const put = (path, content) => writeFileSync(join(dir, path), content, { mode: 0o755 })
   try {
@@ -223,10 +223,11 @@ function runnerFixture(harness, scenario, check) {
       mkdirSync(join(dir, path), { recursive: true })
     }
     const script = harness === "codex" ? "run-instance-codex.sh" : "run-instance.sh"
-    for (const path of [script, "lib/run-paths.sh", "lib/lock.sh"]) {
+    for (const path of [script, "lib/run-paths.sh", "lib/lock.sh", "lib/codex-auth.sh"]) {
       copyFileSync(join(root, path), join(dir, path))
     }
     put("swb-verified.json", "[]")
+    put("bin/smithers-jj-export", "#!/bin/sh\nexit 0\n")
     put(".subject.json", '{"stamp":"fixture"}')
     put("lib/validate-instance.mjs", 'console.log("base")')
     put("lib/write-prompt-codex.mjs", 'console.log("fix the bug")')
@@ -247,6 +248,7 @@ esac
 : > "$2.untracked"
 `)
     put("bin/codex", `#!/bin/bash
+if [ "$1" = login ] && [ "$2" = status ]; then echo 'Logged in using an API key'; exit 0; fi
 if [ "$1" = login ]; then exit 0; fi
 while [ "$#" -gt 0 ]; do
   if [ "$1" = -C ]; then printf 'paid edits\\n' > "$2/edited.txt"; break; fi
@@ -295,6 +297,7 @@ switch (args[0]) {
         ...process.env,
         PATH: `${join(dir, "bin")}:${process.env.PATH}`,
         SWB_DATASET: join(dir, "swb-verified.json"),
+        SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: join(dir, "bin/smithers-jj-export"),
         SWB_CODEX_NETWORK: "on",
         SWB_CODEX_EFFORT: "high",
         SWB_FLOWS_OPENAI_AUTH: "api-key",
@@ -305,7 +308,8 @@ switch (args[0]) {
         // scenario below exits 2 before the runner does anything it asserts on.
         SWB_FLOWS_HOST_SHELL: "allowed",
         FIXTURE_DIR: dir,
-        FIXTURE_SCENARIO: scenario
+        FIXTURE_SCENARIO: scenario,
+        ...overrideEnvironment
       }
     })
     assert.ifError(result.error)
@@ -317,6 +321,14 @@ switch (args[0]) {
     rmSync(dir, { recursive: true, force: true })
   }
 }
+
+test("flows refuses a missing native helper before pulling an image", () => {
+  runnerFixture("flows", "success", ({ dir, result }) => {
+    assert.equal(result.status, 1)
+    assert.match(result.stderr, /no executable workspace helper/u)
+    assert.ok(!existsSync(join(dir, "docker.log")), "no image operation started")
+  }, { SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: "/no-such-video-benchmark-helper" })
+})
 
 for (const scenario of ["capture-failure", "missing-patch"]) {
   test(`codex ${scenario} preserves paid edits and reports failure`, () => {

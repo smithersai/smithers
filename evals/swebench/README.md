@@ -179,6 +179,18 @@ same prompt content — including the repository's own test runner, which
 ./run-instance-codex.sh django__django-16612 1500
 ```
 
+For a ChatGPT-subscription control, set `SWB_CODEX_AUTH=chatgpt` and
+`SWB_CODEX_HOME=$HOME/.codex`. The runner checks that `codex login status`
+actually reports a ChatGPT login before pulling an image; the default remains
+the rig's isolated API-key home for historical lanes. Set
+`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY` to an executable `smithers-jj-export`
+for the flows arm when overriding the CLI's packaged/checkout resolver. Its
+guarded filesystem needs the helper even for `plan`, and the rig rejects a
+broken explicit override before pulling an image.
+The current flows CLI also requires `AI_GATEWAY_API_KEY` for its Jev judge at
+approval time; `SMITHERS_OPENAI_AUTH=chatgpt` changes the agent model route,
+not that judge.
+
 The whole sample, one harness at a time:
 
 ```sh

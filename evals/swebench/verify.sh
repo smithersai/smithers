@@ -149,6 +149,7 @@ node "$S/fixtures/check-cli-path.mjs"
 
 echo "== the environment the lane hands that CLI"
 node "$S/fixtures/check-env-names.mjs"
+"$S/fixtures/check-codex-auth.sh"
 
 echo "== the read-only liveness reading"
 node "$S/fixtures/check-liveness-report.mjs"

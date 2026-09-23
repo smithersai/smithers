@@ -204,6 +204,16 @@ esac
 # ---------------------------------------------------------------------------
 # Refusals, before anything is spent.
 # ---------------------------------------------------------------------------
+# The fullbench worker pulls an image before it calls run-instance.sh. Reject
+# a broken explicit helper path here; otherwise the CLI resolves its packaged
+# or checkout helper itself.
+if [ -z "${SWB_RERUN_INSTANCE_CMD:-}" ] \
+  && [ -n "${SMITHERS_WORKSPACE_JJ_EXPORT_BINARY:-}" ]; then
+  if [ ! -x "$SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" ]; then
+    echo "run-45.sh: no executable workspace helper at $SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" >&2
+    exit 1
+  fi
+fi
 # A stubbed pipeline starts no harness, so there is no subject for a pin to name.
 if [ -z "${SWB_RERUN_INSTANCE_CMD:-}" ] && [ ! -f "$S/.subject.json" ]; then
   echo "run-45.sh: no pinned subject at $S/.subject.json — run ./preflight.sh first." >&2
@@ -305,6 +315,10 @@ reap_finished() {
     if [ -n "$PID" ] && ! kill -0 "$PID" 2>/dev/null; then
       STATUS="$(cat "$FB/workers/$NAME.done" 2>/dev/null || printf '?')"
       log "$NAME finished (exit $STATUS)"
+      if [ "$STATUS" != 0 ]; then
+        log "PAUSED: $NAME did not reach a valid graded attempt"
+        STOPPING=1
+      fi
       PIDS[$INDEX_I]=""
       RUNNING=$((RUNNING - 1))
       REAPED=1

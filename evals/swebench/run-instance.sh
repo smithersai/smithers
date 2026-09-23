@@ -43,6 +43,13 @@ esac
 if [ ! -f "$DATASET" ]; then
   echo "[$INSTANCE] no dataset at $DATASET — run ./bootstrap.sh first"; exit 1
 fi
+# A configured helper takes precedence over the CLI's package/checkout
+# resolver. Reject a broken override before a multi-GB image pull.
+if [ -n "${SMITHERS_WORKSPACE_JJ_EXPORT_BINARY:-}" ] \
+  && [ ! -x "$SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" ]; then
+  echo "[$INSTANCE] no executable workspace helper at $SMITHERS_WORKSPACE_JJ_EXPORT_BINARY" >&2
+  exit 1
+fi
 BASE="$(node "$S/lib/validate-instance.mjs" "$DATASET" "$INSTANCE")" || exit $?
 case "$BUDGET" in
   ''|*[!0-9]*) echo "[$INSTANCE] timeout must be a positive integer"; exit 2 ;;
