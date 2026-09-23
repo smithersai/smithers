@@ -342,6 +342,14 @@ export interface Executable {
    * to be: those resolve into the host's own installed code.
    */
   readonly delegate: string | undefined
+  /**
+   * The payload schema a module that IS its flow declared; `undefined` for
+   * delegating and markdown descriptors.
+   *
+   * Discovery reads a module without importing it, so no listing carries this
+   * schema. A host that asks a person for missing input reads it here.
+   */
+  readonly input: Schema.Top | undefined
   /** The runtime decisions lowered off the descriptor. */
   readonly lowered: Lowered
   /** The envelope the delegate receives for a given caller input. */
@@ -1108,6 +1116,7 @@ export const fromDescriptor = (
       descriptor,
       declaredTag: body.flow?._tag,
       delegate: body.flow === undefined ? name : undefined,
+      input: body.flow?.payloadSchema,
       lowered,
       invocation,
       // The catalog cannot name services of a dynamically selected delegate.

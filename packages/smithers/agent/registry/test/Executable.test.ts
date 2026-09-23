@@ -221,6 +221,23 @@ describe("a module that is its own flow", () => {
       expect(executable.flow._tag).toBe("standalone")
     }).pipe(Effect.provide(platform)))
 
+  it.effect("exposes its payload schema as the executable's input", () =>
+    Effect.gen(function*() {
+      const executable = yield* Executable.fromDescriptor(
+        yield* descriptorNamed("standalone"),
+        { delegates: [] }
+      )
+      const input = executable.input!
+      expect(Schema.is(input)({ name: "ada" })).toBe(true)
+      expect(Schema.is(input)({})).toBe(false)
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("has no input schema when it delegates", () =>
+    Effect.gen(function*() {
+      const executable = yield* Executable.fromDescriptor(yield* descriptorNamed("greet"), options())
+      expect(executable.input).toBeUndefined()
+    }).pipe(Effect.provide(platform)))
+
   it.effect("plans its own graph rather than one delegating node", () =>
     Effect.gen(function*() {
       const executable = yield* Executable.fromDescriptor(
