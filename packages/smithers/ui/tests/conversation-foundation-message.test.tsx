@@ -158,6 +158,32 @@ describe("Message", () => {
     expect(second!.tabIndex).toBe(0);
   });
 
+  test("MessageActions keeps exactly one tab stop as actions arrive and disable", async () => {
+    const view = (actions: string[], disabled: string[] = []) => (
+      <Message role="assistant">
+        <MessageContent>body</MessageContent>
+        <MessageActions>
+          {actions.map((name) => (
+            <button key={name} type="button" disabled={disabled.includes(name)}>
+              {name}
+            </button>
+          ))}
+        </MessageActions>
+      </Message>
+    );
+    await render(view(["copy"]));
+    const tabStops = () =>
+      Array.from(container!.querySelectorAll<HTMLButtonElement>('[data-slot="message-actions"] button'))
+        .filter((button) => button.tabIndex === 0)
+        .map((button) => button.textContent);
+
+    await act(async () => root!.render(view(["copy", "retry", "share"])));
+    expect(tabStops()).toEqual(["copy"]);
+
+    await act(async () => root!.render(view(["copy", "retry", "share"], ["copy"])));
+    expect(tabStops()).toEqual(["retry"]);
+  });
+
   test("renders under the dark theme and self-injects the lane fragment", async () => {
     installDarkThemeStyles();
     document.documentElement.dataset.theme = "dark";

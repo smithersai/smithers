@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { formatStatus, normalizeStatus, statusClass } from "../status";
 import { useInjectUiCss } from "../styles";
+import { dateFromMs } from "../time/dateFromMs";
 
 export type ActivityKind =
   | "message"
@@ -48,9 +49,9 @@ function useActivityCss(): void {
   useInjectUiCss();
 }
 
-function formatTimestamp(timestampMs: number): { dateTime: string; text: string } {
-  const iso = new Date(timestampMs).toISOString();
-  return { dateTime: iso, text: iso.slice(11, 19) };
+function formatTimestamp(timestampMs: number | undefined): { dateTime: string; text: string } | undefined {
+  const iso = dateFromMs(timestampMs)?.toISOString();
+  return iso === undefined ? undefined : { dateTime: iso, text: iso.slice(11, 19) };
 }
 
 export type ActivityItemProps = Omit<ComponentProps<"li">, "children" | "title"> & {
@@ -74,7 +75,7 @@ export function ActivityItem({
   ...props
 }: ActivityItemProps) {
   useActivityCss();
-  const timestamp = timestampMs !== undefined ? formatTimestamp(timestampMs) : undefined;
+  const timestamp = formatTimestamp(timestampMs);
   return (
     <li
       data-slot="activity-item"

@@ -6,6 +6,7 @@ import {
   useInsertionEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { crepeThemeCss } from "./crepeTheme.generated";
@@ -226,6 +227,11 @@ export function supportsRichTextEditing(): boolean {
   return richTextSupport;
 }
 
+/** Layout support never changes within a document, so there is nothing to subscribe to. */
+const subscribeToNothing = (): (() => void) => () => {};
+/** A server render has no layout engine. */
+const noRichTextOnServer = (): boolean => false;
+
 /** The editor state machine: loading the modules, running, or fallen back. */
 type EditorState = "loading" | "ready" | "failed";
 
@@ -351,7 +357,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorHandle, MarkdownEditorPro
   // updated by every local edit, external `setMarkdown`, and reseed.
   const lastMarkdownRef = useRef(value);
 
-  const useFallback = fallback ?? !supportsRichTextEditing();
+  // Server render and hydration both read the no-layout answer, so the first
+  // client tree matches the server's textarea; React then re-renders with the
+  // measured answer. A fresh client mount reads the measurement directly.
+  const richText = useSyncExternalStore(subscribeToNothing, supportsRichTextEditing, noRichTextOnServer);
+  const useFallback = fallback ?? !richText;
   const [fallbackValue, setFallbackValue] = useState(value);
   /**
    * The editor's own lifecycle, reset during render whenever the document or

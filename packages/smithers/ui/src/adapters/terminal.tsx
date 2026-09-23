@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useInsertionEffect, useRef, type ComponentProps } from "react";
+import { useEffect, useInsertionEffect, useRef, useState, type ComponentProps } from "react";
 import type { IDisposable, ITheme, Terminal as XTerminal } from "@xterm/xterm";
 import { cn } from "../cn";
 import { useResolvedTheme } from "../internal/useResolvedTheme";
@@ -37,6 +37,20 @@ export type TerminalWriter = (data: string | Uint8Array) => void;
  */
 export type TerminalStream = (write: TerminalWriter) => void | (() => void);
 
+/** The xterm.js modules the emulator is built from. */
+export type TerminalModules = {
+  Terminal: typeof import("@xterm/xterm").Terminal;
+  FitAddon: typeof import("@xterm/addon-fit").FitAddon;
+};
+
+/** Typed startup failure: the modules did not load, or the emulator did not open. */
+export type TerminalError = { code: "terminal-start-failed"; cause: unknown };
+
+async function loadXterm(): Promise<TerminalModules> {
+  const [{ Terminal }, { FitAddon }] = await Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit")]);
+  return { Terminal, FitAddon };
+}
+
 /** Built-in palettes. Pass a `colors` override for anything more specific. */
 export type TerminalColorTheme = "dark" | "light";
 
@@ -64,6 +78,7 @@ const STYLE_ATTR = "data-smithers-ui-terminal";
  */
 const surfaceCss = `
 .sui-terminal { position:relative; box-sizing:border-box; display:flex; flex-direction:column; min-height:0; width:100%; height:100%; padding:12px; border:1px solid ${t.border}; border-radius:${t.radius}; overflow:hidden; font-family:${t.fontMono}; }
+.sui-terminal-error { color:${t.destructive}; font-size:13px; }
 .sui-terminal-screen { flex:1 1 auto; min-height:0; width:100%; }
 .sui-terminal-screen .xterm { height:100%; }
 .sui-terminal-screen .xterm-viewport { overflow-y:auto; background-color:transparent; }
@@ -94,6 +109,10 @@ export type TerminalProps = Omit<ComponentProps<"div">, "onResize"> & {
   readOnly?: boolean;
   /** Scrollback buffer size in lines. */
   scrollback?: number;
+  /** Called once when the emulator cannot start, with the original cause. */
+  onError?: (error: TerminalError) => void;
+  /** Module loader seam. Defaults to the dynamic `@xterm/*` imports. */
+  loadModules?: () => Promise<TerminalModules>;
 };
 
 const DEFAULT_FONT_FAMILY = "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
@@ -131,6 +150,8 @@ export function Terminal({
   cursorBlink = true,
   readOnly = false,
   scrollback = 1000,
+  onError,
+  loadModules,
   className,
   style,
   ...rest
@@ -159,6 +180,12 @@ export function Terminal({
   onReadyRef.current = onReady;
   const colorsRef = useRef(colors);
   colorsRef.current = colors;
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
+  const loadModulesRef = useRef(loadModules);
+  loadModulesRef.current = loadModules;
+  // True when startup failed before an emulator existed to print the error.
+  const [blank, setBlank] = useState(false);
 
   const mountRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerminal | null>(null);
@@ -192,10 +219,7 @@ export function Terminal({
     let motionTeardown: (() => void) | null = null;
 
     async function mount() {
-      const [{ Terminal: XtermTerminal }, { FitAddon }] = await Promise.all([
-        import("@xterm/xterm"),
-        import("@xterm/addon-fit"),
-      ]);
+      const { Terminal: XtermTerminal, FitAddon } = await (loadModulesRef.current ?? loadXterm)();
       if (ac.signal.aborted || !host) return;
 
       // The mount div persists across effect re-runs; never stack a second
@@ -247,11 +271,18 @@ export function Terminal({
       streamTeardown = streamRef.current?.(write) ?? undefined;
     }
 
+    setBlank(false);
     void mount().catch((error: unknown) => {
       if (ac.signal.aborted) return;
-      // Surface the failure inside the terminal, where the eye already is.
+      onErrorRef.current?.({ code: "terminal-start-failed", cause: error });
+      // Surface the failure inside the terminal, where the eye already is; with
+      // no emulator the surface itself states it instead of staying blank.
+      if (term === null) {
+        setBlank(true);
+        return;
+      }
       const message = error instanceof Error ? error.message : "Failed to start terminal.";
-      term?.writeln(`\x1b[1;31m${message}\x1b[0m`);
+      term.writeln(`\x1b[1;31m${message}\x1b[0m`);
     });
 
     return () => {
@@ -274,10 +305,16 @@ export function Terminal({
       data-slot="terminal"
       data-theme-mode={resolvedTheme}
       data-palette={resolvedPalette}
+      data-state={blank ? "failed" : undefined}
       className={cn("sui-terminal", className)}
       style={{ background: colors?.background ?? surfaceBackground, ...style }}
       {...rest}
     >
+      {blank ? (
+        <div role="alert" data-slot="terminal-error" className="sui-terminal-error">
+          Terminal failed to start.
+        </div>
+      ) : null}
       <div className="sui-terminal-screen" data-slot="terminal-screen" ref={mountRef} />
     </div>
   );

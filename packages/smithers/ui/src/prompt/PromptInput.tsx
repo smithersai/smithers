@@ -428,7 +428,24 @@ export function PromptInput({
     const submitted = attachments;
     const submittedIds = new Set(submitted.map((item) => item.id));
     const submittedValueRevision = valueRevisionRef.current;
-    const result = onSubmit({ text: value, attachments: submitted }, event);
+    // The draft is deliberately retained on failure: a failed submit that also
+    // erased what the user typed is the worst outcome available here.
+    const reportFailure = (cause: unknown): void => {
+      onErrorRef.current?.({
+        code: "submit-failed",
+        message: "The prompt could not be submitted.",
+        cause,
+      });
+    };
+    let result: ReturnType<typeof onSubmit>;
+    let thenable: boolean;
+    try {
+      result = onSubmit({ text: value, attachments: submitted }, event);
+      thenable = typeof (result as PromiseLike<void> | undefined)?.then === "function";
+    } catch (cause) {
+      reportFailure(cause);
+      return;
+    }
 
     /** Accept only the submitted draft, preserving edits made while pending. */
     const accept = (): void => {
@@ -448,19 +465,13 @@ export function PromptInput({
     // uncontrolled clear-on-submit behavior has always looked like. An async
     // handler holds the draft and its blob URLs until it resolves, because the
     // attachments it was handed are only readable while those URLs live.
-    if (typeof (result as PromiseLike<void> | undefined)?.then !== "function") {
+    if (!thenable) {
       accept();
       return;
     }
-    void Promise.resolve(result).then(accept, (cause: unknown) => {
-      // The draft is deliberately retained: a failed submit that also erased
-      // what the user typed is the worst outcome available here.
-      onErrorRef.current?.({
-        code: "submit-failed",
-        message: "The prompt could not be submitted.",
-        cause,
-      });
-    });
+    // Promise.resolve adopts the thenable; a `then` getter or method that
+    // throws becomes a rejection here, never an escaped exception.
+    void Promise.resolve(result).then(accept, reportFailure);
   };
 
   const contextValue = useMemo<PromptInputContextValue>(

@@ -528,6 +528,8 @@ type TerminalWriter = (data: string | Uint8Array) => void
 type TerminalStream = (write: TerminalWriter) => void | (() => void)
 type TerminalColorTheme = "dark" | "light"
 type TerminalInstance = XTerminal
+type TerminalModules = { Terminal: typeof XTerminal; FitAddon: typeof FitAddon }
+type TerminalError = { code: "terminal-start-failed"; cause: unknown }
 ```
 
 `Terminal` (`TerminalProps`) owns the emulator, the fit addon, theming, and
@@ -537,6 +539,11 @@ every fit; `onReady` hands back the raw xterm.js instance. `theme`, `palette`,
 and `colors` override the theme resolved from the document. `readOnly`,
 `scrollback`, `fontSize`, `fontFamily`, and `cursorBlink` configure the
 emulator.
+
+When the emulator cannot start, `onError` receives a `TerminalError` with the
+original cause. If no emulator opened, the surface sets `data-state="failed"`
+and renders a `role="alert"` message instead of staying blank. `loadModules`
+replaces the dynamic `@xterm/*` imports.
 
 The xterm base stylesheet is vendored as a string and injected through the same
 seam as the rest of the library, so a host must not import

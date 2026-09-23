@@ -9,6 +9,7 @@ import { Button } from "../button";
 import { cn } from "../cn";
 import { Spinner } from "../spinner";
 import { useInjectUiCss } from "../styles";
+import { dateFromMs } from "../time/dateFromMs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";
 
 export type CheckpointModel = {
@@ -107,16 +108,11 @@ export function CheckpointIcon({ className, children, ...props }: ComponentProps
 export function CheckpointMetadata({ className, ...props }: ComponentProps<"div">) {
   useInjectUiCss();
   const { checkpoint } = useCheckpoint();
+  const date = dateFromMs(checkpoint.timestampMs);
   return (
     <div data-slot="checkpoint-metadata" className={cn("sui-checkpoint-metadata", className)} {...props}>
       {checkpoint.frameNo !== undefined ? <span>frame {checkpoint.frameNo}</span> : null}
-      {checkpoint.timestampMs !== undefined ?
-        (
-          <time dateTime={new Date(checkpoint.timestampMs).toISOString()}>
-            {new Date(checkpoint.timestampMs).toLocaleString()}
-          </time>
-        ) :
-        null}
+      {date !== undefined ? <time dateTime={date.toISOString()}>{date.toLocaleString()}</time> : null}
       {checkpoint.messageCount !== undefined ? <span>{checkpoint.messageCount} messages</span> : null}
     </div>
   );

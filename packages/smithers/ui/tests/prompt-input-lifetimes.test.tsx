@@ -155,6 +155,42 @@ describe("an async onSubmit borrows attachments for its whole lifetime", () => {
     ]);
   });
 
+  test("a synchronously throwing onSubmit keeps the draft and attachments and reports submit-failed", async () => {
+    await withObjectUrls(async ({ revoked }) => {
+      const cause = new Error("host threw");
+      const errors: PromptInputError[] = [];
+      let hook!: ReturnType<typeof usePromptInputAttachments>;
+      function Harness() {
+        hook = usePromptInputAttachments();
+        return <PromptInputTextarea />;
+      }
+      await render(
+        <PromptInput
+          defaultValue="keep me"
+          onSubmit={() => {
+            throw cause;
+          }}
+          onError={(error) => errors.push(error)}
+        >
+          <Harness />
+        </PromptInput>,
+      );
+      await act(async () => hook.add([makeFile("shot.png", "image/png")]));
+
+      await act(async () => {
+        pressEnter(textarea());
+        await Promise.resolve();
+      });
+
+      expect(textarea().value).toBe("keep me");
+      expect(hook.attachments.map((item) => item.name)).toEqual(["shot.png"]);
+      expect(revoked).toEqual([]);
+      expect(errors).toEqual([
+        { code: "submit-failed", message: "The prompt could not be submitted.", cause },
+      ]);
+    });
+  });
+
   test.each(["unsent second draft", "submitted draft"])("pending acceptance preserves edited text (%s) and later attachments", async (laterText) => {
     await withObjectUrls(async ({ revoked }) => {
       let hook!: ReturnType<typeof usePromptInputAttachments>;

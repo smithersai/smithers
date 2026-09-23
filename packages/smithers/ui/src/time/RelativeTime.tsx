@@ -2,6 +2,7 @@
 import { useSyncExternalStore, type ComponentProps } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
+import { dateFromMs } from "./dateFromMs";
 import { formatRelativeTime } from "./formatRelativeTime";
 
 /**
@@ -64,25 +65,21 @@ export type RelativeTimeProps = Omit<ComponentProps<"time">, "children" | "dateT
  * Ticking relative timestamp ("3m ago") with the absolute instant in
  * `dateTime`/`title`. Tabular-nums keeps the label from jittering as it ticks.
  */
-/** The ECMAScript time-value range; anything outside it is not a date. */
-const MAX_TIME_VALUE = 8.64e15;
-
 export function RelativeTime({ ts, title, relativeUntilMs, className, ...props }: RelativeTimeProps) {
   useInjectUiCss();
   const label = useRelativeTime(ts);
   // `new Date(NaN).toISOString()` throws `RangeError: Invalid time value`,
   // which would take down the whole render for one bad row. A timestamp
   // outside the representable range simply has no absolute instant to state.
-  const representable = Number.isFinite(ts) && Math.abs(ts) <= MAX_TIME_VALUE;
-  const date = new Date(representable ? ts : 0);
-  const display = representable && relativeUntilMs !== undefined && Date.now() - ts >= relativeUntilMs
+  const date = dateFromMs(ts);
+  const display = date !== undefined && relativeUntilMs !== undefined && Date.now() - ts >= relativeUntilMs
     ? date.toLocaleTimeString(undefined, { timeStyle: "medium" })
     : label;
   return (
     <time
       data-slot="relative-time"
       className={cn("sui-relative-time", className)}
-      {...(representable
+      {...(date !== undefined
         ? { dateTime: date.toISOString(), title: title ?? date.toLocaleString() }
         : title === undefined
         ? {}

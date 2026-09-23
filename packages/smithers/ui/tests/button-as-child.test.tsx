@@ -82,4 +82,23 @@ describe("Button asChild activation", () => {
     await dispatch(link, click());
     expect(onClick).toHaveBeenCalledTimes(1);
   });
+
+  test("caller aria props cannot override loading semantics", async () => {
+    const link = await renderLink(
+      <Button asChild loading aria-disabled={false} aria-busy={false}>
+        <a href="/runs">Open runs</a>
+      </Button>,
+    );
+    expect(link.getAttribute("aria-disabled")).toBe("true");
+    expect(link.getAttribute("aria-busy")).toBe("true");
+  });
+
+  test("an idle button keeps the caller's own aria-busy", async () => {
+    const link = await renderLink(
+      <Button asChild aria-busy>
+        <a href="/runs">Open runs</a>
+      </Button>,
+    );
+    expect(link.getAttribute("aria-busy")).toBe("true");
+  });
 });

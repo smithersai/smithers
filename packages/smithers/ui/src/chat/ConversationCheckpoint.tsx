@@ -2,6 +2,7 @@
 import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
+import { dateFromMs } from "../time/dateFromMs";
 
 export type ConversationCheckpointProps = Omit<ComponentProps<"div">, "children"> & {
   /** Checkpoint label (restore point name, frame description, ...). */
@@ -21,7 +22,7 @@ export function ConversationCheckpoint({
   ...props
 }: ConversationCheckpointProps) {
   useInjectUiCss();
-  const date = timestampMs !== undefined ? new Date(timestampMs) : undefined;
+  const date = dateFromMs(timestampMs);
   return (
     <div data-slot="conversation-checkpoint" className={cn("sui-convo-checkpoint", className)} {...props}>
       <span className="sui-convo-checkpoint-body">

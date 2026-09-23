@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { Terminal as XTerminal } from "@xterm/xterm";
-import { Terminal, terminalThemeFor, type TerminalWriter } from "../src/adapters/terminal";
+import { Terminal, terminalThemeFor, type TerminalError, type TerminalWriter } from "../src/adapters/terminal";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -220,6 +220,34 @@ describe("<Terminal> headless rendering", () => {
     await act(async () => mounted.unmount());
     root = undefined;
     expect(listeners.size).toBe(0);
+  });
+});
+
+describe("<Terminal> startup failure", () => {
+  test("a module load failure reports terminal-start-failed and renders a visible alert", async () => {
+    const cause = new Error("chunk load failed");
+    const errors: TerminalError[] = [];
+    await render(<Terminal loadModules={() => Promise.reject(cause)} onError={(error) => errors.push(error)} />);
+    const alert = await waitFor(() => container!.querySelector<HTMLElement>('[data-slot="terminal-error"]'));
+    expect(alert.getAttribute("role")).toBe("alert");
+    expect(container!.querySelector('[data-slot="terminal"]')!.getAttribute("data-state")).toBe("failed");
+    expect(errors).toEqual([{ code: "terminal-start-failed", cause }]);
+  });
+
+  test("a failure after the emulator opens still reports through onError", async () => {
+    const cause = new Error("stream refused");
+    const errors: TerminalError[] = [];
+    await render(
+      <Terminal
+        stream={() => {
+          throw cause;
+        }}
+        onError={(error) => errors.push(error)}
+      />,
+    );
+    await waitFor(() => errors.length > 0);
+    expect(errors).toEqual([{ code: "terminal-start-failed", cause }]);
+    expect(container!.querySelector('[data-slot="terminal-error"]')).toBeNull();
   });
 });
 

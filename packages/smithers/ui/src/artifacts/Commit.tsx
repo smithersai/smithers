@@ -2,6 +2,7 @@
 import { createContext, useContext, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
+import { dateFromMs } from "../time/dateFromMs";
 
 export type CommitFileStatusKind = "added" | "modified" | "deleted" | "renamed" | "copied";
 
@@ -123,10 +124,10 @@ export type CommitTimestampProps = Omit<ComponentProps<"span">, "children"> & { 
 
 export function CommitTimestamp({ timestampMs, className, ...props }: CommitTimestampProps) {
   useInjectUiCss();
-  const date = new Date(timestampMs);
+  const date = dateFromMs(timestampMs);
   return (
     <span data-slot="commit-timestamp" className={cn("sui-commit-timestamp", className)} {...props}>
-      <time dateTime={date.toISOString()}>{date.toLocaleString()}</time>
+      {date !== undefined ? <time dateTime={date.toISOString()}>{date.toLocaleString()}</time> : null}
     </span>
   );
 }

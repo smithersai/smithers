@@ -72,11 +72,12 @@ export function Button({
     // Slot.Root's public type only declares generic HTML attributes, but it
     // merges arbitrary child props at runtime. Keep `disabled` in a spread so
     // slotted native controls receive the real disabling attribute rather
-    // than only advisory aria-disabled state.
+    // than only advisory aria-disabled state. Spread after the caller's
+    // props, and only when active, so a caller can neither un-disable a
+    // loading button nor have its own aria state erased when idle.
     const slottedStateProps = {
-      disabled: interactionDisabled || undefined,
-      "aria-disabled": interactionDisabled ? true : undefined,
-      "aria-busy": loading ? true : undefined,
+      ...(interactionDisabled ? { disabled: true, "aria-disabled": true } : {}),
+      ...(loading ? { "aria-busy": true } : {}),
     };
     // Anchors and other non-native children ignore `disabled`, and Slot runs
     // the child's handlers before ours, so guard activation in the capture
@@ -100,7 +101,7 @@ export function Button({
         }
       : { onClickCapture, onKeyDownCapture };
     return (
-      <Slot.Root data-slot="button" className={classes} {...slottedStateProps} {...rest} {...inertProps}>
+      <Slot.Root data-slot="button" className={classes} {...rest} {...slottedStateProps} {...inertProps}>
         {children}
       </Slot.Root>
     );
@@ -110,9 +111,9 @@ export function Button({
       data-slot="button"
       type={type ?? "button"}
       className={classes}
-      disabled={interactionDisabled}
-      aria-busy={loading ? true : undefined}
       {...props}
+      disabled={interactionDisabled}
+      {...(loading ? { "aria-busy": true } : {})}
     >
       {loading ? <Spinner size="sm" aria-hidden="true" /> : null}
       {children}

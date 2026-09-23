@@ -374,6 +374,18 @@ describe("misc primitives", () => {
     expect(renderToStaticMarkup(<Progress value={-10} />)).toContain("translateX(-100%)");
   });
 
+  test("Progress announces the same clamped value it paints", () => {
+    const over = renderToStaticMarkup(<Progress value={80} max={50} />);
+    expect(over).toContain('aria-valuenow="50"');
+    expect(over).toContain('data-state="complete"');
+    const under = renderToStaticMarkup(<Progress value={-10} />);
+    expect(under).toContain('aria-valuenow="0"');
+    expect(under).toContain('data-state="loading"');
+    const unknown = renderToStaticMarkup(<Progress value={Number.NaN} />);
+    expect(unknown).toContain('data-state="indeterminate"');
+    expect(unknown).not.toContain("aria-valuenow");
+  });
+
   test("Separator renders orientation data attributes", () => {
     expect(renderToStaticMarkup(<Separator />)).toContain('data-orientation="horizontal"');
     expect(renderToStaticMarkup(<Separator orientation="vertical" />)).toContain('data-orientation="vertical"');
