@@ -14,6 +14,7 @@
  * handed the `Search` the host supplied rather than the bare filesystem
  * context.
  */
+import * as NodePath from "@effect/platform-node/NodePath"
 import type { FlowRuntime } from "@smthrs/flow"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
@@ -154,7 +155,7 @@ describe("the standard capability catalog", () => {
       await writeFile(join(root, "nested/add.mjs"), "export const sum = (a, b) => a + b\n")
       const guarded = KernelFileSystem.layer.pipe(
         Layer.provide(AtomicFileSystem.layer),
-        Layer.provideMerge(Path.layer),
+        Layer.provideMerge(NodePath.layer),
         Layer.provide(Workspace.layer(root)),
         Layer.provide(GrantStore.layerNoop)
       )
