@@ -52,6 +52,77 @@ type Client struct {
 	http       *http.Client
 }
 
+// CallRPC speaks the canonical Control/Gateway NDJSON protocol on the same
+// identity-verified host used by Flow runtime commands. The product relay owns
+// the procedure allowlist; this method never exposes the host credential.
+func (c *Client) CallRPC(ctx context.Context, procedure string, payload json.RawMessage) (json.RawMessage, error) {
+	path := "/rpc"
+	if procedure == "Projection.Snapshot" || procedure == "Approval.Submit" {
+		path = "/projections"
+	}
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	frame, err := json.Marshal(struct {
+		Tag     string          `json:"_tag"`
+		ID      int             `json:"id"`
+		Method  string          `json:"tag"`
+		Payload json.RawMessage `json:"payload"`
+		Headers []any           `json:"headers"`
+	}{Tag: "Request", ID: 1, Method: procedure, Payload: payload, Headers: []any{}})
+	if err != nil {
+		return nil, &Error{Code: "invalid_request", Message: "RPC request could not be encoded"}
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+path, bytes.NewReader(append(frame, '\n')))
+	if err != nil {
+		return nil, &Error{Code: "invalid_endpoint", Message: "runtime endpoint could not be addressed"}
+	}
+	request.Header.Set("Authorization", "Bearer "+c.credential)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return nil, &Error{Code: "transport", Message: "runtime host could not be reached", Retryable: true}
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	if err != nil || len(body) > maxResponseBytes || response.StatusCode != http.StatusOK {
+		return nil, &Error{Code: "invalid_response", Message: "runtime RPC response was unavailable", HTTPStatus: response.StatusCode}
+	}
+	line, _, _ := bytes.Cut(bytes.TrimSpace(body), []byte{'\n'})
+	var exit struct {
+		Tag       string `json:"_tag"`
+		RequestID int    `json:"requestId"`
+		Exit      struct {
+			Tag   string          `json:"_tag"`
+			Value json.RawMessage `json:"value"`
+			Cause json.RawMessage `json:"cause"`
+		} `json:"exit"`
+	}
+	if json.Unmarshal(line, &exit) != nil || exit.Tag != "Exit" || exit.RequestID != 1 {
+		return nil, &Error{Code: "invalid_response", Message: "runtime RPC response was not a gateway outcome"}
+	}
+	if exit.Exit.Tag == "Success" {
+		return json.Marshal(struct {
+			OK      bool            `json:"ok"`
+			Payload json.RawMessage `json:"payload"`
+		}{true, exit.Exit.Value})
+	}
+	if exit.Exit.Tag == "Failure" {
+		return json.Marshal(struct {
+			OK    bool `json:"ok"`
+			Error struct {
+				Message string          `json:"message"`
+				Detail  json.RawMessage `json:"detail"`
+			} `json:"error"`
+		}{false, struct {
+			Message string          `json:"message"`
+			Detail  json.RawMessage `json:"detail"`
+		}{"The workspace refused the call.", exit.Exit.Cause}})
+	}
+	return nil, &Error{Code: "invalid_response", Message: "runtime RPC response was not a gateway outcome"}
+}
+
 func New(config Config) (*Client, error) {
 	parsed, err := url.Parse(config.Endpoint)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {

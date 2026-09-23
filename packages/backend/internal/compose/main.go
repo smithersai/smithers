@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/trace"
 
@@ -1525,6 +1526,17 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		smithersMetrics,
 		alertRemediationWorker != nil,
 	)
+	if flow != nil && options.Role.servesHTTP() {
+		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
+		flowAccess := []func(http.Handler) http.Handler{
+			cors.Handler(apiCORSOptions(cfg)), middleware.JSONTimeout(4 * time.Minute),
+			middleware.JSONAllowContentType("application/json"), middleware.MaxBodySize(middleware.MaxRequestBodySize),
+			authLoader(queries, cfg.Auth), apiCSRFMiddleware,
+			middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteRepository),
+		}
+		router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)
+		router.With(flowAccess...).Post("/api/workflow/rpc", browser.rpc)
+	}
 	if chatService != nil && options.Role.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
 		mountChatProducerOnSharedListener(router, chatService)

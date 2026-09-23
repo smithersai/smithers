@@ -136,6 +136,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
       SMITHERS_FLOW_HOST_MANIFEST: manifest,
       SMITHERS_MODEL_HOST_BUNDLE: join(hostDir, "smithers-model-host"),
       SMITHERS_NODE_BINARY: nodeBinary,
+	  AI_GATEWAY_API_KEY: `matrix-flow-${randomUUID()}`,
       SMITHERS_FFI_LIBRARY_PATH: ffiLibrary,
       SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: join(dirname(ffiLibrary), "smithers-jj-export"),
       SMITHERS_AUTH_BOOTSTRAP_TOKEN: bootstrapToken,

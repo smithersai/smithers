@@ -213,6 +213,22 @@ func (service *Service) Get(ctx context.Context, scope jobs.Scope, operationID s
 	return service.store.Get(ctx, scope, operationID)
 }
 
+// CallRPC resolves the same fenced Flow host as durable dispatch, then relays
+// a browser catalog, plan, run, or projection call to its canonical RPC.
+func (service *Service) CallRPC(ctx context.Context, target flowruntime.Target, procedure string, payload json.RawMessage) (json.RawMessage, error) {
+	runtime, err := service.resolver.ResolveFlowRuntime(ctx, target)
+	if err != nil {
+		return nil, err
+	}
+	caller, ok := runtime.(interface {
+		CallRPC(context.Context, string, json.RawMessage) (json.RawMessage, error)
+	})
+	if !ok {
+		return nil, errors.New("flow dispatch: runtime has no gateway RPC")
+	}
+	return caller.CallRPC(ctx, procedure, payload)
+}
+
 // RunWorker consumes only Flow bridge operations from the shared jobs table.
 func (service *Service) RunWorker(ctx context.Context, config jobs.WorkerConfig) error {
 	config.Operations = []string{OperationLaunch, OperationApprove, OperationSignal}

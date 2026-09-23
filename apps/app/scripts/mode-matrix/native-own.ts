@@ -72,7 +72,8 @@ export const startNativeOwn = async (
       artifactsDirectory: join(outputDir, "native-own-diagnostics"),
       runtime: "product",
       startupTimeoutMs: 180_000,
-      env: { SMITHERS_BACKEND_MODE: "own", SMITHERS_OWNED_BACKEND_ORIGIN: origin }
+	  env: { SMITHERS_BACKEND_MODE: "own", SMITHERS_OWNED_BACKEND_ORIGIN: origin,
+	    AI_GATEWAY_API_KEY: `matrix-flow-${randomUUID()}` }
     })
     await app.ready()
     await waitForBackend(origin)

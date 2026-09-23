@@ -1,0 +1,138 @@
+package compose
+
+import (
+	"encoding/json"
+	"io"
+	"log/slog"
+	"net/http"
+	"regexp"
+	"strconv"
+	"strings"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/smithersai/smithers/packages/backend/flowdispatch"
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
+)
+
+var browserFlowRepo = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
+
+// The procedure set is the product relay contract in apps/server/gatewayRpc.ts.
+// All payload and result bodies remain canonical Control/Gateway RPC shapes.
+var browserFlowProcedures = map[string]bool{
+	"Plan": true, "Run": true, "Cancel": true, "Resume": true,
+	"Steer": true, "Signal": true, "List": true,
+	"Projection.Snapshot": true, "Approval.Submit": true,
+}
+
+type browserFlowAPI struct {
+	repos      *services.RepoService
+	workspaces *services.WorkspaceService
+	queries    *db.Queries
+	dispatcher *flowdispatch.Service
+}
+
+type browserFlowRequest struct {
+	Repo        string          `json:"repo"`
+	WorkspaceID string          `json:"workspaceId"`
+	Procedure   string          `json:"procedure"`
+	Payload     json.RawMessage `json:"payload"`
+}
+
+func browserFlowJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func browserFlowRefusal(w http.ResponseWriter, status int, message string) {
+	browserFlowJSON(w, status, map[string]any{"ok": false, "error": map[string]string{"message": message}})
+}
+
+func (api *browserFlowAPI) prepare(w http.ResponseWriter, r *http.Request) (browserFlowRequest, flowruntime.Target, bool) {
+	var request browserFlowRequest
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	if decoder.Decode(&request) != nil || !browserFlowRepo.MatchString(request.Repo) ||
+		(request.WorkspaceID != "" && !validBrowserWorkspaceID(request.WorkspaceID)) {
+		browserFlowRefusal(w, http.StatusBadRequest, "Body must name a repository and an optional canonical workspaceId.")
+		return request, flowruntime.Target{}, false
+	}
+	user := middleware.UserFromContext(r.Context())
+	if user == nil {
+		browserFlowRefusal(w, http.StatusUnauthorized, "Sign in to run flows.")
+		return request, flowruntime.Target{}, false
+	}
+	owner, name, _ := strings.Cut(request.Repo, "/")
+	view, err := api.repos.GetRepoView(r.Context(), user, owner, name)
+	if err != nil || !view.CanWrite {
+		browserFlowRefusal(w, http.StatusNotFound, "Repository unavailable.")
+		return request, flowruntime.Target{}, false
+	}
+	workspaceID := request.WorkspaceID
+	if workspaceID != "" {
+		workspace, err := api.queries.GetWorkspaceForUserRepo(r.Context(), db.GetWorkspaceForUserRepoParams{
+			ID: workspaceID, RepositoryID: view.Repository.ID, UserID: user.ID,
+		})
+		if err != nil || workspace.Status != "running" {
+			browserFlowRefusal(w, http.StatusNotFound, "Workspace unavailable.")
+			return request, flowruntime.Target{}, false
+		}
+	} else {
+		workspace, err := api.workspaces.CreateWorkspace(r.Context(), services.CreateWorkspaceInput{
+			RepositoryID: view.Repository.ID, UserID: user.ID, RepoOwner: owner, RepoName: name,
+		})
+		if err != nil || workspace.Status != "running" {
+			slog.Error("browser Flow workspace unavailable", "error", err, "status", workspace.Status)
+			browserFlowRefusal(w, http.StatusServiceUnavailable, "Workspace unavailable.")
+			return request, flowruntime.Target{}, false
+		}
+		workspaceID = workspace.ID
+	}
+	return request, flowruntime.Target{
+		TenantID:    "repository:" + strconv.FormatInt(view.Repository.ID, 10),
+		PrincipalID: "user:" + strconv.FormatInt(user.ID, 10),
+		WorkspaceID: workspaceID, BindingKind: "browser-flow", BindingID: request.Repo,
+	}, true
+}
+
+func validBrowserWorkspaceID(value string) bool {
+	id, err := uuid.Parse(value)
+	return err == nil && id.String() == value
+}
+
+func (api *browserFlowAPI) provision(w http.ResponseWriter, r *http.Request) {
+	_, target, ok := api.prepare(w, r)
+	if !ok {
+		return
+	}
+	browserFlowJSON(w, http.StatusOK, map[string]any{
+		"status": "ready", "workspaceId": target.WorkspaceID, "gatewayId": target.WorkspaceID,
+	})
+}
+
+func (api *browserFlowAPI) rpc(w http.ResponseWriter, r *http.Request) {
+	request, target, ok := api.prepare(w, r)
+	if !ok {
+		return
+	}
+	if !browserFlowProcedures[request.Procedure] {
+		browserFlowRefusal(w, http.StatusBadRequest, "The workflow seam does not relay this procedure.")
+		return
+	}
+	answer, err := api.dispatcher.CallRPC(r.Context(), target, request.Procedure, request.Payload)
+	if err != nil {
+		slog.Error("browser Flow RPC unavailable", "error", err, "procedure", request.Procedure)
+		if err == pgx.ErrNoRows {
+			browserFlowRefusal(w, http.StatusNotFound, "Flow host unavailable.")
+		} else {
+			browserFlowRefusal(w, http.StatusServiceUnavailable, "Flow host unavailable.")
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(answer)
+}

@@ -43,10 +43,16 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	build.Dir = root
 	output, err := build.CombinedOutput()
 	require.NoError(t, err, string(output))
-	for _, family := range []string{"coding", "librarian"} {
+	for _, family := range []string{"coding"} {
 		name := "smithers-" + family + "-host"
 		require.NoError(t, os.WriteFile(filepath.Join(bundleDir, name), []byte("#!/bin/sh\nexit 1\n"), 0o755))
 	}
+	librarian := filepath.Join(bundleDir, "smithers-librarian-host")
+	librarianBuild := exec.Command(node, filepath.Join(root, "flows/librarian/build.mjs"), librarian)
+	librarianBuild.Dir = root
+	output, err = librarianBuild.CombinedOutput()
+	require.NoError(t, err, string(output))
+	require.NoError(t, os.Chmod(librarian, 0o755))
 	manifest := map[string]any{"version": 1, "hosts": map[string]any{}}
 	hosts := manifest["hosts"].(map[string]any)
 	for _, family := range []string{"coding", "librarian"} {
@@ -102,6 +108,7 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 		"SMITHERS_FLOW_HOST_MANIFEST":            manifestPath,
 		"SMITHERS_MODEL_HOST_BUNDLE":             bundle,
 		"SMITHERS_NODE_BINARY":                   node,
+		"AI_GATEWAY_API_KEY":                     "test-gateway-key-only-for-deterministic-flow",
 	} {
 		t.Setenv(name, value)
 	}
@@ -145,7 +152,11 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 		defer response.Body.Close()
 		result, readErr := io.ReadAll(response.Body)
 		require.NoError(t, readErr)
-		require.Equal(t, http.StatusOK, response.StatusCode, string(result))
+		wantStatus := http.StatusOK
+		if path == "/api/user/repos" {
+			wantStatus = http.StatusCreated
+		}
+		require.Equal(t, wantStatus, response.StatusCode, string(result))
 		return result
 	}
 	post("/api/auth/local/bootstrap", "", map[string]string{"username": "l3bowner", "email": "l3b@example.test", "password": "owner password for integration"})
@@ -154,6 +165,50 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(post("/api/auth/local/token", "", map[string]string{"username": "l3bowner", "password": "owner password for integration", "name": "chat-integration"}), &tokenResult))
 	require.NotEmpty(t, tokenResult.Token)
+	{
+		created := post("/api/user/repos", tokenResult.Token, map[string]any{
+			"name": "flow-http-integration", "private": true, "auto_init": true, "default_bookmark": "main",
+		})
+		_ = created
+		catalog := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
+			"repo": "l3bowner/flow-http-integration", "procedure": "List", "payload": map[string]string{"_tag": "flows"},
+		})
+		require.Contains(t, string(catalog), `"flowId":"librarian/history"`)
+		flowRPC := func(procedure string, payload any) map[string]any {
+			result := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
+				"repo": "l3bowner/flow-http-integration", "procedure": procedure, "payload": payload,
+			})
+			var frame map[string]any
+			require.NoError(t, json.Unmarshal(result, &frame))
+			require.Equal(t, true, frame["ok"], string(result))
+			return frame["payload"].(map[string]any)
+		}
+		plan := flowRPC("Plan", map[string]any{"flowId": "librarian/history", "input": map[string]string{"repo": "l3bowner/flow-http-integration"}})
+		planID, ok := plan["planId"].(string)
+		require.True(t, ok, "%v", plan)
+		digest, ok := plan["digest"].(string)
+		require.True(t, ok, "%v", plan)
+		approval := map[string]any{"target": map[string]any{"_tag": "Plan", "planId": planID, "digest": digest, "envelope": plan["envelope"]},
+			"scope": "run", "idempotencyKey": "approve:" + planID, "decision": "approve"}
+		flowRPC("Approval.Submit", approval)
+		run := flowRPC("Run", map[string]any{"_tag": "Plan", "planId": planID, "digest": digest,
+			"envelope": plan["envelope"], "idempotencyKey": "run:" + planID})
+		runID, ok := run["runId"].(string)
+		require.True(t, ok, "%v", run)
+		var status string
+		for range 100 {
+			snapshot := flowRPC("Projection.Snapshot", map[string]any{"selector": map[string]string{"_tag": "run-summary", "runId": runID}})
+			rows, ok := snapshot["rows"].([]any)
+			if ok && len(rows) > 0 {
+				status, _ = rows[0].(map[string]any)["status"].(string)
+				if status == "completed" || status == "failed" || status == "cancelled" {
+					break
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		require.Equal(t, "completed", status)
+	}
 	key := "private-owner-model-key"
 	received := make(chan string, 1)
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

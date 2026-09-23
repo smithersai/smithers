@@ -345,6 +345,7 @@ export const startPackagedWebSelfhost = async (options: WebSelfhostLaunchOptions
       "docker", "run", "--detach", "--name", resources.appContainer, "--network", resources.network,
       "--publish", `127.0.0.1:${resources.hostPort}:4000`, "--env", `SMITHERS_DATABASE_URL=${databaseURL}`,
       "--env", "SMITHERS_AUTH_MODE=selfhost", "--env", `SMITHERS_AUTH_BOOTSTRAP_TOKEN=${bootstrapToken}`,
+	  "--env", `AI_GATEWAY_API_KEY=matrix-flow-${randomUUID()}`,
       "--env", `SMITHERS_PUBLIC_URL=${expectedOrigin}`,
       "--volume", `${resources.dataVolume}:/var/lib/smithers`, resources.image
     ])

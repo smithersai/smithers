@@ -17,6 +17,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
@@ -52,6 +53,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			Executable: registry.Librarian.Executable, ArtifactDigest: registry.Librarian.SHA256,
 			ServiceName: "smithers-librarian-host", ProductAPIURL: productAPIURL,
 			ImplementationModel: strings.TrimSpace(os.Getenv("SMITHERS_LIBRARIAN_MODEL")),
+			Environment:         librarianHostEnvironment(options.Role),
 		},
 	}
 	bindings, err := flowhost.NewStore(pool, codec)
@@ -66,7 +68,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("repository job Flow host targets: %w", err)
 	}
-	targets := flowTargetResolver(agentTargets, repositoryJobTargets)
+	targets := flowTargetResolver(agentTargets, repositoryJobTargets, browserFlowTarget{queries: db.New(pool)})
 	launcher, err := flowhost.NewWorkspaceLauncher(options.Workspace)
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
@@ -108,6 +110,18 @@ func codingHostEnvironment(role Role) map[string]string {
 	return environment
 }
 
+func librarianHostEnvironment(role Role) map[string]string {
+	environment := make(map[string]string)
+	if role == RoleLocal {
+		for _, name := range []string{"AI_GATEWAY_API_KEY", "SMITHERS_EVALUATOR_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
+			if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+				environment[name] = value
+			}
+		}
+	}
+	return environment
+}
+
 func (flow *flowComposition) recover(ctx context.Context) error {
 	if _, err := flow.jobs.RecoverExpiredForOperations(ctx,
 		[]string{flowdispatch.OperationLaunch, flowdispatch.OperationApprove, flowdispatch.OperationSignal}, 100); err != nil {
@@ -119,13 +133,18 @@ func (flow *flowComposition) recover(ctx context.Context) error {
 	return nil
 }
 
-func flowTargetResolver(agents, repositoryJobs flowhost.TargetResolver) flowhost.TargetResolver {
+func flowTargetResolver(agents, repositoryJobs flowhost.TargetResolver, browserTargets ...flowhost.TargetResolver) flowhost.TargetResolver {
 	return flowhost.TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (flowhost.Authority, error) {
 		switch target.BindingKind {
 		case "agent-session":
 			return agents.ResolveFlowHostTarget(ctx, target)
 		case "repository-job-dispatch":
 			return repositoryJobs.ResolveFlowHostTarget(ctx, target)
+		case "browser-flow":
+			if len(browserTargets) == 1 {
+				return browserTargets[0].ResolveFlowHostTarget(ctx, target)
+			}
+			return flowhost.Authority{}, errors.New("browser Flow target unavailable")
 		default:
 			return flowhost.Authority{}, fmt.Errorf("unsupported Flow host binding kind %q", target.BindingKind)
 		}
