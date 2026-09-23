@@ -57,6 +57,24 @@ export const jjManaged = (cwd: string): boolean => {
   }
 }
 
+const text = (entry: Entry): string =>
+  entry.kind === "exchange"
+    ? `User: ${entry.user}\nYou answered: ${entry.answer}`
+    : entry.kind === "undo"
+    ? `User reverted earlier edits to: ${entry.paths.join(", ")}. Re-read them before editing.`
+    : `User ran a shell command:\n${entry.text}`
+
+/**
+ * How many of the oldest entries to drop to free about `tokens` (four
+ * characters a token). The newest entry always stays.
+ */
+export const compactable = (history: ReadonlyArray<Entry>, tokens: number): number => {
+  let freed = 0
+  let dropped = 0
+  while (freed < tokens && dropped < history.length - 1) freed += text(history[dropped++]!).length / 4
+  return dropped
+}
+
 export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string> => {
   const parts = [
     `You are a coding agent working in ${cwd}. Read before you change, keep edits small, and verify with the repository's own commands. Paths are relative to ${cwd}.`
@@ -71,14 +89,7 @@ export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string
   }
   if (history.length > 0) {
     parts.push(
-      "The conversation so far, oldest first:\n\n" +
-        history.map((entry) =>
-          entry.kind === "exchange"
-            ? `User: ${entry.user}\nYou answered: ${entry.answer}`
-            : entry.kind === "undo"
-            ? `User reverted earlier edits to: ${entry.paths.join(", ")}. Re-read them before editing.`
-            : `User ran a shell command:\n${entry.text}`
-        ).join("\n\n")
+      "The conversation so far, oldest first:\n\n" + history.map(text).join("\n\n")
     )
   }
   return parts

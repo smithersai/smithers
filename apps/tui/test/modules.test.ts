@@ -293,3 +293,28 @@ describe("replay", () => {
     expect(replies.every((reply) => reply.at(-1)?.delta.type === "settle")).toBe(true)
   })
 })
+
+describe("context compaction", () => {
+  const exchange = (text: string): Context.Entry => ({ kind: "exchange", user: text, answer: text })
+
+  it("drops the oldest entries until the requested tokens are gone, and keeps the newest", () => {
+    const history = [exchange("a".repeat(400)), exchange("b".repeat(400)), exchange("c".repeat(400))]
+    expect(Context.compactable(history, 1)).toBe(1)
+    expect(Context.compactable(history, 250)).toBe(2)
+    expect(Context.compactable(history, 1_000_000)).toBe(2)
+    expect(Context.compactable(history.slice(0, 1), 1_000_000)).toBe(0)
+    expect(Context.compactable(history, 0)).toBe(0)
+  })
+
+  it("sends the model only what a compact record left", () => {
+    const records: Array<Session.Record> = [
+      { type: "outcome", at: 1, prompt: "first", outcome: { _tag: "done", answer: "one" } },
+      { type: "outcome", at: 2, prompt: "second", outcome: { _tag: "done", answer: "two" } },
+      { type: "compact", at: 3, dropped: 1 },
+      { type: "outcome", at: 4, prompt: "third", outcome: { _tag: "done", answer: "three" } }
+    ]
+    const { entries } = Session.restore(records)
+    expect(entries.map((entry) => entry.kind === "exchange" ? entry.user : "")).toEqual(["second", "third"])
+    expect(Context.system("/tmp", entries).join("\n")).not.toContain("User: first")
+  })
+})

@@ -83,7 +83,7 @@ Ctrl+O read it.
 
 ## Commands
 
-`/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`,
+`/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`, `/compact`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
 `/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/retry <id>`, `/stop <id>`,
 `/hotkeys`, `/quit`. After `/model `, `/thinking ` and `/flow ` the menu completes the argument, and the

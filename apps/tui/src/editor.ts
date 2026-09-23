@@ -64,6 +64,7 @@ export const commands: ReadonlyArray<Command> = [
   { name: "resume", description: "Resume a session" },
   { name: "fork", description: "Fork from an earlier message" },
   { name: "session", description: "Show the session file and tokens" },
+  { name: "compact", description: "Drop the oldest context" },
   { name: "name", args: "<name>", description: "Name this session" },
   { name: "copy", description: "Copy the last answer" },
   { name: "summary", description: "Review this conversation" },

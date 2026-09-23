@@ -55,6 +55,8 @@ export type Record =
     readonly outcome: { readonly _tag: string; readonly answer?: string; readonly message?: string }
   }
   | { readonly type: "shell"; readonly at: number; readonly result: Shell.Result; readonly excluded: boolean }
+  /** `/compact`: the model no longer receives the oldest `dropped` context entries. */
+  | { readonly type: "compact"; readonly at: number; readonly dropped: number }
   /** The user reversed these calls' captured changes (call identities, `Changes.identity`). */
   | {
     readonly type: "undo"
@@ -376,6 +378,9 @@ export const restore = (records: ReadonlyArray<Record>): {
       case "undo":
         if (record.tab === undefined) transcript = Transcript.undone(transcript, record.calls, record.paths, record.at)
         entries.push({ kind: "undo", paths: record.paths })
+        break
+      case "compact":
+        entries.splice(0, record.dropped)
         break
       case "session":
         break

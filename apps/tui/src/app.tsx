@@ -14,7 +14,7 @@ import * as Approvals from "./approvals.ts"
 import * as Clipboard from "./clipboard.ts"
 import * as Complete from "./complete.ts"
 import * as DragScroll from "./drag-scroll.ts"
-import type * as Context from "./context.ts"
+import * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
@@ -998,6 +998,22 @@ export function App(props: AppProps) {
             Date.now()
           )
         )
+        return true
+      }
+      case "compact": {
+        if (live.current.turn !== undefined) {
+          setStatus("Stop running work first", "warning")
+          return true
+        }
+        const dropped = Context.compactable(entries.current, compact ?? Math.round(transcript.usage.context / 2))
+        if (dropped === 0) {
+          setStatus("Nothing to compact")
+          return true
+        }
+        entries.current.splice(0, dropped)
+        writer.current.append({ type: "compact", at: Date.now(), dropped })
+        setCompact(undefined)
+        setStatus(`Dropped the ${dropped} oldest context entries`)
         return true
       }
       case "name":
