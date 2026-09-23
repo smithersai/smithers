@@ -21,6 +21,7 @@ import * as Files from "./files.ts"
 import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
 import * as Form from "./form.ts"
 import * as Fuzzy from "./fuzzy.ts"
+import * as Monitors from "./monitors.ts"
 import type * as Host from "./host.ts"
 import * as Keys from "./keys.ts"
 import type { Model } from "./models.ts"
@@ -267,6 +268,41 @@ export function App(props: AppProps) {
   const [runs, setRuns] = useState(() =>
     new FlowRuns({ port: props.flows, persist: writer.current.append, restored: restored.current?.flows })
   )
+  /** Monitor updates reach the screen through this; it is set once the toast exists. */
+  const deliver = useRef<(delivery: Monitors.Delivery) => void>(() => {})
+  const makeMonitors = (
+    tabs: Workspace,
+    flows: FlowRuns,
+    persist: Session.Writer["append"],
+    restoredMonitors?: ReadonlyArray<Monitors.Monitor>
+  ) =>
+    new Monitors.Monitors({
+      judged: props.host.judged && props.host.monitor !== undefined,
+      observe: Monitors.observer({
+        tab: tabs.read,
+        run: flows.read,
+        shell: (command) => {
+          const running = Shell.run({ command, cwd: props.host.cwd, onOutput: () => {} })
+          const timer = setTimeout(running.cancel, 30_000)
+          return running.done.finally(() => clearTimeout(timer))
+        }
+      }),
+      judge: (input) => props.host.monitor!.judge(input),
+      compose: (input) => props.host.monitor!.compose(input),
+      deliver: (delivery) => deliver.current(delivery),
+      persist,
+      subscribe: (source, listener) =>
+        source.kind === "tab" ? tabs.subscribe(listener) : source.kind === "run" ? flows.subscribe(listener) : () => {},
+      ...(restoredMonitors === undefined ? {} : { restored: restoredMonitors }),
+      // A restored shell monitor asks again under this session's approval mode.
+      ...(props.host.approvals === undefined ? {} : {
+        authorize: Approvals.restored((requests) => props.host.approvals!.authorize(requests))
+      })
+    })
+  const [monitors, setMonitors] = useState(() =>
+    makeMonitors(workspace, runs, writer.current.append, restored.current?.monitors)
+  )
+  useEffect(() => () => monitors.dispose(), [monitors])
   /** Runs the user started here; their form opens without a key. */
   const userRuns = useRef(new Set<string>())
   const formOpened = useRef(new Set<string>())
@@ -429,6 +465,12 @@ export function App(props: AppProps) {
   const parkedDraft = useRef<string | undefined>(undefined)
   const dimensions = useTerminalDimensions()
   const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
+  deliver.current = (delivery) => {
+    const text = `${delivery.title}: ${delivery._tag === "update" ? delivery.text : Monitors.message(delivery.failure)}`
+    setStatus(text, delivery._tag === "update" ? "info" : "danger")
+    setTranscript((current) =>
+      delivery._tag === "update" ? Transcript.note(current, text, delivery.at) : Transcript.alert(current, text, delivery.at))
+  }
 
   const completion = useMemo(
     () => (menuDismissed
@@ -567,12 +609,13 @@ export function App(props: AppProps) {
 
   const quit = useCallback(() => {
     workspace.dispose()
+    monitors.dispose()
     const stopped = runs.dispose()
     live.current.turn?.handle.cancel()
     live.current.shell?.cancel()
     renderer.destroy()
     void stopped.then(() => Promise.allSettled([props.host.dispose(), props.flows?.dispose()])).finally(() => process.exit(0))
-  }, [renderer, props.host, props.flows, workspace, runs])
+  }, [renderer, props.host, props.flows, workspace, runs, monitors])
 
   const startTurn = useCallback((prompt: string) => {
     const steering = Steering.make()
@@ -586,12 +629,13 @@ export function App(props: AppProps) {
       history: entries.current,
       ...(live.current.seat.startsWith("replay:") ? {} : { role: "coordinator" as const }),
       workerSeat: props.workerSeat ?? props.seat,
-      background: `${workspace.context()}\nFlow runs: ${runs.context()}`,
+      background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}`,
       runtime: {
         publish: workspace.publish,
         delegate: workspace.request,
         read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
         list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
+        monitors,
         ...(props.flows === undefined ? {} : {
           flows: {
             list: () => runs.listed().filter((flow) => flow.modelInvocable),
@@ -641,7 +685,7 @@ export function App(props: AppProps) {
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
-  }, [props.host, props.flows, workspace, runs])
+  }, [props.host, props.flows, workspace, runs, monitors])
   const startTurnRef = useRef(startTurn)
   startTurnRef.current = startTurn
 
@@ -717,16 +761,17 @@ export function App(props: AppProps) {
   const newSession = useCallback(() => {
     writer.current = Session.create(props.host.cwd)
     entries.current = []
-    setRuns(new FlowRuns({ port: props.flows, persist: writer.current.append }))
+    const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append })
+    setRuns(nextRuns)
     setForm(undefined)
-    setWorkspace(
-      new Workspace({
-        host: props.host,
-        workerSeat: props.workerSeat ?? props.seat,
-        history: () => entries.current,
-        persist: writer.current.append
-      })
-    )
+    const nextWorkspace = new Workspace({
+      host: props.host,
+      workerSeat: props.workerSeat ?? props.seat,
+      history: () => entries.current,
+      persist: writer.current.append
+    })
+    setWorkspace(nextWorkspace)
+    setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append))
     setSurface("chat")
     setPanelFocus(false)
     setName(undefined)
@@ -740,17 +785,18 @@ export function App(props: AppProps) {
     writer.current = next
     entries.current = state.entries
     history.current = new Editor.History(state.prompts)
-    setRuns(new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows }))
+    const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows })
+    setRuns(nextRuns)
     setForm(undefined)
-    setWorkspace(
-      new Workspace({
-        host: props.host,
-        workerSeat: props.workerSeat ?? props.seat,
-        history: () => entries.current,
-        persist: writer.current.append,
-        restored: state.workspace
-      })
-    )
+    const nextWorkspace = new Workspace({
+      host: props.host,
+      workerSeat: props.workerSeat ?? props.seat,
+      history: () => entries.current,
+      persist: writer.current.append,
+      restored: state.workspace
+    })
+    setWorkspace(nextWorkspace)
+    setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append, state.monitors))
     setSurface("chat")
     setPanelFocus(false)
     setName(state.name)

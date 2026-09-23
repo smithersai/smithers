@@ -8,6 +8,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as Panels from "./panels.ts"
 import type { DelegateModel } from "./models.ts"
+import type * as Monitors from "./monitors.ts"
 
 export interface Ports {
   readonly publish: (panel: Panels.Panel) => void
@@ -16,15 +17,27 @@ export interface Ports {
   readonly list?: () => unknown
   /** The user's flow runs, served to cells by the Smithers plugin. */
   readonly flows?: SmithersPlugin.Ports
+  readonly monitors?: Pick<Monitors.Monitors, "create" | "list" | "stop">
 }
 /** The plugins every turn runs with: Smithers, with the flow ports when the role has them. */
 export const plugins = (ports?: Ports) => [SmithersPlugin.make(ports?.flows)]
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))
+/**
+ * A thrown error's public text. A tagged error (`_tag`, optional `code`) keeps
+ * its tag, so the cell reads `JevFailed (unreachable): ...` and not prose alone.
+ */
+export const publicError = (error: Error): string => {
+  const { _tag: tag, code } = error as { _tag?: unknown; code?: unknown }
+  if (typeof tag !== "string") return error.message
+  return `${tag}${typeof code === "string" ? ` (${code})` : ""}: ${error.message}`
+}
 const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown, never>>(
   name: string,
   description: string,
   input: I,
-  handle: (input: I["Type"]) => unknown
+  handle: (input: I["Type"]) => unknown,
+  /** Consequential capabilities the approval gate asks for; see `Approvals.requests`. */
+  capabilities: ReadonlyArray<string> = []
 ): FlowBinding.Binding => {
   const flow = Flow.make(name, {
     description,
@@ -38,16 +51,16 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
       name: flow._tag,
       input,
       output: flow.successSchema,
-      capabilities: [],
+      capabilities,
       effects: { reads: [], writes: [], tier: "irreversible", mode: "expected", onConflict: "serialize" }
     },
     handler: (input) =>
       Effect.try({
         // Optional fields arrive as `undefined`, which a cell result cannot carry.
         try: () => JSON.parse(JSON.stringify(handle(input) ?? null)) as unknown,
-        catch: (cause) => new Error(cause instanceof Error ? cause.message : "Runtime request failed")
+        catch: (cause) => cause instanceof Error ? cause : new Error("Runtime request failed")
       }),
-    publicError: (error) => error.message
+    publicError
   })
 }
 export const source = (ports: Ports): FlowBinding.Source =>
@@ -62,6 +75,41 @@ export const source = (ports: Ports): FlowBinding.Source =>
         return { id: panel.id, status: "published" }
       }
     ),
+    ...(ports.monitors === undefined ? [] : [
+      bind(
+        "monitor.create",
+        "Watch a source and tell the user only when something notable happens; returns immediately. Jev judges each change against watch; Luna writes the one-line update. source is {kind:\"tab\",id} (a worker tab), {kind:\"run\",id} (a smithers.run id) or {kind:\"shell\",command}. trigger is {kind:\"events\"} (default for tab and run) or {kind:\"interval\",seconds} (10 to 86400; required for shell, default 60). Reuse id to deduplicate or restart a stopped or failed monitor.",
+        Schema.Struct({
+          id: short,
+          title: short,
+          watch: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)),
+          source: Schema.Union([
+            Schema.Struct({ kind: Schema.Literal("tab"), id: short }),
+            Schema.Struct({ kind: Schema.Literal("run"), id: short }),
+            Schema.Struct({ kind: Schema.Literal("shell"), command: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000)) })
+          ]),
+          trigger: Schema.optional(Schema.Union([
+            Schema.Struct({ kind: Schema.Literal("events") }),
+            Schema.Struct({ kind: Schema.Literal("interval"), seconds: Schema.Number })
+          ]))
+        }),
+        (input) => ports.monitors!.create(input),
+        // A shell source runs its command every tick: the gate asks, per call.
+        ["proc:spawn:*"]
+      ),
+      bind(
+        "monitor.list",
+        "List monitors: id, title, status, update count and any failure.",
+        Schema.Struct({}),
+        () => ports.monitors!.list()
+      ),
+      bind(
+        "monitor.stop",
+        "Stop a monitor.",
+        Schema.Struct({ id: short }),
+        (input) => ports.monitors!.stop(input.id)
+      )
+    ]),
     ...(ports.delegate === undefined ? [] : [
       bind(
         "agent.delegate",
@@ -89,7 +137,7 @@ export const source = (ports: Ports): FlowBinding.Source =>
     ])
   ])
 export const coordinatorTeaching =
-  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Every turn ends with ctx.done(acknowledgement) in the cell that makes the request; console.log does not end it. Never wait, retry, or re-check tab.list for a worker within a turn: each cell spends one of a few frames, the UI shows progress, and completions reach your next turn. If a request fails, end the turn saying it was not made and why. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
+  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Every turn ends with ctx.done(acknowledgement) in the cell that makes the request; console.log does not end it. Never wait, retry, or re-check tab.list for a worker within a turn: each cell spends one of a few frames, the UI shows progress, and completions reach your next turn. If a request fails, end the turn saying it was not made and why. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. To hear later only when something notable happens in a tab, a flow run or a command's output, use monitor.create. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
 
 /** Requests the coordinator makes; a failed one is work the user asked for that nobody took. */
 export const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }

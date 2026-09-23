@@ -201,6 +201,21 @@ details. The coordinator also gets `smithers.flows`, `smithers.run` and
 `smithers.inspect` over the same runs (model-invocable flows only);
 `smithers.run` returns a `requested` receipt at once.
 
+## Monitors
+
+The coordinator has `monitor.create`, `monitor.list` and `monitor.stop`. A
+monitor watches a worker tab, a `smithers.run` run, or a shell command's output,
+on source events or an interval (10 s to 24 h; shell needs one). Each change
+goes to Jev (`AI_GATEWAY_API_KEY`), which answers whether it is notable for the
+monitor's `watch`; only a yes asks `openai:gpt-6-luna` for a one-line update,
+shown as a toast and a chat row. An unchanged source asks nothing. There is no
+fallback: without the key `monitor.create` is refused, and a Jev, Luna or
+source failure fails the monitor with a typed error row. Creating the same id
+restarts it. A shell monitor runs its command every tick, so creating one is
+asked like `bash` under `--approve ask` and refused under `deny`; on `/resume`
+and `-c` it asks again before its command runs. Monitors persist in the
+session and resume on `/resume` and `-c`.
+
 ## Tests
 
 | Command | What |

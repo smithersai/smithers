@@ -1255,3 +1255,57 @@ describe("transcript scrolling", () => {
     await tui.press(mouse(0, 5, 1, true))
   }, 60_000)
 })
+
+describe("monitors", () => {
+  const update = "CI: Build failed on main."
+  const watch = async (notable: boolean) => {
+    const cwd = repository()
+    const sessions = join(cwd, "sessions")
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "monitor-fixture.tsx")}`,
+      env: {
+        PATH: process.env.PATH!,
+        HOME: process.env.HOME!,
+        SMITHERS_TUI_SESSION_DIR: sessions,
+        MONITOR_NOTABLE: notable ? "1" : "0"
+      }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    await tui.type("watch the build")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Watching the build."), 10_000, "acknowledgement")
+    const log = join(cwd, "judged.log")
+    const judged = () => {
+      try {
+        return readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { verdict: boolean; done: boolean })
+      } catch {
+        return []
+      }
+    }
+    for (let attempt = 0; attempt < 200 && !judged().some((entry) => entry.done); attempt++) await Bun.sleep(50)
+    expect(judged().some((entry) => entry.done)).toBe(true)
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
+    const updates = () => Session.load(file).filter((record) => record.type === "monitor-update")
+    return { tui, judged, updates }
+  }
+
+  it("delivers a notable change as one toast and one chat row", async () => {
+    const { tui, updates } = await watch(true)
+    const screen = await tui.until((screen) => screen.includes(update), 10_000, "monitor update")
+    // Once in the toast, once as the chat row.
+    expect(screen.split(update).length - 1).toBe(2)
+    await Bun.sleep(3_000)
+    expect(updates()).toEqual([expect.objectContaining({ type: "monitor-update", id: "ci", text: "Build failed on main." })])
+    expect(tui.screen().split(update).length - 1).toBeLessThanOrEqual(2)
+  }, 60_000)
+
+  it("delivers nothing when Jev calls the change routine", async () => {
+    const { tui, judged, updates } = await watch(false)
+    await Bun.sleep(3_000)
+    expect(judged().every((entry) => !entry.verdict)).toBe(true)
+    expect(tui.screen()).not.toContain("Build failed on main.")
+    expect(updates()).toEqual([])
+  }, 60_000)
+})

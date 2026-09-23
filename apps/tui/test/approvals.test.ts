@@ -26,7 +26,13 @@ const descriptors = Effect.gen(function*() {
   const catalog = yield* FlowBinding.catalog([
     StandardFlows.filesystem(services),
     StandardFlows.shell(services),
-    Runtime.source({ publish() {}, delegate() {}, read() {}, list() {} })
+    Runtime.source({
+      publish() {},
+      delegate() {},
+      read() {},
+      list() {},
+      monitors: { create: () => ({ id: "m", status: "active" }), list: () => [], stop: (id) => ({ id, status: "stopped" }) }
+    })
   ])
   return catalog.descriptors
 }).pipe(Effect.provide(NodeServices.layer), Effect.runSync)
@@ -60,7 +66,10 @@ const inputs: Record<string, Record<string, unknown>> = {
   "ui.publish": { id: "p", title: "P", summary: "s", rows: [] },
   "agent.delegate": { id: "w", title: "W", prompt: "go" },
   "tab.read": { id: "w" },
-  "tab.list": {}
+  "tab.list": {},
+  "monitor.create": { id: "m", title: "M", watch: "w", source: { kind: "shell", command: "make" } },
+  "monitor.list": {},
+  "monitor.stop": { id: "m" }
 }
 
 /** Runs `effect` against a real attended store rooted at `cwd`. */
@@ -109,8 +118,19 @@ describe("classification", () => {
     const silent = descriptors.filter((descriptor) =>
       Approvals.requests(callOf(descriptor.name, inputs[descriptor.name] ?? {}), cwd, "chat").length === 0
     ).map((descriptor) => descriptor.name).sort()
-    expect(asked).toEqual(["apply_patch", "bash", "edit", "write"])
-    expect(silent).toEqual(["agent.delegate", "glob", "grep", "ls", "read", "tab.list", "tab.read", "ui.publish"])
+    expect(asked).toEqual(["apply_patch", "bash", "edit", "monitor.create", "write"])
+    expect(silent).toEqual([
+      "agent.delegate",
+      "glob",
+      "grep",
+      "ls",
+      "monitor.list",
+      "monitor.stop",
+      "read",
+      "tab.list",
+      "tab.read",
+      "ui.publish"
+    ])
     expect(asked.length + silent.length).toBe(descriptors.length)
   })
 
@@ -123,6 +143,17 @@ describe("classification", () => {
 })
 
 describe("resource narrowing", () => {
+  it("asks monitor.create for a shell source as its command, and never for a tab or run", () => {
+    const call = (source: object) => callOf("monitor.create", { id: "m", title: "M", watch: "w", source })
+    const [request, ...rest] = Approvals.requests(call({ kind: "shell", command: "tail -5 x.log" }), cwd, "chat")
+    expect(rest).toEqual([])
+    expect(Capability.format(request!.capability)).toBe("proc:spawn:monitor.create")
+    expect(request!.meta).toEqual({ flow: "monitor.create", subject: "tail -5 x.log", source: "chat" })
+    expect(Approvals.monitorRequest("tail -5 x.log")).toEqual(request!)
+    expect(Approvals.requests(call({ kind: "tab", id: "t" }), cwd, "chat")).toEqual([])
+    expect(Approvals.requests(call({ kind: "run", id: "r" }), cwd, "chat")).toEqual([])
+  })
+
   it("names the file an edit touches, inside the workspace", () => {
     const [request] = Approvals.requests(callOf("edit", { path: "src/a.js", oldString: "a", newString: "b" }), cwd, "t1")
     expect(Capability.format(request!.capability)).toBe(`fs:write:${cwd}/src/a.js`)

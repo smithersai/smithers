@@ -11,7 +11,8 @@
  * workspace's VCS will not show, or reach outside the process: every
  * `fs:write` (this host restores no snapshot, so "compensable" is never
  * compensated), `proc:spawn`, and all `net:` actions (a GET still sends data
- * out). Reads and the TUI's own runtime flows declare none of these.
+ * out). Reads and the TUI's own runtime flows declare none of these, except
+ * `monitor.create`, whose shell source runs a command.
  */
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
@@ -23,6 +24,7 @@ import { Effect, Layer, Option } from "effect"
 import { lstatSync, readlinkSync } from "node:fs"
 import { dirname, isAbsolute, join, relative } from "node:path"
 import * as Changes from "./changes.ts"
+import type * as Monitors from "./monitors.ts"
 
 /** `ask` waits for y/n, `all` asks nothing, `deny` refuses every consequential call. */
 export type Mode = "ask" | "all" | "deny"
@@ -121,6 +123,38 @@ export const shownInput = (flow: string, input: unknown): string => {
   return typeof only === "string" ? only : JSON.stringify(input)
 }
 
+/**
+ * Flows that spawn a process for some inputs only: the command a call runs,
+ * or `undefined` when it runs none. A shell-sourced monitor runs its command
+ * on every tick, so creating one is asked like running it.
+ */
+const spawns: Readonly<Record<string, (input: unknown) => string | undefined>> = {
+  "monitor.create": (input) => {
+    const source = typeof input === "object" && input !== null ? (input as { source?: unknown }).source : undefined
+    if (typeof source !== "object" || source === null) return undefined
+    const { kind, command } = source as { kind?: unknown; command?: unknown }
+    return kind === "shell" ? String(command) : undefined
+  }
+}
+
+/**
+ * The request a restored shell monitor waits on before it runs again: the one
+ * `monitor.create` asked, so an `a` for that flow covers both.
+ */
+export const monitorRequest = (command: string, source = "chat"): Request => ({
+  capability: Capability.make("proc:spawn", "monitor.create"),
+  meta: { flow: "monitor.create", subject: command, source }
+})
+
+/**
+ * `Monitors.Ports.authorize` over a host's `authorize`: a restored shell
+ * monitor asks under this session's mode, whatever the session that created
+ * it allowed. Other sources run nothing and ask nothing.
+ */
+export const restored = (authorize: (requests: ReadonlyArray<Request>) => Promise<void>) =>
+(monitor: Pick<Monitors.Monitor, "source">): Promise<void> =>
+  authorize(monitor.source.kind === "shell" ? [monitorRequest(monitor.source.command)] : [])
+
 /** One request per consequential capability, narrowed to what this call touches. */
 export const requests = (call: Cell.Call, cwd: string, source: string): ReadonlyArray<Request> => {
   const found = new Map<string, Request>()
@@ -147,7 +181,10 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
       }
     } else if (capability.action === "proc:spawn") {
       // The flow, not the command: `a` then means this flow for the session.
-      add(Capability.make("proc:spawn", call.flowName), subject)
+      const spawned = spawns[call.flowName]
+      const shown = spawned === undefined ? subject : spawned(call.input)
+      if (shown === undefined) continue
+      add(Capability.make("proc:spawn", call.flowName), shown)
     } else {
       add(capability, subject)
     }

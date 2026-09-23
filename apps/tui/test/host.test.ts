@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Approvals from "../src/approvals.ts"
 import * as Host from "../src/host.ts"
 
 const roots: Array<string> = []
@@ -250,5 +251,108 @@ describe("Host.run frame budget", () => {
     })
 
     expect(answer).toBe("Stopped after 8 frames.\nRequested: Fix tab.read output")
+  })
+})
+
+describe("Host.run shell monitors pass the approval gate", () => {
+  const shell = { kind: "shell", command: "tail -5 x.log" }
+  const tab = { kind: "tab", id: "build" }
+  const created: Array<unknown> = []
+  const monitorTurn = async (
+    approvals: Approvals.Mode,
+    source: object,
+    answer?: Approvals.Choice
+  ) => {
+    created.length = 0
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-monitor-"))
+    roots.push(cwd)
+    const host = Host.make({ cwd, environment: {}, approvals })
+    const request = { id: "log", title: "Log", watch: "an error", source }
+    const cell = `let r; try { r = await ctx.call("monitor.create", ${JSON.stringify(request)}) } ` +
+      `catch (e) { r = { threw: String(e?.message ?? e) } } ctx.done(JSON.stringify(r))`
+    try {
+      const turn = host.run({
+        prompt: "watch",
+        role: "coordinator",
+        seat: `replay:${doneReplay(cwd, cell)}`,
+        history: [],
+        runtime: {
+          publish: () => {},
+          monitors: {
+            create: (input) => (created.push(input), { id: input.id, status: "active" }),
+            list: () => [],
+            stop: (id) => ({ id, status: "stopped" })
+          }
+        },
+        onEvent: () => {}
+      })
+      let pending: ReadonlyArray<Approvals.Pending> = []
+      if (answer !== undefined) {
+        for (let attempt = 0; attempt < 400 && pending.length === 0; attempt++) {
+          pending = await host.approvals!.pending()
+          if (pending.length === 0) await Bun.sleep(10)
+        }
+        expect(created).toEqual([])
+        await host.approvals!.reply(pending[0]!, answer)
+      }
+      const outcome = await turn.done
+      return { outcome, pending, created: [...created] }
+    } finally {
+      await host.dispose()
+    }
+  }
+
+  test("all creates without asking", async () => {
+    const { outcome, created } = await monitorTurn("all", shell)
+    expect(outcome).toEqual({ _tag: "done", answer: JSON.stringify({ id: "log", status: "active" }) })
+    expect(created).toHaveLength(1)
+  })
+
+  test("ask waits for y and shows the command; n refuses", async () => {
+    const yes = await monitorTurn("ask", shell, "once")
+    expect(yes.pending[0]).toMatchObject({ flow: "monitor.create", subject: "tail -5 x.log", action: "proc:spawn" })
+    expect(yes.created).toHaveLength(1)
+    const no = await monitorTurn("ask", shell, "deny")
+    expect(no.created).toEqual([])
+    expect(JSON.stringify(no.outcome)).toContain("Denied: monitor.create tail -5 x.log")
+  })
+
+  test("deny refuses a shell source and still creates a tab source", async () => {
+    const denied = await monitorTurn("deny", shell)
+    expect(denied.created).toEqual([])
+    expect(JSON.stringify(denied.outcome)).toContain("Denied: monitor.create")
+    const watched = await monitorTurn("deny", tab)
+    expect(watched.created).toHaveLength(1)
+  })
+
+  test("a restored shell monitor asks again under this session's mode", async () => {
+    const restoredUnder = async (approvals: Approvals.Mode, answer?: Approvals.Choice) => {
+      const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-monitor-"))
+      roots.push(cwd)
+      const host = Host.make({ cwd, environment: {}, approvals })
+      try {
+        const gate = Approvals.restored((requests) => host.approvals!.authorize(requests))
+        const settled = gate({ source: { kind: "shell", command: "tail -5 x.log" } }).then(() => "armed", (error) => String(error))
+        let pending: ReadonlyArray<Approvals.Pending> = []
+        if (answer !== undefined) {
+          for (let attempt = 0; attempt < 400 && pending.length === 0; attempt++) {
+            pending = await host.approvals!.pending()
+            if (pending.length === 0) await Bun.sleep(10)
+          }
+          await host.approvals!.reply(pending[0]!, answer)
+        }
+        return { result: await settled, pending, tab: await gate({ source: { kind: "tab", id: "t" } }).then(() => "armed") }
+      } finally {
+        await host.dispose()
+      }
+    }
+    expect(await restoredUnder("all")).toMatchObject({ result: "armed", tab: "armed" })
+    const denied = await restoredUnder("deny")
+    expect(denied.result).toContain("Denied: monitor.create tail -5 x.log")
+    expect(denied.tab).toBe("armed")
+    const asked = await restoredUnder("ask", "once")
+    expect(asked.pending[0]).toMatchObject({ flow: "monitor.create", subject: "tail -5 x.log" })
+    expect(asked.result).toBe("armed")
+    expect((await restoredUnder("ask", "deny")).result).toContain("Denied")
   })
 })

@@ -80,7 +80,13 @@ export type Item = (
     readonly frame?: number
   }
   | { readonly kind: "answer"; readonly id: string; readonly text: string }
-  | { readonly kind: "error"; readonly id: string; readonly text: string }
+  | {
+    readonly kind: "error"
+    readonly id: string
+    readonly text: string
+    /** Raised by background work such as a monitor; it ends no turn. */
+    readonly background?: true
+  }
   | { readonly kind: "note"; readonly id: string; readonly text: string }
 ) & {
   /** When the item appeared; an item without one shares the previous item's time. */
@@ -175,6 +181,10 @@ export const shell = (transcript: Transcript, result: Shell.Result, excluded: bo
 
 export const note = (transcript: Transcript, text: string, at?: number): Transcript =>
   withId(transcript, { kind: "note", text }, at)
+
+/** An error row that settles nothing: a background failure the person must see. */
+export const alert = (transcript: Transcript, text: string, at?: number): Transcript =>
+  withId(transcript, { kind: "error", text, background: true }, at)
 
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
   withId({ ...settleOpen(transcript, at, "failed"),

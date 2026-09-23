@@ -140,7 +140,10 @@ export const panel = (transcript: Transcript.Transcript, id = "summary", title =
       })
     }
   }
-  const last = rows.at(-1)
+  const background = new Set(
+    transcript.items.flatMap((item) => item.kind === "error" && item.background === true ? [item.id] : [])
+  )
+  const last = rows.findLast((row) => !background.has(row.id))
   const answer = transcript.items.findLast((item) => item.kind === "answer")
   // The latest turn's requests nobody took lead the summary, whatever its
   // answer says: the answer can be a sentence written before the request failed.

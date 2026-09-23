@@ -43,6 +43,7 @@ import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSp
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
 import * as Context from "./context.ts"
+import * as Monitors from "./monitors.ts"
 import * as Panels from "./panels.ts"
 import * as Replay from "./replay.ts"
 import * as Runtime from "./runtime.ts"
@@ -83,6 +84,11 @@ export interface Host {
   readonly cwd: string
   readonly compaction: (used: number, window: number) => Promise<number | undefined>
   readonly describe?: (input: { title: string; prompt: string; model: DelegateModel }) => Promise<string>
+  /** Jev judges a monitor's change; Luna writes its update. Absent on test fakes. */
+  readonly monitor?: {
+    readonly judge: (input: Monitors.Judged) => Promise<boolean>
+    readonly compose: (input: Monitors.Judged) => Promise<string>
+  }
   /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
   readonly judged: boolean
   readonly run: (input: TurnInput) => Turn
@@ -198,12 +204,37 @@ export const make = (options: {
         messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: `Title: ${title}\nTask: ${prompt}` })])],
         tools: [],
         toolChoice: "none",
-        params: ModelRequest.GenerationParams.make({ maxTokens: 80 })
+        // No maxTokens: the ChatGPT-subscription route refuses a budget. Workspace trims the line.
+        params: ModelRequest.GenerationParams.make({})
       }))))
       if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Description incomplete")
       return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
     })
   )
+
+  const monitor: NonNullable<Host["monitor"]> = {
+    judge: Monitors.jev((request) =>
+      runtime.runPromise(Effect.gen(function*() {
+        return yield* (yield* Evaluator.Evaluator).evaluate(request)
+      }))
+    ),
+    compose: (input) => runtime.runPromise(
+      Effect.gen(function*() {
+        const seat = yield* (yield* SeatResolver.SeatResolver).resolve(delegateModels.luna)
+        const events = Array.from(yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
+          modelId: seat.modelId,
+          system: [ModelRequest.SystemPart.make({ text: Monitors.composeSystem })],
+          messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: Monitors.composeText(input) })])],
+          tools: [],
+          toolChoice: "none",
+          // No maxTokens: the ChatGPT-subscription route refuses a budget. Monitors trims the line.
+          params: ModelRequest.GenerationParams.make({})
+        }))))
+        if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Update incomplete")
+        return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
+      })
+    )
+  }
 
   const run = (input: TurnInput): Turn => {
     const index = ++turns
@@ -335,6 +366,7 @@ export const make = (options: {
     run,
     approvals,
     describe: describeTab,
+    monitor,
     dispose: () => runtime.dispose()
   }
 }

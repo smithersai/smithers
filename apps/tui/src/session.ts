@@ -14,6 +14,7 @@ import { basename, join } from "node:path"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
 import type * as Flows from "./flows.ts"
+import type * as Monitors from "./monitors.ts"
 import type * as Panels from "./panels.ts"
 import * as Shell from "./shell.ts"
 import * as Transcript from "./transcript.ts"
@@ -24,6 +25,16 @@ export type Record =
   | { readonly type: "panel"; readonly panel: Panels.Panel }
   | { readonly type: "tab"; readonly tab: Workspace.Tab }
   | { readonly type: "flow"; readonly run: Flows.Run }
+  | { readonly type: "monitor"; readonly monitor: Monitors.Monitor }
+  /** A delivered monitor update, or its failure. */
+  | {
+    readonly type: "monitor-update"
+    readonly at: number
+    readonly id: string
+    readonly title: string
+    readonly text: string
+    readonly failed?: true
+  }
   | { readonly type: "patch"; readonly receipt: Changes.Receipt }
   | {
     readonly type: "session"
@@ -222,6 +233,7 @@ export const restore = (records: ReadonlyArray<Record>): {
   readonly transcript: Transcript.Transcript
   readonly workspace: Workspace.Snapshot
   readonly flows: ReadonlyArray<Flows.Run>
+  readonly monitors: ReadonlyArray<Monitors.Monitor>
   readonly entries: Array<Context.Entry>
   readonly prompts: Array<string>
   readonly name: string | undefined
@@ -229,6 +241,7 @@ export const restore = (records: ReadonlyArray<Record>): {
   const panels = new Map<string, Panels.Panel>()
   const tabs = new Map<string, Workspace.Tab>()
   const flows = new Map<string, Flows.Run>()
+  const monitors = new Map<string, Monitors.Monitor>()
   let transcript = Transcript.empty
   const entries: Array<Context.Entry> = []
   const prompts: Array<string> = []
@@ -246,6 +259,14 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       case "flow":
         flows.set(record.run.id, record.run)
+        break
+      case "monitor":
+        monitors.set(record.monitor.id, record.monitor)
+        break
+      case "monitor-update":
+        transcript = record.failed === true
+          ? Transcript.alert(transcript, `${record.title}: ${record.text}`, record.at)
+          : Transcript.note(transcript, `${record.title}: ${record.text}`, record.at)
         break
       case "patch":
         transcript = Transcript.patched(transcript, record.receipt)
@@ -290,6 +311,7 @@ export const restore = (records: ReadonlyArray<Record>): {
     prompts,
     name,
     workspace: { tabs: [...tabs.values()], panels: [...panels.values()] },
-    flows: [...flows.values()]
+    flows: [...flows.values()],
+    monitors: [...monitors.values()]
   }
 }
