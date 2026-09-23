@@ -1,5 +1,6 @@
 // Real process/SQLite/filesystem frontier; Jj and the losing conflict are
 // controlled protocol seams, not a native-Jj merge correctness test.
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Jj } from "@smthrs/kernel"
@@ -10,7 +11,7 @@ import { PlanStore } from "@smthrs/plan-store"
 import { KeyMaterial, Plan, StepKey } from "@smthrs/plan"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { RunStore } from "@smthrs/run-store"
-import { Clock, Effect, Fiber, FileSystem, Layer, Option, Path } from "effect"
+import { Clock, Effect, Fiber, FileSystem, Layer, Option } from "effect"
 import { join } from "node:path"
 import * as PlanMergeStore from "../../src/PlanMergeStore.ts"
 import * as PlanScheduler from "../../src/PlanScheduler.ts"
@@ -35,7 +36,7 @@ const clock = mode === "crash" ? {
 } : liveClock
 const owner = { hostId: "plan-merge-frontier", pid: process.pid, nonce: `process-${process.pid}` }
 const workspaceFs = KernelFileSystem.layer.pipe(
-  Layer.provide(AtomicFileSystem.layer), Layer.provide(Path.layer),
+  Layer.provide(AtomicFileSystem.layer), Layer.provide(NodePath.layer),
   Layer.provide(Workspace.layer(root)), Layer.provide(GrantStore.layerNoop)
 )
 const artifacts = ArtifactStore.layerFileSystem({ directory: join(root, ".flows/objects"), durability: "best-effort" })

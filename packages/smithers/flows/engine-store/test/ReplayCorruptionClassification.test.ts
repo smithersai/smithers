@@ -11,6 +11,7 @@
  * transient host errors stay retryable and never reach the receiver. Both
  * classes journal their `reason` on the `replay_failed` provenance record.
  */
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
@@ -29,7 +30,6 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
-import * as EffectPath from "effect/Path"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -582,7 +582,7 @@ describe("replay-failed classification (issue #150)", () => {
         // workspace-relative, and replay refuses evidence naming anything else.
         const host = KernelFileSystem.layer.pipe(
           Layer.provide(AtomicFileSystem.layer),
-          Layer.provide(EffectPath.layer),
+          Layer.provide(NodePath.layer),
           Layer.provide(KernelWorkspace.layer(root)),
           Layer.provide(GrantStore.layerNoop)
         )

@@ -9,6 +9,7 @@
  * cone below the edit re-runs and every unchanged branch is a cache hit. This
  * is where that stops being a claim.
  */
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
@@ -24,7 +25,6 @@ import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as EffectPath from "effect/Path"
 import { mkdirSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -58,7 +58,7 @@ const jjLayer = Layer.succeed(
 const production = (root: string) => {
   const workspaceFs = KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layer),
-    Layer.provide(EffectPath.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(KernelWorkspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )
@@ -82,7 +82,7 @@ const production = (root: string) => {
 const boundaryOnly = (root: string) => {
   const workspaceFs = KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layer),
-    Layer.provide(EffectPath.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(KernelWorkspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )

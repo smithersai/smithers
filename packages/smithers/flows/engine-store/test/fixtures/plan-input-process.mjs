@@ -1,4 +1,5 @@
 // Real process/database/filesystem recovery; Jj itself is a protocol stub.
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Jj } from "@smthrs/kernel"
@@ -8,7 +9,7 @@ import * as Workspace from "@smthrs/kernel/Workspace"
 import { KeyMaterial, Plan } from "@smthrs/plan"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { RunStore } from "@smthrs/run-store"
-import { Cause, Clock, Effect, Exit, FileSystem, Layer, Path } from "effect"
+import { Cause, Clock, Effect, Exit, FileSystem, Layer } from "effect"
 import { join } from "node:path"
 import * as PlanScheduler from "../../src/PlanScheduler.ts"
 import * as StepBoundary from "../../src/StepBoundary.ts"
@@ -30,7 +31,7 @@ const fixtureClock = mode === "crash" ? {
 } : liveClock
 const owner = { hostId: "plan-input-process", pid: process.pid, nonce: `process-${process.pid}` }
 const workspaceFs = KernelFileSystem.layer.pipe(
-  Layer.provide(AtomicFileSystem.layer), Layer.provide(Path.layer),
+  Layer.provide(AtomicFileSystem.layer), Layer.provide(NodePath.layer),
   Layer.provide(Workspace.layer(root)), Layer.provide(GrantStore.layerNoop)
 )
 const artifacts = ArtifactStore.layerFileSystem({ directory: join(root, ".flows/objects"), durability: "best-effort" })

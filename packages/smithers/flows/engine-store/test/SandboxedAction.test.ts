@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * The lane this suite proves: an action body runs in an isolated workspace
@@ -27,7 +28,6 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import * as EffectPath from "effect/Path"
 import * as Schema from "effect/Schema"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -69,7 +69,7 @@ const production = (root: string, sandboxed: boolean) => {
   // workspace-relative and resolve against `root` on every host operation.
   const host = KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layer),
-    Layer.provide(EffectPath.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(KernelWorkspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )

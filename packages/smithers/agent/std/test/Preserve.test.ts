@@ -1,4 +1,5 @@
 import { NodeFileSystem } from "@effect/platform-node"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Path, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
@@ -47,11 +48,11 @@ describe("atomic replacement", () => {
           yield* handler.run(path)
           const after = yield* fs.stat(path)
           expect(new Uint8Array(yield* fs.readFile(path))).toEqual(new TextEncoder().encode(replacement))
-          expect(after.mode & 0o7777).toBe(0o4750)
+          expect(after.mode & 0o7777).toBe(before.mode & 0o7777)
           expect(after.uid).toEqual(before.uid)
           expect(after.gid).toEqual(before.gid)
           expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
-        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer))
       )
     })
 
@@ -79,7 +80,7 @@ describe("atomic replacement", () => {
           expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
           expect(yield* fs.readFileString(path)).toBe(original)
           expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
-        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer))
       )
     })
 
@@ -91,6 +92,7 @@ describe("atomic replacement", () => {
           const path = `${dir}/target.txt`
           yield* fs.writeFileString(path, original)
           yield* fs.chmod(path, 0o640)
+          const before = yield* fs.stat(path)
           const faulty = {
             ...fs,
             writeFileString: (target: string, value: string, options?: Parameters<typeof fs.writeFileString>[2]) =>
@@ -108,9 +110,9 @@ describe("atomic replacement", () => {
           const exit = yield* Effect.exit(handler.run(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty)))
           expect(Exit.isFailure(exit)).toBe(true)
           expect(yield* fs.readFileString(path)).toBe(original)
-          expect((yield* fs.stat(path)).mode & 0o7777).toBe(0o640)
+          expect((yield* fs.stat(path)).mode & 0o7777).toBe(before.mode & 0o7777)
           expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
-        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
+        })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodePath.layer))
       )
     })
   }

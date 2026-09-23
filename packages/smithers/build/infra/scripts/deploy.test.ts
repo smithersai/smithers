@@ -164,7 +164,7 @@ describe("deploy wrapper", () => {
     expect(resolveDeployOptions({ cli: "cli", cwd: "cwd", escalationDelayMs: 1 }).escalationDelayMs).toBe(1)
   })
 
-  it("reports a command that ended on a signal of its own", async () => {
+  it.skipIf(process.platform === "win32")("reports a command that ended on a signal of its own", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
     try {
       const options = { cli: script("self-signal"), cwd: directory, stateDirectory: stateDirectory(), redact: async () => 0 }
@@ -202,7 +202,7 @@ describe("deploy wrapper", () => {
     }
   })
 
-  it("kills the command outright when a second termination signal arrives", async () => {
+  it.skipIf(process.platform === "win32")("kills the command outright when a second termination signal arrives", async () => {
     const marker = NodePath.join(directory, "second-signal")
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
     try {

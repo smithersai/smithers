@@ -37,9 +37,9 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as StandardFlows from "../src/StandardFlows.ts"
 
-/** The posix path service, materialized once so bindings can be given a context. */
+/** The native path service, materialized once so bindings can be given a context. */
 const pathServices: Context.Context<Path.Path> = Effect.runSync(
-  Effect.provide(Effect.context<Path.Path>(), Path.layer)
+  Effect.provide(Effect.context<Path.Path>(), NodePath.layer)
 )
 
 /**

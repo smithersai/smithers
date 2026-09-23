@@ -1,3 +1,4 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
@@ -5,7 +6,7 @@ import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
-import { Effect, FileSystem, Layer, Path, PlatformError, Result } from "effect"
+import { Effect, FileSystem, Layer,  PlatformError, Result } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -27,7 +28,7 @@ afterEach(async () => {
 const guarded = (root: string, options: AtomicFileSystem.Options = {}) =>
   KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layerWith(options)),
-    Layer.provide(Path.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(Workspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )

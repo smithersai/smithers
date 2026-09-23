@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { type Artifact, verify } from "./soakArtifact.ts"
 
-it("writes explicit failed evidence and releases resources after a real SIGTERM", async () => {
+it.skipIf(process.platform === "win32")("writes explicit failed evidence and releases resources after a real SIGTERM", async () => {
   const directory = await mkdtemp(join(tmpdir(), "sync-soak-interruption-"))
   try {
     const artifactPath = join(directory, "interrupted.json")

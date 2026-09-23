@@ -189,7 +189,7 @@ describe("NodeDatabase concurrent open", () => {
    * reuses the parked descriptor for the next open. That descriptor is
    * accounted for below, and it is not a connection.
    */
-  it.live("does not accumulate connections across the attempts a contended open retries", () =>
+  it.live.skipIf(process.platform === "win32")("does not accumulate connections across the attempts a contended open retries", () =>
     Effect.gen(function*() {
       const filename = tempFile()
       seedRollbackMode(filename)
