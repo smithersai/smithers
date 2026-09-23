@@ -165,8 +165,15 @@ export const appEntryPath = (): string => {
   return path
 }
 
+export const productUrl = (page: Page, path: string): string => {
+  const current = page.url()
+  const base = /^https?:\/\//.test(current) ? current : process.env.SMITHERS_REAL_BASE_URL
+  if (!base) throw new Error("The product page has no HTTP origin for navigation.")
+  return new URL(path, base).toString()
+}
+
 export const openApp = async (page: Page): Promise<void> => {
-  await page.goto(appEntryPath())
+  await page.goto(productUrl(page, appEntryPath()))
 }
 
 /** What a measured boot followed: a fresh load of the app, or a reload of the page already on it. */

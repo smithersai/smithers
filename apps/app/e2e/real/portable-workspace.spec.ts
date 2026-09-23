@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { closeComposer, expect, realApi } from "./support/test"
+import { closeComposer, expect, productUrl, realApi } from "./support/test"
 import { runSlash } from "./issues/local"
 import { withOwnedRepository } from "./portable/owned-repository"
 import type { APIRequestContext, Page } from "@playwright/test"
@@ -49,7 +49,7 @@ authenticatedTest("a product terminal accepts keyboard input on its workspace", 
   coverage: ["action:workspace.view", "action:workspace.terminal", "host:local", "host:production", "path:success", "path:keyboard", "door:slash", "dimension:keyboard", "dimension:real-pty", "evidence:terminal-output-and-cleanup"]
 }), async ({ page, request }) => {
   await withOwnedRepository(page, request, (repo) => runningWorkspace(page, request, repo, async (id) => {
-    await page.goto(`/${repo.fullName}`, { waitUntil: "domcontentloaded" })
+    await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
     await runSlash(page, `/workspace.view ${id}`)
     const card = page.getByTestId(`card-workspace-${id}`)
     await expect(card).toBeVisible()

@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { expect, realApi } from "./support/test"
+import { expect, productUrl, realApi } from "./support/test"
 import { runSlash } from "./issues/local"
 import { withOwnedRepository } from "./portable/owned-repository"
 
@@ -11,7 +11,7 @@ authenticatedTest("an owned repository runs a declared Flow and exposes its dura
   coverage: ["action:flow.list", "action:flow.run", "host:local", "host:production", "path:success", "door:slash", "surface:flow-api", "evidence:accepted-run-and-terminal-projection"]
 }), async ({ page, request }) => {
   await withOwnedRepository(page, request, async (repo) => {
-    await page.goto(`/${repo.fullName}`, { waitUntil: "domcontentloaded" })
+    await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
     const list = await realApi(page, request, "POST", "/api/workflow/rpc", {
       repo: repo.fullName, procedure: "List", payload: { _tag: "flows" }
     })
