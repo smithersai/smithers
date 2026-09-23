@@ -20,9 +20,26 @@ Configuration (environment variables of the harness host):
                      task holds 2. Grants are first come, first served across
                      processes, so two arms launched with the same -n share
                      the cluster evenly. Unset: no ledger.
+    PLUE_MAX_WORKSPACES  running workspaces the ledger allows at once: the
+                     account plan's concurrent-sandbox cap (a create over it
+                     is refused with 402). Unset or 0: no count cap.
     PLUE_MAX_CPUS    the largest guest a sandbox worker can place. A task
                      asking for more raises PlueUnplaceable at once instead
-                     of waiting for capacity that cannot appear.
+                     of waiting for capacity that cannot appear. So does a
+                     task that needs a GPU, a TPU or anything else the
+                     workspace backend lacks: Harbor's constructor check is
+                     deferred to reserve(), inside the trial.
+    PLUE_LEAK_LOG    where stop() records a workspace it could not delete
+                     (default ~/.cache/plue-leaks.log); stop() never raises.
+
+Every environment method raises PlueError (or a subclass) and nothing else,
+so a plue failure is always a trial's exception and never the job's.
+
+A task whose verifier runs in a separate environment (all of TB4) hands its
+ledger slot from the agent workspace straight to the verifier workspace, and
+Harbor awaits the verifier's reserve() before its build timer as well.
+Queueing that verifier behind fresh trials inside the timer was every
+VerifierTimeoutError of the 2026-09-23 pass.
 
 Capacity waits happen before Harbor's environment-start timer. Harbor wraps
 `environment.start()` in `asyncio.wait_for(build_timeout_sec)`; importing
@@ -44,7 +61,10 @@ and `RUN chmod` lines (the DeepSWE verifier shape); plue does not build images.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import fcntl
+import functools
+import importlib.metadata
 import json
 import math
 import os
@@ -57,6 +77,11 @@ import time
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from . import outcome
+except ImportError:  # run as a top-level module (fixtures)
+    import outcome  # type: ignore[no-redef]
+
 _DEFAULT_WAIT_SEC = 900
 _DEFAULT_EXEC_TIMEOUT_SEC = 8 * 3600
 _DEFAULT_USER = "root"
@@ -66,6 +91,13 @@ _DEFAULT_CAPACITY_WAIT_SEC = 14400
 _CAPACITY_POLL_SEC = 60
 _SLOT_VCPUS = 2
 _SLOT_POLL_SEC = 5
+# How long a finished agent workspace keeps its slot for the same trial's
+# verifier workspace. Harbor stops one and creates the other seconds apart.
+_HEIR_TTL_SEC = 180
+_DELETE_ATTEMPTS = 3
+_DELETE_BACKOFF_SEC = 10
+# Harbor versions whose Trial._separate_verifier_env is copied below.
+_VERIFIER_PATCH_HARBOR = ("0.23.0",)
 # What the workspace SSH gateway prints on the session's stderr when the
 # transport, not the command, failed (plue internal/ssh/server.go). The
 # command's exit status is then meaningless.
@@ -127,19 +159,32 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def heir_of(session_id: str) -> str | None:
+    """The session-id prefix of the verifier workspace that follows an agent
+    workspace in the same trial (Harbor: `<trial>__env`, then
+    `<trial>__verifier__<key>`)."""
+    if session_id.endswith("__env"):
+        return session_id[: -len("__env")] + "__verifier__"
+    return None
+
+
 class SlotLedger:
     """Workspace slots shared by every harness process on one host.
 
     State is one JSON file guarded by flock: `holders` {key: {pid, slots}}
     and `waiters`, a FIFO list. Only the head waiter can be granted, and only
-    when its slots fit, so a 2-slot task is not starved by 1-slot ones and
-    two arms with the same -n get the same share. Entries of dead processes
-    are dropped on every update.
+    when its slots fit and fewer than `max_holders` workspaces run, so a
+    2-slot task is not starved by 1-slot ones and two arms with the same -n
+    get the same share. A holder released with an `heir` keeps its slot until
+    `until` for the first key starting with that prefix: the heir queues
+    first and takes the slot at once. Entries of dead processes and expired
+    handovers are dropped on every update.
     """
 
-    def __init__(self, path: Path | str, capacity: int):
+    def __init__(self, path: Path | str, capacity: int, max_holders: int = 0):
         self.path = Path(path)
         self.capacity = capacity
+        self.max_holders = max_holders
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _update(self, change):
@@ -149,9 +194,12 @@ class SlotLedger:
                 state = json.loads(self.path.read_text())
             except (OSError, ValueError):
                 state = {}
-            holders = {k: v for k, v in (state.get("holders") or {}).items() if _pid_alive(int(v["pid"]))}
+            now = time.time()
+            holders = {k: v for k, v in (state.get("holders") or {}).items()
+                       if _pid_alive(int(v["pid"])) and float(v.get("until", now + 1)) > now}
             waiters = [w for w in (state.get("waiters") or []) if _pid_alive(int(w["pid"]))]
-            state = {"capacity": self.capacity, "holders": holders, "waiters": waiters}
+            state = {"capacity": self.capacity, "max_holders": self.max_holders,
+                     "holders": holders, "waiters": waiters}
             result = change(state)
             state["used"] = sum(int(v["slots"]) for v in state["holders"].values())
             tmp = self.path.with_suffix(".tmp")
@@ -159,34 +207,62 @@ class SlotLedger:
             tmp.replace(self.path)
             return result
 
+    @staticmethod
+    def _handover(state, key: str) -> str | None:
+        for holder, entry in state["holders"].items():
+            if entry.get("heir") and key.startswith(entry["heir"]):
+                return holder
+        return None
+
     def enqueue(self, key: str, slots: int, pid: int | None = None) -> None:
         pid = pid or os.getpid()
 
         def change(state):
             if key in state["holders"] or any(w["key"] == key for w in state["waiters"]):
                 return
-            state["waiters"].append({"key": key, "slots": slots, "pid": pid, "since": time.time()})
+            entry = {"key": key, "slots": slots, "pid": pid, "since": time.time()}
+            if self._handover(state, key):
+                heirs = sum(1 for w in state["waiters"] if w.get("heir"))
+                state["waiters"].insert(heirs, {**entry, "heir": True})
+            else:
+                state["waiters"].append(entry)
         self._update(change)
 
     def try_grant(self, key: str) -> bool:
         def change(state):
             if key in state["holders"]:
                 return True
-            if not state["waiters"] or state["waiters"][0]["key"] != key:
+            waiter = next((w for w in state["waiters"] if w["key"] == key), None)
+            if waiter is None:
                 return False
-            head = state["waiters"][0]
             used = sum(int(v["slots"]) for v in state["holders"].values())
-            if used + int(head["slots"]) > self.capacity and state["holders"]:
+            previous = self._handover(state, key)
+            if previous is not None:
+                others = used - int(state["holders"][previous]["slots"])
+                if others + int(waiter["slots"]) <= self.capacity or len(state["holders"]) == 1:
+                    state["holders"].pop(previous)
+                    state["waiters"].remove(waiter)
+                    state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"], "since": time.time()}
+                    return True
+            if state["waiters"][0]["key"] != key:
                 return False
+            if state["holders"]:
+                if used + int(waiter["slots"]) > self.capacity:
+                    return False
+                if self.max_holders and len(state["holders"]) >= self.max_holders:
+                    return False
             state["waiters"].pop(0)
-            state["holders"][key] = {"pid": head["pid"], "slots": head["slots"], "since": time.time()}
+            state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"], "since": time.time()}
             return True
         return self._update(change)
 
-    def release(self, key: str) -> None:
+    def release(self, key: str, heir: str | None = None, ttl: float = _HEIR_TTL_SEC) -> None:
         def change(state):
-            state["holders"].pop(key, None)
             state["waiters"] = [w for w in state["waiters"] if w["key"] != key]
+            if heir and key in state["holders"]:
+                state["holders"][key].update(heir=heir, until=time.time() + ttl)
+            else:
+                state["holders"].pop(key, None)
         self._update(change)
 
     @classmethod
@@ -195,7 +271,7 @@ class SlotLedger:
         if capacity <= 0:
             return None
         path = os.environ.get("PLUE_SLOT_LEDGER") or str(Path.home() / ".cache" / "plue-slots.json")
-        return cls(path, capacity)
+        return cls(path, capacity, int(os.environ.get("PLUE_MAX_WORKSPACES", "0") or 0))
 
 
 def install_untimed_reserve(trial_cls) -> None:
@@ -218,6 +294,62 @@ def install_untimed_reserve(trial_cls) -> None:
 
     _start_agent_environment._plue_untimed_reserve = True  # type: ignore[attr-defined]
     trial_cls._start_agent_environment = _start_agent_environment
+
+
+def install_untimed_verifier_reserve(trial_cls) -> bool:
+    """The same pre-step for the separate verifier environment.
+
+    Harbor creates it inside `Trial._separate_verifier_env` and starts it
+    under `wait_for(start(), build_timeout_sec)` with no hook in between, so
+    this is a copy of that method (Harbor 0.23.0) with one added line: await
+    `env.reserve()` before the timer. Other Harbor versions are left alone and
+    say so. Returns whether the patch is installed."""
+    current = trial_cls._separate_verifier_env
+    if getattr(current, "_plue_untimed_reserve", False):
+        return True
+    version = importlib.metadata.version("harbor")
+    if version not in _VERIFIER_PATCH_HARBOR:
+        import logging
+        logging.getLogger(__name__).warning(
+            "plue: Harbor %s is not %s; the separate verifier environment still reserves inside the build timer",
+            version, _VERIFIER_PATCH_HARBOR)
+        return False
+    from harbor.environments.factory import EnvironmentFactory
+
+    @contextlib.asynccontextmanager
+    async def _separate_verifier_env(self, env_config, *, key, plan, step_cfg=None):
+        verifier_runtime_config = self.config.environment.model_copy(update={"extra_docker_compose": []})
+        if plan.verifier_env_baseline is None:
+            raise RuntimeError("separate verifier env requires a verifier baseline in the network plan")
+        env = EnvironmentFactory.create_environment_from_config(
+            config=verifier_runtime_config,
+            environment_dir=self._verifier_env_build_context(step_cfg),
+            environment_name=self.task.short_name,
+            session_id=self._separate_verifier_session_id(key),
+            trial_paths=self.paths,
+            task_env_config=env_config,
+            logger=self.logger,
+            mounts=self._verifier_env_mounts(env_config),
+            network_policy=plan.verifier_env_baseline,
+            phase_network_policies=[plan.verifier_phase],
+        )
+        env.context_id = self._id
+        self._validate_separate_verifier_env_policies(env, plan=plan)
+        try:
+            reserve = getattr(env, "reserve", None)
+            if reserve is not None:
+                await reserve()
+            await asyncio.wait_for(env.start(force_build=False), timeout=self._environment_build_timeout_sec)
+            yield env
+        finally:
+            try:
+                await asyncio.shield(env.stop(delete=self.config.environment.delete))
+            except Exception as exc:
+                self.logger.debug(f"Failed to stop verifier env '{key}': {exc}")
+
+    _separate_verifier_env._plue_untimed_reserve = True  # type: ignore[attr-defined]
+    trial_cls._separate_verifier_env = _separate_verifier_env
+    return True
 
 
 def is_capacity_error(error: PlueError) -> bool:
@@ -305,6 +437,9 @@ class _PlueOps:
             raise PlueError("PLUE_REPO must be owner/name")
         return repo
 
+    def _validate_definition(self) -> None:
+        self._resolve_image()
+
     def _resolve_image(self) -> None:
         image = getattr(self.task_env_config, "docker_image", None)
         self._plue_copies, self._plue_chmods = [], []
@@ -328,12 +463,15 @@ class _PlueOps:
                    check: bool = True) -> subprocess.CompletedProcess[bytes]:
         command = [self._cli(), *args]
         self.logger.debug("plue: %s", " ".join(shlex.quote(a) for a in command))
-        proc = await asyncio.create_subprocess_exec(
-            *command,
-            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *command,
+                stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except OSError as error:
+            raise PlueError(f"cannot run the plue CLI: {error}", "cli_unavailable", command) from error
         try:
             out, err = await asyncio.wait_for(proc.communicate(stdin), timeout=timeout)
         except asyncio.TimeoutError:
@@ -364,6 +502,9 @@ class _PlueOps:
 
     _plue_reserved: bool = False
     _plue_ledger_key: str = ""
+    # A check Harbor runs in the constructor that this backend fails (GPU,
+    # an image plue cannot build, …), raised by reserve() inside the trial.
+    _plue_deferred: PlueError | None = None
 
     def _plue_ledger(self) -> SlotLedger | None:
         return SlotLedger.from_environment()
@@ -371,6 +512,8 @@ class _PlueOps:
     async def _plue_reserve(self) -> None:
         """Hold a host slot, then create the workspace and wait for it to run.
         Harbor awaits this before its environment-start timer."""
+        if self._plue_deferred is not None:
+            raise self._plue_deferred
         if self._plue_reserved:
             return
         cpus = getattr(self.task_env_config, "cpus", None) or 1
@@ -400,13 +543,30 @@ class _PlueOps:
             raise
         self._plue_reserved = True
 
-    async def _plue_release(self) -> None:
+    async def _plue_release(self, heir: str | None = None) -> None:
         if not self._plue_ledger_key:
             return
         ledger = self._plue_ledger()
         if ledger is not None:
-            await asyncio.to_thread(ledger.release, self._plue_ledger_key)
+            await asyncio.to_thread(ledger.release, self._plue_ledger_key, heir)
         self._plue_ledger_key = ""
+
+    def _plue_verifies_separately(self) -> bool:
+        """Whether the task's verifier runs in its own environment, read from
+        the task.toml beside this environment directory."""
+        try:
+            import tomllib
+            config = tomllib.loads((Path(self.environment_dir).parent / "task.toml").read_text())
+        except (OSError, ValueError):
+            return False
+        verifier = config.get("verifier") or {}
+        return verifier.get("environment_mode") == "separate" or "environment" in verifier
+
+    def _plue_heir(self) -> str | None:
+        heir = heir_of(str(getattr(self, "session_id", "")))
+        if heir is None or not self._plue_ledger_key or not self._plue_verifies_separately():
+            return None
+        return self._plue_ledger_key.split(":", 1)[0] + ":" + heir
 
     async def _plue_start(self) -> None:
         await self._plue_reserve()
@@ -470,13 +630,47 @@ class _PlueOps:
                                 timeout=300, check=False)
 
     async def _plue_stop(self) -> None:
+        """Delete the workspace and free the slot. Never raises: a workspace
+        that survives every attempt is logged to PLUE_LEAK_LOG, because an
+        undeleted workspace is not the trial's failure."""
+        workspace = self._workspace_id
+        heir = self._plue_heir()
         try:
-            if self._workspace_id:
-                await self._run("workspace", "delete", *self._ws(), "--format", "json", timeout=300)
+            last: PlueError | None = None
+            for attempt in range(_DELETE_ATTEMPTS if workspace else 0):
+                try:
+                    await self._run("workspace", "delete", workspace, "--repo", self._repo(),
+                                    "--format", "json", timeout=300)
+                    last = None
+                    break
+                except PlueError as error:
+                    if "not found" in str(error).lower():
+                        last = None
+                        break
+                    last = error
+                    await asyncio.sleep(_DELETE_BACKOFF_SEC * (attempt + 1))
+            if last is not None:
+                self._plue_record_leak(workspace, last)
+        except Exception as error:  # noqa: BLE001 - stop() must not raise
+            self._plue_record_leak(workspace, error)
         finally:
             self._workspace_id = ""
             self._plue_reserved = False
-            await self._plue_release()
+            try:
+                await self._plue_release(heir)
+            except Exception as error:  # noqa: BLE001
+                self.logger.warning("plue: could not release ledger slot: %s", error)
+
+    def _plue_record_leak(self, workspace: str, error: BaseException) -> None:
+        self.logger.warning("plue: workspace %s was not deleted: %s", workspace, error)
+        path = Path(os.environ.get("PLUE_LEAK_LOG") or Path.home() / ".cache" / "plue-leaks.log")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as log:
+                log.write(json.dumps({"at": time.time(), "workspace": workspace, "repo": os.environ.get("PLUE_REPO", ""),
+                                      "session": getattr(self, "session_id", ""), "error": str(error)[:500]}) + "\n")
+        except OSError:
+            pass
 
     # --- exec --------------------------------------------------------------
 
@@ -492,7 +686,12 @@ class _PlueOps:
             args += ["--env", f"{key}={value}"]
         args += ["--command", with_egress(command)]
         result = await self._run(*args, timeout=timeout + 60, check=False)
-        data = _envelope(result.stdout.decode(errors="replace"))
+        try:
+            data = _envelope(result.stdout.decode(errors="replace"))
+        except ValueError as error:
+            raise PlueError(f"unreadable workspace exec reply: {error}", "cli_reply", result.args) from error
+        if not isinstance(data, dict) or not data:
+            raise PlueError(f"empty workspace exec reply (exit {result.returncode})", "cli_reply", result.args)
         if "error" in data and "exit_code" not in data:
             error = data["error"]
             raise PlueError(error.get("message", "exec failed"), error.get("code", ""), result.args)
@@ -504,6 +703,11 @@ class _PlueOps:
             # The gateway lost the session; the command may still be running
             # or may never have started. Not the command's exit status.
             raise PlueError(failure, "ssh_session_failed", result.args)
+        client = outcome.ssh_transport_error(stderr + "\n" + result.stderr.decode(errors="replace"))
+        if code == 255 and client:
+            # OpenSSH exits 255 on its own errors: connect timeout, the remote
+            # closing the connection, a dead read. Not the command's status.
+            raise PlueError(client, "ssh_transport", result.args)
         return payload.get("stdout", "") or "", stderr, code
 
     # --- files -------------------------------------------------------------
@@ -544,6 +748,49 @@ class _PlueOps:
         return code == 0
 
 
+def contained(method):
+    """Every failure of an environment method is a PlueError, so Harbor
+    records it on the trial. Cancellation passes through untouched."""
+    @functools.wraps(method)
+    async def wrapper(self, *args, **kwargs):
+        try:
+            return await method(self, *args, **kwargs)
+        except PlueError:
+            raise
+        except Exception as error:
+            raise PlueError(f"{type(error).__name__}: {error}", "harness_internal") from error
+    return wrapper
+
+
+def _deferring(check_name: str):
+    """A constructor check whose failure is kept for reserve() to raise."""
+    def check(self):
+        try:
+            getattr(super(_Deferring, self), check_name)()
+        except PlueError as error:
+            self._plue_deferred = self._plue_deferred or error
+        except Exception as error:  # GPU, TPU, Windows, network policy …
+            self._plue_deferred = self._plue_deferred or PlueUnplaceable(
+                f"the plue workspace backend cannot hold this task: {error}", "unsupported")
+    check.__name__ = check_name
+    return check
+
+
+class _Deferring:
+    """Mixin: Harbor's constructor-time checks never raise out of __init__.
+
+    Harbor constructs the environment in `Trial.create`, outside the trial's
+    exception handling, so a raise there ends the whole job (the 2026-09-23
+    06:02 and 06:45 crashes: `Task requires 1 GPU(s)`). The first failure is
+    raised by reserve() instead, where the trial records it."""
+
+
+for _name in ("_validate_definition", "_validate_resource_mode_support", "_validate_gpu_support",
+              "_validate_tpu_support", "_validate_network_policy_support", "_validate_windows_support",
+              "_validate_extra_docker_compose_support"):
+    setattr(_Deferring, _name, _deferring(_name))
+
+
 def _harbor_classes():
     from harbor.environments.base import BaseEnvironment, ExecResult
     from harbor.environments.capabilities import (
@@ -554,8 +801,9 @@ def _harbor_classes():
     from harbor.trial.trial import Trial
 
     install_untimed_reserve(Trial)
+    install_untimed_verifier_reserve(Trial)
 
-    class PlueEnvironment(_PlueOps, BaseEnvironment):
+    class PlueEnvironment(_Deferring, _PlueOps, BaseEnvironment):
         """Harbor environment on Smithers Cloud workspaces."""
 
         def __init__(self, *args, **kwargs):
@@ -579,9 +827,6 @@ def _harbor_classes():
                 network_allowlist_wildcard_hostnames=True,
             )
 
-        def _validate_definition(self):
-            self._resolve_image()
-
         def _plue_network(self) -> tuple[str, list[str]]:
             policy = self.network_policy
             if policy.network_mode == NetworkMode.NO_NETWORK:
@@ -590,33 +835,42 @@ def _harbor_classes():
                 return "allowlist", list(policy.allowed_hosts)
             return "proxy", []
 
+        @contained
         async def reserve(self) -> None:
             await self._plue_reserve()
 
+        @contained
         async def start(self, force_build: bool) -> None:
             await self._plue_start()
 
         async def stop(self, delete: bool):
-            await self._plue_stop()
+            await self._plue_stop()  # never raises
 
+        @contained
         async def upload_file(self, source_path, target_path: str):
             await self._plue_upload(source_path, target_path)
 
+        @contained
         async def upload_dir(self, source_dir, target_dir: str):
             await self._plue_upload_contents(source_dir, target_dir)
 
+        @contained
         async def download_file(self, source_path: str, target_path):
             await self._plue_download(source_path, target_path)
 
+        @contained
         async def download_dir(self, source_dir: str, target_dir):
             await self._plue_download_dir(source_dir, target_dir)
 
+        @contained
         async def is_dir(self, path: str, user=None) -> bool:
             return await self._plue_is(path, "dir", user)
 
+        @contained
         async def is_file(self, path: str, user=None) -> bool:
             return await self._plue_is(path, "file", user)
 
+        @contained
         async def exec(self, command: str, cwd=None, env=None, timeout_sec=None, user=None) -> ExecResult:
             stdout, stderr, code = await self._plue_exec(
                 command, cwd=cwd, env=self._merge_env(env), timeout_sec=timeout_sec,
@@ -631,7 +885,7 @@ def _pier_classes():
     from pier.environments.base import BaseEnvironment, ExecResult
     from pier.environments.capabilities import EnvironmentCapabilities
 
-    class PluePierEnvironment(_PlueOps, BaseEnvironment):
+    class PluePierEnvironment(_Deferring, _PlueOps, BaseEnvironment):
         """Pier environment on Smithers Cloud workspaces."""
 
         def __init__(self, *args, **kwargs):
@@ -646,9 +900,6 @@ def _pier_classes():
         def capabilities(self) -> EnvironmentCapabilities:
             return EnvironmentCapabilities(disable_internet=True, filtered_egress=True)
 
-        def _validate_definition(self):
-            self._resolve_image()
-
         def _plue_network(self) -> tuple[str, list[str]]:
             allow = [d.lstrip(".") if not d.startswith(".") else "*" + d for d in self.network_allowlist.domains]
             if getattr(self.task_env_config, "allow_internet", False):
@@ -657,24 +908,30 @@ def _pier_classes():
                 return "allowlist", allow
             return "none", []
 
+        @contained
         async def start(self, force_build: bool) -> None:
             await self._plue_start()
 
         async def stop(self, delete: bool):
-            await self._plue_stop()
+            await self._plue_stop()  # never raises
 
+        @contained
         async def upload_file(self, source_path, target_path: str):
             await self._plue_upload(source_path, target_path)
 
+        @contained
         async def upload_dir(self, source_dir, target_dir: str):
             await self._plue_upload_contents(source_dir, target_dir)
 
+        @contained
         async def download_file(self, source_path: str, target_path):
             await self._plue_download(source_path, target_path)
 
+        @contained
         async def download_dir(self, source_dir: str, target_dir):
             await self._plue_download_dir(source_dir, target_dir)
 
+        @contained
         async def exec(self, command: str, cwd=None, env=None, timeout_sec=None, user=None) -> ExecResult:
             stdout, stderr, code = await self._plue_exec(
                 command, cwd=cwd, env=env, timeout_sec=timeout_sec, user=user or self.default_user,

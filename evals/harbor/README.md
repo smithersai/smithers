@@ -20,6 +20,8 @@ adapter's own logic and is the only thing here CI runs.
 | ------------------------- | ---------------------------------------------------------------------- |
 | `smithers_agent.py`       | `SmithersAgent`, the Harbor/Pier `BaseAgent` that drives the harness   |
 | `plue_env.py`             | `PlueEnvironment` / `PluePierEnvironment`: the task on a Smithers Cloud workspace, public CLI only |
+| `outcome.py`              | Which finished trials are scored (graded, agent outcome) and which are infra, re-run |
+| `health.py`, `requeue.py` | Mid-run health rule; move infra trials aside for `harbor jobs resume` |
 | `plue_docker.py`          | The `docker` the harness calls on Smithers Cloud: `exec` becomes `smithers workspace exec` |
 | `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial     |
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool  |
@@ -86,9 +88,20 @@ await `environment.reserve()` (slot, capacity wait, workspace boot) ahead of
 the timed `start()`. A create that finds no capacity waits
 (`PLUE_CAPACITY_WAIT_SEC`) instead of failing the trial. Two arms on one host
 share `PLUE_SLOTS` first come, first served (a slot is 2 vCPU), and a task
-bigger than `PLUE_MAX_CPUS` raises `PlueUnplaceable` at once. A workspace SSH
-session the gateway lost raises `PlueError` (`ssh_session_failed`) instead of
-passing the command a meaningless exit 1.
+bigger than `PLUE_MAX_CPUS`, or one needing a GPU, raises `PlueUnplaceable`
+from `reserve()`, inside the trial. `PLUE_MAX_WORKSPACES` caps running
+workspaces at the account plan's concurrent-sandbox limit. Every TB4 task
+verifies in a separate workspace: the agent workspace hands its ledger slot
+to its own verifier, whose `reserve()` also runs before Harbor's build timer.
+A workspace SSH session the gateway lost (`ssh_session_failed`) or OpenSSH's
+own exit 255 (`ssh_transport`: connect timeout, remote closed, dead read)
+raises `PlueError` instead of passing the command a meaningless status.
+
+No plue failure ends the job: every environment method raises `PlueError`
+or a subclass, Harbor's constructor checks are deferred to `reserve()`
+(Harbor builds the environment in `Trial.create`, outside the trial's
+exception handling), and `stop()` never raises; a workspace it could not
+delete goes to `PLUE_LEAK_LOG`.
 
 Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
 (label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in
@@ -115,11 +128,18 @@ the stock arm). The stock arm is
   naming the container settled with `exitCode` 0; for the stock arm, no
   `command_execution` item in `codex.txt` exited 0. The count is
   `containerCommands` in `smithers-run.json` / `codex-account.json`.
-- Run with `-r 2 --retry-include ModelRouteError --retry-include PlueError
-  --retry-include ContainerUnreachable --retry-include EnvironmentStartTimeoutError
-  --retry-include AgentSetupTimeoutError` to re-run those trials. All five are
-  infrastructure faults and are excluded from scoring until a retry grades.
-  `PlueUnplaceable` is not retried: the guest cannot fit this cluster.
+- A trial is healthy only when it was graded, or graded after a whitelisted
+  agent outcome: `AgentTimeoutError`, or `NonZeroAgentExitCodeError` with no
+  SSH or gateway transport error in its output (`outcome.py`). Everything
+  else (`VerifierTimeoutError`, `CancelledError`, `PlueError`, start and
+  setup timeouts, `ContainerUnreachable`, `ModelRouteError`, an ungraded
+  agent outcome) is infrastructure: re-run, never scored. Run with `-r 3` and
+  one `--retry-include` per name in `outcome.INFRA_EXCEPTIONS`; after the
+  harbor process exits, `requeue.py <job>` moves the remaining infra and
+  unfinished trials to `<job>.infra/` and `harbor jobs resume -p <job>`
+  re-runs them. `health.py` trips when infra is over 20% of a job's trials
+  finished in the last hour. `PlueUnplaceable` is neither retried nor
+  scored: the guest cannot fit this cluster.
 - When no healthy account is left the pool PAUSES: a lease waits
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
