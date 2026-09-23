@@ -1,7 +1,10 @@
 import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
 import * as Y from "yjs"
-import { SCOPED_TEST_USER, SCOPED_TEST_USER_CLOUD_SESSION } from "./identity"
+import { installCloudFixture } from "./cloudFixture"
+import { fillComposer } from "./composer"
+
+test.skip(process.env.VITE_SMITHERS_WIKI !== "true", "Wiki is a default-off release flag; run the tier with VITE_SMITHERS_WIKI=true")
 
 const repo = "smithersai/smithers"
 const pageId = 42
@@ -9,7 +12,7 @@ const documentId = `wiki:${repo}:${pageId}`
 const cardId = `wiki-open-${documentId}`
 const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) })
 const send = async (page: Page, text: string) => {
-  await page.getByTestId("composer-input").fill(text)
+  await fillComposer(page, text)
   await page.getByTestId("composer-send").click()
 }
 
@@ -36,49 +39,22 @@ test("collaborative Wiki stays embedded, edits through the flow, and restores th
     state: Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64"),
     state_vector: Buffer.from(Y.encodeStateVector(doc)).toString("base64")
   })
-  await page.route("**/api/**", (route) => route.fulfill(json({ error: { message: "No test seam" } }, 404)))
-  await page.route(
-    "**/api/bootstrap",
-    (route) =>
-      route.fulfill(
-        json({
-          apiVersion: 1,
-          host: "local",
-          version: "test",
-          buildSha: "test",
-          capabilities: ["agent", "identity", "cloud"],
-          authFlow: "none",
-          sandbox: { platform: "darwin", mode: "trusted-only" }
-        })
-      )
-  )
-  await page.route("**/api/repos", (route) => route.fulfill(json({ repos: [] })))
-  await page.route("**/api/auth/session", (route) => route.fulfill(json(SCOPED_TEST_USER)))
-  await page.route("**/api/cloud-auth/session", (route) => route.fulfill(json(SCOPED_TEST_USER_CLOUD_SESSION)))
-  await page.route(
-    "**/api/cloud/api/user/repos",
-    (route) =>
-      route.fulfill(
-        json({ repos: [{ owner: "smithersai", name: "smithers", full_name: repo, default_bookmark: "main" }] })
-      )
-  )
-  await page.route("**/api/cloud/api/user/orgs", (route) => route.fulfill(json({ orgs: [{ login: "smithersai" }] })))
-  await page.route("**/api/cloud/api/user/workspaces", (route) => route.fulfill(json({ workspaces: [] })))
-  await page.route(`**/api/cloud/api/repos/${repo}/wiki?*`, (route) => {
+  await installCloudFixture(page)
+  await page.route(`**/api/repos/${repo}/wiki?*`, (route) => {
     const { body: _body, ...index } = bootstrap().page
     return route.fulfill(json([index]))
   })
   await page.route(
-    `**/api/cloud/api/repos/${repo}/wiki/architecture/document`,
+    `**/api/repos/${repo}/wiki/architecture/document`,
     (route) => route.fulfill(json(bootstrap()))
   )
-  await page.route(`**/api/cloud/api/repos/${repo}/wiki/architecture/stream?*`, (route) =>
+  await page.route(`**/api/repos/${repo}/wiki/architecture/stream?*`, (route) =>
     route.fulfill({
       status: 200,
       contentType: "text/event-stream",
       body: ": connected\n\n"
     }))
-  await page.route(`**/api/cloud/api/repos/${repo}/wiki/architecture/updates`, async (route) => {
+  await page.route(`**/api/repos/${repo}/wiki/architecture/updates`, async (route) => {
     const input = route.request().postDataJSON() as typeof posts[number]
     posts.push(input)
     if (!accepted.has(input.update_id)) {
@@ -93,10 +69,11 @@ test("collaborative Wiki stays embedded, edits through the flow, and restores th
   await send(page, `/wiki.cloud ${repo}`)
   const index = page.getByTestId(`card-wiki-index-${repo}`)
   await expect(index).toBeVisible()
+  await page.getByTestId("composer-input").press("Escape")
   await index.getByRole("button", { name: "Open page", exact: true }).click()
   const card = page.getByTestId(`card-${cardId}`)
   await expect(card.getByRole("list", { name: "Page outline" })).toContainText("Runtime")
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeHidden()
   await expect(card.locator(".world-card-sidebar")).not.toContainText("wiki:")
   await page.screenshot({ path: "/tmp/smithers-wiki-outline.png", fullPage: true })
   await card.getByRole("button", { name: "Document", exact: true }).click()
@@ -123,7 +100,7 @@ test("collaborative Wiki stays embedded, edits through the flow, and restores th
   expect(await card.locator(".world-card-workspace").evaluate((node, original) => node === original, component)).toBe(
     true
   )
-  await expect(page.getByTestId("composer-input")).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toBeHidden()
   await card.getByRole("button", { name: "Restore", exact: true }).click()
   await expect(card).toHaveAttribute("data-maximized", "false")
   doc.destroy()
