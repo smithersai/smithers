@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2831 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2837 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -294,6 +294,12 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **matrix:** identify native target after route change ([a76e8d00ad](https://github.com/smithersai/smithers/commit/a76e8d00adeee3c7496005e89ee1b040a1e3b06e))
+- **matrix:** resolve scenario navigation in packaged native window ([3322496f30](https://github.com/smithersai/smithers/commit/3322496f30aa7811ee2367184aca7f825bd1bb51))
+- **matrix:** attach packaged native scenarios by CEF target ID ([5a0c659e8b](https://github.com/smithersai/smithers/commit/5a0c659e8b9a9ba05f6015793e0ed24ed7a83a85))
+- **matrix:** keep native target across navigation and admit Docker test provider ([f7a6874c97](https://github.com/smithersai/smithers/commit/f7a6874c97c29a23997242fbe7d4e128dd4c2231))
+- **db:** classify Plue coding reconciliations as private ([62761d8923](https://github.com/smithersai/smithers/commit/62761d8923165a00c70060c12a374d3169a1442d))
+- **agent:** key sealed cell calls on the tree they read ([6b2cfde788](https://github.com/smithersai/smithers/commit/6b2cfde788df0894756000952c7909a62ea7ca85))
 - **app:** verify local Plue renderer in native gate ([9d0a5979c3](https://github.com/smithersai/smithers/commit/9d0a5979c348fab78629931c1bb0fd95e2e5d58d))
 - **model:** retry in-stream overload failures ([50025aceda](https://github.com/smithersai/smithers/commit/50025aceda1cf1cd4ae53dac2634fdf251852f6c))
 - **app:** bind native matrix fixtures to CDP target ([edeed0c28e](https://github.com/smithersai/smithers/commit/edeed0c28edbd6ac11519d272631bdba2ea34b46))
