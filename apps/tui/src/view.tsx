@@ -6,7 +6,7 @@
  * instead of a boxed border, and a selected row filled with the brand color.
  */
 import { RGBA } from "@opentui/core"
-import { useState, type ReactNode } from "react"
+import { memo, useState, type ReactNode } from "react"
 import * as Keys from "./keys.ts"
 import * as Scrubber from "./scrubber.ts"
 import { color, mix, syntax } from "./theme.ts"
@@ -121,7 +121,7 @@ function KeyColumns(props: { readonly bindings: ReadonlyArray<Keys.Binding> }) {
   )
 }
 
-export function Entry(props: {
+export interface EntryProps {
   readonly item: Transcript.Item
   readonly now: number
   readonly tick: string
@@ -132,7 +132,32 @@ export function Entry(props: {
   readonly selected?: boolean
   /** What the shared fold says about a cell's frame. */
   readonly step?: Scrubber.Step
-}) {
+}
+
+/** Whether a row draws the clock: an unfinished cell or call, or a shell command still running. */
+export const ticking = (item: Transcript.Item): boolean =>
+  item.kind === "cell"
+    ? item.endedAt === undefined || item.calls.some((call) => call.endedAt === undefined)
+    : item.kind === "shell"
+    ? item.result === undefined
+    : false
+
+const sameStep = (a: Scrubber.Step | undefined, b: Scrubber.Step | undefined): boolean =>
+  a === b || (a !== undefined && b !== undefined && a.line === b.line && a.notes.length === b.notes.length &&
+    a.notes.every((note, index) => note === b.notes[index]))
+
+/**
+ * Whether a row can keep its last drawing. Items are immutable, so a settled
+ * row redraws only when it, its fold step, or the view changes; the 100 ms
+ * clock reaches only rows that draw it.
+ */
+export const sameEntry = (a: EntryProps, b: EntryProps): boolean =>
+  a.item === b.item && a.expanded === b.expanded && a.selected === b.selected && a.tone === b.tone &&
+  sameStep(a.step, b.step) && (!ticking(b.item) || (a.now === b.now && a.tick === b.tick))
+
+export const Entry = memo(EntryView, sameEntry)
+
+function EntryView(props: EntryProps) {
   const { item } = props
   switch (item.kind) {
     case "user":
