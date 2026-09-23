@@ -39,6 +39,7 @@ const execute = (root: string, command: string, input: string) =>
         SMITHERS_REMOTE: "",
         SMITHERS_API_KEY: "",
         SMITHERS_BACKEND: "sqlite",
+        SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
         SMITHERS_AUDIENCE: "human",
         SMITHERS_INSIDE_RUN: "",
         SMITHERS_LIVE_MODEL_TESTS: "0"

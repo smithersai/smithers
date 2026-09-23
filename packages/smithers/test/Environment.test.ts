@@ -23,7 +23,6 @@ describe("the environment contract", () => {
       "SMITHERS_BACKEND",
       "SMITHERS_BUG_ENDPOINT",
       "SMITHERS_JJ_PATH",
-      "SMITHERS_PYTHON3",
       "SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS",
       "SMITHERS_INSIDE_RUN",
       "SMITHERS_RUN_ID"

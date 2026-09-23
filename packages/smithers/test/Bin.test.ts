@@ -861,8 +861,8 @@ describe("the SQLite-only database contract", processBudget, () => {
     expect(result.status).toBe(0)
     expect(JSON.parse(result.stdout)).toMatchObject({ _tag: "flows" })
     expect(result.stderr.split("\n").filter((line) => line.startsWith("ignored: "))).toEqual([
-      "ignored: SMITHERS_POSTGRES_URL has no effect in 1.0.0-rc.0 (SQLite only)",
-      "ignored: SMITHERS_TEST_PG_URL has no effect in 1.0.0-rc.0 (SQLite only)"
+      "ignored: SMITHERS_POSTGRES_URL has no effect in 1.0.0-rc.1 (SQLite only)",
+      "ignored: SMITHERS_TEST_PG_URL has no effect in 1.0.0-rc.1 (SQLite only)"
     ])
   })
 

@@ -1076,6 +1076,7 @@ describe("a real stdio round trip", () => {
               "--mcp"
             ],
             cwd,
+            env: { SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY },
             // The child boots the whole command tree through tsx before it can
             // answer, and the client's 10 s default is a boot budget this case
             // never meant to assert. Kept inside the case's own 60 s budget, so

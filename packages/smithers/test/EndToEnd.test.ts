@@ -191,7 +191,9 @@ describe("one project, from init to gc", processBudget, () => {
    * it, and a diagnosis `smthrs init`'s seatless-prompt refusal already
    * owns.
    */
-  it("says what the pending run waits for and how to proceed", () => {
+  it("says what the pending run waits for and how to proceed", async () => {
+    // Listings allow five seconds for an executor to claim a new run.
+    await new Promise((resolve) => setTimeout(resolve, 5_500))
     const run = json("ps").items.find((entry: { readonly runId: string }) => entry.runId === runId)
 
     // `ps` labels it, in the field that already names what a waiting run holds
