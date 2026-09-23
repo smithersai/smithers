@@ -62,6 +62,22 @@ jobs:
           fi
           authorization="Basic $(printf 'x-access-token:%s' "$SMITHERS_CLOUD_MIRROR_TOKEN" | base64 -w0)"
           echo "::add-mask::$authorization"
-          git -c "http.extraHeader=Authorization: $authorization" push "$MIRROR_URL" HEAD:refs/heads/main
-          echo "Pushed $(git rev-parse HEAD) to $MIRROR_URL main."
+          push_log="$(mktemp)"
+          trap 'rm -- "$push_log"' EXIT
+          for attempt in 1 2 3 4; do
+            if git -c "http.extraHeader=Authorization: $authorization" push "$MIRROR_URL" HEAD:refs/heads/main > "$push_log" 2>&1; then
+              cat "$push_log"
+              echo "Pushed $(git rev-parse HEAD) to $MIRROR_URL main."
+              exit 0
+            else
+              status=$?
+            fi
+            cat "$push_log"
+            # Retry transient proxy failures, never authentication or rejected refs.
+            if [ "$attempt" -eq 4 ] || ! grep -Eq 'The requested URL returned error: (500|502|503|504)([[:space:]]|$)' "$push_log"; then
+              exit "$status"
+            fi
+            echo "::warning title=Mirror temporarily unavailable::Push attempt $attempt failed; retrying."
+            sleep "$((attempt * 10))"
+          done
         shell: bash

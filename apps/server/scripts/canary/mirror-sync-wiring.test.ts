@@ -8,7 +8,9 @@
  * namespace is exactly the drift this file exists to catch.
  */
 import { describe, expect, it } from "bun:test"
-import { readFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { AVAILABLE_REPOS } from "../../src/publicRepoCatalog"
 
@@ -35,6 +37,60 @@ const workflow = Bun.YAML.parse(source) as Workflow
 const jobs = Object.values(workflow.jobs)
 const steps = jobs.flatMap((job) => job.steps)
 const push = steps.find((step) => typeof step.run === "string" && step.run.includes("git ") && step.run.includes("push"))
+
+function runPush(failure: string, token = "test-token") {
+  const directory = mkdtempSync(join(tmpdir(), "mirror-sync-"))
+  const attempts = join(directory, "attempts")
+  const delays = join(directory, "delays")
+  try {
+    writeFileSync(attempts, "0")
+    writeFileSync(delays, "")
+    // Execute the workflow's shell with a fake transport, never a real push.
+    writeFileSync(join(directory, "git"), `#!/bin/sh
+if [ "$1" = "rev-parse" ]; then
+  echo test-head
+  exit 0
+fi
+attempt=$(cat "$MIRROR_TEST_ATTEMPTS")
+attempt=$((attempt + 1))
+echo "$attempt" > "$MIRROR_TEST_ATTEMPTS"
+case "$MIRROR_TEST_FAILURE" in
+  rejected) echo '! [rejected] main -> main (non-fast-forward)' >&2; exit 1 ;;
+  401) echo 'fatal: The requested URL returned error: 401' >&2; exit 128 ;;
+  persistent) echo 'fatal: The requested URL returned error: 500' >&2; exit 128 ;;
+esac
+if [ "$attempt" -eq 1 ]; then
+  echo "fatal: The requested URL returned error: $MIRROR_TEST_FAILURE" >&2
+  exit 128
+fi
+echo 'main -> main'
+`, { mode: 0o755 })
+    writeFileSync(join(directory, "sleep"), '#!/bin/sh\necho "$1" >> "$MIRROR_TEST_DELAYS"\n', { mode: 0o755 })
+    // Keep this Linux workflow portable to developer machines with BSD base64.
+    writeFileSync(join(directory, "base64"), '#!/bin/sh\ncat > /dev/null\necho test-header\n', { mode: 0o755 })
+    const result = Bun.spawnSync({
+      cmd: ["bash", "-eo", "pipefail", "-c", push?.run ?? ""],
+      env: {
+        ...process.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        SMITHERS_CLOUD_MIRROR_TOKEN: token,
+        MIRROR_URL: "https://mirror.invalid/repo.git",
+        MIRROR_TEST_ATTEMPTS: attempts,
+        MIRROR_TEST_DELAYS: delays,
+        MIRROR_TEST_FAILURE: failure,
+      },
+      timeout: 10_000,
+    })
+    return {
+      exitCode: result.exitCode,
+      output: result.stdout.toString() + result.stderr.toString(),
+      attempts: Number(readFileSync(attempts, "utf8")),
+      delays: readFileSync(delays, "utf8").trim(),
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+}
 
 describe("mirror-sync.yml keeps the Cloud mirror on main", () => {
   it("runs on a push to main and on nothing else", () => {
@@ -98,5 +154,38 @@ describe("mirror-sync.yml keeps the Cloud mirror on main", () => {
     expect(source).not.toContain("continue-on-error")
     for (const job of jobs) expect(job.if).toBeUndefined()
     for (const step of steps) expect(step.if).toBeUndefined()
+  })
+
+  it.each(["500", "502", "503", "504"])("recovers from a transient HTTP %s without claiming early success", (status) => {
+    const result = runPush(status)
+    expect(result.exitCode).toBe(0)
+    expect(result.attempts).toBe(2)
+    expect(result.delays).toBe("10")
+    expect(result.output.indexOf("retrying")).toBeLessThan(result.output.indexOf("Pushed test-head"))
+    expect(result.output).not.toContain("test-token")
+  })
+
+  it("fails persistent proxy errors after four attempts", () => {
+    const result = runPush("persistent")
+    expect(result.exitCode).toBe(128)
+    expect(result.attempts).toBe(4)
+    expect(result.delays).toBe("10\n20\n30")
+    expect(result.output).not.toContain("Pushed test-head")
+  })
+
+  it.each(["401", "rejected"])("fails %s immediately", (failure) => {
+    const result = runPush(failure)
+    expect(result.exitCode).not.toBe(0)
+    expect(result.attempts).toBe(1)
+    expect(result.delays).toBe("")
+    expect(result.output).not.toContain("Pushed test-head")
+  })
+
+  it("makes no push attempt when the token is missing", () => {
+    const result = runPush("500", "")
+    expect(result.exitCode).toBe(0)
+    expect(result.attempts).toBe(0)
+    expect(result.output).toContain("::notice title=Mirror sync skipped::")
+    expect(result.output).not.toContain("Pushed test-head")
   })
 })
