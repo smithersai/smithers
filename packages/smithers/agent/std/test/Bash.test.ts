@@ -72,6 +72,39 @@ const recorder = (spawns: Array<Spawned>) =>
   )
 
 describe("Bash", () => {
+  it.each([undefined, "other-task"])("refuses a sealed command targeting %s before spawning", async (container) => {
+    const spawns: Array<Spawned> = []
+    const exit = await execute(Effect.provide(
+      Effect.exit(Bash.sealed("task-1")({ mode: "unhermetic", container, command: "true" })),
+      recorder(spawns)
+    ))
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const failure = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+      expect(failure?.code).toBe("outside_container")
+      expect(failure?.message).toContain("only inside container \"task-1\"")
+      expect(failure?.message).toContain(container === undefined ? "container: \"task-1\"" : "not \"other-task\"")
+    }
+    expect(spawns).toEqual([])
+  })
+
+  it("runs a sealed command through the named container transport", async () => {
+    const spawns: Array<Spawned> = []
+    const output = await execute(Effect.provide(
+      Bash.sealed("task-1")({ mode: "unhermetic", container: "task-1", command: "printf done", cwd: "/testbed" }),
+      Layer.merge(recorder(spawns), Layer.succeed(Container.Container)(Container.makeCommand()))
+    ))
+    expect(output.exitCode).toBe(0)
+    expect(commands(spawns)).toEqual([{
+      file: "docker",
+      args: ["exec", "-w", "/testbed", "--", "task-1", "bash", "-lc", "printf done"],
+      stdin: undefined,
+      shell: false,
+      cwd: undefined
+    }])
+    expect(spawns.every((spawn) => spawn.file === "docker" && spawn.args.includes("task-1"))).toBe(true)
+  })
+
   it("returns non-zero exit codes as successful results", async () => {
     const result = await execute(Effect.provide(
       Bash.run({
