@@ -143,7 +143,7 @@ describe("createApp", () => {
     expect(readFileSync(join(root, "routes.ui.gen.ts"), "utf8")).toContain("site/page.tsx")
   })
 
-  it("regenerates when a routed file appears and ignores anything else", async () => {
+  it.each(["/", "\\"])("regenerates for %s-separated routed paths and ignores anything else", async (separator) => {
     const root = tree({ ...layers, "app/page.tsx": "export default () => null\n" })
     const plugin = createApp({ root, manifest: async () => manifestOf(minimal) })
     await plugin.configResolved({ root })
@@ -155,10 +155,11 @@ describe("createApp", () => {
     mkdirSync(join(root, "app/panes"), { recursive: true })
     writeFileSync(join(root, "app/panes/balances.tsx"), "export const Pane = {}\n")
 
-    listeners[0]!(join(root, "src/theme.css"))
+    const eventPath = (file: string): string => join(root, file).replaceAll("\\", "/").replaceAll("/", separator)
+    listeners[0]!(eventPath("src/theme.css"))
     expect(readFileSync(join(root, "routes.ui.gen.ts"), "utf8")).not.toContain("balances")
 
-    listeners[0]!(join(root, "app/panes/balances.tsx"))
+    listeners[0]!(eventPath("app/panes/balances.tsx"))
     expect(readFileSync(join(root, "routes.ui.gen.ts"), "utf8")).toContain("balances")
   })
 

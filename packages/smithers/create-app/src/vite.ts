@@ -230,9 +230,11 @@ export interface CreateAppPlugin {
 }
 
 /** Whether a changed path is one the route tables are derived from. */
-const isRouted = (file: string): boolean =>
-  /\/(?:page|layout)\.tsx$/.test(file) || /\/panes\/[^/]+\.tsx$/.test(file) ||
-  /\/flow\.(?:ts|mdx)$/.test(file) || /\/(?:AGENT|SANDBOX|TOOLS)\.ts$/.test(file)
+const isRouted = (file: string): boolean => {
+  const path = file.replaceAll("\\", "/")
+  return /\/(?:page|layout)\.tsx$/.test(path) || /\/panes\/[^/]+\.tsx$/.test(path) ||
+    /\/flow\.(?:ts|mdx)$/.test(path) || /\/(?:AGENT|SANDBOX|TOOLS)\.ts$/.test(path)
+}
 
 /**
  * Creates the plugin.
