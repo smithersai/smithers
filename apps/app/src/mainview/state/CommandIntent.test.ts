@@ -52,6 +52,19 @@ const invocation = (lineage = "lineage", ordinal = 1): AgentInvocation => ({
 })
 
 describe("durable command intent at the active shared door", () => {
+  test.each(["/appearance.theme nord", "/missing-command"])("a delayed submission of %s preserves the next draft", async line => {
+    const store = await open()
+    const held = deferred(), entered = deferred()
+    const controller = controllerFor(hold(store, "command.intent.accepted", held, entered))
+    controller.changeDraft(line)
+    const pending = controller.commands.run("chat.send", line)
+    await entered.promise
+    controller.changeDraft("/appearance.dark-mode")
+    held.resolve()
+    await pending
+    expect(store.session().draft).toBe("/appearance.dark-mode")
+  })
+
   test("pure replay refuses duplicate accepts and mismatched settlements", () => {
     const baseline = seedAppProjection(emptyAppProjection(), { createdAt: 1, theme: "light", seedWiki: false })
     const accept = { type: "command.intent.accepted", actor: "smithers", id: "call", name: "repo.update", source: "command" } as const

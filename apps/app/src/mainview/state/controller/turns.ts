@@ -1084,7 +1084,7 @@ export const createTurnController = (
        * the download card when the native app is the answer, the sentence
        * otherwise), and only a name no host has is "no such flow".
        */
-      store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
+      if (store.session().draft.trim() === text.trim()) store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
       /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
       const saidBefore = latestOrdinal(store.collections)
       void ctx.commands.run(parsed.name).then((outcome) => {
@@ -1100,7 +1100,7 @@ export const createTurnController = (
        * outcome here is what made `/name <args>` silent while bare `/name`
        * (which the slash menu routes through the pointer path) was honest.
        */
-      store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
+      if (store.session().draft.trim() === text.trim()) store.dispatch({ type: "composer.changed", actor: "user", draft: "" })
       /* Everything the door says from here on belongs to this line (controller/spokenLines.ts). */
       const saidBefore = latestOrdinal(store.collections)
       void ctx.commands

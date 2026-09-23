@@ -52,6 +52,7 @@ const runFlow = async (page: Page, line: string): Promise<void> => {
   await expect(composer).toBeVisible()
   await composer.fill(line)
   await composer.press("Enter")
+  await expect(composer).toBeHidden()
 }
 
 /**
