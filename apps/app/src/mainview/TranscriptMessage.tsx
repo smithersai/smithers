@@ -84,9 +84,11 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
           <div className="message-init" data-testid="init-message">
             <CheckCircle2 size={16} className="message-init-check" aria-label="Initialized" />
             <div className="message-init-body">
+              {/* The greeting is a voice line, not a second headline — only
+               * the title carries bold. */}
               <Markdown
                 className="message-markdown message-init-greeting"
-                content={`**${INIT_GREETING}**`}
+                content={INIT_GREETING}
               />
               <Markdown
                 className="message-markdown message-init-title"

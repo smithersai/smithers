@@ -232,6 +232,7 @@ const Seats = ({ card, onRunCommand }: { readonly card: ModelsCard; readonly onR
               <td className="world-card-title">{label}</td>
               <td>
                 <select
+                  className="sui-input"
                   aria-label={label}
                   data-seat={seat.id}
                   {...flowProps("model.assign")}

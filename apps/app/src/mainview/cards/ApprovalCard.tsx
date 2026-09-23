@@ -45,9 +45,10 @@ const ApprovalCardBody = ({
     <Confirmation state={state}>
       <ConfirmationRequest>
         {summary !== undefined ? <div className="sui-approval-summary">{summary}</div> : null}
-        <ul className="sui-approval-actions-list">
-          <li>{payload.capability}</li>
-        </ul>
+        {/* The capability is the card's title at creation, so it prints only
+         * when it says something the header doesn't — as a mono caption, not
+         * a one-item bullet list. */}
+        {payload.capability === card.title ? null : <p className="sui-approval-meta"><code>{payload.capability}</code></p>}
       </ConfirmationRequest>
       {pending ? <p className="sui-approval-pending">Sending your decision…</p> : card.status === "acted" ? null : payload.question !== undefined ?
         (

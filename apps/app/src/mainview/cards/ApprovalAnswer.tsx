@@ -79,12 +79,13 @@ export const ApprovalAnswerForm = ({
       {attempt === undefined ? null : <p className="smithers-card-note">{attempt}</p>}
       {question.kind === "confirm" ?
         (
+          /* The gate's acts match the grant gate's: the affirmative is the
+           * solid primary, at the same control height as Approve. */
           <div className="flow-run-actions">
-            <Button size="sm" disabled={disabled} data-testid="approval-answer-yes" onClick={() => onAnswer(true)}>
+            <Button variant="solid" disabled={disabled} data-testid="approval-answer-yes" onClick={() => onAnswer(true)}>
               Yes
             </Button>
             <Button
-              size="sm"
               variant="outline"
               disabled={disabled}
               data-testid="approval-answer-no"
@@ -100,7 +101,6 @@ export const ApprovalAnswerForm = ({
             {(question.options ?? []).map((option) => (
               <Button
                 key={option}
-                size="sm"
                 variant="outline"
                 disabled={disabled}
                 data-testid={`approval-answer-option-${option}`}
@@ -127,7 +127,7 @@ export const ApprovalAnswerForm = ({
               placeholder={question.kind === "json" ? "A JSON value" : "Your answer"}
             />
             <div className="flow-run-actions">
-              <Button size="sm" disabled={disabled} data-testid="approval-answer-send" onClick={send}>
+              <Button variant="solid" disabled={disabled} data-testid="approval-answer-send" onClick={send}>
                 Send answer
               </Button>
             </div>

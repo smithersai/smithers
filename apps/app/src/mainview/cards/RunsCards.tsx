@@ -164,7 +164,7 @@ export const ApprovalsInboxCardBody = ({
   return (
     <div className="world-card-list">
       <p className="smithers-card-note" data-testid="approvals-inbox-count">
-        {approvals.length} approval{approvals.length === 1 ? "" : "s"} pending on {repo}
+        {approvals.length} approval{approvals.length === 1 ? "" : "s"} pending
       </p>
       {approvals.map((approval) => {
         // The row id the decision flows take: the inbox card plus the gate it names.
@@ -177,13 +177,16 @@ export const ApprovalsInboxCardBody = ({
         const stamp = approval.decidedAt === undefined
           ? undefined
           : `${approval.decision === "denied" ? "Denied" : "Approved"} — ${clockLabel(approval.decidedAt)}`
+        /* A question row's headline is the prompt the form renders — printing
+         * the gate's title too stacked the same ask twice. Provenance is the
+         * caption line above it; a grant gate keeps its title as the headline. */
         return (
           <Confirmation key={approvalRowKey(approval)} state={state}>
             <ConfirmationRequest>
-              <div className="sui-approval-summary">{approval.title}</div>
-              <ul className="sui-approval-actions-list">
-                <li>run {approval.runId} · {clockLabel(approval.requestedAt)}</li>
-              </ul>
+              {approval.question === undefined ?
+                <div className="sui-approval-question">{approval.title}</div> :
+                null}
+              <p className="sui-approval-meta">run <code>{approval.runId}</code> · {clockLabel(approval.requestedAt)}</p>
             </ConfirmationRequest>
             {approval.decision !== undefined || approval.pending === true ?
               null :
