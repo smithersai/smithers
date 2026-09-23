@@ -295,8 +295,20 @@ try {
   const plue = await launch(plueHome, "plue", plueOrigin, plueToken)
   await plue.appPID
   const plueState = await plue.bridgeState()
-  if (plueState.app?.origin !== plueOrigin || plueState.app.packaged !== true) {
-    throw new Error("The installed native app did not select the configured Plue backend.")
+  const rendererOrigin = plueState.app?.origin
+  if (!rendererOrigin || new URL(rendererOrigin).hostname !== "127.0.0.1" ||
+    rendererOrigin === plueOrigin || plueState.app?.packaged !== true) {
+    throw new Error("The installed native app did not serve its packaged Plue UI locally.")
+  }
+  const plueIndex = await fetch(`${rendererOrigin}/`).then((response) => response.text())
+  if (!plueIndex.includes('<div id="root"')) {
+    throw new Error("The installed native app did not serve the packaged Plue application.")
+  }
+  if (plueToken) {
+    const response = await fetch(`${rendererOrigin}/api/bootstrap`)
+    if (!response.ok || (await response.json() as { host?: string }).host !== "cloud") {
+      throw new Error("The installed native app did not relay the configured Plue backend.")
+    }
   }
   await plue.stop()
   if (existsSync(plue.state)) throw new Error("Native Plue mode created local backend or PostgreSQL state.")
