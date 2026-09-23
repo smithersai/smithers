@@ -1,5 +1,72 @@
 [
   {
+    "label": "//:backendGo",
+    "package": "",
+    "name": "backendGo",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "go.mod"
+      },
+      {
+        "kind": "file",
+        "path": "go.sum"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/backend/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/backend/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "distribution/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//:backendGoModules"
+    ],
+    "source": {
+      "file": "PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//:backendGoModules",
+    "package": "",
+    "name": "backendGoModules",
+    "rule": "Go.ModDownload",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "go.mod"
+      },
+      {
+        "kind": "file",
+        "path": "go.sum"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "PACKAGE.ts"
+    }
+  },
+  {
     "label": "//:changelog",
     "package": "",
     "name": "changelog",
@@ -52,6 +119,10 @@
     "mode": "check",
     "cacheable": true,
     "inputs": [
+      {
+        "kind": "file",
+        "path": "rust-toolchain.toml"
+      },
       {
         "kind": "file",
         "path": "rust-toolchain.toml"
@@ -266,6 +337,49 @@
     "outputs": [
       "pnpm-lock.yaml"
     ],
+    "dependencies": [],
+    "source": {
+      "file": "PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//:nativeFfi",
+    "package": "",
+    "name": "nativeFfi",
+    "rule": "Shell.Build",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "Cargo.toml"
+      },
+      {
+        "kind": "file",
+        "path": "Cargo.lock"
+      },
+      {
+        "kind": "file",
+        "path": "crates/flows-jj/Cargo.toml"
+      },
+      {
+        "kind": "glob",
+        "pattern": "crates/flows-jj/src/**/*.rs",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "crates/smithers-ffi/**/*.rs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "crates/smithers-ffi/Cargo.toml"
+      }
+    ],
+    "outputs": [],
     "dependencies": [],
     "source": {
       "file": "PACKAGE.ts"
@@ -6651,6 +6765,70 @@
     }
   },
   {
+    "label": "//apps/model-host:bundle",
+    "package": "apps/model-host",
+    "name": "bundle",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/model-host/build.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/model-host:lib"
+    ],
+    "source": {
+      "file": "apps/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/model-host:check",
+    "package": "apps/model-host",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/smithers/agent/model-host:lib"
+    ],
+    "source": {
+      "file": "apps/model-host/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/review:check",
     "package": "apps/review",
     "name": "check",
@@ -7259,6 +7437,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/model-host/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/review/package.json"
       },
       {
@@ -7275,7 +7457,7 @@
       },
       {
         "kind": "file",
-        "path": "apps/tutorial-coordinator/package.json"
+        "path": "apps/tui/package.json"
       },
       {
         "kind": "file",
@@ -7356,6 +7538,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/package.json"
       },
       {
         "kind": "file",
@@ -8548,6 +8734,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/model-host/package.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/review/package.json"
       },
       {
@@ -8564,7 +8754,7 @@
       },
       {
         "kind": "file",
-        "path": "apps/tutorial-coordinator/package.json"
+        "path": "apps/tui/package.json"
       },
       {
         "kind": "file",
@@ -8645,6 +8835,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/agent/model/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/package.json"
       },
       {
         "kind": "file",
@@ -9112,6 +9306,74 @@
     }
   },
   {
+    "label": "//apps/tui:check",
+    "package": "apps/tui",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/test/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/tsconfig.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/tui/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/tui:unitTests",
+    "package": "apps/tui",
+    "name": "unitTests",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/src/**/*.tsx",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/tui/test/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/tui/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//crates/flows-jj:buildScript",
     "package": "crates/flows-jj",
     "name": "buildScript",
@@ -9449,6 +9711,38 @@
     "dependencies": [],
     "source": {
       "file": "evals/authoring/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//evals/harbor:offline",
+    "package": "evals/harbor",
+    "name": "offline",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Check the Harbor adapter's prompt, environment, journal fold and trajectory without docker or a model.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "evals/harbor/verify.sh"
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/harbor/*.{py,md,sh}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "evals/harbor/fixtures/**",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "evals/harbor/PACKAGE.ts"
     }
   },
   {
@@ -10557,6 +10851,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/wiki/jev-citations.ts"
       },
       {
@@ -11228,6 +11526,10 @@
       },
       {
         "kind": "file",
+        "path": "flows/wiki/flow.ts"
+      },
+      {
+        "kind": "file",
         "path": "flows/wiki/jev-citations.ts"
       },
       {
@@ -11894,6 +12196,10 @@
       {
         "kind": "file",
         "path": "packages/smithers/src/internal/NodeControlHost.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/wiki/flow.ts"
       },
       {
         "kind": "file",
@@ -12674,6 +12980,18 @@
       {
         "kind": "file",
         "path": "flows/test/canary-coding-setup.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/invoke-native-host.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/librarian-state.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "flows/test/product-host-source.test.mjs"
       },
       {
         "kind": "glob",
@@ -15420,6 +15738,238 @@
     ],
     "source": {
       "file": "packages/smithers/agent/memory/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:check",
+    "package": "packages/smithers/agent/model-host",
+    "name": "check",
+    "rule": "Typecheck",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/repo-targets/test-utils/effect-property.*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/tsconfig.test.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/agent/model-host:lib",
+      "//packages/smithers/agent/model:lib",
+      "//packages/smithers/flows/kernel:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:docs",
+    "package": "packages/smithers/agent/model-host",
+    "name": "docs",
+    "rule": "DocsParity",
+    "kinds": [
+      "docs"
+    ],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/README.md"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:docsFiles",
+    "package": "packages/smithers/agent/model-host",
+    "name": "docsFiles",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/docs/**/*.md",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/README.md"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:fmt",
+    "package": "packages/smithers/agent/model-host",
+    "name": "fmt",
+    "rule": "Dprint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/test/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/dprint.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:lib",
+    "package": "packages/smithers/agent/model-host",
+    "name": "lib",
+    "rule": "TsBuild",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/scripts/compile-commonjs.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/src/index.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/scripts/build.mjs"
+      }
+    ],
+    "outputs": [
+      "packages/smithers/agent/model-host/dist/cjs",
+      "packages/smithers/agent/model-host/dist/esm"
+    ],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/agent/model:lib",
+      "//packages/smithers/flows/kernel:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:lint",
+    "package": "packages/smithers/agent/model-host",
+    "name": "lint",
+    "rule": "EsLint",
+    "kinds": [
+      "lint"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/model-host/eslint.config.js"
+      },
+      {
+        "kind": "file",
+        "path": "eslint.jsdoc.js"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/model-host:test",
+    "package": "packages/smithers/agent/model-host",
+    "name": "test",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/model-host/test/**/*.ts",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/rpc:check",
+      "//packages/smithers/agent/model-host:lib",
+      "//packages/smithers/agent/model:lib",
+      "//packages/smithers/flows/kernel:lib"
+    ],
+    "source": {
+      "file": "packages/smithers/agent/model-host/PACKAGE.ts"
     }
   },
   {
@@ -20517,11 +21067,6 @@
         "exclude": []
       },
       {
-        "kind": "glob",
-        "pattern": "packages/smithers/flows/core/test/fixtures/*.json",
-        "exclude": []
-      },
-      {
         "kind": "file",
         "path": "packages/smithers/flows/core/vitest.config.ts"
       }
@@ -25330,16 +25875,6 @@
       {
         "kind": "glob",
         "pattern": "packages/repo-targets/test-utils/effect-property.*",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/flows/platform-node/src/internal/AtomicFileSystemHelper.py",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "packages/smithers/flows/platform-node/scripts/generate-atomic-helper.mjs",
         "exclude": []
       },
       {
