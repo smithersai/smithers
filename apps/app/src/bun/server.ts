@@ -49,8 +49,8 @@ import {
   CLOUD_WS_PENDING_CLOSE_CODE,
   CLOUD_WS_ROUTE_PREFIX,
   withRetryAfter
-} from "@smthrs/rpc/LocalApp"
-import type { CloudWsSessionKind } from "@smthrs/rpc/LocalApp"
+} from "@smthrs/rpc/CloudTunnel"
+import type { CloudWsSessionKind } from "@smthrs/rpc/CloudTunnel"
 import {
   isLocalSessionToken,
   localSessionProtocol,

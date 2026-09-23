@@ -19,7 +19,7 @@
  * asked, so a pointer that stays put asks once.
  */
 import { fileArgs } from "../flows/FileArgs"
-import { LSP_HOVER_CAP_CHARS } from "@smthrs/rpc/LocalApp"
+import { LSP_HOVER_CAP_CHARS } from "@smthrs/rpc/LocalLsp"
 import { Markdown } from "@smthrs/ui"
 import { CodeFileView, languageForFile } from "@smthrs/ui/adapters/code-view"
 import type { CodeLineAnnotation, CodeTokenPosition } from "@smthrs/ui/adapters/code-view"

@@ -227,6 +227,13 @@ const SOURCE_NOT_CONFIRMED_AGENT =
  * code that is not one of plue's does not compile.
  */
 const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
+  /* The account is at its sandbox plan limit: the way out is an upgrade, never a retry. */
+  plan_limit_exceeded: {
+    lead: "Your plan is at its sandbox limit.",
+    agent:
+      "fault=user: the account reached its sandbox plan limit. Offer billing.plans so the human can upgrade, or suspend a sandbox. Do not retry automatically.",
+    doors: ["upgrade"]
+  },
   /*
    * The one a full fleet produces, and the reason this file exists. It takes
    * the infra lead unchanged; what it adds is that the box itself survived, so
@@ -735,14 +742,6 @@ export const refusalCopy = (refusal: Refusal): RefusalCopyRow => {
    * about our fleet, which is exactly what we cannot know here.
    */
   if (refusal.origin === "client") return BY_ORIGIN.client
-  if (refusal.rawCode === "plan_limit_exceeded") {
-    return {
-      lead: "Your plan is at its sandbox limit.",
-      agent:
-        "fault=user: the account reached its sandbox plan limit. Offer billing.plans so the human can upgrade, or suspend a sandbox. Do not retry automatically.",
-      doors: ["upgrade"]
-    }
-  }
   const base = REFUSAL_COPY[refusal.fault]
   /*
    * The native host's own codes take the FAULT'S row, the way plue's do and
@@ -787,11 +786,14 @@ export const refusalLead = (refusal: Refusal): string => refusalCopy(refusal).le
  */
 export const refusalDoors = (refusal: Refusal): ReadonlyArray<RefusalDoor> => refusalCopy(refusal).doors
 
+const LOCAL_SUFFIX = "@local"
+
 /**
  * The one sentence a seam hands back for a refusal — the line a person reads
  * in the transcript or a toast.
  *
- * Its shape is `<code> — <the refusing party's own words>. <lead>`: the code
+ * Its shape is `<code> — <the refusing party's own words>. <lead>`, with
+ * `<code>@local` for a Worker code the desktop host wrote: the code
  * first, which is the convention the workspace seam already used and which is
  * also the anchor `agentFaultNote` reads; then plue's words, untouched; then
  * the one line that says whose fault it was. A person who never opens the card
@@ -803,7 +805,13 @@ export const refusalDoors = (refusal: Refusal): ReadonlyArray<RefusalDoor> => re
 export const refusalSentence = (refusal: Refusal): string => {
   const words = refusal.message.trim()
   const stopped = words === "" || /[.!?]$/u.test(words) ? words : `${words}.`
-  const head = refusal.rawCode === null ? "" : `${refusal.rawCode} — `
+  /*
+   * A Worker code the desktop host wrote says so in the token: the code alone
+   * reads as the Worker's, and `agentFaultNote` would then tell the model that
+   * "this deployment" failed when it was a program on the reader's laptop.
+   */
+  const local = refusal.origin === "local" && isWorkerFailureCode(refusal.code) ? LOCAL_SUFFIX : ""
+  const head = refusal.rawCode === null ? "" : `${refusal.rawCode}${local} — `
   return stopped === "" ? `${head}${refusalCopy(refusal).lead}` : `${head}${stopped} ${refusalCopy(refusal).lead}`
 }
 
@@ -814,7 +822,7 @@ export const refusalSentence = (refusal: Refusal): string => {
  * anywhere in a sentence would be the prose-matching this whole file exists
  * to remove.
  */
-const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*) — /u
+const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*)(@local)? — /u
 
 /**
  * The fault the model should be told, for a refusal that reached the agent
@@ -837,7 +845,8 @@ const LEADING_CODE = /^([A-Za-z][A-Za-z0-9_]*) — /u
  * @category constants
  */
 export const agentFaultNote = (text: string): string | null => {
-  const code = refusalCode(LEADING_CODE.exec(text)?.[1])
+  const leading = LEADING_CODE.exec(text)
+  const code = refusalCode(leading?.[1])
   const entry = refusalEntry(code)
   if (code === null || entry === null) return null
   const copy = refusalCopy({
@@ -847,7 +856,11 @@ export const agentFaultNote = (text: string): string | null => {
     message: "",
     retryAfter: entry.retryAfter === 0 ? null : entry.retryAfter,
     status: entry.status,
-    origin: isNativeFailureCode(code) ? "local" : isWorkerFailureCode(code) ? "worker" : "plue"
+    origin: isNativeFailureCode(code) || leading?.[2] === LOCAL_SUFFIX
+      ? "local"
+      : isWorkerFailureCode(code)
+      ? "worker"
+      : "plue"
   })
   return `[fault=${entry.fault} code=${code}] ${copy.agent}`
 }

@@ -1,5 +1,4 @@
 import { describe, expect, test } from "vitest"
-import * as CloudTunnel from "../src/CloudTunnel.ts"
 import * as LocalApp from "../src/LocalApp.ts"
 import {
   HarnessesResponseSchema,
@@ -22,7 +21,6 @@ import {
   TargetSchema,
   TargetsQueryResponseSchema
 } from "../src/LocalApp.ts"
-import * as LocalLsp from "../src/LocalLsp.ts"
 import { RunReplayResponseSchema, TargetRunEventSchema } from "../src/TargetGraph.ts"
 
 /*
@@ -380,30 +378,10 @@ describe("the targets query and run wire model", () => {
   })
 })
 
-/*
- * Code intelligence, the Smithers Cloud seam and the Linear handoff live in
- * their own modules. LocalApp re-exports the names it had at the move for one
- * release: each is its home's own value, never a second declaration, and
- * LocalApp declares nothing of those domains itself.
- */
+/* Code intelligence and the Smithers Cloud seam live in their own modules; LocalApp exports none of their names. */
 describe("the names that moved out of LocalApp", () => {
-  const homes = { LocalLsp, CloudTunnel }
-  const localApp: Record<string, unknown> = LocalApp
-
-  test("still import from LocalApp, as the value their home declares", () => {
-    expect(localApp.LspHoverSchema).toBe(LocalLsp.LspHoverSchema)
-    expect(localApp.CloudSessionSchema).toBe(CloudTunnel.CloudSessionSchema)
-    for (const [home, exports] of Object.entries(homes)) {
-      for (const [name, value] of Object.entries(exports)) {
-        if (name in localApp) expect(localApp[name], `${home}.${name}`).toBe(value)
-      }
-    }
-  })
-
-  test("LocalApp declares no code-intelligence, Cloud or Linear name of its own", () => {
+  test("LocalApp exports no code-intelligence or Cloud name", () => {
     const domain = /^(?:LSP_|Lsp|lsp|CLOUD_|Cloud|withRetryAfter$|retryAfterOf$|LINEAR_|Linear)/
-    const strays = Object.keys(localApp)
-      .filter((name) => domain.test(name) && !Object.values(homes).some((home) => name in home))
-    expect(strays).toEqual([])
+    expect(Object.keys(LocalApp).filter((name) => domain.test(name))).toEqual([])
   })
 })

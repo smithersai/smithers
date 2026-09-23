@@ -172,9 +172,3 @@ export const resolveApplicationTarget = (
 
   return { ...document, apiOrigin, ...facts, baseUrl: external ? apiOrigin : "" }
 }
-
-/** Whether selecting this target may start the packaged backend supervisor.
- * @since 1.0.0
- * @category conversions
- */
-export const startsOwnedBackend = (target: Pick<ApplicationTarget, "launch">): boolean => target.launch === "supervisor"

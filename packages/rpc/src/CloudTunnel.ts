@@ -134,11 +134,39 @@ export const CLOUD_WS_PENDING_CLOSE_CODE = 4425
  * @category constants
  */
 export const CLOUD_WS_NOT_READY_CLOSE_CODE = 4503
+/**
+ * A WebSocket close reason is at most 123 UTF-8 bytes; a socket refuses a longer one.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const CLOSE_REASON_MAX_BYTES = 123
 /** The close reason with the refusal's `Retry-After` in words; `retryAfterOf` reads it back.
+ * The message is shortened, never the suffix, so the result fits {@link CLOSE_REASON_MAX_BYTES}
+ * and a host that cuts long reasons from the end cannot drop the wait.
  * @since 1.0.0
  * @category conversions
  */
-export const withRetryAfter = (reason: string, seconds: number): string => `${reason} (retry after ${seconds} s)`
+export const withRetryAfter = (reason: string, seconds: number): string => {
+  const encoder = new TextEncoder()
+  const suffix = ` (retry after ${seconds} s)`
+  const budget = CLOSE_REASON_MAX_BYTES - encoder.encode(suffix).byteLength
+  let message = reason.replace(/\s+/g, " ").trim()
+  if (encoder.encode(message).byteLength > budget) {
+    const ellipsis = "…"
+    const room = budget - encoder.encode(ellipsis).byteLength
+    let cut = ""
+    let used = 0
+    for (const char of message) {
+      const size = encoder.encode(char).byteLength
+      if (used + size > room) break
+      cut += char
+      used += size
+    }
+    message = `${cut.trimEnd()}${ellipsis}`
+  }
+  return `${message}${suffix}`
+}
 /** The `Retry-After` seconds a close reason names, or null when it names none.
  * @since 1.0.0
  * @category conversions

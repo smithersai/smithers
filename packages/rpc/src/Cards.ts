@@ -2857,9 +2857,32 @@ type PatchFor<C extends Card> = C extends Card
   }
   : never
 
-// Derive each branch from the card itself so enums, caps and redaction cannot
-// drift. A stage-changing onboarding payload is an atomic replacement: the
-// required fields depend on the new stage and cannot be partially inherited.
+/*
+ * A patch field is optional WITHOUT its default. zod's `.partial()` keeps
+ * `.default()`, so an omitted field would decode to the default and the
+ * consumer's shallow merge would overwrite the stored value with it.
+ */
+const withoutDefault = (field: z.ZodType): z.ZodType => {
+  if (field instanceof z.ZodDefault || field instanceof z.ZodPrefault) {
+    return withoutDefault(field.unwrap() as z.ZodType)
+  }
+  if (field instanceof z.ZodOptional) return withoutDefault(field.unwrap() as z.ZodType)
+  return field
+}
+
+const patchPayload = (payload: z.ZodType): z.ZodType =>
+  payload instanceof z.ZodObject ?
+    z.object(
+      Object.fromEntries(
+        Object.entries(payload.shape as Record<string, z.ZodType>).map(([key, field]) => [
+          key,
+          withoutDefault(field).optional()
+        ])
+      )
+    ) :
+    payload
+
+// Derive each branch from the card itself so enums, caps and redaction cannot drift.
 const cardPatchOptions = CurrentCardSchema.options.map((card) => {
   const payload = card.shape.payload
   return z.object({
@@ -2869,7 +2892,7 @@ const cardPatchOptions = CurrentCardSchema.options.map((card) => {
     status: cardBaseShape.status.optional(),
     createdAt: cardBaseShape.createdAt.optional(),
     ordinal: cardBaseShape.ordinal.optional(),
-    payload: (payload instanceof z.ZodObject ? payload.partial() : payload).optional()
+    payload: patchPayload(payload).optional()
   })
 })
 

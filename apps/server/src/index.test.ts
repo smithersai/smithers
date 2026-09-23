@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
 import { LOCAL_SESSION_HEADER } from "@smthrs/rpc/LocalSession"
 import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import {
@@ -2689,27 +2689,54 @@ describe("the browser tool route (§2d)", () => {
       return new Response(null, { status: 302, headers: { location: "https://127.0.0.1/private" } })
     } } }
     const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://8.8.8.8/" }), env)
-    expect(response.status).toBe(422)
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ code: "request_invalid" })
     expect(calls).toBe(1)
   })
 
-  test("a malformed body is a 400, a non-https URL a guarded 422 — no fetch happens", async () => {
+  test("a malformed body and a refused target are coded 400s — no fetch happens", async () => {
     const bad = await worker.fetch(post("/api/tools/browser-fetch", { nope: true }), assetsEnv())
     expect(bad.status).toBe(400)
     const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("must not fetch") } } }
     const http = await worker.fetch(post("/api/tools/browser-fetch", { url: "http://example.com/" }), env)
-    expect(http.status).toBe(422)
-    expect(((await http.json()) as { message: string }).message).toContain("https")
+    expect(http.status).toBe(400)
+    expect(await http.json()).toMatchObject({ code: "request_invalid", message: expect.stringContaining("https") })
     const privateIp = await worker.fetch(
       post("/api/tools/browser-fetch", { url: "https://127.0.0.1/" }),
       env
     )
-    expect(privateIp.status).toBe(422)
+    expect(privateIp.status).toBe(400)
     const internal = await worker.fetch(
       post("/api/tools/browser-fetch", { url: "https://db.internal/" }),
       env
     )
-    expect(internal.status).toBe(422)
+    expect(internal.status).toBe(400)
+  })
+
+  test("a resolver outage is the dependency's fault, never the reader's", async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as unknown as typeof fetch
+    const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("must not fetch") } } }
+    try {
+      const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
+      expect(response.status).toBe(502)
+      expect(await response.json()).toMatchObject({ status: "error", code: "upstream_unreachable" })
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("a failed egress binding is refused as unreachable", async () => {
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => Response.json({ Answer: [{ type: 1, data: "8.8.8.8" }] })) as unknown as typeof fetch
+    const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("binding down") } } }
+    try {
+      const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
+      expect(response.status).toBe(502)
+      expect(await response.json()).toMatchObject({ code: "upstream_unreachable" })
+    } finally {
+      globalThis.fetch = original
+    }
   })
 
   test("with an identity seam configured, an anonymous caller gets the session gate's 401", async () => {

@@ -11,7 +11,7 @@ import {
   CLOUD_AUTH_SESSION_PATH,
   CLOUD_AUTH_SIGN_OUT_PATH,
   CLOUD_AUTH_START_PATH
-} from "@smthrs/rpc/LocalApp"
+} from "@smthrs/rpc/CloudTunnel"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { createCloudSeam } from "./CloudSeam"

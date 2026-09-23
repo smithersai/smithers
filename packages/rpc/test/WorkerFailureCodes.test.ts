@@ -9,7 +9,7 @@ import {
   refusalFromStored,
   refusalOf,
   storedRefusal,
-  workerRefusal
+  workerRefusalEnvelope
 } from "../src/Refusal.ts"
 import {
   agentFaultNote,
@@ -21,6 +21,7 @@ import {
   WORKER_REFUSAL_COPY
 } from "../src/RefusalCopy.ts"
 import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src/WorkerFailureCodes.ts"
+import { workerRefusal } from "./refusalFixtures.ts"
 
 /*
  * The Cloudflare Worker's own refusals. plue's registry is generated and
@@ -29,16 +30,16 @@ import { WORKER_FAILURE_CODES, WORKER_FAILURES, workerFailureCode } from "../src
  * a person with a sentence nobody wrote for them.
  */
 describe("the Worker's own failure registry", () => {
-  test("shares no code with plue's, which is what lets one string name its author", () => {
+  test("shares no code with plue's, which is what lets one string name its author", async () => {
     const shared = WORKER_FAILURE_CODES.filter((code) => Object.hasOwn(PLUE_FAILURES, code))
     expect(shared).toEqual([])
   })
 
-  test("stays sorted and free of duplicates, so a new code lands in one obvious place", () => {
+  test("stays sorted and free of duplicates, so a new code lands in one obvious place", async () => {
     expect([...WORKER_FAILURE_CODES]).toEqual([...new Set(WORKER_FAILURE_CODES)].sort())
   })
 
-  test("answers the same three questions per row as plue's", () => {
+  test("answers the same three questions per row as plue's", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       const entry = WORKER_FAILURES[code]
       expect(Object.keys(entry).sort()).toEqual(["fault", "retryAfter", "status"])
@@ -48,14 +49,14 @@ describe("the Worker's own failure registry", () => {
     }
   })
 
-  test("names a written lead for every code — an unwritten one does not compile, and is not blank either", () => {
+  test("names a written lead for every code — an unwritten one does not compile, and is not blank either", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       expect(WORKER_REFUSAL_COPY[code].lead.trim()).not.toBe("")
     }
     expect(Object.keys(WORKER_REFUSAL_COPY).sort()).toEqual([...WORKER_FAILURE_CODES])
   })
 
-  test("reads a code back to its own table and never to plue's", () => {
+  test("reads a code back to its own table and never to plue's", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       expect(workerFailureCode(code)).toBe(code)
       expect(refusalCode(code)).toBe(code)
@@ -68,7 +69,7 @@ describe("the Worker's own failure registry", () => {
 })
 
 describe("a Worker refusal as it reaches the app", () => {
-  test("carries the Worker's own code, its documented fault, and origin=worker", () => {
+  test("carries the Worker's own code, its documented fault, and origin=worker", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       const entry = WORKER_FAILURES[code]
       const refusal = refusalOf({ body: { status: "error", code }, status: entry.status, message: "nope" })
@@ -79,36 +80,55 @@ describe("a Worker refusal as it reaches the app", () => {
     }
   })
 
-  test("is built the same way on both sides: workerRefusal takes status and fault from the table", () => {
+  test("the envelope takes status and pacing from the table, and the app reads back what it wrote", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       const entry = WORKER_FAILURES[code]
-      const built = workerRefusal(code, "nope")
-      expect(built.status).toBe(entry.status)
-      expect(built.fault).toBe(entry.fault)
-      expect(built.origin).toBe("worker")
-      expect(built).toEqual(
-        refusalOf({
-          body: { status: "error", code, ...(entry.retryAfter > 0 ? { retry_after: entry.retryAfter } : {}) },
-          status: entry.status,
-          message: "nope"
-        })
-      )
+      const envelope = workerRefusalEnvelope(code, "nope")
+      const paced = entry.retryAfter > 0
+      expect(envelope).toEqual({
+        status: entry.status,
+        body: { status: "error", code, message: "nope", ...(paced ? { retry_after: entry.retryAfter } : {}) },
+        headers: paced ? { "retry-after": String(entry.retryAfter) } : {}
+      })
+      const built = await workerRefusal(code, "nope")
+      expect({ status: built.status, fault: built.fault, origin: built.origin, retryAfter: built.retryAfter }).toEqual({
+        status: entry.status,
+        fault: entry.fault,
+        origin: "worker",
+        retryAfter: paced ? entry.retryAfter : null
+      })
     }
   })
 
-  test("survives a round trip through a card's stored shape", () => {
-    const refusal = workerRefusal("deployment_not_configured", "CEREBRAS_API_KEY is unset.")
+  test("the desktop host's envelope says local and carries the same pacing", async () => {
+    const refusal = await workerRefusal("model_rate_limited", "slow down", { origin: "local" })
+    expect({ origin: refusal.origin, retryAfter: refusal.retryAfter }).toEqual({ origin: "local", retryAfter: 60 })
+  })
+
+  test("a caller's status and stated wait win; null states no wait", () => {
+    expect(workerRefusalEnvelope("upstream_refused", "x", { status: 409, retryAfterSeconds: null })).toEqual({
+      status: 409,
+      body: { status: "error", code: "upstream_refused", message: "x" },
+      headers: {}
+    })
+    expect(workerRefusalEnvelope("model_rate_limited", "x", { retryAfterSeconds: 5 }).headers).toEqual({
+      "retry-after": "5"
+    })
+  })
+
+  test("survives a round trip through a card's stored shape", async () => {
+    const refusal = await workerRefusal("deployment_not_configured", "CEREBRAS_API_KEY is unset.")
     expect(refusalFromStored(storedRefusal(refusal))).toEqual(refusal)
   })
 
-  test("beats the status guess it used to get: a 501 is infra here, not the bug faultOfStatus reads", () => {
+  test("beats the status guess it used to get: a 501 is infra here, not the bug faultOfStatus reads", async () => {
     expect(faultOfStatus(501)).toBe("bug")
-    expect(workerRefusal("deployment_not_configured", "x").fault).toBe("infra")
+    expect((await workerRefusal("deployment_not_configured", "x")).fault).toBe("infra")
   })
 
-  test("is never retried on a timer unless the Worker said to wait and said how long", () => {
+  test("is never retried on a timer unless the Worker said to wait and said how long", async () => {
     for (const code of WORKER_FAILURE_CODES) {
-      const refusal = workerRefusal(code, "x")
+      const refusal = await workerRefusal(code, "x")
       expect(mayAutoRetry(refusal)).toBe(WORKER_FAILURES[code].fault === "wait" && refusal.retryAfter !== null)
     }
   })
@@ -121,16 +141,16 @@ describe("what a person is told about a Worker refusal", () => {
    * `no_capacity` is plue's — so borrowing the sentence here would send a
    * reader to the wrong person about the wrong problem.
    */
-  test("never borrows the capacity line for a failure that is not a full fleet", () => {
+  test("never borrows the capacity line for a failure that is not a full fleet", async () => {
     for (const code of WORKER_FAILURE_CODES) {
-      const refusal = workerRefusal(code, "x")
+      const refusal = await workerRefusal(code, "x")
       expect(refusalLead(refusal)).not.toContain("@fucory")
       expect(agentRefusalText(refusal)).not.toContain("@fucory")
     }
   })
 
-  test("a misconfigured deployment is infra, says so, and says the honest thing about it", () => {
-    const refusal = workerRefusal("deployment_not_configured", "CHAT_URL is not configured on this deployment.")
+  test("a misconfigured deployment is infra, says so, and says the honest thing about it", async () => {
+    const refusal = await workerRefusal("deployment_not_configured", "CHAT_URL is not configured on this deployment.")
     expect(refusal.fault).toBe("infra")
     const lead = refusalLead(refusal)
     expect(lead).toBe(
@@ -147,24 +167,24 @@ describe("what a person is told about a Worker refusal", () => {
     expect(agent).toContain("do NOT say Smithers ran out of infra")
   })
 
-  test("an absent seam gets the same audience and the same refusal to mention capacity", () => {
-    const refusal = workerRefusal("seam_not_configured", "Repository actions need the identity seam.")
+  test("an absent seam gets the same audience and the same refusal to mention capacity", async () => {
+    const refusal = await workerRefusal("seam_not_configured", "Repository actions need the identity seam.")
     expect(refusal.fault).toBe("infra")
     expect(refusalLead(refusal)).toContain("doesn't have the piece that answers this")
     expect(refusalLead(refusal)).not.toContain("ran out")
   })
 
-  test("opens the doors each refusal actually has", () => {
-    expect(refusalDoors(workerRefusal("sign_in_required", "x"))).toContain("sign-in")
-    expect(refusalDoors(workerRefusal("session_expired", "x"))).toContain("sign-in")
-    expect(refusalDoors(workerRefusal("route_not_found", "x"))).toEqual([])
-    expect(refusalDoors(workerRefusal("account_not_allowlisted", "x"))).toEqual([])
+  test("opens the doors each refusal actually has", async () => {
+    expect(refusalDoors(await workerRefusal("sign_in_required", "x"))).toContain("sign-in")
+    expect(refusalDoors(await workerRefusal("session_expired", "x"))).toContain("sign-in")
+    expect(refusalDoors(await workerRefusal("route_not_found", "x"))).toEqual([])
+    expect(refusalDoors(await workerRefusal("account_not_allowlisted", "x"))).toEqual([])
     /* The report door stays carried and unattached: no surface renders it yet. */
-    expect(refusalDoors(workerRefusal("deployment_not_configured", "x"))).toContain("report")
-    expect(refusalDoors(workerRefusal("unexpected_failure", "x"))).toContain("report")
+    expect(refusalDoors(await workerRefusal("deployment_not_configured", "x"))).toContain("report")
+    expect(refusalDoors(await workerRefusal("unexpected_failure", "x"))).toContain("report")
   })
 
-  test("tells the chat model the fault class for a Worker code, not only a plue one", () => {
+  test("tells the chat model the fault class for a Worker code, not only a plue one", async () => {
     const note = agentFaultNote("deployment_not_configured — CHAT_URL is not configured on this deployment.")
     expect(note).toContain("[fault=infra code=deployment_not_configured]")
     expect(note).not.toContain("@fucory")
@@ -174,9 +194,9 @@ describe("what a person is told about a Worker refusal", () => {
     expect(agentFaultNote("something went wrong")).toBeNull()
   })
 
-  test("keeps the two infra audiences apart, which is the whole reason origin exists", () => {
+  test("keeps the two infra audiences apart, which is the whole reason origin exists", async () => {
     const fleetFull = refusalOf({ body: { code: "no_capacity", fault: "infra" }, status: 503, message: "full" })
-    const misconfigured = workerRefusal("deployment_not_configured", "unset")
+    const misconfigured = await workerRefusal("deployment_not_configured", "unset")
     expect(fleetFull.origin).toBe("plue")
     expect(misconfigured.origin).toBe("worker")
     expect(fleetFull.fault).toBe(misconfigured.fault)

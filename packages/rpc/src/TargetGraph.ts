@@ -514,19 +514,6 @@ export const CiMatrixCardPayloadSchema = z.object({
  */
 export type CiMatrixCardPayload = z.infer<typeof CiMatrixCardPayloadSchema>
 
-/** Routes this contract adds to the local server (LOCAL-APP.md "Targets: graph and runs").
- * @since 1.0.0
- * @category constants
- */
-export const TARGET_GRAPH_ROUTES = {
-  graph: "/api/targets/graph",
-  runs: "/api/targets/runs",
-  replay: "/api/targets/runs/replay",
-  affected: "/api/targets/affected",
-  ci: "/api/targets/ci",
-  openSource: "/api/targets/open-source"
-} as const
-
 /**
  * Labels reachable from `label` along the given direction (deps = outgoing,
  * rdeps = incoming). The start label is not in the set unless a cycle

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"
-import { SHARED_BACKEND_CLIENT_ROUTES } from "../src/AgentApiRoutes.js"
+import { SHARED_BACKEND_CLIENT_ROUTES } from "../src/AgentApiRoutes.ts"
 
 describe("shared backend client route contract", () => {
   test("every client-called route is mounted by the Go composition root", () => {

@@ -263,11 +263,12 @@ test("slash browser.open exposes the real service rejection for a loopback targe
     response.request().method() === "POST" && new URL(response.url()).pathname === "/api/tools/browser-fetch")
   await command(page, "/browser.open https://127.0.0.1/")
   const response = await fetching
-  expect(response.status()).toBe(422)
+  expect(response.status()).toBe(400)
   expect(response.request().postDataJSON()).toEqual({ url: "https://127.0.0.1/" })
   const body = await response.json() as { readonly status?: unknown; readonly message?: unknown }
-  expect(body).toEqual({
+  expect(body).toMatchObject({
     status: "error",
+    code: "request_invalid",
     message: "That address points at a private host, which the browser tool never reads."
   })
   const card = transcript(page).locator('.smithers-card[data-kind="browser"]')

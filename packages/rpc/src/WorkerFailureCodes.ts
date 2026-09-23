@@ -226,12 +226,3 @@ export const WORKER_FAILURES = {
  */
 export const workerFailureCode = (value: unknown): WorkerFailureCode | null =>
   typeof value === "string" && Object.hasOwn(WORKER_FAILURES, value) ? value as WorkerFailureCode : null
-
-/**
- * The status this Worker answers for a code. Read by `refuse` so a route's
- * status and its code cannot disagree.
- *
- * @since 1.0.0
- * @category constants
- */
-export const workerFailureStatus = (code: WorkerFailureCode): number => WORKER_FAILURES[code].status

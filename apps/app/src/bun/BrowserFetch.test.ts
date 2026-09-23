@@ -55,6 +55,7 @@ test("the native reader refuses private destinations before requesting anything"
   const response = await handleBrowserFetch(new Request("http://local/api/tools/browser-fetch", { method: "POST", body: JSON.stringify({ url: "https://example.test" }) }), {
     resolveHost: async () => ["127.0.0.1"], fetchImpl: async () => { requested = true; return new Response("unexpected") }
   })
-  expect(response.status).toBe(422)
+  expect(response.status).toBe(400)
+  expect(await response.json()).toMatchObject({ status: "error", code: "request_invalid", origin: "local" })
   expect(requested).toBe(false)
 })

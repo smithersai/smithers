@@ -197,3 +197,6 @@ docs/reviews/
 # Throwaway discovery and repro scripts; they say "not shipped" in their headers.
 apps/app/scripts/tmp-*
 zz-*-repro.*
+
+# Agent lane exit markers (check/lint/test status files), never source.
+.enrollment-*.exit

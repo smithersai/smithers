@@ -11,7 +11,8 @@
  * going-away into).
  */
 import { afterEach, expect, setDefaultTimeout, test } from "bun:test"
-import { CLOUD_LSP_ROOT_URI, LSP_LANGUAGE_SERVER_MISSING, withRetryAfter } from "@smthrs/rpc/LocalApp"
+import { CLOUD_LSP_ROOT_URI, withRetryAfter } from "@smthrs/rpc/CloudTunnel"
+import { LSP_LANGUAGE_SERVER_MISSING } from "@smthrs/rpc/LocalLsp"
 import { cloudDocumentUri, createCloudLspClient, documentLanguageId, pageCloudLspSocketUrl } from "./CloudLspClient"
 import type { CloudLspClient, CloudLspDocument, CloudLspEvent } from "./CloudLspClient"
 

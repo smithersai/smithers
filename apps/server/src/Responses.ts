@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect"
 import { upstreamProse } from "@smthrs/rpc/UpstreamProse"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
+import { workerRefusalEnvelope } from "@smthrs/rpc/Refusal"
+import type { WorkerRefusalEnvelope } from "@smthrs/rpc/Refusal"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure, UpstreamFailure } from "./Failures"
 import { readBoundedJson } from "./Http"
@@ -59,10 +60,7 @@ export const refuse = (
   code: WorkerFailureCode,
   message: string,
   options?: { readonly retryAfterSeconds?: number | null }
-): Response => {
-  const entry = WORKER_FAILURES[code]
-  return coded(entry.status, code, message, options?.retryAfterSeconds ?? (entry.retryAfter > 0 ? entry.retryAfter : null))
-}
+): Response => coded(workerRefusalEnvelope(code, message, { retryAfterSeconds: options?.retryAfterSeconds ?? undefined }))
 
 /**
  * The same refusal at a status the route did not choose — an upstream's, kept
@@ -77,12 +75,12 @@ export const refuseWithStatus = (
   code: WorkerFailureCode,
   message: string,
   options?: { readonly retryAfterSeconds?: number | null }
-): Response => coded(status, code, message, options?.retryAfterSeconds ?? null)
+): Response => coded(workerRefusalEnvelope(code, message, { status, retryAfterSeconds: options?.retryAfterSeconds ?? null }))
 
-/** The refusal envelope itself: the code beside the sentence, and a stated wait on both the header and the body. */
-const coded = (status: number, code: WorkerFailureCode, message: string, seconds: number | null): Response => {
-  const response = json(status, { status: "error", code, message, ...(seconds === null ? {} : { retry_after: seconds }) })
-  if (seconds !== null) response.headers.set("retry-after", String(seconds))
+/** The refusal envelope itself, from @smthrs/rpc so the app's classifier reads exactly what this writes. */
+const coded = (envelope: WorkerRefusalEnvelope): Response => {
+  const response = json(envelope.status, envelope.body)
+  for (const [name, value] of Object.entries(envelope.headers)) response.headers.set(name, value)
   return response
 }
 

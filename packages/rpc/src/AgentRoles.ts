@@ -188,19 +188,6 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
   })
 ]
 
-/** Whether a string is a well-formed agent id; not whether one exists.
- * @since 1.0.0
- * @category conversions
- */
-export const isAgentRoleId = (value: string): value is AgentRoleId => AGENT_ROLE_ID.test(value)
-
-/** Whether an id names one of the seeded rows.
- * @since 1.0.0
- * @category conversions
- */
-export const isBuiltinAgentRoleId = (value: string): value is BuiltinAgentRoleId =>
-  (AGENT_ROLE_IDS as ReadonlyArray<string>).includes(value)
-
 /** The role with this id in a list (the built-ins by default), or undefined.
  * @since 1.0.0
  * @category conversions
@@ -326,7 +313,7 @@ export const cloudRole = (id: CloudRoleId): CloudRole => {
  * The model id a deployment serves a cloud role on: the role's `modelEnv`
  * variable when it is set to a well-formed model id, else the table default.
  * A malformed override is ignored, not launched: the id is re-checked here
- * exactly as `roleLaunchArgv` re-checks a local role's.
+ * against the same model-id alphabet a local role uses.
  * @since 1.0.0
  * @category conversions
  */
@@ -344,9 +331,8 @@ export const agentRoleTitle = (role: AgentRole): string => `${role.label} · ${r
 /**
  * What a harness needs to launch a role: its binary name and the flag that
  * takes a model id (`claude --model`, `codex -m`, `opencode --model`). The
- * harness table (@smthrs/harness-detect) states these,
- * verified against each installed binary's `--help`; this module only
- * composes with them.
+ * harness table (@smthrs/harness-detect) states these, verified against each
+ * installed binary's `--help`.
  * @since 1.0.0
  * @category models
  */
@@ -356,45 +342,3 @@ export interface HarnessModelSpec {
   /** The flag(s) placed before the model id. */
   readonly flag: ReadonlyArray<string>
 }
-
-/**
- * The launch argv for a role: the harness binary, its model flag, and the
- * role's model id — COMPOSED, never stored, and never containing renderer
- * text except the delegated task as the CLI's first prompt. The model id is
- * re-checked here so a row that slipped past validation still cannot inject
- * a flag. A trimmed task starting with a dash is refused; every nonempty
- * task follows the `--` option terminator as one positional prompt.
- * `claude [prompt]` and `codex [PROMPT]` take the task positionally;
- * the OpenCode TUI takes none, so a task runs through
- * `opencode run -m provider/model -- <message>` (opencode 1.18.22 `run --help`).
- * @since 1.0.0
- * @category conversions
- */
-export const roleLaunchArgv = (
-  role: Pick<AgentRole, "model">,
-  harness: HarnessModelSpec,
-  task?: string
-): ReadonlyArray<string> => {
-  const model = role.model.id
-  if (!MODEL_ID.test(model)) throw new Error(`Refusing to launch: ${JSON.stringify(model)} is not a model id.`)
-  const prompt = task?.trim() ?? ""
-  if (prompt.startsWith("-")) throw new Error("Refusing to launch: a task must not start with a dash.")
-  if (prompt !== "" && harness.binary === "opencode") return ["opencode", "run", "-m", model, "--", prompt]
-  const base = [harness.binary, ...harness.flag, model]
-  return prompt === "" ? base : [...base, "--", prompt]
-}
-
-/**
- * Validates agents response values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const AgentsResponseSchema = z.object({ agents: z.array(AgentRoleSchema) })
-/**
- * The decoded value accepted by {@link AgentsResponseSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type AgentsResponse = z.infer<typeof AgentsResponseSchema>

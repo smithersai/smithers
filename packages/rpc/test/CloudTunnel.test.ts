@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest"
 import {
+  CLOSE_REASON_MAX_BYTES,
   CLOUD_LSP_FRAME_CAP_BYTES,
   CLOUD_LSP_REASSEMBLY_CAP_BYTES,
   CLOUD_LSP_ROOT_URI,
@@ -57,6 +58,18 @@ describe("the cloud LSP relay contract", () => {
     expect(retryAfterOf(reason)).toBe(2)
     expect(retryAfterOf("access revoked: token expired")).toBeNull()
     expect(retryAfterOf("guest_not_ready: activating (retry after 30 s) ")).toBe(30)
+  })
+
+  test("the Retry-After survives a message that fills the 123-byte close reason", () => {
+    const message = `language_server_busy: ${"x".repeat(120 - 22)}`
+    expect(new TextEncoder().encode(message).byteLength).toBe(120)
+    const reason = withRetryAfter(message, 5)
+    expect(new TextEncoder().encode(reason).byteLength).toBeLessThanOrEqual(CLOSE_REASON_MAX_BYTES)
+    expect(reason.startsWith("language_server_busy: xxx")).toBe(true)
+    expect(retryAfterOf(reason)).toBe(5)
+    const multibyte = withRetryAfter("é".repeat(100), 30)
+    expect(new TextEncoder().encode(multibyte).byteLength).toBeLessThanOrEqual(CLOSE_REASON_MAX_BYTES)
+    expect(retryAfterOf(multibyte)).toBe(30)
   })
 })
 

@@ -27,13 +27,15 @@ import {
   CLOUD_WS_PENDING_CLOSE_CODE,
   CloudLspFragmentSchema,
   CloudLspSessionSchema,
+  retryAfterOf
+} from "@smthrs/rpc/CloudTunnel"
+import {
   LSP_DIAGNOSTICS_CAP,
   LSP_LANGUAGE_SERVER_MISSING,
   LSP_LOCATIONS_CAP,
-  LSP_REQUEST_TIMEOUT_MS,
-  retryAfterOf
-} from "@smthrs/rpc/LocalApp"
-import type { LspDiagnostic, LspHover, LspLanguageId, LspLocation } from "@smthrs/rpc/LocalApp"
+  LSP_REQUEST_TIMEOUT_MS
+} from "@smthrs/rpc/LocalLsp"
+import type { LspDiagnostic, LspHover, LspLanguageId, LspLocation } from "@smthrs/rpc/LocalLsp"
 import { hoverContents, LSP_CLIENT_CAPABILITIES, redactHostPaths, relativeToRoot, toDiagnostic, toWireRange } from "@smthrs/rpc/LspWire"
 import type { LspDiagnosticWire, LspHoverWire, LspLocationLinkWire, LspLocationWire } from "@smthrs/rpc/LspWire"
 

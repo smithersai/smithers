@@ -144,13 +144,6 @@ export const IDENTITY_REQUEST_ACCESS_PATH = "/api/identity/request-access"
  * @category constants
  */
 export const BILLING_BALANCE_PATH = "/api/billing/balance"
-/**
- * The billing usage route shared by server and client.
- *
- * @since 1.0.0
- * @category constants
- */
-export const BILLING_USAGE_PATH = "/api/billing/usage"
 /*
  * Approvals are no longer a route of their own. A decision is the gateway's
  * `Approval.Submit` procedure, relayed through {@link WORKFLOW_RPC_PATH}: one

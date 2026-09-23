@@ -5,7 +5,7 @@
  */
 import { canonicalize } from "@smthrs/canonical/Serializer"
 import { z } from "zod"
-import { AgentTurnFrameSchema } from "./NativeAgent.js"
+import { AgentTurnFrameSchema } from "./NativeAgent.ts"
 
 const Hash = z.string().regex(/^[0-9a-f]{64}$/)
 const Position = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)

@@ -2,8 +2,8 @@ import { BILLING_OVERVIEW_PATH, BILLING_PLANS_PATH } from "@smthrs/rpc/AgentApiR
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
-import { browserFetchResponseBody } from "@smthrs/rpc/BrowserFetch"
-import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { browserFetchResponseBody, browserFetchWorkerCode } from "@smthrs/rpc/BrowserFetch"
+import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
 /*
  * The machine-readable half of an upstream refusal, shared with the desktop
  * app's native host (@smthrs/rpc/UpstreamProse): both hosts restate the same
@@ -288,10 +288,13 @@ export const handleBrowserFetch = (request: Request): Effect.Effect<Response, ne
     if (Option.isNone(egress)) {
       return refuse("feature_unavailable_here", "Web page reading is unavailable on this host. Open it in the native app.")
     }
-    const outcome = yield* egress.value.read(url.trim()).pipe(
-      Effect.catch((failure) => Effect.succeed({ ok: false as const, message: `Reading the page failed: ${failure.message}` }))
-    )
-    return json(outcome.ok ? 200 : 422, browserFetchResponseBody(outcome))
+    const outcome = yield* egress.value.read(url.trim()).pipe(Effect.result)
+    // The egress binding itself failed: the page was never reached, so a dependency is at fault.
+    if (Result.isFailure(outcome)) {
+      return refuse("upstream_unreachable", `Reading the page failed: ${outcome.failure.message}`)
+    }
+    if (!outcome.success.ok) return refuse(browserFetchWorkerCode(outcome.success.code), outcome.success.message)
+    return json(200, browserFetchResponseBody(outcome.success))
   })
 
 /*

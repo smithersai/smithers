@@ -20,11 +20,6 @@ export const LOCAL_AUTH_BOOTSTRAP_PATH = "/api/auth/local/bootstrap"
  * @category constants
  */
 export const LOCAL_AUTH_LOGIN_PATH = "/api/auth/local/login"
-/** Local owner token route.
- * @since 1.0.0
- * @category constants
- */
-export const LOCAL_AUTH_TOKEN_PATH = "/api/auth/local/token"
 /** One-use socket-ticket route.
  * @since 1.0.0
  * @category constants

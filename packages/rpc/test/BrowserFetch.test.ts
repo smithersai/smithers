@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import {
+  BROWSER_FETCH_FAILURE_CODES,
   BROWSER_FETCH_MAX_BYTES,
   BROWSER_FETCH_MAX_TEXT,
   browserFetch,
   browserFetchResponseBody,
+  browserFetchWorkerCode,
   extractReadableText,
   isPublicAddress,
   resolveHostOverHttps
 } from "../src/BrowserFetch.ts"
+import { refusalOf } from "../src/Refusal.ts"
+import { WORKER_FAILURES } from "../src/WorkerFailureCodes.ts"
 
 /*
  * The browser tool's hard guards (§2d): https only, public hosts only AFTER
@@ -178,7 +182,11 @@ describe("browserFetch guards", () => {
           { status: 302 }
         )
     })
-    expect(outcome).toEqual({ ok: false, message: "The page answered HTTP 302 with nowhere to go." })
+    expect(outcome).toEqual({
+      ok: false,
+      code: "redirect_invalid",
+      message: "The page answered HTTP 302 with nowhere to go."
+    })
   })
 
   test.each(["pending", "rejecting"])("a %s redirect cancellation does not block the next hop", async (cleanup) => {
@@ -224,7 +232,11 @@ describe("browserFetch guards", () => {
 
   test("fails closed instead of falling back to a second hostname lookup", async () => {
     const outcome = await browserFetch("https://example.com/", { resolveHost: publicResolver })
-    expect(outcome).toEqual({ ok: false, message: "Secure pinned egress is unavailable for the browser tool." })
+    expect(outcome).toEqual({
+      ok: false,
+      code: "egress_unavailable",
+      message: "Secure pinned egress is unavailable for the browser tool."
+    })
   })
 
   test("a readable page returns text, the final URL, the status — and frameability", async () => {
@@ -434,7 +446,7 @@ describe("browserFetch guards", () => {
         return new Response(null, { status: 302, headers: { location: `https://example.com/${fetches}` } })
       }
     })
-    expect(outcome).toEqual({ ok: false, message: "The page redirected too many times." })
+    expect(outcome).toEqual({ ok: false, code: "too_many_redirects", message: "The page redirected too many times." })
     expect(fetches).toBe(4)
   })
 
@@ -443,7 +455,11 @@ describe("browserFetch guards", () => {
       resolveHost: publicResolver,
       fetchImpl: async () => new Response(null, { status: 301 })
     })
-    expect(outcome).toEqual({ ok: false, message: "The page answered HTTP 301 with nowhere to go." })
+    expect(outcome).toEqual({
+      ok: false,
+      code: "redirect_invalid",
+      message: "The page answered HTTP 301 with nowhere to go."
+    })
   })
 
   test("a bodiless 204 succeeds with empty text and its frameability", async () => {
@@ -472,7 +488,11 @@ describe("browserFetch guards", () => {
   })
 
   test("browserFetchResponseBody maps both outcomes to the route's JSON shape", () => {
-    expect(browserFetchResponseBody({ ok: false, message: "m" })).toEqual({ status: "error", message: "m" })
+    expect(browserFetchResponseBody({ ok: false, code: "timeout", message: "m" })).toEqual({
+      status: "error",
+      code: "upstream_timeout",
+      message: "m"
+    })
     expect(
       browserFetchResponseBody({
         ok: true,
@@ -498,14 +518,21 @@ describe("browserFetch guards", () => {
       resolveHost: async () => [],
       fetchImpl: async () => okPage("unexpected")
     })
-    expect(empty).toEqual({ ok: false, message: "The host example.com could not be resolved." })
+    expect(empty).toEqual({ ok: false, code: "unresolved", message: "The host example.com could not be resolved." })
     const outage = await browserFetch("https://example.com/", {
       resolveHost: async () => {
         throw new Error("status 503")
       },
       fetchImpl: async () => okPage("unexpected")
     })
-    expect(outage).toEqual({ ok: false, message: "The name resolver did not answer (status 503); try again." })
+    expect(outage).toEqual({
+      ok: false,
+      code: "resolver_unavailable",
+      message: "The name resolver did not answer (status 503); try again."
+    })
+    // The resolver outage is a dependency's fault once it reaches the app, never the reader's.
+    const refusal = refusalOf({ body: browserFetchResponseBody(outage), status: 422, message: "x" })
+    expect({ code: refusal.code, fault: refusal.fault }).toEqual({ code: "upstream_unreachable", fault: "dependency" })
   })
 
   test("an unreachable host is an honest failure, never a throw", async () => {
@@ -567,7 +594,11 @@ describe("browserFetch guards", () => {
         )
       }
     })
-    expect(outcome).toEqual({ ok: false, message: "Reading next.example.com took too long and was stopped." })
+    expect(outcome).toEqual({
+      ok: false,
+      code: "timeout",
+      message: "Reading next.example.com took too long and was stopped."
+    })
     expect(signals).toHaveLength(2)
     expect(signals[1]).toBe(signals[0])
     expect(signals[1]?.aborted).toBe(true)
@@ -612,6 +643,60 @@ describe("browserFetch guards", () => {
   })
 })
 
+describe("browser fetch failure codes", () => {
+  const faults = Object.fromEntries(
+    BROWSER_FETCH_FAILURE_CODES.map((code) => [code, WORKER_FAILURES[browserFetchWorkerCode(code)].fault])
+  )
+
+  test("bad input is the reader's; a resolver, egress, timeout or site fault never is", () => {
+    expect(faults).toEqual({
+      invalid_url: "user",
+      scheme_refused: "user",
+      credentials_in_url: "user",
+      private_host: "user",
+      unresolved: "user",
+      resolver_unavailable: "dependency",
+      egress_unavailable: "infra",
+      timeout: "dependency",
+      read_failed: "dependency",
+      too_many_redirects: "dependency",
+      redirect_invalid: "dependency"
+    })
+  })
+
+  test("each guard names its code", async () => {
+    const page = async () => new Response("x", { status: 200 })
+    const codeOf = async (url: string, deps: Parameters<typeof browserFetch>[1]) => {
+      const outcome = await browserFetch(url, deps)
+      return outcome.ok ? "ok" : outcome.code
+    }
+    const resolver = async () => ["93.184.216.34"]
+    expect(await codeOf("not a url", { resolveHost: resolver, fetchImpl: page })).toBe("invalid_url")
+    expect(await codeOf("http://example.com/", { resolveHost: resolver, fetchImpl: page })).toBe("scheme_refused")
+    expect(await codeOf("https://a:b@example.com/", { resolveHost: resolver, fetchImpl: page })).toBe(
+      "credentials_in_url"
+    )
+    expect(await codeOf("https://db.internal/", { resolveHost: resolver, fetchImpl: page })).toBe("private_host")
+    expect(await codeOf("https://example.com/", { resolveHost: async () => ["10.0.0.1"], fetchImpl: page })).toBe(
+      "private_host"
+    )
+    expect(
+      await codeOf("https://example.com/", {
+        resolveHost: resolver,
+        fetchImpl: async () => {
+          throw new Error("reset")
+        }
+      })
+    ).toBe("read_failed")
+    expect(
+      await codeOf("https://example.com/", {
+        resolveHost: resolver,
+        fetchImpl: async () => new Response(null, { status: 302, headers: { location: "http://[" } })
+      })
+    ).toBe("redirect_invalid")
+  })
+})
+
 describe("resolveHostOverHttps", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -644,6 +729,18 @@ describe("resolveHostOverHttps", () => {
       ))
     await expect(resolveHostOverHttps("example.com")).rejects.toThrow("status 503")
     expect(cancelled).toBeGreaterThan(0)
+  })
+
+  test("a SERVFAIL answer is a resolver fault, and NXDOMAIN is an empty answer", async () => {
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ Status: 2 }), { status: 200 }))
+    await expect(resolveHostOverHttps("example.com")).rejects.toThrow("DNS status 2")
+    vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ Status: 3 }), { status: 200 }))
+    await expect(resolveHostOverHttps("example.com")).resolves.toEqual([])
+  })
+
+  test("a 200 whose body is not JSON is a resolver fault, not an empty answer", async () => {
+    vi.stubGlobal("fetch", async () => new Response("<html>captive portal</html>", { status: 200 }))
+    await expect(resolveHostOverHttps("example.com")).rejects.toThrow("malformed")
   })
 })
 

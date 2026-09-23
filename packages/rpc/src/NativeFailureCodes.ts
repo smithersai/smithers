@@ -317,12 +317,3 @@ export const nativeFailureCode = (value: unknown): NativeFailureCode | null => {
  */
 export const nativeFailureEntry = (code: NativeFailureCode): NativeFailureEntry =>
   NATIVE_FAILURES[code.slice(NATIVE_CODE_PREFIX.length) as NativeRouteCode]
-
-/**
- * The status this host answers for a route code. `jsonError` reads it from
- * here, so a route's status and its code cannot disagree.
- *
- * @since 1.0.0
- * @category constants
- */
-export const nativeFailureStatus = (code: NativeRouteCode): number => NATIVE_FAILURES[code].status

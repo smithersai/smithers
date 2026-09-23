@@ -3,6 +3,7 @@ import {
   AGENT_ROLE_IDS,
   AGENT_ROLES,
   agentRole,
+  AgentRoleIdSchema,
   AgentRoleSchema,
   agentRoleTitle,
   CLOUD_AGENT_ROLE_IDS,
@@ -11,17 +12,10 @@ import {
   cloudRoleModelId,
   CloudRoleSchema,
   findAgentRole,
-  isAgentRoleId,
-  isBuiltinAgentRoleId,
-  isCloudRoleId,
-  roleLaunchArgv
+  isCloudRoleId
 } from "../src/AgentRoles.ts"
 import type { AgentRole } from "../src/AgentRoles.ts"
 import { HARNESS_IDS } from "../src/LocalApp.ts"
-
-const CLAUDE = { binary: "claude", flag: ["--model"] }
-const CODEX = { binary: "codex", flag: ["-m"] }
-const OPENCODE = { binary: "opencode", flag: ["--model"] }
 
 const custom = {
   id: "reviewer",
@@ -63,81 +57,13 @@ describe("the agent role registry", () => {
 
   test("titles pair the role with its model; a well-formed id is recognised whether or not a row exists", () => {
     expect(agentRoleTitle(agentRole("explainer"))).toBe("Explainer · Kimi K3")
-    expect(isAgentRoleId("fast-ui")).toBe(true)
-    expect(isAgentRoleId("reviewer")).toBe(true)
-    expect(isAgentRoleId("claude")).toBe(true)
-    expect(isBuiltinAgentRoleId("fast-ui")).toBe(true)
-    expect(isBuiltinAgentRoleId("reviewer")).toBe(false)
+    expect(AgentRoleIdSchema.safeParse("fast-ui").success).toBe(true)
+    expect(AgentRoleIdSchema.safeParse("reviewer").success).toBe(true)
+    expect(AgentRoleIdSchema.safeParse("claude").success).toBe(true)
+    expect(AGENT_ROLE_IDS).toContain("fast-ui")
+    expect(AGENT_ROLE_IDS).not.toContain("reviewer")
     expect(findAgentRole("reviewer")).toBeUndefined()
     expect(findAgentRole("reviewer", [...AGENT_ROLES, custom])?.label).toBe("Reviewer")
-  })
-
-  test("the launch argv is composed per harness: binary, model flag, model id, then the task as the first prompt", () => {
-    expect(roleLaunchArgv(agentRole("orchestrator"), CLAUDE)).toEqual(["claude", "--model", "claude-fable-5"])
-    expect(roleLaunchArgv(agentRole("orchestrator"), CLAUDE, " plan it ")).toEqual([
-      "claude",
-      "--model",
-      "claude-fable-5",
-      "--",
-      "plan it"
-    ])
-    expect(roleLaunchArgv(agentRole("implementation"), CODEX, "add a retry")).toEqual([
-      "codex",
-      "-m",
-      "gpt-5.6-sol",
-      "--",
-      "add a retry"
-    ])
-    expect(roleLaunchArgv(custom, CODEX)).toEqual(["codex", "-m", "gpt-5.6-terra"])
-    expect(roleLaunchArgv(agentRole("explainer"), OPENCODE)).toEqual(["opencode", "--model", "kimi-for-coding/k3"])
-    expect(roleLaunchArgv(agentRole("explainer"), OPENCODE, "why did this fail")).toEqual([
-      "opencode",
-      "run",
-      "-m",
-      "kimi-for-coding/k3",
-      "--",
-      "why did this fail"
-    ])
-    expect(roleLaunchArgv(agentRole("ui"), OPENCODE, "   ")).toEqual(["opencode", "--model", "kimi-for-coding/k3"])
-  })
-
-  test("renderer input never reaches argv verbatim: a model id that is a flag is refused at composition", () => {
-    expect(() => roleLaunchArgv({ model: { ...custom.model, id: "--yolo" } }, CODEX)).toThrow(/not a model id/)
-    expect(() => roleLaunchArgv({ model: { ...custom.model, id: "gpt -m evil" } }, CODEX)).toThrow(/not a model id/)
-  })
-
-  describe.each([
-    { role: agentRole("orchestrator"), harness: CLAUDE, base: ["claude", "--model", "claude-fable-5"] },
-    { role: custom, harness: CODEX, base: ["codex", "-m", "gpt-5.6-terra"] },
-    { role: agentRole("explainer"), harness: OPENCODE, base: ["opencode", "run", "-m", "kimi-for-coding/k3"] }
-  ])("delegated tasks for $harness.binary", ({ role, harness, base }) => {
-    test.each([
-      "--dangerously-skip-permissions",
-      "--permission-mode=bypassPermissions",
-      "--sandbox=danger-full-access",
-      "--model=other",
-      "--help",
-      "--share",
-      "-p",
-      "--",
-      " \t\n--model=other ",
-      "--dangerously-skip-permissions do it"
-    ])("refuses a flag-shaped task: %j", (task) => {
-      expect(() => roleLaunchArgv(role, harness, task)).toThrow(
-        new Error("Refusing to launch: a task must not start with a dash.")
-      )
-    })
-
-    test.each(["plan the next change", " \tplan the next change\n", "explain --model=other and --help"])(
-      "terminates options before the trimmed prompt: %j",
-      (task) => {
-        expect(roleLaunchArgv(role, harness, task)).toEqual([...base, "--", task.trim()])
-      }
-    )
-
-    test.each([undefined, "", " \t\n"])("omits the prompt and terminator for an empty task: %j", (task) => {
-      expect(roleLaunchArgv(role, harness, task)).toEqual([harness.binary, ...harness.flag, role.model.id])
-    })
   })
 })
 
@@ -150,7 +76,7 @@ describe("the cloud roles", () => {
       expect(role.model.provider).toBe("cerebras")
       expect(role.purpose.length).toBeGreaterThan(10)
       expect("harness" in role).toBe(false)
-      expect(isBuiltinAgentRoleId(role.id)).toBe(false)
+      expect(AGENT_ROLE_IDS as ReadonlyArray<string>).not.toContain(role.id)
       expect(AgentRoleSchema.safeParse(role).success).toBe(false)
     }
     expect(cloudRole("librarian")).toMatchObject({
@@ -169,7 +95,7 @@ describe("the cloud roles", () => {
     expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: " gpt-oss-120b " })).toBe("gpt-oss-120b")
     expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_FLOWS: "gpt-oss-120b" })).toBe("qwen-3.8-27b")
     expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "" })).toBe("qwen-3.8-27b")
-    // A flag-shaped override is ignored, exactly as roleLaunchArgv refuses one.
+    // A flag-shaped override is ignored, never launched.
     expect(cloudRoleModelId(librarian, { CEREBRAS_MODEL_LIBRARIAN: "--model evil" })).toBe("qwen-3.8-27b")
   })
 })

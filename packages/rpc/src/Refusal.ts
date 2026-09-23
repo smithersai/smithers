@@ -32,7 +32,7 @@
  *
  * @since 1.0.0
  */
-import { NATIVE_FAILURES, nativeFailureCode, nativeFailureEntry, nativeWireCode } from "./NativeFailureCodes.ts"
+import { nativeFailureCode, nativeFailureEntry } from "./NativeFailureCodes.ts"
 import type { NativeFailureCode, NativeRouteCode } from "./NativeFailureCodes.ts"
 import { PLUE_FAILURES, PLUE_FAULTS } from "./PlueFailureCodes.ts"
 import type { PlueFailureCode, PlueFault } from "./PlueFailureCodes.ts"
@@ -123,14 +123,6 @@ const ORIGINS: ReadonlySet<string> = new Set(REFUSAL_ORIGINS)
  */
 export const plueFailureCode = (value: unknown): PlueFailureCode | null =>
   typeof value === "string" && Object.hasOwn(PLUE_FAILURES, value) ? value as PlueFailureCode : null
-
-/**
- * The registry row for a code, or null for a code this build does not know.
- *
- * @since 1.0.0
- * @category constants
- */
-export const plueFailureEntry = (code: PlueFailureCode | null) => code === null ? null : PLUE_FAILURES[code]
 
 /**
  * Whether a code is one the Cloudflare Worker wrote rather than one plue did.
@@ -282,58 +274,60 @@ export const refusalOf = (input: RefusalInput): Refusal => {
 }
 
 /**
- * A refusal the Cloudflare Worker wrote, built from its own registry.
- *
- * The status and the fault come from the table rather than from the caller, so
- * a route and its code can never disagree about either. This is the
- * constructor the Worker's own `refuse` mirrors and the one a test uses to say
- * "this is what that code looks like once it has reached the app". The desktop
- * app's native host writes the same vocabulary on the routes it shares with
- * the Worker, so `origin` says which of the two answered.
+ * The HTTP answer for a refusal in the Worker's vocabulary: status, JSON body
+ * and headers.
  *
  * @since 1.0.0
- * @category constants
+ * @category models
  */
-export const workerRefusal = (
-  code: WorkerFailureCode,
-  message: string,
-  options?: { readonly retryAfterSeconds?: number | null; readonly origin?: "worker" | "local" }
-): Refusal => {
-  const entry = WORKER_FAILURES[code]
-  return {
-    code,
-    rawCode: code,
-    fault: entry.fault,
-    message,
-    retryAfter: secondsOf(options?.retryAfterSeconds) ?? (entry.retryAfter > 0 ? entry.retryAfter : null),
-    status: entry.status,
-    origin: options?.origin ?? "worker"
+export interface WorkerRefusalEnvelope {
+  readonly status: number
+  readonly body: {
+    readonly status: "error"
+    readonly code: WorkerFailureCode
+    readonly message: string
+    readonly retry_after?: number
+    readonly origin?: "local"
   }
+  readonly headers: Readonly<Record<string, string>>
 }
 
 /**
- * A refusal the desktop app's own host wrote on one of its private routes,
- * built from its own registry.
+ * The one envelope a host answers a Worker-vocabulary refusal with.
  *
- * The mirror of `workerRefusal` for the third vocabulary: the status and the
- * fault come from NativeFailureCodes.ts rather than from the caller, so a
- * route and its code cannot disagree about either, and `origin` is `local`
- * because this refusal can only have been written by a program on the reader's
- * own box.
+ * The status comes from the registry unless the caller passes one it has as
+ * evidence (an upstream's). `retryAfterSeconds` left out uses the registry's
+ * pacing; `null` states no wait. A stated wait travels on both the
+ * `Retry-After` header and the body's `retry_after`, which is what
+ * `refusalOf` reads back. `origin: "local"` marks the desktop host, which
+ * serves the same routes in the same vocabulary.
  *
  * @since 1.0.0
- * @category constants
+ * @category constructors
  */
-export const nativeRefusal = (code: NativeRouteCode, message: string): Refusal => {
-  const entry = NATIVE_FAILURES[code]
+export const workerRefusalEnvelope = (
+  code: WorkerFailureCode,
+  message: string,
+  options?: {
+    readonly status?: number
+    readonly retryAfterSeconds?: number | null
+    readonly origin?: "worker" | "local"
+  }
+): WorkerRefusalEnvelope => {
+  const entry = WORKER_FAILURES[code]
+  const seconds = options?.retryAfterSeconds === undefined
+    ? (entry.retryAfter > 0 ? entry.retryAfter : null)
+    : secondsOf(options.retryAfterSeconds)
   return {
-    code: nativeWireCode(code),
-    rawCode: nativeWireCode(code),
-    fault: entry.fault,
-    message,
-    retryAfter: entry.retryAfter > 0 ? entry.retryAfter : null,
-    status: entry.status,
-    origin: "local"
+    status: options?.status ?? entry.status,
+    body: {
+      status: "error",
+      code,
+      message,
+      ...(seconds === null ? {} : { retry_after: seconds }),
+      ...(options?.origin === "local" ? { origin: "local" as const } : {})
+    },
+    headers: seconds === null ? {} : { "retry-after": String(seconds) }
   }
 }
 
@@ -424,7 +418,7 @@ export const refusalFromStored = (stored: StoredRefusal): Refusal => {
 }
 
 /**
- * True when the Worker classified this as the fleet being full rather than one account being at its cap.
+ * True when plue's `no_capacity` says the fleet is full, rather than one account being at its cap.
  *
  * @since 1.0.0
  * @category constants

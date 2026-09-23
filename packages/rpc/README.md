@@ -6,8 +6,6 @@ Shared product contracts for the local host, browser, and server. Import individ
 
 `BrowserFetch` is the one implementation module: the browser tool's guarded fetch-and-extract handler, shared by the product Worker and the local host. It is the only module that performs network I/O, with the DNS resolver injected by each host.
 
-`LocalApp` re-exports the names that moved to `LocalLsp` and `CloudTunnel` for one release. Import them from their home; a new name is exported from its home alone.
-
 The model host owns enrollment (`POST /api/model/credential`) and safe receipts
 (`GET /api/model/credential/receipt`). Bun uses its state-scoped OS keychain;
 the Worker returns `local_host_required` after its session gate.

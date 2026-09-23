@@ -1,5 +1,5 @@
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { CLOUD_AUTH_SESSION_PATH } from "@smthrs/rpc/LocalApp"
+import { CLOUD_AUTH_SESSION_PATH } from "@smthrs/rpc/CloudTunnel"
 import { describe, expect, test } from "bun:test"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../runtime/AgentPort"

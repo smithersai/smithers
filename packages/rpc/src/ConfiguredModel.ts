@@ -1317,6 +1317,7 @@ export type ModelInvalidField = (typeof MODEL_INVALID_FIELDS)[number]
  * Every way a configured model fails, by code.
  *
  * - `unreachable` no answer came back from the endpoint.
+ * - `empty_output` the endpoint answered success with no model output at all.
  * - `refused` the endpoint answered with this status; a redirect is never followed, so a 3xx is one.
  * - `timeout` the deadline the failure states ran out.
  * - `invalid` the named field cannot be served, or the endpoint does not speak the protocol.

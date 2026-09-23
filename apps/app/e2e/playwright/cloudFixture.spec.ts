@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
-import { CloudSessionSchema, ReposResponseSchema } from "@smthrs/rpc/LocalApp"
+import { ReposResponseSchema } from "@smthrs/rpc/LocalApp"
+import { CloudSessionSchema } from "@smthrs/rpc/CloudTunnel"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 const read = (page: Page, path: string) => page.evaluate(async (path) => {

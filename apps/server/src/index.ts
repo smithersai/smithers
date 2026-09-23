@@ -30,7 +30,7 @@ import {
 } from "@smthrs/rpc/AgentApiRoutes"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
-import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX, CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CLOUD_AUTH_SESSION_PATH, CLOUD_ROUTE_PREFIX, CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
 import { handleTerminalRelay } from "./terminalRelay"
 import { probeCloudSession } from "./cloudSession"
 import { handleAdmin } from "./admin"

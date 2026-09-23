@@ -16,7 +16,7 @@ import {
   CLOUD_AUTH_START_PATH,
   CloudAuthStartResponseSchema,
   CloudSessionSchema
-} from "@smthrs/rpc/LocalApp"
+} from "@smthrs/rpc/CloudTunnel"
 import type { SeamContext } from "./SeamContext"
 
 export interface CloudSeam {

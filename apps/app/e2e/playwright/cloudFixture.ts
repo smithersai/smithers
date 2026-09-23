@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test"
 import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
-import { ReposResponseSchema, type CloudSession, type Repo } from "@smthrs/rpc/LocalApp"
+import { ReposResponseSchema, type Repo } from "@smthrs/rpc/LocalApp"
+import { type CloudSession } from "@smthrs/rpc/CloudTunnel"
 import { SCOPED_TEST_USER, SCOPED_TEST_USER_CLOUD_SESSION } from "./identity.ts"
 
 // Cloud proxy DTO fields used by these specs. The upstream contracts live in

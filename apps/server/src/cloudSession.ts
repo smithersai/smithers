@@ -1,4 +1,4 @@
-import type { CloudSession } from "@smthrs/rpc/LocalApp"
+import type { CloudSession } from "@smthrs/rpc/CloudTunnel"
 import { plueFailureCode } from "@smthrs/rpc/Refusal"
 import { machineReadableRefusal, upstreamProse } from "@smthrs/rpc/UpstreamProse"
 import * as Effect from "effect/Effect"

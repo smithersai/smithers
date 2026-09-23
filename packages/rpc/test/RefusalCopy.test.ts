@@ -1,18 +1,21 @@
 import { describe, expect, test } from "vitest"
 import { PLUE_FAILURES, PLUE_FAULTS } from "../src/PlueFailureCodes.ts"
 import type { PlueFailureCode } from "../src/PlueFailureCodes.ts"
-import { clientRefusal, mayAutoRetry, refusalOf, workerRefusal } from "../src/Refusal.ts"
+import { clientRefusal, mayAutoRetry, refusalOf } from "../src/Refusal.ts"
 import {
+  agentFaultNote,
   agentRefusalText,
   INFRA_NOT_YOUR_FAULT,
   NOTHING_ANSWERED,
   REFUSAL_COPY,
   refusalCopy,
   refusalDoors,
-  refusalLead
+  refusalLead,
+  refusalSentence
 } from "../src/RefusalCopy.ts"
 import { WORKER_FAILURE_CODES, WORKER_FAILURES } from "../src/WorkerFailureCodes.ts"
 import type { WorkerFailureCode } from "../src/WorkerFailureCodes.ts"
+import { workerRefusal } from "./refusalFixtures.ts"
 
 /** A refusal exactly as plue answers for this code, through its own registry row. */
 const forCode = (code: PlueFailureCode, message = "plue's own words") =>
@@ -51,7 +54,7 @@ const TERMINAL_UNTIL_WE_SHIP: ReadonlyArray<PlueFailureCode> = [
 ]
 
 describe("the copy table", () => {
-  test("every fault has a row, and every row says something", () => {
+  test("every fault has a row, and every row says something", async () => {
     for (const fault of PLUE_FAULTS) {
       const row = REFUSAL_COPY[fault]
       expect(row.lead, fault).not.toBe("")
@@ -60,7 +63,7 @@ describe("the copy table", () => {
     expect(Object.keys(REFUSAL_COPY).sort()).toEqual([...PLUE_FAULTS].sort())
   })
 
-  test("every one of plue's codes resolves to a lead line and an agent sentence", () => {
+  test("every one of plue's codes resolves to a lead line and an agent sentence", async () => {
     // The exhaustiveness that matters at runtime: the table is keyed by fault,
     // so a code plue adds is covered the moment it has a registry row — and a
     // code whose fault somehow has no row would surface here rather than as a
@@ -72,7 +75,7 @@ describe("the copy table", () => {
     }
   })
 
-  test("a busy build cache is a wait with a stated pace, never the caller's request to change", () => {
+  test("a busy build cache is a wait with a stated pace, never the caller's request to change", async () => {
     // plue's build cache refuses with 429 when the CACHE is at its own
     // concurrency ceiling, not the caller's budget. The Worker proxy forwards
     // `code` and `retry_after` but drops `fault`, so a build that predates the
@@ -94,7 +97,7 @@ describe("the copy table", () => {
     expect(agentRefusalText(refusal)).not.toContain("@fucory")
   })
 
-  test("a contended control transaction says nothing changed and paces the re-ask, instead of the generic infra line that forbids one", () => {
+  test("a contended control transaction says nothing changed and paces the re-ask, instead of the generic infra line that forbids one", async () => {
     // plue paces this one itself (503, retry_after 2) and its doc says the
     // identical request works once the contention clears. The default infra
     // copy says the opposite — "do not retry it on a timer" — so the reader
@@ -110,14 +113,14 @@ describe("the copy table", () => {
     expect(refusalDoors(refusal)).toEqual(["retry"])
   })
 
-  test("each fault renders its own lead line", () => {
+  test("each fault renders its own lead line", async () => {
     const leads = PLUE_FAULTS.map((fault) => REFUSAL_COPY[fault].lead)
     expect(new Set(leads).size).toBe(PLUE_FAULTS.length)
   })
 })
 
 describe("the infra line", () => {
-  test("appears for no_capacity, names @fucory, and says it is not the user's fault", () => {
+  test("appears for no_capacity, names @fucory, and says it is not the user's fault", async () => {
     const lead = refusalLead(forCode("no_capacity", "no sandbox slots are free"))
     expect(lead).toBe(INFRA_NOT_YOUR_FAULT)
     expect(lead).toContain("not your fault")
@@ -125,7 +128,7 @@ describe("the infra line", () => {
     expect(lead).toContain("infra")
   })
 
-  test("does NOT appear for quota_exceeded — that one is the account's own cap", () => {
+  test("does NOT appear for quota_exceeded — that one is the account's own cap", async () => {
     const refusal = forCode("quota_exceeded", "you already have 5 boxes running")
     expect(refusal.fault).toBe("user")
     expect(refusalLead(refusal)).not.toContain("@fucory")
@@ -143,7 +146,7 @@ describe("the infra line", () => {
    * say plainly whose fault it is. The claim about the fleet is checked in the
    * other direction, so no refusal outside a real shortage can borrow it.
    */
-  test("every infra lead says plainly it is not the reader's fault", () => {
+  test("every infra lead says plainly it is not the reader's fault", async () => {
     for (const code of INFRA_CODES) {
       expect(refusalLead(forCode(code)).toLowerCase(), code).toContain("not your fault")
     }
@@ -158,7 +161,7 @@ describe("the infra line", () => {
    * any of them, and pointing the reader at @fucory to buy more sends them
    * after a problem that does not exist.
    */
-  test("only a genuine shortage claims we ran out, or names @fucory", () => {
+  test("only a genuine shortage claims we ran out, or names @fucory", async () => {
     for (const code of INFRA_CODES) {
       const lead = refusalLead(forCode(code))
       const claims = lead.includes("@fucory") || lead.includes("ran out")
@@ -167,7 +170,7 @@ describe("the infra line", () => {
   })
 
   /* And the model is told the same thing, in as many words, on every one of them. */
-  test("a non-capacity infra code forbids the capacity claim to the model", () => {
+  test("a non-capacity infra code forbids the capacity claim to the model", async () => {
     for (const code of INFRA_CODES) {
       if (CAPACITY_CODES.includes(code)) continue
       const agent = refusalCopy(forCode(code)).agent
@@ -177,10 +180,10 @@ describe("the infra line", () => {
   })
 
   /* The Worker's own infra refusals are not a shortage either, and say so. */
-  test("the Worker's infra codes forbid it too", () => {
+  test("the Worker's infra codes forbid it too", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       if (WORKER_FAILURES[code].fault !== "infra") continue
-      const refusal = workerRefusal(code, "the Worker's own words")
+      const refusal = await workerRefusal(code, "the Worker's own words")
       expect(refusalLead(refusal).toLowerCase(), code).toContain("not your fault")
       expect(refusalLead(refusal), code).not.toContain("@fucory")
       expect(refusalCopy(refusal).agent.toLowerCase(), code).toContain("do not say smithers ran out of infra")
@@ -194,7 +197,7 @@ describe("the infra line", () => {
    * ("Retrying does not help until the deployment is migrated", "terminal for
    * that box"). The lead has to say so instead of offering the button.
    */
-  test("no infra refusal offers a Retry that cannot work", () => {
+  test("no infra refusal offers a Retry that cannot work", async () => {
     for (const code of TERMINAL_UNTIL_WE_SHIP) {
       expect(PLUE_FAILURES[code].fault, code).toBe("infra")
       expect(refusalDoors(forCode(code)), code).not.toContain("retry")
@@ -203,7 +206,7 @@ describe("the infra line", () => {
   })
 
   /* The inverse: where plue itself paces a re-ask, the button has to be there. */
-  test("a paced infra refusal offers the Retry plue asked for", () => {
+  test("a paced infra refusal offers the Retry plue asked for", async () => {
     for (const code of INFRA_CODES) {
       if (PLUE_FAILURES[code].retryAfter === 0) continue
       expect(refusalDoors(forCode(code)), code).toContain("retry")
@@ -211,13 +214,13 @@ describe("the infra line", () => {
   })
 
   /* No infra refusal is a dead end: something is always offered. */
-  test("every infra refusal offers at least one door", () => {
+  test("every infra refusal offers at least one door", async () => {
     for (const code of INFRA_CODES) {
       expect(refusalDoors(forCode(code)).length, code).toBeGreaterThan(0)
     }
   })
 
-  test("no code outside infra claims we ran out", () => {
+  test("no code outside infra claims we ran out", async () => {
     for (const code of Object.keys(PLUE_FAILURES) as ReadonlyArray<PlueFailureCode>) {
       if (PLUE_FAILURES[code].fault === "infra") continue
       const lead = refusalLead(forCode(code))
@@ -232,7 +235,7 @@ describe("the infra line", () => {
    * for a kind. Both are plue's rollout lag (both answer 409 `infra` since
    * plue a695bed7), and both were told, by the iff above, to say we ran out.
    */
-  test("does NOT appear for our own rollout lag — nothing is full, an image is old", () => {
+  test("does NOT appear for our own rollout lag — nothing is full, an image is old", async () => {
     for (const code of ["desktop_tools_unavailable", "environment_image_unavailable"] as const) {
       expect(PLUE_FAILURES[code].fault, code).toBe("infra")
       const lead = refusalLead(forCode(code))
@@ -249,7 +252,7 @@ describe("the infra line", () => {
    * judged the request, but it is not that failure and we are in no position
    * to claim it is: nothing answered, so nothing is known about the fleet.
    */
-  test("does NOT appear for a fetch nothing answered — that is the connection, and we cannot see our own fleet from there", () => {
+  test("does NOT appear for a fetch nothing answered — that is the connection, and we cannot see our own fleet from there", async () => {
     const refusal = clientRefusal(new Error("Load failed"))
     expect(refusal.fault).toBe("infra")
     const lead = refusalLead(refusal)
@@ -264,7 +267,7 @@ describe("the infra line", () => {
     expect(refusalDoors(refusal)).not.toContain("report")
   })
 
-  test("the model is corrected too: it must not claim we ran out when nothing answered", () => {
+  test("the model is corrected too: it must not claim we ran out when nothing answered", async () => {
     const text = agentRefusalText(clientRefusal(new Error("Load failed")))
     expect(text).toContain("origin=client")
     expect(text).toContain("fault=infra")
@@ -282,20 +285,20 @@ describe("the infra line", () => {
 describe("a refusal the native host wrote", () => {
   const local = (code: WorkerFailureCode, message: string) => workerRefusal(code, message, { origin: "local" })
 
-  test("is told apart from the Worker's, which is the point of widening origin", () => {
-    expect(local("seam_not_configured", "x").origin).toBe("local")
-    expect(workerRefusal("seam_not_configured", "x").origin).toBe("worker")
+  test("is told apart from the Worker's, which is the point of widening origin", async () => {
+    expect((await local("seam_not_configured", "x")).origin).toBe("local")
+    expect((await workerRefusal("seam_not_configured", "x")).origin).toBe("worker")
   })
 
-  test("never talks about a deployment, or about whoever deployed it", () => {
+  test("never talks about a deployment, or about whoever deployed it", async () => {
     for (const code of ["deployment_not_configured", "seam_not_configured"] as const) {
-      const lead = refusalLead(local(code, "x"))
+      const lead = refusalLead(await local(code, "x"))
       expect(lead).toContain("This build")
       expect(lead).not.toContain("deployment")
       expect(lead).not.toContain("deployed")
       expect(lead).not.toContain("@fucory")
       expect(lead).toContain("Not your fault")
-      const agent = agentRefusalText(local(code, "x"))
+      const agent = agentRefusalText(await local(code, "x"))
       expect(agent).toContain("origin=local")
       expect(agent).toContain("do NOT say Smithers ran out of infra")
       /* Told in as many words not to send the reader after a deployment that does not exist. */
@@ -303,14 +306,26 @@ describe("a refusal the native host wrote", () => {
     }
   })
 
-  test("keeps the Worker's wording for every code that has no local rewording", () => {
+  test("keeps its origin when it reaches the model as a string", async () => {
+    const refusal = await local("deployment_not_configured", "The cloud seam is not set up.")
+    const sentence = refusalSentence(refusal)
+    expect(sentence.startsWith("deployment_not_configured@local — ")).toBe(true)
+    const note = agentFaultNote(sentence)
+    expect(note).toContain("[fault=infra code=deployment_not_configured]")
+    expect(note).toBe(`[fault=infra code=deployment_not_configured] ${refusalCopy(refusal).agent}`)
+    expect(note).toContain("origin=local")
+    const worker = agentFaultNote(refusalSentence(await workerRefusal("deployment_not_configured", "x")))
+    expect(worker).not.toBe(note)
+  })
+
+  test("keeps the Worker's wording for every code that has no local rewording", async () => {
     for (const code of WORKER_FAILURE_CODES) {
       if (code === "deployment_not_configured" || code === "seam_not_configured") continue
-      expect(refusalLead(local(code, "x"))).toBe(refusalLead(workerRefusal(code, "x")))
+      expect(refusalLead(await local(code, "x"))).toBe(refusalLead(await workerRefusal(code, "x")))
     }
   })
 
-  test("is read back off the wire from the origin it states, not guessed from its code", () => {
+  test("is read back off the wire from the origin it states, not guessed from its code", async () => {
     const refusal = refusalOf({
       body: { status: "error", code: "feature_unavailable_here", origin: "local" },
       status: 501,
@@ -326,13 +341,13 @@ describe("a refusal the native host wrote", () => {
 })
 
 describe("doors", () => {
-  test("a stopped box offers resume, a dead session offers sign-in, a wait offers retry", () => {
+  test("a stopped box offers resume, a dead session offers sign-in, a wait offers retry", async () => {
     expect(refusalDoors(forCode("desktop_not_running"))).toContain("resume")
     expect(refusalDoors(forCode("unauthorized"))).toContain("sign-in")
     expect(refusalDoors(forCode("desktop_not_ready"))).toContain("retry")
   })
 
-  test("report is offered for infra and bug, and is not offered for a user fault", () => {
+  test("report is offered for infra and bug, and is not offered for a user fault", async () => {
     expect(refusalDoors(forCode("no_capacity"))).toContain("report")
     expect(refusalDoors(forCode("internal"))).toContain("report")
     expect(refusalDoors(forCode("quota_exceeded"))).not.toContain("report")
@@ -344,7 +359,7 @@ describe("doors", () => {
    * A Retry is therefore a door onto a wall. The door that works is a new box,
    * which boots the current image.
    */
-  test("a box with no desktop tools offers a new box, never a retry", () => {
+  test("a box with no desktop tools offers a new box, never a retry", async () => {
     const doors = refusalDoors(forCode("desktop_tools_unavailable"))
     expect(doors).toContain("new-box")
     expect(doors).not.toContain("retry")
@@ -353,7 +368,7 @@ describe("doors", () => {
 })
 
 describe("the agent's tool result", () => {
-  test("carries the fault class, the code and the pacing as machine facts", () => {
+  test("carries the fault class, the code and the pacing as machine facts", async () => {
     const text = agentRefusalText(
       refusalOf({
         body: { code: "no_capacity", fault: "infra", retry_after: 30 },
@@ -372,7 +387,7 @@ describe("the agent's tool result", () => {
     expect(text).toContain("@fucory")
   })
 
-  test("a fetch that threw is told to the model as infra, not as a bare failure string", () => {
+  test("a fetch that threw is told to the model as infra, not as a bare failure string", async () => {
     const text = agentRefusalText(clientRefusal(new Error("Load failed")))
     expect(text).toContain("fault=infra")
     expect(text).toContain("origin=client")
@@ -381,7 +396,7 @@ describe("the agent's tool result", () => {
     expect(text).not.toBe("failed: Load failed")
   })
 
-  test("every fault produces a distinct instruction to the model", () => {
+  test("every fault produces a distinct instruction to the model", async () => {
     const sentences = PLUE_FAULTS.map((fault) => REFUSAL_COPY[fault].agent)
     expect(new Set(sentences).size).toBe(PLUE_FAULTS.length)
   })
@@ -391,7 +406,7 @@ describe("the agent's tool result", () => {
    * own sentence it would tell the user to yell for more infra about a box
    * whose image is simply old, and would have nothing to offer them.
    */
-  test("the model is told a missing desktop tool is our rollout, not a shortage", () => {
+  test("the model is told a missing desktop tool is our rollout, not a shortage", async () => {
     const text = agentRefusalText(forCode("desktop_tools_unavailable", "this box's image has no desktop tools"))
     expect(text).toContain("fault=infra")
     expect(text).toContain("code=desktop_tools_unavailable")

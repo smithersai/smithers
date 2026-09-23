@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { resolveApplicationTarget, startsOwnedBackend } from "../src/ApplicationTarget.js"
+import { resolveApplicationTarget } from "../src/ApplicationTarget.ts"
 
 const PAGE = "https://app.example.test"
 
@@ -24,7 +24,7 @@ describe("application target matrix", () => {
       developerExternal: mode === "web-plue" && external
     }, PAGE)
     expect({ ownership: target.ownership, launch: target.launch }).toEqual({ ownership, launch })
-    expect(startsOwnedBackend(target)).toBe(mode === "native-own")
+    expect(target.launch === "supervisor").toBe(mode === "native-own")
   })
 
   test("remote modes never select the supervisor", () => {
@@ -37,7 +37,7 @@ describe("application target matrix", () => {
         cors: mode === "web-plue" ? "same-origin" : "credentialed",
         developerExternal: false
       }, PAGE)
-      expect(startsOwnedBackend(target)).toBe(false)
+      expect(target.launch).not.toBe("supervisor")
     }
   })
 

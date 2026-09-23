@@ -379,7 +379,7 @@ export const harnessModels = (id: string): HarnessModels | undefined =>
   DETECTORS.find((detector) => detector.id === id)?.models
 
 /**
- * What `roleLaunchArgv` composes with: the harness's binary name and its
+ * What launching a role on this harness needs: the binary name and its
  * model flag.
  *
  * @category detection

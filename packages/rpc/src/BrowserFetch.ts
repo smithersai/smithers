@@ -3,6 +3,8 @@
  *
  * @since 1.0.0
  */
+import type { WorkerFailureCode } from "./WorkerFailureCodes.ts"
+
 /*
  * The browser tool's server half (Wave 10, §2d): fetch-and-extract, not a
  * session. One isomorphic handler shared by the deployed product Worker and
@@ -39,6 +41,63 @@ export const BROWSER_FETCH_MAX_TEXT = 20_000
 const MAX_REDIRECTS = 3
 
 /**
+ * Why a browser fetch failed, as a closed set. The sentence is for people; the
+ * code decides whose fault it is.
+ *
+ * @since 1.0.0
+ * @category constants
+ */
+export const BROWSER_FETCH_FAILURE_CODES = [
+  "invalid_url",
+  "scheme_refused",
+  "credentials_in_url",
+  "private_host",
+  "unresolved",
+  "resolver_unavailable",
+  "egress_unavailable",
+  "timeout",
+  "read_failed",
+  "too_many_redirects",
+  "redirect_invalid"
+] as const
+
+/**
+ * One reason a browser fetch failed.
+ *
+ * @since 1.0.0
+ * @category models
+ */
+export type BrowserFetchFailureCode = (typeof BROWSER_FETCH_FAILURE_CODES)[number]
+
+/*
+ * The Worker registry row each failure is answered under. Bad input is the
+ * reader's; a resolver outage, a timeout or a site that redirects nowhere is a
+ * dependency's; a host with no pinned egress was never wired, which is infra.
+ */
+const BROWSER_FETCH_WORKER_CODES = {
+  invalid_url: "request_invalid",
+  scheme_refused: "request_invalid",
+  credentials_in_url: "request_invalid",
+  private_host: "request_invalid",
+  unresolved: "request_invalid",
+  resolver_unavailable: "upstream_unreachable",
+  egress_unavailable: "deployment_not_configured",
+  timeout: "upstream_timeout",
+  read_failed: "upstream_unreachable",
+  too_many_redirects: "upstream_malformed",
+  redirect_invalid: "upstream_malformed"
+} as const satisfies Record<BrowserFetchFailureCode, WorkerFailureCode>
+
+/**
+ * The Worker failure code a browser fetch failure is refused with.
+ *
+ * @since 1.0.0
+ * @category conversions
+ */
+export const browserFetchWorkerCode = (code: BrowserFetchFailureCode): WorkerFailureCode =>
+  BROWSER_FETCH_WORKER_CODES[code]
+
+/**
  * The browser fetch success contract shared by the host and its clients.
  *
  * @since 1.0.0
@@ -64,6 +123,7 @@ export interface BrowserFetchSuccess {
  */
 export interface BrowserFetchFailure {
   readonly ok: false
+  readonly code: BrowserFetchFailureCode
   readonly message: string
 }
 
@@ -169,24 +229,30 @@ export const isPublicAddress = (raw: string): boolean => {
   return first >= 0x2000 && first <= 0x3fff
 }
 
+const PRIVATE_HOST = "That address points at a private host, which the browser tool never reads."
+
 const guardTarget = async (
   url: URL,
   resolveHost: ResolveHost,
   signal?: AbortSignal
 ): Promise<BrowserFetchFailure | { readonly addresses: ReadonlyArray<string> }> => {
   if (url.protocol !== "https:") {
-    return { ok: false, message: "Only https:// pages can be read." }
+    return { ok: false, code: "scheme_refused", message: "Only https:// pages can be read." }
   }
   if (url.username !== "" || url.password !== "") {
-    return { ok: false, message: "Pages that include credentials in the URL cannot be read." }
+    return {
+      ok: false,
+      code: "credentials_in_url",
+      message: "Pages that include credentials in the URL cannot be read."
+    }
   }
   const hostname = url.hostname
   if (hostname === "" || isBlockedHostname(hostname)) {
-    return { ok: false, message: "That address points at a private host, which the browser tool never reads." }
+    return { ok: false, code: "private_host", message: PRIVATE_HOST }
   }
   if (parseIpv4(hostname) !== undefined || hostname.includes(":")) {
     if (!isPublicAddress(hostname)) {
-      return { ok: false, message: "That address points at a private host, which the browser tool never reads." }
+      return { ok: false, code: "private_host", message: PRIVATE_HOST }
     }
     return { addresses: [normalizeIpLiteral(hostname)] }
   }
@@ -203,14 +269,22 @@ const guardTarget = async (
      * and the operator can tell them apart.
      */
     const cause = error instanceof Error ? error.message : "unknown error"
-    return { ok: false, message: `The name resolver did not answer (${cause}); try again.` }
+    return {
+      ok: false,
+      code: "resolver_unavailable",
+      message: `The name resolver did not answer (${cause}); try again.`
+    }
   }
   if (addresses.length === 0) {
-    return { ok: false, message: `The host ${hostname} could not be resolved.` }
+    return { ok: false, code: "unresolved", message: `The host ${hostname} could not be resolved.` }
   }
   for (const address of addresses) {
     if (!isPublicAddress(address)) {
-      return { ok: false, message: "That address resolves to a private host, which the browser tool never reads." }
+      return {
+        ok: false,
+        code: "private_host",
+        message: "That address resolves to a private host, which the browser tool never reads."
+      }
     }
   }
   return { addresses }
@@ -384,6 +458,12 @@ export interface BrowserFetchDeps {
   readonly timeoutMs?: number
 }
 
+const TOO_MANY_REDIRECTS: BrowserFetchFailure = {
+  ok: false,
+  code: "too_many_redirects",
+  message: "The page redirected too many times."
+}
+
 /** Fetch-and-extract one page under the browser tool's hard guards.
  * `timeoutMs` bounds caller settlement across DNS, headers, redirects and body reads.
  * Transport cleanup is best-effort and fire-and-forget; cancellation failures are ignored.
@@ -398,7 +478,7 @@ export const browserFetch = async (
   try {
     url = new URL(rawUrl)
   } catch {
-    return { ok: false, message: "That is not a URL I can read." }
+    return { ok: false, code: "invalid_url", message: "That is not a URL I can read." }
   }
   const timeoutMs = deps.timeoutMs ?? BROWSER_FETCH_TIMEOUT_MS
   const timeout = AbortSignal.timeout(timeoutMs)
@@ -406,6 +486,7 @@ export const browserFetch = async (
   let current = url
   const failedRead = (error: unknown): BrowserFetchFailure => ({
     ok: false,
+    code: timeout.aborted ? "timeout" : "read_failed",
     message: timeout.aborted
       ? `Reading ${current.host} took too long and was stopped.`
       : `Reading ${current.host} failed: ${error instanceof Error ? error.message : "unknown error"}`
@@ -419,7 +500,11 @@ export const browserFetch = async (
     }
     if ("ok" in guarded) return guarded
     if (deps.fetchImpl === undefined) {
-      return { ok: false, message: "Secure pinned egress is unavailable for the browser tool." }
+      return {
+        ok: false,
+        code: "egress_unavailable",
+        message: "Secure pinned egress is unavailable for the browser tool."
+      }
     }
     const address = guarded.addresses[0]!
     let response: Response
@@ -444,13 +529,17 @@ export const browserFetch = async (
       const location = response.headers.get("location")
       void response.body?.cancel().catch(() => {})
       if (location === null) {
-        return { ok: false, message: `The page answered HTTP ${response.status} with nowhere to go.` }
+        return {
+          ok: false,
+          code: "redirect_invalid",
+          message: `The page answered HTTP ${response.status} with nowhere to go.`
+        }
       }
-      if (hop === MAX_REDIRECTS) return { ok: false, message: "The page redirected too many times." }
+      if (hop === MAX_REDIRECTS) return TOO_MANY_REDIRECTS
       try {
         current = new URL(location, current)
       } catch {
-        return { ok: false, message: "The page redirected somewhere unreadable." }
+        return { ok: false, code: "redirect_invalid", message: "The page redirected somewhere unreadable." }
       }
       continue
     }
@@ -486,7 +575,7 @@ export const browserFetch = async (
       blockReason
     }
   }
-  return { ok: false, message: "The page redirected too many times." }
+  return TOO_MANY_REDIRECTS
 }
 
 /** The workerd DNS resolver: DNS-over-HTTPS, since workerd exposes no dns module.
@@ -505,10 +594,15 @@ export const resolveHostOverHttps: ResolveHost = async (hostname, signal) => {
       throw new Error(`status ${response.status}`)
     }
     const body = (await response.json().catch(() => undefined)) as
-      | { Answer?: Array<{ type?: unknown; data?: unknown }> }
+      | { Status?: unknown; Answer?: Array<{ type?: unknown; data?: unknown }> }
       | undefined
+    // An unreadable body or a SERVFAIL/REFUSED rcode is an outage, never an unknown name.
+    if (typeof body !== "object" || body === null) throw new Error("malformed resolver answer")
+    if (body.Status !== undefined && body.Status !== 0 && body.Status !== 3) {
+      throw new Error(`DNS status ${String(body.Status)}`)
+    }
     const wanted = type === "A" ? 1 : 28
-    return (body?.Answer ?? [])
+    return (body.Answer ?? [])
       .filter((answer) => answer.type === wanted && typeof answer.data === "string")
       .map((answer) => answer.data as string)
   }
@@ -516,7 +610,8 @@ export const resolveHostOverHttps: ResolveHost = async (hostname, signal) => {
   return [...a, ...aaaa]
 }
 
-/** The JSON body the /api/tools/browser-fetch route answers with.
+/** The JSON body the /api/tools/browser-fetch route answers with. A failure carries
+ * the Worker failure code, so the app reads its fault from the registry rather than the status.
  * @since 1.0.0
  * @category conversions
  */
@@ -532,4 +627,4 @@ export const browserFetchResponseBody = (
       frameable: outcome.frameable,
       blockReason: outcome.blockReason
     }
-    : { status: "error", message: outcome.message }
+    : { status: "error", code: browserFetchWorkerCode(outcome.code), message: outcome.message }

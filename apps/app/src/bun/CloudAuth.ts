@@ -22,7 +22,7 @@
  */
 import type { Server } from "bun"
 import { randomBytes, timingSafeEqual } from "node:crypto"
-import type { CloudSession } from "@smthrs/rpc/LocalApp"
+import type { CloudSession } from "@smthrs/rpc/CloudTunnel"
 import { isCloudScopeRefusal } from "@smthrs/rpc/UpstreamProse"
 
 /** What the login callback posts; the keychain entry serializes exactly this. */

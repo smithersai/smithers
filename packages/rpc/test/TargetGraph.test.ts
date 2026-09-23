@@ -22,7 +22,6 @@ import {
   RunReplayResponseSchema,
   RunSummarySchema,
   RunTimelineCardPayloadSchema,
-  TARGET_GRAPH_ROUTES,
   TargetGraphResponseSchema,
   TargetRunEventSchema
 } from "../src/TargetGraph.ts"
@@ -504,19 +503,6 @@ describe("the five card payloads", () => {
     ).toBe(false)
     expect(CiMatrixCardPayloadSchema.safeParse({ repoId: "force", status: "done", result: { workflows: [] } }).success)
       .toBe(false)
-  })
-})
-
-describe("TARGET_GRAPH_ROUTES", () => {
-  test("names the six routes LOCAL-APP.md documents", () => {
-    expect(TARGET_GRAPH_ROUTES).toEqual({
-      graph: "/api/targets/graph",
-      runs: "/api/targets/runs",
-      replay: "/api/targets/runs/replay",
-      affected: "/api/targets/affected",
-      ci: "/api/targets/ci",
-      openSource: "/api/targets/open-source"
-    })
   })
 })
 

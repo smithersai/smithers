@@ -1,4 +1,4 @@
-import { CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/LocalApp"
+import { CLOUD_WS_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"

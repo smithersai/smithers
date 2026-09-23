@@ -29,8 +29,8 @@ import { actorSharedState } from "../ActorBindings"
  * while the card still shows that text. A hover drawn under line 12 of text
  * that no longer has that line would be an invention.
  */
-import { LSP_HOVER_CAP_CHARS, LSP_LANGUAGE_SERVER_MISSING, LSP_REQUEST_TIMEOUT_MS, lspLanguageFor } from "@smthrs/rpc/LocalApp"
-import type { LspDiagnostic, LspLocation } from "@smthrs/rpc/LocalApp"
+import { LSP_HOVER_CAP_CHARS, LSP_LANGUAGE_SERVER_MISSING, LSP_REQUEST_TIMEOUT_MS, lspLanguageFor } from "@smthrs/rpc/LocalLsp"
+import type { LspDiagnostic, LspLocation } from "@smthrs/rpc/LocalLsp"
 import { parseRepoSelection } from "../AppState"
 import type { Actor, Card, CloudWorkspaceRow } from "../AppState"
 import type { CloudLspClient, CloudLspDocument, CloudLspEvent, LspAnswer, LspRefusal } from "../CloudLspClient"

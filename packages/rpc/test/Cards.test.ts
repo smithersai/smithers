@@ -521,6 +521,24 @@ describe("card patch validation", () => {
   })
 })
 
+describe("card patches never invent defaults", () => {
+  test("a repository-setup patch that omits previousReceipts decodes without it", () => {
+    expect(CardPatchSchema.parse({ kind: "repository-setup", payload: { inspectedAt: 5 } })).toEqual({
+      kind: "repository-setup",
+      payload: { inspectedAt: 5 }
+    })
+  })
+  test("an empty payload patch stays empty for every card kind with an object payload", () => {
+    const objectPayloads = CardSchema.options.filter((option) => option.shape.payload instanceof z.ZodObject)
+    expect(objectPayloads.length).toBeGreaterThan(CardSchema.options.length / 2)
+    for (const option of objectPayloads) {
+      const kind = option.shape.kind.value
+      const patch = CardPatchSchema.parse({ kind, payload: {} })
+      expect({ kind, payload: patch.payload }).toEqual({ kind, payload: {} })
+    }
+  })
+})
+
 describe("env card persistence", () => {
   test("redacts values on initial decoding, patches, and repeated reads", () => {
     const vars = [{ name: "DATABASE_URL", value: "postgres://user:password@host/db" }, { name: "PIN", value: "12" }]

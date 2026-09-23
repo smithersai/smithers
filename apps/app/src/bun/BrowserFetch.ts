@@ -3,9 +3,9 @@ import { request } from "node:https"
 import { isIP } from "node:net"
 import { Readable } from "node:stream"
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib"
-import { browserFetch, browserFetchResponseBody } from "@smthrs/rpc/BrowserFetch"
+import { browserFetch, browserFetchResponseBody, browserFetchWorkerCode } from "@smthrs/rpc/BrowserFetch"
 import type { BrowserFetchDeps } from "@smthrs/rpc/BrowserFetch"
-import { json } from "./routes"
+import { json, refuse } from "./routes"
 
 /** Pin the socket to the address checked by the shared guard, keeping Host, SNI and certificate verification on the original hostname. */
 export const createPinnedHttpsFetch = (options: { readonly ca?: string } = {}): NonNullable<BrowserFetchDeps["fetchImpl"]> =>
@@ -63,5 +63,6 @@ export const handleBrowserFetch = async (request: Request, deps: BrowserFetchDep
   const url = typeof body === "object" && body !== null && "url" in body && typeof body.url === "string" ? body.url.trim() : ""
   if (url === "") return json({ status: "error", message: "Body must be { url }." }, 400)
   const outcome = await browserFetch(url, deps)
-  return json(browserFetchResponseBody(outcome), outcome.ok ? 200 : 422)
+  if (!outcome.ok) return refuse(browserFetchWorkerCode(outcome.code), outcome.message)
+  return json(browserFetchResponseBody(outcome), 200)
 }
