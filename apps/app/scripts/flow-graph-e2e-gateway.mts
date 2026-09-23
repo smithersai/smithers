@@ -72,6 +72,7 @@ import { LIST_TRIGGERS_PAYLOAD, workflowTriggersFromFrame } from "smithers-serve
 import { execFileSync } from "node:child_process"
 import { repositoryRoot, stackWith } from "../../../packages/smithers/test/BridgedEngineRun.ts"
 import { GRAPH_REPO } from "../e2e/graph/workspace.ts"
+import { AUTHENTICATED_USER_PATH } from "@smthrs/rpc/ApplicationAuth"
 import { SCOPED_TEST_USER } from "../e2e/playwright/identity.ts"
 
 /** The workspace name the app addresses this gateway by. */
@@ -272,6 +273,7 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Pro
         void (async () => {
           try {
             const url = new URL(request.url ?? "/", "http://relay.local")
+            if (url.pathname === AUTHENTICATED_USER_PATH) return json(response, 200, { id: 1, username: SCOPED_TEST_USER.login, is_admin: false })
             if (url.pathname === "/api/auth/session") return json(response, 200, SCOPED_TEST_USER)
             if (url.pathname === "/api/auth/scopes") return json(response, 200, { scopes: [] })
             if (url.pathname === "/api/workflow/provision") {

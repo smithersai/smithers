@@ -31,6 +31,7 @@ import {
   TURN_RETIRE_PATH,
   TURN_ERASE_PATH
 } from "@smthrs/rpc/AgentApiRoutes"
+import { AUTHENTICATED_USER_PATH } from "@smthrs/rpc/ApplicationAuth"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { APP_API_VERSION, APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
 import { AgentRuntimeContextSchema } from "@smthrs/rpc/AgentContext"
@@ -1137,7 +1138,7 @@ export const startLocalServer = async (options: LocalServerOptions): Promise<Loc
        * was on 2026-09-02. An allowlist, mirroring the Worker's, never a
        * wildcard.
        */
-      if (PRODUCT_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+      if (pathname === AUTHENTICATED_USER_PATH || PRODUCT_PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
         return identityUpstream === null
           ? refuse("feature_unavailable_here", "Smithers Cloud is not reachable from this build (offline mode).")
           : proxyIdentity(request, url, identityUpstream, upstreamTimeoutMs, log)
