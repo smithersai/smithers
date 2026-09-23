@@ -56,6 +56,23 @@ test("native UI stays available when the selected backend has no bootstrap", asy
   expect(await (await fetch(`${native.origin}/api/bootstrap`)).json()).toEqual({ apiVersion: 1 })
 })
 
+test("packaged Plue window relays a compressed backend response as readable JSON", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-compressed-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div id='root'>packaged UI</div>")
+  // A CDN in front of Plue gzips API responses; fetch decodes the body, so the
+  // relay must not keep advertising the original encoding.
+  const remote = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(Bun.gzipSync(JSON.stringify({ buildSha: "compressed" })), {
+    headers: { "content-type": "application/json", "content-encoding": "gzip" }
+  }) })
+  close.push(() => remote.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`)
+  close.push(native.stop)
+  const response = await fetch(`${native.origin}/api/bootstrap`, { headers: { "accept-encoding": "gzip" } })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ buildSha: "compressed" })
+})
+
 test("packaged terminal WebSocket reaches the selected backend with its owner session", async () => {
   const dist = mkdtempSync(join(tmpdir(), "smithers-native-terminal-"))
   close.push(() => rmSync(dist, { recursive: true, force: true }))

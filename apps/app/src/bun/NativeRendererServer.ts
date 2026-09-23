@@ -54,12 +54,18 @@ export const startNativeRendererServer = (distDirectory: string, apiOrigin: stri
         headers.delete("host")
         headers.delete("origin")
         const target = new URL(url.pathname + url.search, remote)
-        return fetch(new Request(target, {
+        const response = await fetch(new Request(target, {
           method: request.method,
           headers,
           body: request.method === "GET" || request.method === "HEAD" ? undefined : request.body,
           redirect: "manual"
         }))
+        // fetch has already decoded the body; the original encoding and
+        // length would make the renderer decode it a second time.
+        const relayed = new Headers(response.headers)
+        relayed.delete("content-encoding")
+        relayed.delete("content-length")
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers: relayed })
       }
       let decoded: string
       try { decoded = decodeURIComponent(url.pathname) }
