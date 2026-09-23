@@ -571,11 +571,17 @@ describe("discovery over the project flows directory", () => {
       ].sort(),
     );
     assert.deepEqual([...scan.entries].map((entry) => entry.name).sort(), [...EXPECTED_FLOWS, ...modules, ...delegatingModules].sort());
-    // Visibility is a declaration, so it survives the scan. Every other flow
-    // under `flows/` is offered to a model; these two are not.
+    // The authoring entry carries its stage instructions itself; those stages
+    // stay directly runnable without appearing as nested model calls.
+    const hiddenFlows = [
+      "create-flow/clarify", "create-flow/design", "create-flow/document",
+      "create-flow/fix", "create-flow/provision", "create-flow/scaffold",
+      ...hiddenModules,
+    ].sort();
+    // Visibility survives discovery for both prompt and module declarations.
     assert.deepEqual(
       [...scan.entries].filter((entry) => !entry.modelInvocable).map((entry) => entry.name).sort(),
-      hiddenModules,
+      hiddenFlows,
     );
     // A collapsed module flow names no delegate, so it loads and plans on a
     // host that registers none. `checks/wiki` still asks for one by name.
