@@ -8,7 +8,9 @@
     "runtimeArtifactDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "sourceRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "flowId": "fixture/small",
-    "payload": { "value": 1 }
+    "payload": {
+      "value": 1
+    }
   },
   "commandResponse": {
     "protocol": "smithers.flow-runtime/v1",
@@ -22,8 +24,16 @@
       "planId": "plan-1",
       "planDigest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "executionDigest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "envelope": { "capabilities": [], "flows": [], "budget": {} },
-      "receipt": { "_tag": "Accepted", "receiptId": "receipt-1", "runId": "run-1" }
+      "envelope": {
+        "capabilities": [],
+        "flows": [],
+        "budget": {}
+      },
+      "receipt": {
+        "_tag": "Accepted",
+        "receiptId": "receipt-1",
+        "runId": "run-1"
+      }
     }
   },
   "observeResponse": {
@@ -40,7 +50,9 @@
       },
       "events": [
         {
-          "cursor": { "sequence": 42 },
+          "cursor": {
+            "sequence": 42
+          },
           "sequence": 42,
           "kind": "control.run.completed",
           "runId": "run-1",
@@ -52,5 +64,89 @@
       "hasMore": false,
       "terminal": true
     }
-  }
+  },
+  "cursorPages": [
+    {
+      "afterCursor": "",
+      "events": [],
+      "nextCursor": "",
+      "hasMore": false
+    },
+    {
+      "afterCursor": "",
+      "events": [
+        {
+          "sequence": 0,
+          "cursor": {
+            "sequence": 0,
+            "offset": 0
+          },
+          "kind": "source",
+          "runId": "run-1",
+          "occurredAt": 1,
+          "payload": null
+        }
+      ],
+      "nextCursor": "v1:0:0",
+      "hasMore": true
+    },
+    {
+      "afterCursor": "v1:0:0",
+      "events": [
+        {
+          "sequence": 0,
+          "cursor": {
+            "sequence": 0,
+            "offset": 1
+          },
+          "kind": "derived-one",
+          "runId": "run-1",
+          "occurredAt": 1,
+          "payload": null
+        }
+      ],
+      "nextCursor": "v1:0:1",
+      "hasMore": true
+    },
+    {
+      "afterCursor": "v1:0:1",
+      "events": [
+        {
+          "sequence": 0,
+          "cursor": {
+            "sequence": 0
+          },
+          "kind": "derived-two",
+          "runId": "run-1",
+          "occurredAt": 1,
+          "payload": null
+        }
+      ],
+      "nextCursor": "0",
+      "hasMore": true
+    },
+    {
+      "afterCursor": "0",
+      "events": [
+        {
+          "sequence": 1,
+          "cursor": {
+            "sequence": 1
+          },
+          "kind": "next-source",
+          "runId": "run-1",
+          "occurredAt": 2,
+          "payload": null
+        }
+      ],
+      "nextCursor": "1",
+      "hasMore": false
+    },
+    {
+      "afterCursor": "1",
+      "events": [],
+      "nextCursor": "1",
+      "hasMore": false
+    }
+  ]
 }

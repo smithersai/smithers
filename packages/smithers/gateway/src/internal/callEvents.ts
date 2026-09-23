@@ -136,16 +136,18 @@ export const callEventKey = (event: CallObservation): string | undefined => {
   const stepEvent = nativeStepEvent(event)
   const original = event
   event = stepEvent ?? nativeCallEvent(event) ?? event
-  if (event.kind !== "control.agent.cell-call-started" && event.kind !== "control.agent.cell-call-settled") {
-    if (stepEvent === undefined) return undefined
-    const envelope = original.payload as Record<string, unknown>
-    return JSON.stringify(["step-fact", original.runId, callScope(stepEvent), envelope.sourceSequence])
-  }
   const payload = event.payload
-  if (typeof payload !== "object" || payload === null || !("callId" in payload) || typeof payload.callId !== "string") {
-    return undefined
+  if (
+    (event.kind === "control.agent.cell-call-started" || event.kind === "control.agent.cell-call-settled") &&
+    typeof payload === "object" && payload !== null && "callId" in payload && typeof payload.callId === "string"
+  ) {
+    return JSON.stringify([event.kind, payload.callId, callScope(event)])
   }
-  return JSON.stringify([event.kind, payload.callId, callScope(event)])
+  // An older checkpoint may not have a call ID. Its durable source identity
+  // still deduplicates replay, including after the event body is evicted.
+  if (stepEvent === undefined) return undefined
+  const envelope = original.payload as Record<string, unknown>
+  return JSON.stringify(["step-fact", original.runId, callScope(stepEvent), envelope.sourceSequence])
 }
 
 /**

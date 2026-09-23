@@ -208,19 +208,23 @@ subscriber converges to a fresh fold at the same cursor. See
 
 A projection reads one journal per run, so the read is bounded on purpose:
 
-| Bound                            | Value  | What it caps                                            |
-| -------------------------------- | ------ | ------------------------------------------------------- |
-| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds                     |
-| `Projections.maxEventsPerRun`    | 10,000 | retained events per run                                 |
-| `Projections.maxEventsPerPage`   | 1,000  | events per `run-events` page                            |
-| `Projections.maxEventBytes`      | 16 KiB | retained event size before clipping                     |
-| `Projections.maxProjectionBytes` | 4 MiB  | retained event window, event page, or projected row set |
+| Bound                            | Value  | What it caps                                                                |
+| -------------------------------- | ------ | --------------------------------------------------------------------------- |
+| `Projections.maxWorkspaceRuns`   | 500    | runs one workspace projection folds                                         |
+| `Projections.maxEventsPerRun`    | 10,000 | retained events per run                                                     |
+| `Projections.maxEventsPerPage`   | 1,000  | events per `run-events` page                                                |
+| `Projections.maxEventBytes`      | 16 KiB | retained event size before clipping                                         |
+| `Projections.maxProjectionBytes` | 4 MiB  | retained events and digest identity state, event page, or projected row set |
 
 `maxWorkspaceRuns` equals `ControlSchema.maxPageSize`, so the control plane can
 satisfy the whole gateway allowance in one page when it can. A workspace with
 more runs is answered as its first 500. Older retained events are folded into
-a carried digest. A projected row set over the byte budget fails with
-`resource_limit`.
+a carried digest. Compact scalar contributions retain call and checkpoint
+identities so replay is counted once and committed native facts can correct
+earlier telemetry across the window boundary. These contributions share the
+retained byte budget; their inputs, outputs, and event bodies are not retained.
+If the exact identity state or a projected row set cannot fit, the read fails
+with `resource_limit`.
 
 `run-events` pages preserve complete `control.engine.event` payloads, including
 native typed results, without the 16 KiB clipping applied to other large events.

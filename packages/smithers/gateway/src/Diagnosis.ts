@@ -19,7 +19,10 @@
  * @since 1.0.0
  */
 import { ControlSchema } from "@smthrs/control"
-import { callScope, uniqueCallEvents } from "./internal/callEvents.ts"
+import { HashMap } from "effect"
+import { callEventKey, callScope, nativeCallEvent, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.ts"
+import * as DigestIndex from "./internal/digestIndex.ts"
+import { encodedBytes, recordDigestBytes } from "./internal/digestMemory.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
 
 /**
@@ -322,7 +325,7 @@ export const handlerReach: Readonly<Record<string, "aggregate" | "root">> = Obje
  * @since 1.0.0
  * @category constructors
  */
-export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Digest => {
+const rawDigest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Digest => {
   const accumulator: Accumulator = {
     status: undefined,
     cause: undefined,
@@ -398,6 +401,155 @@ export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Diges
     startedAt,
     endedAt
   }
+}
+
+const counters = [
+  "turns",
+  "calls",
+  "callsFailed",
+  "editsAttempted",
+  "editsSucceeded",
+  "inputTokens",
+  "outputTokens"
+] as const
+type ContributionValue = Partial<Pick<Digest, typeof counters[number] | "seat" | "startedAt" | "endedAt" | "refusals">>
+
+const contributionValue = (value: Digest): ContributionValue => ({
+  ...Object.fromEntries(counters.filter((counter) => value[counter] !== 0).map((counter) => [counter, value[counter]])),
+  ...(value.seat === undefined ? {} : { seat: value.seat }),
+  ...(value.startedAt === undefined ? {} : { startedAt: value.startedAt }),
+  ...(value.endedAt === undefined ? {} : { endedAt: value.endedAt }),
+  ...(value.refusals.length === 0 ? {} : { refusals: value.refusals })
+})
+
+interface Contribution {
+  readonly ordinal: number
+  readonly authoritative: boolean
+  readonly value: ContributionValue
+}
+
+interface DigestState {
+  readonly base: Digest
+  readonly writes: { readonly cause: boolean; readonly finalOutput: boolean; readonly parkedQuestion: boolean }
+  readonly baseSeatOrdinal: number | undefined
+  readonly baseRefusals: ReadonlyMap<string, number>
+  readonly indexes: Indexes
+  readonly contributions: HashMap.HashMap<string, Contribution>
+  readonly contributionBytes: number
+  readonly length: number
+}
+
+interface Indexes {
+  readonly timings: DigestIndex.Index | undefined
+  readonly refusals: HashMap.HashMap<string, DigestIndex.Index>
+  readonly refusalBytes: number
+}
+
+const emptyIndexes = (): Indexes => ({ timings: undefined, refusals: HashMap.empty(), refusalBytes: 0 })
+const refusalIndexBytes = (message: string, tree: DigestIndex.Index | undefined): number =>
+  tree === undefined ? 0 : encodedBytes(message) + tree.bytes
+
+const indexContribution = (indexes: Indexes, previous: Contribution | undefined, next: Contribution): Indexes => {
+  let refusals = indexes.refusals
+  let refusalBytes = indexes.refusalBytes
+  for (const refusal of previous?.value.refusals ?? []) {
+    if (next.value.refusals?.some((member) => member.message === refusal.message)) continue
+    const old = HashMap.get(refusals, refusal.message)
+    const oldTree = old._tag === "Some" ? old.value : undefined
+    const tree = DigestIndex.remove(oldTree, next.ordinal)
+    refusalBytes += refusalIndexBytes(refusal.message, tree) - refusalIndexBytes(refusal.message, oldTree)
+    refusals = tree === undefined
+      ? HashMap.remove(refusals, refusal.message)
+      : HashMap.set(refusals, refusal.message, tree)
+  }
+  for (const refusal of next.value.refusals ?? []) {
+    if (previous?.value.refusals?.some((member) => member.message === refusal.message)) continue
+    const old = HashMap.get(refusals, refusal.message)
+    const oldTree = old._tag === "Some" ? old.value : undefined
+    const tree = DigestIndex.set(oldTree, next.ordinal)
+    refusalBytes += refusalIndexBytes(refusal.message, tree) - refusalIndexBytes(refusal.message, oldTree)
+    refusals = HashMap.set(refusals, refusal.message, tree)
+  }
+  return {
+    timings: DigestIndex.set(indexes.timings, next.ordinal, next.value.startedAt, next.value.endedAt),
+    refusals,
+    refusalBytes
+  }
+}
+
+// Scalar contributions only: no model input, call output, or event body is
+// retained. Weak associations keep the public Digest and its wire shape intact.
+const digestStates = new WeakMap<Digest, DigestState>()
+const remember = (value: Digest, state: DigestState): Digest => {
+  digestStates.set(value, state)
+  recordDigestBytes(
+    value,
+    encodedBytes(value) + (value === state.base ? 0 : encodedBytes(state.base)) +
+      state.contributionBytes + (state.indexes.timings?.bytes ?? 0) + state.indexes.refusalBytes + encodedBytes({
+        writes: state.writes,
+        baseSeatOrdinal: state.baseSeatOrdinal,
+        baseRefusals: [...state.baseRefusals],
+        length: state.length
+      })
+  )
+  return value
+}
+
+/**
+ * Folds one event range, retaining compact identities for later combination.
+ * Native facts supersede telemetry at its first position across ranges too.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const digest = (events: ReadonlyArray<ControlSchema.ControlEvent>): Digest => {
+  let contributions = HashMap.empty<string, Contribution>()
+  let indexes = emptyIndexes()
+  let contributionBytes = 0
+  const baseEvents: Array<ControlSchema.ControlEvent> = []
+  const baseRefusals = new Map<string, number>()
+  const writes = { cause: false, finalOutput: false, parkedQuestion: false }
+  let baseSeatOrdinal: number | undefined
+  for (const [ordinal, event] of events.entries()) {
+    const key = callEventKey(event)
+    if (key === undefined) {
+      baseEvents.push(event)
+      if (event.kind === "control.run.failed") writes.cause = true
+      if (callScope(event) === undefined) {
+        if (event.kind === "control.agent.resolved") writes.finalOutput = true
+        if (event.kind === "control.approval.requested") writes.parkedQuestion = true
+      }
+      const payload = asRecord(event.payload)
+      if (event.kind === "control.agent.turn-opened" && asString(payload.seat) !== undefined) baseSeatOrdinal = ordinal
+      if (event.kind === "control.agent.cell-call-settled" && payload.outcome === "failure") {
+        const message = firstLine(asString(payload.message) ?? "unknown refusal")
+        if (!baseRefusals.has(message)) baseRefusals.set(message, ordinal)
+      }
+      continue
+    }
+    const native = nativeStepEvent(event) ?? nativeCallEvent(event)
+    const previous = HashMap.get(contributions, key)
+    if (previous._tag === "Some" && (previous.value.authoritative || native === undefined)) continue
+    const contribution = {
+      ordinal: previous._tag === "Some" ? previous.value.ordinal : ordinal,
+      authoritative: native !== undefined,
+      value: contributionValue(rawDigest([native ?? event]))
+    }
+    contributionBytes += encodedBytes([key, contribution]) -
+      (previous._tag === "Some" ? encodedBytes([key, previous.value]) : 0)
+    contributions = HashMap.set(contributions, key, contribution)
+    indexes = indexContribution(indexes, previous._tag === "Some" ? previous.value : undefined, contribution)
+  }
+  const value = rawDigest(events)
+  return remember(value, {
+    base: baseEvents.length === events.length ? value : rawDigest(baseEvents),
+    writes,
+    baseSeatOrdinal,
+    baseRefusals,
+    indexes,
+    contributions,
+    contributionBytes,
+    length: events.length
+  })
 }
 
 /**
@@ -518,16 +670,15 @@ export const emptyDigest = (): Digest => digest([])
  * for a run whose journal it cannot hold: it folds the events it drops into a
  * carry digest and combines that carry with the digest of the window it kept.
  *
- * Counters add. Latest-wins fields take `later`'s reading when it has one, and
- * keep `earlier`'s otherwise, which is what one fold over the concatenation
- * would have produced. Refusal counts merge and re-sort. The span widens.
+ * Used for contributions that do not overlap. Written fields may deliberately
+ * clear an older value. Refusal counts merge and re-sort. The span widens.
  *
  * @param earlier the digest of the earlier range
  * @param later the digest of the range that follows it
  * @since 1.0.0
  * @category constructors
  */
-export const combine = (earlier: Digest, later: Digest): Digest => {
+const combinePlain = (earlier: Digest, later: Digest, writes: DigestState["writes"]): Digest => {
   const counts = new Map<string, number>()
   for (const refusal of [...earlier.refusals, ...later.refusals]) {
     counts.set(refusal.message, (counts.get(refusal.message) ?? 0) + refusal.count)
@@ -538,7 +689,7 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
     left === undefined ? right : right === undefined ? left : Math.max(left, right)
   return {
     status: later.status ?? earlier.status,
-    cause: later.cause ?? earlier.cause,
+    cause: writes.cause ? later.cause : earlier.cause,
     seat: later.seat ?? earlier.seat,
     turns: earlier.turns + later.turns,
     calls: earlier.calls + later.calls,
@@ -550,10 +701,144 @@ export const combine = (earlier: Digest, later: Digest): Digest => {
       .sort((left, right) => right.count - left.count),
     inputTokens: earlier.inputTokens + later.inputTokens,
     outputTokens: earlier.outputTokens + later.outputTokens,
-    finalOutput: later.finalOutput ?? earlier.finalOutput,
+    finalOutput: writes.finalOutput ? later.finalOutput : earlier.finalOutput,
     nativeResolution: NativeResolution.combine(earlier.nativeResolution, later.nativeResolution),
-    parkedQuestion: later.parkedQuestion ?? earlier.parkedQuestion,
+    parkedQuestion: writes.parkedQuestion ? later.parkedQuestion : earlier.parkedQuestion,
     startedAt: earliest(earlier.startedAt, later.startedAt),
     endedAt: latest(earlier.endedAt, later.endedAt)
   }
+}
+
+const stateOf = (value: Digest): DigestState =>
+  digestStates.get(value) ?? {
+    base: value,
+    writes: {
+      cause: value.cause !== undefined,
+      finalOutput: value.finalOutput !== undefined,
+      parkedQuestion: value.parkedQuestion !== undefined
+    },
+    baseSeatOrdinal: value.seat === undefined ? undefined : 0,
+    baseRefusals: new Map(value.refusals.map((refusal) => [refusal.message, 0])),
+    indexes: emptyIndexes(),
+    contributions: HashMap.empty(),
+    contributionBytes: 0,
+    length: 1
+  }
+
+/** Rebuild only scalar facts; keyed observations never own root result/state fields. */
+const combinedFacts = (state: DigestState): Digest => {
+  const result = { ...state.base }
+  let seatOrdinal = state.baseSeatOrdinal ?? -1
+  const refusals = new Map(state.base.refusals.map((refusal) => [refusal.message, {
+    count: refusal.count,
+    ordinal: state.baseRefusals.get(refusal.message) ?? 0
+  }]))
+  for (const [, contribution] of state.contributions) {
+    const value = contribution.value
+    for (const key of counters) result[key] += value[key] ?? 0
+    if (value.seat !== undefined && contribution.ordinal > seatOrdinal) {
+      result.seat = value.seat
+      seatOrdinal = contribution.ordinal
+    }
+    if (value.startedAt !== undefined) result.startedAt = Math.min(result.startedAt ?? value.startedAt, value.startedAt)
+    if (value.endedAt !== undefined) result.endedAt = Math.max(result.endedAt ?? value.endedAt, value.endedAt)
+    for (const refusal of value.refusals ?? []) {
+      const previous = refusals.get(refusal.message)
+      refusals.set(refusal.message, {
+        count: (previous?.count ?? 0) + refusal.count,
+        ordinal: Math.min(previous?.ordinal ?? contribution.ordinal, contribution.ordinal)
+      })
+    }
+  }
+  result.refusals = [...refusals].sort(([, left], [, right]) =>
+    right.count - left.count || left.ordinal - right.ordinal
+  )
+    .map(([message, { count }]) => ({ message, count }))
+  return result
+}
+
+/**
+ * Combines adjacent digests without counting an identified call or checkpoint
+ * twice. A later native fact replaces the earlier telemetry contribution.
+ * Identity state is private and must stay with the in-memory digest; a plain
+ * reconstructed Digest is treated as an already aggregated, unkeyed value.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const combine = (earlier: Digest, later: Digest): Digest => {
+  const left = stateOf(earlier)
+  const right = stateOf(later)
+  let contributions = left.contributions
+  let indexes = left.indexes
+  let contributionBytes = left.contributionBytes
+  let accepted = HashMap.empty<string, Contribution>()
+  const corrected = { ...earlier }
+  let rebuild = false
+  for (const [key, value] of right.contributions) {
+    const previous = HashMap.get(contributions, key)
+    if (previous._tag === "Some" && (previous.value.authoritative || !value.authoritative)) continue
+    if (previous._tag === "Some") {
+      const old = previous.value.value
+      const next = value.value
+      for (const counter of counters) corrected[counter] += (next[counter] ?? 0) - (old[counter] ?? 0)
+      // Current native upgrades are call facts, which never own a seat. Keep
+      // a full scalar fallback if a future identity-bearing handler adds one.
+      if (old.seat !== next.seat) rebuild = true
+    } else accepted = HashMap.set(accepted, key, value)
+    const contribution = {
+      ...value,
+      ordinal: previous._tag === "Some" ? previous.value.ordinal : left.length + value.ordinal
+    }
+    contributionBytes += encodedBytes([key, contribution]) -
+      (previous._tag === "Some" ? encodedBytes([key, previous.value]) : 0)
+    contributions = HashMap.set(contributions, key, contribution)
+    indexes = indexContribution(indexes, previous._tag === "Some" ? previous.value : undefined, contribution)
+  }
+  const baseRefusals = new Map(left.baseRefusals)
+  for (const [message, ordinal] of right.baseRefusals) {
+    if (!baseRefusals.has(message)) baseRefusals.set(message, left.length + ordinal)
+  }
+  const incomingComplete = HashMap.size(accepted) === HashMap.size(right.contributions)
+  const incoming = incomingComplete ? later : combinedFacts({ ...right, contributions: accepted })
+  const state: DigestState = {
+    base: combinePlain(left.base, right.base, right.writes),
+    writes: {
+      cause: left.writes.cause || right.writes.cause,
+      finalOutput: left.writes.finalOutput || right.writes.finalOutput,
+      parkedQuestion: left.writes.parkedQuestion || right.writes.parkedQuestion
+    },
+    baseSeatOrdinal: right.baseSeatOrdinal === undefined ? left.baseSeatOrdinal : left.length + right.baseSeatOrdinal,
+    baseRefusals,
+    indexes,
+    contributions,
+    contributionBytes,
+    length: left.length + right.length
+  }
+  // Appending new identities (or replaying an existing one) should cost the
+  // incoming range, not re-fold the entire retained ledger on every eviction.
+  // Indexed timestamps and refusal positions handle native corrections without
+  // re-scanning all identities. Refusal rendering costs distinct messages.
+  const value = { ...(rebuild ? combinedFacts(state) : combinePlain(corrected, incoming, right.writes)) }
+  value.startedAt = state.base.startedAt
+  value.endedAt = state.base.endedAt
+  if (indexes.timings?.min !== undefined) {
+    value.startedAt = Math.min(value.startedAt ?? indexes.timings.min, indexes.timings.min)
+  }
+  if (indexes.timings?.max !== undefined) {
+    value.endedAt = Math.max(value.endedAt ?? indexes.timings.max, indexes.timings.max)
+  }
+  const refusals = new Map(state.base.refusals.map((refusal) => [refusal.message, {
+    count: refusal.count,
+    ordinal: baseRefusals.get(refusal.message) ?? 0
+  }]))
+  for (const [message, tree] of indexes.refusals) {
+    const previous = refusals.get(message)
+    refusals.set(message, {
+      count: (previous?.count ?? 0) + tree.size,
+      ordinal: Math.min(previous?.ordinal ?? tree.first, tree.first)
+    })
+  }
+  value.refusals = [...refusals].sort(([, a], [, b]) => b.count - a.count || a.ordinal - b.ordinal)
+    .map(([message, { count }]) => ({ message, count }))
+  return remember(value, state)
 }

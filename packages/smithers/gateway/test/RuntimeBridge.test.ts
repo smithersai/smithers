@@ -13,6 +13,7 @@ import { stack } from "./GatewayStack.ts"
 
 const digest = "a".repeat(64)
 const revision = "b".repeat(40)
+const privateMessage = "fixture-private-path /private/runtime.db SELECT fixture_secret"
 const principal: Principal = { id: "gateway", kind: "bearer", stampedAt: 1 }
 const accepted = { _tag: "Accepted", receiptId: "receipt-1", runId: "run-1" } as const
 const envelope = { capabilities: [], flows: [], budget: {} }
@@ -340,7 +341,7 @@ describe("RuntimeBridge", () => {
         watch: () => Stream.empty
       })
       const initial = yield* RuntimeBridge.observe(empty, { protocol: RuntimeBridge.protocol, runId: "run-1" })
-      expect(initial).toMatchObject({ nextCursor: "0", hasMore: false, terminal: false })
+      expect(initial).toMatchObject({ nextCursor: "", hasMore: false, terminal: false })
       const after = yield* RuntimeBridge.observe(empty, {
         protocol: RuntimeBridge.protocol,
         runId: "run-1",
@@ -523,6 +524,56 @@ describe("RuntimeBridge", () => {
         body: { error: { code: "internal", message: "Runtime bridge failed" } }
       })
     }))
+
+  for (
+    const [label, failure, status, code, retryable] of [
+      [
+        "persistence",
+        new ControlError.PersistenceError({ operation: "read", message: privateMessage }),
+        503,
+        "persistence_failed",
+        true
+      ],
+      [
+        "non-retryable transport",
+        new ControlError.TransportError({ message: privateMessage, retryable: false }),
+        400,
+        "transport_error",
+        false
+      ],
+      [
+        "retryable transport",
+        new ControlError.TransportError({ message: privateMessage, retryable: true }),
+        503,
+        "transport_error",
+        true
+      ],
+      ["unknown Error", new Error(privateMessage), 500, "internal", false],
+      ["unknown code", { code: privateMessage, message: privateMessage }, 500, "internal", false]
+    ] as const
+  ) {
+    it.effect(`sanitizes ${label} errors and preserves retryability`, () =>
+      Effect.gen(function*() {
+        const result = yield* Effect.gen(function*() {
+          const server = yield* HttpServer.HttpServer
+          if (server.address._tag !== "InetAddressV4") return yield* Effect.die("expected IPv4")
+          const port = server.address.port
+          return yield* Effect.promise(async () => {
+            const response = await fetch(`http://127.0.0.1:${port}/runtime/v1/command`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(launch)
+            })
+            return { status: response.status, body: await response.json() }
+          })
+        }).pipe(
+          Effect.provide(directBridge(service({ plan: () => Effect.fail(failure as ControlError.PersistenceError) }))),
+          Effect.scoped
+        )
+        expect(result).toMatchObject({ status, body: { ok: false, error: { code, retryable } } })
+        expect(JSON.stringify(result)).not.toContain(privateMessage)
+      }))
+  }
 
   it.effect("keeps the bridge authenticated when a loopback gateway has no credential", () =>
     Effect.gen(function*() {

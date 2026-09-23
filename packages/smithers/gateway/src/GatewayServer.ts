@@ -174,9 +174,9 @@ export const watchHeartbeatKind = "control.gateway.heartbeat"
  * sends its own `Ping` every 5 s, but a non-Effect consumer behind a relay
  * sends nothing, so the keepalive has to come from the server.
  *
- * The keepalive repeats the sequence of the last event delivered, so a client
- * that resumes from the last sequence it saw does not rewind on a heartbeat,
- * and it carries the watched run id so a client routing by run keeps routing.
+ * The keepalive repeats the last delivered sequence and run-scoped cursor,
+ * including an expansion offset, so it cannot advance or rewind a checkpoint.
+ * It carries the watched run id so a client routing by run keeps routing.
  * A snapshot read (`follow: false`) is left alone: it has to end.
  */
 const keptAlive = (
@@ -185,9 +185,12 @@ const keptAlive = (
   events: Stream.Stream<ControlSchema.ControlEvent, ControlError.ControlError>
 ): Stream.Stream<ControlSchema.ControlEvent, ControlError.ControlError> => {
   if (filter.follow === false) return events
-  let sequence = filter.afterSequence ?? 0
+  let cursor = filter.afterCursor ??
+    (filter.afterSequence === undefined ? undefined : { sequence: filter.afterSequence })
+  let sequence = cursor?.sequence ?? 0
   const tracked = Stream.map(events, (event) => {
     sequence = event.sequence
+    cursor = event.cursor ?? { sequence }
     return event
   })
   const beats = Stream.tick(millis).pipe(
@@ -197,6 +200,7 @@ const keptAlive = (
         Effect.clockWith((clock) => clock.currentTimeMillis),
         (occurredAt): ControlSchema.ControlEvent => ({
           sequence,
+          ...(filter.runId === undefined || cursor === undefined ? {} : { cursor }),
           kind: watchHeartbeatKind,
           ...(filter.runId === undefined ? {} : { runId: filter.runId }),
           occurredAt,

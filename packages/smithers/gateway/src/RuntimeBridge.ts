@@ -8,8 +8,8 @@
  * @since 1.0.0
  */
 import { Control } from "@smthrs/control/Control"
-import type * as ControlError from "@smthrs/control/ControlError"
-import type { Principal } from "@smthrs/control/ControlSchema"
+import * as ControlError from "@smthrs/control/ControlError"
+import type { Principal, WatchCursor } from "@smthrs/control/ControlSchema"
 import { ApprovalPayload, ControlEvent, Receipt, RunSummary, SignalPayload } from "@smthrs/control/ControlSchema"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -28,6 +28,9 @@ const PositiveSafeInteger = Schema.Int.check(
   Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
 )
 const RequestId = Schema.NonEmptyString.check(Schema.isMaxLength(1024))
+// A decimal consumes a whole journal entry. v1 preserves an expansion offset;
+// the empty seed consumes nothing, including sequence zero.
+const observationCursorPattern = /^(?:(0|[1-9][0-9]*)|v1:(0|[1-9][0-9]*):(0|[1-9][0-9]*))?(?![\s\S])/
 
 /**
  * Non-secret identity published by readiness for startup compatibility.
@@ -155,7 +158,7 @@ export type Command = typeof Command.Type
 export const ObserveRequest = Schema.Struct({
   protocol: Schema.Literal(protocol),
   runId: Schema.NonEmptyString,
-  afterCursor: Schema.optional(Schema.String.check(Schema.isPattern(/^(0|[1-9][0-9]*)$/))),
+  afterCursor: Schema.optional(Schema.String.check(Schema.isPattern(observationCursorPattern))),
   limit: Schema.optional(PositiveSafeInteger)
 })
 
@@ -342,15 +345,25 @@ export const execute = (
     }
   })
 
-const cursorNumber = (cursor: string | undefined): Effect.Effect<number | undefined, BridgeError> => {
-  if (cursor === undefined) return Effect.succeed(undefined)
-  const value = Number(cursor)
-  return Number.isSafeInteger(value) && value >= 0
-    ? Effect.succeed(value)
+const cursorPosition = (cursor: string | undefined): Effect.Effect<WatchCursor | undefined, BridgeError> => {
+  if (cursor === undefined || cursor === "") return Effect.succeed(undefined)
+  const match = observationCursorPattern.exec(cursor)
+  const sequence = Number(match?.[1] ?? match?.[2])
+  const offset = match?.[3] === undefined ? undefined : Number(match[3])
+  const valid = (value: number) => Number.isSafeInteger(value) && value >= 0 && value < Number.MAX_SAFE_INTEGER
+  return match !== null && valid(sequence) && (offset === undefined || valid(offset))
+    ? Effect.succeed({ sequence, ...(offset === undefined ? {} : { offset }) })
     : Effect.fail(
-      new BridgeError({ code: "invalid_request", message: "Observation cursor is out of range", retryable: false })
+      new BridgeError({
+        code: "invalid_request",
+        message: "Observation cursor is invalid or out of range",
+        retryable: false
+      })
     )
 }
+
+const encodedCursor = (cursor: WatchCursor): string =>
+  cursor.offset === undefined ? String(cursor.sequence) : `v1:${cursor.sequence}:${cursor.offset}`
 
 /**
  * Reads a bounded event replay and current canonical run projection.
@@ -359,7 +372,7 @@ const cursorNumber = (cursor: string | undefined): Effect.Effect<number | undefi
  */
 export const observe = (control: Control["Service"], input: ObserveRequest) =>
   Effect.gen(function*() {
-    const after = yield* cursorNumber(input.afterCursor)
+    const after = yield* cursorPosition(input.afterCursor)
     const limit = Math.min(input.limit ?? defaultEventLimit, maximumEventLimit)
     const listed = yield* control.list({ _tag: "runs", filters: { runId: input.runId }, limit: 1 })
     const summary = listed._tag === "runs" ? listed.items[0] : undefined
@@ -370,7 +383,15 @@ export const observe = (control: Control["Service"], input: ObserveRequest) =>
     }
     const events = Array.from(
       yield* Stream.runCollect(Stream.take(
-        control.watch({ runId: input.runId, ...(after === undefined ? {} : { afterSequence: after }), follow: false }),
+        control.watch({
+          runId: input.runId,
+          ...(after === undefined
+            ? {}
+            : after.offset === undefined
+            ? { afterSequence: after.sequence }
+            : { afterCursor: after }),
+          follow: false
+        }),
         limit + 1
       ))
     )
@@ -379,7 +400,9 @@ export const observe = (control: Control["Service"], input: ObserveRequest) =>
     return {
       run: summary,
       events: page,
-      nextCursor: String(last?.cursor?.sequence ?? last?.sequence ?? after ?? 0),
+      nextCursor: last === undefined
+        ? input.afterCursor ?? ""
+        : encodedCursor(last.cursor ?? { sequence: last.sequence }),
       hasMore: events.length > limit,
       terminal: terminal.has(summary.status)
     }
@@ -437,13 +460,16 @@ export const ErrorResponse = Schema.Struct({
 })
 
 const errorResponse = (cause: unknown) => {
-  const code = typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
-    ? cause.code
-    : "internal"
+  const known = Schema.is(ControlError.ControlErrorSchema)(cause)
+  const code = cause instanceof BridgeError || known ? cause.code : "internal"
   const retryable = cause instanceof BridgeError
     ? cause.retryable
+    : cause instanceof ControlError.TransportError
+    ? cause.retryable
     : retryableCodes.has(code)
-  const message = cause instanceof BridgeError || cause instanceof Error ? cause.message : "Runtime bridge failed"
+  // Control errors can contain storage paths, SQL diagnostics, or executor
+  // output. The bridge publishes their stable code, never that backend text.
+  const message = cause instanceof BridgeError ? cause.message : "Runtime bridge failed"
   const status = code === "unauthorized" ?
     401
     : notFoundCodes.has(code) ?

@@ -1635,6 +1635,39 @@ describe("the assembled gateway over a real loopback bind", () => {
 describe("the Watch keepalive", () => {
   const kept = GatewayServer.layerKeepAlive(25).pipe(Layer.provideMerge(stack()))
 
+  test("preserves a partial cursor on a keepalive before and after source delivery", () =>
+    Effect.gen(function*() {
+      const original = yield* Control
+      for (const deliver of [false, true]) {
+        const cursor = { sequence: 7, offset: 0 }
+        const control = {
+          ...original,
+          watch: () =>
+            deliver
+              ? Stream.concat(
+                Stream.make({ sequence: 7, cursor, kind: "source", occurredAt: 1, payload: null }),
+                Stream.never
+              )
+              : Stream.never
+        }
+        const frames = yield* Effect.gen(function*() {
+          const kept = yield* Control
+          return yield* Stream.runCollect(Stream.takeUntil(
+            kept.watch({ runId: "run-1", afterCursor: { sequence: 6, offset: 1 }, follow: true }),
+            (event) => event.kind === GatewayServer.watchHeartbeatKind
+          ))
+        }).pipe(Effect.provide(
+          GatewayServer.layerKeepAlive(10).pipe(
+            Layer.provide(Layer.succeed(Control, control))
+          )
+        ))
+        expect(frames.at(-1)).toMatchObject({
+          sequence: deliver ? 7 : 6,
+          cursor: deliver ? cursor : { sequence: 6, offset: 1 }
+        })
+      }
+    }).pipe(Effect.provide(stack())))
+
   test("leaves a snapshot read alone and names no run on a workspace watch", () =>
     Effect.gen(function*() {
       const control = yield* Control

@@ -41,6 +41,7 @@ import { GatewayError, settingRefusal } from "./GatewayError.ts"
 import * as GatewayProjection from "./GatewayProjection.ts"
 import * as GatewaySchema from "./GatewaySchema.ts"
 import { callEventKey, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.ts"
+import { retainedDigestBytes } from "./internal/digestMemory.ts"
 
 /**
  * How often an idle subscription emits a keepalive frame.
@@ -128,8 +129,9 @@ export const maxDurationRuns = 20
  * The row budget is a refusal: rows go on the wire, and a frame larger than
  * this is one no client asked for. The window budget is retention: events
  * older than the newest {@link maxProjectionBytes} are folded into a carried
- * digest instead of being held, so the counters a run card shows stay exact
- * while the memory one projection holds stays bounded.
+ * digest instead of being held. Its compact identity contributions share this
+ * budget; if they cannot fit, the read refuses instead of reporting inexact
+ * counters or retaining an unbounded identity set.
  *
  * @since 1.0.0
  * @category models
@@ -435,18 +437,20 @@ const appendEvent = (
       ? state.lastPosition.offset + 1
       : 0
     if (keep) state.events.push(event)
-    // The window is retention, not a refusal. A run whose journal outgrows it
-    // keeps its newest events and folds the rest into the carried digest, so a
-    // run card still answers with exact counters instead of the
-    // `resource_limit` a nine-retry model step used to earn.
+    // Event bodies may leave the window while compact identity contributions
+    // keep the diagnosis exact. Both share the byte budget; if even the scalar
+    // state cannot fit, refuse instead of silently forgetting identities.
     let carry = state.carry
     let dropped = state.dropped
     while (state.events.length > maxEventsPerRun || encodedBytes > maxProjectionBytes) {
       const evicted = state.events.shift()
-      /* v8 ignore next -- a clipped event is orders of magnitude inside the window, so one always fits. */
-      if (evicted === undefined) break
+      if (evicted === undefined) {
+        return Effect.fail(resourceLimit(`Projection identity state exceeds ${maxProjectionBytes} encoded bytes`))
+      }
       encodedBytes = Math.max(2, encodedBytes - encodedSize(evicted) - (state.events.length === 0 ? 0 : 1))
+      const previousCarryBytes = retainedDigestBytes(carry)
       carry = Diagnosis.combine(carry ?? Diagnosis.emptyDigest(), Diagnosis.digest([evicted]))
+      encodedBytes += retainedDigestBytes(carry) - previousCarryBytes
       dropped += 1
     }
     return Effect.succeed({
@@ -1123,7 +1127,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
                   ? transcriptAppend(event, turnsBefore).at(-1)?.turn ?? turnsBefore
                   : 0
                 return Effect.flatMap(
-                  selector._tag === "run-summary" || selector._tag === "run-tree"
+                  selector._tag === "run-summary" || selector._tag === "run-tree" || selector._tag === "approvals"
                     ? runOf(runId)
                     : Effect.succeed(source.run),
                   (run) =>
