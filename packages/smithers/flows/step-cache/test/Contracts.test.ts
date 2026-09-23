@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Option } from "effect"
 import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join, relative } from "node:path"
+import { join, posix, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
 import * as CacheStore from "../src/CacheStore.ts"
@@ -15,7 +15,7 @@ const modules = (directory = sourceRoot): ReadonlyArray<string> =>
     entry.isDirectory()
       ? modules(join(directory, entry.name))
       : entry.name.endsWith(".ts")
-      ? [relative(sourceRoot, join(directory, entry.name))]
+      ? [relative(sourceRoot, join(directory, entry.name)).split(sep).join("/")]
       : []
   )
 
@@ -30,7 +30,7 @@ const runtimeImports = (module: string): ReadonlyArray<string> =>
         (ts.isExportDeclaration(statement) && !statement.isTypeOnly)
       const specifier = loaded ? statement.moduleSpecifier : undefined
       if (specifier === undefined || !ts.isStringLiteral(specifier)) return []
-      return [specifier.text.startsWith(".") ? join(dirname(module), specifier.text) : specifier.text]
+      return [specifier.text.startsWith(".") ? posix.join(posix.dirname(module), specifier.text) : specifier.text]
     })
 
 /** Every module and package a module loads at runtime, transitively. */
