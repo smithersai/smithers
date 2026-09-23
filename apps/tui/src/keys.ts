@@ -42,6 +42,7 @@ export const registry: ReadonlyArray<Binding> = [
   { id: "next-tab", keys: ["ctrl+]", "ctrl+right"], label: "Next tab", context: "global", group: "Tabs" },
   { id: "previous-tab", keys: ["ctrl+\\", "ctrl+left"], label: "Previous tab", context: "global", group: "Tabs" },
   { id: "scroll", keys: ["pageup", "pagedown"], label: "Scroll", context: "global", group: "Global" },
+  { id: "scroll-line", keys: ["shift+up", "shift+down"], display: "shift+↑/↓", label: "Scroll a line", context: "global", group: "Global" },
 
   { id: "send", keys: ["enter"], label: "Send", context: "composer", group: "Composer" },
   { id: "queue", keys: ["alt+enter"], label: "Queue", context: "composer", group: "Composer" },

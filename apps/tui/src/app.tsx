@@ -1510,6 +1510,10 @@ export function App(props: AppProps) {
     if (key.ctrl && key.name === "p") return cycleModel(key.shift ? -1 : 1)
     if (key.ctrl && key.name === "o") return setExpanded((value) => !value)
     if (key.ctrl && key.name === "g") return externalEditor()
+    if (key.shift && (key.name === "up" || key.name === "down")) {
+      key.preventDefault()
+      return scroll.current?.scrollBy(key.name === "up" ? -1 : 1)
+    }
     if (key.name === "pageup") return scroll.current?.scrollBy(-0.5, "viewport")
     if (key.name === "pagedown") return scroll.current?.scrollBy(0.5, "viewport")
     // History only from an empty editor or while already browsing (pi's rule).

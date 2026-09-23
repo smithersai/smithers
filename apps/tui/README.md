@@ -78,6 +78,7 @@ Ctrl+O read it.
 | Tab/Down, Shift+Tab/Up, Space, Left/Right, Enter, Esc | In a flow form: next, previous field, toggle, choose, run, close (the run stays parked) |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
 | PageUp, PageDown | Scroll |
+| Shift+Up, Shift+Down | Scroll a line |
 | `!cmd` | Run a shell command; its output joins the next turn's context |
 | `!!cmd` | Run a shell command and keep it out of context |
 

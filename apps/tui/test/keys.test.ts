@@ -138,3 +138,11 @@ describe("key registry", () => {
     expect(Keys.bindingFor({ name: "y" }, "approval")?.id).toBe("allow")
   })
 })
+
+describe("transcript scrolling", () => {
+  it("scrolls a line with shift+up and shift+down from any context", () => {
+    expect(Keys.bindingFor({ name: "up", shift: true }, "composer")?.id).toBe("scroll-line")
+    expect(Keys.bindingFor({ name: "down", shift: true }, "working")?.id).toBe("scroll-line")
+    expect(Keys.bindingFor({ name: "up" }, "composer")?.id).not.toBe("scroll-line")
+  })
+})
