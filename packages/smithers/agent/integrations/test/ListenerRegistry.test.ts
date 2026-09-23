@@ -278,7 +278,9 @@ describe("ownership state writes", () => {
 
     expect(readFileSync(victim, "utf8")).toBe("DO NOT OVERWRITE")
     expect(readOwnershipState(root)).toEqual({ version: 1, github: [], pending: [] })
-    expect(statSync(join(root, DEFAULT_STATE_PATH)).mode & 0o777).toBe(0o600)
+    const state = statSync(join(root, DEFAULT_STATE_PATH))
+    expect(state.isFile()).toBe(true)
+    if (process.platform !== "win32") expect(state.mode & 0o777).toBe(0o600)
     expect(readdirSync(join(root, ".smithers")).sort()).toEqual([
       "listeners.state.json",
       `listeners.state.json.${process.pid}.tmp`
@@ -1106,19 +1108,16 @@ describe("workspace apply lock", () => {
   it("reports a real file-system refusal while acquiring the lock", async () => {
     const root = makeWorkspace({ version: 1, listeners: [listener()] })
     fixture = await startFixture((_request, response) => json(response, 200, []))
-    chmodSync(join(root, ".smithers"), 0o500)
-    try {
-      const failure = await Effect.runPromise(Effect.flip(reconcile({
-        workspaceRoot: root,
-        apply: true,
-        env,
-        client: makeClient({ token: "token", apiBaseUrl: fixture.origin })
-      })))
-      expect(failure.reason).toBe("invalid-config")
-      expect(fixture.requests).toHaveLength(0)
-    } finally {
-      chmodSync(join(root, ".smithers"), 0o700)
-    }
+    rmSync(join(root, ".smithers"), { recursive: true })
+    writeFileSync(join(root, ".smithers"), "lock parent is a file")
+    const failure = await Effect.runPromise(Effect.flip(reconcile({
+      workspaceRoot: root,
+      apply: true,
+      env,
+      client: makeClient({ token: "token", apiBaseUrl: fixture.origin })
+    })))
+    expect(failure.reason).toBe("invalid-config")
+    expect(fixture.requests).toHaveLength(0)
   })
 
   it("reports a lock path that cannot be reclaimed as a file", async () => {
