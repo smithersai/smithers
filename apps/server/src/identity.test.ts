@@ -193,6 +193,52 @@ describe("proxyToIdentity", () => {
     expect(seen[0]!.headers.get("origin")).toBe("https://mvp.test")
   })
 
+  /*
+   * The identity worker rate-limits its OAuth routes per client address.
+   * Through this proxy, cf-connecting-ip at the upstream is the proxy's own
+   * subrequest address, so every user would share one bucket. The proxy
+   * attests the browser's address in x-smithers-client-ip beside the
+   * service token the upstream already trusts; a client-supplied copy of
+   * either header is stripped first.
+   */
+  test("attests the browser's address beside the service token, never a client-supplied one", async () => {
+    const { seen, layer } = wire(() => jsonAnswer(302, {}))
+    await run(
+      proxyToIdentity(
+        new Request("https://mvp.test/api/auth/github/start", {
+          headers: {
+            "cf-connecting-ip": "203.0.113.7",
+            "x-smithers-client-ip": "10.0.0.1",
+            "x-smithers-service-token": "forged"
+          }
+        })
+      ),
+      layer,
+      config()
+    )
+    expect(seen[0]!.headers.get("x-smithers-client-ip")).toBe("203.0.113.7")
+    expect(seen[0]!.headers.get("x-smithers-service-token")).toBe("service-token")
+
+    // No connecting address (local dev): nothing attested, nothing forged through.
+    const { seen: local, layer: localLayer } = wire(() => jsonAnswer(302, {}))
+    await run(
+      proxyToIdentity(new Request("https://mvp.test/api/auth/github/start", { headers: { "x-smithers-client-ip": "10.0.0.1" } })),
+      localLayer,
+      config()
+    )
+    expect(local[0]!.headers.get("x-smithers-client-ip")).toBeNull()
+
+    // No service token configured: the address is still not attested (the upstream would ignore it).
+    const { seen: untrusted, layer: untrustedLayer } = wire(() => jsonAnswer(302, {}))
+    await run(
+      proxyToIdentity(new Request("https://mvp.test/api/auth/github/start", { headers: { "cf-connecting-ip": "203.0.113.7" } })),
+      untrustedLayer,
+      config({ identityServiceToken: undefined })
+    )
+    expect(untrusted[0]!.headers.get("x-smithers-client-ip")).toBeNull()
+    expect(untrusted[0]!.headers.get("x-smithers-service-token")).toBeNull()
+  })
+
   test("the sibling's admin surface is the canonical 404 and never forwarded; no seam is a 501", async () => {
     const { seen, layer } = wire(() => jsonAnswer(200, { ok: true }))
     const hidden = await run(proxyToIdentity(new Request("https://mvp.test/api/identity/admin/allowlist")), layer, config())

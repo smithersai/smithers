@@ -53,6 +53,17 @@ export const proxyToIdentity = (request: Request): Effect.Effect<Response, never
     const target = new URL(url.pathname + url.search, config.identityUpstreamUrl)
     const headers = strippedHeaders(request)
     withProxyOrigin(headers, url)
+    // The identity worker rate-limits its OAuth routes per client address,
+    // and at the upstream cf-connecting-ip is THIS Worker's subrequest
+    // address — every user in one bucket. Attest the browser's address
+    // beside the service token the upstream already trusts; the upstream
+    // ignores the address without the token, and strippedHeaders above
+    // dropped any client-supplied copy of either.
+    const clientAddress = request.headers.get("cf-connecting-ip")?.trim() ?? ""
+    if (clientAddress !== "" && config.identityServiceToken !== undefined) {
+      headers.set("x-smithers-client-ip", clientAddress)
+      headers.set("x-smithers-service-token", Redacted.value(config.identityServiceToken))
+    }
     return yield* forwardUnderDeadline(
       IDENTITY_SEAM,
       new Request(target.toString(), new Request(request, { headers })),

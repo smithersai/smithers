@@ -230,6 +230,7 @@ export const upstreamFailureCode = (status: number): WorkerFailureCode => {
  * (trusted-proxy pattern, docs/guides/custom-workflow-ui.mdx).
  */
 export const STRIPPED_IDENTITY_HEADERS = [
+  "x-smithers-client-ip",
   "x-user-id",
   "x-user-scopes",
   "x-user-role",
