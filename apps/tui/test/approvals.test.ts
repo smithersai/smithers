@@ -657,3 +657,24 @@ describe("denials", () => {
     ])
   })
 })
+
+describe("poll", () => {
+  it("reads at once, then at most once per interval, never while a read is in flight", async () => {
+    let calls = 0
+    let finish!: () => void
+    const stop = Approvals.poll(() => {
+      calls++
+      return new Promise<void>((resolve) => { finish = resolve })
+    }, 20)
+    expect(calls).toBe(1)
+    await Bun.sleep(90)
+    expect(calls).toBe(1)
+    finish()
+    await Bun.sleep(40)
+    expect(calls).toBe(2)
+    stop()
+    finish()
+    await Bun.sleep(60)
+    expect(calls).toBe(2)
+  })
+})

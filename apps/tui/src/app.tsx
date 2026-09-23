@@ -539,27 +539,32 @@ export function App(props: AppProps) {
   }, [clockRunning])
 
   // The store has no subscription; a request exists only while work runs, so
-  // the work clock is the poll.
+  // it is read on its own slower poll while the work clock runs.
   useEffect(() => {
     const ports = props.host.approvals
     if (ports === undefined || ports.mode !== "ask") return
     if (!clockRunning) return setApprovals((current) => (current.length === 0 ? current : []))
     let active = true
-    ports.pending().then(
-      (listed) => {
-        if (!active) return
-        arming.current = Approvals.shown(arming.current, listed, Date.now(), answered.current)
-        const next = listed.filter((request) => !answered.current.has(request.requestId))
-        setApprovals((current) =>
-          current.length === next.length && current.every((each, index) => each.requestId === next[index]!.requestId)
-            ? current
-            : next
-        )
-      },
-      (error) => setStatus(String(error), "danger")
+    const stop = Approvals.poll(() =>
+      ports.pending().then(
+        (listed) => {
+          if (!active) return
+          arming.current = Approvals.shown(arming.current, listed, Date.now(), answered.current)
+          const next = listed.filter((request) => !answered.current.has(request.requestId))
+          setApprovals((current) =>
+            current.length === next.length && current.every((each, index) => each.requestId === next[index]!.requestId)
+              ? current
+              : next
+          )
+        },
+        (error) => setStatus(String(error), "danger")
+      )
     )
-    return () => { active = false }
-  }, [now, clockRunning, props.host, setStatus])
+    return () => {
+      active = false
+      stop()
+    }
+  }, [clockRunning, props.host, setStatus])
 
   useEffect(() => {
     // A failure stays until another notice replaces it or the next submit.

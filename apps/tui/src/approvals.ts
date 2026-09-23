@@ -321,6 +321,25 @@ export const scope = (request: Pending): string => request.action === "fs:write"
  */
 export const armMs = 400
 
+/** How often the UI reads the store while work runs; well under `armMs`, far above the 100 ms clock. */
+export const pollMs = 250
+
+/**
+ * Calls `read` now and every `ms` until stopped, never while the last call is
+ * still in flight: a slow store is not asked again before it answers.
+ */
+export const poll = (read: () => Promise<unknown>, ms = pollMs): () => void => {
+  let busy = false
+  const tick = () => {
+    if (busy) return
+    busy = true
+    read().then(() => { busy = false }, () => { busy = false })
+  }
+  tick()
+  const timer = setInterval(tick, ms)
+  return () => clearInterval(timer)
+}
+
 /**
  * Whether the front row takes keys yet.
  *
