@@ -117,7 +117,9 @@ describe("native backend ownership", () => {
     expect(env.SMITHERS_PUBLIC_URL).toBe("http://127.0.0.1:4000")
     expect(env.SMITHERS_AUTH_MODE).toBe("selfhost")
     expect(env.SMITHERS_AUTH_BOOTSTRAP_TOKEN).toBe("native-bootstrap")
-    expect(env.SMITHERS_FFI_LIBRARY_PATH).toEndWith("libsmithers_ffi.dylib")
+    expect(env.SMITHERS_FFI_LIBRARY_PATH).toBe(join(runtime.root,
+      process.platform === "darwin" ? "libsmithers_ffi.dylib" : process.platform === "linux" ? "libsmithers_ffi.so" : "smithers_ffi.dll"
+    ))
     expect(env.SMITHERS_WORKSPACE_CODING_HOST_BINARY).toEndWith("smithers-coding-host")
     expect(env.SMITHERS_WORKSPACE_LIBRARIAN_HOST_BINARY).toEndWith("smithers-librarian-host")
     expect(env.SMITHERS_MODEL_HOST_BUNDLE).toEndWith("smithers-model-host")
