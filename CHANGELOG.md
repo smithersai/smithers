@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3009 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3040 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,15 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **ci:** stabilize graph selection and browser suite budget ([4954581389](https://github.com/smithersai/smithers/commit/49545813899bc0814457c737213872d4b39b4bc9))
+- **app:** assert interactive composer in hidden native tests ([641ebe6b01](https://github.com/smithersai/smithers/commit/641ebe6b01b7fee7039d408697d4ce40e1f242ca))
+- **ci:** retry transient mirror proxy failures ([4ee72c937d](https://github.com/smithersai/smithers/commit/4ee72c937d6584effbd6730f1d2054f18999f196))
+- **app:** fail matrix on nested gates and stabilize hidden native focus ([29c3d6d8a7](https://github.com/smithersai/smithers/commit/29c3d6d8a74cca847b513ae1f8a14f3731222461))
+- **app:** relay native workspace WebSockets to the selected backend ([e0cbb3f7ad](https://github.com/smithersai/smithers/commit/e0cbb3f7ad432fe42d825ae768207656156865d8))
+- **tui:** show effective approval paths and rearm after editing ([9b9c704ce0](https://github.com/smithersai/smithers/commit/9b9c704ce0c51881b9fdc5a301343cf905345c9f))
+- **tui:** keep approval replies scoped and retryable ([1b2f7022e6](https://github.com/smithersai/smithers/commit/1b2f7022e60a341fadbd492a310f8943d9a49233))
+- **std:** derive patch paths from the execution parser ([372b22062d](https://github.com/smithersai/smithers/commit/372b22062d5e2c7752b0ff9fff929ad9ad2b2ee7))
+- **evals:** wait for plue capacity before Harbor's start timer ([2f63016ba5](https://github.com/smithersai/smithers/commit/2f63016ba5c8f2d1ab74df46bd2b9f9bc3f7e021))
 - **tui:** keep parked flow runs connected and forms dismissible ([d341cda1fc](https://github.com/smithersai/smithers/commit/d341cda1fcc23c36d0b743168d3e9cbe7cd49a7b))
 - **app:** run catalog-listed librarian flows ([a688d8ad92](https://github.com/smithersai/smithers/commit/a688d8ad92b7d921780c076767a53a051a51f47e))
 - **flows:** make flow authoring approval reachable ([364153d31b](https://github.com/smithersai/smithers/commit/364153d31bbfe5d1fad034b8cea8420dd0e6e7a1))
@@ -2165,6 +2174,9 @@ the release notes at
 
 ### 📝 Documentation
 
+- **site:** refresh CLI and runtime references ([bbba6ca15b](https://github.com/smithersai/smithers/commit/bbba6ca15b3ea70adeb77be086c2a4463785933f))
+- synchronize generated package sites ([05ba881787](https://github.com/smithersai/smithers/commit/05ba8817877fbb6c3aef6937c1b42f34fbcca8c4))
+- **std,harness:** document ApplyPatch.paths and denials as capability_refused ([d64e0df548](https://github.com/smithersai/smithers/commit/d64e0df54827960ccdc652576038acba996dfa22))
 - **site:** resync API pages and llms bundle ([296f672624](https://github.com/smithersai/smithers/commit/296f672624434221469ae0d8250ac52bf8dada4c))
 - **site:** sync harness API page for Supervisor ([03b44c8893](https://github.com/smithersai/smithers/commit/03b44c88930978b1a5f0aef00d07985883ef9788))
 - **tui:** describe the current message layout ([f5f8c7576e](https://github.com/smithersai/smithers/commit/f5f8c7576e2dc7572788a1889617f117ccbe9f2d))
@@ -2456,6 +2468,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- **build:** refresh the declared target index ([6e418156f8](https://github.com/smithersai/smithers/commit/6e418156f8b680c481bb426b64d0f479720c7ffb))
 - **tui:** declare the local control dependency ([ff746f67c5](https://github.com/smithersai/smithers/commit/ff746f67c5499db0a389dfbfb75a4af0f66cb1b1))
 - **targets:** index model host coverage inputs ([7afbcd943e](https://github.com/smithersai/smithers/commit/7afbcd943e0f2ae8a464fdb6821900f2922a63ba))
 - **targets:** index native backend and host contract inputs ([e8794c03ae](https://github.com/smithersai/smithers/commit/e8794c03ae2fa8bac259d46050c9223c811b49de))
@@ -2491,6 +2504,24 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(release):** configure offline smoke and jj fixture identity ([e4c6ecc029](https://github.com/smithersai/smithers/commit/e4c6ecc0295fff69f0aaa3e0528c60aad07e7e78))
+- **test(runtime):** preserve file URL semantics in native fixtures ([6b6ce7494c](https://github.com/smithersai/smithers/commit/6b6ce7494ca0025a1808fb7d64bd99ee47812614))
+- **test(engine-store):** compare recovery paths across host separators ([b501910026](https://github.com/smithersai/smithers/commit/b501910026d4a8c91f5de7ba061c8a0d72e05b04))
+- **test(create-app):** check auth errors without debug escaping ([a769654022](https://github.com/smithersai/smithers/commit/a769654022232c9d7643b8505ea8bc6e0961919e))
+- **test(harness):** match TypeScript virtual paths on Windows ([74480020f0](https://github.com/smithersai/smithers/commit/74480020f00712bec1646ad673be29634f574f87))
+- **test(observability):** normalize source paths in console guard ([7289593617](https://github.com/smithersai/smithers/commit/72895936179183d716a6d364dbeb1cb16323a393))
+- **test(gateway):** batch persisted projection history setup ([3d21d2fe37](https://github.com/smithersai/smithers/commit/3d21d2fe3717c60a97804eecb7d288d3851c657a))
+- **test(runtime):** decode file URLs before passing native paths ([758cb5237b](https://github.com/smithersai/smithers/commit/758cb5237bae5ad250f35e1ee30c7a4de1b70df6))
+- **test(build):** make declaration and recovery fixtures portable ([f0af7519d0](https://github.com/smithersai/smithers/commit/f0af7519d005da2bc7a37d6154d4de1a7288c72d))
+- **test(platform-node):** allow cold Python startup before signal timing ([2f6b5b5ac6](https://github.com/smithersai/smithers/commit/2f6b5b5ac6d6006aee9a271e893c146939d97997))
+- **test(site):** check the review route against the Smithers zone ([6d9cd8abad](https://github.com/smithersai/smithers/commit/6d9cd8abad725d8156867b3b145e73a7fb87ccca))
+- **test(flows):** verify product host persistence outside the repository ([de16b95ee8](https://github.com/smithersai/smithers/commit/de16b95ee8f563ec1ffbe0fdbc21f971efd23e89))
+- **test(flows):** install pinned invocation libraries on Node ([6f998acef7](https://github.com/smithersai/smithers/commit/6f998acef728878f27a3c33df85e1a76dcad77e5))
+- **test(agent):** verify checks again after workspace writes ([78f3e8886f](https://github.com/smithersai/smithers/commit/78f3e8886f88fa1482fc2dfb354c48acdeff26a0))
+- **test(flows):** refresh declared authoring visibility in the catalog ([beb26dcbda](https://github.com/smithersai/smithers/commit/beb26dcbdae22111f851e4479a6cac72505bc8a2))
+- **test(platform-node):** wait for a complete helper pid marker ([d435f82251](https://github.com/smithersai/smithers/commit/d435f8225198d9cd0d0b2162885f22226d498267))
+- **test(agent):** preserve explicit supervisor steering state ([b046fee9b1](https://github.com/smithersai/smithers/commit/b046fee9b15e2f02b3b99da90e8379901f0e5d73))
+- **test(platform-node):** account for owner exit during group escalation ([7f97406bc5](https://github.com/smithersai/smithers/commit/7f97406bc5998120e3fededa59309061352ed330))
 - **test(release):** cover supervisor steer and allow process scheduler delay ([239b7a7299](https://github.com/smithersai/smithers/commit/239b7a729950e764d164d7707d34d1a04f73788f))
 - **test(app):** wait for durable form readiness before Enter ([7e4bdfb843](https://github.com/smithersai/smithers/commit/7e4bdfb843f56b870a1c028caad73064ed04ef7a))
 - **ci(app):** retain native matrix traces and final diagnostics ([30e88d17cf](https://github.com/smithersai/smithers/commit/30e88d17cf0d147387ce3fb8e9620552293da522))
