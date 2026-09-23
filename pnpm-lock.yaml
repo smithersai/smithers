@@ -1698,6 +1698,9 @@ importers:
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
+      '@smthrs/std':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/std
       effect:
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115
