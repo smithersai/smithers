@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	searchRateLimitScope = "search"
-	authRateLimitScope   = "auth"
+	searchRateLimitScope    = "search"
+	authRateLimitScope      = "auth"
+	sseTicketRateLimitScope = "sse_ticket"
 	// authWorkerRateLimitScope buckets trusted Cloudflare-Worker
 	// server-to-server auth calls (shared-bearer authenticated) separately
 	// from the strict anonymous "auth" scope. All Worker traffic egresses
@@ -79,6 +80,13 @@ func AuthRateLimit(store SearchRateLimitStore) func(http.Handler) http.Handler {
 
 func NewAuthRateLimit(store SearchRateLimitStore, limit int, window time.Duration) func(http.Handler) http.Handler {
 	return newRateLimit(store, authRateLimitScope, limit, window, 5, time.Minute)
+}
+
+// SSETicketRateLimit permits authenticated stream and socket connections to
+// reconnect without consuming the credential-attempt bucket. RequireAuth must
+// run first so the 60/minute bucket belongs to the authenticated user.
+func SSETicketRateLimit(store SearchRateLimitStore) func(http.Handler) http.Handler {
+	return newRateLimit(store, sseTicketRateLimitScope, 60, time.Minute, 60, time.Minute)
 }
 
 // InteractiveAuthRateLimit enforces the interactive OAuth flow limit:
@@ -191,7 +199,8 @@ func newLimiter(
 
 	failClosed := scope == authRateLimitScope ||
 		scope == authWorkerRateLimitScope ||
-		scope == authInteractiveRateLimitScope
+		scope == authInteractiveRateLimitScope ||
+		scope == sseTicketRateLimitScope
 
 	limiter := &rateLimiter{
 		store:           store,

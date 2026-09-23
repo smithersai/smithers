@@ -1022,8 +1022,8 @@ func buildRouter(
 			middleware.RequireSharedBearerToken(cfg.Auth.WorkerExchangeToken),
 		).Post("/auth/github/token-exchange", authHandler.PostGitHubTokenExchange)
 		issueSSETicket := []func(http.Handler) http.Handler{
-			middleware.AuthRateLimit(queries),
 			middleware.RequireAuth,
+			middleware.SSETicketRateLimit(queries),
 		}
 		if sseTicketHandler != nil {
 			r.With(issueSSETicket...).Post("/auth/sse-ticket", sseTicketHandler.PostSSETicket)

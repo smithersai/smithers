@@ -141,6 +141,73 @@ func TestAuthRateLimit_EnforcesLimit(t *testing.T) {
 	assert.Contains(t, store.keysSeen, "auth|ip:203.0.113.11")
 }
 
+// Pin token-store time so burst assertions do not depend on runner scheduling.
+type fixedTimeRateLimitStore struct {
+	mockRateLimitStore
+	now time.Time
+}
+
+func (m *fixedTimeRateLimitStore) ConsumeSearchRateLimitToken(ctx context.Context, arg db.ConsumeSearchRateLimitTokenParams) (db.ConsumeSearchRateLimitTokenRow, error) {
+	arg.NowAt = m.now
+	return m.mockRateLimitStore.ConsumeSearchRateLimitToken(ctx, arg)
+}
+
+func TestSSETicketRateLimit_IsolatesConnectionsByUserAndFromCredentials(t *testing.T) {
+	t.Parallel()
+
+	store := &fixedTimeRateLimitStore{now: time.Now().UTC()}
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	tickets := RequireAuth(SSETicketRateLimit(store)(ok))
+	credentials := AuthRateLimit(store)(ok)
+	request := func(handler http.Handler, userID int64) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/auth/sse-ticket", nil)
+		req.RemoteAddr = "203.0.113.11:12345"
+		if userID != 0 {
+			req = req.WithContext(ContextWithAuthInfo(req.Context(), &AuthInfo{User: &db.User{ID: userID}}))
+		}
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+
+	// Anonymous callers never consume the authenticated connection bucket.
+	require.Equal(t, http.StatusUnauthorized, request(tickets, 0).Code)
+	require.Empty(t, store.keysSeen)
+	// Credential attempts retain their five-request limit.
+	for i := 0; i < 5; i++ {
+		require.Equal(t, http.StatusNoContent, request(credentials, 1).Code)
+	}
+	require.Equal(t, http.StatusTooManyRequests, request(credentials, 1).Code)
+	// Stream subscriptions, terminal sockets and reconnects have their own budget.
+	for i := 0; i < 60; i++ {
+		rec := request(tickets, 1)
+		require.Equal(t, http.StatusNoContent, rec.Code, "ticket %d", i+1)
+		require.Equal(t, "60", rec.Header().Get("X-RateLimit-Limit"))
+	}
+	rec := request(tickets, 1)
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.NotEmpty(t, rec.Header().Get("Retry-After"))
+	require.Equal(t, http.StatusNoContent, request(tickets, 2).Code, "another user on the same IP has a separate budget")
+	require.Equal(t, http.StatusTooManyRequests, request(credentials, 1).Code)
+	assert.Contains(t, store.keysSeen, "sse_ticket|user:1")
+	assert.Contains(t, store.keysSeen, "sse_ticket|user:2")
+}
+
+func TestSSETicketRateLimit_StoreErrorFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	store := &errorStore{}
+	called := false
+	handler := SSETicketRateLimit(store)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/auth/sse-ticket", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	require.False(t, called)
+	require.Equal(t, "1", rec.Header().Get("Retry-After"))
+}
+
 func TestRateLimit_ScopeIsolation(t *testing.T) {
 	t.Parallel()
 
