@@ -78,10 +78,25 @@ export class Tui {
     const path = join(directory, "z.sock")
     const daemon = spawn(binary, ["--socket", path, "--idle-seconds", "0"], { stdio: "ignore" })
     await waitFor(() => existsSync(path), 5_000, "zmuxd socket")
-    const socket = await new Promise<Socket>((resolve, reject) => {
-      const connection = createConnection(path, () => resolve(connection))
-      connection.once("error", reject)
-    })
+    // The socket path can precede listen(); wait for a connection, not just stat().
+    let socket: Socket
+    const deadline = Date.now() + 5_000
+    for (;;) {
+      try {
+        socket = await new Promise<Socket>((resolve, reject) => {
+          const connection = createConnection(path, () => resolve(connection))
+          connection.once("error", (error) => { connection.destroy(); reject(error) })
+        })
+        break
+      } catch (error) {
+        if (Date.now() >= deadline) {
+          daemon.kill()
+          rmSync(directory, { recursive: true, force: true })
+          throw error
+        }
+        await sleep(25)
+      }
+    }
     const tui = new Tui(daemon, socket, directory, options.rows ?? 40, options.cols ?? 110)
     const created = await tui.call("session.create", {
       id: "tui",

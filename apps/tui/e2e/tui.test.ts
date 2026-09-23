@@ -991,16 +991,25 @@ describe("approvals", () => {
   }, 240_000)
 
   it("n denies: nothing changes and the call shows denied", async () => {
-    const { tui, cwd } = await start({ approve: "ask" })
+    const { tui, cwd, sessions } = await start({ approve: "ask" })
     await tui.type(prompt)
     await tui.press(key.enter)
     await tui.until((screen) => asking.test(screen), 60_000, "first approval")
-    const screen = await answerAll(tui, () => "n")
-    expect(screen).not.toMatch(/┃\s+n/)
+    await tui.press("n")
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
+    await tui.until(() => Session.load(file).some((record) =>
+      record.type === "event" && record.event._tag === "cell-call-settled" &&
+      record.event.result.code === "capability_refused" && record.event.result.message?.startsWith("Denied:")
+    ), 10_000, "denial receipt")
+    // The recording repeats after a refusal. Stop once the real denial is durable.
+    await tui.press(key.escape)
+    const screen = await tui.until(idle, 10_000, "stopped replay")
+    expect(screen).not.toMatch(/┃[ \t]+n[ \t]*$/m)
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toBe("export const add = (a, b) => a - b\n")
     await tui.press(key.ctrlO)
     await tui.until((screen) => screen.includes("Denied"), 10_000, "denied call")
-  }, 240_000)
+  }, 90_000)
 
   it("never eats typing, and answers once the editor is empty", async () => {
     const { tui } = await start({ approve: "ask" })
