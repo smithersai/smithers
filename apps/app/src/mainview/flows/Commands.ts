@@ -479,8 +479,11 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
     // A new human command is a return to the transcript. A stale maximized
     // card from an earlier session must not hide the card this command renders.
-    // The explicit card.minimize flow remains the single presentation seam.
-    if (invoker === "user" && actions.snapshot().maximizedCardId != null) actions.minimizeCard()
+    // Commands raised by a maximized card itself keep that presentation until
+    // their own frame or card handler decides where to go.
+    const staysInMaximizedCard = name === "card.maximize" || name === "card.minimize" ||
+      name.startsWith("frame.") || name.startsWith("files.")
+    if (invoker === "user" && actions.snapshot().maximizedCardId != null && !staysInMaximizedCard) actions.minimizeCard()
     // Only the human's local form edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
     let pendingFormInput: PendingFormInput | undefined

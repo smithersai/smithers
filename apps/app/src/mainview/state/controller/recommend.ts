@@ -230,7 +230,9 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
     if (debounce !== undefined) clearTimeout(debounce)
     debounce = setTimeout(() => {
       debounce = undefined
-      void ctx.commands.run(RECOMMEND_FLOW)
+      // Recommendation refreshes are background work. Keep a card the user is
+      // reading maximized while the catalog updates.
+      void ctx.commands.run(RECOMMEND_FLOW, undefined, "automatic")
     }, debounceMs)
     ctx.unref(debounce)
   }

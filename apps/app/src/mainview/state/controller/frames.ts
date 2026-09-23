@@ -31,14 +31,19 @@ const validLocation = (ctx: ControllerContext, location: FrameLocation): boolean
   const workspace = ctx.store.collections.workspaces.get(location.workspaceId)
   const branch = ctx.store.collections.branches.get(location.branchId)
   const frame = ctx.store.collections.frames.get(location.frameId)
+  // Only the active branch's frames are projected into `collections.frames`.
+  // Browser history still carries frames from an inactive branch, so accept
+  // their durable ids and let `frame.navigated` restore that branch snapshot.
+  const historicalFrame = frame === undefined && branch !== undefined &&
+    (location.frameId === rootFrameId(branch.id) ||
+      branch.snapshot?.cards.some((card) => location.frameId === cardFrameId(branch.id, card.id)) === true)
   const card = frame?.cardId == null ? undefined : ctx.store.collections.cards.get(frame.cardId) ??
     branch?.snapshot?.cards.find(card => card.id === frame.cardId)
   return workspace !== undefined &&
     branch?.workspaceId === workspace.id &&
-    frame?.workspaceId === workspace.id &&
-    frame.branchId === branch.id &&
+    (historicalFrame || (frame?.workspaceId === workspace.id && frame.branchId === branch.id)) &&
     (card === undefined || knowledgeCardAvailable(card.kind, ctx.services.features)) &&
-    (frame.cardId === null || ctx.store.collections.cards.get(frame.cardId) !== undefined ||
+    (frame === undefined || frame.cardId === null || ctx.store.collections.cards.get(frame.cardId) !== undefined ||
       branch.snapshot?.cards.some((card) => card.id === frame.cardId) === true)
 }
 
@@ -95,7 +100,11 @@ export const createFramesController = (
       return identity?.accountOwnerLogin ?? identity?.login ?? null
     }
     const accountOwner = owner()
-    const sourceLocation = sessionLocation(ctx)
+    // The address bar is updated in the same browser gesture as the store
+    // dispatch. Prefer it while the live projection catches up so a fork made
+    // immediately after maximize captures the card frame rather than the old
+    // root frame.
+    const sourceLocation = history?.current() ?? sessionLocation(ctx)
     const source = ctx.store.collections.frames.get(sourceLocation.frameId)
     if (source === undefined) return "The current frame no longer exists."
     const id = `branch-${crypto.randomUUID()}`
