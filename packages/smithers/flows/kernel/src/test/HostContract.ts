@@ -113,7 +113,7 @@ export interface PathSuccess {
 /**
  * Successful `ChildProcessSpawner` contract options.
  *
- * Defaults are POSIX commands suitable for Node and Bun. In-process browser
+ * Defaults use the current Node or Bun executable. In-process browser
  * doubles can provide their own scripted commands and expected output.
  *
  * There is no timeout case: a wall-clock budget is `Effect.timeout` around any
@@ -461,21 +461,24 @@ const fileSystemProbe = (
 
 /** The default stdin probe: echo back one line read from the child's stdin. */
 const defaultStdinCommand = ChildProcess.make(
-  "/bin/sh",
-  ["-c", `read host_contract_input; printf '%s' "$host_contract_input"`],
+  process.execPath,
+  [
+    "-e",
+    `let input = ""; process.stdin.setEncoding("utf8"); process.stdin.on("data", chunk => input += chunk); process.stdin.on("end", () => process.stdout.write(input.replace(/\\r?\\n$/, "")));`
+  ],
   { stdin: Stream.fromArray([new TextEncoder().encode("stdin\n")]) }
 )
 
 /** The default two-leg process probe. */
 const defaultPipelineCommand = ChildProcess.pipeTo(
-  ChildProcess.make("printf", ["host-contract-pipeline"]),
-  ChildProcess.make("cat")
+  ChildProcess.make(process.execPath, ["-e", `process.stdout.write("host-contract-pipeline")`]),
+  ChildProcess.make(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"])
 )
 
 /** The default multi-leg cancellation probe. */
 const defaultInterruptCommand = ChildProcess.pipeTo(
-  ChildProcess.make("sleep", ["10"]),
-  ChildProcess.make("cat")
+  ChildProcess.make(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"]),
+  ChildProcess.make(process.execPath, ["-e", "process.stdin.pipe(process.stdout)"])
 )
 
 /**
@@ -580,7 +583,8 @@ export const runHostContract = (
           ? unsupportedChildProcess("string", childProcessCap.code)
           : Effect.gen(function*() {
             const spawner = yield* ChildProcessSpawner
-            const command = childProcessCap.execCommand ?? ChildProcess.make("printf", ["host-contract"])
+            const command = childProcessCap.execCommand ??
+              ChildProcess.make(process.execPath, ["-e", `process.stdout.write("host-contract")`])
             expect(yield* spawner.string(command)).toBe(childProcessCap.expectedStdout ?? "host-contract")
             expect(yield* spawner.exitCode(command)).toBe(0)
           }),
@@ -595,7 +599,8 @@ export const runHostContract = (
             const spawner = yield* ChildProcessSpawner
             const output = yield* Stream.mkString(
               spawner.streamString(
-                childProcessCap.streamCommand ?? ChildProcess.make("printf", ["host-contract-stream"])
+                childProcessCap.streamCommand ??
+                  ChildProcess.make(process.execPath, ["-e", `process.stdout.write("host-contract-stream")`])
               )
             )
             expect(output).toContain(childProcessCap.expectedStreamText ?? "host-contract-stream")
@@ -611,7 +616,7 @@ export const runHostContract = (
             const spawner = yield* ChildProcessSpawner
             const output = yield* spawner.string(
               childProcessCap.optionsCommand ??
-                ChildProcess.make("/bin/sh", ["-c", `printf '%s' "$HOST_CONTRACT_ENV"`], {
+                ChildProcess.make(process.execPath, ["-e", "process.stdout.write(process.env.HOST_CONTRACT_ENV)"], {
                   cwd: tmpdir(),
                   env: { HOST_CONTRACT_ENV: "env" },
                   extendEnv: true
