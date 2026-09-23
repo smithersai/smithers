@@ -126,7 +126,7 @@ const resolveRoot = (
     const cwd = walked.explicitFile ? path.dirname(input.root) : input.root
     const selected = walked.explicitFile ?
       walked.files :
-      walked.files.filter((file) => included(path.relative(input.root, file), path.basename(file)))
+      walked.files.filter((file) => included(Walk.relativeForPattern(path, input.root, file), path.basename(file)))
     const links = walked.explicitFile ? [] : yield* Walk.symbolicLinks(fileSystem, selected)
     return {
       cwd,
@@ -403,7 +403,7 @@ const glob = (
     }
     const paths = nulSeparated(result.stdout).map(root.absolute).filter((file) =>
       root.explicitFile ||
-      Contract.includedByGlobs([input.pattern], path.relative(input.root, file), path.basename(file))
+      Contract.includedByGlobs([input.pattern], Walk.relativeForPattern(path, input.root, file), path.basename(file))
     ).sort()
     const shown = paths.slice(0, input.limit)
     const unsatisfiable = paths.length > 0 ? undefined : yield* Contract.unsatisfiableNotice({

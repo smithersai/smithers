@@ -52,6 +52,17 @@ export const skippedDirectories: ReadonlySet<string> = new Set([
 const concurrency = 16
 
 /**
+ * Separates pattern path segments with slashes while preserving POSIX filenames.
+ *
+ * @private
+ * @since 1.0.0
+ */
+export const relativeForPattern = (path: Path.Path, from: string, to: string): string => {
+  const relative = path.relative(from, to)
+  return path.sep === "\\" ? relative.replaceAll("\\", "/") : relative
+}
+
+/**
  * Answers whether each path is a symbolic link, which neither peer follows.
  *
  * `FileSystem.stat` resolves links, so the only probe available is `readLink`,
@@ -156,11 +167,12 @@ export const files = (
             entry.candidate,
             path.basename(entry.candidate),
             entry.type === "Directory",
-            path.relative
+            (from, to) => relativeForPattern(path, from, to)
           )
         ) {
           if (
-            entry.type === "Directory" || included(path.relative(root, entry.candidate), path.basename(entry.candidate))
+            entry.type === "Directory" ||
+            included(relativeForPattern(path, root, entry.candidate), path.basename(entry.candidate))
           ) excluded = true
           continue
         }

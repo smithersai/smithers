@@ -4,10 +4,11 @@ import { Context, Effect, Layer, Schema } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, relative } from "node:path"
+import { dirname, join, posix, relative, sep } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Glob from "../src/Glob.ts"
 import * as Grep from "../src/Grep.ts"
+import * as Ignore from "../src/internal/Ignore.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
 import * as Search from "../src/Search.ts"
@@ -27,6 +28,7 @@ const fixture = (files: Record<string, string>) => {
 const cases = [
   {
     name: "matches the entire filename including a final newline",
+    posixNames: true,
     rules: "end.txt\n",
     files: ["end.txt", "end.txt\n"],
     kept: ["end.txt\n"]
@@ -83,6 +85,7 @@ const cases = [
   },
   {
     name: "spaces and escaped glob characters",
+    posixNames: true,
     rules: "drop.txt   \nspace\\ \nliteral\\*.txt\n",
     files: ["drop.txt", "space ", "literal*.txt", "literalX.txt"],
     kept: ["literalX.txt"]
@@ -107,22 +110,37 @@ const cases = [
   }
 ]
 
+it.each(cases.filter((scenario) => "posixNames" in scenario))(
+  "matches POSIX filename bytes on every host: $name",
+  (scenario) => {
+    const scope = Ignore.parse("/repo", scenario.rules)
+    const kept = scenario.files.filter((file) =>
+      !Ignore.ignored([scope], posix.join("/repo", file), file, false, posix.relative)
+    )
+    expect(kept).toEqual(scenario.kept)
+  }
+)
+
 for (const [name, layer] of [["portable", PortableSearch.layer], ["native", NativeSearch.layer]] as const) {
   describe(`ignore files (${name})`, () => {
     const implementation = layer.pipe(Layer.provide(NodeServices.layer))
     const glob = (input: Glob.Input) => Effect.runPromise(Glob.run(input).pipe(Effect.provide(implementation)))
     const grep = (input: Grep.Input) => Effect.runPromise(Grep.run(input).pipe(Effect.provide(implementation)))
     for (const scenario of cases) {
-      it(scenario.name, async () => {
+      // Windows cannot create names containing newlines, literal *, or trailing spaces.
+      it.skipIf(process.platform === "win32" && "posixNames" in scenario)(scenario.name, async () => {
         const root = fixture({
           ".gitignore": scenario.rules,
           ...Object.fromEntries(scenario.files.map((file) => [file, "needle\n"]))
         })
-        expect((await glob({ root, pattern: "**/*" })).paths.map((file) => relative(root, file))).toEqual(
+        expect((await glob({ root, pattern: "**/*" })).paths.map((file) => relative(root, file).split(sep).join("/")))
+          .toEqual(
+            scenario.kept.sort()
+          )
+        const found = await grep({ root, pattern: "needle", globs: ["**/*"], symbols: false })
+        expect(found.matches.map((match) => relative(root, match.file).split(sep).join("/"))).toEqual(
           scenario.kept.sort()
         )
-        const found = await grep({ root, pattern: "needle", globs: ["**/*"], symbols: false })
-        expect(found.matches.map((match) => relative(root, match.file))).toEqual(scenario.kept.sort())
         expect(found.filesSearched).toBe(scenario.kept.length)
         expect((await grep({ root, pattern: "needle", noIgnore: true, symbols: false })).filesSearched).toBe(
           scenario.files.length
@@ -153,7 +171,11 @@ for (const [name, layer] of [["portable", PortableSearch.layer], ["native", Nati
         "one/cache/a.txt": "needle",
         "two/cache/a.txt": "needle"
       })
-      expect((await glob({ root, pattern: "**/*", noIgnore: false })).paths.map((file) => relative(root, file)))
+      expect(
+        (await glob({ root, pattern: "**/*", noIgnore: false })).paths.map((file) =>
+          relative(root, file).split(sep).join("/")
+        )
+      )
         .toEqual(["one/keep.tmp", "one/sub/anchored.txt", "two/cache/a.txt"])
     })
     it("ignores only root-scoped .gitignore", async () => {

@@ -33,7 +33,7 @@ const candidates = (
   Effect.gen(function*() {
     if (walked.explicitFile) return walked.files
     const included = walked.files.filter((file) =>
-      Contract.includedByGlobs(globs, path.relative(root, file), path.basename(file))
+      Contract.includedByGlobs(globs, Walk.relativeForPattern(path, root, file), path.basename(file))
     )
     const links = yield* Walk.symbolicLinks(fileSystem, included)
     return included.filter((_, index) => links[index] !== true)
