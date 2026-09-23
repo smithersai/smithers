@@ -5,6 +5,7 @@
  * the resolver inputs exposed by import closures, and every refusal by which
  * file algebra avoids silently treating an unsupported target as an empty set.
  */
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import { constants as NodeFsConstants } from "node:fs"
@@ -422,6 +423,7 @@ describe("generator backup recovery and bounds", () => {
     const original = NodePath.join(root, "out/original.txt")
     await Fs.writeFile(original, "irreplaceable bytes")
     await Fs.chmod(original, 0o640)
+    const originalMode = (await Fs.stat(original)).mode & 0o777
     const mkdtemp = vi.spyOn(Fs, "mkdtemp")
     const open = Fs.open
     vi.spyOn(Fs, "open").mockImplementation(async (...args) => {
@@ -437,13 +439,14 @@ describe("generator backup recovery and bounds", () => {
     const backup = await mkdtemp.mock.results[0]!.value as string
     temporary.push(backup)
     expect(Exit.isFailure(exit)).toBe(true)
-    expect(JSON.stringify(exit)).toContain("injected restore failure")
-    expect(JSON.stringify(exit)).toContain(`generator backup retained at ${backup}`)
+    const message = Exit.isFailure(exit) ? Cause.pretty(exit.cause) : ""
+    expect(message).toContain("injected restore failure")
+    expect(message).toContain(`generator backup retained at ${backup}`)
     expect(await Fs.readFile(NodePath.join(backup, "files/out/original.txt"), "utf8")).toBe("irreplaceable bytes")
     const manifest = JSON.parse(await Fs.readFile(NodePath.join(backup, "manifest.json"), "utf8"))
     expect(manifest.root).toBe(root)
     expect(manifest.entries).toContainEqual(
-      expect.objectContaining({ path: "out/original.txt", kind: "file", mode: 0o640 })
+      expect.objectContaining({ path: "out/original.txt", kind: "file", mode: originalMode })
     )
   })
 

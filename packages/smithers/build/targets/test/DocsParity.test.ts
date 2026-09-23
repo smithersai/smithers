@@ -207,10 +207,10 @@ describe("DocsParity execution", () => {
       await Fs.writeFile(path, text, "utf8")
     }
     try {
-      const rulesModule = NodePath.resolve(import.meta.dirname, "../src/Smithers.ts")
+      const rulesModule = JSON.stringify(new URL("../src/Smithers.ts", import.meta.url).href)
       await write(
         ".smithers/WORKSPACE.ts",
-        `import * as S from "${rulesModule}"\n` +
+        `import * as S from ${rulesModule}\n` +
           `const packageJson = S.file("//package.json")\n` +
           `export const Workspace = S.Workspace("fixture", {\n` +
           `  repository: "git+https://example.invalid/fixture.git",\n` +
@@ -225,7 +225,7 @@ describe("DocsParity execution", () => {
       for (const name of ["complete", "stub"]) {
         await write(
           `packages/${name}/PACKAGE.ts`,
-          `import * as S from "${rulesModule}"\n` +
+          `import * as S from ${rulesModule}\n` +
             `const runtime = S.Runtime.Node({ version: ">=22.19.0" })\n` +
             `const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })\n` +
             `const docs = S.DocsParity({ readme: S.file("README.md"), deps: [], cwd: "packages/${name}" })\n` +
