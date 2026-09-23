@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import { readFileSync } from "node:fs"
+import { sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
 import { describe, expect, it } from "vitest"
@@ -52,7 +53,7 @@ it("typechecks the Handler recovery fence and keeps the guide's example identica
     ${example}
     export {}
   `
-  const file = fileURLToPath(new URL("HandlerRecovery.doc.ts", import.meta.url))
+  const file = fileURLToPath(new URL("HandlerRecovery.doc.ts", import.meta.url)).split(sep).join("/")
   const options: ts.CompilerOptions = {
     strict: true,
     noEmit: true,
