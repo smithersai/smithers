@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3004 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3009 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **tui:** keep parked flow runs connected and forms dismissible ([d341cda1fc](https://github.com/smithersai/smithers/commit/d341cda1fcc23c36d0b743168d3e9cbe7cd49a7b))
+- **app:** run catalog-listed librarian flows ([a688d8ad92](https://github.com/smithersai/smithers/commit/a688d8ad92b7d921780c076767a53a051a51f47e))
+- **flows:** make flow authoring approval reachable ([364153d31b](https://github.com/smithersai/smithers/commit/364153d31bbfe5d1fad034b8cea8420dd0e6e7a1))
 - **backend:** isolate authenticated socket ticket rate limits ([d37a2a5d26](https://github.com/smithersai/smithers/commit/d37a2a5d26efe99621d6f83befe115b674b60ff8))
 - **tui:** undo worker edits with durable recovery ([62828d9873](https://github.com/smithersai/smithers/commit/62828d9873ec387bb64ec8b0157e1c9586bea573))
 - **release:** allow build CLI suite to complete on hosted runner ([617ea86979](https://github.com/smithersai/smithers/commit/617ea86979bdbab1c2bdfc9d27129fddeb777392))
@@ -2488,6 +2491,8 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(release):** cover supervisor steer and allow process scheduler delay ([239b7a7299](https://github.com/smithersai/smithers/commit/239b7a729950e764d164d7707d34d1a04f73788f))
+- **test(app):** wait for durable form readiness before Enter ([7e4bdfb843](https://github.com/smithersai/smithers/commit/7e4bdfb843f56b870a1c028caad73064ed04ef7a))
 - **ci(app):** retain native matrix traces and final diagnostics ([30e88d17cf](https://github.com/smithersai/smithers/commit/30e88d17cf0d147387ce3fb8e9620552293da522))
 - **test(platform-node):** restore process spies on interruption ([0e1dca4a5c](https://github.com/smithersai/smithers/commit/0e1dca4a5cc12e0606c35b220f0e55a798bd63cb))
 - **test(app):** allow physical storage refusal to reach the error panel ([6b71f65af2](https://github.com/smithersai/smithers/commit/6b71f65af29efe2530c9617e4760455f1b78f5fb))
