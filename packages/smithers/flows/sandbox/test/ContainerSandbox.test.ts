@@ -1,6 +1,5 @@
-import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
 import { afterAll, describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Layer, Path, PlatformError, Sink, Stream } from "effect"
+import { Effect, Exit, PlatformError, Sink, Stream } from "effect"
 import * as Scope from "effect/Scope"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import {
@@ -17,6 +16,7 @@ import * as ContainerSandbox from "../src/ContainerSandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/index.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
+import { platform } from "./helpers/containedPlatform.ts"
 import { stalledFinalizer } from "./stalledFinalizer.ts"
 
 // -----------------------------------------------------------------------------
@@ -38,10 +38,8 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
-const platform = Layer.provideMerge(
-  NodeChildProcessSpawner.layer,
-  Layer.merge(NodeFileSystem.layer, Path.layer)
-)
+// Use the host's contained native adapter: its pipe error listeners survive
+// scope cleanup when a guest refuses a write before consuming all stdin.
 const local = Effect.runSync(
   Effect.gen(function*() {
     return yield* ChildProcessSpawner
@@ -805,7 +803,11 @@ describe("ContainerSandbox", () => {
           yield* session.writeFile(`${workdir}/empty.bin`, new Uint8Array())
           expect(Array.from(yield* session.readFile(`${workdir}/empty.bin`))).toEqual([])
           writeFileSync(`${workdir}/blocker`, "a file, not a directory")
-          const refused = yield* Effect.flip(session.writeFile(`${workdir}/blocker/child`, new Uint8Array([3])))
+          // The guest refuses before reading stdin, including input larger
+          // than a pipe buffer that can still be pending when it exits.
+          const refused = yield* Effect.flip(
+            session.writeFile(`${workdir}/blocker/child`, new Uint8Array(256 * 1024).fill(3))
+          )
           expect((refused as ProviderError).code).toBe("unknown")
         }))
       // The test root's path is made of shell-safe characters, so the quoter
