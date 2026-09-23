@@ -9,10 +9,17 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2949 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2989 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **std:** seal bash to one container for benchmark hosts ([3f9c10fedc](https://github.com/smithersai/smithers/commit/3f9c10fedcb50ac1316b8deda33916e9ed39527e))
+- **tui:** run project flows in durable background tabs ([a4c489e3d5](https://github.com/smithersai/smithers/commit/a4c489e3d5a07678426219f0bee91b8464da06d5))
+- **cli:** expose the native Bun control composition ([17469344fc](https://github.com/smithersai/smithers/commit/17469344fcaf0c778f3d51b01f698a86acb19e3d))
+- **registry:** expose executable input schemas ([292eaa93e1](https://github.com/smithersai/smithers/commit/292eaa93e1787b566c7c69bf626f6defc3b69af0))
+- **tui:** show active workers and choose delegate models ([ceaa26151f](https://github.com/smithersai/smithers/commit/ceaa26151f6f25d8c08bdf2eed214b8c7b1d0f3a))
+- **tui:** approve consequential flow calls with y, n and a ([c7307a3475](https://github.com/smithersai/smithers/commit/c7307a347521f8363e8dfc80960bc14a0bec5b3c))
+- **backend:** serve browser Flow RPC from shared runtime ([426ba2dfb3](https://github.com/smithersai/smithers/commit/426ba2dfb31373e91359f632948b2eb6aa4109a3))
 - **chat:** keep the agent timeline within reach in app and TUI ([0f4a43bf55](https://github.com/smithersai/smithers/commit/0f4a43bf55f8f645af4ec1fdba7d01714631e32b))
 - **cli:** add `smthrs tui` and a `smthrs` bin so `npx smthrs tui` opens the TUI ([4a5b31df33](https://github.com/smithersai/smithers/commit/4a5b31df3370024e8ebb77c01ff0810657f312c9))
 - **tui:** undo a Summary row's captured file changes with u ([1c780cc4e0](https://github.com/smithersai/smithers/commit/1c780cc4e00308db70bad380d6a0a68b6997b1a0))
@@ -317,6 +324,29 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** allow build CLI suite to complete on hosted runner ([617ea86979](https://github.com/smithersai/smithers/commit/617ea86979bdbab1c2bdfc9d27129fddeb777392))
+- **tui:** preserve settled workers when forking sessions ([95aea53a82](https://github.com/smithersai/smithers/commit/95aea53a8210e86e367cf988587c9b70b592489f))
+- **app:** settle stale workflow toasts ([e2aed9512d](https://github.com/smithersai/smithers/commit/e2aed9512d48064d15b413e7bd801f34c8e98fdd))
+- **cli:** install TypeScript 5 for the terminal FFI peer ([1fbff0562e](https://github.com/smithersai/smithers/commit/1fbff0562eee0a1424b034f7b6c5caf4cca6772a))
+- **cli:** lazily expose Bun control from the public barrel ([2896993258](https://github.com/smithersai/smithers/commit/28969932585175c0daa6d0e726cc4a32837e0a63))
+- **tui:** preserve drafts across palette commands and show search limits ([b8a699c7b0](https://github.com/smithersai/smithers/commit/b8a699c7b08ed31eb95c5d7e56b07be198907768))
+- **site:** make docs --check failures always print their reason ([a659b41425](https://github.com/smithersai/smithers/commit/a659b41425ab3fd85967d1ecbee1aea2a34406cd))
+- **issues:** provision cloud issue flows and launch directly ([3efa79d946](https://github.com/smithersai/smithers/commit/3efa79d946380f53df020f07c7b67ab0659a18c0))
+- **evals:** replay exactly the snapshots and rule the live supervisor uses ([293110c8f5](https://github.com/smithersai/smithers/commit/293110c8f50823b0e4fd62ae5d861d3c978a60da))
+- **cli:** bind real recall and a per-project bank for the supervisor's memory ([9eca5ef7e2](https://github.com/smithersai/smithers/commit/9eca5ef7e2fd47d35acaba4533c56febea7d561f))
+- **harness:** keep supervisor inserts out of the task and journal what the supervisor did ([cb8a57e8ab](https://github.com/smithersai/smithers/commit/cb8a57e8ab012e6cf7f1a0fca403e9ae055ae84d))
+- **cli:** align the compatibility package Node support range ([0a0775484a](https://github.com/smithersai/smithers/commit/0a0775484ad3beb22627e47d5025e395772d173d))
+- **gateway:** ship the shared trace runtime dependencies ([48e4c1a77d](https://github.com/smithersai/smithers/commit/48e4c1a77db6f8246b33acf9a8f919657ff39c1f))
+- **docs:** inspect CLI install commands within their code spans ([4958e88408](https://github.com/smithersai/smithers/commit/4958e884085e73fef11711c61d56e508ba5628e4))
+- **backend:** preserve Flow RPC failure contract ([468bf1f6e9](https://github.com/smithersai/smithers/commit/468bf1f6e9f93338cae3a91b58a0610c91a1c378))
+- **evals:** refuse a re-run lane whose index run-paths rejects ([c205eec366](https://github.com/smithersai/smithers/commit/c205eec3660ee0e3a345733c6a81c4e5ec9fe1b2))
+- **tui:** sync the shared gateway dependency in Bun lockfile ([4c3caf6bbd](https://github.com/smithersai/smithers/commit/4c3caf6bbd9b989463ba8eea32c0969f11703507))
+- **app:** retain file inventory across edits to the same form ([c65fb9c3ac](https://github.com/smithersai/smithers/commit/c65fb9c3acc7617e4da164c75147be040119045b))
+- **app:** retain pending setup text through older saved projections ([6440aa3c33](https://github.com/smithersai/smithers/commit/6440aa3c331a1dd01ef4470128bd1f5d95191e44))
+- **app:** preserve newer drafts during delayed command submission ([f79e34f079](https://github.com/smithersai/smithers/commit/f79e34f0798435f047e9fbb2ad7042ce8acd0a9c))
+- **evals:** read and archive the control journal beside engine.db ([fbbc17047c](https://github.com/smithersai/smithers/commit/fbbc17047c4a124ed10c5d06cb3c4a8f1c14dc6f))
+- **app:** recover bootstrap failures and hide native test windows ([359f476d04](https://github.com/smithersai/smithers/commit/359f476d04d42a30af3951d63065a336e27a3bcb))
+- **app:** forward the canonical identity route on local hosts ([c3147b2f70](https://github.com/smithersai/smithers/commit/c3147b2f70d88bc119fd048b6b7edfa4f5c4f2b0))
 - **evals:** the plue docker shim carries its own repo, CLI and token ([968d7548b7](https://github.com/smithersai/smithers/commit/968d7548b7269b3e943a3820f9f129d4a70a5949))
 - **app:** clip oversized children to the narrow app shell ([9c2bc14ddc](https://github.com/smithersai/smithers/commit/9c2bc14ddc31a433f344e0386f3e8edcdbc19e90))
 - **evals:** support subscription Codex benchmark lanes ([0c0f69794f](https://github.com/smithersai/smithers/commit/0c0f69794fb12db893ed4ea3845425cb9cfd084b))
@@ -2130,6 +2160,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **site:** resync API pages and llms bundle ([296f672624](https://github.com/smithersai/smithers/commit/296f672624434221469ae0d8250ac52bf8dada4c))
 - **site:** sync harness API page for Supervisor ([03b44c8893](https://github.com/smithersai/smithers/commit/03b44c88930978b1a5f0aef00d07985883ef9788))
 - **tui:** describe the current message layout ([f5f8c7576e](https://github.com/smithersai/smithers/commit/f5f8c7576e2dc7572788a1889617f117ccbe9f2d))
 - **site:** re-sync api reference pages from package api.md sources ([cbaf740fbc](https://github.com/smithersai/smithers/commit/cbaf740fbc8f762f18bb9d4f878aaf16176c3dc9))
@@ -2420,6 +2451,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- **tui:** declare the local control dependency ([ff746f67c5](https://github.com/smithersai/smithers/commit/ff746f67c5499db0a389dfbfb75a4af0f66cb1b1))
 - **targets:** index model host coverage inputs ([7afbcd943e](https://github.com/smithersai/smithers/commit/7afbcd943e0f2ae8a464fdb6821900f2922a63ba))
 - **targets:** index native backend and host contract inputs ([e8794c03ae](https://github.com/smithersai/smithers/commit/e8794c03ae2fa8bac259d46050c9223c811b49de))
 - delete the tutorial coordinator and executor apps ([2fce79a97c](https://github.com/smithersai/smithers/commit/2fce79a97cfe948963aba161b2b2183b502b48b5))
@@ -2454,6 +2486,14 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(std):** cover sealed container commands and document exports ([6b7b5cd6e8](https://github.com/smithersai/smithers/commit/6b7b5cd6e8abf95366f8227bdfbf49d743637e4f))
+- **test(cli):** prove the shipped executor recalls supervisor memory across runs ([0de91ed8f6](https://github.com/smithersai/smithers/commit/0de91ed8f6089bb207321fc2646d5c05c40083f4))
+- **test(app):** account for startup backend recovery actions ([607e6977ae](https://github.com/smithersai/smithers/commit/607e6977ae5284528d9d575ab8d9d2c5d8f86229))
+- **test(platform-node):** measure helper layouts and exit cleanup ([0bd90c42a6](https://github.com/smithersai/smithers/commit/0bd90c42a65a4ee96994e17b5e4025e4ef8e4fa9))
+- **test(app):** exercise telemetry through the server package contract ([e6fd638f66](https://github.com/smithersai/smithers/commit/e6fd638f6675e4fbe66bfe04aab96d4110a462a8))
+- **test(cli):** document the interactive TUI launch boundary ([9af9c95f5b](https://github.com/smithersai/smithers/commit/9af9c95f5be96ef888307459961fce4660bc01b5))
+- **test(gateway):** register shared trace public exports ([0d3bd4f646](https://github.com/smithersai/smithers/commit/0d3bd4f64693072979702b847251152b383ffc51))
+- **test(gateway):** cover shared run traces and native evidence boundaries ([d3a21e77d5](https://github.com/smithersai/smithers/commit/d3a21e77d51a95ea3665e5af8daa80119d52dc27))
 - **test(release):** match Go and Rust cache rehearsal toolchain ([22e656cf71](https://github.com/smithersai/smithers/commit/22e656cf715b08aeb4e3286e320770ff285b5a53))
 - **test(app):** run collaborative Wiki against current cloud and feature contracts ([4d41cb2725](https://github.com/smithersai/smithers/commit/4d41cb27258dafbaec23428350b22d405a88817e))
 - **test(tui):** verify one worker identity across pending tab updates ([83bfbd80a4](https://github.com/smithersai/smithers/commit/83bfbd80a45358c063263dbb9ea94fe95b731362))
