@@ -20,7 +20,9 @@ const git = (root, ...args) => execFileSync("git", ["-C", root, ...args], { enco
 
 test("standalone product gateway executes real librarian flows, publishes before completion, and survives restart", { timeout: 180_000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), "product-gateway-"))
+  const stateRoot = await mkdtemp(join(tmpdir(), "product-gateway-state-"))
   t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => rm(stateRoot, { recursive: true, force: true }))
   if (built !== undefined) {
     t.after(() => rm(built, { recursive: true, force: true }))
     assert.ok((await readFile(`${artifact}.sha256`, "utf8")).startsWith(`${digest}  `), "the host sidecar must record the built bytes")
@@ -47,7 +49,7 @@ test("standalone product gateway executes real librarian flows, publishes before
   const stop = async () => { if (child?.exitCode === null) { const stopped = new Promise(resolve => child.once("exit", resolve)); child.kill("SIGTERM"); await stopped } }
   t.after(stop)
   const start = async () => {
-    child = spawn(runtime, [artifact, "serve", "--root", root, "--port", String(port)], { cwd: root,
+    child = spawn(runtime, [artifact, "serve", "--root", root, "--state-dir", stateRoot, "--port", String(port)], { cwd: root,
       env: { ...process.env, SMITHERS_API_KEY: "fixture", SMITHERS_GATEWAY_ID: "11111111-1111-4111-8111-111111111111",
         SMITHERS_OWNER_GENERATION: "7", SMITHERS_SOURCE_REVISION: sourceHead,
         SMITHERS_FLOW_ARTIFACT_SHA256: artifactDigest,
@@ -145,5 +147,6 @@ test("standalone product gateway executes real librarian flows, publishes before
   await stop(); await start()
   assert.equal((await settled(wiki.runId)).status, "completed")
   assert.equal((await settled(history.runId)).status, "completed")
-  assert.ok((await readFile(join(root, ".flows", "control.db"))).length > 0)
+  assert.ok((await readFile(join(stateRoot, ".flows", "control.db"))).length > 0)
+  await assert.rejects(readFile(join(root, ".flows", "control.db")), { code: "ENOENT" })
 })
