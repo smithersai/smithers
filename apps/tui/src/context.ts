@@ -2,9 +2,12 @@
  * What every turn is told before its task: the working directory, the
  * project's instruction files, and the conversation so far.
  *
- * Instruction files follow pi: in each directory from the filesystem root
+ * Instruction files follow pi, bounded by the repository: in each directory
+ * from the repository root (the nearest ancestor holding `.jj` or `.git`)
  * down to the working directory, the first of `AGENTS.override.md`,
  * `AGENTS.md`, `CLAUDE.md` is read, after the global `~/.smithers/agent/AGENTS.md`.
+ * Outside a repository only the working directory is read: a parent such as
+ * `/tmp` or `$HOME` never supplies instructions.
  */
 import { existsSync, readFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -26,7 +29,11 @@ export const instructionFiles = (cwd: string, home = homedir()): ReadonlyArray<s
   const directories: Array<string> = []
   for (let directory = resolve(cwd); ; directory = dirname(directory)) {
     directories.unshift(directory)
-    if (dirname(directory) === directory) break
+    if (existsSync(join(directory, ".jj")) || existsSync(join(directory, ".git"))) break
+    if (dirname(directory) === directory) {
+      directories.splice(0, directories.length - 1)
+      break
+    }
   }
   for (const directory of directories) {
     const first = instructionNames.map((name) => join(directory, name)).find((path) => existsSync(path))

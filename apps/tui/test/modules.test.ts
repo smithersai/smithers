@@ -107,12 +107,34 @@ describe("context", () => {
     const root = mkdtempSync(join(tmpdir(), "tui-context-"))
     const nested = join(root, "a", "b")
     mkdirSync(nested, { recursive: true })
+    mkdirSync(join(root, ".git"))
     writeFileSync(join(root, "CLAUDE.md"), "root")
     writeFileSync(join(root, "a", "AGENTS.md"), "a")
     writeFileSync(join(root, "a", "CLAUDE.md"), "shadowed")
     const files = Context.instructionFiles(nested, home)
     expect(files[0]).toBe(join(home, ".smithers", "agent", "AGENTS.md"))
     expect(files.slice(-2)).toEqual([join(root, "CLAUDE.md"), join(root, "a", "AGENTS.md")])
+  })
+
+  it("never reads instructions from above the repository root", () => {
+    const home = mkdtempSync(join(tmpdir(), "tui-home-"))
+    const outside = mkdtempSync(join(tmpdir(), "tui-context-"))
+    const repository = join(outside, "repo")
+    mkdirSync(join(repository, ".jj"), { recursive: true })
+    writeFileSync(join(outside, "AGENTS.md"), "planted")
+    writeFileSync(join(repository, "AGENTS.md"), "repo")
+    expect(Context.instructionFiles(repository, home)).toEqual([join(repository, "AGENTS.md")])
+  })
+
+  it("reads only the working directory outside a repository", () => {
+    const home = mkdtempSync(join(tmpdir(), "tui-home-"))
+    const outside = mkdtempSync(join(tmpdir(), "tui-context-"))
+    const loose = join(outside, "loose")
+    mkdirSync(loose)
+    writeFileSync(join(outside, "AGENTS.md"), "planted")
+    expect(Context.instructionFiles(loose, home)).toEqual([])
+    writeFileSync(join(loose, "AGENTS.md"), "here")
+    expect(Context.instructionFiles(loose, home)).toEqual([join(loose, "AGENTS.md")])
   })
 
   it("tells a turn in a jj checkout to use jj, and says nothing of jj elsewhere", () => {
