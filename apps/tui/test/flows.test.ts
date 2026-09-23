@@ -369,10 +369,41 @@ describe("flow runs", () => {
     expect(f.runs.get("r1")).toMatchObject({ status: "failed", message: "Unknown flow nope" })
   })
 
-  it("caps active runs at three", () => {
+  it("queues a fourth run instead of refusing it, and starts it when a seat frees", async () => {
     const f = setup()
     for (const id of ["a", "b", "c"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
-    expect(() => f.runs.request({ id: "d", flow: "review", input: {}, by: "user" })).toThrow("Three flow runs")
+    expect(f.runs.request({ id: "d", flow: "review", input: {}, by: "agent" })).toEqual({ id: "d", status: "queued" })
+    expect(f.runs.request({ id: "e", flow: "review", input: {}, by: "agent" })).toEqual({ id: "e", status: "queued" })
+    expect(f.runs.busy).toBe(true)
+    expect(f.runs.panel("d").summary).toBe("Queued.")
+    await tick()
+    expect(f.calls.filter((each) => each === "start")).toHaveLength(3)
+    f.watches[0]!.done.resolve({ kind: "done", answer: "ok" })
+    await tick()
+    await tick()
+    expect(f.runs.get("a")?.status).toBe("done")
+    expect(f.runs.get("d")?.status).not.toBe("queued")
+    expect(f.runs.get("e")?.status).toBe("queued")
+    expect(f.calls.filter((each) => each === "start")).toHaveLength(4)
+  })
+
+  it("cancels a queued run without starting it", async () => {
+    const f = setup()
+    for (const id of ["a", "b", "c", "d"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
+    f.runs.cancel("d")
+    expect(f.runs.get("d")?.status).toBe("cancelled")
+    await tick()
+    expect(f.calls.filter((each) => each === "start")).toHaveLength(3)
+  })
+
+  it("queues a retry at the cap instead of throwing", async () => {
+    const f = setup()
+    f.runs.request({ id: "x", flow: "nope", input: {}, by: "user" })
+    await tick()
+    expect(f.runs.get("x")?.status).toBe("failed")
+    for (const id of ["a", "b", "c"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
+    expect(() => f.runs.retry("x")).not.toThrow()
+    expect(f.runs.get("x")?.status).toBe("queued")
   })
 
   it("refuses without a port", () => {

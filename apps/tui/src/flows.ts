@@ -63,7 +63,7 @@ export interface Run {
   readonly input: Record<string, unknown>
   /** The original input as JSON, for deduplication. */
   readonly requested: string
-  readonly status: "requested" | "input" | "approval" | "running" | "waiting" | "done" | "failed" | "cancelled"
+  readonly status: "queued" | "requested" | "input" | "approval" | "running" | "waiting" | "done" | "failed" | "cancelled"
   readonly runId?: string
   readonly startedAt: number
   readonly endedAt?: number
@@ -80,6 +80,8 @@ export interface Request {
 }
 
 export const interrupted = "Interrupted; retry to continue."
+/** Concurrent flow runs; later requests wait FIFO in `queued` and start when one settles. */
+export const seats = 3
 /** Events the watch settles on; they never move a parked run back to running. */
 export const terminal: ReadonlySet<string> = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled", "control.run.pending"])
 const active = (run: Run) =>
@@ -109,7 +111,7 @@ export class FlowRuns {
     }
   ) {
     for (const run of options.restored ?? []) {
-      if (active(run)) this.save({ ...run, status: "failed", message: interrupted, endedAt: Date.now() })
+      if (active(run) || run.status === "queued") this.save({ ...run, status: "failed", message: interrupted, endedAt: Date.now() })
       else this.runs.set(run.id, run)
     }
   }
@@ -124,7 +126,7 @@ export class FlowRuns {
   }
   snapshot = (): ReadonlyArray<Run> => [...this.runs.values()]
   get busy(): boolean {
-    return [...this.runs.values()].some(active)
+    return [...this.runs.values()].some((run) => active(run) || run.status === "queued")
   }
   has = (id: string): boolean => this.runs.has(id)
   get = (id: string): Run | undefined => this.runs.get(id)
@@ -150,6 +152,21 @@ export class FlowRuns {
     this.options.persist({ type: "flow", run })
     this.runs.set(run.id, run)
     this.changed()
+    if (!active(run) && run.status !== "queued") this.drain()
+  }
+  private full(): boolean {
+    return [...this.runs.values()].filter(active).length >= seats
+  }
+  /** Starts queued runs, oldest request first, while a seat is free. */
+  private drain() {
+    if (this.closed) return
+    const queued = [...this.runs.values()].filter((run) => run.status === "queued").sort((a, b) => a.startedAt - b.startedAt)
+    for (const run of queued) {
+      if (this.full()) return
+      const attempt = this.attempt(run.id)
+      this.save({ ...run, status: "requested", message: undefined })
+      queueMicrotask(() => void this.prepare(run.id, attempt))
+    }
   }
   private update(id: string, attempt: number, change: Partial<Run>) {
     const run = this.runs.get(id)
@@ -184,9 +201,6 @@ export class FlowRuns {
       }
       return { id: existing.id, status: existing.status }
     }
-    if ([...this.runs.values()].filter(active).length >= 3) {
-      throw new Error("Three flow runs are active; wait for a completion")
-    }
     const id = request.id ?? `${request.flow}-${Date.now().toString(36)}`
     const run: Run = {
       id,
@@ -194,11 +208,12 @@ export class FlowRuns {
       by: request.by,
       input: request.input,
       requested,
-      status: "requested",
+      status: this.full() ? "queued" : "requested",
       startedAt: Date.now()
     }
     // Persist FIRST; the receipt acknowledges only the request.
     this.save(run)
+    if (run.status === "queued") return { id, status: "queued" }
     const attempt = this.attempt(id)
     queueMicrotask(() => void this.prepare(id, attempt))
     return { id, status: "requested" }
@@ -323,7 +338,7 @@ export class FlowRuns {
   }
   cancel = (id: string): void => {
     const run = this.runs.get(id)
-    if (run === undefined || !active(run)) return
+    if (run === undefined || (!active(run) && run.status !== "queued")) return
     if (this.launching.has(id)) {
       this.save({ ...run, stopRequested: true, message: "Stopping" })
       this.launching.get(id)!.abort()
@@ -343,11 +358,13 @@ export class FlowRuns {
     const run = this.runs.get(id)
     if (run === undefined || (run.status !== "failed" && run.status !== "cancelled") || this.closed) return
     if (this.options.port === undefined) throw new Error("Flows unavailable")
-    if ([...this.runs.values()].filter(active).length >= 3) {
-      throw new Error("Three flow runs are active; wait for a completion")
+    const { endedAt: _ended, answer: _answer, ...rest } = run
+    if (this.full()) {
+      const { runId: _runId, stopRequested: _stop, ...fresh } = rest
+      this.save({ ...fresh, status: "queued", message: undefined, startedAt: Date.now() })
+      return
     }
     const attempt = this.attempt(id)
-    const { endedAt: _ended, answer: _answer, ...rest } = run
     if (run.runId !== undefined && run.stopRequested && run.status === "failed") {
       this.save({ ...rest, status: "running", message: undefined })
       this.follow(id, attempt, run.runId)
@@ -386,6 +403,8 @@ export class FlowRuns {
         ? Summary.sentence(run.answer ?? "Done.")
         : run.status === "requested"
         ? "Requested."
+        : run.status === "queued"
+        ? "Queued."
         : run.status === "cancelled"
         ? "Stopped."
         : run.status === "waiting"

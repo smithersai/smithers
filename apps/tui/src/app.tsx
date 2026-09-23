@@ -125,7 +125,7 @@ interface FlowForm {
 }
 
 const flowGlyph = (status: Run["status"]): string =>
-  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : "◌ "
+  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : "◌ "
 const flowActive = (status: Run["status"]): boolean =>
   status !== "done" && status !== "failed" && status !== "cancelled"
 
