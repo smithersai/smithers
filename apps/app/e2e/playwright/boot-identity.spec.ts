@@ -78,14 +78,15 @@ test("unknown repository has one sign-in card and no Wiki door while the flag is
   await expect(page.getByTestId("chrome-wiki")).toHaveCount(0)
   if (!await page.getByTestId("composer-input").isVisible()) await page.keyboard.press("Control+k")
   await page.getByTestId("composer-input").fill("/wiki")
-  await expect(page.locator('[role="option"]').first()).toBeVisible()
+  await expect(page.getByRole("listbox", { name: "Search palette" })).toBeVisible()
+  await expect(page.getByRole("status")).toContainText("There is no /wiki flow")
   await expect(page.locator('[role="option"][data-flow^="wiki"], [role="option"][data-flow^="world"]')).toHaveCount(0)
   await page.keyboard.press("Escape")
   await expect(page.locator(".world-card-empty")).toHaveCount(0)
   await expect(page.locator(".world-document-title")).toHaveCount(0)
 })
 
-test("chrome sign-in paints with the shell's brand action token, not its text color", async ({ page }) => {
+test("chrome sign-in paints with the readable primary action token", async ({ page }) => {
   await signedOutVisitor(page)
   await page.goto("/smithersai/smithers/")
   const door = page.getByTestId("chrome-sign-in")
@@ -95,15 +96,15 @@ test("chrome sign-in paints with the shell's brand action token, not its text co
     node.append(probe)
     const read = (value: string) => { probe.style.color = value; return getComputedStyle(probe).color }
     const painted = getComputedStyle(node).color
-    const same = { brand: painted === read("var(--brand)"), text: painted === read("var(--text)") }
+    const same = { action: painted === read("var(--action-primary)"), text: painted === read("var(--text)") }
     probe.remove()
     return same
-  })).toEqual({ brand: true, text: false })
+  })).toEqual({ action: true, text: false })
 })
 
 /*
  * CT089: a bare repository command typed before first run has chosen its
- * target parks and resumes into the practice list. Both identity reads are on
+ * target parks and resumes into the sign-in requirement. Both identity reads are on
  * the critical path (state/controller/auth-billing.ts dispatchSignedOut), so
  * both are held here; releasing only the session read leaves a second hop.
  */
@@ -124,7 +125,7 @@ const heldIdentity = async (page: import("@playwright/test").Page) => {
  */
 const HELD_WINDOW_MS = 1_500
 
-test("a bare issues.list during first-run identity resumes into the practice list", async ({ page }) => {
+test("a bare issues.list during first-run identity resumes into one sign-in prompt", async ({ page }) => {
   await signedOutVisitor(page)
   const release = await heldIdentity(page)
   const errors: string[] = []
@@ -146,12 +147,14 @@ test("a bare issues.list during first-run identity resumes into the practice lis
   await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)
 
   release()
-  await expect(page.getByTestId("card-practice-issues")).toBeVisible()
-  await expect(page.locator('.smithers-card[data-kind="issue-list"]')).toHaveCount(1)
+  const signIn = page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })
+  await expect(signIn).toHaveCount(1)
+  await expect(signIn.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
+  await expect(page.locator('.smithers-card[data-kind="issue-list"]')).toHaveCount(0)
   await expect(page.locator('.smithers-card[data-kind="flow-form"]')).toHaveCount(0)
   await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)
   expect(errors).toEqual([])
-  // The bundle answers: no hosted issues request was made for the practice repository.
+  // The sign-in requirement keeps the repository read parked without issuing a request.
   expect(issueReads).toEqual([])
 })
 
@@ -183,7 +186,7 @@ test("CONTROL: a repository entry is a target, so the same command never parks o
  * is the narrow version of the held-latch race, and the one every fast network
  * actually produces.
  */
-test("a bare issues.list still reaches the practice list when identity answers immediately", async ({ page }) => {
+test("a bare issues.list offers sign-in when identity answers immediately", async ({ page }) => {
   await signedOutVisitor(page)
   const release = await heldIdentity(page)
   await page.goto("/")
@@ -191,7 +194,9 @@ test("a bare issues.list still reaches the practice list when identity answers i
   await page.getByRole("button", { name: "Dismiss", exact: true }).click()
   await slash(page, "/issues.list")
   release()
-  await expect(page.getByTestId("card-practice-issues")).toBeVisible()
+  const signIn = page.getByRole("article").filter({ has: page.locator('[data-flow="auth.sign-in"]') })
+  await expect(signIn).toHaveCount(1)
+  await expect(signIn.getByRole("button", { name: "Sign in with GitHub", exact: true })).toBeVisible()
   await expect(page.locator('.smithers-card[data-kind="flow-form"]')).toHaveCount(0)
   await expect(page.getByRole("textbox", { name: "Repo" })).toHaveCount(0)
 })
