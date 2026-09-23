@@ -16,15 +16,17 @@ import * as Complete from "./complete.ts"
 import * as DragScroll from "./drag-scroll.ts"
 import * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
+import * as Estimate from "./estimate.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
 import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
 import * as Form from "./form.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import * as Monitors from "./monitors.ts"
+import * as Improve from "./improve.ts"
 import type * as Host from "./host.ts"
 import * as Keys from "./keys.ts"
-import type { Model } from "./models.ts"
+import { delegateModels, type Model } from "./models.ts"
 import { PanelView } from "./panel-view.tsx"
 import * as Palette from "./palette.ts"
 import * as Panels from "./panels.ts"
@@ -42,7 +44,7 @@ import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
-import { type Tab, tabToast, Workspace } from "./workspace.ts"
+import { seats, type Tab, tabToast, Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -75,6 +77,8 @@ interface TurnState {
   readonly handle: Host.Turn
   readonly startedAt: number
   readonly steering: Steering.Queue
+  /** The turn's id in the estimate ledger. */
+  readonly estimate: string
 }
 
 type Picker =
@@ -311,6 +315,20 @@ export function App(props: AppProps) {
     makeMonitors(workspace, runs, writer.current.append, restored.current?.monitors)
   )
   useEffect(() => () => monitors.dispose(), [monitors])
+  // One ledger per directory: every session's work calibrates the next estimate.
+  // Its failures toast once each; `setStatus` is defined below, so they go through a ref.
+  const estimateProblem = useRef((_: string) => {})
+  const [estimator] = useState(() =>
+    new Estimate.Estimator({
+      ledger: new Improve.Ledger(Estimate.ledgerFile(props.host.cwd), {
+        onWriteError: (error) => estimateProblem.current(`Estimates not saved: ${error instanceof Error ? error.message : String(error)}`)
+      }),
+      model: props.host.complete === undefined
+        ? undefined
+        : (request) => props.host.complete!({ ...request, seat: delegateModels.luna }),
+      onFailure: (failure) => estimateProblem.current(`Estimate model failed: ${failure.message.split("\n")[0]!.slice(0, 80)}`)
+    })
+  )
   /** Runs the user started here; their form opens without a key. */
   const userRuns = useRef(new Set<string>())
   const formOpened = useRef(new Set<string>())
@@ -340,6 +358,15 @@ export function App(props: AppProps) {
     return () => { void runs.dispose() }
   }, [runs])
   const flowRuns = runs.snapshot()
+  useEffect(() => estimator.subscribe(() => setRevision((value) => value + 1)), [estimator])
+  useEffect(() => {
+    const timer = setTimeout(() => estimator.seed(join(Session.directory(props.host.cwd), "workers")), 0)
+    return () => clearTimeout(timer)
+  }, [estimator, props.host.cwd])
+  useEffect(() => {
+    estimator.tabs(workspace.snapshot().tabs)
+    estimator.flows(runs.snapshot(), (flow) => runs.listed().find((listed) => listed.name === flow)?.description)
+  }, [estimator, workspace, runs, revision])
   /** Opens a run's form for its missing input. */
   const openForm = useCallback((id: string) => {
     const run = runs.get(id)
@@ -368,6 +395,12 @@ export function App(props: AppProps) {
     }
   }, [revision, runs, openForm, changeForm, approvals, picker, draft])
   const snapshot = workspace.snapshot()
+  const eta = (id: string, status: string, startedAt: number) => {
+    if (status === "done" || status === "failed" || status === "cancelled") return ""
+    // Queued work has not started: its label is the whole estimate.
+    const text = Estimate.label(estimator.get(id), status === "queued" ? now : startedAt, now)
+    return text === "" ? "" : ` ${text}`
+  }
   const surfaces = [
     { id: "chat", title: "Chat" },
     { id: "summary", title: "Summary" },
@@ -385,9 +418,12 @@ export function App(props: AppProps) {
           : tab.status === "done"
           ? "✓ "
           : "■ "
-      }${tab.title}`
+      }${tab.title}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
     })),
-    ...flowRuns.map((run) => ({ id: `flow:${run.id}`, title: `${flowGlyph(run.status)}${run.flow}` })),
+    ...flowRuns.map((run) => ({
+      id: `flow:${run.id}`,
+      title: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
+    })),
     ...snapshot.panels.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
   ]
   const showTab = (id: string) => {
@@ -483,6 +519,7 @@ export function App(props: AppProps) {
   useEffect(() => {
     if (restored.damaged !== undefined) setStatus(restored.damaged, "danger")
   }, [])
+  estimateProblem.current = (text) => setStatus(text, "warning")
 
   const completion = useMemo(
     () => (menuDismissed
@@ -646,6 +683,9 @@ export function App(props: AppProps) {
     const steering = Steering.make()
     const steered: Array<string> = []
     const startedAt = Date.now()
+    const estimate = `turn:${writer.current.file}:${startedAt}`
+    let tokens: number | undefined
+    estimator.request({ id: estimate, kind: "turn", key: `turn:${live.current.seat}`, subject: prompt, startedAt })
     writer.current.append({ type: "user", at: startedAt, text: prompt })
     setTranscript((current) => Transcript.user(current, prompt, false, startedAt))
     const handle = props.host.run({
@@ -662,6 +702,7 @@ export function App(props: AppProps) {
         list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
         retry: (id) => (runs.has(id) ? runs.retry(id) : workspace.retry(id)),
         monitors,
+        eta: () => estimator.eta(Estimate.active(workspace.snapshot().tabs, runs.snapshot()), Date.now(), seats),
         ...(props.flows === undefined ? {} : {
           flows: {
             list: () => runs.listed().filter((flow) => flow.modelInvocable),
@@ -684,6 +725,7 @@ export function App(props: AppProps) {
       onEvent: (event) => {
         const at = Date.now()
         if (event._tag !== "model-delta") writer.current.append({ type: "event", at, event })
+        if (event._tag === "model-settled") tokens = (tokens ?? 0) + (Estimate.usage([{ type: "event", at, event }]) ?? 0)
         if (event._tag === "steering-drained") {
           for (const message of event.messages) {
             steered.push(message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join(""))
@@ -692,13 +734,14 @@ export function App(props: AppProps) {
         setTranscript((current) => Transcript.apply(current, event, at))
       }
     })
-    const state: TurnState = { handle, startedAt, steering }
+    const state: TurnState = { handle, startedAt, steering, estimate }
     live.current.turn = state
     setTurn(state)
     void handle.done.then((outcome) => {
       const at = Date.now()
       const said = [prompt, ...steered].join("\n\n")
       writer.current.append({ type: "outcome", at, prompt: said, outcome })
+      estimator.settle(estimate, { ms: at - startedAt, ...(tokens === undefined ? {} : { tokens }) }, outcome._tag, at)
       if (outcome._tag === "done") entries.current.push({ kind: "exchange", user: said, answer: outcome.answer })
       if (outcome._tag === "failed") setTranscript((current) => Transcript.failure(current, outcome.message, at))
       if (outcome._tag === "cancelled") setTranscript((current) => Transcript.failure(current, "Stopped", at))
@@ -711,7 +754,7 @@ export function App(props: AppProps) {
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
-  }, [props.host, props.flows, workspace, runs, monitors])
+  }, [props.host, props.flows, workspace, runs, monitors, estimator])
   const startTurnRef = useRef(startTurn)
   startTurnRef.current = startTurn
 
@@ -1571,12 +1614,19 @@ export function App(props: AppProps) {
       <box style={{ flexDirection: "row", width: "100%", height: "100%", justifyContent: "center" }}>
         {showSidebar ? (
           <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>
-            {activeTabs.map((tab) => (
-              <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}
-                onMouseDown={() => clickTab(`tab:${tab.id}`)}>
-                {(tab.description ?? tab.title).length > 22 ? `${(tab.description ?? tab.title).slice(0, 21)}…` : (tab.description ?? tab.title)}
-              </text>
-            ))}
+            {activeTabs.map((tab) => {
+              const name = tab.description ?? tab.title
+              const time = eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab)).trim()
+              const room = time === "" ? 22 : 21 - time.length
+              const shown = name.length > room ? `${name.slice(0, room - 1)}…` : name
+              return (
+                <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}
+                  onMouseDown={() => clickTab(`tab:${tab.id}`)}>
+                  {shown}
+                  {time === "" ? null : <span fg={color.faint}>{" ".repeat(22 - shown.length - time.length)}{time}</span>}
+                </text>
+              )
+            })}
           </box>
         ) : null}
       <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
@@ -1774,7 +1824,12 @@ export function App(props: AppProps) {
             {/* The path gives way before the hints do. */}
             <text wrapMode="none" style={{ flexShrink: 100, marginRight: 2 }}>
               {working
-                ? <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
+                ? (
+                  <>
+                    <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
+                    <span fg={color.faint}>{eta(turn.estimate, "running", turn.startedAt)}</span>
+                  </>
+                )
                 : (
                   <span fg={color.faint}>
                     {props.host.cwd.replace(homedir(), "~")}

@@ -356,3 +356,39 @@ describe("Host.run shell monitors pass the approval gate", () => {
     expect((await restoredUnder("ask", "deny")).result).toContain("Denied")
   })
 })
+
+describe("Host.complete", () => {
+  test("sends the seat's bare model id and no token budget, which the ChatGPT route would refuse", async () => {
+    const bodies: Array<Record<string, unknown>> = []
+    const chunk = (value: object) => `data: ${JSON.stringify(value)}\n\n`
+    const server = Bun.serve({
+      port: 0,
+      fetch: async (request) => {
+        bodies.push(await request.json() as Record<string, unknown>)
+        const choice = (delta: object, finish: string | null) =>
+          chunk({ id: "c", object: "chat.completion.chunk", created: 0, model: "m", choices: [{ index: 0, delta, finish_reason: finish }] })
+        return new Response(`${choice({ role: "assistant", content: "{\"minutes\": 3}" }, null)}${choice({}, "stop")}data: [DONE]\n\n`, {
+          headers: { "content-type": "text/event-stream" }
+        })
+      }
+    })
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-complete-"))
+    roots.push(cwd)
+    const host = Host.make({
+      cwd,
+      environment: { OPENAI_API_KEY: "k", SMITHERS_OPENAI_COMPATIBLE_BASE_URL: `http://127.0.0.1:${server.port}` }
+    })
+    try {
+      expect(await host.complete!({ system: "s", prompt: "p", seat: "openai:gpt-6-luna" })).toBe("{\"minutes\": 3}")
+      // A tab description goes to the worker's own seat, by its bare model id too.
+      expect(await host.describe!({ title: "t", prompt: "p", seat: "openai:gpt-6-sol" })).toBe("{\"minutes\": 3}")
+    } finally {
+      await host.dispose()
+      server.stop()
+    }
+    expect(bodies.map((body) => body.model)).toEqual(["gpt-6-luna", "gpt-6-sol"])
+    for (const body of bodies) {
+      expect(Object.keys(body).filter((key) => /max/.test(key))).toEqual([])
+    }
+  })
+})

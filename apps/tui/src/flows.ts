@@ -64,7 +64,12 @@ export interface Run {
   readonly requested: string
   readonly status: "queued" | "requested" | "input" | "running" | "waiting" | "done" | "failed" | "cancelled"
   readonly runId?: string
+  /** When the current attempt began: a retry or resume restarts it. */
   readonly startedAt: number
+  /** When the control plane started the attempt, after any queue, input or approval wait. */
+  readonly launchedAt?: number
+  /** 1 for the first request, bumped by every retry or resume. Absent means 1. */
+  readonly attempt?: number
   readonly endedAt?: number
   readonly message?: string
   readonly answer?: string
@@ -282,7 +287,7 @@ export class FlowRuns {
         // Preserve the receipt even after the UI detached; retry must target this run.
         this.save({ ...run, runId, status: "failed", message: interrupted, endedAt: Date.now() })
       } else {
-        if (this.update(id, attempt, { status: "running", runId, message: undefined }) === undefined) return
+        if (this.update(id, attempt, { status: "running", runId, message: undefined, launchedAt: Date.now() }) === undefined) return
         this.follow(id, attempt, runId)
       }
       if (run.stopRequested) await this.stop(id, runId)
@@ -360,10 +365,12 @@ export class FlowRuns {
     }
     if (this.closed) throw new Error("Session closed")
     if (this.options.port === undefined) throw new Error("Flows unavailable")
-    const { endedAt: _ended, answer: _answer, ...rest } = run
+    const { endedAt: _ended, answer: _answer, launchedAt: _launched, ...previous } = run
+    // Each retry is new work with its own clock, so it is estimated and scored on its own.
+    const rest = { ...previous, attempt: (run.attempt ?? 1) + 1, startedAt: Date.now() }
     if (this.full()) {
       const { runId: _runId, stopRequested: _stop, ...fresh } = rest
-      this.save({ ...fresh, status: "queued", message: undefined, startedAt: Date.now() })
+      this.save({ ...fresh, status: "queued", message: undefined })
       return { id, status: "queued" }
     }
     const attempt = this.attempt(id)
@@ -375,7 +382,7 @@ export class FlowRuns {
     }
     if (run.runId !== undefined && run.message === interrupted) {
       const runId = run.runId
-      this.save({ ...rest, status: "running", message: undefined })
+      this.save({ ...rest, status: "running", message: undefined, launchedAt: rest.startedAt })
       this.options.port.resume(runId).then((receipt) => {
         if ("runId" in receipt) {
           if (this.update(id, attempt, { runId: receipt.runId }) !== undefined) this.follow(id, attempt, receipt.runId)
@@ -384,7 +391,7 @@ export class FlowRuns {
       return { id, status: "running" }
     }
     const { runId: _runId, stopRequested: _stop, ...fresh } = rest
-    this.save({ ...fresh, status: "requested", message: undefined, startedAt: Date.now() })
+    this.save({ ...fresh, status: "requested", message: undefined })
     queueMicrotask(() => void this.prepare(id, attempt))
     return { id, status: "requested" }
   }

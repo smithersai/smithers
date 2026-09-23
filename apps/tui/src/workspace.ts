@@ -15,7 +15,10 @@ export interface Tab {
   readonly seat: string
   readonly file: string
   readonly status: "queued" | "requested" | "running" | "done" | "failed" | "cancelled"
+  /** When the request was made; a queued tab waits before it launches. */
   readonly startedAt: number
+  /** When the worker began, after any wait for a seat. */
+  readonly launchedAt?: number
   readonly endedAt?: number
   readonly message?: string
   readonly answer?: string
@@ -202,7 +205,7 @@ export class Workspace {
         }
       })
       this.handles.set(tab.id, handle)
-      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "running" })
+      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "running", launchedAt: at })
       void handle.done.then((outcome) => {
         this.handles.delete(tab.id)
         const at = Date.now()

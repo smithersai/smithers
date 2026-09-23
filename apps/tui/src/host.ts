@@ -90,6 +90,8 @@ export interface Host {
     readonly judge: (input: Monitors.Judged) => Promise<boolean>
     readonly compose: (input: Monitors.Judged) => Promise<string>
   }
+  /** One short answer from `seat`, outside any turn; estimates, descriptions and monitor updates use it. */
+  readonly complete?: (input: { system: string; prompt: string; seat: string }) => Promise<string>
   /** Whether Jev judges completions; false when `AI_GATEWAY_API_KEY` is unset. */
   readonly judged: boolean
   readonly run: (input: TurnInput) => Turn
@@ -196,19 +198,22 @@ export const make = (options: {
     }
   }
 
-  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, seat: id }) => runtime.runPromise(
+  const complete: NonNullable<Host["complete"]> = ({ system, prompt, seat: id }) => runtime.runPromise(
     Effect.gen(function*() {
       const seat = yield* (yield* SeatResolver.SeatResolver).resolve(id)
       const events = Array.from(yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
-        modelId: id,
-        system: [ModelRequest.SystemPart.make({ text: "Summarize this background agent task in one short line (at most 80 characters). Reply with only the description." })],
-        messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: `Title: ${title}\nTask: ${prompt}` })])],
+        // The seat's own model id: the full `provider:model` seat is refused as a model name.
+        modelId: seat.modelId,
+        system: [ModelRequest.SystemPart.make({ text: system })],
+        messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: prompt })])],
         tools: [],
         toolChoice: "none",
-        // No maxTokens: the ChatGPT-subscription route refuses a budget. Workspace trims the line.
+        // No token budget: the ChatGPT-subscription route refuses `maxTokens`
+        // (`OpenAIResponses.chatgptFromRequest`) and no seat says which routes
+        // honor one. The system prompt bounds the answer instead.
         params: ModelRequest.GenerationParams.make({})
       }))))
-      if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Description incomplete")
+      if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Answer incomplete")
       return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
     })
   )
@@ -219,23 +224,15 @@ export const make = (options: {
         return yield* (yield* Evaluator.Evaluator).evaluate(request)
       }))
     ),
-    compose: (input) => runtime.runPromise(
-      Effect.gen(function*() {
-        const seat = yield* (yield* SeatResolver.SeatResolver).resolve(delegateModels.luna)
-        const events = Array.from(yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
-          modelId: seat.modelId,
-          system: [ModelRequest.SystemPart.make({ text: Monitors.composeSystem })],
-          messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: Monitors.composeText(input) })])],
-          tools: [],
-          toolChoice: "none",
-          // No maxTokens: the ChatGPT-subscription route refuses a budget. Monitors trims the line.
-          params: ModelRequest.GenerationParams.make({})
-        }))))
-        if (ModelEvent.ModelEvent.settledMessage(events).message.stopReason !== "stop") throw new Error("Update incomplete")
-        return events.flatMap((event) => event.type === "text-delta" ? [event.text] : []).join("")
-      })
-    )
+    compose: (input) => complete({ system: Monitors.composeSystem, prompt: Monitors.composeText(input), seat: delegateModels.luna })
   }
+
+  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, seat }) =>
+    complete({
+      system: "Summarize this background agent task in one short line (at most 80 characters). Reply with only the description.",
+      prompt: `Title: ${title}\nTask: ${prompt}`,
+      seat
+    })
 
   const run = (input: TurnInput): Turn => {
     const index = ++turns
@@ -368,6 +365,7 @@ export const make = (options: {
     approvals,
     describe: describeTab,
     monitor,
+    complete,
     dispose: () => runtime.dispose()
   }
 }

@@ -3,7 +3,9 @@ import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { App } from "../src/app.tsx"
 import { Schema } from "effect"
-import { readFileSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import * as Changes from "../src/changes.ts"
 import type * as Flows from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
@@ -11,7 +13,9 @@ const host: Host.Host = {
   cwd: process.cwd(),
   judged: false,
   compaction: async () => undefined,
-  dispose: async () => {},
+  dispose: async () => {
+    await real?.dispose()
+  },
   run: (input) => {
     if (input.role === "worker" && input.prompt === "Fix math.js.") {
       // A worker cell whose `edit` call changes math.js, captured like the host's flows.
@@ -33,6 +37,13 @@ const host: Host.Host = {
         }),
         cancel: () => cancelled()
       }
+    }
+    if (input.prompt === "what is the ETA on all tasks") {
+      // A real coordinator turn: the recorded model's cell calls `tab.eta` through the runtime binding.
+      // Loaded on demand: the real host's import must not slow every other test's first draw.
+      const turn = import("../src/host.ts").then((Real) => (real ??= Real.make({ cwd: process.cwd(), environment: {} }))
+        .run({ ...input, seat: `replay:${etaReplay()}` }))
+      return { done: turn.then((started) => started.done), cancel: () => void turn.then((started) => started.cancel()) }
     }
     let answer = "Still here."
     if (input.prompt === "delegate fix") {
@@ -59,6 +70,22 @@ const host: Host.Host = {
   }
 }
 let cancelled = () => {}
+let real: Host.Host | undefined
+/** A recorded coordinator reply whose one cell asks `tab.eta` and answers with it. */
+const etaReplay = (): string => {
+  const file = join(mkdtempSync(join(tmpdir(), "tui-eta-replay-")), "eta.jsonl")
+  const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
+  const cell = "const eta = await ctx.call(\"tab.eta\", {})\n" +
+    "ctx.done(\"ETA \" + eta.tasks.map((task) => task.id + \":\" + task.status + \":\" + task.method).join(\",\"))"
+  writeFileSync(file, [
+    JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
+    delta({ type: "text-start", id: "cell" }),
+    delta({ type: "text-delta", id: "cell", text: `\`\`\`cell\n${cell}\n\`\`\`` }),
+    delta({ type: "text-end", id: "cell" }),
+    JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
+  ].join("\n"))
+  return file
+}
 /** One flow that needs `{title}`; its run settles only when stopped. */
 let settle = (_: Flows.Settled) => {}
 const flows: Flows.Port = {

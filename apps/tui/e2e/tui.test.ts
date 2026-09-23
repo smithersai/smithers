@@ -793,6 +793,36 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("Already undone"), 5_000, "already undone")
   }, 60_000)
 
+  it("estimates a new worker from the finished one, shows it on the tab, and a coordinator turn answers ETA through tab.eta", async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-estimate-"))
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    await tui.type("delegate fix")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Fixer · done"), 10_000, "worker done")
+    await tui.type("investigate")
+    await tui.press(key.enter)
+    // The only history is a worker that took milliseconds, so the new one is soon past its estimate.
+    await tui.until((screen) => /Investigation\s+late/.test(screen), 10_000, "estimate on the tab")
+    await tui.type("what is the ETA on all tasks")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("ETA investigation:running:class"), 30_000, "tab.eta answer")
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const ledger = readFileSync(join(folder, "evals", "estimates.jsonl"), "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line))
+    expect(ledger.filter((entry) => entry.type === "observation" && entry.observation.kind === "delegate")).toHaveLength(1)
+    expect(ledger.filter((entry) => entry.type === "prediction" && entry.prediction.kind === "delegate"))
+      .toMatchObject([{ prediction: { method: "class", subject: "Investigation\nInvestigate the failing check." } }])
+    // Chat turns are measured too: every settled turn is on record.
+    expect(ledger.filter((entry) => entry.type === "observation" && entry.observation.kind === "turn").length)
+      .toBeGreaterThanOrEqual(2)
+  }, 60_000)
+
   it("undo refuses while a project flow is active", async () => {
     const cwd = repository()
     tui = await Tui.start({

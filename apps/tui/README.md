@@ -222,6 +222,19 @@ asked like `bash` under `--approve ask` and refused under `deny`; on `/resume`
 and `-c` it asks again before its command runs. Monitors persist in the
 session and resume on `/resume` and `-c`.
 
+## Estimates
+
+Every chat turn, worker tab and flow run gets a time and token estimate when it
+is requested, and is scored when it settles. A flow or a turn is estimated from
+its own past runs; a delegated task asks GPT-6 Luna with the most similar past
+tasks and the model's own past errors in the prompt, or takes the median task
+without a model. A model failure is logged with its reason and toasts once.
+Scores calibrate the next estimate. A running tab and a working turn show
+`~7m·250k` (time left, tokens) or `late`; the coordinator's `tab.eta` flow
+answers ETA questions, queued tabs included. The eval log is
+`<session dir>/<cwd slug>/evals/estimates.jsonl`. See
+`.plans/estimation-system.md`.
+
 ## Tests
 
 | Command | What |
