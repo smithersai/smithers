@@ -422,9 +422,16 @@ export const prepare = (
       )
       const deadline = Date.now() + verificationMs
       for (;;) {
-        const observed = grouped ? snapshot() : undefined
+        // The kernel's ESRCH proves the group empty with no fork. A `ps`
+        // snapshot can go unanswered on a loaded host, so it only decides what
+        // the kernel cannot: a group still holding zombies, or an unknown one.
+        // A live member keeps both answers false. This host is alive, so a
+        // vacant group is never this host's own group.
+        const vacant = grouped && system.vacant(raw.pid)
+        const observed = grouped && !vacant ? snapshot() : undefined
         settled = !control.cleanupFailed && (!requireCleanupReceipt || control.cleanupAcknowledged) && (grouped
-          ? observed !== undefined && observed.ownGroup !== raw.pid && observed.members.every((member) => member.zombie)
+          ? vacant ||
+            observed !== undefined && observed.ownGroup !== raw.pid && observed.members.every((member) => member.zombie)
           : control.targetDone || control.spawnFailed || !control.activationSent)
         if (settled) return
         if (Date.now() >= deadline) {
@@ -439,6 +446,7 @@ export const prepare = (
                   cleanupRequired: requireCleanupReceipt,
                   cleanupAcknowledged: control.cleanupAcknowledged,
                   targetDone: control.targetDone,
+                  groupVacant: vacant,
                   ownerObserved: observed !== undefined,
                   members: observed?.members
                 }

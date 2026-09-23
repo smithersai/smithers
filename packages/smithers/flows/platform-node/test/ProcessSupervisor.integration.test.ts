@@ -189,11 +189,87 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       }
     }).pipe(Effect.provide(layers), Effect.scoped))
 
+  // SWE-bench rerun-jev1: 3/45 runs failed a finished `rg` with
+  // `Process cleanup could not be verified` and `targetDone: true,
+  // ownerObserved: false`. The `ps` snapshot went unanswered on a loaded host
+  // while the real group was already empty.
+  it.effect("settles a finished target from the kernel's empty-group answer when ps is unavailable", () =>
+    Effect.gen(function*() {
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "kernel-vacant", ownerPid: process.pid })
+      const probed: Array<number> = []
+      const result = yield* Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        const handle = yield* spawner.spawn(ChildProcess.make("/bin/sh", ["-c", "exit 0"]))
+        expect(yield* handle.exitCode).toBe(0)
+        return handle.pid
+      }).pipe(
+        Effect.provide(ContainedSpawner.layer(
+          { graceMs: 0 },
+          prepare({
+            platform: process.platform,
+            snapshot: () => undefined,
+            vacant: (pgid) => {
+              probed.push(pgid)
+              return ProcessReaper.groupVacant(pgid)
+            }
+          }, policy)
+        )),
+        Effect.provide(layers),
+        Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+        Effect.scoped,
+        Effect.exit
+      )
+      expect(Exit.isSuccess(result)).toBe(true)
+      // The probe asked about the supervised group, not some other identity.
+      if (Exit.isSuccess(result)) expect(probed).toContain(result.value)
+      expect(yield* ledger.live).toHaveLength(0)
+    }))
+
+  // The control must still fire when the group really has a live process.
+  // A real `sleep` leads its own group; the kernel reports that group
+  // occupied, and cleanup is refused with the record retained.
+  it.effect("retains a record when the kernel reports a live group member and ps is unavailable", () =>
+    Effect.gen(function*() {
+      const survivor = yield* Effect.acquireRelease(
+        Effect.sync(() => spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" })),
+        (child) => Effect.sync(() => child.kill("SIGKILL"))
+      )
+      const group = survivor.pid!
+      expect(ProcessReaper.groupVacant(group)).toBe(false)
+      const ledger = yield* ProcessLedger.makeMemory({ hostId: "kernel-occupied", ownerPid: process.pid })
+      let probes = 0
+      const result = yield* Effect.gen(function*() {
+        const spawner = yield* ChildProcessSpawner
+        const handle = yield* spawner.spawn(ChildProcess.make("/bin/sh", ["-c", "exit 0"]))
+        expect(yield* handle.exitCode).toBe(0)
+      }).pipe(
+        Effect.provide(ContainedSpawner.layer(
+          { graceMs: 0 },
+          prepare({
+            platform: process.platform,
+            snapshot: () => undefined,
+            vacant: () => {
+              probes++
+              return ProcessReaper.groupVacant(group)
+            }
+          }, policy)
+        )),
+        Effect.provide(layers),
+        Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+        Effect.scoped,
+        Effect.exit
+      )
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(String(Exit.isFailure(result) ? result.cause : "")).toContain("Process cleanup could not be verified")
+      expect(probes).toBeGreaterThan(1)
+      expect(yield* ledger.live).toHaveLength(1)
+    }))
+
   for (const unknown of ["unavailable", "own-group"] as const) {
     // The native owner exits even with it.effect's frozen caller clock. A
     // failed observation must still reach its bounded refusal and retain the
     // real ledger record, rather than freezing an uninterruptible finalizer.
-    it.effect(`retains a record when post-exit cleanup observation is ${unknown}`, () =>
+    it.effect(`retains a record when post-exit cleanup observation is ${unknown} and the kernel proves nothing`, () =>
       Effect.gen(function*() {
         const ledger = yield* ProcessLedger.makeMemory({ hostId: "unverified-owner", ownerPid: process.pid })
         let observations = 0
@@ -209,7 +285,8 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
               snapshot: (pid) => {
                 observations++
                 return unknown === "unavailable" ? undefined : { ownGroup: pid, members: [] }
-              }
+              },
+              vacant: () => false
             }, policy)
           )),
           Effect.provide(layers),

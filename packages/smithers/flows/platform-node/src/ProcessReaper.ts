@@ -249,6 +249,30 @@ export const groupSnapshotFor = (platform: string): (pgid: number) => ProcessCle
   platform === "linux" ? ProcSnapshot.snapshot(ProcSnapshot.defaultProcRoot) : psGroupSnapshot
 
 /**
+ * Whether the kernel reports no process at all in a group.
+ *
+ * Signal 0 delivers nothing; it only asks the kernel whether the group has a
+ * member. `ESRCH` is the one answer that proves the group empty, with no fork
+ * and no process table to parse, so it still answers on a loaded host where a
+ * `ps` snapshot cannot be taken. A live member, a zombie (macOS answers
+ * `EPERM`, Linux succeeds), another user's member or any other error answers
+ * `false`, which leaves the question to the snapshot.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const groupVacant = (pgid: number): boolean => {
+  // kill(0) and kill(-1) address the caller's group and every process.
+  if (!Number.isSafeInteger(pgid) || pgid <= 1) return false
+  try {
+    process.kill(-pgid, 0)
+    return false
+  } catch (cause) {
+    return errorCode(cause) === "ESRCH"
+  }
+}
+
+/**
  * Live cleanup for Node and Bun contained spawners.
  *
  * A trusted supervisor remains the group owner after the target exits. It
@@ -262,7 +286,8 @@ export const groupSnapshotFor = (platform: string): (pgid: number) => ProcessCle
  */
 export const processLifecycle = ProcessCleanup.lifecycle({
   platform: process.platform,
-  snapshot: groupSnapshotFor(process.platform)
+  snapshot: groupSnapshotFor(process.platform),
+  vacant: groupVacant
 })
 
 /**

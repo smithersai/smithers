@@ -85,7 +85,9 @@ const fixture = (settings: Settings = {}) => {
           : settings.snapshot === "owner" && !ownerDone
           ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
           : []
-      })
+      }),
+    // Fixture identities are fabricated, so the kernel can prove nothing about them.
+    vacant: () => false
   }
   const spawn = (command: ChildProcess.StandardCommand) =>
     Effect.gen(function*() {
@@ -377,7 +379,7 @@ describe("failed process preparation", () => {
       }
       const spawn = vi.fn(() => Effect.die("raw spawn must not run"))
       const outcome = await Effect.runPromise(
-        Supervisor.prepare({ platform: "darwin", snapshot: () => undefined }, Cleanup.policy)(
+        Supervisor.prepare({ platform: "darwin", snapshot: () => undefined, vacant: () => false }, Cleanup.policy)(
           ChildProcess.make("literal"),
           spawn
         ).pipe(Effect.scoped, Effect.exit)

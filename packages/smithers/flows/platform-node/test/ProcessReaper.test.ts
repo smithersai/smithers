@@ -1,10 +1,10 @@
 import { ProcessLedger } from "@smthrs/kernel"
 import { Effect } from "effect"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 
 describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone", () => {
@@ -76,4 +76,43 @@ describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone
       }
     }
   )
+})
+
+describe.skipIf(process.platform === "win32")("ProcessReaper.groupVacant", () => {
+  it("answers true only after the kernel reports the group has no process", async () => {
+    const leader = spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" })
+    const pgid = leader.pid!
+    try {
+      expect(ProcessReaper.groupVacant(pgid)).toBe(false)
+    } finally {
+      leader.kill("SIGKILL")
+    }
+    await new Promise((resolve) => leader.once("exit", resolve))
+    // Node reaps on exit; poll briefly for the kernel to drop the group.
+    const deadline = Date.now() + 5000
+    while (!ProcessReaper.groupVacant(pgid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+    expect(ProcessReaper.groupVacant(pgid)).toBe(true)
+  })
+
+  it("never addresses the caller's group or every process", () => {
+    const kill = vi.spyOn(process, "kill")
+    try {
+      for (const pgid of [1, 0, -5, 1.5, Number.NaN]) expect(ProcessReaper.groupVacant(pgid)).toBe(false)
+      expect(kill).not.toHaveBeenCalled()
+    } finally {
+      kill.mockRestore()
+    }
+  })
+
+  it("treats another user's member or an unknown error as not vacant", () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), { code: "EPERM" })
+    })
+    try {
+      expect(ProcessReaper.groupVacant(4242)).toBe(false)
+      expect(kill).toHaveBeenCalledWith(-4242, 0)
+    } finally {
+      kill.mockRestore()
+    }
+  })
 })

@@ -134,6 +134,9 @@ const windows = (
           platform: "win32",
           snapshot: () => {
             throw new Error("Windows must not inspect POSIX groups")
+          },
+          vacant: () => {
+            throw new Error("Windows must not inspect POSIX groups")
           }
         })
       )),

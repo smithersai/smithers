@@ -361,8 +361,12 @@ for a path whose ancestors do not exist, exactly as `fs.rm` does.
 returning `(pgid) => { ownGroup, members } | undefined`. Each member carries
 `pid`, `startedAtMs`, and `zombie`. Linux reads `/proc` directly and needs no
 `ps` binary for live cleanup; other POSIX hosts use `/bin/ps`. Unreadable or
-malformed process data returns `undefined`, so cleanup cannot claim success.
-`ProcessReaper.processLifecycle` uses the probe for the current platform.
+malformed process data returns `undefined`, so the snapshot cannot claim
+success. `ProcessReaper.groupVacant(pgid)` asks the kernel first with signal 0:
+only `ESRCH` returns `true`, which proves the group has no process at all and
+needs no `ps` fork. A live member, a zombie, or any other error returns `false`,
+and the snapshot decides. `ProcessReaper.processLifecycle` uses both probes for
+the current platform.
 
 `HostLiveness.isAlive({ hostId })` is the probe a durable engine consults before
 it takes a run whose recorded owner it is not: an owner on a different host reads

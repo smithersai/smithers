@@ -40,6 +40,11 @@ export interface Snapshot {
 export interface System {
   readonly platform: string
   readonly snapshot: (pgid: number) => Snapshot | undefined
+  /**
+   * True only when the kernel proves the group has no process at all. False
+   * means occupied or unknown; `snapshot` still decides those.
+   */
+  readonly vacant: (pgid: number) => boolean
 }
 
 /**
