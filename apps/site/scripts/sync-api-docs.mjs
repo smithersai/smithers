@@ -194,8 +194,7 @@ ${mdxBody}
 const packages = discover()
 const apiPackageNames = new Set(packages.map((pkg) => pkg.name))
 if (packages.length === 0) {
-  console.error("sync-api-docs: no published packages with docs/api.md found")
-  process.exit(1)
+  throw new Error("sync-api-docs: no published packages with docs/api.md found")
 }
 
 let drift = 0
@@ -226,5 +225,7 @@ if (allWarnings.length > 0) {
 }
 if (checkMode && drift > 0) {
   console.error(`sync-api-docs: ${drift} page(s) out of date; run node apps/site/scripts/sync-api-docs.mjs`)
-  process.exit(1)
+  // exitCode rather than an exit call: exiting can drop queued output on a macOS
+  // pipe, which reads as a failure with no reason.
+  process.exitCode = 1
 }

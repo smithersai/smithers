@@ -109,4 +109,9 @@ for (const [path, content] of outputs) {
     console.log(`wrote ${relative(siteRoot, path)} (${content.length} bytes)`)
   }
 }
-if (checkMode && drift > 0) process.exit(1)
+// exitCode rather than an exit call: exiting can drop the queued drift lines on a
+// macOS pipe, which reads as a failure with no reason.
+if (checkMode && drift > 0) {
+  console.error(`generate-llms: ${drift} file(s) out of date; run node apps/site/scripts/generate-llms.mjs`)
+  process.exitCode = 1
+}
