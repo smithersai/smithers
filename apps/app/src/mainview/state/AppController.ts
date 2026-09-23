@@ -2028,6 +2028,7 @@ export const createAppController = (
   }
 
   repoImportSeam.resume()
+  secretsSeam.resumeCodingProviders()
   workflowController.resumeWorkflowRequests()
   repositorySetup.resumeRepositorySetups()
   /*
@@ -2036,6 +2037,7 @@ export const createAppController = (
    * before that answer would only be superseded by it.
    */
   const setupIdentitySubscription = store.collections.identitySessions.subscribeChanges(() => {
+    queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
     workflowController.resumeWorkflowRequests()
     // Catalog recovery writes a card; leave the identity projection before dispatching it.
     queueMicrotask(() => { if (!ctx.disposed) { resumeModels(); resumeModelCalls() } })
@@ -2045,7 +2047,10 @@ export const createAppController = (
     runs.resumeApprovalRequests()
   })
   ctx.onDispose(() => setupIdentitySubscription.unsubscribe())
-  const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => repoImportSeam.resume())
+  const importCloudSubscription = store.collections.cloudSessions.subscribeChanges(() => {
+    repoImportSeam.resume()
+    queueMicrotask(() => { if (!ctx.disposed) secretsSeam.resumeCodingProviders() })
+  })
   ctx.onDispose(() => importCloudSubscription.unsubscribe())
   subscribeToAgent()
   // Material transitions regenerate the next-step pills through the `recommend` flow.
