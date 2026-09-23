@@ -1,4 +1,5 @@
-import { execFileSync } from "node:child_process"
+import { spawnShape } from "@smthrs/targets/Exec"
+import { execFileSync, spawnSync } from "node:child_process"
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
@@ -18,11 +19,16 @@ it("ships every default template file in the npm tarball", () => {
   const destination = mkdtempSync(join(tmpdir(), "smithers-create-app-pack-"))
   try {
     const tarball = join(destination, "create-app.tgz")
-    execFileSync("pnpm", ["pack", "--out", tarball], {
+    const command = spawnShape(["pnpm", "pack", "--out", tarball])
+    const packed = spawnSync(command.file, [...command.args], {
       cwd: packageRoot,
+      windowsVerbatimArguments: command.windowsVerbatimArguments,
+      encoding: "utf8",
       timeout: 60_000,
       stdio: "pipe"
     })
+    expect(packed.error).toBeUndefined()
+    expect(packed.status, packed.stderr).toBe(0)
     const packedFiles = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8", timeout: 10_000 })
       .trim().split("\n")
       .filter((path) => path.startsWith("package/template/default/") && !path.endsWith("/"))
