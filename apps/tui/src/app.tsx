@@ -1539,8 +1539,14 @@ export function App(props: AppProps) {
               style={{ minHeight: 1, maxHeight: Math.max(6, Math.floor(dimensions.height / 3)) }}
             />
             <text style={{ marginTop: 1, marginBottom: 1 }}>
-              <span fg={bashMode ? color.success : color.brand}>{bashMode ? "shell" : "code"}</span>
-              <span fg={color.faint}>{"  ·  "}</span>
+              {bashMode
+                ? (
+                  <>
+                    <span fg={color.success}>{"shell"}</span>
+                    <span fg={color.faint}>{"  ·  "}</span>
+                  </>
+                )
+                : null}
               <span fg={color.text}>{label}</span>
               {model === undefined ? null : <span fg={color.faint}>{" "}{model.provider}</span>}
               {thinking === undefined ? null : <span fg={color.warning}>{"  "}{thinking}</span>}

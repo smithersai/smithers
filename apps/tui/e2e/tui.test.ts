@@ -15,8 +15,10 @@ import { key, Tui } from "./zmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const fixture = join(app, "test", "fixtures", "fix-add.jsonl")
+/** The status bar's token counter: present once the first frame is drawn. */
+const drawn = (screen: string) => /↑\S+ ↓\S+/.test(screen)
 const idle = (screen: string) =>
-  screen.includes("code  ·") && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
+  drawn(screen) && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
 let tui: Tui | undefined
 afterEach(async () => {
@@ -70,9 +72,20 @@ const start = async (
       SMITHERS_TUI_APPROVE: options.approve ?? "all"
     }
   })
-  await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+  await tui.until(drawn, 20_000, "first draw")
   return { tui, cwd, sessions }
 }
+
+describe("composer mode", () => {
+  it("names no mode by default and shows shell once the draft starts with !", async () => {
+    const { tui } = await start()
+    const footer = (screen: string) => screen.split("\n").find((line) => line.includes("replay fix-add.jsonl"))?.replace(/^\s*┃/, "").trim()
+    expect(footer(tui.screen())).toBe("replay fix-add.jsonl")
+    await tui.type("!")
+    const screen = await tui.until((screen) => footer(screen)?.includes("shell") === true, 5_000, "shell mode")
+    expect(footer(screen)).toBe("shell  ·  replay fix-add.jsonl")
+  }, 60_000)
+})
 
 describe("ctrl+c and ctrl+d", () => {
   it("clears the editor on the first press and exits on a second within 500ms", async () => {
@@ -372,7 +385,7 @@ describe("search palette", () => {
         SMITHERS_TUI_APPROVE: "all"
       }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.until(drawn, 20_000, "first draw")
     await tui.press(key.ctrlK)
     await tui.type("session:")
     await tui.until((screen) => /Search[\s\S]*_[0-9a-f]{8}-/.test(screen), 5_000, "session row")
@@ -449,7 +462,7 @@ describe("fork", () => {
         SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-background-"))
       }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.until(drawn, 20_000, "first draw")
     await tui.type("investigate")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Investigation · running") && !screen.includes("esc interrupt"), 5_000, "worker")
@@ -620,7 +633,7 @@ describe("runtime views", () => {
       command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.until(drawn, 20_000, "first draw")
     await tui.type("delegate fix")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Fixer · done"), 10_000, "worker done")
@@ -660,7 +673,7 @@ describe("runtime views", () => {
       command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000)
+    await tui.until(drawn, 20_000)
     await tui.type("delegate fix")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Requested the fix.") && screen.includes("Fixer · done"))
@@ -736,7 +749,7 @@ describe("runtime views", () => {
           SMITHERS_TUI_SESSION_DIR: sessions
         }
       })
-      await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+      await tui.until(drawn, 20_000, "first draw")
       return tui
     }
     const first = await launch(false)
@@ -774,7 +787,7 @@ it(
       command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.until(drawn, 20_000, "first draw")
     await tui.type("investigate")
     await tui.press(key.enter)
     await tui.until(
@@ -856,7 +869,7 @@ describe("flows", () => {
       command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
       env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.until(drawn, 20_000, "first draw")
     return { tui, sessions }
   }
 
@@ -938,7 +951,7 @@ describe("approvals", () => {
       command: `bun ${join(app, "e2e", "approval-fixture.tsx")}`,
       env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
     })
-    await tui.until((screen) => screen.includes("code  ·"), 20_000)
+    await tui.until(drawn, 20_000)
     await tui.type("run")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("? bash true") && screen.includes("n deny"))
