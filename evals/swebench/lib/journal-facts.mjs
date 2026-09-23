@@ -96,6 +96,12 @@ export const read = (databasePath) => {
   let firstAt
   let lastAt
   let frame
+  // The task as the run was handed it. The first frame's request writes its
+  // whole system prefix, in segment order: the cell contract, the flow
+  // catalog, any host teaching, memory, and the task last (see `opening` in
+  // `@smthrs/agent`'s Agent.ts). Later requests write `system` only when it
+  // moved, so the first one is the one read.
+  let task = ""
 
   for (const row of rows) {
     const payload = JSON.parse(row.payload_json)
@@ -116,6 +122,13 @@ export const read = (databasePath) => {
         }
         break
       }
+      case "control.agent.model-requested": {
+        if (task === "" && payload.purpose === "frame" && Array.isArray(payload.system)) {
+          const last = payload.system[payload.system.length - 1]
+          if (typeof last === "string") task = last
+        }
+        break
+      }
       case "control.agent.turn-opened":
         if (seat === undefined) seat = payload.seat
         frame = {
@@ -127,12 +140,21 @@ export const read = (databasePath) => {
           mutated: false,
           declaredWrites: 0,
           transition: "none",
-          transitionSeq: undefined
+          transitionSeq: undefined,
+          // What the model wrote and what its cell printed, as the journal
+          // bounded them; a field the journal replaced by a truncation
+          // marker reads as empty rather than as the marker's JSON.
+          cell: "",
+          prose: "",
+          printed: "",
+          /** `raised` or `rejected` when the cell settled no transition. */
+          outcome: "settled"
         }
         frames.push(frame)
         break
       case "control.agent.model-settled":
         modelCalls += 1
+        if (frame !== undefined && typeof payload.text === "string") frame.prose = payload.text
         usage.inputTokens += payload.usage?.inputTokens ?? 0
         usage.cachedInputTokens += payload.usage?.cachedInputTokens ?? 0
         usage.outputTokens += payload.usage?.outputTokens ?? 0
@@ -158,6 +180,18 @@ export const read = (databasePath) => {
         })
         break
       }
+      case "control.agent.cell-produced":
+        if (frame !== undefined && typeof payload.text === "string") frame.cell = payload.text
+        break
+      case "control.agent.cell-printed":
+        if (frame !== undefined && typeof payload.text === "string") frame.printed = payload.text
+        break
+      case "control.agent.cell-settled":
+        if (frame === undefined) break
+        if (payload.outcome?._tag === "raised" || payload.outcome?._tag === "rejected") {
+          frame.outcome = payload.outcome._tag
+        }
+        break
       case "control.agent.mutation-observed":
         if (frame === undefined) break
         frame.basis = payload.basis
@@ -246,6 +280,8 @@ export const read = (databasePath) => {
     frames,
     demands,
     sufficiencyEvents,
+    /** The task text the first frame's request carried; empty when the journal predates `model-requested`. */
+    task,
     seat,
     modelCalls,
     usage,

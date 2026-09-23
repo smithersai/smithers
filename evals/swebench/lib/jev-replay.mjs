@@ -1,0 +1,409 @@
+/**
+ * Replays the supervisor's reading over archived journals, offline, and scores
+ * it against the verdicts the evaluator gave.
+ *
+ *   node lib/jev-replay.mjs <journals-dir> --manifest <fullbench/manifest.jsonl>
+ *       [--suffix -r97] [--limit N] [--json] [--dry-run]
+ *
+ * The harness asks Jev about a run's shape once per frame, off the cell loop's
+ * hot path (`@smthrs/harness` `Supervisor`). Before its nudge is allowed in
+ * front of a model, the question is whether the reading predicts anything: a
+ * run it calls thrashing or off target should be one the evaluator later marks
+ * unresolved, and a run it calls confident should be one it marks resolved.
+ * This script builds, for every frame of every archived journal, the same
+ * `Snapshot` the harness builds, asks the same classifier, and reports
+ * precision, recall and F1 of each signal against the manifest's verdicts.
+ *
+ * The snapshot is rebuilt from the journal and not from the harness's memory:
+ * `lib/journal-facts.mjs` folds the `control.agent.*` events back into the
+ * per-frame ledgers `CellTurn` carried, through the harness's own modules, so
+ * a count read here is the count the run had. Three things the archive cannot
+ * give are stated rather than guessed at:
+ *
+ * - `candidates` and `recalled` are empty. Offline there is no memory to
+ *   recall from and nothing is written, so the per-item questions are never
+ *   asked; the fixed nine are.
+ * - `remoteMutations` is zero. The journal records container writes only on
+ *   the call that made them, and the r9x waves ran no container-side edits.
+ * - `task` is the last system text of the first frame's `model-requested`
+ *   record, which is where the run's task segment sits (see `opening` in
+ *   `@smthrs/agent` Agent.ts). A journal written before that record existed
+ *   has no task text, and its snapshots say so with an empty string rather
+ *   than with the dataset's problem statement, which is not what the run read.
+ *
+ * `--dry-run` builds every snapshot and prints their counts without asking
+ * Jev; `fixtures/check-jev-replay.mjs` runs it that way over a synthetic
+ * journal. A live run needs `AI_GATEWAY_API_KEY` and reaches the gateway
+ * through the same egress client the CLI's own judge uses, at most four
+ * requests in flight.
+ *
+ * A journal is read read-only and never written.
+ *
+ * @since 0.1.0
+ */
+import * as EgressHttpClient from "../../../packages/smithers/flows/platform-node/src/EgressHttpClient.ts"
+import { Effect, Layer, Redacted } from "effect"
+import { existsSync, readdirSync } from "node:fs"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+import * as Evaluator from "../../../packages/smithers/agent/model/src/Evaluator.ts"
+import * as Supervisor from "../../../packages/smithers/agent/harness/src/Supervisor.ts"
+import { read as readManifest } from "./fullbench-manifest.mjs"
+import { read as readFacts } from "./journal-facts.mjs"
+
+const usage = "usage: node lib/jev-replay.mjs <journals-dir> --manifest <manifest.jsonl> [--suffix S] [--limit N] [--json] [--dry-run]"
+
+/** Parses the command line into its options. */
+export const parseArguments = (argv) => {
+  const options = { journals: undefined, manifest: undefined, suffix: "", limit: Infinity, json: false, dryRun: false }
+  for (let index = 0; index < argv.length; index++) {
+    const argument = argv[index]
+    if (argument === "--manifest") options.manifest = argv[++index]
+    else if (argument === "--suffix") options.suffix = argv[++index] ?? ""
+    else if (argument === "--limit") options.limit = Number.parseInt(argv[++index] ?? "", 10)
+    else if (argument === "--json") options.json = true
+    else if (argument === "--dry-run") options.dryRun = true
+    else if (options.journals === undefined) options.journals = argument
+    else throw new Error(`unexpected argument ${argument}`)
+  }
+  if (options.journals === undefined) throw new Error(usage)
+  if (!Number.isFinite(options.limit) && options.limit !== Infinity) throw new Error("--limit takes an integer")
+  return options
+}
+
+/**
+ * The transition a frame's snapshot names: the transition it applied, or how
+ * its cell ended when it applied none.
+ */
+const transitionOf = (frame) => {
+  if (frame.outcome === "raised" || frame.outcome === "rejected") return frame.outcome
+  if (frame.transition === "complete" || frame.transition === "park") return frame.transition
+  return "continue"
+}
+
+/** The demand events issued at or before one frame's transition. */
+const demandsBefore = (facts, seq) => {
+  const count = (rows) => rows.filter((row) => row.seq <= seq).length
+  return {
+    narrowingDemands: count(facts.demands.narrowed) + count(facts.demands.narrowOnly),
+    unmovedDemands: count(facts.demands.unmoved),
+    unresolvedDemands: count(facts.demands.unresolved),
+    // The claim brake writes `claim-demanded` on every reading; journal-facts
+    // does not fold it, and the supervisor snapshot counts only the bounces
+    // the run was handed. Without the event on the fold this is the count the
+    // run's `State.claimDemands` held before any claim brake fired: zero.
+    claimDemands: 0
+  }
+}
+
+/**
+ * Builds the snapshot the harness would have built when this frame closed.
+ *
+ * `facts.frames` is in frame order and each entry already carries the ledgers
+ * the frame closed on, so the signals are read off the entry and the streaks
+ * are folded here exactly as `Frame.account` folds them: a frame that changed
+ * nothing advances the read-only streak, a frame whose every call was already
+ * issued and that changed nothing advances the repeat streak, and a frame
+ * that issued no call carries the repeat streak across.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const snapshots = (facts, maxFrames = 0) => {
+  const out = []
+  let readOnlyFrames = 0
+  let repeatFrames = 0
+  const asked = new Set()
+  let callsSettled = 0
+  let callsFailed = 0
+  for (const [index, frame] of facts.frames.entries()) {
+    const seq = frame.transitionSeq ?? Number.MAX_SAFE_INTEGER
+    readOnlyFrames = frame.mutated ? 0 : readOnlyFrames + 1
+    const signatures = frame.calls.map((call) => call.signature)
+    const novel = signatures.some((signature) => !asked.has(signature))
+    if (signatures.length > 0) repeatFrames = novel || frame.mutated ? 0 : repeatFrames + 1
+    for (const signature of signatures) asked.add(signature)
+    callsSettled += frame.calls.length
+    callsFailed += frame.calls.filter((call) => !call.ok).length
+    const recent = facts.frames.slice(Math.max(0, index + 1 - Supervisor.recentFrames), index + 1)
+    const snapshot = {
+      task: Supervisor.task(facts.task ?? ""),
+      frames: recent.map((entry) => ({
+        frame: entry.index,
+        cell: Supervisor.head(entry.cell ?? ""),
+        prose: Supervisor.head(entry.prose ?? ""),
+        printed: Supervisor.tail(entry.printed ?? ""),
+        transition: transitionOf(entry),
+        mutated: entry.mutated
+      })),
+      signals: {
+        frame: frame.index,
+        maxFrames,
+        readOnlyFrames,
+        repeatFrames,
+        mutations: frame.closingEpoch ?? 0,
+        remoteMutations: 0,
+        treeMoved: facts.openedDigest !== "" && frame.workspaceDigest !== "" && frame.workspaceDigest !== facts.openedDigest,
+        paths: frame.basis === "observed" ? 1 : 0,
+        checksRun: (frame.ledger ?? []).length,
+        checksFailing: (frame.ledger ?? []).filter((check) => check.failing).length,
+        failuresUnanswered: (frame.failures ?? []).length,
+        callsFailed,
+        callsSettled,
+        ...demandsBefore(facts, seq),
+        sufficiencyStated: facts.sufficiencyEvents.some((event) => event.seq <= seq)
+      },
+      candidates: [],
+      recalled: []
+    }
+    out.push(snapshot)
+  }
+  return out
+}
+
+/** The instance id an archived journal directory belongs to, or nothing. */
+const instanceOf = (name, suffix) => {
+  if (suffix !== "" && !name.endsWith(suffix)) return undefined
+  const id = suffix === "" ? name : name.slice(0, -suffix.length)
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*__[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id) ? id : undefined
+}
+
+/**
+ * The archived journals under a directory, keyed by instance id.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const journalsUnder = (directory, suffix = "") =>
+  readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+    .map((entry) => ({ id: instanceOf(entry.name, suffix), path: join(directory, entry.name, "engine.db") }))
+    .filter((entry) => entry.id !== undefined && existsSync(entry.path))
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+/** Verdicts by instance id, `resolved` and `unresolved` only. */
+const labelsOf = (manifestPath) => {
+  const labels = new Map()
+  if (manifestPath === undefined) return labels
+  const manifest = readManifest(manifestPath)
+  for (const [id, state] of manifest.states) {
+    if (state.verdict === "resolved" || state.verdict === "unresolved") labels.set(id, state.verdict)
+  }
+  return labels
+}
+
+/** Precision, recall and F1 of one predicate over labelled runs; positive predicts `unresolved`. */
+const score = (runs, predicate) => {
+  let tp = 0
+  let fp = 0
+  let fn = 0
+  let tn = 0
+  for (const run of runs) {
+    const positive = predicate(run)
+    const unresolved = run.label === "unresolved"
+    if (positive && unresolved) tp++
+    else if (positive && !unresolved) fp++
+    else if (!positive && unresolved) fn++
+    else tn++
+  }
+  const precision = tp + fp === 0 ? 0 : tp / (tp + fp)
+  const recall = tp + fn === 0 ? 0 : tp / (tp + fn)
+  const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall)
+  return { tp, fp, fn, tn, precision, recall, f1 }
+}
+
+const strong = (level) => level === "strong"
+const mildOrStrong = (level) => level === "mild" || level === "strong"
+
+/**
+ * Every signal scored, over the last frame's reading and over any frame's.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const scoreboard = (runs) => {
+  const labelled = runs.filter((run) => run.label !== undefined && run.readings.length > 0)
+  const last = (run) => run.readings[run.readings.length - 1]
+  const rows = []
+  const flag = (reading) =>
+    reading.onTarget < Supervisor.offTargetAt || reading.thrashing > Supervisor.thrashingAt
+  rows.push({ signal: "on_target<0.5 || thrashing>0.5", frame: "last", ...score(labelled, (run) => flag(last(run))) })
+  rows.push({
+    signal: "on_target<0.5 || thrashing>0.5",
+    frame: "any",
+    ...score(labelled, (run) => run.readings.some(flag))
+  })
+  rows.push({ signal: "suspect>=0.5", frame: "last", ...score(labelled, (run) => last(run).suspect >= Supervisor.suspectAt) })
+  rows.push({
+    signal: "suspect>=0.5",
+    frame: "any",
+    ...score(labelled, (run) => run.readings.some((reading) => reading.suspect >= Supervisor.suspectAt))
+  })
+  for (const emotion of Supervisor.emotions) {
+    for (const [name, test] of [["strong", strong], ["mild|strong", mildOrStrong]]) {
+      rows.push({
+        signal: `${emotion}=${name}`,
+        frame: "last",
+        ...score(labelled, (run) => test(last(run).emotions[emotion]))
+      })
+      rows.push({
+        signal: `${emotion}=${name}`,
+        frame: "any",
+        ...score(labelled, (run) => run.readings.some((reading) => test(reading.emotions[emotion])))
+      })
+    }
+  }
+  rows.push({ signal: "needs_help!=none", frame: "last", ...score(labelled, (run) => last(run).needsHelp !== "none") })
+  rows.push({
+    signal: "needs_help!=none",
+    frame: "any",
+    ...score(labelled, (run) => run.readings.some((reading) => reading.needsHelp !== "none"))
+  })
+  for (const help of ["clarification", "permission", "stuck", "risky_action"]) {
+    rows.push({
+      signal: `needs_help=${help}`,
+      frame: "any",
+      ...score(labelled, (run) => run.readings.some((reading) => reading.needsHelp === help))
+    })
+  }
+  return { labelled: labelled.length, unresolved: labelled.filter((run) => run.label === "unresolved").length, rows }
+}
+
+const percent = (value) => `${(value * 100).toFixed(0)}%`
+
+const markdown = (report) => {
+  const lines = []
+  lines.push(`# Supervisor replay`, ``)
+  lines.push(`journals: ${report.journals}, labelled: ${report.board.labelled} (${report.board.unresolved} unresolved), frames: ${report.frames}, readings: ${report.readings}, unjudged: ${report.unjudgedTotal}`)
+  if (Object.keys(report.unjudged).length > 0) {
+    lines.push(``, `| unjudged reason | frames |`, `| --- | ---: |`)
+    for (const [reason, count] of Object.entries(report.unjudged)) lines.push(`| ${reason} | ${count} |`)
+  }
+  lines.push(``, `Positive predicts unresolved.`, ``)
+  lines.push(`| signal | frame | tp | fp | fn | tn | precision | recall | f1 |`, `| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |`)
+  for (const row of report.board.rows) {
+    lines.push(
+      `| ${row.signal} | ${row.frame} | ${row.tp} | ${row.fp} | ${row.fn} | ${row.tn} | ${percent(row.precision)} | ${percent(row.recall)} | ${row.f1.toFixed(2)} |`
+    )
+  }
+  lines.push(``, `| instance | verdict | frames | last thrashing | max thrashing | last on_target | min on_target | last suspect | last needs_help | last emotions |`)
+  lines.push(`| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |`)
+  for (const run of report.runs) {
+    const last = run.readings[run.readings.length - 1]
+    if (last === undefined) {
+      lines.push(`| ${run.id} | ${run.label ?? "-"} | ${run.frames} | - | - | - | - | - | - | unjudged ${run.unjudged} |`)
+      continue
+    }
+    const emotions = Supervisor.emotions.map((emotion) => `${emotion}:${last.emotions[emotion]}`).join(" ")
+    lines.push(
+      `| ${run.id} | ${run.label ?? "-"} | ${run.frames} | ${last.thrashing.toFixed(2)} | ${run.maxThrashing.toFixed(2)} | ${last.onTarget.toFixed(2)} | ${run.minOnTarget.toFixed(2)} | ${last.suspect.toFixed(2)} | ${last.needsHelp} | ${emotions} |`
+    )
+  }
+  return lines.join("\n")
+}
+
+/** The evaluator the replay asks: Jev through the gateway, over the CLI's own egress client. */
+const evaluatorLayer = (environment) => {
+  const apiKey = environment.AI_GATEWAY_API_KEY
+  if (apiKey === undefined || apiKey === "") throw new Error("AI_GATEWAY_API_KEY is required unless --dry-run")
+  return Evaluator.layerVercelGateway({
+    apiKey: Redacted.make(apiKey),
+    ...(environment.SMITHERS_EVALUATOR_BASE_URL === undefined ? {} : { baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL })
+  }).pipe(Layer.provide(EgressHttpClient.layer(environment)))
+}
+
+/**
+ * Replays one directory of journals and returns the report.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const replay = async (options, environment = process.env) => {
+  const labels = labelsOf(options.manifest)
+  const journals = journalsUnder(options.journals, options.suffix).slice(0, options.limit)
+  const unjudged = {}
+  let frames = 0
+  let readings = 0
+  let unjudgedTotal = 0
+  const layer = options.dryRun ? undefined : evaluatorLayer(environment)
+
+  const ask = (snapshot) =>
+    Supervisor.read(snapshot).pipe(
+      Effect.map((reading) => ({ _tag: "read", reading })),
+      Effect.catch((failure) => Effect.succeed({ _tag: "unjudged", failure })),
+      Effect.provide(layer)
+    )
+
+  const runs = []
+  for (const journal of journals) {
+    const facts = readFacts(journal.path)
+    const built = snapshots(facts)
+    frames += built.length
+    const run = {
+      id: journal.id,
+      label: labels.get(journal.id),
+      frames: built.length,
+      readings: [],
+      unjudged: 0,
+      maxThrashing: 0,
+      minOnTarget: 1,
+      snapshots: options.dryRun ? built : undefined
+    }
+    if (!options.dryRun) {
+      const outcomes = await Effect.runPromise(Effect.forEach(built, ask, { concurrency: 4 }))
+      for (const outcome of outcomes) {
+        if (outcome._tag === "read") {
+          readings++
+          run.readings.push(outcome.reading)
+          run.maxThrashing = Math.max(run.maxThrashing, outcome.reading.thrashing)
+          run.minOnTarget = Math.min(run.minOnTarget, outcome.reading.onTarget)
+        } else {
+          unjudgedTotal++
+          run.unjudged++
+          unjudged[outcome.failure.reason] = (unjudged[outcome.failure.reason] ?? 0) + 1
+        }
+      }
+    }
+    runs.push(run)
+  }
+  return {
+    journals: journals.length,
+    frames,
+    readings,
+    unjudgedTotal,
+    unjudged,
+    board: scoreboard(runs),
+    runs
+  }
+}
+
+const main = async () => {
+  let options
+  try {
+    options = parseArguments(process.argv.slice(2))
+  } catch (error) {
+    console.error(error.message)
+    process.exit(2)
+  }
+  const report = await replay(options)
+  if (options.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n")
+  } else if (options.dryRun) {
+    process.stdout.write(`journals: ${report.journals}, frames: ${report.frames} (dry run, nothing asked)\n`)
+    for (const run of report.runs) {
+      const last = run.snapshots[run.snapshots.length - 1]
+      process.stdout.write(
+        `${run.id}: ${run.frames} frames, verdict ${run.label ?? "-"}, last signals ${JSON.stringify(last?.signals ?? null)}\n`
+      )
+    }
+  } else {
+    process.stdout.write(markdown(report) + "\n")
+  }
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.stack ?? error.message : String(error))
+    process.exit(1)
+  })
+}

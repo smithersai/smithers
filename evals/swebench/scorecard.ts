@@ -16,7 +16,12 @@
  *   the scorecard and `flows status` cannot disagree about what a run did;
  * - wall clock from `timings/<id>.json`, which the run script stamps around the
  *   agent process, because the journal's span ends at the last journaled event;
- * - USD from the committed price table in `prices.ts`.
+ * - USD from the committed price table in `prices.ts`, the seat's model turns
+ *   and, in a column of its own, the run's Jev readings: the completion brake
+ *   (`claim-demanded`), the per-frame supervisor (`supervisor-settled`) and
+ *   the agent's own `jev` flow calls (`cell-call-settled`), priced under the
+ *   `typesafe-ai/jev` row. The codex arm asks Jev nothing, so its column is
+ *   model-only either way.
  *
  * Per-call latency is reported when the journal carries it and reported as
  * unavailable when it does not. The current harness writes `durationMillis`;
@@ -37,7 +42,8 @@ import { fileURLToPath } from "node:url"
 import type { ControlSchema } from "../../packages/smithers/control/src/index.ts"
 import type * as AgentEvent from "../../packages/smithers/agent/harness/src/AgentEvent.ts"
 import * as Forensics from "../../packages/smithers/src/Forensics.ts"
-import { usd } from "./prices.ts"
+import { jevUsageOf } from "./jev-usage.ts"
+import { jevModel, usd } from "./prices.ts"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -176,6 +182,9 @@ interface RunNumbers {
   readonly inputTokens: number
   readonly cachedInputTokens: number
   readonly outputTokens: number
+  readonly jevCalls: number
+  readonly jevInputTokens: number
+  readonly jevOutputTokens: number
   readonly journalSeconds: number | undefined
   readonly callLatencyMs: ReadonlyArray<number>
 }
@@ -225,8 +234,22 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
   // from the same `model-settled` payloads the digest already counted.
   let cachedInputTokens = 0
   const callLatencyMs: Array<number> = []
+  // Jev is metered on three other event types; `lib/run-cost.mjs` owns which
+  // ones and where each keeps its usage, so the scorecard and the full
+  // benchmark's ledger cannot disagree about what a reading cost.
+  let jevCalls = 0
+  let jevInputTokens = 0
+  let jevOutputTokens = 0
   for (const row of rows) {
-    if (row.event_type !== "control.agent.model-settled") continue
+    if (row.event_type !== "control.agent.model-settled") {
+      const metered = jevUsageOf(row.event_type, asRecord(JSON.parse(row.payload_json)))
+      if (metered !== undefined) {
+        jevCalls += 1
+        jevInputTokens += metered.inputTokens
+        jevOutputTokens += metered.outputTokens
+      }
+      continue
+    }
     modelCalls += 1
     const payload = asRecord(JSON.parse(row.payload_json))
     const usage = asRecord(payload.usage)
@@ -249,6 +272,9 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     inputTokens,
     cachedInputTokens,
     outputTokens,
+    jevCalls,
+    jevInputTokens,
+    jevOutputTokens,
     journalSeconds: startedAt === undefined || endedAt === undefined
       ? undefined
       : Math.round((endedAt - startedAt) / 1000),
@@ -321,6 +347,12 @@ const rows = instances.map((id) => {
     outputTokens: numbers?.outputTokens ?? 0
   }
   const priced = usd(model, tokens)
+  const jevTokens = {
+    inputTokens: numbers?.jevInputTokens ?? 0,
+    cachedInputTokens: 0,
+    outputTokens: numbers?.jevOutputTokens ?? 0
+  }
+  const jevPriced = usd(jevModel, jevTokens)
   const verdict = verdicts[id] ?? "not graded"
   const codexRow = baseline.get(id)?.codex
   const codexPriced = codexRow === undefined
@@ -362,7 +394,17 @@ const rows = instances.map((id) => {
       cachedInputTokens: tokens.cachedInputTokens,
       outputTokens: tokens.outputTokens,
       usd: priced.usd,
-      priceSource: priced.source
+      priceSource: priced.source,
+      // The run's Jev readings, priced apart from the seat: `usd` above stays
+      // the model's spend, and this is what judging it cost.
+      jevCalls: numbers?.jevCalls ?? 0,
+      jevInputTokens: jevTokens.inputTokens,
+      jevOutputTokens: jevTokens.outputTokens,
+      jevUsd: jevPriced.usd,
+      jevPriceSource: jevPriced.source,
+      totalUsd: priced.usd === undefined || jevPriced.usd === undefined
+        ? undefined
+        : Math.round((priced.usd + jevPriced.usd) * 10_000) / 10_000
     },
     baseline: codexRow === undefined ? undefined : {
       verdict: codexRow.verdict,
@@ -394,6 +436,10 @@ const aggregate = {
   flowsTokens: sum(rows.map((row) => row.cost.inputTokens + row.cost.outputTokens)),
   codexTokens: sum(rows.map((row) => row.baseline?.tokens)),
   flowsUsd: Math.round(sum(rows.map((row) => row.cost.usd)) * 10_000) / 10_000,
+  flowsJevCalls: sum(rows.map((row) => row.cost.jevCalls)),
+  flowsJevTokens: sum(rows.map((row) => row.cost.jevInputTokens + row.cost.jevOutputTokens)),
+  flowsJevUsd: Math.round(sum(rows.map((row) => row.cost.jevUsd)) * 10_000) / 10_000,
+  flowsTotalUsd: Math.round(sum(rows.map((row) => row.cost.totalUsd)) * 10_000) / 10_000,
   codexUsdFloor: Math.round(sum(rows.map((row) => row.baseline?.usd)) * 10_000) / 10_000,
   perCallLatency: rows.some((row) => row.speed.perCallLatency === "journaled")
     ? "journaled"
@@ -520,17 +566,24 @@ const markdown = [
   "",
   "## Cost",
   "",
-  "| Instance | Input | Cached | Output | flows USD | codex tokens | codex USD (floor) |",
-  "| --- | --- | --- | --- | --- | --- | --- |",
+  "| Instance | Input | Cached | Output | flows USD | Jev calls | Jev tokens | Jev USD | flows total | codex tokens | codex USD (floor) |",
+  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
   ...rows.map((row) =>
     `| ${row.instanceId} | ${show(row.cost.inputTokens)} | ${show(row.cost.cachedInputTokens)} | `
-    + `${show(row.cost.outputTokens)} | ${money(row.cost.usd)} | ${show(row.baseline?.tokens)} | `
-    + `${money(row.baseline?.usd)} |`
+    + `${show(row.cost.outputTokens)} | ${money(row.cost.usd)} | ${show(row.cost.jevCalls)} | `
+    + `${show(row.cost.jevInputTokens + row.cost.jevOutputTokens)} | ${money(row.cost.jevUsd)} | `
+    + `${money(row.cost.totalUsd)} | ${show(row.baseline?.tokens)} | ${money(row.baseline?.usd)} |`
   ),
   "",
-  `Totals: flows ${money(aggregate.flowsUsd)} · codex ${money(aggregate.codexUsdFloor)} (floor).`,
+  `Totals: flows ${money(aggregate.flowsUsd)} model + ${money(aggregate.flowsJevUsd)} Jev (${aggregate.flowsJevCalls} readings) = ${
+    money(aggregate.flowsTotalUsd)
+  } · codex ${money(aggregate.codexUsdFloor)} (floor).`,
   "",
-  "Prices come from the committed table in `prices.ts`. The codex figure is a"
+  "Prices come from the committed table in `prices.ts`. `flows USD` is the seat's"
+  + " model turns; `Jev USD` is every reading the run took of Jev (the completion"
+  + " brake, the per-frame supervisor and the agent's own `jev` calls), priced"
+  + " under the `typesafe-ai/jev` row, and `flows total` is both. The codex arm"
+  + " asks Jev nothing. The codex figure is a"
   + " floor: the committed baseline records one total token count per instance,"
   + " with no input/output split, so it is priced entirely at the input rate.",
   ""
@@ -542,6 +595,8 @@ console.log(`scorecard.ts: ${join(options.out, "scorecard.json")}`)
 console.log(`scorecard.ts: ${join(options.out, "scorecard.md")}`)
 console.log(
   `flows ${aggregate.flowsResolved}/${aggregate.instances} · codex ${aggregate.codexResolved}/${aggregate.instances}`
-  + ` · flows wins ${aggregate.flowsWins} · ${money(aggregate.flowsUsd)} vs ${money(aggregate.codexUsdFloor)} (floor)`
+  + ` · flows wins ${aggregate.flowsWins} · ${money(aggregate.flowsUsd)} + ${money(aggregate.flowsJevUsd)} Jev vs ${
+    money(aggregate.codexUsdFloor)
+  } (floor)`
   + ` · ${aggregate.flowsWallClockSeconds}s vs ${aggregate.codexWallClockSeconds}s`
 )

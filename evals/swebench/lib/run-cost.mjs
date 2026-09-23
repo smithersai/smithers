@@ -4,8 +4,13 @@
  *   node lib/run-cost.mjs <journal-dir-or-engine.db>
  *
  * Prints one JSON object: the seat, the frame and model-call counts, the
- * journal's own span, the four token counters, and USD from the committed price
- * table in `prices.ts`.
+ * journal's own span, the four token counters, USD from the committed price
+ * table in `prices.ts`, and beside it what the run's Jev readings cost: calls,
+ * tokens and `jevUsd`, from `claim-demanded` (the completion brake),
+ * `supervisor-settled` (the per-frame supervisor) and the `jev` flow's own
+ * `cell-call-settled` results. `usd` stays the seat's model spend; `totalUsd`
+ * is both. `decision-settled` repeats a reading without usage and is not
+ * priced.
  *
  * This reads the journal with `node:sqlite` and nothing else. It deliberately
  * does **not** go through `lib/journal-facts.mjs`, which imports the harness's
@@ -21,7 +26,8 @@
  */
 import { existsSync, statSync } from "node:fs"
 import { DatabaseSync } from "node:sqlite"
-import { usd } from "../prices.ts"
+import { jevUsageOf } from "../jev-usage.ts"
+import { jevModel, usd } from "../prices.ts"
 
 const readJournalCost = (databasePath) => {
   const database = new DatabaseSync(databasePath, { readOnly: true })
@@ -29,7 +35,8 @@ const readJournalCost = (databasePath) => {
   try {
     rows = database.prepare(
       "select emitted_at_ms, event_type, payload_json from flows_journal_events"
-        + " where event_type in ('control.agent.model-settled', 'control.agent.turn-opened')"
+        + " where event_type in ('control.agent.model-settled', 'control.agent.turn-opened',"
+        + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled')"
         + " order by seq"
     ).all()
   } finally {
@@ -46,6 +53,7 @@ const readJournalCost = (databasePath) => {
   let dollars = 0
   let priceSource = "no model-settled events"
   const usageBySeat = new Map()
+  const jev = { calls: 0, inputTokens: 0, outputTokens: 0 }
   for (const row of rows) {
     const payload = JSON.parse(row.payload_json)
     if (firstAt === undefined) firstAt = row.emitted_at_ms
@@ -53,6 +61,19 @@ const readJournalCost = (databasePath) => {
     if (row.event_type === "control.agent.turn-opened") {
       frames += 1
       seat = payload.seat
+      continue
+    }
+    if (row.event_type !== "control.agent.model-settled") {
+      const metered = jevUsageOf(row.event_type, payload)
+      if (metered === undefined) continue
+      if (![metered.inputTokens, metered.outputTokens].every((value) => Number.isFinite(value) && value >= 0)) {
+        unknown = true
+        priceSource = "unknown: invalid Jev usage"
+        continue
+      }
+      jev.calls += 1
+      jev.inputTokens += metered.inputTokens
+      jev.outputTokens += metered.outputTokens
       continue
     }
     modelCalls += 1
@@ -85,6 +106,10 @@ const readJournalCost = (databasePath) => {
     }
   }
 
+  // Jev is priced under its own row so the seat's number keeps meaning the
+  // seat. Its tokens are never cached, so the cache counter is zero.
+  const jevPriced = usd(jevModel, { inputTokens: jev.inputTokens, cachedInputTokens: 0, outputTokens: jev.outputTokens })
+  const jevUsd = jevPriced.usd ?? 0
   return {
     seat: seat ?? null,
     frames,
@@ -92,6 +117,11 @@ const readJournalCost = (databasePath) => {
     spanMillis: firstAt === undefined ? 0 : lastAt - firstAt,
     usage,
     usd: unknown ? null : Math.round(dollars * 10_000) / 10_000,
+    jevCalls: jev.calls,
+    jevInputTokens: jev.inputTokens,
+    jevOutputTokens: jev.outputTokens,
+    jevUsd: unknown ? null : jevUsd,
+    totalUsd: unknown ? null : Math.round((dollars + jevUsd) * 10_000) / 10_000,
     unknown,
     priceSource
   }

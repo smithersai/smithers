@@ -104,6 +104,26 @@ const build = (row) => {
       at()
     ])
   }
+  // The two harness classifiers' readings, with the usage the gateway meters
+  // them at, and the same reading repeated as `decision-settled`, which
+  // carries no usage and must price at nothing. Neither adds a flow call, so
+  // every count the mirror pins stays as recorded; `fixtures/check.mjs` pins
+  // the Jev column against these two numbers.
+  events.push([
+    "control.agent.claim-demanded",
+    { complete: 0.9, overclaims: 0.1, invented: 0.05, latencyMs: 300, usage: { inputTokens: 900, outputTokens: 0 }, demanded: false, refused: false, currentDigest: "", nextFrame: turns },
+    at()
+  ])
+  events.push([
+    "control.agent.supervisor-settled",
+    { scope: runId, frame: 0, thrashing: 0.1, onTarget: 0.9, suspect: 0.1, needsHelp: "none", latencyMs: 280, usage: { inputTokens: 600, outputTokens: 0 } },
+    at()
+  ])
+  events.push([
+    "control.agent.decision-settled",
+    { scope: runId, frame: 0, classifier: "supervisor/turn", digest: "fixture", latencyMs: 280, acted: false, decidedBy: "jev" },
+    at()
+  ])
   for (const call of calls) {
     events.push(["control.agent.cell-call-started", { flowName: call.flowName, input: { seq: events.length } }, at()])
     events.push([

@@ -37,6 +37,9 @@
 # patches its selector chose, the matrix manifests, and the matrix report.
 /journals/
 /selected/
+# The per-repository memory stores a SWB_MEMORY=repo wave writes; shared across
+# instances of one repository, never committed.
+/memory/
 /matrix-*.json
 /matrix-report.md
 

@@ -119,6 +119,32 @@ try {
     insert.run(i, i, "control.agent.model-settled", JSON.stringify({ usage: { inputTokens: 1, outputTokens: 0 } }))
   }
   assert.equal(readCost(path).usd, 0.0001, "price aggregated usage without rounding away each small call")
+  // Jev is metered on its own rows and priced under its own row: the
+  // completion brake, the supervisor, and the agent's `jev` flow call each
+  // count once; a failed `jev` call and a `decision-settled` count nothing.
+  // 10,000 input tokens at 0.042 USD per 1M is 0.00042, rounded to 0.0004.
+  priced.exec("DELETE FROM flows_journal_events WHERE seq > 0")
+  insert.run(1, 1, "control.agent.model-settled", JSON.stringify({ usage: { inputTokens: 1000, outputTokens: 100 } }))
+  insert.run(2, 2, "control.agent.claim-demanded", JSON.stringify({ usage: { inputTokens: 4000, outputTokens: 0 } }))
+  insert.run(3, 3, "control.agent.supervisor-settled", JSON.stringify({ usage: { inputTokens: 3000, outputTokens: 0 } }))
+  insert.run(4, 4, "control.agent.cell-call-settled", JSON.stringify({
+    flowName: "jev", outcome: "success", value: { answers: {}, usage: { inputTokens: 3000, outputTokens: 0 }, latencyMs: 290 }
+  }))
+  insert.run(5, 5, "control.agent.cell-call-settled", JSON.stringify({ flowName: "jev", outcome: "failure", message: "refused" }))
+  insert.run(6, 6, "control.agent.cell-call-settled", JSON.stringify({ flowName: "bash", outcome: "success", value: { exitCode: 0 } }))
+  insert.run(7, 7, "control.agent.decision-settled", JSON.stringify({ classifier: "supervisor/turn", answers: {} }))
+  {
+    const metered = readCost(path)
+    assert.equal(metered.usd, 0.008, "the seat's usd is the model turns alone")
+    assert.equal(metered.jevCalls, 3, "the brake, the supervisor and one settled jev call")
+    assert.equal(metered.jevInputTokens, 10_000)
+    assert.equal(metered.jevOutputTokens, 0)
+    assert.equal(metered.jevUsd, 0.0004, "Jev priced under typesafe-ai/jev, decision-settled unpriced")
+    assert.equal(metered.totalUsd, 0.0084)
+    assert.equal(metered.unknown, false)
+  }
+  insert.run(8, 8, "control.agent.supervisor-settled", JSON.stringify({ usage: { inputTokens: -1, outputTokens: 0 } }))
+  assert.equal(readCost(path).unknown, true, "malformed Jev usage is an explicit unknown")
   priced.exec("DELETE FROM flows_journal_events WHERE seq > 0")
   priced.prepare("INSERT INTO flows_journal_events VALUES (1, 1, 'control.agent.model-settled', ?)").run("{}")
   assert.equal(readCost(path).unknown, true, "a call without usage cannot prove zero")

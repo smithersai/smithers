@@ -50,6 +50,9 @@ CLI wrapper, and the evaluator environment with it.
 | `compare-runs.mjs`         | Baseline vs re-run — resolved, dollars, wall, per-instance deltas    |
 | `lib/excluded.mjs`         | The instances excluded from the scoreboard by name, and the cause on record |
 | `lib/program-evidence.mjs` | What a run's agent actually did, counted off its journals            |
+| `lib/jev-replay.mjs`       | The supervisor's reading, replayed over archived journals and scored against verdicts |
+| `fixtures/check-jev-replay.mjs` | Proves that replay over a synthetic journal, offline                  |
+| `memory/`                  | Per-repository memory stores a `SWB_MEMORY=repo` wave writes (gitignored) |
 | `lib/trace-bundle.mjs`     | One instance's two traces and two bills, as the brief for an analyst |
 | `regen-patch.sh`           | Re-derives one patch from a surviving workspace                      |
 | `scorecard.ts`             | Quality + speed + cost, per instance and in aggregate                |
@@ -185,6 +188,29 @@ The whole sample, one harness at a time:
 
 Both run scripts take an optional trailing **run index**, which is how one
 instance carries five attempts at once. See [Best-of-n](#best-of-n).
+
+Two conditions on the flows side are off unless a lane turns them on, and both
+are stamped into `timings/<id>.json` so a report can separate them:
+
+```sh
+SWB_MEMORY=repo ./run-instance.sh django__django-16612          # "memory": "repo"
+SWB_SUPERVISOR_STEER=1 ./run-instance.sh django__django-16612   # "supervisorSteer": true
+```
+
+`SWB_MEMORY=repo` points the CLI's memory store (`SMITHERS_MEMORY_DB`) at
+`memory/<repo>.db`, outside the workspace and shared by every instance of one
+repository and by nothing else. A run may then remember how its repository
+builds and tests, and a later run of the same repository may be shown it. That
+is a different experiment from the independent-instance score the scoreboard
+reports: the second django instance in a memory-on wave is not independent of
+the first, so a report must not pool the two conditions. The default, `off`,
+stamps `"memory": "off"`.
+
+`SWB_SUPERVISOR_STEER=1` exports `SMITHERS_SUPERVISOR_STEER=1`. The harness
+journals a supervisor verdict on every frame whenever a judge is bound; this
+additionally lets a verdict past its threshold nudge the run at the next turn
+boundary and insert recalled memory. It stays off until the replay below has
+measured the verdict's precision.
 
 ## The sealed testbed
 
@@ -796,6 +822,29 @@ and the evaluator's predictions can only ever be keyed by instance id:
 `SWB_PATCH_SUFFIX=-r3` grades `<id>-r3.patch` as `<id>`'s prediction,
 `SWB_PATCHES=selected` grades a different directory, and `SWB_MODEL_NAME`
 changes the name the report is filed under. `grade-matrix.sh` drives all three.
+
+### Supervisor replay
+
+```sh
+node lib/jev-replay.mjs fullbench/rerun-r97/journals --manifest fullbench/rerun-r97/manifest.jsonl --suffix -r97
+node lib/jev-replay.mjs <journals-dir> --manifest <manifest.jsonl> --dry-run     # snapshots only, no spend
+```
+
+The harness asks Jev about a run's shape once per frame, off the cell loop's
+hot path: whether it is thrashing, still on the task, standing on suspect
+evidence, five scored operational states (`frustrated`, `anxious`, `scared`,
+`confused`, `confident`, each `none`, `mild` or `strong`) and `needs_help`.
+Before any of that is allowed to nudge a model, this replay rebuilds the same
+snapshot from each archived journal (through `lib/journal-facts.mjs`, so the
+counts are the counts the run had), asks the same classifier, and scores every
+signal against the manifest's verdicts. Positive predicts `unresolved`. Each
+signal is scored twice, on the last frame's reading and on any frame's, with
+precision, recall and F1; a per-instance table follows with the last reading
+and the extremes across frames. Readings Jev could not give are counted by
+reason and never scored as calm. It needs `AI_GATEWAY_API_KEY`; `--dry-run`
+builds the snapshots and asks nothing, and `--limit N` bounds the journals
+read. `fixtures/check-jev-replay.mjs` runs the dry run over a synthetic
+journal inside `./verify.sh`.
 
 ### Two rig faults the r90 benchmark found, and what closes them
 
@@ -2449,7 +2498,17 @@ codex baseline:
   ever landed an edit;
 - **speed** — wall clock from `timings/<id>.json`, the journal's own span,
   turns, model calls, and per-call latency when the journal carries it;
-- **cost** — input, cached and output tokens, and USD from `prices.ts`.
+- **cost** — input, cached and output tokens, and USD from `prices.ts`, in two
+  columns: `flows USD` is the seat's model turns, and `Jev USD` is every reading
+  the run took of Jev, priced under the `typesafe-ai/jev` row. The journal
+  meters Jev on three event types and the scorecard sums all three:
+  `claim-demanded` (the completion brake), `supervisor-settled` (the per-frame
+  supervisor) and the `jev` flow's own `cell-call-settled` result. A
+  `decision-settled` row repeats a reading without usage and is never priced.
+  `flows total` is both columns together; the codex arm asks Jev nothing, so
+  its column is model-only either way. `lib/run-cost.mjs` reports the same
+  split as `jevCalls`, `jevInputTokens`, `jevOutputTokens`, `jevUsd` and
+  `totalUsd` beside `usd`.
 
 The flows-side numbers come from the run's journal through
 `Forensics.digest` — the same projection `flows status` renders — so the

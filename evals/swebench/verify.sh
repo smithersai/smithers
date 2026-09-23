@@ -221,6 +221,9 @@ node "$S/fixtures/check-surgery-evidence.mjs"
 echo "== the round-3 evidence a third re-run reads off its journals"
 node "$S/fixtures/check-round3-evidence.mjs"
 
+echo "== the supervisor replay, rebuilt from a journal and scored offline"
+node "$S/fixtures/check-jev-replay.mjs"
+
 echo "== the realm evidence the REPL A/B reads off its journals"
 node "$S/fixtures/check-repl-evidence.mjs"
 

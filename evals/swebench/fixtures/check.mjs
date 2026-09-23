@@ -55,6 +55,16 @@ for (const expected of mirror) {
   const expectedUsd = Math.round((expected.inTok * 5 + expected.outTok * 30) / 100) / 10_000
   check(`${expected.id} usd`, row.cost.usd, expectedUsd)
 
+  // Jev is priced apart from the seat: the fixture journal carries one
+  // claim-demanded (900 input tokens) and one supervisor-settled (600), plus a
+  // decision-settled that carries no usage and must not be counted.
+  check(`${expected.id} jev calls`, row.cost.jevCalls, 2)
+  check(`${expected.id} jev input tokens`, row.cost.jevInputTokens, 1500)
+  check(`${expected.id} jev output tokens`, row.cost.jevOutputTokens, 0)
+  const expectedJevUsd = Math.round(1500 * 0.042 / 100) / 10_000
+  check(`${expected.id} jev usd`, row.cost.jevUsd, expectedJevUsd)
+  check(`${expected.id} total usd`, row.cost.totalUsd, Math.round((expectedUsd + expectedJevUsd) * 10_000) / 10_000)
+
   if (mode === "expect-latency") {
     if (row.speed.meanCallLatencyMs === undefined) failures.push(`${expected.id}: expected a per-call latency`)
     check(`${expected.id} mean call latency`, row.speed.meanCallLatencyMs, Math.round(4000 + (expected.turns - 1) / 2))

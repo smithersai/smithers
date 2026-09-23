@@ -62,6 +62,43 @@ if [ "${SWB_SKIP_AGENT:-0}" != "1" ] && [ "$HOST_SHELL" != "allowed" ]; then
   exit 2
 fi
 
+# Cross-run memory is a benchmark condition of its own, off by default. With
+# SWB_MEMORY=repo the CLI opens its memory store at memory/<repo>.db, OUTSIDE
+# the workspace and shared by every instance of one repository and by nothing
+# else: a django run may remember how django runs its tests, and the next
+# django run may be shown it, but a sphinx run never sees a django fact. A wave
+# run this way is therefore not the independent-instance score the scoreboard
+# reports, and the condition is stamped into the timings so a report can
+# separate the two rather than average them. Any value other than `repo` or
+# unset is refused here, the way an unknown auth mode is.
+MEMORY="${SWB_MEMORY:-off}"
+case "$MEMORY" in
+  off|repo) ;;
+  *) echo "[$INSTANCE] SWB_MEMORY must be unset or 'repo', got '$MEMORY'"; exit 2 ;;
+esac
+# The repository is the id up to its issue number: `django__django-16612` is a
+# run of `django__django`. The id was validated by lib/validate-instance.mjs
+# above with the character class lib/run-paths.sh uses, so the prefix is a
+# safe file name.
+REPO="$(printf '%s' "$INSTANCE" | sed -E 's/-[0-9]+$//')"
+if [ "$MEMORY" = "repo" ]; then
+  if ! printf '%s' "$REPO" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]*__[A-Za-z0-9][A-Za-z0-9._-]*$'; then
+    echo "[$INSTANCE] cannot derive a repository name from the instance id"; exit 2
+  fi
+  mkdir -p "$S/memory"
+fi
+
+# The supervisor's steering arm, off by default. The harness journals a
+# supervisor verdict on every frame whenever a judge is bound; SWB_SUPERVISOR_STEER=1
+# additionally lets a verdict past its threshold nudge the run and insert
+# recalled memory. Stamped into the timings beside the memory condition, because
+# a wave with it on is measuring the nudge and not only the harness.
+SUPERVISOR_STEER="${SWB_SUPERVISOR_STEER:-0}"
+case "$SUPERVISOR_STEER" in
+  0|1) ;;
+  *) echo "[$INSTANCE] SWB_SUPERVISOR_STEER must be unset, 0 or 1, got '$SUPERVISOR_STEER'"; exit 2 ;;
+esac
+
 # The subject the wave measures, pinned by ./preflight.sh. It is stamped into
 # this instance's timings record so the scorecard can state which bytes each
 # instance ran, and refuse to average two subjects into one wave.
@@ -265,6 +302,15 @@ else
     export SMITHERS_TEST_CONTAINER="$CONTAINER"
     export SMITHERS_TEST_CWD="/testbed"
     export SMITHERS_OPENAI_AUTH="$OPENAI_AUTH"
+    # Both conditional, and each on a line of its own so
+    # fixtures/check-env-names.mjs sees the name and holds it against the
+    # CLI's list.
+    if [ "$MEMORY" = "repo" ]; then
+      export SMITHERS_MEMORY_DB="$S/memory/$REPO.db"
+    fi
+    if [ "$SUPERVISOR_STEER" = "1" ]; then
+      export SMITHERS_SUPERVISOR_STEER=1
+    fi
     A=$("$S/flows.sh" --json plan fix | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.stringify(JSON.parse(s).approval))}catch{process.exit(1)}})') || exit 1
     "$S/flows.sh" --json approve "$A" --scope run >/dev/null 2>&1 || {
       echo "[$RUN_ID] APPROVAL FAILED"; exit 1;
@@ -284,10 +330,12 @@ else
   # than one because a report that could only print the request would be
   # printing a claim; the ledger row and every scoreboard downstream carry the
   # observation. `hostShell` is the condition the agent's host-side shell ran
-  # under; `allowed` is the only value an agent run can have today.
-  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
+  # under; `allowed` is the only value an agent run can have today. `memory`
+  # and `supervisorSteer` are the two conditions declared above; a report that
+  # pools a memory-on run with the independent-instance score reads them.
+  printf '{\n  "instance_id": "%s",\n  "run_id": "%s",\n  "runIndex": "%s",\n  "seat": "%s",\n  "openaiAuth": "%s",\n  "subject": "%s",\n  "budgetSeconds": %s,\n  "testbedNetwork": "%s",\n  "testbedNetworkObserved": "%s",\n  "hostShell": "%s",\n  "memory": "%s",\n  "supervisorSteer": %s,\n  "startedAt": %s,\n  "endedAt": %s,\n  "wallClockSeconds": %s,\n  "exitStatus": %s,\n  "timedOut": %s\n}\n' \
     "$INSTANCE" "$RUN_ID" "$RUN_INDEX" "$SEAT" "$OPENAI_AUTH" "$SUBJECT" "$BUDGET" \
-    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$((START*1000))" "$((END*1000))" "$((END-START))" \
+    "$TESTBED_NETWORK" "$TESTBED_OBSERVED" "$HOST_SHELL" "$MEMORY" "$([ "$SUPERVISOR_STEER" = "1" ] && printf true || printf false)" "$((START*1000))" "$((END*1000))" "$((END-START))" \
     "$RUN_STATUS" "$([ "$RUN_STATUS" -eq 124 ] && printf true || printf false)" \
     > "$TIMINGS"
 fi
