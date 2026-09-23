@@ -175,6 +175,13 @@ export const maximize = async (page: Page): Promise<void> => {
   await expect(card).toHaveAttribute("data-maximized", "true")
 }
 
+/** A maximized card survives navigation in a shared window; hand the next scenario an unobstructed page. */
+export const restore = async (page: Page): Promise<void> => {
+  const card = modelsCard(page)
+  if (await card.getAttribute("data-maximized") === "true") await card.getByRole("button", { name: "Restore", exact: true }).click()
+  await expect(card).not.toHaveAttribute("data-maximized", "true")
+}
+
 /** How long a turn's open stream is waited for. A sealed turn ends with its answer; one that never ends is read as far as it got. */
 const STREAM_READ_MS = 20_000
 

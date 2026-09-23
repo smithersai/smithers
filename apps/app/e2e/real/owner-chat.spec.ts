@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { awaitBoot, closeComposer, command, expect, openApp } from "./support"
-import { listModels, maximize, modelsCard, modelRow, seatSelect } from "./models/ui"
+import { listModels, maximize, modelsCard, modelRow, restore, seatSelect } from "./models/ui"
 import { PROVIDER_MODEL, PROVIDER_REPLY } from "./support/model-provider-behaviors"
 import { launchModelProvider } from "./support/model-provider-process"
 
@@ -45,6 +45,7 @@ authenticatedTest("owner adds a model key in the UI and Chat streams its reply",
     expect(journal.at(-1)).toMatchObject({ modelId: PROVIDER_MODEL.answers, authorized: true,
       credentialSha256: createHash("sha256").update(key).digest("hex") })
     expect(await page.locator("body").innerText()).not.toContain(key)
+    await restore(page)
   } finally {
     await provider.close()
   }
