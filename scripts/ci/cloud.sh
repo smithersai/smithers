@@ -9,7 +9,7 @@
 # hours per push: run 11697 (2026-09-15) still had 4 tasks running and 35
 # queued after 20 minutes.
 #
-# So .smithers/workflows/ci.tsx batches the 39 gates into 6 tasks, and each
+# So .smithers/workflows/ci.tsx batches the gates (46 as of 2026-09-23) into 6 tasks, and each
 # task calls the group mode here:
 #
 #   bash scripts/ci/cloud.sh <gate>                  # one gate (unchanged)
@@ -317,6 +317,10 @@ gate_tools() {
     examples) echo 'js jj' ;;
     scripts) echo 'js jj rust' ;;
     flows) echo 'js' ;;
+    flows-egress) echo 'js' ;;
+    flows-repository) echo 'js jj' ;;
+    flows-fixtures) echo 'js jj' ;;
+    flows-product-host) echo 'js' ;;
     jsdoc) echo 'js' ;;
     script-lint) echo 'js' ;;
     jsdoc-rules) echo 'js' ;;
@@ -343,10 +347,13 @@ gate_tools() {
     target-index) echo 'js' ;;
     ui-check) echo 'js jj' ;;
     ui-tests) echo 'js jj' ;;
+    ui-conformance) echo 'js jj' ;;
     ui-browser) echo 'js jj' ;;
     rust-lint) echo 'js rust' ;;
     third-party-notices) echo 'js rust' ;;
     rust-test) echo 'js rust' ;;
+    native-ffi) echo 'js jj rust' ;;
+    backend-go) echo 'js' ;;
     wasm-build-script) echo 'js' ;;
     faults) echo 'js jj' ;;
     web-bundle) echo 'js' ;;
@@ -401,6 +408,18 @@ run_gate() {
       ;;
     flows)
       pnpm exec smthrs test '//flows:pack' --verbose
+      ;;
+    flows-egress)
+      pnpm exec smthrs test '//flows:egress' --verbose
+      ;;
+    flows-repository)
+      pnpm exec smthrs test '//flows:repository' --verbose
+      ;;
+    flows-fixtures)
+      pnpm exec smthrs test '//flows:fixtures' --verbose
+      ;;
+    flows-product-host)
+      pnpm exec smthrs test '//flows:productHost' --verbose
       ;;
     jsdoc)
       pnpm exec smthrs lint '//:jsdocTree' --verbose
@@ -495,6 +514,9 @@ run_gate() {
     ui-tests)
       pnpm exec smthrs test '//apps/app:unitTests' --verbose
       ;;
+    ui-conformance)
+      pnpm exec smthrs test '//apps/app:conformance' --verbose
+      ;;
     ui-browser)
       # Playwright installs the browsers' own system libraries through the
       # distribution package manager as root. A Cloud task is an unprivileged
@@ -516,6 +538,21 @@ run_gate() {
       ;;
     rust-test)
       pnpm exec smthrs test '//crates/flows-jj:cargoTest' --verbose
+      ;;
+    native-ffi)
+      pnpm exec smthrs build '//:nativeFfi' --verbose
+      ;;
+    backend-go)
+      # `//:backendGo` needs the Go 1.26 toolchain and a Postgres container
+      # started through Docker (the `backendPostgres` service in PACKAGE.ts).
+      # A Cloud runner is an unprivileged gVisor sandbox with neither, and
+      # gate_tools installs only js, jj, Foundry and Rust, so on Cloud this
+      # skips; GitHub's `go-backend` job remains the required gate.
+      if on_cloud; then
+        skip_gate backend-go 'the Go toolchain and a Docker Postgres service are not available on Cloud runners'
+      else
+        pnpm exec smthrs test '//:backendGo' --verbose
+      fi
       ;;
     wasm-build-script)
       pnpm exec smthrs test '//crates/flows-jj:buildScript' --verbose

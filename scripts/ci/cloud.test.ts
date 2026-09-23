@@ -67,7 +67,15 @@ describe("Smithers Cloud CI", () => {
       if (name === "cloud-contract") {
         expect(body).toContain("bun test scripts/ci/cloud.test.ts")
       } else {
-        const commands = Array.from(body.matchAll(/^ {6,8}(pnpm exec .+)$/gm), ([, command]) => command!)
+        // target-index carries a second, off-Cloud-only repair command
+        // (6c8abc37, 2026-09-15): it regenerates the index before the drift
+        // check for a developer running the gate locally. GitHub CI never runs
+        // that write, so it is set aside by exact text and every gate still
+        // retains exactly one GitHub command.
+        const repair = name === "target-index" ? "pnpm exec smthrs target '//:targetIndex' --write --verbose" : undefined
+        const all = Array.from(body.matchAll(/^ {6,8}(pnpm exec .+)$/gm), ([, command]) => command!)
+        if (repair) expect(all).toContain(repair)
+        const commands = all.filter(command => command !== repair)
         expect(commands.length).toBe(1)
         expect(github).toContain(`run: "${commands[0]}"`)
       }
@@ -121,8 +129,10 @@ describe("Smithers Cloud CI", () => {
   test("a gate that cannot run on this tier skips explicitly, and only on a Cloud runner", () => {
     // Playwright installs browser system libraries as root; a Cloud task has
     // no sudo, so run 11727 got an authentication failure before any test ran.
+    // `//:backendGo` (0ea458d7, 2026-09-21) needs Go and a Docker Postgres
+    // service, neither of which a gVisor Cloud runner has.
     const skipped = gates.filter(({ body }) => body.includes("skip_gate"))
-    expect(skipped.map(({ name }) => name)).toEqual(["ui-browser"])
+    expect(skipped.map(({ name }) => name).sort()).toEqual(["backend-go", "ui-browser"])
     for (const { body } of skipped) {
       expect(body).toContain("if on_cloud; then")
       // The reason is not optional: a bare skip is an unexplained hole.
