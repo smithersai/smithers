@@ -2147,6 +2147,12 @@ importers:
       '@effect/platform-node':
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1))
+      '@opentui/core':
+        specifier: 0.5.11
+        version: 0.5.11(typescript@5.9.3)(web-tree-sitter@0.25.10)
+      '@opentui/react':
+        specifier: 0.5.11
+        version: 0.5.11(react-devtools-core@7.0.1)(react@19.2.8)(typescript@5.9.3)(web-tree-sitter@0.25.10)(ws@8.21.3)
       '@smthrs/agent':
         specifier: 1.0.0-rc.1
         version: link:agent
@@ -2216,6 +2222,9 @@ importers:
       '@smthrs/notifications':
         specifier: 1.0.0-rc.1
         version: link:notifications
+      '@smthrs/plan':
+        specifier: 1.0.0-rc.1
+        version: link:flows/plan
       '@smthrs/platform-node':
         specifier: 1.0.0-rc.1
         version: link:flows/platform-node
@@ -2243,12 +2252,18 @@ importers:
       '@smthrs/triggers':
         specifier: 1.0.0-rc.1
         version: link:agent/triggers
+      diff:
+        specifier: 9.0.0
+        version: 9.0.0
       effect:
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115
       incur:
         specifier: 0.5.1
         version: 0.5.1
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2
@@ -2265,9 +2280,6 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@smthrs/plan':
-        specifier: 1.0.0-rc.1
-        version: link:flows/plan
       '@smthrs/sandbox':
         specifier: 1.0.0-rc.1
         version: link:flows/sandbox
@@ -6244,6 +6256,10 @@ importers:
         version: 4.4.3
 
   packages/smthrs-deprecation:
+    dependencies:
+      '@smthrs/cli':
+        specifier: 1.0.0-rc.1
+        version: link:../smithers
     devDependencies:
       '@eslint/js':
         specifier: 9.39.5

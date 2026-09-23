@@ -6,7 +6,7 @@
   "smthrs": {
     "group": "agent"
   },
-  "description": "Migration notice for Smithers 1.0. The runtime ships as @smthrs/* packages; importing this package throws.",
+  "description": "The `smthrs` command for npx, and a migration notice for Smithers 1.0: importing this package throws.",
   "homepage": "https://github.com/smithersai/smithers",
   "repository": {
     "type": "git",
@@ -30,10 +30,17 @@
     "node": ">=22.19.0"
   },
   "sideEffects": true,
+  "bin": {
+    "smthrs": "./bin/smthrs.mjs"
+  },
+  "dependencies": {
+    "@smthrs/cli": "1.0.0-rc.1"
+  },
   "exports": {
     ".": "./src/index.ts"
   },
   "files": [
+    "bin/**/*.mjs",
     "src/**/*.ts",
     "dist/**/*.js",
     "dist/**/*.js.map",

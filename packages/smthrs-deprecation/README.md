@@ -4,8 +4,11 @@ Release candidate scope, host requirements and compatibility review are defined 
 
 **Documentation:** https://smthrs.smithers.sh
 
-`smthrs@1.0.0-rc.0` is a migration notice, not a runtime. An import that
-reaches it throws:
+`npx smthrs <verb>` runs the Smithers CLI (`@smthrs/cli`). `npx smthrs tui`
+opens the terminal coding agent; it requires [Bun](https://bun.sh).
+
+As a library, `smthrs@1.0.0-rc.0` is a migration notice, not a runtime. An
+import that reaches it throws:
 
 ```text
 smthrs 1.0 is a migration notice, not a runtime.
@@ -111,7 +114,7 @@ the concept to rewrite against.
 | Output accessors and workflow context hooks                                 | Journal projections and the run store (`@smthrs/journal`, `@smthrs/run-store`).                                                                |
 | `mdx-plugin`, JSX workflow loaders and templates                            | Flow descriptor discovery (`@smthrs/registry`).                                                                                                |
 | Backend selection and direct database helpers                               | `@smthrs/database` and `@smthrs/engine-store`. SQLite is the only backend supported at 1.0.0-rc.0.                                             |
-| The `smithers` binary published by `smthrs`                                 | `@smthrs/cli`, which owns both the `smthrs` and `smithers` spellings of one executable.                                                        |
+| The `smithers` binary published by `smthrs`                                 | `@smthrs/cli`, which owns both the `smthrs` and `smithers` spellings of one executable. `smthrs` still ships `smthrs`, which runs that CLI.    |
 
 Smithers 1.0.0-rc.0 does not migrate live or in-flight 0.x runs. Finish,
 archive, or discard them before upgrading.

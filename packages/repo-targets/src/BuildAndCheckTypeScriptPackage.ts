@@ -92,6 +92,13 @@ export interface Options {
    */
   readonly buildProgram?: Input.File | undefined
   /**
+   * Further files the build program reads, beyond `sources` and the shared
+   * build scripts. `@smthrs/cli` bundles `apps/tui` into its distribution.
+   *
+   * @default []
+   */
+  readonly buildInputs?: ReadonlyArray<Input.Glob | Input.File> | undefined
+  /**
    * The circular-dependency guard this package runs. It defaults to the
    * conventional `scripts/circular.mjs`, which is what the repository's
    * per-package `circular` script runs.
@@ -186,7 +193,8 @@ export const BuildAndCheckTypeScriptPackage = (options: Options): PackageTargets
     srcs: [
       sources,
       Input.file("//packages/repo-targets/scripts/build-library.mjs"),
-      Input.file("//packages/smithers/scripts/compile-commonjs.mjs")
+      Input.file("//packages/smithers/scripts/compile-commonjs.mjs"),
+      ...(options.buildInputs ?? [])
     ],
     entries: [entry],
     deps,

@@ -25,6 +25,7 @@ import * as DoctorCmd from "./commands/Doctor.ts"
 import * as GcCmd from "./commands/Gc.ts"
 import type * as Globals from "./commands/Globals.ts"
 import * as MigrateCmd from "./commands/Migrate.ts"
+import * as TuiCmd from "./commands/Tui.ts"
 import * as UpdateCmd from "./commands/Update.ts"
 import { didYouMean } from "./DidYouMean.ts"
 import * as Doctor from "./Doctor.ts"
@@ -238,6 +239,25 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
           )
           config.exit?.(Suggest.exitStatus(outcome))
           return json ? { ...outcome, documents } : undefined
+        })
+    })
+    .command("tui", {
+      description: "Open the terminal coding agent; requires Bun",
+      mcp: false,
+      args: z.object({ directory: z.string().optional().describe("Working directory; defaults to cwd") }),
+      options: z.object({
+        model: z.string().optional().describe("Chat seat as provider:model"),
+        continue: z.boolean().default(false).describe("Continue the latest session in the directory"),
+        resume: z.boolean().default(false).describe("Pick a session to continue"),
+        print: z.string().optional().describe("Answer one prompt, print it, and exit")
+      }),
+      alias: { model: "m", continue: "c", resume: "r", print: "p" },
+      run: (c) =>
+        Presentation.guard(c, async () => {
+          config.exit?.(
+            await TuiCmd.run({ ...c.options, directory: c.args.directory }, config.environment ?? process.env)
+          )
+          return undefined
         })
     })
     .command("migrate", {

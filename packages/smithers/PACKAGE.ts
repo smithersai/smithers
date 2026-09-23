@@ -11,6 +11,8 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // aggregate coverage gate in one run, with twice the observed completed
   // duration available; individual test deadlines remain unchanged.
   testTimeoutMs: 40 * 60_000,
+  // `scripts/build.mjs` bundles the TUI that `smthrs tui` runs.
+  buildInputs: [Smithers.glob("//apps/tui/src/**/*.ts"), Smithers.glob("//apps/tui/src/**/*.tsx")],
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] })
 })
 

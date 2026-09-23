@@ -11,6 +11,7 @@ import { fences, notice } from "./golden.ts"
 const url = (path: string): URL => new URL(path, import.meta.url)
 const manifest = JSON.parse(readFileSync(url("../package.json"), "utf8")) as {
   readonly bin?: unknown
+  readonly version?: string
   readonly dependencies?: unknown
   readonly engines?: { readonly node?: string }
   readonly exports?: unknown
@@ -19,17 +20,22 @@ const manifest = JSON.parse(readFileSync(url("../package.json"), "utf8")) as {
 }
 
 describe("the published manifest", () => {
-  it("ships no bin, which is what makes the smithers-build rename collision-free", () => {
-    // Contract section 3.4 renames the private build CLI's binary to
-    // `smithers-build` and justifies it with "the deprecation package `smthrs`
-    // ships no bin, so no `PATH` collision exists between the two names". A bin
-    // added here would shadow @smthrs/cli's `smithers` on every machine that
-    // installs both.
-    expect(manifest.bin).toBeUndefined()
+  it("ships the smthrs command, so `npx smthrs <verb>` runs the CLI", () => {
+    // The bin runs @smthrs/cli's own executable, so the two `smthrs` bins are
+    // one program. `smithers-build` stays collision-free: no bin here takes it.
+    expect(manifest.bin).toEqual({ smthrs: "./bin/smthrs.mjs" })
   })
 
-  it("declares no dependencies, so installing the notice installs nothing else", () => {
-    expect(manifest.dependencies).toBeUndefined()
+  it("depends on the CLI alone, at the synchronized release version", () => {
+    expect(manifest.dependencies).toEqual({ "@smthrs/cli": manifest.version })
+  })
+
+  it("runs the CLI from its bin", () => {
+    const result = spawnSync(process.execPath, [fileURLToPath(url("../bin/smthrs.mjs")), "--version"], {
+      encoding: "utf8"
+    })
+    expect(result.status).toBe(0)
+    expect(result.stdout).toContain(manifest.version)
   })
 
   it("keeps the side effect that is the whole package", () => {

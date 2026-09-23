@@ -713,6 +713,8 @@
   },
   "dependencies": {
     "@clack/prompts": "1.7.0",
+    "@opentui/core": "0.5.11",
+    "@opentui/react": "0.5.11",
     "@effect/platform-node": "4.0.0-rc.115",
     "@smthrs/agent": "1.0.0-rc.1",
     "@smthrs/build-cli": "1.0.0-rc.1",
@@ -737,6 +739,7 @@
     "@smthrs/migrate": "1.0.0-rc.1",
     "@smthrs/model": "1.0.0-rc.1",
     "@smthrs/notifications": "1.0.0-rc.1",
+    "@smthrs/plan": "1.0.0-rc.1",
     "@smthrs/platform-node": "1.0.0-rc.1",
     "@smthrs/registry": "1.0.0-rc.1",
     "@smthrs/run-store": "1.0.0-rc.1",
@@ -746,8 +749,10 @@
     "@smthrs/targets": "1.0.0-rc.1",
     "@smthrs/time-travel": "1.0.0-rc.1",
     "@smthrs/triggers": "1.0.0-rc.1",
+    "diff": "9.0.0",
     "effect": "4.0.0-rc.115",
     "incur": "0.5.1",
+    "react": "19.2.8",
     "@effect/platform-bun": "4.0.0-rc.115"
   },
   "devDependencies": {
@@ -755,7 +760,6 @@
     "@effect/sql-sqlite-node": "4.0.0-rc.115",
     "@effect/vitest": "4.0.0-rc.115",
     "@eslint/js": "9.39.5",
-    "@smthrs/plan": "1.0.0-rc.1",
     "@smthrs/sandbox": "1.0.0-rc.1",
     "@smthrs/testing": "1.0.0-rc.1",
     "@types/node": "26.4.1",

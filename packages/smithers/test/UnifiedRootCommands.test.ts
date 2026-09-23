@@ -128,7 +128,7 @@ const invoke = async (args: Array<string>, overrides: RuntimeConfig = {}) => {
 
 describe("unified root command dispatch", () => {
   it("keeps help/schema inert across every root command", async () => {
-    for (const command of ["init", "doctor", "serve", "gc", "suggest", "migrate", "update", "bug"]) {
+    for (const command of ["init", "doctor", "serve", "gc", "suggest", "tui", "migrate", "update", "bug"]) {
       const result = await invoke([command, "--help"])
       expect(result.codes).not.toContain(1)
       expect(result.stdout).toContain(command)
