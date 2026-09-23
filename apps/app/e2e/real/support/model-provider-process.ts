@@ -42,9 +42,16 @@ const terminate = async (child: ChildProcess): Promise<void> => {
 
 export const launchModelProvider = async (options: ModelProviderOptions): Promise<ModelProvider> => {
   const appDir = resolve(__dirname, "../../..")
-  const dockerSelfhost = process.env.SMITHERS_REAL_E2E_MODE === "web-selfhost"
+  const mode = process.env.SMITHERS_REAL_E2E_MODE
+  const dockerSelfhost = mode === "web-selfhost"
+  const hostedPlue = mode === "web-plue" || mode === "local-plue" || mode === "native-plue"
+  const publicOrigin = process.env.SMITHERS_REAL_MODEL_PROVIDER_PUBLIC_ORIGIN?.trim()
+  const publicPort = Number(process.env.SMITHERS_REAL_MODEL_PROVIDER_PORT)
+  if (hostedPlue && (!publicOrigin || !/^https:\/\/[^/]+$/.test(publicOrigin) || !Number.isInteger(publicPort) || publicPort < 1 || publicPort > 65_535)) {
+    throw new Error("Hosted Plue model evidence requires SMITHERS_REAL_MODEL_PROVIDER_PUBLIC_ORIGIN and SMITHERS_REAL_MODEL_PROVIDER_PORT.")
+  }
   let child: ChildProcess | undefined
-  let port = options.port ?? 0
+  let port = options.port ?? (hostedPlue ? publicPort : 0)
   const boot = async (): Promise<void> => {
     if (child !== undefined && !exited(child)) throw new Error("The model provider is already running.")
     const started = spawn("bun", [resolve(__dirname, "model-provider.ts")], {
@@ -92,7 +99,7 @@ export const launchModelProvider = async (options: ModelProviderOptions): Promis
   }
   await boot()
   const origin = `http://127.0.0.1:${port}`
-  const productOrigin = dockerSelfhost ? `http://host.docker.internal:${port}` : origin
+  const productOrigin = dockerSelfhost ? `http://host.docker.internal:${port}` : hostedPlue ? publicOrigin! : origin
   return {
     origin: productOrigin,
     evaluationUrl: `${productOrigin}${PROVIDER_PATHS.evaluation}`,
