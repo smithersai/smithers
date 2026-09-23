@@ -45,6 +45,26 @@ const popupFixture = () => {
   return { popup, opened }
 }
 
+for (const outcome of ["accepted", "rejected", "dismissed"] as const) test(`Chat accepts typing before its receipt; ${outcome} controls later microphone capture`, async () => {
+  let starts = 0
+  replaceGlobal("SpeechRecognition", class {
+    start() { starts++ }
+    abort() {}
+  })
+  const { controller, held } = await fixture({}, outcome === "rejected")
+  await controller.store.dispatch({ type: "input.mode.changed", actor: "user", mode: "dictation" }).isPersisted.promise
+  const pending = controller.commands.run("chat.open")
+  expect(controller.store.session().paletteOpen).toBe(true)
+  controller.store.dispatch({ type: "composer.changed", actor: "user", draft: "/account.show" })
+  expect(starts).toBe(0)
+  if (outcome === "dismissed") controller.closePalette()
+  held.resolve()
+  expect((await pending).status).toBe(outcome === "rejected" ? "failed" : "executed")
+  expect(starts).toBe(outcome === "accepted" ? 1 : 0)
+  expect(controller.store.session().draft).toBe("/account.show")
+  expect(controller.store.session().paletteOpen).toBe(outcome !== "dismissed")
+})
+
 test("the actual download door reserves its window synchronously and navigates only after acceptance", async () => {
   const { controller, held } = await fixture({ bootstrap: bootstrap("cloud"), downloadUrl: "https://downloads.test/app" })
   const { popup, opened } = popupFixture()

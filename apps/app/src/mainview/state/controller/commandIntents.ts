@@ -33,6 +33,13 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       if (ctx.services.openExternal !== undefined || (ctx.services.bootstrap?.host !== "local" && ctx.services.bootstrap?.authFlow !== "native-handoff") || ctx.store.collections.identitySessions.get("identity")?.state !== "signed-out") return undefined
     }
     if (name === "app.download" && (ctx.services.openExternal !== undefined || ctx.services.downloadUrl === null)) return undefined
+    if (name === "chat.open") {
+      // Prepare the local input during the gesture so immediate typing has a
+      // destination. The flow (including microphone capture) still waits for
+      // its receipt, and a dismissal while saving cancels that pending open.
+      if (ctx.store.session().paletteOpen !== true) ctx.store.dispatch({ type: "palette.toggled", actor: "user", open: true })
+      return { name, chatInputCurrent: () => ctx.store.session().paletteOpen === true, release: () => {} }
+    }
     return reserveBrowserCommandGesture(name)
   },
   accept: async (request, pendingFormInput) => {

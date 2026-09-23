@@ -5,6 +5,7 @@ export interface CommandGesture {
   readonly name: string
   readonly openExternal?: (url: string) => Promise<boolean>
   readonly copyText?: (text: string) => Promise<void>
+  readonly chatInputCurrent?: () => boolean
   readonly hasWriteOnly?: (field: string) => boolean
   readonly takeWriteOnly?: (field: string) => string | undefined
   readonly release: () => void
