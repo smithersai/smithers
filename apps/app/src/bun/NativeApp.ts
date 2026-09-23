@@ -57,7 +57,7 @@ const backendProcess = stubAgent === undefined
   : undefined
 const rendererServer = backendProcess !== undefined
   ? startNativeRendererServer(defaultDistDir(import.meta.dir), backendProcess.mode === "own"
-      ? backendProcess.origin ?? "" : Bun.env.SMITHERS_API_ORIGIN ?? "")
+      ? backendProcess.origin ?? "" : Bun.env.SMITHERS_API_ORIGIN ?? "", Bun.env.SMITHERS_API_TOKEN ?? "")
   : undefined
 
 // The retired Bun product host survives only as the deterministic packaged
@@ -138,7 +138,7 @@ if (headless) {
         switchApplicationTarget: async ({ origin, token }) => {
           if (rendererServer === undefined) throw new Error("Native backend selection is unavailable.")
           const credential = token.trim()
-          rendererServer.setTarget(origin)
+          rendererServer.setTarget(origin, credential)
           selectedBackend = {
             rendererOrigin: rendererServer.origin,
             target: {

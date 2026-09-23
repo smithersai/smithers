@@ -19,7 +19,7 @@ test("packaged Plue window serves its UI and forwards authenticated product API 
     return Response.json({ buildSha: "remote" })
   } })
   close.push(() => remote.stop(true))
-  const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`)
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`, "owner-token")
   close.push(native.stop)
 
   expect(await (await fetch(`${native.origin}/owner/repo`)).text()).toContain("packaged UI")
@@ -82,6 +82,9 @@ test("packaged terminal WebSocket reaches the selected backend with its owner se
     hostname: "127.0.0.1", port: 0,
     fetch(request, server) {
       const url = new URL(request.url)
+      if (url.pathname === "/api/login") return new Response("signed in", {
+        headers: { "set-cookie": "smithers_session=owner; HttpOnly; Path=/" }
+      })
       seen.push({ path: url.pathname + url.search, origin: request.headers.get("origin"), cookie: request.headers.get("cookie") })
       if (request.headers.get("origin") !== `http://127.0.0.1:${server.port}` ||
         request.headers.get("cookie") !== "smithers_session=owner") return new Response("Forbidden", { status: 403 })
@@ -92,6 +95,7 @@ test("packaged terminal WebSocket reaches the selected backend with its owner se
   close.push(() => remote.stop(true))
   const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`)
   close.push(native.stop)
+  await fetch(`${native.origin}/api/login`)
 
   const response = await new Promise<string>((resolve, reject) => {
     const socket = new WebSocket(`${native.origin.replace("http:", "ws:")}/api/repos/owner/repo/workspace/sessions/session/terminal?ticket=owner`, {
@@ -105,4 +109,233 @@ test("packaged terminal WebSocket reaches the selected backend with its owner se
   expect(response).toBe("native terminal")
   expect(seen).toEqual([{ path: "/api/repos/owner/repo/workspace/sessions/session/terminal?ticket=owner",
     origin: `http://127.0.0.1:${remote.port}`, cookie: "smithers_session=owner" }])
+})
+
+test("switching native backends isolates HTTP and WebSocket sessions and restores the selected jar", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-session-switch-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div>packaged UI</div>")
+  const seen: Array<{ backend: string; transport: string; cookie: string | null }> = []
+  const backend = (name: string) => Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    fetch(request, server) {
+      const cookie = request.headers.get("cookie")
+      if (request.headers.get("upgrade") === "websocket") {
+        seen.push({ backend: name, transport: "websocket", cookie })
+        return server.upgrade(request) ? undefined : new Response("Upgrade required", { status: 426 })
+      }
+      seen.push({ backend: name, transport: "http", cookie })
+      if (new URL(request.url).pathname === "/api/login") {
+        return new Response("signed in", { headers: { "set-cookie": `smithers_session=${name}_SESSION; HttpOnly; Path=/` } })
+      }
+      return Response.json({ backend: name })
+    },
+    websocket: { message(socket, message) { socket.send(message) } }
+  })
+  const a = backend("A")
+  const b = backend("B")
+  close.push(() => a.stop(true), () => b.stop(true))
+  const aOrigin = `http://127.0.0.1:${a.port}`
+  const bOrigin = `http://127.0.0.1:${b.port}`
+  const native = startNativeRendererServer(dist, aOrigin)
+  close.push(native.stop)
+  const rendererCookie = "smithers_session=A_SESSION"
+  const http = () => fetch(`${native.origin}/api/identity`, { headers: { cookie: rendererCookie } })
+  const socket = () => new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(`${native.origin.replace("http:", "ws:")}/api/terminal`, {
+      headers: { origin: native.origin, cookie: rendererCookie }
+    } as never)
+    ws.addEventListener("open", () => ws.send("ping"))
+    ws.addEventListener("message", () => { resolve(); ws.close() })
+    ws.addEventListener("error", () => reject(new Error("native WebSocket failed")))
+    ws.addEventListener("close", (event) => reject(new Error(`native WebSocket closed before output: ${event.code}; ${JSON.stringify(seen)}`)))
+  })
+
+  const login = await fetch(`${native.origin}/api/login`)
+  expect(login.headers.get("set-cookie")).not.toContain("A_SESSION")
+  expect(await login.text()).toBe("signed in")
+  await http()
+  await socket()
+  native.setTarget(bOrigin)
+  await http()
+  await socket()
+  native.setTarget(aOrigin)
+  await http()
+  await socket()
+  expect(seen).toEqual([
+    { backend: "A", transport: "http", cookie: null },
+    { backend: "A", transport: "http", cookie: rendererCookie },
+    { backend: "A", transport: "websocket", cookie: rendererCookie },
+    { backend: "B", transport: "http", cookie: null },
+    { backend: "B", transport: "websocket", cookie: null },
+    { backend: "A", transport: "http", cookie: rendererCookie },
+    { backend: "A", transport: "websocket", cookie: rendererCookie }
+  ])
+})
+
+test("native relay keeps CSRF paired with its backend session", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-csrf-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div>packaged UI</div>")
+  const seen: Array<{ backend: string; cookie: string | null; csrf: string | null }> = []
+  const backend = (name: string) => Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+    const url = new URL(request.url)
+    seen.push({ backend: name, cookie: request.headers.get("cookie"), csrf: request.headers.get("x-csrf-token") })
+    if (url.pathname === "/api/login") {
+      const headers = new Headers()
+      headers.append("set-cookie", `smithers_session=${name}_SESSION; HttpOnly; Path=/`)
+      headers.append("set-cookie", `__csrf=${name}_CSRF; Path=/; SameSite=Strict`)
+      return new Response("signed in", { headers })
+    }
+    return Response.json({ backend: name })
+  } })
+  const a = backend("A")
+  const b = backend("B")
+  close.push(() => a.stop(true), () => b.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${a.port}`)
+  close.push(native.stop)
+  const aLogin = await fetch(`${native.origin}/api/login`)
+  expect(aLogin.headers.getSetCookie()).toEqual(["__csrf=A_CSRF; Path=/; SameSite=Strict"])
+  await fetch(`${native.origin}/api/mutate`, { method: "POST", headers: { "x-csrf-token": "A_CSRF" } })
+  native.setTarget(`http://127.0.0.1:${b.port}`)
+  const bFirst = await fetch(`${native.origin}/api/mutate`, { method: "POST", headers: {
+    cookie: "smithers_session=A_SESSION; __csrf=A_CSRF", "x-csrf-token": "A_CSRF"
+  } })
+  expect(bFirst.headers.get("set-cookie")).toContain("Max-Age=0")
+  const bLogin = await fetch(`${native.origin}/api/login`)
+  expect(bLogin.headers.getSetCookie()).toEqual(["__csrf=B_CSRF; Path=/; SameSite=Strict"])
+  await fetch(`${native.origin}/api/mutate`, { method: "POST", headers: { "x-csrf-token": "B_CSRF" } })
+  native.setTarget(`http://127.0.0.1:${a.port}`)
+  const aBack = await fetch(`${native.origin}/api/identity`)
+  expect(aBack.headers.get("set-cookie")).toContain("__csrf=A_CSRF")
+  expect(seen).toEqual([
+    { backend: "A", cookie: null, csrf: null },
+    { backend: "A", cookie: "smithers_session=A_SESSION; __csrf=A_CSRF", csrf: "A_CSRF" },
+    { backend: "B", cookie: null, csrf: null },
+    { backend: "B", cookie: null, csrf: null },
+    { backend: "B", cookie: "smithers_session=B_SESSION; __csrf=B_CSRF", csrf: "B_CSRF" },
+    { backend: "A", cookie: "smithers_session=A_SESSION; __csrf=A_CSRF", csrf: null }
+  ])
+})
+
+test("a stale renderer bearer is not sent to the next backend", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-token-switch-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div>packaged UI</div>")
+  const seen: Array<{ backend: string; transport: string; authorization: string | null }> = []
+  const backend = (name: string) => Bun.serve({ hostname: "127.0.0.1", port: 0,
+    fetch(request, server) {
+      seen.push({ backend: name, transport: request.headers.get("upgrade") === "websocket" ? "websocket" : "http",
+        authorization: request.headers.get("authorization") })
+      return request.headers.get("upgrade") === "websocket"
+        ? server.upgrade(request) ? undefined : new Response("Upgrade required", { status: 426 })
+        : new Response("ok")
+    }, websocket: { message(socket, message) { socket.send(message) } }
+  })
+  const a = backend("A")
+  const b = backend("B")
+  close.push(() => a.stop(true), () => b.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${a.port}`, "A_TOKEN")
+  close.push(native.stop)
+  const http = (authorization: string) => fetch(`${native.origin}/api/identity`, { headers: { authorization } })
+  const socket = (authorization: string) => new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(`${native.origin.replace("http:", "ws:")}/api/terminal`, {
+      headers: { origin: native.origin, authorization }
+    } as never)
+    ws.addEventListener("open", () => ws.send("ping"))
+    ws.addEventListener("message", () => { resolve(); ws.close() })
+    ws.addEventListener("error", () => reject(new Error("token WebSocket failed")))
+  })
+  await http("Bearer A_TOKEN")
+  await socket("Bearer A_TOKEN")
+  native.setTarget(`http://127.0.0.1:${b.port}`, "B_TOKEN")
+  await http("Bearer A_TOKEN")
+  await socket("Bearer A_TOKEN")
+  await http("Bearer B_TOKEN")
+  await socket("Bearer B_TOKEN")
+  expect(seen).toEqual([
+    { backend: "A", transport: "http", authorization: "Bearer A_TOKEN" },
+    { backend: "A", transport: "websocket", authorization: "Bearer A_TOKEN" },
+    { backend: "B", transport: "http", authorization: null },
+    { backend: "B", transport: "websocket", authorization: null },
+    { backend: "B", transport: "http", authorization: "Bearer B_TOKEN" },
+    { backend: "B", transport: "websocket", authorization: "Bearer B_TOKEN" }
+  ])
+})
+
+test("switching targets closes old tunnels and discards a delayed old response", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-switch-race-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div>packaged UI</div>")
+  let entered!: () => void
+  let release!: () => void
+  const requestEntered = new Promise<void>((resolve) => { entered = resolve })
+  const releaseResponse = new Promise<void>((resolve) => { release = resolve })
+  const aCookies: Array<string | null> = []
+  const a = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(request, server) {
+    if (request.headers.get("upgrade") === "websocket") {
+      return server.upgrade(request) ? undefined : new Response("Upgrade required", { status: 426 })
+    }
+    aCookies.push(request.headers.get("cookie"))
+    entered()
+    await releaseResponse
+    return new Response("stale A", { headers: { "set-cookie": "smithers_session=LATE_A; Path=/" } })
+  }, websocket: { message() {} } })
+  const b = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("B") })
+  close.push(() => a.stop(true), () => b.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${a.port}`)
+  close.push(native.stop)
+  const ws = new WebSocket(`${native.origin.replace("http:", "ws:")}/api/terminal`, {
+    headers: { origin: native.origin }
+  } as never)
+  await new Promise<void>((resolve, reject) => {
+    ws.addEventListener("open", () => resolve())
+    ws.addEventListener("error", () => reject(new Error("old tunnel did not open")))
+  })
+  const closed = new Promise<void>((resolve) => ws.addEventListener("close", () => resolve()))
+  const slow = fetch(`${native.origin}/api/slow`)
+  await requestEntered
+  native.setTarget(`http://127.0.0.1:${b.port}`)
+  release()
+  await closed
+  const stale = await slow
+  expect(stale.status).toBe(409)
+  expect(stale.headers.get("set-cookie")).toBeNull()
+  expect(await stale.text()).toBe("Backend changed")
+  expect(await (await fetch(`${native.origin}/api/identity`)).text()).toBe("B")
+  native.setTarget(`http://127.0.0.1:${a.port}`)
+  const back = await fetch(`${native.origin}/api/identity`, { headers: { cookie: "smithers_session=LATE_A" } })
+  expect(back.headers.get("set-cookie")).not.toContain("LATE_A")
+  expect(aCookies).toEqual([null, null])
+})
+
+test("switching targets stops an old streamed response", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-stream-switch-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div>packaged UI</div>")
+  let release!: () => void
+  const secondChunk = new Promise<void>((resolve) => { release = resolve })
+  const a = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(new ReadableStream({
+    async start(output) {
+      output.enqueue(new TextEncoder().encode("first"))
+      await secondChunk
+      output.enqueue(new TextEncoder().encode("secret after switch"))
+      output.close()
+    }
+  })) })
+  const b = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("B") })
+  close.push(() => a.stop(true), () => b.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${a.port}`)
+  close.push(native.stop)
+  const response = await fetch(`${native.origin}/api/stream`)
+  const reader = response.body!.getReader()
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe("first")
+  native.setTarget(`http://127.0.0.1:${b.port}`)
+  release()
+  try {
+    const afterSwitch = await reader.read()
+    expect(afterSwitch.value === undefined ? "" : new TextDecoder().decode(afterSwitch.value)).not.toContain("secret")
+  } catch (error) {
+    expect(String(error)).toContain("Backend changed")
+  }
 })
