@@ -121,7 +121,11 @@ _DIRS = ("/logs/agent", "/logs/verifier", "/logs/artifacts", "/tests", "/solutio
 # hands it to the services it starts; an SSH exec session does not read it,
 # so every command sources it first. Absent (network none), nothing happens.
 EGRESS_ENV = "/etc/smithers/egress.env"
-EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
+# Intel OpenMP (PyTorch's libiomp) asserts in kmp_affinity.cpp(642) on the
+# guest's CPU topology, each vCPU presented as its own socket; disabling its
+# thread pinning changes no result. A task's own KMP_AFFINITY wins.
+GUEST_DEFAULTS = 'export KMP_AFFINITY="${KMP_AFFINITY:-disabled}"; '
+EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; {GUEST_DEFAULTS}"
 
 
 # The microsandbox guest init mounts a 512 MiB tmpfs over /tmp, hiding the

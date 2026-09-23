@@ -46,10 +46,10 @@ import plue_env  # noqa: E402
 
 CONFIG_NAME = "plue-docker.json"
 
-# Same as plue_env.EGRESS_PREFIX: the SSH session does not carry the
-# sandbox's egress proxy, so the command sources it first when it is there.
-EGRESS_ENV = "/etc/smithers/egress.env"
-EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
+# plue_env.EGRESS_PREFIX: the SSH session does not carry the sandbox's egress
+# proxy, so the command sources it first, plus the guest defaults.
+EGRESS_ENV = plue_env.EGRESS_ENV
+EGRESS_PREFIX = plue_env.EGRESS_PREFIX
 
 
 def load_config(invoked: str) -> dict:

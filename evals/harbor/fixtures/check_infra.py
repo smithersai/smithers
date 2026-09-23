@@ -433,6 +433,22 @@ def check_shim_durable_exec() -> None:
         assert "--exec-id" not in lines[0] and "--cwd /src" in lines[0], lines
 
 
+def check_guest_prelude() -> None:
+    """Intel OpenMP asserts in kmp_affinity.cpp(642) on the plue guest's CPU
+    topology (each vCPU its own socket): vllm-deepseek-streaming's oracle
+    died with exit 134. Every exec, the shim's included, defaults
+    KMP_AFFINITY=disabled (no thread pinning, same results) unless the task
+    set it."""
+    import subprocess as sp
+    import plue_docker
+    prelude = plue_env.with_egress("true")
+    assert "KMP_AFFINITY" in prelude and plue_docker.EGRESS_PREFIX == plue_env.EGRESS_PREFIX
+    run = lambda env: sp.run(["sh", "-c", plue_env.with_egress('printf %s "$KMP_AFFINITY"')],
+                             capture_output=True, text=True, env=env).stdout
+    assert run({"PATH": os.environ["PATH"]}) == "disabled"
+    assert run({"PATH": os.environ["PATH"], "KMP_AFFINITY": "compact"}) == "compact", "a task's own setting wins"
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -592,6 +608,7 @@ if __name__ == "__main__":
     check_trial_containment()
     check_durable_exec_and_workdir()
     check_shim_durable_exec()
+    check_guest_prelude()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "
