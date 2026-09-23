@@ -21,6 +21,7 @@ import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
+import { posix, win32 } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import type { Detection } from "./Detect.ts"
 import * as Fs from "./internal/Fs.ts"
@@ -184,6 +185,8 @@ export interface Options {
   readonly tmpdir?: string | undefined
 }
 
+const windowsAbsolute = (path: string): boolean => /^(?:[A-Za-z]:[\\/]|\\\\)/.test(path)
+
 /**
  * Every directory that holds 0.x run state.
  *
@@ -219,12 +222,18 @@ export const roots = (report: RunStateReport): ReadonlyArray<string> => {
     if (directory !== "") found.add(directory)
   }
   for (const file of report.gatewayState) {
-    const directory = parent(file)
-    if (directory !== "") found.add(directory)
+    const directory = (windowsAbsolute(file) ? win32 : posix).dirname(file)
+    if (directory !== ".") found.add(directory)
   }
   // A root that lives inside another root is already walked by it.
   const all = [...found].sort()
-  return all.filter((entry) => !all.some((other) => other !== entry && entry.startsWith(`${other}/`)))
+  const comparable = (entry: string): string => windowsAbsolute(entry) ? entry.replaceAll("\\", "/") : entry
+  return all.filter((entry) =>
+    !all.some((other) => {
+      const directory = comparable(other)
+      return other !== entry && comparable(entry).startsWith(directory.endsWith("/") ? directory : `${directory}/`)
+    })
+  )
 }
 
 /**
@@ -405,6 +414,29 @@ const backendSetting = (
   sources: ReadonlyArray<{ readonly file: string; readonly text: string }>
 ): BackendSetting | undefined => (sources.length === 0 ? undefined : { backend, sources })
 
+/** Gateway JSON escapes native Windows separators and may nest workspace records. */
+const mentionsRoot = (text: string, root: string): boolean => {
+  if (text.includes(root)) return true
+  let value: unknown
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return false
+  }
+  const pending: Array<unknown> = [value]
+  while (pending.length > 0) {
+    const current = pending.pop()
+    if (typeof current === "string" && current.includes(root)) return true
+    if (current !== null && typeof current === "object") {
+      for (const [key, child] of Object.entries(current)) {
+        if (key.includes(root)) return true
+        pending.push(child)
+      }
+    }
+  }
+  return false
+}
+
 /**
  * Reads every trace of Smithers 0.x run state under `root` and returns the
  * verdict plus the operator instructions, in the order the operator has to act
@@ -554,7 +586,7 @@ export const scan = (
         for (const file of yield* Fs.walk(gatewayDirectory)) {
           if (!file.endsWith(".json")) continue
           const text = yield* Fs.readOption(path.join(gatewayDirectory, ...file.split("/")))
-          if (text !== undefined && text.includes(root)) gatewayState.push(path.join(gatewayDirectory, file))
+          if (text !== undefined && mentionsRoot(text, root)) gatewayState.push(path.join(gatewayDirectory, file))
         }
       }
     }

@@ -204,6 +204,40 @@ describe("RunState.scan", () => {
       expect(result.instructions.some((line) => line.includes("smithers down"))).toBe(true)
     }))
 
+  for (const position of ["value", "key"] as const) {
+    it.effect(`blocks on a JSON-escaped workspace path in a gateway ${position}`, () =>
+      Effect.gen(function*() {
+        const root = copyFixture("jsx-single")
+        const temporary = copyFixture("jsx-single")
+        const directory = join(temporary, "smithers-gateway")
+        mkdirSync(directory, { recursive: true })
+        const escaped = root.split("").map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`).join("")
+        writeFileSync(
+          join(directory, "gateway.json"),
+          position === "value"
+            ? `{"workspaces":[null,123,{"path":"${escaped}"}]}`
+            : `{"workspaces":{"${escaped}":true}}`
+        )
+        writeFileSync(join(directory, "unrelated.json"), "{\"other\":[null,123,\"another workspace\"]}")
+        writeFileSync(join(directory, "invalid.json"), "{invalid")
+        const result = yield* report(root, { tmpdir: temporary })
+
+        expect(result.gatewayState).toEqual([join(directory, "gateway.json")])
+        expect(result.verdict).toBe("blocked")
+      }))
+  }
+
+  for (const directory of ["C:\\state\\smithers-gateway", "\\\\server\\share\\smithers-gateway"]) {
+    it.effect(`protects a native Windows gateway directory ${directory} and its descendants`, () =>
+      Effect.gen(function*() {
+        const result = yield* report(copyFixture("jsx-single"))
+        expect(RunState.roots({
+          ...result,
+          gatewayState: [`${directory}\\gateway.json`, `${directory}\\nested\\another.json`]
+        })).toEqual([directory])
+      }))
+  }
+
   it.effect("finds a database named by a dbPath literal in project source", () =>
     Effect.gen(function*() {
       const root = copyFixture("persisted-db")
