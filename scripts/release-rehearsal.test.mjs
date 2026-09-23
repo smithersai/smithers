@@ -357,7 +357,7 @@ test("the driver reads the toolchain steps copied out of ci.yml", () => {
   assert.equal(systemPackages.shell, "bash")
   assert.match(systemPackages.run, /--no-install-recommends 'bubblewrap'/)
   assert.equal(step("Install ripgrep").with.tool, "ripgrep@14.1.1")
-  assert.equal(step("Install Go").with["go-version"], "1.26.0")
+  assert.equal(step("Install Go").with["go-version"], "1.26.8")
   assert.equal(step("Install Foundry").with.version, "v1.8.1")
 })
 

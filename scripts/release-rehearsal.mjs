@@ -240,6 +240,7 @@ export const localEquivalents = {
   "actions/setup-node": "the Node toolchain bin directory pinned by --node <version>=<dir>",
   "oven-sh/setup-bun": "bun on PATH",
   "actions/setup-go": "the Go toolchain already installed on PATH",
+  "Swatinem/rust-cache": "the local Cargo cache remains available",
   "foundry-rs/foundry-toolchain": "forge and anvil already installed on PATH",
   "taiki-e/install-action": "the tool already installed on PATH"
 }
