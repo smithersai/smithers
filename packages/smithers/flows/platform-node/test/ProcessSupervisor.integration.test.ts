@@ -529,7 +529,8 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
                 Effect.runSync(Deferred.succeed(ready, undefined))
               })
             ),
-            Effect.andThen(Effect.sync(() => performance.now())),
+            Effect.exit,
+            Effect.map((exit) => ({ exit, at: performance.now() })),
             Effect.forkChild
           )
           yield* Deferred.await(ready).pipe(Effect.timeout("5 seconds"))
@@ -539,7 +540,15 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
           const start = performance.now()
           yield* prepared.handle.kill({ killSignal: "SIGTERM", forceKillAfter: graceMs })
           const elapsedMs = performance.now() - start
-          const exitAfterMs = (yield* Fiber.join(ended)) - start
+          const output = yield* Fiber.join(ended)
+          const exitAfterMs = output.at - start
+          // Group KILL also kills the owner, so its status channel can report
+          // the missing target outcome before stdout observes EOF. Both must
+          // follow the full grace; every other read failure remains a failure.
+          if (Exit.isFailure(output.exit)) {
+            expect(escaped).toBe(false)
+            expect(Cause.pretty(output.exit.cause)).toContain("Process supervisor closed before reporting its outcome")
+          }
           const termSeen = existsSync(marker) && readFileSync(marker, "utf8") === "TERM"
           expect({ termSeen, requests, elapsedMs, exitAfterMs }).toMatchObject({
             termSeen: true,
