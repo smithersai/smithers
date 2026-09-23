@@ -182,9 +182,13 @@ store as it now stands.
 
 A hook that fails with a `HarnessError` whose `cause` is a
 `Permission.PermissionDenied` refuses that one call: the cell reads
-`{ ok: false, error: { code: "permission_denied" } }` and the run goes on.
-Any other failure ends the run. The call's `callMs` clock starts after the
-hook answers, so a hook may wait for a person.
+`{ ok: false, error: { code: "capability_refused", message } }`, where
+`message` is the hook's own `HarnessError` message, and the run goes on. The
+code set is part of every sealed call key, so a denial reuses
+`capability_refused` rather than adding a code; write a message your host can
+recognize when it needs to tell its denials apart. Any other failure ends the
+run. The call's `callMs` clock starts after the hook answers, so a hook may
+wait for a person.
 
 ## Declare the envelope honestly
 

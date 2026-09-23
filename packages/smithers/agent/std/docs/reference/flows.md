@@ -317,6 +317,11 @@ A patch naming one path in two sections is refused whole rather than applied by
 halves. Fails with `invalid_input` for a parse or preflight failure, `not_found`,
 `binary_file`, or `no_match` when a hunk's context is not in the file.
 
+`ApplyPatch.paths(patch)` returns every path a patch writes, a move's
+destination included, read by the same parser `run` uses. It returns
+`undefined` for a patch `run` would refuse, so a host asking permission for
+the call asks for everything the flow declares instead.
+
 ## update_plan
 
 Acknowledges a plan update. Pure: it touches nothing, and the harness observes

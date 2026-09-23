@@ -462,7 +462,7 @@ projects a failed result into the fixed envelope the cell observes:
 
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
-flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 14 codes
+flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 13 codes
 to the one action that recovers it. The codes and hints are tabulated in
 [troubleshooting](/troubleshooting/#a-flow-call-fails).
 
@@ -1223,10 +1223,13 @@ remembering, and up to `recalledLimit` (6) rows recalled from memory. Nothing
 is re-derived: the supervisor reads the harness's evidence and never measures
 a second time.
 
-One Jev call per snapshot answers every question at once. Three are about the
-run and decide a nudge: `thrashing` (at or above `thrashingAt`, 0.5),
-`on_target` (at or below `offTargetAt`, 0.5) and `suspect` (at or above
-`suspectAt`, 0.5), plus `outdated_context` and `irrelevant_context`. Five are
+One Jev call per snapshot answers every question at once; eleven are fixed.
+Five are about the run and decide a nudge, the `triggers`: `thrashing` (at or
+above `thrashingAt`, 0.5), `off_target` (`on_target` at or below
+`offTargetAt`, 0.5), `suspect` (at or above `suspectAt`, 0.5),
+`outdated_context` and `irrelevant_context` (each at or above `acceptAt`,
+0.5). `crosses(reading)` is any trigger firing and `triggered(reading)` names
+the ones that did; `judge` and the offline replay both call them. Five are
 operational states scored on `Level` (`none`, `mild`, `strong`), each naming
 the evidence it reads: `frustrated`, `anxious`, `scared`, `confused`,
 `confident`. `needs_help` is a choice over `Help` (`none`, `clarification`,
@@ -1243,19 +1246,27 @@ the loop's scope takes the newest snapshot, recalls, asks through
 and journals `AgentEvent.SupervisorSettled` beside a `DecisionSettled` that
 carries the snapshot and every answer. `judge` turns a `Reading` into a
 `Verdict` under `Options`: `steer` (default off) arms the `nudge`, a concise
-message naming the counts behind the reading, and the insertion of accepted
-recalled rows, both delivered as ordinary steering inserts by the next
-boundary that executes and dropped as stale after that; `remember` (default
-on) writes accepted candidates to the bound `Memory`, a port with
-`memoryNone` behind it unless the host adapts a store. `defaultOptions`
-journals verdicts and nudges nothing.
+message naming the counts behind the reading and the frame they were read at,
+and the insertion of accepted recalled rows. Both are delivered by the next
+boundary that executes, in the drain's own `supervisor` field rather than
+among the person's steering inserts, and dropped as stale after that. The
+model reads them above the frame's ask; the task the completion brake and
+later snapshots read never includes them. Each `SupervisorSettled` states the
+`steer` it ran under. `remember` (default off) writes accepted candidates to
+the bound `Memory`, a port with `memoryNone` behind it unless the host adapts
+a store. A `Memory` read or write that fails is journaled as
+`AgentEvent.SupervisorMemoryFailed` and the reading goes on.
+`defaultOptions` journals verdicts, nudges nothing and writes nothing.
 
 It never falls back. A snapshot nobody could judge is journaled as
-`AgentEvent.SupervisorUnjudged` with `UnjudgedReason` (`unconfigured`, or the
-transport's own code) and inserts nothing, remembers nothing and reports no
-level. A replayed frame is never offered, so a resumed run re-asks nothing
-and re-delivers exactly the inserts its recorded drains hold; a reading in
-flight when the run ends is lost with the scope. The offline replay over
+`AgentEvent.SupervisorUnjudged` with `UnjudgedReason` (`unconfigured`,
+`interrupted`, or the transport's own code; an `unreachable` detail is
+`Evaluator.unreachableMessage`, never the transport's text) and inserts
+nothing, remembers nothing and reports no level. A replayed frame is never
+offered, so a resumed run re-asks nothing and re-delivers exactly the inserts
+its recorded drains hold. A reading in flight when the run ends gets
+`closeGraceMs` (1,500) to settle; one still unanswered is interrupted and
+journaled `interrupted`, and the run never waits longer. The offline replay over
 archived journals that measures the nudge's precision is
 `evals/swebench/lib/jev-replay.mjs`.
 
