@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseMatrixConfig } from "../e2e/real/coverage/matrix"
+import { parseMatrixConfig, selectMatrixModes } from "../e2e/real/coverage/matrix"
 import type { MatrixConfig } from "../e2e/real/coverage/matrix"
 import { startPackagedWebSelfhost } from "./mode-matrix/docker-web-selfhost"
 import type { WebSelfhostSession } from "./mode-matrix/docker-web-selfhost"
@@ -34,7 +34,8 @@ const revision = await sourceRevision(rootDir)
 
 const outputDir = resolve(option("--output-dir") ?? process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? resolve(appDir, "test-results/mode-matrix"))
 const modeSelection = option("--modes")
-const wants = (mode: string): boolean => modeSelection === undefined || modeSelection.split(",").includes(mode)
+const selectedModes = selectMatrixModes(modeSelection).modes
+const wants = (mode: string): boolean => selectedModes.some((selected) => selected === mode)
 const configPath = resolve(outputDir, "config.json")
 const reportPath = resolve(outputDir, "report.json")
 mkdirSync(outputDir, { recursive: true })

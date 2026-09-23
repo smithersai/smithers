@@ -340,11 +340,26 @@ export const missingModeReadiness = (mode: DeploymentMode, reason: string): Mode
   reasons: [reason]
 })
 
+export interface MatrixSelection {
+  readonly modes: readonly DeploymentMode[]
+  readonly scope: "six-mode" | "partial"
+}
+
+export const selectMatrixModes = (value?: string): MatrixSelection => {
+  const modes = value === undefined ? DEPLOYMENT_MODES
+    : value === "own-only" ? DEPLOYMENT_MODES.filter((mode) => MODE_DESCRIPTORS[mode].provider === "selfhost")
+      : value.split(",").map((mode) => {
+        if (!(DEPLOYMENT_MODES as readonly string[]).includes(mode)) throw new Error(`invalid matrix mode ${mode}`)
+        return mode as DeploymentMode
+      })
+  if (modes.length === 0 || new Set(modes).size !== modes.length) throw new Error("matrix modes must be a nonempty set")
+  return { modes, scope: modes.length === DEPLOYMENT_MODES.length ? "six-mode" : "partial" }
+}
+
 export const matrixPasses = (
   readiness: readonly ModeReadiness[],
   scenarios: readonly MatrixScenarioReceipt[],
   deterministicPassed: boolean,
-  plueConfigured: boolean,
   requiredModes: readonly DeploymentMode[] = DEPLOYMENT_MODES,
   commands: readonly { readonly tier: string; readonly status: "passed" | "failed" | "unavailable"; readonly exitCode?: number }[] = []
 ): boolean => deterministicPassed &&
@@ -357,7 +372,21 @@ export const matrixPasses = (
   readiness.every(({ mode }) => requiredModes.includes(mode)) &&
   scenarios.length === requiredModes.length * MATRIX_OBLIGATIONS.reduce((count, { scenarios: rows }) => count + rows.length, 0) &&
   new Set(scenarios.map(({ mode, scenarioId }) => `${mode}:${scenarioId}`)).size === scenarios.length &&
-  readiness.every(({ mode, status }) => status === "passed" ||
-    (MODE_DESCRIPTORS[mode].provider === "plue" && !plueConfigured && status === "not-configured")) &&
-  scenarios.every(({ status }) => status === "passed" || status === "not-applicable" ||
-    (!plueConfigured && status === "not-configured"))
+  readiness.every(({ status }) => status === "passed") &&
+  scenarios.every(({ mode, scenarioId, status }) => {
+    const scenario = MATRIX_OBLIGATIONS.flatMap(({ scenarios: rows }) => rows).find(({ id }) => id === scenarioId)
+    const capabilities = readiness.find((row) => row.mode === mode)?.capabilities ?? []
+    return requiredModes.includes(mode) && scenario !== undefined &&
+      (status === "passed" || (status === "not-applicable" && scenario.capabilities.some((capability) => !capabilities.includes(capability))))
+  })
+
+export const matrixVerdict = (
+  selection: MatrixSelection,
+  readiness: readonly ModeReadiness[],
+  scenarios: readonly MatrixScenarioReceipt[],
+  deterministicPassed: boolean,
+  commands: readonly { readonly tier: string; readonly status: "passed" | "failed" | "unavailable"; readonly exitCode?: number }[] = []
+) => {
+  const ok = matrixPasses(readiness, scenarios, deterministicPassed, selection.modes, commands)
+  return { ok, scope: selection.scope, modes: selection.modes, sixModeAccepted: ok && selection.scope === "six-mode" }
+}

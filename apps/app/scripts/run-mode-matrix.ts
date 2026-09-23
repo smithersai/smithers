@@ -8,12 +8,12 @@ import {
   MODE_DESCRIPTORS,
   applicableScenarioIds,
   missingModeReadiness,
-  matrixPasses,
+  matrixVerdict,
   parseMatrixConfig,
   probeMode,
-  scenarioReceipts
+  scenarioReceipts,
+  selectMatrixModes
 } from "../e2e/real/coverage/matrix"
-import { DEPLOYMENT_MODES } from "../e2e/real/coverage/types"
 import type { MatrixConfig, MatrixScenarioReceipt, ModeReadiness } from "../e2e/real/coverage/matrix"
 import type { DeploymentMode, RealE2EEvidenceFile, RealScenarioRunEvidence } from "../e2e/real/coverage/types"
 import { sourceRevision } from "./mode-matrix/source-revision"
@@ -30,16 +30,8 @@ const option = (name: string): string | undefined => {
   if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`)
   return value
 }
-const requestedModes = option("--modes")?.split(",")
-const selectedModes: readonly DeploymentMode[] = requestedModes === undefined
-  ? DEPLOYMENT_MODES
-  : requestedModes.map((mode) => {
-    if (!(DEPLOYMENT_MODES as readonly string[]).includes(mode)) throw new Error(`invalid matrix mode ${mode}`)
-    return mode as DeploymentMode
-  })
-if (selectedModes.length === 0 || new Set(selectedModes).size !== selectedModes.length) {
-  throw new Error("matrix modes must be a nonempty set")
-}
+const selection = selectMatrixModes(option("--modes"))
+const selectedModes = selection.modes
 
 const detectedRevision = await sourceRevision(resolve(appDir, "../.."))
 const configPath = option("--config") ?? process.env.SMITHERS_MODE_MATRIX_CONFIG
@@ -129,11 +121,10 @@ for (const mode of selectedModes) {
 
 const scenarios: MatrixScenarioReceipt[] = readiness.flatMap((state) => scenarioReceipts(state, config.revision, runs))
 const report = {
-  ok: matrixPasses(readiness, scenarios, deterministicPassed, Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL), selectedModes, commands),
+  ...matrixVerdict(selection, readiness, scenarios, deterministicPassed, commands),
   generatedAt: new Date().toISOString(),
   revision: config.revision,
   command,
-  modes: selectedModes,
   commands,
   readiness,
   scenarios

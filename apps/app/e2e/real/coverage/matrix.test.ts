@@ -11,10 +11,12 @@ import {
   MODE_DESCRIPTORS,
   missingModeReadiness,
   matrixPasses,
+  matrixVerdict,
   parseMatrixConfig,
   probeMode,
   readExecutionReceipt,
   scenarioReceipts,
+  selectMatrixModes,
   validateExecutionReceipt
 } from "./matrix"
 import { checkRealE2E } from "./gate"
@@ -269,39 +271,70 @@ describe("deployment mode matrix", () => {
     const readiness = DEPLOYMENT_MODES.map((mode) => mode === "local-plue" ? result :
       mode.endsWith("-plue") ? missingModeReadiness(mode, "not configured") :
       { ...missingModeReadiness(mode, "not launched"), status: "passed" as const })
-    expect(matrixPasses(readiness, [], true, true)).toBe(false)
+    expect(matrixPasses(readiness, [], true)).toBe(false)
   })
 
-  test("unconfigured Plue modes remain distinct from a passing owned gate", () => {
+  test("three passing own modes cannot accept a six-mode run with three unconfigured Plue modes", () => {
     const readiness = DEPLOYMENT_MODES.map((mode) => mode.endsWith("-plue")
       ? missingModeReadiness(mode, "not configured")
-      : { ...missingModeReadiness(mode, "ready"), status: "passed" as const })
+      : { ...missingModeReadiness(mode, "ready"), status: "passed" as const,
+          capabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"] })
     expect(readiness.filter(({ status }) => status === "not-configured")).toHaveLength(3)
-    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, []).map((row) => ({
-      ...row, status: state.status === "not-configured" ? "not-configured" as const : "passed" as const
-    })))
-    expect(matrixPasses(readiness, rows, true, false)).toBe(true)
-    expect(matrixPasses(readiness, rows, true, false, DEPLOYMENT_MODES, [
+    const runs = readiness.filter(({ status }) => status === "passed").flatMap((state) =>
+      applicableScenarioIds(state.capabilities).map((scenarioId) => ({
+        mode: state.mode, scenarioId, host: MODE_DESCRIPTORS[state.mode].legacyHost,
+        status: "passed" as const, revision,
+        startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z"
+      })))
+    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, runs))
+    expect(rows.filter(({ status }) => status === "not-configured")).toHaveLength(3 * MATRIX_SCENARIO_IDS.length)
+    expect(matrixPasses(readiness, rows, true)).toBe(false)
+    expect(matrixPasses(readiness, rows, true, DEPLOYMENT_MODES, [
       { tier: "deterministic", status: "passed", exitCode: 0 },
       { tier: "local-infrastructure", status: "failed", exitCode: 1 }
     ])).toBe(false)
-    expect(matrixPasses(readiness, rows, true, true)).toBe(false)
-    expect(matrixPasses(readiness, rows.slice(1), true, false)).toBe(false)
+    expect(matrixPasses(readiness, rows.slice(1), true)).toBe(false)
+
+    const own = selectMatrixModes("own-only")
+    expect(own).toEqual({ modes: ["web-selfhost", "local-own", "native-own"], scope: "partial" })
+    const ownReadiness = readiness.filter(({ mode }) => own.modes.includes(mode))
+    const ownRows = rows.filter(({ mode }) => own.modes.includes(mode))
+    expect(matrixVerdict(own, ownReadiness, ownRows, true)).toEqual({
+      ok: true, scope: "partial", modes: own.modes, sixModeAccepted: false
+    })
+    expect(matrixVerdict(selectMatrixModes(), readiness, rows, true).sixModeAccepted).toBe(false)
+  })
+
+  test("six-mode acceptance needs an executed receipt for every applicable scenario", () => {
+    const selection = selectMatrixModes()
+    const readiness = selection.modes.map((mode) => ({
+      mode, status: "passed" as const,
+      tier: MODE_DESCRIPTORS[mode].provider === "plue" ? "plue-production" as const : "local-infrastructure" as const,
+      capabilities: ["identity", "agent", "model.turn", "cloud", "cloud.terminal"], reasons: []
+    }))
+    const runs = readiness.flatMap((state) => applicableScenarioIds(state.capabilities).map((scenarioId) => ({
+      mode: state.mode, scenarioId, host: MODE_DESCRIPTORS[state.mode].legacyHost,
+      status: "passed" as const, revision,
+      startedAt: "2026-09-21T00:00:00Z", finishedAt: "2026-09-21T00:00:01Z"
+    })))
+    const receipts = readiness.flatMap((state) => scenarioReceipts(state, revision, runs))
+    expect(matrixVerdict(selection, readiness, receipts, true)).toEqual({
+      ok: true, scope: "six-mode", modes: DEPLOYMENT_MODES, sixModeAccepted: true
+    })
+    const missing = readiness.flatMap((state) => scenarioReceipts(state, revision,
+      runs.filter((run) => run.mode !== "native-plue" || run.scenarioId !== "flows.product-run")))
+    expect(matrixVerdict(selection, readiness, missing, true).sixModeAccepted).toBe(false)
   })
 
   test("runner partitions cover only their declared modes while the default still requires all six", () => {
     const ubuntu = ["web-selfhost", "web-plue", "local-own", "local-plue"] as const
     const mac = ["native-own", "native-plue"] as const
     expect(new Set([...ubuntu, ...mac])).toEqual(new Set(DEPLOYMENT_MODES))
-    const readiness = ubuntu.map((mode) => mode.endsWith("-plue")
-      ? missingModeReadiness(mode, "not configured")
-      : { ...missingModeReadiness(mode, "ready"), status: "passed" as const })
-    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, []).map((row) => ({
-      ...row, status: state.status === "not-configured" ? "not-configured" as const : "passed" as const
-    })))
-    expect(matrixPasses(readiness, rows, true, false, ubuntu)).toBe(true)
-    expect(matrixPasses(readiness, rows, true, false)).toBe(false)
-    expect(matrixPasses(readiness, rows, true, false, ["web-selfhost", "web-selfhost"])).toBe(false)
+    const readiness = ubuntu.map((mode) => missingModeReadiness(mode, "not configured"))
+    const rows = readiness.flatMap((state) => scenarioReceipts(state, revision, []))
+    expect(matrixPasses(readiness, rows, true, ubuntu)).toBe(false)
+    expect(matrixPasses(readiness, rows, true)).toBe(false)
+    expect(matrixPasses(readiness, rows, true, ["web-selfhost", "web-selfhost"])).toBe(false)
   })
 })
 

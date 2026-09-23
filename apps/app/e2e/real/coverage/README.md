@@ -131,11 +131,15 @@ Plue-backed local/native modes fail if they started any of those processes.
 The readiness probe then reads the real health/bootstrap endpoints and records
 advertised capabilities.
 
-Output contains only `passed`, `failed`, or `unavailable`; there is no skip
-state. Missing mode configuration, auth, launcher evidence, capability,
-scenario implementation, or executed receipt stays `unavailable` and makes
-the gate fail. Deterministic, local-infrastructure, live-provider, and
-Plue-production tiers remain separate rows.
+The default run selects all six modes. Missing Plue configuration appears as
+`not-configured` and fails the gate. For a developer run, `--modes own-only`
+selects the three owned modes; an explicit comma-separated list can select
+other subsets. A passing subset report has `scope: "partial"`, lists its modes,
+and has `sixModeAccepted: false`. Only a passing full selection sets
+`sixModeAccepted: true`. Applicable scenarios need executed passing receipts;
+`not-applicable` is accepted only when a capability is absent. Deterministic,
+local-infrastructure, live-provider, and Plue-production tiers remain separate
+rows.
 
 The shared `scenario()` details also derive `@real-host:*` Playwright tags.
 The real config selects the current host before fixtures execute, so a
