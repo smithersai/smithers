@@ -2,7 +2,7 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:f
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { resolveDefaultExecutable } from "../src/internal/AtomicFileSystemExecutable.ts"
+import { outsideWorkspace, resolveDefaultExecutable } from "../src/internal/AtomicFileSystemExecutable.ts"
 
 const roots: Array<string> = []
 const fixture = async () => {
@@ -23,6 +23,30 @@ afterEach(async () => {
 })
 
 describe("default atomic helper resolution", () => {
+  it("tries a second staging location when the first is confined", async () => {
+    const { root } = await fixture()
+    const source = join(root, "helper")
+    const confined = join(root, "confined")
+    const outside = await realpath(await mkdtemp(join(tmpdir(), "atomic-stage-")))
+    roots.push(outside)
+    await mkdir(confined)
+    await helper(source)
+    const selected = outsideWorkspace(source, root, [confined, outside])
+    expect(selected.startsWith(`${outside}/`)).toBe(true)
+    expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+    expect(outsideWorkspace(source, root, [confined])).toBe(selected)
+  })
+
+  it("fails when every staging location is confined or none is available", async () => {
+    const { root } = await fixture()
+    const source = join(root, "helper")
+    const confined = join(root, "confined")
+    await mkdir(confined)
+    await helper(source)
+    expect(() => outsideWorkspace(source, root, [confined])).toThrow(/confined workspace/)
+    expect(() => outsideWorkspace(source, root, [])).toThrow(/no staging location/)
+  })
+
   it("uses the helper shipped in the installed platform package", async () => {
     const { packageRoot, root } = await fixture()
     const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
@@ -31,6 +55,14 @@ describe("default atomic helper resolution", () => {
     const selected = resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent"))
     expect(selected).not.toBe(binary)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+  })
+
+  it("rejects a packaged helper that is a directory", async () => {
+    const { packageRoot, root } = await fixture()
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    await mkdir(binary, { recursive: true })
+    expect(() => resolveDefaultExecutable(packageRoot, root, join(root, "absent")))
+      .toThrow(/not a regular file/)
   })
 
   it("pins an installed helper outside a confined project", async () => {
@@ -64,5 +96,12 @@ describe("default atomic helper resolution", () => {
     const { packageRoot, root } = await fixture()
     expect(() => resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent")))
       .toThrow(/cargo build.*SMITHERS_WORKSPACE_JJ_EXPORT_BINARY/)
+  })
+
+  it("rejects a fallback helper inside the confined project", async () => {
+    const { packageRoot, root } = await fixture()
+    const fallback = join(root, "fallback")
+    await helper(fallback)
+    expect(() => resolveDefaultExecutable(packageRoot, root, fallback)).toThrow(/confined workspace/)
   })
 })

@@ -9,6 +9,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { usableExecutable } from "./AtomicFileSystemTransport.ts"
 
+/* v8 ignore start -- the CJS and installed-layout paths run in the packed consumer smoke test */
 const moduleDirectory = typeof __dirname === "string" ? __dirname : dirname(fileURLToPath(import.meta.url))
 const sourcePackageRoot = resolve(moduleDirectory, "../..")
 
@@ -20,14 +21,23 @@ const sourcePackageRoot = resolve(moduleDirectory, "../..")
 export const packageRoot = existsSync(join(sourcePackageRoot, "package.json"))
   ? sourcePackageRoot
   : resolve(moduleDirectory, "../../..")
+/* v8 ignore stop */
 
 const staged = new Map<string, string>()
 
-/** Pin an install inside the workspace before any flow can modify its bytes. */
-const outsideWorkspace = (source: string, boundaryRoot: string | undefined): string => {
+/**
+ * Pin an install inside the workspace before any flow can modify its bytes.
+ * @private
+ * @since 1.0.0
+ */
+export const outsideWorkspace = (
+  source: string,
+  boundaryRoot: string | undefined,
+  bases: ReadonlyArray<string> = [tmpdir(), homedir()]
+): string => {
   const cached = staged.get(source)
   if (cached !== undefined) return usableExecutable(cached, boundaryRoot)
-  for (const base of [tmpdir(), homedir()]) {
+  for (const [index, base] of bases.entries()) {
     const directory = mkdtempSync(join(base, ".smthrs-atomic-helper-"))
     const destination = join(directory, "smithers-jj-export")
     try {
@@ -36,14 +46,15 @@ const outsideWorkspace = (source: string, boundaryRoot: string | undefined): str
       chmodSync(destination, 0o500)
       const executable = usableExecutable(destination, boundaryRoot)
       staged.set(source, executable)
+      /* v8 ignore next -- runs only when the host process exits */
       process.once("exit", () => rmSync(directory, { recursive: true, force: true }))
       return executable
     } catch (cause) {
       rmSync(directory, { recursive: true, force: true })
-      if (base === homedir()) throw cause
+      if (index === bases.length - 1) throw cause
     }
   }
-  throw new Error("could not stage smithers-jj-export outside the confined workspace")
+  throw new Error("no staging location for smithers-jj-export")
 }
 
 /**

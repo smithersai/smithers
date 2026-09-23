@@ -1531,7 +1531,9 @@ describe("AwsSandbox", () => {
   it.effect("passes the sandbox conformance suite through the CLI session transport", () =>
     Effect.gen(function*() {
       const violations = yield* SandboxConformance.check(transportProvider(fakeEcs(), fakeCli()), {
-        provides: { ping: true, kill: true }
+        provides: { ping: true, kill: true },
+        commands: { ...SandboxConformance.uniquePosixCommands(), stopsWithin: "15 seconds" },
+        checkTimeout: "25 seconds"
       })
       expect(violations).toEqual([])
     }), 120_000)
