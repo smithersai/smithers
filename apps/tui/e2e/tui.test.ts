@@ -44,7 +44,14 @@ const repository = (options: { readonly git?: boolean } = {}) => {
 }
 
 const start = async (
-  options: { readonly holdMs?: number; readonly args?: string; readonly cwd?: string; readonly sessions?: string } = {}
+  options: {
+    readonly holdMs?: number
+    readonly args?: string
+    readonly cwd?: string
+    readonly sessions?: string
+    /** `all` unless a case is about approvals, so replays test what they test. */
+    readonly approve?: "ask" | "all" | "deny"
+  } = {}
 ) => {
   const cwd = options.cwd ?? repository()
   const sessions = options.sessions ?? mkdtempSync(join(tmpdir(), "tui-sessions-"))
@@ -57,7 +64,8 @@ const start = async (
       SMITHERS_TUI_REPLAY: fixture,
       SMITHERS_TUI_REPLAY_HOLD_MS: String(options.holdMs ?? 0),
       SMITHERS_TUI_REPLAY_SPEED: "20",
-      SMITHERS_TUI_SESSION_DIR: sessions
+      SMITHERS_TUI_SESSION_DIR: sessions,
+      SMITHERS_TUI_APPROVE: options.approve ?? "all"
     }
   })
   await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
@@ -205,7 +213,8 @@ describe("turns", () => {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         SMITHERS_TUI_REPLAY: fixture,
-        SMITHERS_TUI_SESSION_DIR: first.sessions
+        SMITHERS_TUI_SESSION_DIR: first.sessions,
+        SMITHERS_TUI_APPROVE: "all"
       }
     })
     await tui.until((screen) => screen.includes("remembered-output"), 20_000, "restored transcript")
@@ -311,7 +320,8 @@ describe("search palette", () => {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         SMITHERS_TUI_REPLAY: fixture,
-        SMITHERS_TUI_SESSION_DIR: first.sessions
+        SMITHERS_TUI_SESSION_DIR: first.sessions,
+        SMITHERS_TUI_APPROVE: "all"
       }
     })
     await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
@@ -506,7 +516,8 @@ describe("runtime views", () => {
         PATH: process.env.PATH ?? "",
         HOME: process.env.HOME ?? "",
         SMITHERS_TUI_REPLAY: fixture,
-        SMITHERS_TUI_SESSION_DIR: first.sessions
+        SMITHERS_TUI_SESSION_DIR: first.sessions,
+        SMITHERS_TUI_APPROVE: "all"
       }
     })
     await tui.until((screen) => screen.includes("Undid math.js"), 20_000, "restored note")
@@ -644,7 +655,12 @@ it(
     const folder = join(sessions, readdirSync(sessions)[0]!)
     const records = readFileSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line))
-    expect(records.filter((record) => record.type === "tab" && record.tab.status === "requested")).toHaveLength(1)
+    const requests = records.filter((record) => record.type === "tab" && record.tab.status === "requested")
+    // Describing a pending request may append a newer version of the same
+    // tab. Deduplication promises one worker identity and one execution file.
+    expect([...new Set(requests.map((record) => record.tab.id))]).toEqual(["investigation"])
+    expect(new Set(requests.map((record) => record.tab.file)).size).toBe(1)
+    expect(readdirSync(join(folder, "workers"))).toHaveLength(1)
     await tui.press(key.ctrlK)
     await tui.type("tab:inv")
     await tui.until((screen) => screen.includes("Search") && /Investigation\s+running/.test(screen), 5_000, "tab row")
@@ -663,3 +679,107 @@ it(
   },
   60_000
 )
+
+describe("approvals", () => {
+  const prompt = "node check.mjs fails. Fix it and show it passes."
+  const asking = /\? (bash|edit|write|apply_patch) .*y allow/
+
+  /** Answers every approval with `answer` until the turn is idle. */
+  const answerAll = async (tui: Tui, answer: (screen: string) => string) => {
+    for (let index = 0; index < 40; index++) {
+      const screen = await tui.until((screen) => asking.test(screen) || idle(screen), 120_000, "approval or idle")
+      if (!asking.test(screen)) return screen
+      await tui.press(answer(screen))
+    }
+    throw new Error(`too many approvals; screen:\n${tui.screen()}`)
+  }
+
+  it("asks before a consequential call; y lets it run", async () => {
+    const { tui, cwd } = await start({ approve: "ask" })
+    await tui.type(prompt)
+    await tui.press(key.enter)
+    await tui.until((screen) => asking.test(screen), 60_000, "first approval")
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a - b")
+    // `a` on the first bash covers the rest of them for the session.
+    let always = false
+    const screen = await answerAll(tui, (screen) => {
+      if (!always && /\? bash .*a always/.test(screen)) {
+        always = true
+        return "a"
+      }
+      return "y"
+    })
+    expect(always).toBe(true)
+    expect(screen).toMatch(/Fixed/)
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+  }, 240_000)
+
+  it("n denies: nothing changes and the call shows denied", async () => {
+    const { tui, cwd } = await start({ approve: "ask" })
+    await tui.type(prompt)
+    await tui.press(key.enter)
+    await tui.until((screen) => asking.test(screen), 60_000, "first approval")
+    await answerAll(tui, () => "n")
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toBe("export const add = (a, b) => a - b\n")
+    await tui.press(key.ctrlO)
+    await tui.until((screen) => screen.includes("Denied"), 10_000, "denied call")
+  }, 240_000)
+
+  it("never eats typing, and answers once the editor is empty", async () => {
+    const { tui } = await start({ approve: "ask" })
+    await tui.type(prompt)
+    await tui.press(key.enter)
+    await tui.until((screen) => asking.test(screen), 60_000, "first approval")
+    const before = tui.screen().match(asking)![0]
+    await tui.type("hy")
+    const typed = await tui.until((screen) => /┃\s+hy/.test(screen), 5_000, "typed draft")
+    expect(typed.match(asking)?.[0]).toBe(before)
+    await tui.press(key.ctrlC)
+    await tui.until((screen) => !/┃\s+hy/.test(screen), 5_000, "cleared draft")
+    await tui.press("y")
+    await tui.until((screen) => screen.match(asking)?.[0] !== before, 30_000, "answered")
+  }, 120_000)
+
+  it("keeps chat usable while a request waits, and esc drops it", async () => {
+    const { tui } = await start({ approve: "ask" })
+    await tui.type(prompt)
+    await tui.press(key.enter)
+    await tui.until((screen) => asking.test(screen), 60_000, "first approval")
+    await tui.type("later")
+    await tui.press("\x1b\r")
+    await tui.until((screen) => screen.includes("Follow-up: later"), 5_000, "queued")
+    await tui.press(key.escape)
+    await tui.until((screen) => !asking.test(screen) && idle(screen), 5_000, "dropped approval")
+  }, 120_000)
+
+  it("print mode never hangs: it denies unless told otherwise", () => {
+    const run = (approve: string | undefined) => {
+      const cwd = repository()
+      const env: Record<string, string> = {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_REPLAY: fixture,
+        SMITHERS_TUI_REPLAY_SPEED: "20",
+        SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-sessions-"))
+      }
+      if (approve !== undefined) env.SMITHERS_TUI_APPROVE = approve
+      const started = Date.now()
+      const result = spawnSync("bun", [join(app, "src", "main.tsx"), cwd, "-p", prompt], {
+        env,
+        encoding: "utf8",
+        timeout: 60_000
+      })
+      return { ...result, ms: Date.now() - started, math: readFileSync(join(cwd, "math.js"), "utf8") }
+    }
+    const denied = run(undefined)
+    expect(denied.signal).toBeNull()
+    expect(denied.stderr).toMatch(/denied (bash|edit)/)
+    expect(denied.math).toContain("a - b")
+    const allowed = run("all")
+    expect(allowed.math).toContain("a + b")
+    const refused = run("ask")
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain("SMITHERS_TUI_APPROVE=ask needs the interactive TUI")
+    expect(refused.ms).toBeLessThan(10_000)
+  }, 200_000)
+})
