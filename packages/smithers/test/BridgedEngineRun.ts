@@ -73,6 +73,7 @@ import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
 import type * as Trigger from "@smthrs/triggers/Trigger"
 import * as TriggerStore from "@smthrs/triggers/TriggerStore"
 import { Context, Effect, Layer, Option, Schema } from "effect"
+import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -121,7 +122,24 @@ export const repositoryRoot = fileURLToPath(new URL("../../../", import.meta.url
  */
 let readRevision: { readonly value: string | undefined } | undefined
 export const sourceRevision = (): string | undefined =>
-  (readRevision ??= { value: SourceRevision.read(repositoryRoot) }).value
+  (readRevision ??= {
+    value: Effect.runSync(SourceRevision.read(repositoryRoot, (file, args, cwd) =>
+      Effect.sync(() => {
+        // This synchronous fixture builds a plan before its Effect host exists.
+        // Product hosts use the scoped asynchronous reader.
+        try {
+          return execFileSync(file, [...args], {
+            cwd,
+            encoding: "utf8",
+            stdio: ["ignore", "pipe", "ignore"],
+            timeout: 30_000,
+            maxBuffer: 1_000_000
+          })
+        } catch {
+          return undefined
+        }
+      })))
+  }).value
 
 /**
  * The record the bridge writes once it has drained an execution's journal

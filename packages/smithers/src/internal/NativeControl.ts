@@ -783,408 +783,415 @@ export const make = (
     ControlExecutor.ControlExecutor,
     never,
     ControlRuntime.ControlRuntime | Journal.Journal | NotificationQueue.NotificationQueue | Registry.Registry
-  > => {
-    const {
-      environment,
-      grants = layerGrantStore(root),
-      mcpServers = [],
-      modules,
-      quotaPolicy = QuotaPolicy.layerDefault(),
-      requestExecutor = native.requestExecutor
-    } = options
-    // Same separation `engineDurable` makes for `control.db`: `engine.db` and
-    // its WAL follow the state root, never the served checkout.
-    const stateRoot = resolve(options.stateRoot ?? root)
-    // Every capability this executor equips a run with belongs to the checkout
-    // the run executes in, which is the fork's worktree once history resumed one
-    // and the project root otherwise. `root` still names the project: its
-    // databases, its routing table, and the mount a container knows it by.
-    const workspaceRoot = resolve(options.executionRoot ?? root)
-    /*
-     * The first half of this host's revision reading. The catalog below is a
-     * startup snapshot of the modules on this tree and the engine drives those
-     * same modules, so one revision describes what both of them hold — but only
-     * if the tree held still while they were read. Registration reads the tree
-     * again once the catalog is built and records a revision only when the two
-     * readings agree, because a write landing in between (a peer agent's, an
-     * editor's) would otherwise leave this host naming a tree the catalog does
-     * not hold. A workspace under no version control names nothing (D-068).
-     */
-    const revisionBefore = SourceRevision.read(workspaceRoot)
-    // Startup sweepers may ask before final registration captures the native SQL
-    // client. They refuse until that existing final phase installs the reader.
-    let admission: ((runId: string) => Effect.Effect<boolean>) | undefined
-    const canExecute = (runId: string) => Effect.suspend(() => admission?.(runId) ?? Effect.succeed(false))
-    // The control plane the engine records its own wakes against, captured the
-    // same way and for the same reason as `admission` above: the engine layer
-    // is built before the registration phase that holds the control runtime.
-    //
-    // A durable clock firing, a durable deferred completing, and a child
-    // settling under a parent that parked on it are the wakes nobody asks for
-    // — no operator, no approval, no answer — and `AgentSession`'s round guard
-    // refuses a parked run whose resume nothing delegated. Recording the
-    // request is what tells that guard an engine wake from its own heartbeat
-    // sweep; without it a run that slept never settled.
-    //
-    // Every refusal is tolerated rather than raised: a run this control plane
-    // never launched has no row (`RunNotFound`), a settled one owes no resume
-    // (`InvalidInput`), and neither is a reason to fail the wake.
-    let resumes: ControlRuntime.Service | undefined
-    const requestResume = (runId: string) =>
-      Effect.suspend(() =>
-        resumes === undefined
-          ? Effect.void
-          : Effect.ignore(resumes.requestResume(runId))
-      )
-    // The same guarded platform the registry discovers under: kernel FileSystem
-    // over descriptor-relative atomic access, with the selected service bundle
-    // (Path, raw spawner, crypto) merged through. `grants` is passed rather than
-    // defaulted so the filesystem and the shell below it can never end up asking
-    // two different stores.
-    const platform = layerGuardedPlatform(workspaceRoot, grants)
-    // Permission checks do not contain a process after its CLI owner crashes.
-    // Keep one durable ledger under the shell, native search/test runners and
-    // MCP connections, and reap only verified children of dead owners before
-    // exposing the spawner. The registration phase receives the engine journal
-    // from native.runtime, so these records survive this process.
-    const contain = () =>
-      ProcessReaper.layerSpawner().pipe(
-        Layer.provideMerge(platform),
-        Layer.provideMerge(ProcessReaper.layer()),
-        Layer.provide(ProcessLedger.layer({ hostId: hostname(), ownerPid: process.pid }))
-      )
-    let toolSpawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"] | undefined
-    const contained = contain().pipe(Layer.tap((context) =>
-      Effect.sync(() => {
-        toolSpawner = Context.get(context, KernelChildProcessSpawner.ChildProcessSpawner)
-      })
-    ))
-    // Engine bookkeeping must be contained before the native engine itself
-    // starts. Reuse the already materialized control journal for that lifetime;
-    // a distinct layer instance keeps registration's native journal separate.
-    const engineJj = native.jj(workspaceRoot).pipe(
-      Layer.provide(contain().pipe(Layer.provide(engine.journal)))
-    )
-    const guarded = KernelChildProcessSpawner.layer.pipe(
-      Layer.provide(grants),
-      Layer.provideMerge(contained)
-    )
-    const memory = MemoryStore.layer.pipe(Layer.provide(engine.stores), Layer.orDie)
-    // AgentSession installs the effective budget from the approved card around
-    // each `agent.run`. No card exists while this executor layer is built, so
-    // unbounded is the only honest construction-time budget. The provider is
-    // discarded after it closes `Agent.layer`; every run installs
-    // `Budget.layerFromEnvelope` directly around the call. The quota layer is
-    // the same policy the session installs for the run.
-    const sessionAgent = Agent.layer.pipe(
-      // eslint-disable-next-line no-restricted-syntax -- no envelope exists until AgentSession starts a run
-      Layer.provide(Layer.mergeAll(quotaPolicy, Budget.layerUnbounded()))
-    )
-    // The judge was selected before the control stores were materialized.
-    // Every classifier and the completion brake below share that binding.
-    // The dispatcher must live as long as the executor. A model captures this
-    // service and uses it after seat resolution has returned.
-    //
-    // It also has to be replaceable. A retry ladder repairs a failure by waiting,
-    // and an HTTP/2 session the peer has destroyed is the failure waiting does not
-    // repair: every attempt that reuses the pool holding it fails identically, and
-    // r92 of the SWE-bench full benchmark spent ten `transport` retries and $0.85
-    // proving it on two instances. Undici's `Agent` *is* the pool, and
-    // `makeDispatcher` acquires a fresh one, so the honest rebuild here is a new
-    // agent in a scope of its own. The previous one is closed as soon as the new
-    // one is in hand, so a run that rebuilds many times still holds one pool.
-    const registration = Layer.effect(ControlExecutor.ControlExecutor)(
-      Effect.gen(function*() {
-        const capturedFilesystem = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
-        const filesystemServices = native.filesystem === undefined ? capturedFilesystem : Context.add(
-          capturedFilesystem,
-          FileSystem.FileSystem,
-          yield* native.filesystem(workspaceRoot, Context.get(capturedFilesystem, FileSystem.FileSystem), toolSpawner!)
+  > =>
+    Layer.unwrap(Effect.gen(function*() {
+      const {
+        environment,
+        grants = layerGrantStore(root),
+        mcpServers = [],
+        modules,
+        quotaPolicy = QuotaPolicy.layerDefault(),
+        requestExecutor = native.requestExecutor
+      } = options
+      // Same separation `engineDurable` makes for `control.db`: `engine.db` and
+      // its WAL follow the state root, never the served checkout.
+      const stateRoot = resolve(options.stateRoot ?? root)
+      // Every capability this executor equips a run with belongs to the checkout
+      // the run executes in, which is the fork's worktree once history resumed one
+      // and the project root otherwise. `root` still names the project: its
+      // databases, its routing table, and the mount a container knows it by.
+      const workspaceRoot = resolve(options.executionRoot ?? root)
+      /*
+       * The first half of this host's revision reading. The catalog below is a
+       * startup snapshot of the modules on this tree and the engine drives those
+       * same modules, so one revision describes what both of them hold — but only
+       * if the tree held still while they were read. Registration reads the tree
+       * again once the catalog is built and records a revision only when the two
+       * readings agree, because a write landing in between (a peer agent's, an
+       * editor's) would otherwise leave this host naming a tree the catalog does
+       * not hold. A workspace under no version control names nothing (D-068).
+       */
+      const revisionBefore = yield* SourceRevision.read(workspaceRoot)
+      // Startup sweepers may ask before final registration captures the native SQL
+      // client. They refuse until that existing final phase installs the reader.
+      let admission: ((runId: string) => Effect.Effect<boolean>) | undefined
+      const canExecute = (runId: string) => Effect.suspend(() => admission?.(runId) ?? Effect.succeed(false))
+      // The control plane the engine records its own wakes against, captured the
+      // same way and for the same reason as `admission` above: the engine layer
+      // is built before the registration phase that holds the control runtime.
+      //
+      // A durable clock firing, a durable deferred completing, and a child
+      // settling under a parent that parked on it are the wakes nobody asks for
+      // — no operator, no approval, no answer — and `AgentSession`'s round guard
+      // refuses a parked run whose resume nothing delegated. Recording the
+      // request is what tells that guard an engine wake from its own heartbeat
+      // sweep; without it a run that slept never settled.
+      //
+      // Every refusal is tolerated rather than raised: a run this control plane
+      // never launched has no row (`RunNotFound`), a settled one owes no resume
+      // (`InvalidInput`), and neither is a reason to fail the wake.
+      let resumes: ControlRuntime.Service | undefined
+      const requestResume = (runId: string) =>
+        Effect.suspend(() =>
+          resumes === undefined
+            ? Effect.void
+            : Effect.ignore(resumes.requestResume(runId))
         )
-        const shellServices = yield* Effect.context<
-          KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
-        >()
-        const memoryServices = yield* Effect.context<MemoryStore.MemoryStore | Recall.Recall>()
-        const nativeSearch = NativeSearch.make(Context.merge(filesystemServices, shellServices))
-        // `test` is offered exactly when this host can say how the repository
-        // runs its tests. The declaration carries the container too, so the
-        // runner reaches the same transport `bash` does, and the judge that
-        // attributes a non-zero exit travels with them.
-        const judge = yield* Effect.context<Evaluator.Evaluator>()
-        const runner = testRunner(environment, root, workspaceRoot)
-        const container = Container.makeCommand()
-        // Each configured server is a startup-time connection the operator
-        // opted into by naming it, the same way `memory` below is: a server
-        // that fails to spawn dies the executor loudly (`Effect.orDie`) rather
-        // than running silently short of the tools it was configured to have.
-        const mcp = yield* Effect.forEach(mcpServers, (server) => Effect.orDie(McpFlows.connected(server)))
-        const sources = [
-          StandardFlows.filesystem(filesystemServices, nativeSearch),
-          StandardFlows.shell(shellServices, container),
-          StandardFlows.memory(memoryServices),
-          // The same judge the completion brake and `test` use, offered to the
-          // cell directly. A host that starts runs always holds a live judge
-          // (`evaluatorFor` refuses to boot without one), so the flow is never
-          // a stub here; a judge that fails is the call's own typed failure.
-          StandardFlows.jev(judge),
-          ...testFlows(Context.merge(shellServices, judge), container, runner),
-          ...mcp
-        ]
-        const actionHost = AgentAction.makeHost({
-          registry: yield* Registry.Registry,
-          limits: cellLimits,
-          flows: sources
+      // The same guarded platform the registry discovers under: kernel FileSystem
+      // over descriptor-relative atomic access, with the selected service bundle
+      // (Path, raw spawner, crypto) merged through. `grants` is passed rather than
+      // defaulted so the filesystem and the shell below it can never end up asking
+      // two different stores.
+      const platform = layerGuardedPlatform(workspaceRoot, grants)
+      // Permission checks do not contain a process after its CLI owner crashes.
+      // Keep one durable ledger under the shell, native search/test runners and
+      // MCP connections, and reap only verified children of dead owners before
+      // exposing the spawner. The registration phase receives the engine journal
+      // from native.runtime, so these records survive this process.
+      const contain = () =>
+        ProcessReaper.layerSpawner().pipe(
+          Layer.provideMerge(platform),
+          Layer.provideMerge(ProcessReaper.layer()),
+          Layer.provide(ProcessLedger.layer({ hostId: hostname(), ownerPid: process.pid }))
+        )
+      let toolSpawner: KernelChildProcessSpawner.ChildProcessSpawner["Service"] | undefined
+      const contained = contain().pipe(Layer.tap((context) =>
+        Effect.sync(() => {
+          toolSpawner = Context.get(context, KernelChildProcessSpawner.ChildProcessSpawner)
         })
-        const catalogReady = yield* Deferred.make<Executable.Catalog>()
-        const authority = modules === undefined
-          ? undefined
-          : yield* ModuleAuthority.make(Deferred.await(catalogReady), actionHost)
-        const registrations = modules === undefined ? undefined : (
-          yield* Layer.build(modules.pipe(
-            // No approved card exists at registration. ModuleAuthority installs
-            // the shared, journal-backed approved Budget at each handler entry.
-            // eslint-disable-next-line no-restricted-syntax -- construction-time dependency only
-            Layer.provide(Budget.layerUnbounded()),
-            Layer.provide(Action.layerImplementations),
-            Layer.provide(AgentAction.layerHost(actionHost)),
-            Layer.provide(evaluator),
-            Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
-            Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
-            Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
-          ))
-        )
-        const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
-        // Product hosts must establish their pinned source before any run
-        // admission or gateway readiness. Generic native/library compositions
-        // omit this requirement and may continue to report no source revision.
-        const revisionAfter = SourceRevision.read(workspaceRoot)
-        const capturedRevision =
-          catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
+      ))
+      // Engine bookkeeping must be contained before the native engine itself
+      // starts. Reuse the already materialized control journal for that lifetime;
+      // a distinct layer instance keeps registration's native journal separate.
+      const engineJj = native.jj(workspaceRoot).pipe(
+        Layer.provide(contain().pipe(Layer.provide(engine.journal)))
+      )
+      const guarded = KernelChildProcessSpawner.layer.pipe(
+        Layer.provide(grants),
+        Layer.provideMerge(contained)
+      )
+      const memory = MemoryStore.layer.pipe(Layer.provide(engine.stores), Layer.orDie)
+      // AgentSession installs the effective budget from the approved card around
+      // each `agent.run`. No card exists while this executor layer is built, so
+      // unbounded is the only honest construction-time budget. The provider is
+      // discarded after it closes `Agent.layer`; every run installs
+      // `Budget.layerFromEnvelope` directly around the call. The quota layer is
+      // the same policy the session installs for the run.
+      const sessionAgent = Agent.layer.pipe(
+        // eslint-disable-next-line no-restricted-syntax -- no envelope exists until AgentSession starts a run
+        Layer.provide(Layer.mergeAll(quotaPolicy, Budget.layerUnbounded()))
+      )
+      // The judge was selected before the control stores were materialized.
+      // Every classifier and the completion brake below share that binding.
+      // The dispatcher must live as long as the executor. A model captures this
+      // service and uses it after seat resolution has returned.
+      //
+      // It also has to be replaceable. A retry ladder repairs a failure by waiting,
+      // and an HTTP/2 session the peer has destroyed is the failure waiting does not
+      // repair: every attempt that reuses the pool holding it fails identically, and
+      // r92 of the SWE-bench full benchmark spent ten `transport` retries and $0.85
+      // proving it on two instances. Undici's `Agent` *is* the pool, and
+      // `makeDispatcher` acquires a fresh one, so the honest rebuild here is a new
+      // agent in a scope of its own. The previous one is closed as soon as the new
+      // one is in hand, so a run that rebuilds many times still holds one pool.
+      const registration = Layer.effect(ControlExecutor.ControlExecutor)(
+        Effect.gen(function*() {
+          const capturedFilesystem = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+          const filesystemServices = native.filesystem === undefined ? capturedFilesystem : Context.add(
+            capturedFilesystem,
+            FileSystem.FileSystem,
+            yield* native.filesystem(
+              workspaceRoot,
+              Context.get(capturedFilesystem, FileSystem.FileSystem),
+              toolSpawner!
+            )
+          )
+          const shellServices = yield* Effect.context<
+            KernelChildProcessSpawner.ChildProcessSpawner | Path.Path
+          >()
+          const memoryServices = yield* Effect.context<MemoryStore.MemoryStore | Recall.Recall>()
+          const nativeSearch = NativeSearch.make(Context.merge(filesystemServices, shellServices))
+          // `test` is offered exactly when this host can say how the repository
+          // runs its tests. The declaration carries the container too, so the
+          // runner reaches the same transport `bash` does, and the judge that
+          // attributes a non-zero exit travels with them.
+          const judge = yield* Effect.context<Evaluator.Evaluator>()
+          const runner = testRunner(environment, root, workspaceRoot)
+          const container = Container.makeCommand()
+          // Each configured server is a startup-time connection the operator
+          // opted into by naming it, the same way `memory` below is: a server
+          // that fails to spawn dies the executor loudly (`Effect.orDie`) rather
+          // than running silently short of the tools it was configured to have.
+          const mcp = yield* Effect.forEach(mcpServers, (server) => Effect.orDie(McpFlows.connected(server)))
+          const sources = [
+            StandardFlows.filesystem(filesystemServices, nativeSearch),
+            StandardFlows.shell(shellServices, container),
+            StandardFlows.memory(memoryServices),
+            // The same judge the completion brake and `test` use, offered to the
+            // cell directly. A host that starts runs always holds a live judge
+            // (`evaluatorFor` refuses to boot without one), so the flow is never
+            // a stub here; a judge that fails is the call's own typed failure.
+            StandardFlows.jev(judge),
+            ...testFlows(Context.merge(shellServices, judge), container, runner),
+            ...mcp
+          ]
+          const actionHost = AgentAction.makeHost({
+            registry: yield* Registry.Registry,
+            limits: cellLimits,
+            flows: sources
+          })
+          const catalogReady = yield* Deferred.make<Executable.Catalog>()
+          const authority = modules === undefined
             ? undefined
-            : revisionBefore
-        if (options.expectedSourceRevision !== undefined && capturedRevision !== options.expectedSourceRevision) {
-          return yield* Effect.die(
-            new Error(
-              capturedRevision === undefined
-                ? "Flow host source revision is unavailable; require a stable JJ snapshot or clean Git checkout"
-                : "Flow host source revision does not match its authorized workspace binding"
-            )
+            : yield* ModuleAuthority.make(Deferred.await(catalogReady), actionHost)
+          const registrations = modules === undefined ? undefined : (
+            yield* Layer.build(modules.pipe(
+              // No approved card exists at registration. ModuleAuthority installs
+              // the shared, journal-backed approved Budget at each handler entry.
+              // eslint-disable-next-line no-restricted-syntax -- construction-time dependency only
+              Layer.provide(Budget.layerUnbounded()),
+              Layer.provide(Action.layerImplementations),
+              Layer.provide(AgentAction.layerHost(actionHost)),
+              Layer.provide(evaluator),
+              Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
+              Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
+              Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
+            ))
           )
-        }
-        if (catalog !== undefined) yield* Deferred.succeed(catalogReady, catalog)
-        // Planning reads this reference; see `hostCatalog`. The value is the
-        // catalog service itself, which answers with whatever snapshot the
-        // registration layer currently holds, so a rebuilt entry reaches
-        // planning without this reference being written again.
-        hostCatalog = catalog
-        /*
-         * And the tree it was read out of, so a plan's sites can be opened at
-         * the revision they describe. A host with no catalog builds no graph,
-         * so it records no revision either — and neither does a host whose tree
-         * moved while the catalog above was being read, because the revision
-         * taken before that read then names bytes the catalog may not hold. A
-         * tree that moved during startup names nothing, exactly as a dirty git
-         * checkout does.
-         */
-        hostRevision = capturedRevision
-        // Optional, and read rather than required, because a host may build
-        // its catalog itself: `flows/coding/host.ts` assembles a project
-        // catalog and a bundled one with different loaders and provides the
-        // merged value directly. Such a host keeps the startup snapshot it
-        // always had until it offers a rebuild of its own; one composed from
-        // `Executable.layer` gets it for nothing.
-        // Rebuilding on authoring is an EXPLICIT host decision, off unless the
-        // composition asked for it. The seam itself is only a rebuild; what it
-        // costs is the import, which runs an agent's top-level code in this
-        // process with this host's credentials the moment copy-back settles,
-        // with nothing between the write and the import. A host that holds
-        // credentials keeps the startup snapshot, and a flow a run authored
-        // becomes plannable the next time an operator starts it.
-        const catalogRefresh = registrations === undefined || options.rebuildAuthoredFlows !== true
-          ? undefined
-          : Option.getOrUndefined(Context.getOption(Executable.Refresh)(registrations))
-        const engineSql = yield* SqlClient
-        const controlSql = yield* SqlClient.pipe(Effect.provide(engine.stores))
-        const routing = yield* WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
-        // The engine's wake recorder and the admission check are filled in
-        // together: this is the first point in the composition that holds the
-        // control runtime.
-        resumes = yield* ControlRuntime.ControlRuntime
-        const moduleAdmission = ModuleAdmission.make({
-          runs: yield* RunStore.RunStore,
-          control: resumes,
-          registry: yield* Registry.Registry,
-          catalog
-        })
-        admission = (runId) =>
-          routing.canExecute(workspaceRoot, runId).pipe(
-            Effect.flatMap((allowed) => allowed ? moduleAdmission(runId) : Effect.succeed(false)),
-            Effect.catchCause((cause) =>
-              Cause.hasInterruptsOnly(cause)
-                ? Effect.interrupt
-                : Effect.logWarning("Native admission lookup failed; leaving the run parked", {
-                  runId,
-                  cause: Cause.pretty(cause)
-                })
-                  .pipe(Effect.as(false))
+          const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
+          // Product hosts must establish their pinned source before any run
+          // admission or gateway readiness. Generic native/library compositions
+          // omit this requirement and may continue to report no source revision.
+          const revisionAfter = yield* SourceRevision.read(workspaceRoot)
+          const capturedRevision =
+            catalog === undefined || revisionBefore === undefined || revisionBefore !== revisionAfter
+              ? undefined
+              : revisionBefore
+          if (options.expectedSourceRevision !== undefined && capturedRevision !== options.expectedSourceRevision) {
+            return yield* Effect.die(
+              new Error(
+                capturedRevision === undefined
+                  ? "Flow host source revision is unavailable; require a stable JJ snapshot or clean Git checkout"
+                  : "Flow host source revision does not match its authorized workspace binding"
+              )
             )
-          )
-        // Capture native ports and a transaction-free host context BEFORE the
-        // session selects its control journal. A different Journal service alone
-        // would not remove an inherited control SQL transaction from a caller.
-        const nativeFacts = ExecutionFacts.make({
-          runs: yield* RunStore.RunStore,
-          state: yield* DurableEngineState.DurableEngineState,
-          journal: yield* Journal.Journal,
-          sourceId: "native-control:execution-facts:v1"
-        })
-        const nativeHost = yield* Effect.context<never>()
-        const requestNativeCancel: ControlExecutor.Service["requestCancel"] = (input) =>
-          Effect.acquireUseRelease(
-            Effect.sync(() =>
-              Effect.runForkWith(nativeHost)(Effect.gen(function*() {
-                const at = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-                const outcome = yield* nativeFacts.requestCancelLineage(input.runId, at).pipe(Effect.mapError((cause) =>
-                  new ControlError.PersistenceError({
-                    operation: "NativeControl.requestCancel",
-                    message: "Cannot commit native cancellation intent",
-                    cause
+          }
+          if (catalog !== undefined) yield* Deferred.succeed(catalogReady, catalog)
+          // Planning reads this reference; see `hostCatalog`. The value is the
+          // catalog service itself, which answers with whatever snapshot the
+          // registration layer currently holds, so a rebuilt entry reaches
+          // planning without this reference being written again.
+          hostCatalog = catalog
+          /*
+           * And the tree it was read out of, so a plan's sites can be opened at
+           * the revision they describe. A host with no catalog builds no graph,
+           * so it records no revision either — and neither does a host whose tree
+           * moved while the catalog above was being read, because the revision
+           * taken before that read then names bytes the catalog may not hold. A
+           * tree that moved during startup names nothing, exactly as a dirty git
+           * checkout does.
+           */
+          hostRevision = capturedRevision
+          // Optional, and read rather than required, because a host may build
+          // its catalog itself: `flows/coding/host.ts` assembles a project
+          // catalog and a bundled one with different loaders and provides the
+          // merged value directly. Such a host keeps the startup snapshot it
+          // always had until it offers a rebuild of its own; one composed from
+          // `Executable.layer` gets it for nothing.
+          // Rebuilding on authoring is an EXPLICIT host decision, off unless the
+          // composition asked for it. The seam itself is only a rebuild; what it
+          // costs is the import, which runs an agent's top-level code in this
+          // process with this host's credentials the moment copy-back settles,
+          // with nothing between the write and the import. A host that holds
+          // credentials keeps the startup snapshot, and a flow a run authored
+          // becomes plannable the next time an operator starts it.
+          const catalogRefresh = registrations === undefined || options.rebuildAuthoredFlows !== true
+            ? undefined
+            : Option.getOrUndefined(Context.getOption(Executable.Refresh)(registrations))
+          const engineSql = yield* SqlClient
+          const controlSql = yield* SqlClient.pipe(Effect.provide(engine.stores))
+          const routing = yield* WorkspaceRouting.make({ root, engine: engineSql, control: controlSql })
+          // The engine's wake recorder and the admission check are filled in
+          // together: this is the first point in the composition that holds the
+          // control runtime.
+          resumes = yield* ControlRuntime.ControlRuntime
+          const moduleAdmission = ModuleAdmission.make({
+            runs: yield* RunStore.RunStore,
+            control: resumes,
+            registry: yield* Registry.Registry,
+            catalog
+          })
+          admission = (runId) =>
+            routing.canExecute(workspaceRoot, runId).pipe(
+              Effect.flatMap((allowed) => allowed ? moduleAdmission(runId) : Effect.succeed(false)),
+              Effect.catchCause((cause) =>
+                Cause.hasInterruptsOnly(cause)
+                  ? Effect.interrupt
+                  : Effect.logWarning("Native admission lookup failed; leaving the run parked", {
+                    runId,
+                    cause: Cause.pretty(cause)
                   })
-                ))
-                if (outcome._tag === "Terminal") return { _tag: "Terminal", status: outcome.status } as const
-                if (outcome._tag === "NotFound") {
-                  return "unknown" as const
-                }
-                return outcome._tag === "AlreadyRequested" ? "already-requested" as const : "recorded" as const
-              }))
-            ),
-            Fiber.join,
-            Fiber.interrupt
-          )
-        // Lifecycle, steering and approval belong to the control journal. The
-        // registration phase otherwise inherits the engine's separate journal.
-        // Select only Journal: an unmaterialized engine.journal layer can also
-        // provide the control RunStore, which must not replace the native one.
-        const controlJournal = yield* Journal.Journal.pipe(Effect.provide(engine.journal))
-        // Capture the original native services before selecting the control
-        // journal for AgentSession. This observer lives in the same host scope,
-        // outside admission transactions; it opens no persistence of its own.
-        //
-        // It is built before the session because the session's terminal control
-        // writes are ordered against it: on this host a run's output reaches a
-        // reader only as the decision this observer copies, so `completed` must
-        // not be journaled before that copy exists.
-        const supervisor = yield* EngineJournalSupervisor.make({
-          engineJournal: yield* Journal.Journal,
-          controlJournal,
-          engineState: yield* DurableEngineState.DurableEngineState,
-          runs: yield* RunStore.RunStore,
-          control: yield* ControlRuntime.ControlRuntime,
-          // A run of this host may write this host's own `flows/` directory.
-          // Until the catalog entry behind the file it wrote is rebuilt, the
-          // flow has a descriptor and no executable, so `plan` answers
-          // `FlowNotFound` or a plan with no nodes however many times it is
-          // asked. Rebuilding here, before the receipt is copied across, is
-          // what makes the next plan a client asks for answerable.
+                    .pipe(Effect.as(false))
+              )
+            )
+          // Capture native ports and a transaction-free host context BEFORE the
+          // session selects its control journal. A different Journal service alone
+          // would not remove an inherited control SQL transaction from a caller.
+          const nativeFacts = ExecutionFacts.make({
+            runs: yield* RunStore.RunStore,
+            state: yield* DurableEngineState.DurableEngineState,
+            journal: yield* Journal.Journal,
+            sourceId: "native-control:execution-facts:v1"
+          })
+          const nativeHost = yield* Effect.context<never>()
+          const requestNativeCancel: ControlExecutor.Service["requestCancel"] = (input) =>
+            Effect.acquireUseRelease(
+              Effect.sync(() =>
+                Effect.runForkWith(nativeHost)(Effect.gen(function*() {
+                  const at = yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+                  const outcome = yield* nativeFacts.requestCancelLineage(input.runId, at).pipe(
+                    Effect.mapError((cause) =>
+                      new ControlError.PersistenceError({
+                        operation: "NativeControl.requestCancel",
+                        message: "Cannot commit native cancellation intent",
+                        cause
+                      })
+                    )
+                  )
+                  if (outcome._tag === "Terminal") return { _tag: "Terminal", status: outcome.status } as const
+                  if (outcome._tag === "NotFound") {
+                    return "unknown" as const
+                  }
+                  return outcome._tag === "AlreadyRequested" ? "already-requested" as const : "recorded" as const
+                }))
+              ),
+              Fiber.join,
+              Fiber.interrupt
+            )
+          // Lifecycle, steering and approval belong to the control journal. The
+          // registration phase otherwise inherits the engine's separate journal.
+          // Select only Journal: an unmaterialized engine.journal layer can also
+          // provide the control RunStore, which must not replace the native one.
+          const controlJournal = yield* Journal.Journal.pipe(Effect.provide(engine.journal))
+          // Capture the original native services before selecting the control
+          // journal for AgentSession. This observer lives in the same host scope,
+          // outside admission transactions; it opens no persistence of its own.
           //
-          // A failed rebuild is said out loud and dropped: the observation is
-          // how a client learns a run's nodes settled, and losing that because
-          // a flow file does not compile would take the whole run's evidence
-          // with it. The catalog keeps the refusal, so `ls` still names it.
-          ...(catalogRefresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(catalogRefresh) })
+          // It is built before the session because the session's terminal control
+          // writes are ordered against it: on this host a run's output reaches a
+          // reader only as the decision this observer copies, so `completed` must
+          // not be journaled before that copy exists.
+          const supervisor = yield* EngineJournalSupervisor.make({
+            engineJournal: yield* Journal.Journal,
+            controlJournal,
+            engineState: yield* DurableEngineState.DurableEngineState,
+            runs: yield* RunStore.RunStore,
+            control: yield* ControlRuntime.ControlRuntime,
+            // A run of this host may write this host's own `flows/` directory.
+            // Until the catalog entry behind the file it wrote is rebuilt, the
+            // flow has a descriptor and no executable, so `plan` answers
+            // `FlowNotFound` or a plan with no nodes however many times it is
+            // asked. Rebuilding here, before the receipt is copied across, is
+            // what makes the next plan a client asks for answerable.
+            //
+            // A failed rebuild is said out loud and dropped: the observation is
+            // how a client learns a run's nodes settled, and losing that because
+            // a flow file does not compile would take the whole run's evidence
+            // with it. The catalog keeps the refusal, so `ls` still names it.
+            ...(catalogRefresh === undefined ? {} : { onSourceApplied: AuthoredRebuild.rebuild(catalogRefresh) })
+          })
+          const session = AgentSession.make({
+            requestNativeCancel,
+            canExecute,
+            flows: sources,
+            limits: cellLimits,
+            quotaPolicy,
+            budget: Budget.layerFromEnvelope,
+            orderTerminalStatus: supervisor.awaitSettled
+          })
+          const executor = yield* (catalog === undefined ? session : session.pipe(
+            Effect.provideService(Executable.Catalog, catalog)
+          )).pipe(Effect.provideService(Journal.Journal, controlJournal))
+          yield* Effect.forkScoped(supervisor.recover)
+          return supervisor.wrap(executor)
         })
-        const session = AgentSession.make({
-          requestNativeCancel,
-          canExecute,
-          flows: sources,
-          limits: cellLimits,
+      ).pipe(
+        Layer.provide([
+          guarded,
+          memory,
+          Recall.layerNoop,
           quotaPolicy,
-          budget: Budget.layerFromEnvelope,
-          orderTerminalStatus: supervisor.awaitSettled
-        })
-        const executor = yield* (catalog === undefined ? session : session.pipe(
-          Effect.provideService(Executable.Catalog, catalog)
-        )).pipe(Effect.provideService(Journal.Journal, controlJournal))
-        yield* Effect.forkScoped(supervisor.recover)
-        return supervisor.wrap(executor)
-      })
-    ).pipe(
-      Layer.provide([
-        guarded,
-        memory,
-        Recall.layerNoop,
-        quotaPolicy,
-        sessionAgent,
-        // The run's mutation accounting is measured rather than declared, and
-        // this is what measures it: without an observer in the composition the
-        // controller falls back to what a frame's calls claimed about
-        // themselves, which is blind to every `bash` write. It runs on the host
-        // platform rather than on `platform`, for the reasons `layerObserver`
-        // states.
-        layerObserver(workspaceRoot),
-        // Where a run's checkpoints live. Without it `ctx.checkpoint()` and
-        // `ctx.base` answer `checkpoint_unavailable`, honestly, and the run
-        // takes its readings on the live tree. This is the difference
-        // between a run that can prove fails-before without reverting its own
-        // work and one that cannot.
-        Checkpoints.layerGit(checkpointStore(environment, workspaceRoot)),
-        // Jev. One binding answers both readers: the `test` flow attributes a
-        // non-zero exit with it, and the completion brake judges every claim
-        // with it. Without `AI_GATEWAY_API_KEY` every evaluation is refused,
-        // so a `test` call fails saying so and a run fails at its first
-        // completion, rather than either reporting something nothing judged.
-        evaluator,
-        seats(environment).pipe(Layer.provide(requestExecutor))
-      ])
-    )
-    const nativeRuntime = native.runtime(
-      {
-        filename: executionDatabasePath(stateRoot),
-        workspaceRoot,
-        // The machine's own name, for the same reason `engineDurable` stamps
-        // it: `sameHostPidProbe` compares `hostId` before it trusts a pid, and
-        // a constant made every row in every process table look local. Two
-        // checkouts inside one container and the host they are bind-mounted
-        // from share this file with disjoint pid namespaces, so under a
-        // constant the probe answered about the wrong process table, and a row
-        // whose owner was alive elsewhere read as dead here.
-        owner: { hostId: hostname() },
-        // Two terminals over one project are two engine processes over one
-        // `.flows/engine.db`, so "one engine process at a time" was never true
-        // and a stub answering `false` let each steal the other's running rows
-        // 30 seconds after any heartbeat stall. The probe asks the process
-        // table instead, and answers only about this host: a run recorded on
-        // another host is left to the lease, which `RunStore.steal` verifies.
-        isAlive: Ownership.sameHostPidProbe,
-        canExecute: (row) => canExecute(row.runId),
-        requestResume,
-        // The same revision the plans carry, asked for rather than handed over:
-        // the engine drives the modules this host loaded at startup, so the
-        // sites its journal records describe that tree and say which one — but
-        // this layer is composed BEFORE registration reads the catalog, so the
-        // verified answer does not exist yet. The store asks once per recorded
-        // page, which is always after registration, and records nothing while
-        // there is nothing to record (D-068).
-        sourceRevision: () => hostRevision
-      },
-      StepBoundary.layer,
-      WorkspaceSandbox.layerFileSystem(),
-      registration
-    ).pipe(
-      Layer.provide([platform, native.crypto, engineJj]),
-      Layer.tap(() => secureSqliteFiles(executionDatabasePath(stateRoot)).pipe(Effect.provide(native.host))),
-      // Failure to open or migrate the local execution engine is a startup
-      // defect, just like the control database above: no command can execute
-      // honestly without this composition.
-      Layer.orDie
-    )
-    // The runtime exposes its stores for native registrations. Only the
-    // executor crosses back into the control composition: leaking the native
-    // Journal or RunStore here silently redirects ControlLive to engine.db.
-    return Layer.effect(ControlExecutor.ControlExecutor)(ControlExecutor.ControlExecutor).pipe(
-      Layer.provide(nativeRuntime)
-    )
-  }
+          sessionAgent,
+          // The run's mutation accounting is measured rather than declared, and
+          // this is what measures it: without an observer in the composition the
+          // controller falls back to what a frame's calls claimed about
+          // themselves, which is blind to every `bash` write. It runs on the host
+          // platform rather than on `platform`, for the reasons `layerObserver`
+          // states.
+          layerObserver(workspaceRoot),
+          // Where a run's checkpoints live. Without it `ctx.checkpoint()` and
+          // `ctx.base` answer `checkpoint_unavailable`, honestly, and the run
+          // takes its readings on the live tree. This is the difference
+          // between a run that can prove fails-before without reverting its own
+          // work and one that cannot.
+          Checkpoints.layerGit(checkpointStore(environment, workspaceRoot)),
+          // Jev. One binding answers both readers: the `test` flow attributes a
+          // non-zero exit with it, and the completion brake judges every claim
+          // with it. Without `AI_GATEWAY_API_KEY` every evaluation is refused,
+          // so a `test` call fails saying so and a run fails at its first
+          // completion, rather than either reporting something nothing judged.
+          evaluator,
+          seats(environment).pipe(Layer.provide(requestExecutor))
+        ])
+      )
+      const nativeRuntime = native.runtime(
+        {
+          filename: executionDatabasePath(stateRoot),
+          workspaceRoot,
+          // The machine's own name, for the same reason `engineDurable` stamps
+          // it: `sameHostPidProbe` compares `hostId` before it trusts a pid, and
+          // a constant made every row in every process table look local. Two
+          // checkouts inside one container and the host they are bind-mounted
+          // from share this file with disjoint pid namespaces, so under a
+          // constant the probe answered about the wrong process table, and a row
+          // whose owner was alive elsewhere read as dead here.
+          owner: { hostId: hostname() },
+          // Two terminals over one project are two engine processes over one
+          // `.flows/engine.db`, so "one engine process at a time" was never true
+          // and a stub answering `false` let each steal the other's running rows
+          // 30 seconds after any heartbeat stall. The probe asks the process
+          // table instead, and answers only about this host: a run recorded on
+          // another host is left to the lease, which `RunStore.steal` verifies.
+          isAlive: Ownership.sameHostPidProbe,
+          canExecute: (row) => canExecute(row.runId),
+          requestResume,
+          // The same revision the plans carry, asked for rather than handed over:
+          // the engine drives the modules this host loaded at startup, so the
+          // sites its journal records describe that tree and say which one — but
+          // this layer is composed BEFORE registration reads the catalog, so the
+          // verified answer does not exist yet. The store asks once per recorded
+          // page, which is always after registration, and records nothing while
+          // there is nothing to record (D-068).
+          sourceRevision: () => hostRevision
+        },
+        StepBoundary.layer,
+        WorkspaceSandbox.layerFileSystem(),
+        registration
+      ).pipe(
+        Layer.provide([platform, native.crypto, engineJj]),
+        Layer.tap(() => secureSqliteFiles(executionDatabasePath(stateRoot)).pipe(Effect.provide(native.host))),
+        // Failure to open or migrate the local execution engine is a startup
+        // defect, just like the control database above: no command can execute
+        // honestly without this composition.
+        Layer.orDie
+      )
+      // The runtime exposes its stores for native registrations. Only the
+      // executor crosses back into the control composition: leaking the native
+      // Journal or RunStore here silently redirects ControlLive to engine.db.
+      return Layer.effect(ControlExecutor.ControlExecutor)(ControlExecutor.ControlExecutor).pipe(
+        Layer.provide(nativeRuntime)
+      )
+    }))
 
   /**
    * Builds the executor over one captured control-store graph. Materializing

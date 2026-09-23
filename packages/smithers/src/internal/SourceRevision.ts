@@ -26,7 +26,8 @@
  *
  * @since 1.0.0
  */
-import { execFileSync } from "node:child_process"
+import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
+import { Effect, Option, Stream } from "effect"
 
 /**
  * Runs one read-only command in `cwd` and answers its stdout, or nothing.
@@ -37,7 +38,7 @@ import { execFileSync } from "node:child_process"
  * @since 1.0.0
  * @category models
  */
-export type Reader = (file: string, args: ReadonlyArray<string>, cwd: string) => string | undefined
+export type Reader = (file: string, args: ReadonlyArray<string>, cwd: string) => Effect.Effect<string | undefined>
 
 /**
  * The object id in an answer, or nothing.
@@ -60,27 +61,43 @@ export const objectId = (answer: string | undefined): string | undefined => {
  * The default reader: the command's stdout on success, nothing on any
  * failure.
  *
- * `stderr` is ignored rather than captured: `jj` prints hints and bookmark
+ * `stderr` is drained without retaining it: `jj` prints hints and bookmark
  * warnings there on a healthy repository, and a missing binary, a directory
- * that is not a repository and a non-zero exit all throw, which is the one
+ * that is not a repository and a non-zero exit all refuse, which is the one
  * answer this module has for all of them.
  *
  * @since 1.0.0
  * @category constructors
  */
-export const spawnReader: Reader = (file, args, cwd) => {
-  try {
-    return execFileSync(file, [...args], {
+export const spawnReader: Reader = (file, args, cwd) =>
+  Effect.gen(function*() {
+    const child = yield* ScopedProcess.spawn({
+      command: file,
+      args,
       cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 30_000,
-      maxBuffer: 1_000_000
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" }
     })
-  } catch {
-    return undefined
-  }
-}
+    const decoder = new TextDecoder()
+    let bytes = 0
+    let text = ""
+    const [status] = yield* Effect.all([
+      ScopedProcess.status(child),
+      Stream.runForEach(child.stdout, (chunk) =>
+        Effect.suspend(() => {
+          bytes += chunk.byteLength
+          if (bytes > 1_000_000) return Effect.fail(new Error("revision output exceeded its limit"))
+          text += decoder.decode(chunk, { stream: true })
+          return Effect.void
+        })),
+      Stream.runDrain(child.stderr)
+    ], { concurrency: "unbounded" })
+    return status.code === 0 ? text + decoder.decode() : undefined
+  }).pipe(
+    Effect.timeoutOption("30 seconds"),
+    Effect.map(Option.getOrUndefined),
+    Effect.catch(() => Effect.succeed(undefined)),
+    Effect.scoped
+  )
 
 /**
  * The revision the tree at `root` is at, or nothing.
@@ -88,22 +105,23 @@ export const spawnReader: Reader = (file, args, cwd) => {
  * @since 1.0.0
  * @category accessors
  */
-export const read = (root: string, reader: Reader = spawnReader): string | undefined => {
-  /*
-   * `jj log -r @` snapshots the working copy first, so the id it prints
-   * names the tree as it is on disk right now, uncommitted work included,
-   * and that id keeps resolving after the working copy has moved on.
-   */
-  const jj = objectId(reader("jj", ["log", "-r", "@", "--no-graph", "--color=never", "-T", "commit_id"], root))
-  if (jj !== undefined) return jj
-  /*
-   * git has no name for work that is not committed. `--porcelain` lists
-   * every change including untracked files, so a single line means `HEAD`
-   * does not describe what this host loaded and there is no honest revision
-   * to record. An unreadable status is the same answer: not knowing whether
-   * the tree moved is not knowing the revision.
-   */
-  const status = reader("git", ["status", "--porcelain"], root)
-  if (status === undefined || status.trim() !== "") return undefined
-  return objectId(reader("git", ["rev-parse", "HEAD"], root))
-}
+export const read = (root: string, reader: Reader = spawnReader): Effect.Effect<string | undefined> =>
+  Effect.gen(function*() {
+    /*
+     * `jj log -r @` snapshots the working copy first, so the id it prints
+     * names the tree as it is on disk right now, uncommitted work included,
+     * and that id keeps resolving after the working copy has moved on.
+     */
+    const jj = objectId(yield* reader("jj", ["log", "-r", "@", "--no-graph", "--color=never", "-T", "commit_id"], root))
+    if (jj !== undefined) return jj
+    /*
+     * git has no name for work that is not committed. `--porcelain` lists
+     * every change including untracked files, so a single line means `HEAD`
+     * does not describe what this host loaded and there is no honest revision
+     * to record. An unreadable status is the same answer: not knowing whether
+     * the tree moved is not knowing the revision.
+     */
+    const status = yield* reader("git", ["status", "--porcelain"], root)
+    if (status === undefined || status.trim() !== "") return undefined
+    return objectId(yield* reader("git", ["rev-parse", "HEAD"], root))
+  })

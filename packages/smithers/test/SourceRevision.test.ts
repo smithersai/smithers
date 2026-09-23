@@ -7,6 +7,7 @@
  * repositories in a temporary directory, because a decision table cannot
  * catch a wrong flag, and a wrong flag answers `undefined` forever.
  */
+import { Effect } from "effect"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -22,7 +23,7 @@ const scripted = (answers: Readonly<Record<string, string | undefined>>) => {
   const reader: SourceRevision.Reader = (file, args) => {
     const command = [file, ...args].join(" ")
     asked.push(command)
-    return answers[command]
+    return Effect.succeed(answers[command])
   }
   return { reader, asked }
 }
@@ -31,39 +32,39 @@ const JJ = "jj log -r @ --no-graph --color=never -T commit_id"
 const STATUS = "git status --porcelain"
 const HEAD = "git rev-parse HEAD"
 
-describe("which tool names the tree", () => {
-  it("takes jj's working-copy commit, which holds uncommitted work", () => {
+describe("which tool names the tree", async () => {
+  it("takes jj's working-copy commit, which holds uncommitted work", async () => {
     const { reader, asked } = scripted({ [JJ]: `${ID}\n` })
 
-    expect(SourceRevision.read("/repo", reader)).toBe(ID)
+    expect(await Effect.runPromise(SourceRevision.read("/repo", reader))).toBe(ID)
     /* git is never asked: jj already named the tree on disk. */
     expect(asked).toEqual([JJ])
   })
 
-  it("falls to git's HEAD only where the tree still matches it", () => {
+  it("falls to git's HEAD only where the tree still matches it", async () => {
     const clean = scripted({ [JJ]: undefined, [STATUS]: "", [HEAD]: `${ID}\n` })
 
-    expect(SourceRevision.read("/repo", clean.reader)).toBe(ID)
+    expect(await Effect.runPromise(SourceRevision.read("/repo", clean.reader))).toBe(ID)
     expect(clean.asked).toEqual([JJ, STATUS, HEAD])
   })
 
-  it("names nothing for a git tree that has moved off its commit", () => {
+  it("names nothing for a git tree that has moved off its commit", async () => {
     const edited = scripted({ [JJ]: undefined, [STATUS]: " M flows/a/flow.ts\n", [HEAD]: `${ID}\n` })
     const untracked = scripted({ [JJ]: undefined, [STATUS]: "?? flows/new/flow.ts\n", [HEAD]: `${ID}\n` })
 
-    expect(SourceRevision.read("/repo", edited.reader)).toBeUndefined()
-    expect(SourceRevision.read("/repo", untracked.reader)).toBeUndefined()
+    expect(await Effect.runPromise(SourceRevision.read("/repo", edited.reader))).toBeUndefined()
+    expect(await Effect.runPromise(SourceRevision.read("/repo", untracked.reader))).toBeUndefined()
     /* HEAD is not even asked for: there is no answer it could make honest. */
     expect(edited.asked).toEqual([JJ, STATUS])
   })
 
-  it("names nothing where neither tool answers", () => {
+  it("names nothing where neither tool answers", async () => {
     const { reader } = scripted({})
 
-    expect(SourceRevision.read("/repo", reader)).toBeUndefined()
+    expect(await Effect.runPromise(SourceRevision.read("/repo", reader))).toBeUndefined()
   })
 
-  it("refuses an answer that is not an object id", () => {
+  it("refuses an answer that is not an object id", async () => {
     expect(SourceRevision.objectId(undefined)).toBeUndefined()
     expect(SourceRevision.objectId("")).toBeUndefined()
     expect(SourceRevision.objectId("Error: not a repository")).toBeUndefined()
@@ -97,14 +98,14 @@ const gitRepository = async () => {
   return { root, head: git("rev-parse", "HEAD").trim() }
 }
 
-describe("against a real repository", () => {
+describe("against a real repository", async () => {
   it("reads git's HEAD, and stops naming it once the tree moves", async () => {
     const { root, head } = await gitRepository()
     try {
-      expect(SourceRevision.read(root)).toBe(head)
+      expect(await Effect.runPromise(SourceRevision.read(root))).toBe(head)
 
       await writeFile(join(root, "flow.ts"), "export const flow = 2\n")
-      expect(SourceRevision.read(root)).toBeUndefined()
+      expect(await Effect.runPromise(SourceRevision.read(root))).toBeUndefined()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -113,9 +114,33 @@ describe("against a real repository", () => {
   it("names no revision for a directory under no version control", async () => {
     const root = await mkdtemp(join(tmpdir(), "smithers-source-revision-bare-"))
     try {
-      expect(SourceRevision.read(root)).toBeUndefined()
+      expect(await Effect.runPromise(SourceRevision.read(root))).toBeUndefined()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   }, 60_000)
+})
+
+describe("the scoped revision reader", () => {
+  it("drains stderr and returns only successful stdout", async () => {
+    const output = await Effect.runPromise(
+      SourceRevision.spawnReader(process.execPath, [
+        "-e",
+        "process.stderr.write('diagnostic'.repeat(10000)); process.stdout.write('résumé\\n')"
+      ], process.cwd())
+    )
+    expect(output).toBe("résumé\n")
+  })
+
+  it("refuses a nonzero exit and output exceeding the byte limit", async () => {
+    for (
+      const program of [
+        "process.stdout.write('not a revision'); process.exitCode=2",
+        "process.stdout.write('x'.repeat(1000001))"
+      ]
+    ) {
+      expect(await Effect.runPromise(SourceRevision.spawnReader(process.execPath, ["-e", program], process.cwd())))
+        .toBeUndefined()
+    }
+  })
 })
