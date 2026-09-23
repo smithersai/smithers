@@ -1,0 +1,5 @@
+{"at": 0, "event": {"_tag": "model-requested"}}
+{"at": 1, "event": {"_tag": "model-delta", "delta": {"type": "text-start", "id": "m1"}}}
+{"at": 2, "event": {"_tag": "model-delta", "delta": {"type": "text-delta", "id": "m1", "text": "```cell\nctx.done(\"pong\")\n```"}}}
+{"at": 3, "event": {"_tag": "model-delta", "delta": {"type": "text-end", "id": "m1"}}}
+{"at": 4, "event": {"_tag": "model-settled", "message": {"stopReason": "stop"}}}

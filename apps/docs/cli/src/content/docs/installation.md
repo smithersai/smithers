@@ -78,8 +78,9 @@ Bun honours the shebang, so `bun x` starts Node. Running the CLI with
 ## The terminal UI
 
 `smthrs tui` opens the terminal coding agent in the current directory. It
-renders with OpenTUI, which needs Bun 1.3 or later on `PATH`; the CLI stays on
-Node and starts Bun for the TUI. Set `SMITHERS_BUN` to use another Bun.
+runs on Node 26.4 or later or on Bun. Under Node, the CLI starts the TUI with
+`--experimental-ffi`, which OpenTUI needs to load its renderer. Set
+`SMITHERS_BUN` to a Bun executable to run the TUI on Bun instead.
 
 ```bash
 npx smthrs@next tui              # open the TUI here

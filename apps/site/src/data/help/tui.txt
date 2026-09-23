@@ -1,4 +1,4 @@
-smthrs tui — Open the terminal coding agent; requires Bun
+smthrs tui — Open the terminal coding agent
 
 Usage: smthrs tui [directory] [options]
 

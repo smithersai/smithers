@@ -6,6 +6,7 @@ import { createTwoFilesPatch } from "diff"
 import { Effect } from "effect"
 import { readFile, stat } from "node:fs/promises"
 import { resolve } from "node:path"
+import * as Subprocess from "./subprocess.ts"
 
 export interface Patch {
   readonly path: string
@@ -78,10 +79,8 @@ export const touched = (flow: string, input: unknown): string[] | undefined => {
 export const paths = (flow: string, input: unknown): string[] => touched(flow, input) ?? []
 const command = async (program: string, cwd: string, args: string[]): Promise<string | undefined> => {
   try {
-    const child = Bun.spawn([program, ...args], {
+    const child = Subprocess.spawn([program, ...args], {
       cwd,
-      stdout: "pipe",
-      stderr: "ignore",
       env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" }
     })
     const timer = setTimeout(() => child.kill(), 5000)
@@ -136,7 +135,7 @@ export const capture = (
         ...binding,
         run: (call: Cell.Call) =>
           Effect.gen(function*() {
-            const jj = call.flowName === "bash" && Bun.which("jj") !== null
+            const jj = call.flowName === "bash" && Subprocess.which("jj") !== null
               ? (yield* Effect.promise(() => command("jj", cwd, ["log", "--no-graph", "-r", "@", "-T", "commit_id"])))
                 ?.trim()
               : undefined

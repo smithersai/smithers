@@ -3,7 +3,7 @@
  *
  * The suite replays a recorded cell run through the transcript fold, so a
  * change to `AgentEvent` that the screen no longer understands fails here.
- * It runs under Bun because the renderer, `@opentui/core`, requires Bun.
+ * It runs under Bun because the suite is written for `bun test`.
  *
  * @since 1.0.0
  */

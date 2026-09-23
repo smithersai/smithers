@@ -16,6 +16,18 @@ bun run tui -p "prompt"          # print one answer and exit
 bun run tui --model openai:gpt-6-astra
 ```
 
+It runs on Bun or on Node 26.4 or later. `smthrs tui` (and `npx smthrs tui`)
+takes the same flags and picks the runtime: `SMITHERS_TUI_BIN`, then an
+installed compiled binary, then Bun (`SMITHERS_BUN`, or a CLI already on Bun),
+then this Node with `--experimental-ffi`. To run it on Node from the
+repository:
+
+```sh
+node packages/smithers/scripts/build-tui.mjs
+node --experimental-ffi --disable-warning=ExperimentalWarning packages/smithers/dist/tui/main.js [directory]
+bun packages/smithers/scripts/build-tui-binaries.mjs --single   # compile this platform's binary
+```
+
 Interactive chat prefers `cerebras:qwen-3.8-27b` with low reasoning effort
 when `CEREBRAS_API_KEY` is configured, falling back to an available provider.
 `--model` or `SMITHERS_TUI_SEAT` overrides chat. Background workers use the

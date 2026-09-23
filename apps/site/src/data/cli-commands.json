@@ -4633,7 +4633,7 @@
     },
     {
       "name": "tui",
-      "description": "Open the terminal coding agent; requires Bun",
+      "description": "Open the terminal coding agent",
       "schema": {
         "args": {
           "type": "object",

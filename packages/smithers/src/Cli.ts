@@ -242,7 +242,7 @@ export const makeCli = (config: Bridge.Runtime = {}): ReturnType<typeof makeBuil
         })
     })
     .command("tui", {
-      description: "Open the terminal coding agent; requires Bun",
+      description: "Open the terminal coding agent",
       mcp: false,
       args: z.object({ directory: z.string().optional().describe("Working directory; defaults to cwd") }),
       options: z.object({

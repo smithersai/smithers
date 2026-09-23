@@ -1,0 +1,57 @@
+/**
+ * `smthrs tui -p` end to end on each runtime the TUI supports.
+ *
+ * The CLI starts the real TUI in print mode under Node >= 26.4 (the bundle,
+ * with FFI enabled) and under Bun (the checkout source). The model is the
+ * TUI's replay seat over `apps/tui/test/fixtures/pong.jsonl`, whose one reply
+ * is a cell that answers `pong`, so no credentials or network are needed.
+ * Node runs without Bun on `PATH`.
+ */
+import { spawnSync } from "node:child_process"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { delimiter, join } from "node:path"
+import { fileURLToPath } from "node:url"
+import { afterEach, describe, expect, it } from "vitest"
+
+const bin = fileURLToPath(new URL("../bin/smithers.mjs", import.meta.url))
+const fixture = fileURLToPath(new URL("../../../apps/tui/test/fixtures/pong.jsonl", import.meta.url))
+const [major = 0, minor = 0] = process.versions.node.split(".").map(Number)
+const nodeHasFfi = major > 26 || (major === 26 && minor >= 4)
+const bun = spawnSync("bun", ["--version"]).status === 0 ? "bun" : undefined
+
+const staged: Array<string> = []
+afterEach(() => {
+  for (const root of staged.splice(0)) rmSync(root, { recursive: true, force: true })
+})
+
+const print = (environment: Record<string, string>) => {
+  const root = mkdtempSync(join(tmpdir(), "smithers-tui-e2e-"))
+  staged.push(root)
+  return spawnSync(process.execPath, [bin, "tui", root, "-p", "Reply with the single word pong"], {
+    encoding: "utf8",
+    timeout: 120_000,
+    env: {
+      HOME: process.env["HOME"] ?? root,
+      SMITHERS_TUI_REPLAY: fixture,
+      SMITHERS_TUI_SESSION_DIR: join(root, ".sessions"),
+      ...environment
+    }
+  })
+}
+
+describe("smthrs tui -p on each runtime", () => {
+  it.skipIf(!nodeHasFfi)("answers under Node >= 26.4 without Bun", () => {
+    const path = (process.env["PATH"] ?? "").split(delimiter).filter((entry) => !/\.bun\b/.test(entry))
+    const result = print({ PATH: path.join(delimiter) })
+    expect(result.stderr).toBe("")
+    expect(result.stdout.trim()).toBe("pong")
+    expect(result.status).toBe(0)
+  }, 150_000)
+
+  it.skipIf(bun === undefined)("answers under Bun", () => {
+    const result = print({ PATH: process.env["PATH"] ?? "", SMITHERS_BUN: bun! })
+    expect(result.stdout.trim()).toBe("pong")
+    expect(result.status).toBe(0)
+  }, 150_000)
+})

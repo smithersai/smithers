@@ -46,6 +46,7 @@ import * as Context from "./context.ts"
 import * as Panels from "./panels.ts"
 import * as Replay from "./replay.ts"
 import * as Runtime from "./runtime.ts"
+import * as Subprocess from "./subprocess.ts"
 import * as Transcript from "./transcript.ts"
 
 /** How a turn ended. */
@@ -247,7 +248,7 @@ export const make = (options: {
         flows: [
           ...(input.role === "coordinator" ? [] : [
             Changes.capture(
-              StandardFlows.filesystem(services, Bun.which("rg") === null ? undefined : NativeSearch.make(services)),
+              StandardFlows.filesystem(services, Subprocess.which("rg") === null ? undefined : NativeSearch.make(services)),
               options.cwd,
               input.onPatch ?? (() => {})
             ),

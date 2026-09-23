@@ -9,6 +9,7 @@ import { realpathSync } from "node:fs"
 import { chmod, mkdir, unlink, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import * as Changes from "./changes.ts"
+import * as Subprocess from "./subprocess.ts"
 import type * as Transcript from "./transcript.ts"
 
 export type Failure =
@@ -108,8 +109,8 @@ export const target = (transcript: Transcript.Transcript, rowId: string): Target
 /** The directory's VCS root, as capture saw it: jj first, then git. */
 const root = async (cwd: string): Promise<string | undefined> => {
   for (const command of [["jj", "root"], ["git", "rev-parse", "--show-toplevel"]]) {
-    if (Bun.which(command[0]!) === null) continue
-    const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "ignore" })
+    if (Subprocess.which(command[0]!) === null) continue
+    const child = Subprocess.spawn(command, { cwd })
     const output = await new Response(child.stdout).text()
     if ((await child.exited) === 0) return output.trim()
   }
