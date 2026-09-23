@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3130 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3134 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -327,6 +327,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **testing:** query Windows processes without Unix ps ([de7db2945d](https://github.com/smithersai/smithers/commit/de7db2945d681c8e22468b151802443886f45111))
+- **evals:** keep Harbor's Trial-constructor refusals inside the trial ([6810d97e21](https://github.com/smithersai/smithers/commit/6810d97e21eeb1ac03aae845e0f060dac26d1345))
 - **flows:** use native path layer for host filesystem tests and runtime ([0183b80152](https://github.com/smithersai/smithers/commit/0183b80152be510ede76d843de155c6c5f6a5c30))
 - **evals:** a task with compose sidecars is unplaceable on plue, never a 0 ([d535b64b14](https://github.com/smithersai/smithers/commit/d535b64b149bf1958a3403e3ec1ab27917853363))
 - **evals:** show the image's own /tmp in plue workspaces ([f12c8ed1c8](https://github.com/smithersai/smithers/commit/f12c8ed1c8d15b27b9a4b785025ece122ac78d38))
@@ -2539,6 +2541,8 @@ the release notes at
 
 ### 📦 Other changes
 
+- **build(node):** require Node >= 26.4 ([94347eea11](https://github.com/smithersai/smithers/commit/94347eea111d27d8572e4eefd8b0f64687520faf))
+- **test(workspace):** reject planted temporary symlinks in conformance ([0c43ad7611](https://github.com/smithersai/smithers/commit/0c43ad7611ff71159243b10ddeef8b1e13a1acbd))
 - **test(app):** restore the maximized Models card after owner chat ([5e6b061f15](https://github.com/smithersai/smithers/commit/5e6b061f15dab40c8a3927a6905b7fcaf2a50f93))
 - **test(app):** complete first visit before hosted issue slash commands ([af5cb1c9e3](https://github.com/smithersai/smithers/commit/af5cb1c9e3ab7a533679b6d1c2e5e6610cf668cc))
 - **test(app):** complete first visit before hosted landing ([297a8e3421](https://github.com/smithersai/smithers/commit/297a8e342163c4b20b4a463ba24c7a66d8f09d7a))
