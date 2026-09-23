@@ -19,6 +19,12 @@ describe("Output.make human rendering", () => {
     expect(render("already rendered\nlines", "human").text).toBe("already rendered\nlines")
   })
 
+  it("makes terminal control sequences inert while keeping line breaks and tabs", () => {
+    expect(render("safe\x1b[2J\nnext\tcol\x1b]0;title\x07\r\nend\x00\x9b31m\u202e", "human").text)
+      .toBe("safe\nnext\tcol\nend")
+    expect(render({ note: "\x9b2J\u202eflip" }, "human").text).toBe("{\n  \"note\": \"flip\"\n}")
+  })
+
   it("prints the empty string as nothing at all", () => {
     expect(render("", "human").text).toBe("")
   })

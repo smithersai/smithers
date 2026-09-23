@@ -51,6 +51,8 @@ export interface State {
   readonly completed: number
   readonly failed: number
   readonly skipped: number
+  /** Skipped or deferred nodes that had been scheduled, so they no longer run. */
+  readonly skippedStarted: number
   readonly active: ReadonlyArray<string>
   /** Identities aligned with the bounded active-label window. */
   readonly activeCallIds: ReadonlyArray<string | undefined>
@@ -86,6 +88,7 @@ export const initial = (): State => ({
   completed: 0,
   failed: 0,
   skipped: 0,
+  skippedStarted: 0,
   active: [],
   activeCallIds: [],
   reportedCalls: HashSet.empty(),
@@ -237,6 +240,7 @@ export const project = (
           completed: state.completed + (failed || skipped ? 0 : 1),
           failed: state.failed + (failed ? 1 : 0),
           skipped: state.skipped + (skipped ? 1 : 0),
+          skippedStarted: state.skippedStarted + (skipped && index >= 0 ? 1 : 0),
           active: index < 0 ? state.active : state.active.filter((_, position) => position !== index),
           activeCallIds: index < 0
             ? state.activeCallIds
@@ -279,12 +283,21 @@ export const project = (
   }
 }
 
+/**
+ * Started work that has not settled yet.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const running = (state: State): number =>
+  Math.max(0, state.started - state.completed - state.failed - state.skippedStarted)
+
 const summary = (state: State): string => {
-  const running = Math.max(0, state.started - state.completed - state.failed)
+  const active = running(state)
   const counts = `${state.completed} completed${state.failed === 0 ? "" : ` · ${state.failed} failed`}${
     state.skipped === 0 ? "" : ` · ${state.skipped} skipped`
   }`
-  return `${state.status} · ${counts}${running === 0 || state.settled ? "" : ` · ${running} running`}`
+  return `${state.status} · ${counts}${active === 0 || state.settled ? "" : ` · ${active} running`}`
 }
 
 const quote = (value: string): string => `'${value.replace(/'/g, "'\\''")}'`

@@ -7,6 +7,7 @@ import { ControlSchema } from "@smthrs/control"
 import { Context, Effect, Layer, Redacted, Schema } from "effect"
 import { isProxy } from "node:util/types"
 import * as CliError from "./CliError.ts"
+import { terminalSafeLines } from "./internal/Failure.ts"
 
 /**
  * The two stable renderings exposed by CLI handlers.
@@ -300,11 +301,15 @@ const encode = (value: Snapshot, format: Format, state: EncodeState, path: strin
 const renderSnapshot = (value: Snapshot, format: Format): string => {
   if (format === "human" && typeof value === "string") {
     // `snapshot` has already admitted this string against the same byte cap.
-    return value
+    // Human text reaches a terminal: flow, model, and task strings must not
+    // be able to move the cursor, clear the screen, or set the title.
+    return terminalSafeLines(value)
   }
   const state: EncodeState = { chunks: [], bytes: 0 }
   encode(value, format, state, "$", 0)
-  return state.chunks.join("")
+  const text = state.chunks.join("")
+  // JSON escapes C0 but not C1 or format code points such as bidi overrides.
+  return format === "human" ? terminalSafeLines(text) : text
 }
 
 /**

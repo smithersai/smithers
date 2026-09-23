@@ -82,6 +82,14 @@ export interface StreamOptions<A> {
 }
 
 /**
+ * How long an aborted scan waits for its source's `return()` before settling.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const cleanupTimeoutMillis = 2_000
+
+/**
  * What a streamed scan produced.
  *
  * @category models
@@ -289,9 +297,20 @@ export const make = (options: Options): Service => {
               if (live === undefined) write(output, message)
               else live.cancel(message)
               // A generator cannot finish return() until its pending next()
-              // finishes. Stop animation immediately, then await cleanup so
-              // no source work is silently abandoned.
-              await iterator.return?.()
+              // finishes. Stop animation immediately, then give cleanup a
+              // bounded wait: a source whose next() never settles must not
+              // hold the caller forever.
+              const cleanup = Promise.resolve(iterator.return?.())
+              // A rejection after the wait has nobody left to report to.
+              cleanup.catch(() => {})
+              let timer: ReturnType<typeof setTimeout> | undefined
+              await Promise.race([
+                cleanup,
+                new Promise<void>((resolve) => {
+                  timer = setTimeout(resolve, cleanupTimeoutMillis)
+                })
+              ])
+              clearTimeout(timer)
               return { items: collected, stopped: true }
             }
             if (next.done) break

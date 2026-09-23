@@ -100,7 +100,6 @@ export const satisfiesNode = (version: string, minimum: string = minimumNode): b
   return atLeast(actual, order(minimumNode)!) && atLeast(actual, required)
 }
 
-
 /** How many migrations one database file has recorded, or a reason it cannot say. */
 const ladder = (file: string): Check => {
   if (!existsSync(file)) return { name: `database ${file}`, level: "ok", detail: "not created yet" }

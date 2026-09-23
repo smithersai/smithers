@@ -375,6 +375,24 @@ describe("durable run progress lifecycle", () => {
     expect(process.listenerCount("SIGTERM")).toBe(before)
   })
 
+  it("does not count a scheduled node that settled as skipped as still running", async () => {
+    const term = terminal()
+    const renderer = RunProgress.make("run-test", { policy: policy("live"), output: term.output })
+    renderer.event(event(1, "flows.engine.node-scheduled", { nodeId: "build", attempt: 1 }))
+    renderer.event(event(2, "flows.engine.node-scheduled", { nodeId: "test", attempt: 1 }))
+    renderer.event(event(3, "flows.engine.node-settled", { nodeId: "build", outcome: "skipped" }))
+    await new Promise((resolve) => setTimeout(resolve, 250))
+    renderer.close("interrupted")
+    const lastFrame = term.text().split("build skipped").at(-1) ?? ""
+    expect(lastFrame).toContain("1 running")
+    expect(lastFrame).not.toContain("2 running")
+    const state = [
+      event(1, "flows.engine.node-scheduled", { nodeId: "build", attempt: 1 }),
+      event(2, "flows.engine.node-settled", { nodeId: "build", outcome: "skipped" })
+    ].reduce((current, item) => RunProgress.project(current, item).state, RunProgress.initial())
+    expect(RunProgress.running(state)).toBe(0)
+  })
+
   it("leaves no live indicator while following a parked or terminal run and starts it again on resume", () => {
     const term = terminal()
     const before = process.listenerCount("SIGTERM")

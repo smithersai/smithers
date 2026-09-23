@@ -298,6 +298,38 @@ describe("streamSuggestions", () => {
     }
   })
 
+  it("settles after a bounded wait when the source never finishes its cleanup", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+    try {
+      const term = terminal()
+      const controller = new AbortController()
+      let returnCalled = false
+      const stuck: AsyncIterable<string> = {
+        [Symbol.asyncIterator]: () => ({
+          next: () => new Promise<IteratorResult<string>>(() => {}),
+          return: () => {
+            returnCalled = true
+            return new Promise<IteratorResult<string>>(() => {})
+          }
+        })
+      }
+      let settled = false
+      const running = Effect.runPromise(
+        make(term, false).streamSuggestions(stuck, { ...options, signal: controller.signal })
+      ).then((value) => {
+        settled = true
+        return value
+      })
+      controller.abort()
+      await vi.advanceTimersByTimeAsync(Ui.cleanupTimeoutMillis)
+      expect(returnCalled).toBe(true)
+      expect(settled).toBe(true)
+      expect(await running).toEqual({ items: [], stopped: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("removes its abort listener when a scan completes normally", async () => {
     const combined = vi.spyOn(AbortSignal, "any")
     try {

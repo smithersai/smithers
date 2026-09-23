@@ -31,6 +31,16 @@ import { stripVTControlCharacters } from "node:util"
 export const terminalSafe = (text: string): string => stripVTControlCharacters(text).replace(/[\p{Cc}\p{Cf}]/gu, " ")
 
 /**
+ * Multi-line untrusted text made inert for a terminal: like `terminalSafe`,
+ * but line feeds and tabs survive and a CRLF becomes a line feed.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const terminalSafeLines = (text: string): string =>
+  stripVTControlCharacters(text).replace(/\r\n/g, "\n").replace(/(?![\n\t])[\p{Cc}\p{Cf}]/gu, "")
+
+/**
  * The most specific recorded cause, including older nested Error stacks.
  * @category getters
  * @since 1.0.0
