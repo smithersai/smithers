@@ -2,12 +2,13 @@ import type { APIRequestContext, BrowserContext, Locator, Page, TestInfo } from 
 import { command, expect, realApi } from "../support/test"
 import { deletionOutcome, githubCreationBar, TeardownRefusal } from "../support/teardown"
 import { readAuthenticatedSession } from "../auth-permissions/profile"
+import { finishFirstVisit } from "../support/first-visit"
 
 export const PRODUCTION_REPO = "codeplanesmithers/canary-sandbox"
 
 export const cloudRepoPath = (repo: string, suffix = ""): string => {
   const [owner = "", name = ""] = repo.split("/")
-  return `/api/cloud/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${suffix}`
+  return `/api/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}${suffix}`
 }
 
 /** Product repository reads are served by the app's direct repository facade. */
@@ -22,14 +23,16 @@ export const bootProductionRepository = async (page: Page, repo = PRODUCTION_REP
   if (new URL(page.url()).pathname.replace(/\/$/, "") !== `/${repo}`) {
     await page.goto(`/${repo}`, { waitUntil: "domcontentloaded" })
   }
+  await finishFirstVisit(page)
   await expect(page).toHaveURL(new RegExp(`/${repo.replace("/", "\\/")}$`))
   await expect(page.getByTestId("transcript")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
-  expect(await readAuthenticatedSession(page)).toEqual({
-    login: "codeplanesmithers",
-    allowlisted: true,
-    admin: true
-  })
+  const session = await readAuthenticatedSession(page)
+  if (process.env.SMITHERS_REAL_AUTH_KIND === "application-token") {
+    expect(session?.allowlisted).toBe(true)
+  } else {
+    expect(session).toEqual({ login: "codeplanesmithers", allowlisted: true, admin: true })
+  }
 }
 
 export const enableProductionVerbose = async (page: Page): Promise<void> => {
@@ -71,7 +74,8 @@ export type OwnedGitHubRepository = {
 /** Provision the uniquely named source through GitHub's live repository form. */
 export const createOwnedGitHubRepository = async (
   context: BrowserContext,
-  name: string
+  name: string,
+  visibility: "private" | "public" = "private"
 ): Promise<OwnedGitHubRepository> => {
   if (!/^smithers-e2e-import-[a-z0-9-]+$/.test(name)) {
     throw new Error(`Refusing to create a GitHub repository outside the owned E2E namespace: ${name}`)
@@ -105,24 +109,26 @@ export const createOwnedGitHubRepository = async (
     await expect(nameInput).toBeVisible()
     await nameInput.fill(name)
 
-    const privateChoice = github.getByLabel(/^Private/i)
-      .or(github.locator('input[type="radio"][value="private"]:visible'))
-      .first()
-    if (await privateChoice.isVisible().catch(() => false)) {
-      await privateChoice.check()
-      await expect(privateChoice).toBeChecked()
-    }
-    else {
-      const visibility = github.getByRole("button", { name: "Public", exact: true })
-      await expect(visibility).toBeVisible()
-      await visibility.click()
-      const privateOption = github.getByRole("menuitemradio", { name: /^Private/i })
-        .or(github.getByRole("menuitem", { name: /^Private/i }))
-        .or(github.getByText("Private", { exact: true }))
-        .last()
-      await expect(privateOption).toBeVisible()
-      await privateOption.click()
-      await expect(github.getByRole("button", { name: "Private", exact: true })).toBeVisible()
+    if (visibility === "private") {
+      const privateChoice = github.getByLabel(/^Private/i)
+        .or(github.locator('input[type="radio"][value="private"]:visible'))
+        .first()
+      if (await privateChoice.isVisible().catch(() => false)) {
+        await privateChoice.check()
+        await expect(privateChoice).toBeChecked()
+      }
+      else {
+        const visibilityButton = github.getByRole("button", { name: "Public", exact: true })
+        await expect(visibilityButton).toBeVisible()
+        await visibilityButton.click()
+        const privateOption = github.getByRole("menuitemradio", { name: /^Private/i })
+          .or(github.getByRole("menuitem", { name: /^Private/i }))
+          .or(github.getByText("Private", { exact: true }))
+          .last()
+        await expect(privateOption).toBeVisible()
+        await privateOption.click()
+        await expect(github.getByRole("button", { name: "Private", exact: true })).toBeVisible()
+      }
     }
     const readmeChoice = github.locator('input[name="repository[auto_init]"]:visible').first()
     if (await readmeChoice.count()) {
@@ -156,7 +162,7 @@ export const createOwnedGitHubRepository = async (
     ])
     expect(creationResponse.status(), "GitHub must accept the real repository creation request").toBeLessThan(400)
     await expect(github.locator(`a[href="/codeplanesmithers"]:visible`).first()).toBeVisible()
-    await expect(github.getByText("Private", { exact: true }).first()).toBeVisible()
+    await expect(github.getByText(visibility === "private" ? "Private" : "Public", { exact: true }).first()).toBeVisible()
     await expect(github.getByRole("link", { name: /^README\.md(?:, \(File\))?$/ }).first()).toBeVisible()
     return owned
   } catch (error) {
@@ -276,7 +282,7 @@ export const waitForImportJobId = async (
   if (jobId === "") throw new Error("Cannot wait for an import job without its accepted id.")
   let terminal: Record<string, unknown> | undefined
   await expect.poll(async () => {
-    const response = await realApi(page, request, "GET", `/api/cloud/api/github/import/${encodeURIComponent(jobId)}`)
+    const response = await realApi(page, request, "GET", `/api/github/import/${encodeURIComponent(jobId)}`)
     if (response.status() !== 200) return `http-${response.status()}`
     const body = await response.json() as Record<string, unknown>
     terminal = body
@@ -299,10 +305,10 @@ export const drainOwnedCloudWorkspaces = async (
   request: APIRequestContext,
   repo: string
 ): Promise<ReadonlyArray<OwnedWorkspaceCleanup>> => {
-  if (!/^codeplanesmithers\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
+  if (!/^[a-z0-9-]+\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
     throw new Error(`Refusing workspace cleanup outside the owned E2E namespace: ${repo}`)
   }
-  expect((await readAuthenticatedSession(page))?.login, "workspace cleanup must retain the fixture owner identity").toBe("codeplanesmithers")
+  expect((await readAuthenticatedSession(page))?.login, "workspace cleanup must retain the fixture owner identity").toBe(repo.split("/")[0])
   const path = cloudRepoPath(repo, "/workspaces")
   const deleted: OwnedWorkspaceCleanup[] = []
   const seen = new Set<string>()
@@ -362,7 +368,7 @@ export const deleteOwnedCloudRepository = async (
   request: APIRequestContext,
   repo: string
 ): Promise<{ readonly deleteStatus: number; readonly finalStatus: number; readonly workspaces: ReadonlyArray<OwnedWorkspaceCleanup> }> => {
-  if (!/^codeplanesmithers\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
+  if (!/^[a-z0-9-]+\/smithers-e2e-import-[a-z0-9-]+$/.test(repo)) {
     throw new Error(`Refusing to delete a Smithers Cloud repository outside the owned E2E namespace: ${repo}`)
   }
   const workspaces = await drainOwnedCloudWorkspaces(page, request, repo)

@@ -331,17 +331,28 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       const environment = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
       const token = environment ? process.env[environment]?.trim() : undefined
       if (!token) throw new Error(`${environment ?? "application token"} is required.`)
-      const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
-      const origin = new URL(baseURL).origin
-      await context.addInitScript(({ origin, token }) => {
-        if (location.origin !== origin) return
-        sessionStorage.setItem("smithers.backend-target", JSON.stringify({
-          apiVersion: 1, mode: "web-plue", apiOrigin: "", auth: { kind: "bearer" },
-          cors: "same-origin", developerExternal: false
-        }))
-        sessionStorage.setItem("smithers.backend-token", token)
-      }, { origin, token })
-      try { await use(context) } finally { await context.close() }
+      const useGithubProfile = Boolean(process.env.SMITHERS_E2E_PROFILE?.trim())
+      const profile = useGithubProfile ? await acquireAuthenticatedProfile("SMITHERS_E2E_PROFILE") : undefined
+      let context: BrowserContext | undefined
+      try {
+        context = profile
+          ? await playwright.chromium.launchPersistentContext(profile.path, {
+              baseURL, headless: process.env.SMITHERS_REAL_HEADED !== "1", viewport: { width: 1280, height: 900 }
+            })
+          : await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
+        const origin = new URL(baseURL).origin
+        await context.addInitScript(({ origin, token }) => {
+          if (location.origin !== origin) return
+          sessionStorage.setItem("smithers.backend-target", JSON.stringify({
+            apiVersion: 1, mode: "web-plue", apiOrigin: "", auth: { kind: "bearer" },
+            cors: "same-origin", developerExternal: false
+          }))
+          sessionStorage.setItem("smithers.backend-token", token)
+        }, { origin, token })
+        await use(context)
+      } finally {
+        try { await context?.close() } finally { await profile?.lease.release() }
+      }
       return
     }
     if (realAuthKind() === "owner-session") {

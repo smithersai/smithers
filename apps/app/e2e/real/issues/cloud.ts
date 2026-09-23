@@ -153,7 +153,7 @@ export const createIssueThroughUi = async (
 }
 
 /**
- * Give one test an owned, private GitHub source and its real Smithers Cloud
+ * Give one test an owned GitHub source and its real Smithers Cloud
  * mirror. The callback may create issues; every tracked issue is closed before
  * the mirror and source are deleted, and both repository deletions prove 404.
  */
@@ -163,7 +163,9 @@ export const withOwnedImportedRepository = async (
   body: (fixture: ImportedIssueFixture) => Promise<void>
 ): Promise<void> => {
   const name = uniqueRepositoryName()
-  const repo = `codeplanesmithers/${name}`
+  const sourceRepo = `codeplanesmithers/${name}`
+  let repo = sourceRepo
+  const sourceVisibility = process.env.SMITHERS_REAL_AUTH_KIND === "application-token" ? "public" : "private"
   const trackedIssues = new Set<number>()
   const trackedWorkflowRuns = new Map<string, TrackedWorkflowRun>()
   let owned: OwnedGitHubRepository | undefined
@@ -175,27 +177,28 @@ export const withOwnedImportedRepository = async (
   let primaryFailure: unknown
   const cleanupFailures: unknown[] = []
 
-  await attachProductionJson(testInfo, "owned-private-repository-intent", {
-    repo,
+  await attachProductionJson(testInfo, "owned-repository-intent", {
+    repo: sourceRepo,
     owner: "codeplanesmithers",
-    visibility: "private",
+    visibility: sourceVisibility,
     initializedWithReadme: true,
     cleanup: ["close tracked issues", "delete cloud mirror and verify 404", "delete GitHub source and verify 404"]
   })
 
   try {
-    owned = await createOwnedGitHubRepository(fixtures.context, name)
+    owned = await createOwnedGitHubRepository(fixtures.context, name, sourceVisibility)
     sourceCreated = true
-    await bootProductionRepository(fixtures.page, repo)
+    await bootProductionRepository(fixtures.page, sourceRepo)
 
-    const importPath = "/api/cloud/api/github/import"
-    const starting = fixtures.page.waitForResponse((response) =>
-      response.request().method() === "POST" && new URL(response.url()).pathname === importPath)
+    const importPath = "/api/github/import"
+    const starting = fixtures.context.waitForEvent("response", { predicate: (response) =>
+      response.request().method() === "POST" && new URL(response.url()).pathname === importPath
+    })
     // Once dispatch begins, a lost browser answer could still leave an
     // accepted backend job. Cleanup may delete neither side until that exact
     // response-owned job is known and terminal.
     importSubmitted = true
-    await runSlash(fixtures.page, `/repos.import ${repo}`)
+    await runSlash(fixtures.page, `/repos.import ${sourceRepo}`)
     const start = await starting
     const startBody = await start.json().catch(() => undefined) as {
       readonly importJobId?: unknown
@@ -211,7 +214,11 @@ export const withOwnedImportedRepository = async (
     const authoritativeJob = await waitForImportJobId(fixtures.page, fixtures.request, acceptedImportJobId)
     importSettled = true
     expect(authoritativeJob.status).toBe("ready")
-    const card = fixtures.page.locator('.smithers-card[data-kind="repo-import"]').filter({ hasText: repo }).last()
+    const destination = authoritativeJob.repository as { readonly owner?: unknown; readonly name?: unknown } | undefined
+    expect(destination?.owner).toEqual(expect.any(String))
+    expect(destination?.name).toBe(name)
+    repo = `${destination!.owner as string}/${destination!.name as string}`
+    const card = fixtures.page.locator('.smithers-card[data-kind="repo-import"]').filter({ hasText: sourceRepo }).last()
     await expect(card).toBeVisible()
     const job = await waitForImportJob(fixtures.page, fixtures.request, card)
     expect(job?.status).toBe("ready")
@@ -222,7 +229,8 @@ export const withOwnedImportedRepository = async (
     await card.getByRole("button", { name: "Show issues", exact: true }).click()
     const list = fixtures.page.locator('.smithers-card[data-kind="issue-list"]').filter({ hasText: repo }).last()
     await expect(list).toBeVisible()
-    await attachProductionJson(testInfo, "owned-private-repository-import", {
+    await attachProductionJson(testInfo, "owned-repository-import", {
+      sourceRepo,
       repo,
       startStatus: start.status(),
       terminalJob: job,

@@ -2,27 +2,12 @@ import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
 import { awaitBoot, closeComposer, expect, productUrl, realApi } from "./support/test"
 import { runSlash } from "./issues/local"
+import { finishFirstVisit } from "./support/first-visit"
 import { withOwnedRepository } from "./portable/owned-repository"
 import type { APIRequestContext, Page } from "@playwright/test"
 import type { OwnedRepository } from "./portable/owned-repository"
 
 authenticatedTest.setTimeout(240_000)
-
-const finishFirstVisit = async (page: Page): Promise<void> => {
-  const name = page.getByTestId("signup-name")
-  if (!await name.isVisible().catch(() => false)) return
-  await name.fill("Smithers Canary")
-  await page.getByTestId("signup-account-continue").click()
-  await page.locator('[data-testid="signup-question"][data-question="size"]').getByRole("radio", { name: /Just me/ }).click()
-  await page.locator('[data-testid="signup-question"][data-question="role"]').getByRole("radio", { name: /Engineering/ }).click()
-  await page.locator('[data-testid="signup-question"][data-question="heard"]').getByTestId("signup-skip").click()
-  await page.locator('[data-testid="signup-question"][data-question="know"]').getByRole("radio", { name: /Yes/ }).click()
-  await page.locator('[data-testid="signup-question"][data-question="models"]').getByTestId("signup-skip").click()
-  await page.locator('[data-testid="signup-question"][data-question="repo"]').getByTestId("signup-skip").click()
-  await page.getByTestId("signup-send").click()
-  await page.getByTestId("signup-finish").click()
-  await expect(page.getByTestId("signup-name")).toHaveCount(0)
-}
 
 const runningWorkspace = async <T>(page: Page, request: APIRequestContext, repo: OwnedRepository, use: (id: string) => Promise<T>): Promise<T> => {
   const created = await realApi(page, request, "POST", `${repo.path}/workspaces`, { name: "matrix", source_bookmark: "main", kind: "container" })
