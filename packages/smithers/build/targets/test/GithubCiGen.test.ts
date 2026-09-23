@@ -96,7 +96,8 @@ describe("CiToolchain.Needs", () => {
         const result = spawnSync("bash", ["-e", "-c", step.run!], {
           cwd: root,
           env: {
-            ...process.env,
+            // Runner shell hooks can replace PATH before this script starts.
+            // Only the declared shim search path belongs to this fixture.
             PATH: `${bin}:${process.env.PATH}`,
             RUNNER_TEMP: runnerTemp,
             GITHUB_ENV: NodePath.join(root, "env")
