@@ -99,6 +99,14 @@ describe("child-process containment conformance", () => {
       + "Fault suites use it to verify actual parentage independently of the implementation."
     ],
     [
+      "smithers/src/commands/Tui.ts",
+      "Interactive CLI hand-off to the Bun terminal host, outside a durable flow. "
+      + "Inherits the foreground terminal and awaits its direct child's exit status; "
+      + "Ctrl+C belongs to that child. Tui.test.ts verifies argv, launch refusal and status. "
+      + "This launcher has no durable process ledger or hard-kill recovery guarantee; "
+      + "flow execution inside the TUI composes its own host."
+    ],
+    [
       "smithers/src/Detached.ts",
       "`smithers up -d`, the one launcher whose child must OUTLIVE the process that "
       + "started it. Routing it through the host spawner would kill the engine on the "
