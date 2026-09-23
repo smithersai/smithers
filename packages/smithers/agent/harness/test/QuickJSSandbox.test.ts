@@ -580,6 +580,24 @@ describe("QuickJSSandbox calls", () => {
     expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "accepted" } })
   })
 
+  it("sends an omitted or undefined call input to the host as null", async () => {
+    const observed: Array<Sandbox.Invocation> = []
+    const outcome = await outcomeOf(
+      `await ctx.call("fs/list")
+       await ctx.call("fs/list", undefined)
+       ctx.done("sent")`,
+      {
+        call: (invocation) => {
+          observed.push(invocation)
+          return Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+        }
+      }
+    )
+
+    expect(observed.map((invocation) => invocation.input)).toEqual([null, null])
+    expect(outcome).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "sent" } })
+  })
+
   it("refuses source the boundary parse accepts and the realm does not", async () => {
     // The parser accepts explicit resource management, but this QuickJS
     // release does not. The realm must retain its own compile refusal.

@@ -273,6 +273,37 @@ describe("FlowBinding.make", () => {
     expect(observed).toEqual({})
   })
 
+  it("treats a missing input as {} when every field is optional", async () => {
+    const Input = Schema.Struct({ env: Schema.optional(Schema.String) })
+    const observed: Array<unknown> = []
+    const binding = FlowBinding.make({
+      flow: Flow.make({ name: "list", input: Input, output: Schema.Struct({}) }),
+      handler: (input) =>
+        Effect.sync(() => {
+          observed.push(input)
+          return {}
+        })
+    })
+
+    // A cell's `ctx.call("list")` and `ctx.call("list", undefined)` cross the realm as JSON null.
+    const exit = await run(binding.run(call("list", null)))
+
+    expect(exit).toMatchObject({ _tag: "Success", value: { outcome: "success" } })
+    expect(observed).toEqual([{}])
+  })
+
+  it("refuses a missing input when the schema requires a field", async () => {
+    const binding = FlowBinding.make({ flow: echo, handler: () => Effect.die("unreachable") })
+    const rejection = Schema.decodeUnknownResult(Echo)(null)
+    const rejected = Result.isFailure(rejection) ? rejection.failure.message : ""
+
+    const exit = await run(binding.run(call("echo", null)))
+
+    expect(Exit.isSuccess(exit) && exit.value.message).toBe(
+      `Flow echo rejected its input: ${rejected}. Re-read ctx.flows and reissue the call.`
+    )
+  })
+
   it("reports the original failure when input remains invalid without nulls", async () => {
     const Input = Schema.Struct({ env: Schema.optional(Schema.String), count: Schema.Number })
     const input = { env: null, count: "many" }

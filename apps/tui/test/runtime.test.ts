@@ -161,6 +161,30 @@ it("accepts only named models in the delegate flow", async () => {
   expect(requests).toHaveLength(8)
 })
 
+it("lists tabs and flows when the cell omits the input", async () => {
+  const bindings = [
+    ...await Effect.runPromise(Runtime.source({
+      publish: () => {},
+      delegate: () => ({ status: "requested" }),
+      read: () => ({}),
+      list: () => [{ id: "w1", status: "running" }]
+    }).bindings()),
+    ...SmithersPlugin.flows({
+      list: () => [{ name: "review", description: "Review a change" }],
+      run: () => ({}),
+      inspect: () => ({})
+    })
+  ]
+  // `ctx.call("tab.list")` reaches the binding as JSON null.
+  const run = (name: string) => {
+    const binding = bindings.find((candidate) => candidate.descriptor.name === name)!
+    return Effect.runPromise(binding.run({ input: null } as Parameters<typeof binding.run>[0]))
+  }
+  expect(await run("tab.list")).toMatchObject({ outcome: "success", value: [{ id: "w1", status: "running" }] })
+  expect(await run("smithers.flows")).toMatchObject({ outcome: "success", value: [{ name: "review" }] })
+  expect((await run("tab.read")).outcome).toBe("failure")
+})
+
 it("produces contextual hunks, preserves unchanged lines, and captures patch rename paths", () => {
   const patch = Changes.patch("math.js", "// addition\nreturn a - b\n// end\n", "// addition\nreturn a + b\n// end\n")!
   expect(patch.patch).toContain(" // addition")

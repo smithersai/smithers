@@ -339,7 +339,9 @@ export const make = <
   const decodeCall = (input: unknown): ReturnType<typeof decodeInput> => {
     const first = decodeInput(input)
     if (first._tag !== "Failure") return first
-    const retried = decodeInput(withoutRejectedNulls(input, nullKeys))
+    // A cell that omits the input (`ctx.call("tab.list")`) sends JSON null.
+    // Retry it as `{}`, so an all-optional object schema accepts the call.
+    const retried = decodeInput(input === null ? {} : withoutRejectedNulls(input, nullKeys))
     // When the retry fails too, the first attempt's failure is the one worth
     // reporting: it names the key the caller actually wrote.
     return retried._tag === "Failure" ? first : retried
