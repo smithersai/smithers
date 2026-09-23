@@ -124,7 +124,10 @@ EGRESS_ENV = "/etc/smithers/egress.env"
 # Intel OpenMP (PyTorch's libiomp) asserts in kmp_affinity.cpp(642) on the
 # guest's CPU topology, each vCPU presented as its own socket; disabling its
 # thread pinning changes no result. A task's own KMP_AFFINITY wins.
-GUEST_DEFAULTS = 'export KMP_AFFINITY="${KMP_AFFINITY:-disabled}"; '
+# `docker exec` runs every command under umask 0022; plue CLI 71c3ed6a's
+# durable exec inherits 0077 in some images (data-anonymization's oracle
+# wrote 0600 files its dropped-privilege verifier could not read).
+GUEST_DEFAULTS = 'umask 022; export KMP_AFFINITY="${KMP_AFFINITY:-disabled}"; '
 EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; {GUEST_DEFAULTS}"
 
 

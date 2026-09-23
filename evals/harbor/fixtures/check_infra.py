@@ -434,7 +434,7 @@ def check_shim_durable_exec() -> None:
 
 
 def check_guest_prelude() -> None:
-    """Intel OpenMP asserts in kmp_affinity.cpp(642) on the plue guest's CPU
+    """Every exec runs under `docker exec`'s umask, 0022. Intel OpenMP asserts in kmp_affinity.cpp(642) on the plue guest's CPU
     topology (each vCPU its own socket): vllm-deepseek-streaming's oracle
     died with exit 134. Every exec, the shim's included, defaults
     KMP_AFFINITY=disabled (no thread pinning, same results) unless the task
@@ -447,6 +447,12 @@ def check_guest_prelude() -> None:
                              capture_output=True, text=True, env=env).stdout
     assert run({"PATH": os.environ["PATH"]}) == "disabled"
     assert run({"PATH": os.environ["PATH"], "KMP_AFFINITY": "compact"}) == "compact", "a task's own setting wins"
+    # data-anonymization, 2026-09-23: plue CLI 71c3ed6a runs durable execs
+    # under umask 0077 in that image (0022 with the old CLI), so the oracle's
+    # /app/anon.py was 0600 and the verifier's dropped-privilege run could not
+    # read it. `docker exec` runs under 0022.
+    umask = sp.run(["sh", "-c", "umask 077; " + plue_env.with_egress("umask")], capture_output=True, text=True).stdout.strip()
+    assert umask in ("0022", "022"), umask
 
 
 def check_requeue_and_health() -> None:
