@@ -332,6 +332,10 @@ const started = (call: AgentEvent.CellCallStarted["call"], at: number): Call => 
   }
 }
 
+const onlyDone = (cell: CellItem): boolean =>
+  cell.calls.length === 0 && cell.printed === "" && cell.error === undefined &&
+  /^(?:return\s+)?(?:await\s+)?ctx\.done\([\s\S]*\)\s*;?$/.test(cell.source.trim())
+
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
   if (event._tag === "supervisor-settled" && transcript.contextAssessment?.scope === event.scope &&
@@ -434,7 +438,13 @@ const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: nu
     }
     case "resolved": {
       const text = event.message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
-      return withId({ ...settleOpen(transcript, at, "done"), streaming: "", thinking: false }, { kind: "answer", text }, at)
+      const settled = settleOpen(transcript, at, "done")
+      // A cell that only calls `ctx.done` restates the answer twice; the answer alone says it.
+      const finishing = lastCell(settled)
+      const items = finishing !== undefined && onlyDone(finishing)
+        ? settled.items.filter((item) => item !== finishing)
+        : settled.items
+      return withId({ ...settled, items, streaming: "", thinking: false }, { kind: "answer", text }, at)
     }
     case "aborted":
       return failure(transcript, event.reason, at)

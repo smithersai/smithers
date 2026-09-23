@@ -106,3 +106,26 @@ describe("failures", () => {
     expect(failed.items.at(-1)).toMatchObject({ kind: "error", text: "Our servers are currently overloaded." })
   })
 })
+
+describe("a turn that only calls ctx.done", () => {
+  const turn = (code: string, answer: string) => [
+    { _tag: "model-requested" },
+    { _tag: "model-delta", delta: { type: "text-delta", text: `The seat is sol.\n\`\`\`cell\n${code}\n\`\`\`` } },
+    { _tag: "cell-produced", cell: { language: "javascript", text: code } },
+    { _tag: "cell-settled", outcome: { _tag: "settled" } },
+    { _tag: "resolved", message: { role: "assistant", content: [{ type: "text", text: answer }] } }
+  ].reduce(
+    (transcript, event, at) => Transcript.apply(transcript, event as never, at),
+    Transcript.user(Transcript.empty, "which seat?")
+  )
+
+  it("shows the answer once, without the cell that restates it", () => {
+    const transcript = turn(`ctx.done("The seat is sol.")`, "The seat is sol.")
+    expect(transcript.items.map((item) => item.kind)).toEqual(["user", "answer"])
+  })
+
+  it("keeps a cell that did work before finishing", () => {
+    const transcript = turn(`const seat = 1\nctx.done("The seat is sol.")`, "The seat is sol.")
+    expect(transcript.items.map((item) => item.kind)).toEqual(["user", "cell", "answer"])
+  })
+})
