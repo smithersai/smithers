@@ -25,11 +25,10 @@
  *
  * **Compacting a printed structure.** A result printed whole is mostly repeated
  * keys — a grep hit names `file`, `line`, `text` once per match — so an array of
- * records whose keys are identical is rendered as a table with the keys named
- * once. It is keyed on the shape and nothing else — this module knows no flow —
- * and at the floor it applies to, three rows and two columns, the table is
- * shorter than the JSON by construction, so the change can only take bytes off
- * the bill.
+ * matches renders as file groups with numbered hits and context; other records
+ * render as a table with the union of keys named once. It is keyed on the shape
+ * and nothing else — this module knows no flow. Repeated keys save bytes;
+ * sparse records with mostly distinct keys can cost more as a table.
  *
  * @since 0.1.0
  * @private
@@ -157,16 +156,74 @@ const cell = (value: Schema.Json): string =>
     ? value
     : CanonicalJson.stringify(value)
 
+/** A source line, shared by hits and their context. */
+type MatchLine = { readonly line: number; readonly text: string }
+
+/** The optional symbol attached to a source hit. */
+type MatchSymbol = {
+  readonly kind: string
+  readonly name: string
+  readonly startLine: number
+  readonly endLine: number
+}
+
+/** The exact match shape; additional data must survive in the generic table. */
+type Match = MatchLine & {
+  readonly file: string
+  readonly before?: ReadonlyArray<MatchLine>
+  readonly after?: ReadonlyArray<MatchLine>
+  readonly symbol?: MatchSymbol
+}
+
+const isMatchLine = (value: Schema.Json): value is MatchLine =>
+  isRecord<Schema.Json>(value) && Object.keys(value).length === 2 &&
+  Number.isInteger(value.line) && typeof value.text === "string"
+
+const isMatchSymbol = (value: Schema.Json | undefined): value is MatchSymbol =>
+  isRecord<Schema.Json>(value) && Object.keys(value).length === 4 &&
+  typeof value.kind === "string" && typeof value.name === "string" &&
+  Number.isInteger(value.startLine) && Number.isInteger(value.endLine)
+
+const isMatch = (value: Schema.Json): value is Match =>
+  isRecord<Schema.Json>(value) &&
+  typeof value.file === "string" && Number.isInteger(value.line) && typeof value.text === "string" &&
+  Object.keys(value).every((key) => ["file", "line", "text", "before", "after", "symbol"].includes(key)) &&
+  (!Object.hasOwn(value, "before") || Array.isArray(value.before) && value.before.every(isMatchLine)) &&
+  (!Object.hasOwn(value, "after") || Array.isArray(value.after) && value.after.every(isMatchLine)) &&
+  (!Object.hasOwn(value, "symbol") || isMatchSymbol(value.symbol))
+
+/** Renders nonempty match lists in consecutive file groups, using rg's line markers. */
+const matchList = (value: Schema.Json): string | undefined => {
+  if (!Array.isArray(value) || value.length === 0 || !value.every(isMatch)) return undefined
+  const lines: Array<string> = []
+  let previousFile: string | undefined
+  let previousLine = 0
+  for (const match of value) {
+    const before = match.before ?? []
+    const after = match.after ?? []
+    if (match.file !== previousFile) lines.push(match.file)
+    else if ((before[0]?.line ?? match.line) > previousLine + 1) lines.push("--")
+    for (const context of before) lines.push(`${context.line}-${context.text}`)
+    const symbol = match.symbol
+    const suffix = symbol === undefined ? "" : `  ‹${symbol.kind} ${symbol.name} ${symbol.startLine}-${symbol.endLine}›`
+    lines.push(`${match.line}:${match.text}${suffix}`)
+    for (const context of after) lines.push(`${context.line}-${context.text}`)
+    previousFile = match.file
+    previousLine = after.at(-1)?.line ?? match.line
+  }
+  return lines.join("\n")
+}
+
 /**
- * Renders an array of identically-keyed records as a table, or nothing.
+ * Renders an array of records as a table, or nothing.
  *
- * The key set has to be identical across every element, because a table with a
- * column some rows do not have is a table that says a row held `null` when it
- * held nothing at all. Cells are the string itself where that is unambiguous —
- * no newline, no column separator — and canonical JSON everywhere else, so a
- * row reads back to the value it came from except where a string spells a JSON
- * literal: a cell reading `null` was either the value or the word, and this is a
- * log rather than a wire format, so it is not paid for in quoting every cell.
+ * Columns are the union of keys in first-seen order. An absent member is an
+ * empty cell; explicit null, empty arrays and empty objects stay `null`, `[]`
+ * and `{}`. Cells are the string itself where that is unambiguous — no newline,
+ * no column separator — and canonical JSON everywhere else. An empty string
+ * still looks absent, and a string spelling a JSON literal still looks like
+ * that value: this is a log rather than a wire format, so it is not paid for in
+ * quoting every cell.
  *
  * @since 0.1.0
  * @private
@@ -174,40 +231,28 @@ const cell = (value: Schema.Json): string =>
  */
 export const table = (value: Schema.Json): string | undefined => {
   if (!Array.isArray(value) || value.length < tableRows) return undefined
-  const first = value[0]
-  if (!isRecord<Schema.Json>(first)) return undefined
-  const columns = Object.keys(first)
+  if (!value.every(isRecord<Schema.Json>)) return undefined
+  const columns = [...new Set(value.flatMap((element) => Object.keys(element)))]
   if (columns.length < 2) return undefined
-  const rows: Array<string> = []
-  for (const element of value) {
-    if (!isRecord<Schema.Json>(element)) return undefined
-    const keys = Object.keys(element)
-    if (keys.length !== columns.length || columns.some((column, index) => keys[index] !== column)) return undefined
-    // Every column is a key of this element: the key sets were compared above,
-    // and JSON has no notation for a member that is present and undefined.
-    rows.push(columns.map((column) => cell(element[column]!)).join(" | "))
-  }
+  const rows = value.map((element) =>
+    columns.map((column) => Object.hasOwn(element, column) ? cell(element[column]!) : "").join(" | ")
+  )
   return `${columns.join(" | ")}\n${rows.join("\n")}`
 }
 
 /**
- * Renders one printed JSON value the shortest honest way.
+ * Renders one printed JSON value compactly.
  *
- * A bare array of records becomes a table. An object with exactly one such
- * member becomes that object's other members as JSON, then the member's name,
- * count and table — which is the shape a search result printed whole takes, and
- * the one this exists for. Everything else is canonical JSON as before.
+ * A match list becomes numbered source lines; other records become a table.
+ * An object with exactly one such member becomes that object's other members
+ * as JSON, then the member's name, count and rendered list. An exact failed-call
+ * envelope becomes its code, message and optional hint. Everything else is
+ * canonical JSON as before.
  *
- * The table is shorter than the JSON by construction rather than by comparison,
- * which is why nothing here measures both and picks. A row replaces `{"k":v,…}`
- * with `v | …`: per cell it drops a quoted key, its colon and its comma — at
- * least `len(key) + 3` bytes — and pays three for the column boundary, and it
- * drops the element's two braces outright. What it pays once is the header. At
- * this module's floor, three rows of two one-character keys, that is 24 saved
- * against 4 paid, and every additional row, column or character of key name
- * widens the gap. The envelope form pays fourteen bytes for its `name (count):`
- * line and gets back the quoted key, its comma and the array's brackets, so it
- * is ahead by the table's own saving less three.
+ * Tables save repeated keys but pay for every column boundary, including
+ * absent members. The three-row, two-column floor saves bytes for uniform
+ * records; it does not guarantee savings for sparse records. Rendering stays
+ * shape-based rather than comparing both encodings.
  *
  * @since 0.1.0
  * @private
@@ -218,17 +263,29 @@ export const render = (value: Schema.Json): string => {
   // else the harness renders a projected value. The prelude sends a primitive
   // string down the `text` side, so this arm answers only for a boxed one.
   if (typeof value === "string") return value
-  const flat = table(value)
+  const flat = matchList(value) ?? table(value)
   if (flat !== undefined) return flat
   if (!isRecord<Schema.Json>(value)) return CanonicalJson.stringify(value)
+  const error = value.error
+  if (
+    Object.keys(value).length === 2 && value.ok === false &&
+    isRecord<Schema.Json>(error) &&
+    typeof error.code === "string" && typeof error.message === "string" &&
+    Object.keys(error).every((key) => key === "code" || key === "message" || key === "hint") &&
+    (!Object.hasOwn(error, "hint") || typeof error.hint === "string")
+  ) {
+    return `failed (${error.code}): ${error.message}${Object.hasOwn(error, "hint") ? ` — hint: ${error.hint}` : ""}`
+  }
   const tabled = Object.entries(value).flatMap(([key, member]) => {
-    const rendered = table(member)
+    const rendered = matchList(member) ?? table(member)
     return rendered === undefined ? [] : [[key, member as ReadonlyArray<unknown>, rendered] as const]
   })
   if (tabled.length !== 1) return CanonicalJson.stringify(value)
   const [key, member, rendered] = tabled[0]!
   const rest = Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
-  return `${CanonicalJson.stringify(rest)}\n${key} (${member.length}):\n${rendered}`
+  return `${
+    Object.keys(rest).length === 0 ? "" : `${CanonicalJson.stringify(rest)}\n`
+  }${key} (${member.length}):\n${rendered}`
 }
 
 /**

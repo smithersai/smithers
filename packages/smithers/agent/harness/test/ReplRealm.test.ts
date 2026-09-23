@@ -147,6 +147,39 @@ describe("QuickJSSandbox.openRealm", () => {
     expect(frames[0]!.prints).toBe(`Source: {"a":1,"b":2}`)
   })
 
+  it("puts a multiline argument on its own lines and keeps short neighbours space-joined", async () => {
+    const cases = [
+      ["console.log('a\\nb', 'tail')", "a\nb\ntail"],
+      ["console.log('head', 'a\\nb', 3)", "head\na\nb\n3"],
+      ["console.log('head', 'a\\nb')", "head\na\nb"],
+      ["console.log('a\\nb', 1, 0)", "a\nb\n1 0"],
+      ["console.log('rows', [{a:1,b:2},{a:3,b:4},{a:5,b:6}], 'tail')", "rows\na | b\n1 | 2\n3 | 4\n5 | 6\ntail"],
+      [
+        "console.log([{file:'a.ts',line:1,text:'  hit'}], {ok:false,error:{code:'flow_failed',message:'missing'}})",
+        "a.ts\n1:  hit\nfailed (flow_failed): missing"
+      ],
+      [
+        "console.log('head', {matches:[{file:'a.ts',line:1,text:'hit'}]}, 'tail')",
+        "head\nmatches (1):\na.ts\n1:hit\ntail"
+      ]
+    ]
+    for (const [source, expected] of cases) {
+      const frames = await session([source!])
+      expect(frames[0]!.prints).toBe(expected)
+    }
+  })
+
+  it("keeps single-line arguments space-joined, including escaped JSON newlines", async () => {
+    const frames = await session([
+      "console.log('head', 2, null, true, {text:'a\\nb'}, {ok:false,error:{code:'flow_failed',message:'missing'}})",
+      "console.log()",
+      "console.log('one')"
+    ])
+    expect(frames[0]!.prints).toBe("head 2 null true {\"text\":\"a\\nb\"} failed (flow_failed): missing")
+    expect(frames[1]!.prints).toBe("")
+    expect(frames[2]!.prints).toBe("one")
+  })
+
   it("prints functions, symbols and undefined as themselves", async () => {
     const frames = await session([
       "console.info(undefined)\nconsole.warn(function named() {})\nconsole.error(Symbol('tag'))"
@@ -978,7 +1011,7 @@ describe("the REPL contract's worked example", () => {
     expect(finished._tag === "settled" && finished.transition._tag === "complete" && finished.transition.output)
       .toContain("failed before the edit and exits 0 after it")
     expect(frames[1]!.prints).toContain("+  return widen(value)")
-    expect(frames[1]!.prints).toContain("1 0")
+    expect(frames[1]!.prints).toContain("\n1 0")
   })
 
   it("does not complete when the guard's check fails", async () => {
@@ -1018,6 +1051,6 @@ describe("the REPL contract's worked example", () => {
 
     const carried = frames[1]!.outcome
     expect(carried._tag === "settled" && carried.transition._tag).toBe("continue")
-    expect(frames[1]!.prints).toContain("1 1")
+    expect(frames[1]!.prints).toContain("\n1 1")
   })
 })

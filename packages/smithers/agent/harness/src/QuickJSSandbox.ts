@@ -203,7 +203,7 @@ const sealedCall = Cell.callFailure(
  * members plus `console` are installed, because a script cannot `return`.
  *
  * `console.log` renders each argument on the host side — a string as itself,
- * anything else as canonical JSON — so a structured value reaches the next model
+ * structures through the print channel — so a structured value reaches the next model
  * turn as the value it is rather than as `[object Object]`. A value JSON cannot
  * walk at all, a cycle above all, is the one case where that promise cannot be
  * kept, so it is named instead: the kind, the reason, and the fact that the
@@ -556,7 +556,13 @@ const printParts = Schema.decodeUnknownSync(
  */
 const printed = (encoded: string): printChannel.Statement => {
   const parts = printParts(JSON.parse(encoded))
-  const whole = parts.map((part) => "text" in part ? part.text : printChannel.render(part.json)).join(" ")
+  const rendered = parts.map((part) => "text" in part ? part.text : printChannel.render(part.json))
+  // A multi-line argument gets its own lines; short neighbours stay space-joined.
+  const whole = rendered.reduce(
+    (joined, part, index) =>
+      index === 0 ? part : joined + (part.includes("\n") || rendered[index - 1]!.includes("\n") ? "\n" : " ") + part,
+    ""
+  )
   const wholeBytes = bytes.size(whole)
   if (wholeBytes <= Sandbox.printFrameBytes) return { text: whole, bytes: wholeBytes }
   const edge = Math.floor(Sandbox.printFrameBytes / 2)
