@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { expect, it } from "vitest"
 
@@ -11,7 +11,7 @@ const vitest = join(dirname(fileURLToPath(import.meta.resolve("vitest/package.js
 it.each(["smithers", "smithers/agent", "smithers/build", "smithers/flows"])(
   "%s measures source and fails an uncovered fixture beneath package-named checkout directories",
   (name) => {
-    const checkout = mkdtempSync(join(tmpdir(), "coverage-anchor-"))
+    const checkout = realpathSync(mkdtempSync(join(tmpdir(), "coverage-anchor-")))
     const root = join(checkout, "review-harness/sec-gateway/sandbox/build-cli/package")
     try {
       mkdirSync(root, { recursive: true })
@@ -48,8 +48,10 @@ it.each(["smithers", "smithers/agent", "smithers/build", "smithers/flows"])(
         { statements: { total: number; pct: number } }
       >
       expect(report.total?.statements.total, result.stdout + result.stderr).toBeGreaterThan(0)
-      expect(Object.keys(report).filter((key) => key !== "total").map((key) => key.slice(key.indexOf("/src/"))))
-        .toEqual(["/src/covered.ts", "/src/uncovered.ts"])
+      expect(
+        Object.keys(report).filter((key) => key !== "total").map((key) => relative(root, key).split(sep).join("/"))
+      )
+        .toEqual(["src/covered.ts", "src/uncovered.ts"])
       expect(report.total?.statements.pct).toBeLessThan(100)
       expect(result.status, result.stdout + result.stderr).toBe(1)
     } finally {
