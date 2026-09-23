@@ -1,9 +1,10 @@
 import { execFile } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
 
 const execute = promisify(execFile)
-const fixture = new URL("./fixtures/workspace-routing-portable.ts", import.meta.url).pathname
+const fixture = fileURLToPath(new URL("./fixtures/workspace-routing-portable.ts", import.meta.url))
 
 for (const runtime of ["node", "bun"]) {
   it(`uses the existing ${runtime} SQL clients for history admission`, async () => {

@@ -14,6 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import * as CliError from "../src/CliError.ts"
@@ -269,7 +270,7 @@ describe("the serve command", () => {
       "--no-warnings",
       "--import",
       new URL("./fixtures/scripted-native-host.ts", import.meta.url).href,
-      new URL("../src/bin.ts", import.meta.url).pathname,
+      fileURLToPath(new URL("../src/bin.ts", import.meta.url)),
       "--root",
       root,
       "gateway",

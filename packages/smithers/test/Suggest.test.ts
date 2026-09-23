@@ -16,6 +16,7 @@
  */
 import { Cause, Deferred, Effect, Exit, Fiber, Option } from "effect"
 import { Writable } from "node:stream"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as CliError from "../src/CliError.ts"
 import * as Providers from "../src/Providers.ts"
@@ -487,8 +488,8 @@ describe("the interactive session", () => {
 
 describe("the path a verb is pointed at", () => {
   it("accepts a directory and refuses anything else", () => {
-    expect(Suggest.isDirectory(new URL("..", import.meta.url).pathname)).toBe(true)
-    expect(Suggest.isDirectory(new URL("../package.json", import.meta.url).pathname)).toBe(false)
+    expect(Suggest.isDirectory(fileURLToPath(new URL("..", import.meta.url)))).toBe(true)
+    expect(Suggest.isDirectory(fileURLToPath(new URL("../package.json", import.meta.url)))).toBe(false)
     expect(Suggest.isDirectory("/no/such/directory")).toBe(false)
   })
 })

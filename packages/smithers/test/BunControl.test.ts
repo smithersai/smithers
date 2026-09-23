@@ -4,6 +4,7 @@ import { execFile } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it, vi } from "vitest"
 import * as BunControl from "../src/BunControl.ts"
@@ -47,7 +48,7 @@ it("defers Bun adapters until building either public layer and forwards each roo
 })
 
 const execute = promisify(execFile)
-const module = new URL("../src/BunControl.ts", import.meta.url).pathname
+const module = new URL("../src/BunControl.ts", import.meta.url).href
 
 it("lists no flows under Bun for a root without flows/", async () => {
   const root = await mkdtemp(join(tmpdir(), "bun-control-"))
@@ -63,7 +64,7 @@ it("lists no flows under Bun for a root without flows/", async () => {
       console.log(JSON.stringify({ listed: listed.length }))
     `
     const { stdout } = await execute("bun", ["--eval", script], {
-      cwd: new URL("..", import.meta.url).pathname,
+      cwd: fileURLToPath(new URL("..", import.meta.url)),
       timeout: 120_000
     })
     expect(JSON.parse(stdout.trim().split("\n").at(-1)!)).toEqual({ listed: 0 })

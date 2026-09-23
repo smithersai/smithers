@@ -16,6 +16,7 @@ import * as Layer from "effect/Layer"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { build } from "esbuild"
+import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as BunFileSystem from "../src/BunFileSystem.ts"
 import * as BunHost from "../src/BunHost.ts"
@@ -119,7 +120,7 @@ describe("@smthrs/platform-bun module graph", () => {
   it("never resolves @smthrs/platform-browser", async () => {
     const result = await build({
       bundle: true,
-      entryPoints: [new URL("../src/index.ts", import.meta.url).pathname],
+      entryPoints: [fileURLToPath(new URL("../src/index.ts", import.meta.url))],
       external: ["effect", "effect/*", "@effect/*", "node:*"],
       format: "esm",
       logLevel: "silent",

@@ -1,6 +1,5 @@
 import { Cause, Effect, Layer, Option } from "effect"
 import { execFileSync } from "node:child_process"
-import { pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Command from "../src/Command.ts"
 import * as FlowInvoker from "../src/FlowInvoker.ts"
@@ -124,10 +123,8 @@ describe("Command surface", () => {
   })
 
   it("loads paths containing URL structural characters", async () => {
-    const routeModule = pathToFileURL(new URL("../src/Route.ts", import.meta.url).pathname).href
-    const descriptorModule = pathToFileURL(
-      new URL("../../registry/src/Descriptor.ts", import.meta.url).pathname
-    ).href
+    const routeModule = new URL("../src/Route.ts", import.meta.url).href
+    const descriptorModule = new URL("../../registry/src/Descriptor.ts", import.meta.url).href
     const script = `
       import { Effect, Option } from "effect"
       import * as Descriptor from ${JSON.stringify(descriptorModule)}
