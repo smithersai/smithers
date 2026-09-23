@@ -627,10 +627,10 @@ export default Flow.make({
       expect(built.refused[0]).toMatchObject({
         code: "body_unavailable",
         flow: "aaa-hung",
-        path: `${root}/flows/aaa-hung/flow.ts`
+        path: join(root, "flows", "aaa-hung", "flow.ts")
       })
       expect(built.refused[0]!.message).toContain("500")
-      expect(built.refused[0]!.message).toContain("aaa-hung/flow.ts")
+      expect(built.refused[0]!.message).toContain(join("aaa-hung", "flow.ts"))
       expect(logs).toHaveLength(1)
       expect(logs[0]).toContain("aaa-hung")
       expect(yield* fs.readDirectory(`${root}/flows/aaa-hung`)).toEqual(["flow.ts", "helper.ts"])
