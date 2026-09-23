@@ -191,13 +191,15 @@ function UserMessage(props: { readonly text: string; readonly queued: boolean; r
   )
 }
 
-const statusColor: Record<Transcript.CellStatus, string> = {
-  writing: color.brand,
-  running: color.info,
-  done: color.faint,
-  failed: color.danger,
-  rejected: color.warning
-}
+/** Read at render time: a theme change repaints writing cells in the new accent. */
+export const statusColor = (status: Transcript.CellStatus): string =>
+  ({
+    writing: color.brand,
+    running: color.info,
+    done: color.faint,
+    failed: color.danger,
+    rejected: color.warning
+  })[status]
 
 function ShellView(props: { readonly item: ShellItem; readonly tick: string; readonly expanded: boolean }) {
   const { item } = props
@@ -262,7 +264,7 @@ function CellView(props: {
   const code = hiddenCode === 0 ? cell.source : lines.slice(0, codeLines).join("\n")
   const printed = cell.printed.trimEnd()
   const printedRows = printed === "" ? 0 : printed.split("\n").length
-  const tone = props.selected ? color.brand : statusColor[cell.status]
+  const tone = props.selected ? color.brand : statusColor(cell.status)
   const line = step.line
   const open = live || !folded
   const mark = live ? props.tick : open ? "▾" : "▸"
