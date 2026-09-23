@@ -28,8 +28,9 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
-    "test": "bun test",
-    "lint": "TSESTREE_SINGLE_RUN=true eslint src --max-warnings=0 && dprint check"
+    "test": "vitest",
+    "lint": "TSESTREE_SINGLE_RUN=true eslint src --max-warnings=0 && dprint check",
+    "coverage": "vitest --coverage"
   },
   "dependencies": {
     "@smthrs/kernel": "workspace:*",
@@ -50,6 +51,25 @@
     "eslint-plugin-jsdoc": "64.3.4",
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.69.0"
+    "typescript-eslint": "8.69.0",
+    "vitest": "5.0.0",
+    "@vitest/coverage-v8": "5.0.0"
+  },
+  "publishConfig": {
+    "exports": {
+      "./package.json": "./package.json",
+      ".": {
+        "types": "./dist/esm/index.d.ts",
+        "import": "./dist/esm/index.js",
+        "require": "./dist/cjs/index.js"
+      },
+      "./*": {
+        "types": "./dist/esm/*.d.ts",
+        "import": "./dist/esm/*.js",
+        "require": "./dist/cjs/*.js"
+      },
+      "./internal/*": null,
+      "./*/index": null
+    }
   }
 }

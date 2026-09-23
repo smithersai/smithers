@@ -1,8 +1,8 @@
 import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Stream } from "effect"
+import { describe, expect, test } from "vitest"
 import { providerRequest, runModelTurn, StreamingCredentialCutter } from "../src/ModelTurnHost.ts"
 
 const turn: StartAgentTurnRequest = {
@@ -82,4 +82,85 @@ describe("ModelTurnHost", () => {
     expect(cutter.push("xyz")).toBe("abcxyz")
     expect(cutter.finish()).toBe("")
   })
+})
+
+const collect = async (events: ReadonlyArray<ModelEvent.ModelEvent>, credential?: string) => {
+  const frames: AgentTurnFrame[] = []
+  await Effect.runPromise(runModelTurn(
+    Model.make({ stream: () => Stream.fromIterable(events) }),
+    turn,
+    { modelId: "fixture", ...(credential === undefined ? {} : { credential }) },
+    (frame) =>
+      Effect.sync(() => {
+        frames.push(frame)
+      })
+  ))
+  return frames
+}
+
+test("groups consecutive calls and results without merging ordinary assistant messages", () => {
+  const call = { type: "function_call", call_id: "first", name: "read", arguments: "{}" } as const
+  const result = { type: "function_call_output", call_id: "first", output: "ok" } as const
+  const request = providerRequest({
+    ...turn,
+    messages: [call, { ...call, call_id: "second" }, result, { ...result, call_id: "second" }, {
+      role: "assistant",
+      content: "done"
+    }, call]
+  }, { modelId: "fixture" })
+  expect(request.messages.map((message) => [message.role, message.content.length])).toEqual([
+    ["assistant", 2],
+    ["tool", 2],
+    ["assistant", 1],
+    ["assistant", 1]
+  ])
+  expect(
+    providerRequest({ runId: turn.runId, instructions: turn.instructions, messages: [result] }, { modelId: "fixture" })
+      .tools
+  ).toEqual([])
+})
+
+test.each(["aborted", "error", "content-filter", "unknown", "stop", "length"] as const)(
+  "preserves the terminal meaning of %s",
+  async (stopReason) => {
+    const frames = await collect([{ type: "settle", stopReason }])
+    expect(frames).toEqual([{
+      runId: turn.runId,
+      type: "done",
+      reason: stopReason === "aborted" ? "cancelled" : "stop",
+      ...(["error", "content-filter", "unknown"].includes(stopReason) ? { error: `model stopped: ${stopReason}` } : {})
+    }])
+  }
+)
+
+test("flushes held text and reasoning at settlement and uses accumulated tool arguments", async () => {
+  expect(
+    await collect([
+      { type: "text-start", id: "text" },
+      { type: "text-delta", id: "text", text: "abc" },
+      { type: "thinking-delta", id: "thought", text: "abc" },
+      { type: "tool-call-start", id: "call", name: "abcdefinspect" },
+      { type: "tool-call-delta", id: "call", arguments: "{\"value\":\"abcdef\"}" },
+      { type: "tool-call-end", id: "call" },
+      { type: "settle", stopReason: "tool-calls" }
+    ], "abcdef")
+  ).toEqual([
+    { runId: turn.runId, type: "tool_call", call_id: "call", name: "inspect", arguments: "{\"value\":\"\"}" },
+    { runId: turn.runId, type: "delta", kind: "reasoning", text: "abc" },
+    { runId: turn.runId, type: "delta", kind: "text", text: "abc" },
+    { runId: turn.runId, type: "done", reason: "tool_call" }
+  ])
+  const cutter = new StreamingCredentialCutter("")
+  expect(cutter.push("unchanged")).toBe("unchanged")
+})
+
+test.each(
+  [
+    [[{ type: "tool-call-delta", id: "missing", arguments: "{}" }], "tool delta preceded its start"],
+    [[{ type: "tool-call-end", id: "missing" }], "tool end preceded its start"],
+    [[{ type: "settle", stopReason: "stop" }, { type: "settle", stopReason: "stop" }], "model settled twice"],
+    [[], "model stream ended without settlement"]
+  ] satisfies Array<[ModelEvent.ModelEvent[], string]>
+)("rejects malformed event sequences %j", async (events, message) => {
+  await expect(collect(events)).rejects.toThrow(message)
 })

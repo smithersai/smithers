@@ -3,9 +3,9 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnBatch, AgentTurnCursor } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { describe, expect, test } from "bun:test"
 import { Effect, Stream } from "effect"
 import { createHash } from "node:crypto"
+import { describe, expect, test } from "vitest"
 import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 
 const request: StartAgentTurnRequest = {
@@ -111,4 +111,88 @@ describe("DurableChatProducer", () => {
     )
     expect(order).toEqual(["started", "delta", "tool_call", "done"])
   })
+})
+
+const frame: AgentTurnFrame = { runId: "run", type: "delta", kind: "text", text: "a" }
+
+test.each(
+  [
+    [() => new Response(null, { status: 409 }), "commit refused (409)"],
+    [() => Response.json({}), "invalid receipt"],
+    [() => Response.json({ status: "retired" }), "invalid receipt"],
+    [() => {
+      throw "transport rejection"
+    }, "chat producer request failed"]
+  ] as const
+)("retries refused or malformed commits without changing their cursor", async (response, message) => {
+  const bodies: unknown[] = []
+  const producer = new DurableChatProducer("http://host.test", grant, async (_input, init) => {
+    bodies.push(JSON.parse(String(init?.body)))
+    return response()
+  })
+  await expect(Effect.runPromise(producer.write(frame))).rejects.toThrow(message)
+  expect(bodies).toHaveLength(2)
+  expect(bodies[0]).toEqual(bodies[1])
+  expect(bodies[0]).toMatchObject({ expected: cursor })
+})
+
+test.each([
+  (value: ReturnType<typeof reply>) => {
+    value.batch.runId = "other"
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.batch.legId = "other"
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.batch.batch += 1
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.batch.from += 1
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.batch.previousHash = "b".repeat(64)
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.cursor.hash = "b".repeat(64)
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.cursor.batch += 1
+  },
+  (value: ReturnType<typeof reply>) => {
+    value.cursor.position += 1
+  }
+])("refuses a receipt that cannot extend the committed cursor", async (forge) => {
+  const value = reply(cursor, frame)
+  forge(value)
+  const producer = new DurableChatProducer("http://host.test", grant, async () => Response.json(value))
+  await expect(Effect.runPromise(producer.write(frame))).rejects.toThrow("did not extend")
+})
+
+test("accepts a duplicate receipt, then advances the next batch from that cursor", async () => {
+  let expected = cursor
+  const producer = new DurableChatProducer("http://host.test", grant, async (_input, init) => {
+    expect(JSON.parse(String(init?.body)).expected).toEqual(expected)
+    const value = reply(expected, frame)
+    expected = value.cursor
+    return Response.json({ ...value, status: "duplicate" })
+  })
+  await Effect.runPromise(producer.write(frame))
+  await Effect.runPromise(producer.write(frame))
+  expect(expected.batch).toBe(2)
+})
+
+test("does not call the model after a refused provider-start acknowledgment", async () => {
+  let streamed = false
+  const model = Model.make({
+    stream: () => {
+      streamed = true
+      return Stream.empty
+    }
+  })
+  await expect(
+    Effect.runPromise(
+      runDurableChatTurn(model, grant, { modelId: "m" }, undefined, async () => new Response(null, { status: 403 }))
+    )
+  ).rejects.toThrow("chat provider start refused (403)")
+  expect(streamed).toBe(false)
 })

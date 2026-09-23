@@ -105,9 +105,15 @@ const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant 
   if (!parsed.success) return undefined
   const wire = parsed.data
   const request = turnRequest(wire.request)
+  let producerBaseUrl: string
+  try {
+    producerBaseUrl = normalizedBaseUrl(wire.producerBaseUrl)
+  } catch {
+    return undefined
+  }
   if (
     request === undefined || request.runId !== wire.runId || wire.cursor.runId !== wire.runId ||
-    wire.cursor.legId !== wire.legId || normalizedBaseUrl(wire.producerBaseUrl) !== callbackBaseUrl ||
+    wire.cursor.legId !== wire.legId || producerBaseUrl !== callbackBaseUrl ||
     !Number.isFinite(Date.parse(wire.expiresAt)) || Date.parse(wire.expiresAt) <= Date.now()
   ) return undefined
   return {
@@ -128,9 +134,9 @@ const decodeGrant = (value: unknown, callbackBaseUrl: string): DurableChatGrant 
 const boundedJson = async (request: Request): Promise<unknown | undefined> => {
   const length = Number(request.headers.get("content-length") ?? "0")
   if (!Number.isFinite(length) || length < 0 || length > 2 * 1024 * 1024) return undefined
-  const bytes = new Uint8Array(await request.arrayBuffer())
-  if (bytes.byteLength === 0 || bytes.byteLength > 2 * 1024 * 1024) return undefined
   try {
+    const bytes = new Uint8Array(await request.arrayBuffer())
+    if (bytes.byteLength === 0 || bytes.byteLength > 2 * 1024 * 1024) return undefined
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown
   } catch {
     return undefined
