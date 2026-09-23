@@ -1817,8 +1817,18 @@ describe("target body execution", () => {
       const dependencies = NodePath.resolve(import.meta.dirname, "../node_modules")
       await Fs.mkdir(NodePath.join(root, "node_modules"))
       for (const name of await Fs.readdir(dependencies)) {
-        if (name === ".bin") continue
-        if (name.startsWith("@")) {
+        if (name === ".bin") {
+          await Fs.mkdir(NodePath.join(root, "node_modules", name))
+          for (const binary of await Fs.readdir(NodePath.join(dependencies, name))) {
+            // Keep each shim's real location: copying a pnpm shim or linking
+            // only its directory breaks its relative path to the tool.
+            await Fs.symlink(
+              await Fs.realpath(NodePath.join(dependencies, name, binary)),
+              NodePath.join(root, "node_modules", name, binary),
+              "file"
+            )
+          }
+        } else if (name.startsWith("@")) {
           await Fs.mkdir(NodePath.join(root, "node_modules", name))
           for (const scoped of await Fs.readdir(NodePath.join(dependencies, name))) {
             await Fs.symlink(
@@ -1835,6 +1845,18 @@ describe("target body execution", () => {
           )
         }
       }
+      // An empty bunx cache must still resolve the same installed Vitest
+      // that the fixture imports, without downloading another version.
+      const vitestVersion = JSON.parse(await Fs.readFile(NodePath.join(dependencies, "vitest/package.json"), "utf8"))
+        .version
+      const toolProbe = NodeChildProcess.spawnSync("bun", ["x", "--bun", "--no-install", "vitest", "--version"], {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 20_000,
+        env: { ...process.env, BUN_INSTALL_CACHE_DIR: NodePath.join(root, ".flows/bun-probe-cache") }
+      })
+      expect(toolProbe.status, toolProbe.stderr).toBe(0)
+      expect(toolProbe.stdout).toContain(`vitest/${vitestVersion} `)
       for (
         const args of [
           ["test", "//:nodeTest"],
