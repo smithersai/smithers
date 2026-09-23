@@ -183,7 +183,7 @@ jobs:
       - name: Validate GitHub Actions workflows
         uses: docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
         with:
-          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/mirror-sync.yml"
+          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/distribution.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/mirror-sync.yml"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - name: Install Go
@@ -223,6 +223,17 @@ jobs:
         with:
           bun-version: 1.4.1
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Install native smithers-jj-export
+        run: |
+          case "$(uname -s)" in Linux|Darwin)
+            rustup toolchain install '1.98.0' --profile minimal
+            cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
+            mkdir -p "$RUNNER_TEMP/smithers-native"
+            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+          esac
+        shell: bash
       - name: Validate archived candidate selection
         run: node scripts/restore-release.mjs --check-inputs
       - name: Install jj
@@ -235,11 +246,8 @@ jobs:
         uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
         with:
           tool: ripgrep@14.1.1
-      - name: Build filesystem helper for package tests
-        run: |
-          rustup toolchain install 1.98.0
-          cargo +1.98.0 build --locked --release --package smithers-ffi --bin smithers-jj-export
-          sudo install -m 0755 target/release/smithers-jj-export /usr/local/bin/smithers-jj-export
+      - name: Install filesystem helper for sandboxed package tests
+        run: sudo install -m 0755 "$RUNNER_TEMP/smithers-native/smithers-jj-export" /usr/local/bin/smithers-jj-export
         shell: bash
       - name: Install system packages
         run: |
