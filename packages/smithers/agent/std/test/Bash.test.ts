@@ -1,3 +1,4 @@
+import { NodePath } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Fiber, Layer, Option, Path, Schema, Sink, Stream } from "effect"
 import { TestClock } from "effect/testing"
@@ -282,15 +283,23 @@ describe("Bash", () => {
     }
   })
 
-  it("checks command references when cwd is the absolute resolved base", async () => {
+  it.each(
+    [
+      ["POSIX", NodePath.layerPosix, "/outside/absolute.txt"],
+      ["Windows", NodePath.layerWin32, "\\outside\\absolute.txt"]
+    ] as const
+  )("checks command references when cwd is the absolute resolved base (%s)", async (_, paths, outside) => {
+    const cwd = Effect.runSync(Effect.map(Path.Path, (path) => path.resolve(".")).pipe(Effect.provide(paths)))
     const exit = await execute(Effect.provide(
-      Effect.exit(Bash.run({
-        mode: "hermetic",
-        command: "cat /outside/absolute.txt",
-        cwd: process.cwd(),
-        reads: [],
-        writes: []
-      })),
+      Effect.exit(
+        Bash.run({
+          mode: "hermetic",
+          command: "cat /outside/absolute.txt",
+          cwd,
+          reads: [],
+          writes: []
+        }).pipe(Effect.provide(paths))
+      ),
       layer()
     ))
 
@@ -301,7 +310,7 @@ describe("Bash", () => {
       if (Option.isSome(failure)) {
         expect(failure.value).toMatchObject({
           code: "outside_declared_reads",
-          path: "/outside/absolute.txt"
+          path: outside
         })
       }
     }
