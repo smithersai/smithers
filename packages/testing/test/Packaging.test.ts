@@ -13,7 +13,7 @@
  * serves.
  */
 import { readdirSync, readFileSync } from "node:fs"
-import { dirname, join, relative, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
@@ -53,7 +53,7 @@ const reachableFromExports = (): ReadonlySet<string> => {
     seen.add(file)
     for (const [, specifier] of readFileSync(file, "utf8").matchAll(specifiers)) {
       const target = resolve(dirname(file), specifier as string)
-      if (target.startsWith(`${sourceRoot}/`)) pending.push(target)
+      if (target.startsWith(`${sourceRoot}${sep}`)) pending.push(target)
     }
   }
   return seen
