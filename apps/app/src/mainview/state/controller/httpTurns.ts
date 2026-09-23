@@ -95,10 +95,10 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         const silent = result.refusal.code === "sign_in_required" || store.collections.identitySessions.get("identity")?.state === "signed-out"
         await interrupt(attemptId, "failed", result.message, silent)
         if (!ctx.disposed) dependencies.refused(turn.turnId, result)
-      } else if (result.status === "error") launchFailures.set(attemptId, result.message)
+      } else if (result.status === "error") launchFailures.set(leg.id, result.message)
       // A transport error after POST is ambiguous. The read capability, not
       // another POST, establishes what the producer actually accepted.
-    } catch { launchFailures.set(attemptId, "The turn connection stopped responding.") }
+    } catch { launchFailures.set(leg.id, "The turn connection stopped responding.") }
   }
   const drive = async (attemptId: string): Promise<void> => {
     if (driving.has(attemptId) || !active(attemptId)) return
@@ -175,7 +175,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     if (!active(attemptId) || active(attemptId)?.legId !== requested.id) return
     if (reply.status === "error") {
       if (reply.code === "storage_failed") return
-      if (reply.code !== "not-found" || recovering.has(attemptId) || launchFailures.has(attemptId)) {
+      if (reply.code !== "not-found" || recovering.has(requested.id) || launchFailures.has(requested.id)) {
         await interrupt(attemptId, "ambiguous", "This turn's saved output is unavailable. Its outcome is unknown; it was not restarted.")
       }
       return
@@ -236,7 +236,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     ctx.onDispose(journal.subscribe(delivery => enqueue(() => apply(delivery))))
     ctx.onDispose(() => { for (const id of timers.keys()) clearTimer(id); const turn = ctx.activeTurn; if (turn?.httpAttemptId) journal.disconnect(turn.id) })
     if (!saved || store.session().phase !== "responding") return
-    ctx.activeTurn = mirror(saved); recovering.add(saved.id)
+    ctx.activeTurn = mirror(saved); recovering.add(saved.legId)
     const leg = store.collections.httpTurnLegs.get(saved.legId)
     if (leg?.status === "tool-executing") {
       void interrupt(saved.id, "ambiguous", "A tool was accepted before the app closed, but its result was not saved. Check its result before explicitly trying again.").catch(() => {})

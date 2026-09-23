@@ -1,5 +1,5 @@
 import { digest } from "@smthrs/core/Digest"
-import { TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { TURN_PATH, TURN_REPLAY_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { AgentTurnBatch,AgentTurnCursor,AgentTurnJournalDelivery,AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame,StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
@@ -409,6 +409,61 @@ test("the production agent seat, AppController and actual WebAgent share the dur
   expect([...store.collections.messages.values()].some(row => row.text === "A committed answer.")).toBe(true)
   expect([...store.collections.httpTurns.values()][0]?.status).toBe("complete")
   expect((await store.verifyState()).valid).toBe(true)
+})
+
+test.each(["lost POST response", "reload"])("a %s recovery leaves the pending HTTP continuation active through its not-found poll", async recovery => {
+  const storage = memoryStorage(), store = await open(storage)
+  if (recovery === "reload") {
+    await store.dispatch({ type: "http.turn.started", actor: "user", attemptId: "attempt", turnId: "turn", text: "List commands", retry: false,
+      journal: { version: 1, legId: "leg", token } }).isPersisted.promise
+    await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: "attempt", legId: "leg", cursor: initialCursor() }).isPersisted.promise
+    await store.dispose?.()
+  }
+  const current = recovery === "reload" ? await open(storage) : store
+  const posts: StartAgentTurnRequest[] = [], reads: string[] = []
+  let resolveContinuation!: (response: Response) => void
+  const continuation = new Promise<Response>(resolve => { resolveContinuation = resolve })
+  const agent = createWebAgent({ fetchImpl: async (url, init) => {
+    if (url === TURN_PATH) {
+      const request = JSON.parse(String(init?.body)) as StartAgentTurnRequest
+      posts.push(request)
+      if (posts.length === 1 && recovery === "lost POST response") throw new Error("Response lost after acceptance")
+      return continuation
+    }
+    expect(url).toBe(TURN_REPLAY_PATH)
+    const access = JSON.parse(String(init?.body)) as { journal: { legId: string } }
+    reads.push(access.journal.legId)
+    const firstLeg = recovery === "reload" ? "leg" : posts[0]!.journal!.legId
+    if (access.journal.legId !== firstLeg) return Response.json({ status: "error", code: "not-found" }, { status: 404 })
+    const runId = current.collections.httpTurns.values().next().value!.turnId
+    const cursor = initialCursor(runId, firstLeg)
+    const batch = batchOf(cursor, [
+      { type: "tool_call", runId, call_id: "call", name: "commands", arguments: '{"action":"list"}' },
+      { type: "done", runId, reason: "tool_call" }
+    ])
+    return Response.json({ status: "ok", after: cursor, next: cursorOf(batch), head: cursorOf(batch), terminal: true, more: false, batches: [batch] })
+  } })
+  const controller = controllerFor(current, agent)
+  if (recovery === "lost POST response") controller.send("List commands")
+  const waitForPoll = async (predicate: () => boolean) => {
+    for (let i = 0; i < 400 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 5))
+    expect(predicate()).toBe(true)
+  }
+  await waitForPoll(() => posts.length === (recovery === "reload" ? 1 : 2))
+  const next = posts.at(-1)!, nextLeg = next.journal!.legId
+  await waitForPoll(() => reads.includes(nextLeg))
+  expect(current.collections.httpTurns.values().next().value?.status).toBe("active")
+  expect(current.collections.httpTurnLegs.get(nextLeg)?.status).toBe("prepared")
+  const cursor = initialCursor(next.runId, nextLeg)
+  const done = batchOf(cursor, [{ type: "delta", runId: next.runId, kind: "text", text: "Here are the commands." },
+    { type: "done", runId: next.runId, reason: "stop" }])
+  resolveContinuation(new Response([JSON.stringify({ type: "accepted", cursor }), JSON.stringify({ type: "batch", batch: done, cursor: cursorOf(done) })].join("\n"),
+    { headers: { "x-smithers-turn-journal": "1", "content-type": "application/x-ndjson" } }))
+  await waitForPoll(() => current.session().phase === "idle")
+  expect(current.collections.httpTurns.values().next().value?.status).toBe("complete")
+  expect(current.collections.messages.get(`message-${next.runId}-smithers`)?.text).toBe("Here are the commands.")
+  expect((await current.verifyState()).valid).toBe(true)
+  await controller.dispose()
 })
 
 test("a corrupt received batch preserves the applied prefix and settles honestly without replaying its contents", async () => {
