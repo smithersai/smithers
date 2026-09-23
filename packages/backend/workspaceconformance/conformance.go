@@ -5,6 +5,7 @@ package workspaceconformance
 import (
 	"context"
 	"io/fs"
+	"path"
 	"testing"
 
 	"github.com/smithersai/smithers/packages/backend/workspace"
@@ -105,6 +106,30 @@ func RunCore(t *testing.T, harness CoreHarness) {
 		}})
 		if err != nil || check.ExitCode != 0 || check.Stdout != "outside-sentinel" {
 			t.Fatalf("temporary symlink wrote outside workspace: %#v, %v", check, err)
+		}
+		parallel := []struct {
+			path    string
+			content string
+		}{
+			{"conformance-parallel-a/" + path.Base(harness.FilePath), "parallel-a"},
+			{"conformance-parallel-b/" + path.Base(harness.FilePath), "parallel-b"},
+		}
+		writeResults := make(chan error, len(parallel))
+		for _, file := range parallel {
+			go func() {
+				writeResults <- harness.Runtime.WriteFile(harness.Context("parallel-write-"+file.content), harness.Spec.ID, file.path, []byte(file.content), harness.FileMode)
+			}()
+		}
+		for range parallel {
+			if err := <-writeResults; err != nil {
+				t.Fatalf("parallel WriteFile: %v", err)
+			}
+		}
+		for _, file := range parallel {
+			got, err := harness.Runtime.ReadFile(harness.Context("parallel-read-"+file.content), harness.Spec.ID, file.path)
+			if err != nil || string(got) != file.content {
+				t.Errorf("parallel ReadFile(%q) = %q, %v; want %q", file.path, got, err, file.content)
+			}
 		}
 	}
 
