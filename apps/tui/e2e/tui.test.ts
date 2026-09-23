@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
+import * as Session from "../src/session.ts"
 import { key, Tui } from "./zmux.ts"
 
 const app = resolve(import.meta.dir, "..")
@@ -33,9 +34,11 @@ const repository = () => {
   return directory
 }
 
-const start = async (options: { readonly holdMs?: number; readonly args?: string } = {}) => {
-  const cwd = repository()
-  const sessions = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+const start = async (
+  options: { readonly holdMs?: number; readonly args?: string; readonly cwd?: string; readonly sessions?: string } = {}
+) => {
+  const cwd = options.cwd ?? repository()
+  const sessions = options.sessions ?? mkdtempSync(join(tmpdir(), "tui-sessions-"))
   tui = await Tui.start({
     cwd,
     command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${options.args ?? ""}`,
@@ -309,6 +312,61 @@ describe("search palette", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Resumed") && screen.includes("remembered-output"), 5_000, "resumed")
   }, 90_000)
+})
+
+describe("fork", () => {
+  it("forks before a picked message, puts it back in the editor, and keeps the original", async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+    process.env.SMITHERS_TUI_SESSION_DIR = sessions
+    const source = Session.create(cwd)
+    const exchange = (at: number, text: string, answer: string) => {
+      source.append({ type: "user", at, text })
+      const message = { role: "assistant", content: [{ type: "text", text: answer }] }
+      source.append({ type: "event", at: at + 1, event: { _tag: "resolved", message } } as unknown as Session.Record)
+      source.append({ type: "outcome", at: at + 1, prompt: text, outcome: { _tag: "done", answer } })
+    }
+    exchange(1, "first question", "A1")
+    exchange(3, "second question", "A2")
+    const before = readFileSync(source.file, "utf8")
+    const { tui } = await start({ cwd, sessions, args: "-c" })
+    await tui.until((screen) => screen.includes("A2"), 10_000, "restored session")
+    await tui.type("/fork")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Fork from Message"), 5_000, "fork dialog")
+    await tui.type("second")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => /┃\s+second question/.test(screen) && screen.includes("Forked to new session"),
+      5_000,
+      "forked"
+    )
+    expect(tui.screen()).not.toContain("A2")
+    expect(tui.screen()).toContain("A1")
+    const listed = Session.list(cwd)
+    expect(listed).toHaveLength(2)
+    expect(readFileSync(source.file, "utf8")).toBe(before)
+    const forked = listed.find((each) => each.file !== source.file)!
+    expect(Session.load(forked.file)[0]).toMatchObject({ type: "session", parent: source.file })
+  }, 60_000)
+
+  it("refuses while a turn runs", async () => {
+    const { tui } = await start({ holdMs: 60_000 })
+    await tui.type("node check.mjs fails. Fix it and show it passes.")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("esc interrupt"), 20_000, "turn running")
+    await tui.type("/fork")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
+    expect(tui.screen()).not.toContain("Fork from Message")
+  }, 60_000)
+
+  it("has nothing to fork in a fresh session", async () => {
+    const { tui } = await start()
+    await tui.type("/fork")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("No messages to fork from"), 5_000, "empty")
+  }, 60_000)
 })
 
 describe("model dialog", () => {

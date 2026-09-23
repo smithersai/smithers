@@ -58,7 +58,7 @@ providers this machine can reach. Print mode runs a task directly.
 
 ## Commands
 
-`/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/session`,
+`/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
 `/grep [text]`, `/ui [id]`, `/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model ` and
 `/thinking ` the menu completes the argument.
@@ -78,7 +78,9 @@ Each turn is told the working directory, instruction files (the first of
 `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md` in every directory from the
 root down, after `~/.smithers/agent/AGENTS.md`), and the conversation so far.
 Sessions are JSONL under `~/.smithers/tui/sessions/<cwd>/`
-(`SMITHERS_TUI_SESSION_DIR` overrides).
+(`SMITHERS_TUI_SESSION_DIR` overrides). `/fork` starts a new session from the
+messages before a chosen one and puts that message back in the editor; the
+original stays resumable.
 
 Without `AI_GATEWAY_API_KEY` the completion brake that asks Jev is disarmed
 (`claimCap: 0`); you read every answer. Edits are not rolled back by the
@@ -134,8 +136,8 @@ with a 300 ms delay and real completion/failure as its end.
 
 Workers run locally. Restarting the TUI restores their transcripts and marks
 unfinished workers interrupted, with an explicit retry; it does not claim to
-reconnect to a process that no longer exists. `/new` and `/resume` require
-running work to finish or be stopped first.
+reconnect to a process that no longer exists. `/new`, `/resume`, and `/fork`
+require running work to finish or be stopped first.
 
 ## Tests
 

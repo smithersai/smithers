@@ -8,7 +8,7 @@
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { randomUUID } from "node:crypto"
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type * as Changes from "./changes.ts"
@@ -29,6 +29,8 @@ export type Record =
     readonly id: string
     readonly cwd: string
     readonly createdAt: number
+    /** The session this one was forked from (pi's `parentSession`). */
+    readonly parent?: string
   }
   | { readonly type: "name"; readonly name: string }
   | { readonly type: "user"; readonly at: number; readonly text: string; readonly steered?: boolean }
@@ -60,18 +62,45 @@ export interface Writer {
   readonly append: (record: Record) => void
 }
 
-/** A new session file, written lazily so an empty session leaves nothing behind. */
-export const create = (cwd: string, kind: "chat" | "worker" = "chat"): Writer => {
+/**
+ * A new session file, written lazily so an empty session leaves nothing behind.
+ * A `seed` (a fork's copied records) is written at once, or not at all.
+ */
+export const create = (
+  cwd: string,
+  kind: "chat" | "worker" = "chat",
+  options: { readonly parent?: string; readonly seed?: ReadonlyArray<Record> } = {}
+): Writer => {
   const id = randomUUID()
   const folder = kind === "worker" ? join(directory(cwd), "workers") : directory(cwd)
   const file = join(folder, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`)
+  const header = (): Record => ({
+    type: "session",
+    version: 1,
+    id,
+    cwd,
+    createdAt: Date.now(),
+    ...(options.parent === undefined ? {} : { parent: options.parent })
+  })
   let opened = false
+  if (options.seed !== undefined && options.seed.length > 0) {
+    try {
+      mkdirSync(folder, { recursive: true })
+      writeFileSync(file, [header(), ...options.seed].map((record) => JSON.stringify(record)).join("\n") + "\n", {
+        flag: "wx"
+      })
+    } catch (error) {
+      rmSync(file, { force: true })
+      throw error
+    }
+    opened = true
+  }
   return {
     file,
     append: (record) => {
       if (!opened) {
         mkdirSync(folder, { recursive: true })
-        appendFileSync(file, JSON.stringify({ type: "session", version: 1, id, cwd, createdAt: Date.now() }) + "\n")
+        appendFileSync(file, JSON.stringify(header()) + "\n")
         opened = true
       }
       appendFileSync(file, JSON.stringify(record) + "\n")
@@ -113,6 +142,40 @@ export const list = (cwd: string): ReadonlyArray<Summary> => {
 }
 
 export const latest = (cwd: string): string | undefined => list(cwd)[0]?.file
+
+/** A user turn a fork can start before. `index` is its position in the file's records. */
+export interface Turn {
+  readonly index: number
+  readonly at: number
+  readonly text: string
+}
+
+/** pi's fork points: prompts that started a turn, newest first. A steer belongs to its turn; `!cmd` is not a turn. */
+export const turns = (records: ReadonlyArray<Record>): ReadonlyArray<Turn> =>
+  records
+    .flatMap((record, index) =>
+      record.type === "user" && record.steered !== true ? [{ index, at: record.at, text: record.text }] : []
+    )
+    .reverse()
+
+export type Fork =
+  | {
+    readonly _tag: "Forked"
+    readonly writer: Writer
+    readonly records: ReadonlyArray<Record>
+    readonly text: string
+  }
+  | { readonly _tag: "Stale" }
+
+/** pi's /fork: a new session holding `source`'s records before `turn`. `source` is only read. */
+export const fork = (source: string, cwd: string, turn: Turn): Fork => {
+  const records = load(source)
+  const at = records[turn.index]
+  if (at?.type !== "user" || at.steered === true || at.at !== turn.at || at.text !== turn.text) return { _tag: "Stale" }
+  const kept = records.slice(0, turn.index).filter((record) => record.type !== "session")
+  const writer = create(cwd, "chat", { parent: source, seed: kept })
+  return { _tag: "Forked", writer, records: kept, text: at.text }
+}
 
 /** What a session file rebuilds: the screen, the agent's context, and the prompt history. */
 export const restore = (records: ReadonlyArray<Record>): {

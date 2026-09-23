@@ -30,6 +30,8 @@ describe("slash completion", () => {
   it("opens on / at the start and fuzzy-matches command names", () => {
     expect(labels(Complete.complete("/", 1, sources))?.[0]).toBe("/model")
     expect(labels(Complete.complete("/rsm", 4, sources))).toEqual(["/resume"])
+    const fork = Complete.complete("/fo", 3, sources)!.items[0]!
+    expect(fork).toMatchObject({ label: "/fork", insert: "/fork", submit: true, detail: "Fork from an earlier message" })
     expect(Complete.complete("say /model", 10, sources)).toBeUndefined()
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Effect } from "effect"
@@ -160,6 +160,83 @@ describe("sessions", () => {
       { kind: "shell", text: Shell.contextText(result) }
     ])
     expect(restored.transcript.items.map((item) => item.kind)).toEqual(["user", "shell", "shell"])
+  })
+
+  const seeded = () => {
+    process.env.SMITHERS_TUI_SESSION_DIR = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+    const writer = Session.create("/work/repo")
+    const result = { command: "ls", output: "a", exitCode: 0, cancelled: false }
+    writer.append({ type: "user", at: 1, text: "first" })
+    writer.append({ type: "outcome", at: 2, prompt: "first", outcome: { _tag: "done", answer: "one" } })
+    writer.append({ type: "user", at: 3, text: "steer", steered: true })
+    writer.append({ type: "shell", at: 4, result, excluded: false })
+    writer.append({ type: "user", at: 5, text: "second" })
+    writer.append({ type: "outcome", at: 6, prompt: "second", outcome: { _tag: "done", answer: "two" } })
+    writer.append({ type: "name", name: "n" })
+    writer.append({ type: "user", at: 7, text: "third" })
+    const records = Session.load(writer.file)
+    const turn = (text: string) => Session.turns(records).find((each) => each.text === text)!
+    return { source: writer.file, records, result, turn }
+  }
+
+  it("lists fork points newest first, skipping steers and shell commands", () => {
+    const { records } = seeded()
+    expect(Session.turns(records)).toEqual([
+      { index: 8, at: 7, text: "third" },
+      { index: 5, at: 5, text: "second" },
+      { index: 1, at: 1, text: "first" }
+    ])
+  })
+
+  it("forks before a turn into a new file with a parent, leaving the source unchanged", () => {
+    const { source, records, result, turn } = seeded()
+    const before = readFileSync(source, "utf8")
+    const forked = Session.fork(source, "/work/repo", turn("second"))
+    if (forked._tag !== "Forked") throw new Error(forked._tag)
+    expect(forked.text).toBe("second")
+    expect(readFileSync(source, "utf8")).toBe(before)
+    const [header, ...rest] = Session.load(forked.writer.file)
+    expect(header).toMatchObject({ type: "session", parent: source })
+    expect(header?.type === "session" && records[0]?.type === "session" && header.id !== records[0].id).toBe(true)
+    expect(rest).toEqual(records.slice(1, 5))
+    expect(forked.records).toEqual(records.slice(1, 5))
+    const restored = Session.restore(Session.load(forked.writer.file))
+    expect(restored.entries).toEqual([
+      { kind: "exchange", user: "first", answer: "one" },
+      { kind: "shell", text: Shell.contextText(result) }
+    ])
+    expect(restored.prompts).toEqual(["first", "steer", "!ls"])
+    expect(Session.list("/work/repo")).toHaveLength(2)
+  })
+
+  it("forks before the first turn into an empty session written on the first append", () => {
+    const { source, turn } = seeded()
+    const forked = Session.fork(source, "/work/repo", turn("first"))
+    if (forked._tag !== "Forked") throw new Error(forked._tag)
+    expect(forked.records).toEqual([])
+    expect(existsSync(forked.writer.file)).toBe(false)
+    forked.writer.append({ type: "user", at: 9, text: "again" })
+    expect(Session.load(forked.writer.file)[0]).toMatchObject({ type: "session", parent: source })
+  })
+
+  it("refuses a turn that no longer matches the file", () => {
+    const { source, turn } = seeded()
+    expect(Session.fork(source, "/work/repo", { ...turn("second"), at: 999 })).toEqual({ _tag: "Stale" })
+    expect(Session.fork(source, "/work/repo", { index: 3, at: 3, text: "steer" })).toEqual({ _tag: "Stale" })
+    expect(Session.list("/work/repo")).toHaveLength(1)
+  })
+
+  it("leaves no file behind when writing a seeded session fails", () => {
+    const base = mkdtempSync(join(tmpdir(), "tui-sessions-"))
+    const blocked = join(base, "file")
+    writeFileSync(blocked, "")
+    process.env.SMITHERS_TUI_SESSION_DIR = blocked
+    try {
+      expect(() => Session.create("/work/repo", "chat", { seed: [{ type: "name", name: "n" }] })).toThrow()
+    } finally {
+      process.env.SMITHERS_TUI_SESSION_DIR = base
+    }
+    expect(readdirSync(base)).toEqual(["file"])
   })
 })
 

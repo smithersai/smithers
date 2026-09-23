@@ -7,7 +7,7 @@
 import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { basename, join } from "node:path"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -81,6 +81,12 @@ type Picker =
     /** Read on the first `session:`; undefined until then. */
     readonly sessions?: ReadonlyArray<Session.Summary>
   }
+  | {
+    readonly kind: "fork"
+    readonly query: string
+    readonly selected: number
+    readonly turns: ReadonlyArray<Session.Turn>
+  }
 
 /** A `text:` search in the palette, from launch through its real settlement. */
 interface TextSearch {
@@ -150,6 +156,15 @@ const pickerRows = (
         value: model.seat
       }))
     ]
+  }
+  if (picker.kind === "fork") {
+    const now = Date.now()
+    return Fuzzy.filter(picker.turns, picker.query, (turn) => turn.text).map((turn) => ({
+      key: String(turn.index),
+      label: turn.text.split("\n")[0]!.slice(0, 60),
+      detail: View.ago(turn.at, now),
+      value: String(turn.index)
+    }))
   }
   return Palette.sessionRows(picker.sessions, picker.query, Date.now()).map(({ file, ...row }) => ({ ...row, value: file }))
 }
@@ -459,9 +474,10 @@ export function App(props: AppProps) {
     setStatus("New session started")
   }, [props.host.cwd, setStatus])
 
-  const openSession = useCallback((file: string) => {
-    const state = Session.restore(Session.load(file))
-    writer.current = Session.reopen(file)
+  /** Switches the screen, context, history and workers to `next`, whose records are `records`. */
+  const adopt = useCallback((next: Session.Writer, records: ReadonlyArray<Session.Record>) => {
+    const state = Session.restore(records)
+    writer.current = next
     entries.current = state.entries
     history.current = new Editor.History(state.prompts)
     setWorkspace(
@@ -477,8 +493,26 @@ export function App(props: AppProps) {
     setPanelFocus(false)
     setName(state.name)
     setTranscript(state.transcript)
+    return state
+  }, [])
+
+  const openSession = useCallback((file: string) => {
+    const state = adopt(Session.reopen(file), Session.load(file))
     setStatus(`Resumed ${state.name ?? basename(file)}`)
-  }, [setStatus])
+  }, [adopt, setStatus])
+
+  const forkSession = useCallback((turn: Session.Turn) => {
+    let result: Session.Fork
+    try {
+      result = Session.fork(writer.current.file, props.host.cwd, turn)
+    } catch (error) {
+      return setStatus(`Fork failed: ${error instanceof Error ? error.message : String(error)}`, "danger")
+    }
+    if (result._tag === "Stale") return setStatus("Session changed; fork again", "warning")
+    adopt(result.writer, result.records)
+    setText(result.text)
+    setStatus("Forked to new session")
+  }, [adopt, setText, setStatus, props.host.cwd])
 
   const command = useCallback((text: string): boolean => {
     const parsed = Editor.parseCommand(text)
@@ -554,6 +588,22 @@ export function App(props: AppProps) {
       case "resume":
         setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
         return true
+      case "fork": {
+        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+          setStatus("Stop running work first", "warning")
+          return true
+        }
+        let turns: ReadonlyArray<Session.Turn>
+        try {
+          turns = existsSync(writer.current.file) ? Session.turns(Session.load(writer.current.file)) : []
+        } catch (error) {
+          setStatus(`Fork failed: ${error instanceof Error ? error.message : String(error)}`, "danger")
+          return true
+        }
+        if (turns.length === 0) setStatus("No messages to fork from")
+        else setPicker({ kind: "fork", query: "", selected: 0, turns })
+        return true
+      }
       case "session": {
         const usage = transcript.usage
         setTranscript((current) =>
@@ -682,6 +732,14 @@ export function App(props: AppProps) {
       )
     }
     setPicker(undefined)
+    if (open.kind === "fork") {
+      const turn = open.turns.find((each) => String(each.index) === value)
+      if (turn === undefined) return
+      if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+        return setStatus("Stop running work first", "warning")
+      }
+      return forkSession(turn)
+    }
     if (open.kind === "model") return switchSeat(value)
     if (open.kind === "theme") {
       if (!isTheme(value)) return
@@ -725,7 +783,7 @@ export function App(props: AppProps) {
       }
     }
     resumeGuarded(value)
-  }, [switchSeat, openSession, setStatus, workspace, setText, submit])
+  }, [switchSeat, openSession, forkSession, setStatus, workspace, setText, submit])
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
@@ -1116,6 +1174,8 @@ export function App(props: AppProps) {
             ? "Filter chat"
             : picker.kind === "palette"
             ? "Search"
+            : picker.kind === "fork"
+            ? "Fork from Message"
             : "Resume session"}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
@@ -1144,6 +1204,8 @@ export function App(props: AppProps) {
                 ? "No sessions in this directory"
                 : picker.kind === "palette"
                 ? search?.status === "running" ? "Searching" : "No matches"
+                : picker.kind === "fork"
+                ? `No messages match "${picker.query}"`
                 : `No ${picker.kind} matches "${picker.query}"`}
             />
           </box>

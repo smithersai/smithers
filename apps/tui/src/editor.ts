@@ -62,6 +62,7 @@ export const commands: ReadonlyArray<Command> = [
   { name: "thinking", args: "[level]", description: "Set the reasoning effort" },
   { name: "new", description: "Start a new session" },
   { name: "resume", description: "Resume a session" },
+  { name: "fork", description: "Fork from an earlier message" },
   { name: "session", description: "Show the session file and tokens" },
   { name: "name", args: "<name>", description: "Name this session" },
   { name: "copy", description: "Copy the last answer" },
