@@ -645,6 +645,7 @@ func buildRouter(
 	// vocabulary it is actually running. Unauthenticated and read-only for the
 	// same reason /api/health is: it is a published contract.
 	r.Get("/api/meta/failure-codes", routes.FailureCodes)
+	r.Get("/api/public/repos", routes.PublicRepositoryCatalog)
 	if billingHandler != nil {
 		r.With(
 			middleware.JSONTimeout(30*time.Second),
@@ -951,6 +952,9 @@ func buildRouter(
 		}
 		r.Use(apiCSRFMiddleware)
 		r.Use(middleware.ExcludePaths(middleware.GlobalAPIRateLimit(queries), "/api/search/", "/api/_test/", "/api/telemetry/", "/api/auth/github/token-exchange"))
+		r.Post("/recommend", routes.Recommend)
+		r.Post("/recommend/outcome", routes.RecommendOutcome)
+		r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/model/stream", routes.ModelStream)
 
 		if strings.EqualFold(os.Getenv("SMITHERS_ENABLE_E2E_TEST_ROUTES"), "true") {
 			r.Get("/_test/panic", routes.MiddlewarePanic)
@@ -1081,6 +1085,7 @@ func buildRouter(
 		r.Get("/users/{username}/repos", userHandler.GetUserReposByUsername)
 
 		if billingHandler != nil {
+			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/balance", billingHandler.GetUserBalance)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing", billingHandler.GetUserBilling)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/plans", billingHandler.GetUserPlans)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/checkout", billingHandler.PostUserCheckout)

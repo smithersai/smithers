@@ -419,3 +419,16 @@ export const MODEL_CREDENTIAL_PATH = "/api/model/credential"
  * @category constants
  */
 export const MODEL_CREDENTIAL_RECEIPT_PATH = "/api/model/credential/receipt"
+
+/**
+ * Routes called by the browser that must be present in the shared Go backend.
+ * `capability` names the bootstrap capability that gates the client call;
+ * `undefined` means the route is a public or locally rule-driven contract.
+ */
+export const SHARED_BACKEND_CLIENT_ROUTES = [
+  { method: "GET", path: BILLING_BALANCE_PATH, capability: "billing.checkout" },
+  { method: "GET", path: PUBLIC_REPOS_PATH },
+  { method: "POST", path: RECOMMEND_PATH },
+  { method: "POST", path: RECOMMEND_OUTCOME_PATH },
+  { method: "POST", path: MODEL_STREAM_PATH, capability: "identity" }
+] as const

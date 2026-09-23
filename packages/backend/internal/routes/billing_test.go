@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type mockBillingRouteService struct {
@@ -122,6 +122,24 @@ func TestBillingHandler_GetUserBilling_Success(t *testing.T) {
 	var overview services.BillingOverview
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &overview))
 	assert.Equal(t, "pro", overview.PlanKey)
+}
+
+func TestBillingHandler_GetUserBalance_Success(t *testing.T) {
+	t.Parallel()
+	h := &BillingHandler{Service: &mockBillingRouteService{
+		getUserOverviewFn: func(context.Context, *db.User) (services.BillingOverview, error) {
+			return services.BillingOverview{CreditBalanceCents: 250}, nil
+		},
+	}}
+	req := withAuth(httptest.NewRequest(http.MethodGet, "/api/billing/balance", nil), 1, "alice")
+	rec := httptest.NewRecorder()
+	h.GetUserBalance(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	assert.Equal(t, "ok", body["state"])
+	assert.Equal(t, true, body["allowedToStartWork"])
+	assert.Equal(t, "2.50", body["balance"].(map[string]any)["totalUsd"])
 }
 
 func TestBillingHandler_PostUserCheckout_Success(t *testing.T) {

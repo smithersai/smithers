@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 type BillingRouteService interface {
@@ -32,6 +33,36 @@ type BillingHandler struct {
 type billingCheckoutRequest struct {
 	Plan     string `json:"plan"`
 	Interval string `json:"interval"`
+}
+
+// GetUserBalance is the small browser contract used during session refresh.
+func (h *BillingHandler) GetUserBalance(w http.ResponseWriter, r *http.Request) {
+	user, err := requireRouteUser(r)
+	if err != nil {
+		errors.WriteError(w, err.(*errors.APIError))
+		return
+	}
+	overview, svcErr := h.Service.GetUserOverview(r.Context(), user)
+	if svcErr != nil {
+		writeRouteError(w, r, svcErr)
+		return
+	}
+	state := "empty"
+	if overview.CreditBalanceCents > 0 {
+		state = "ok"
+		if overview.CreditBalanceCents < 100 {
+			state = "low"
+		}
+	}
+	errors.WriteJSON(w, http.StatusOK, map[string]any{
+		"state":              state,
+		"allowedToStartWork": overview.CreditBalanceCents > 0,
+		"balance": map[string]any{
+			"totalUsd":           strconv.FormatFloat(float64(overview.CreditBalanceCents)/100, 'f', 2, 64),
+			"lifetimeChargedUsd": "0",
+			"chargeCount":        0,
+		},
+	})
 }
 
 func (h *BillingHandler) GetUserBilling(w http.ResponseWriter, r *http.Request) {
