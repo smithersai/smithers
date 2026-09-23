@@ -44,7 +44,11 @@ const smokeArtifacts = (source: string): void => {
   // neither the build nor the fixture imports touch another process's output.
   const scratch = copyPackage(source)
   try {
-    execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: scratch.packageDir, timeout: 120_000 })
+    execFileSync(process.execPath, ["scripts/build.mjs"], {
+      cwd: scratch.packageDir,
+      timeout: 120_000,
+      stdio: "inherit"
+    })
     execFileSync(process.execPath, ["test/fixtures/artifact-esm.mjs"], { cwd: scratch.packageDir, timeout: 20_000 })
     execFileSync(process.execPath, ["test/fixtures/artifact-cjs.cjs"], { cwd: scratch.packageDir, timeout: 20_000 })
   } finally {
