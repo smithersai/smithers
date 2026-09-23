@@ -618,6 +618,23 @@ describe("undo", () => {
     expect(Changes.patch("run.sh", "x\n", null, 0o755)!.patch).toStartWith("diff --git a/run.sh b/run.sh\ndeleted file mode 100755\n")
   })
 
+  it("refuses a plan over a bash call without touching the disk or asking the VCS", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "after\n")
+    const call = {
+      flow: "bash",
+      identity: "shell",
+      patches: [Changes.patch("a.ts", "before\n", "after\n")!]
+    } as unknown as Parameters<typeof Undo.plan>[1]["calls"][number]
+    let reads = 0
+    const result = await Undo.plan(cwd, { calls: [call], paths: ["a.ts"] }, async () => {
+      reads++
+      return "after\n"
+    })
+    expect(result).toEqual({ _tag: "Uncaptured", flows: ["bash"] })
+    expect(reads).toBe(0)
+  })
+
   it("words failures in the fewest words", () => {
     expect(Undo.message({ _tag: "Busy" })).toBe("Stop running work first")
     expect(Undo.message({ _tag: "Conflict", paths: ["math.js", "b.ts"] })).toBe("Not undone · changed since: math.js, b.ts")

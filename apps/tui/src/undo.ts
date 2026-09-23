@@ -5,11 +5,9 @@
  * writes it, rolling back on an IO error.
  */
 import { applyPatch, parsePatch, reversePatch, type StructuredPatch } from "diff"
-import { realpathSync } from "node:fs"
 import { chmod, mkdir, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import * as Changes from "./changes.ts"
-import * as Subprocess from "./subprocess.ts"
 import type * as Transcript from "./transcript.ts"
 
 export type Failure =
@@ -20,8 +18,6 @@ export type Failure =
   | { readonly _tag: "Uncaptured"; readonly flows: ReadonlyArray<string> }
   /** A binary, large, or truncated change, labeled instead of diffed. */
   | { readonly _tag: "Unrendered"; readonly paths: ReadonlyArray<string> }
-  /** Shell changes are recorded relative to the repository root, and this directory is not it. */
-  | { readonly _tag: "NotRoot"; readonly root: string }
   /** The files changed since the turn. */
   | { readonly _tag: "Conflict"; readonly paths: ReadonlyArray<string> }
   | { readonly _tag: "WriteFailed"; readonly path: string; readonly message: string; readonly restored: boolean }
@@ -110,34 +106,14 @@ export const target = (transcript: Transcript.Transcript, rowId: string): Target
   return { calls, paths: [...paths] }
 }
 
-/** The directory's VCS root, as capture saw it: jj first, then git. */
-const root = async (cwd: string): Promise<string | undefined> => {
-  for (const command of [["jj", "root"], ["git", "rev-parse", "--show-toplevel"]]) {
-    if (Subprocess.which(command[0]!) === null) continue
-    const child = Subprocess.spawn(command, { cwd })
-    const output = await new Response(child.stdout).text()
-    if ((await child.exited) === 0) return output.trim()
-  }
-  return undefined
-}
-
 /** Every file's restored content, reading only. Collects every conflicting path. */
 export const plan = async (
   cwd: string,
   target: Target,
   read: (path: string) => Promise<string | null | undefined> = Changes.read
 ): Promise<Plan | Failure> => {
-  if (target.calls.some((call) => call.flow === "bash")) {
-    const found = await root(cwd)
-    const real = (path: string) => {
-      try {
-        return realpathSync(path)
-      } catch {
-        return path
-      }
-    }
-    if (found === undefined || real(found) !== real(cwd)) return { _tag: "NotRoot", root: found ?? cwd }
-  }
+  // A shell diff is repository-wide and may hold other workers' edits; `target` never picks one, and neither does a plan.
+  if (target.calls.some((call) => call.flow === "bash")) return { _tag: "Uncaptured", flows: ["bash"] }
   const seeded = new Map<string, string | null | undefined>()
   const state = new Map<string, string | null | undefined>()
   const poisoned = new Set<string>()
@@ -269,8 +245,6 @@ export const message = (failure: Failure): string => {
       return `Not undone · uncaptured: ${failure.flows.join(", ")}`
     case "Unrendered":
       return `Not undone · binary or large: ${failure.paths.join(", ")}`
-    case "NotRoot":
-      return `Not undone · shell changes: run from ${failure.root}`
     case "Conflict":
       return `Not undone · changed since: ${failure.paths.join(", ")}`
     case "WriteFailed":
