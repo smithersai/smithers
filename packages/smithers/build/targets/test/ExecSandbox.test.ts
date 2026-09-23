@@ -932,9 +932,9 @@ describe("seatbelt profile", () => {
     }
     const profile = ExecSandbox.seatbelt(planned(darwin), selected)
     expect(profile).toContain(`(subpath "${developerDirectory}")`)
-    expect(profile).not.toContain('(subpath "/Applications")')
+    expect(profile).not.toContain("(subpath \"/Applications\")")
     const untrusted = ExecSandbox.seatbelt(planned(darwin), { ...selected, developerDirectory: "/Users/owner/.ssh" })
-    expect(untrusted).not.toContain('(subpath "/Users/owner/.ssh")')
+    expect(untrusted).not.toContain("(subpath \"/Users/owner/.ssh\")")
   })
 
   it("denies network and writes, closes reads under the workspace, and reopens the declared set", () => {

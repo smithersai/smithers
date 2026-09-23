@@ -90,22 +90,32 @@ test("the authenticated model stream emits provider frames through the configure
     resolve: (accepted) => {
       resolvedOwner = accepted.ownerId
       return Effect.succeed({
-        model: Model.make({ stream: () => Stream.fromIterable([
-          { type: "text-delta", id: "t", text: "provider token" } as const,
-          { type: "settle", stopReason: "stop" } as const
-        ]) }),
+        model: Model.make({
+          stream: () =>
+            Stream.fromIterable([
+              { type: "text-delta", id: "t", text: "provider token" } as const,
+              { type: "settle", stopReason: "stop" } as const
+            ])
+        }),
         options: { modelId: "fixture" }
       })
     }
   })
   const body = JSON.stringify({
-    runId: "run-stream", ownerId: 42, instructions: "summarize", messages: [{ role: "user", content: "hi" }]
+    runId: "run-stream",
+    ownerId: 42,
+    instructions: "summarize",
+    messages: [{ role: "user", content: "hi" }]
   })
   const refused = await handler(new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, { method: "POST", body }))
   expect(refused.status).toBe(401)
-  const response = await handler(new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, {
-    method: "POST", headers: { authorization: "Bearer host-token", "content-type": "application/json" }, body
-  }))
+  const response = await handler(
+    new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, {
+      method: "POST",
+      headers: { authorization: "Bearer host-token", "content-type": "application/json" },
+      body
+    })
+  )
   expect(response.status).toBe(200)
   expect(resolvedOwner).toBe(42)
   const frames = (await response.text()).trim().split("\n").map((line) => JSON.parse(line))

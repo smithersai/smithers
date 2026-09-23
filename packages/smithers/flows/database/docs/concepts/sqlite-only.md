@@ -15,11 +15,11 @@ says out loud which names it is ignoring.
 `NodeDatabase.layer` runs a guard before it creates a connection, and raises
 `UnsupportedDatabase` as a defect in each of these cases:
 
-| Code                        | Refused when                                                         | Message                                                                                   |
-| --------------------------- | -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Code                        | Refused when                                                         | Message                                                                                  |
+| --------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `unsupported_runtime`       | `process.versions.bun` is set                                        | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0` |
-| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table      | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`      |
-| `database_locked`           | a peer held the file for the whole open ladder, so it was never read | `<path> could not be inspected because another process holds it`                          |
+| `unsupported_database_file` | the file has at least one table and no `flows_migrations` table      | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`     |
+| `database_locked`           | a peer held the file for the whole open ladder, so it was never read | `<path> could not be inspected because another process holds it`                         |
 
 A refusal is a defect rather than a typed failure on purpose. `layer` is a leaf
 client layer whose error channel every durable package composes against as

@@ -189,56 +189,59 @@ describe("NodeDatabase concurrent open", () => {
    * reuses the parked descriptor for the next open. That descriptor is
    * accounted for below, and it is not a connection.
    */
-  it.live.skipIf(process.platform === "win32")("does not accumulate connections across the attempts a contended open retries", () =>
-    Effect.gen(function*() {
-      const filename = tempFile()
-      seedRollbackMode(filename)
-      const peer = holdReadLock(filename)
-      // `busyTimeout` only sets the pace. The WAL conversion does consult the
-      // busy handler under a shared lock, so the vendor's five-second default
-      // would spend five seconds on every attempt; zero makes each one refuse
-      // at once. What an attempt does is unchanged: open a connection, fail
-      // the conversion, retry.
-      const opening = NodeDatabase.layer({
-        filename,
-        sqlite: { busyTimeout: 0 }
-      })
+  it.live.skipIf(process.platform === "win32")(
+    "does not accumulate connections across the attempts a contended open retries",
+    () =>
+      Effect.gen(function*() {
+        const filename = tempFile()
+        seedRollbackMode(filename)
+        const peer = holdReadLock(filename)
+        // `busyTimeout` only sets the pace. The WAL conversion does consult the
+        // busy handler under a shared lock, so the vendor's five-second default
+        // would spend five seconds on every attempt; zero makes each one refuse
+        // at once. What an attempt does is unchanged: open a connection, fail
+        // the conversion, retry.
+        const opening = NodeDatabase.layer({
+          filename,
+          sqlite: { busyTimeout: 0 }
+        })
 
-      try {
-        expect(openHandles(filename)).toBe(1)
-        let opened = false
-        const observed = yield* Effect.scoped(Effect.gen(function*() {
-          const building = yield* Effect.forkChild(
-            Effect.tap(Layer.build(opening), () => Effect.sync(() => opened = true))
-          )
-          // Two samples with roughly ten further attempts between them. Both
-          // land between attempts rather than inside one: an attempt is
-          // synchronous, so no other fiber runs while a connection of its own
-          // is open.
-          yield* Effect.sleep(Duration.millis(150))
-          const early = openHandles(filename)
-          yield* Effect.sleep(Duration.millis(600))
-          const late = openHandles(filename)
-          // The peer still holds the file, so every attempt behind those two
-          // samples failed, which is what makes them worth comparing.
-          expect(opened).toBe(false)
+        try {
+          expect(openHandles(filename)).toBe(1)
+          let opened = false
+          const observed = yield* Effect.scoped(Effect.gen(function*() {
+            const building = yield* Effect.forkChild(
+              Effect.tap(Layer.build(opening), () => Effect.sync(() => opened = true))
+            )
+            // Two samples with roughly ten further attempts between them. Both
+            // land between attempts rather than inside one: an attempt is
+            // synchronous, so no other fiber runs while a connection of its own
+            // is open.
+            yield* Effect.sleep(Duration.millis(150))
+            const early = openHandles(filename)
+            yield* Effect.sleep(Duration.millis(600))
+            const late = openHandles(filename)
+            // The peer still holds the file, so every attempt behind those two
+            // samples failed, which is what makes them worth comparing.
+            expect(opened).toBe(false)
+            peer.release()
+            yield* Fiber.join(building)
+            return { early, late, afterOpen: openHandles(filename) }
+          }))
+
+          // Attempts spent, and nothing gained: a ladder that kept a connection
+          // per attempt would have counted ten more by the second sample.
+          expect(observed.late).toBe(observed.early)
+          // Only the connection the layer actually returned. The peer released
+          // and closed before this, and its parked descriptor went with it.
+          expect(observed.afterOpen).toBe(1)
+          // And that one goes when the layer's scope closes.
+          expect(openHandles(filename)).toBe(0)
+        } finally {
           peer.release()
-          yield* Fiber.join(building)
-          return { early, late, afterOpen: openHandles(filename) }
-        }))
-
-        // Attempts spent, and nothing gained: a ladder that kept a connection
-        // per attempt would have counted ten more by the second sample.
-        expect(observed.late).toBe(observed.early)
-        // Only the connection the layer actually returned. The peer released
-        // and closed before this, and its parked descriptor went with it.
-        expect(observed.afterOpen).toBe(1)
-        // And that one goes when the layer's scope closes.
-        expect(openHandles(filename)).toBe(0)
-      } finally {
-        peer.release()
-      }
-    }))
+        }
+      })
+  )
 
   /**
    * Runs on every gate. It used to be pinned behind an environment variable

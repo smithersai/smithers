@@ -27,11 +27,11 @@ pnpm add -D @smthrs/build-cli@next @smthrs/targets@next
 
 The `exports` map publishes the index, every module under `src` through the `./*` subpath, and the manifest:
 
-| Import                         | Source          | Platform         |
-| ------------------------------ | --------------- | ---------------- |
-| `@smthrs/targets`              | `src/index.ts`  | Node.js 26.4.0+  |
-| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 26.4.0+  |
-| `@smthrs/targets/package.json` | `package.json`  | Node.js 26.4.0+  |
+| Import                         | Source          | Platform        |
+| ------------------------------ | --------------- | --------------- |
+| `@smthrs/targets`              | `src/index.ts`  | Node.js 26.4.0+ |
+| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 26.4.0+ |
+| `@smthrs/targets/package.json` | `package.json`  | Node.js 26.4.0+ |
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built

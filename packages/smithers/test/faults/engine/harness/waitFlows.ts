@@ -145,7 +145,9 @@ export const host = (mode: WaitMode, options: WaitOptions) => {
   // wider probe budget so a scheduler delay is not reported as a host fault.
   const registration = mode === "approval"
     ? approvalRegistration
-    : mode === "timer" ? timerRegistration(options) : eventRegistration(options)
+    : mode === "timer"
+    ? timerRegistration(options)
+    : eventRegistration(options)
   return NodeRuntime.layerHost(hostOptions(options), registration).pipe(
     Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs, 30_000))
   )

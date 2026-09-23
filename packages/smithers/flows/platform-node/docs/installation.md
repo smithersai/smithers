@@ -53,7 +53,7 @@ The package ships ESM, CommonJS, and TypeScript declarations.
 
 | Requirement                                        | Why it is needed                                                                                          |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Node.js 26.4.0 or later                           | the minimum this package's `engines` field declares                                                       |
+| Node.js 26.4.0 or later                            | the minimum this package's `engines` field declares                                                       |
 | a POSIX host                                       | Windows has none of the primitives below and is unsupported                                               |
 | CPython 3 at `/usr/bin/python3`                    | `AtomicFileSystem` runs every filesystem syscall through it                                               |
 | that interpreter's `os` module supporting `dir_fd` | with `O_NOFOLLOW` and `O_DIRECTORY`, for `open`, `mkdir`, `readlink`, `rename`, `rmdir`, `stat`, `unlink` |

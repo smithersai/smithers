@@ -9,8 +9,8 @@
  * cone below the edit re-runs and every unchanged branch is a cache hit. This
  * is where that stops being a claim.
  */
-import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"

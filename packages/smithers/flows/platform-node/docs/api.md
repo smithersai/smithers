@@ -44,7 +44,7 @@ use the selected process runner.
 
 | Requirement                                        | Why                                                                                                       |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Node.js >=26.4.0                                  | the minimum this package's `engines` field declares                                                       |
+| Node.js >=26.4.0                                   | the minimum this package's `engines` field declares                                                       |
 | CPython 3 at `/usr/bin/python3`                    | `AtomicFileSystem` runs every filesystem syscall through it                                               |
 | that interpreter's `os` module supporting `dir_fd` | with `O_NOFOLLOW` and `O_DIRECTORY`, for `open`, `mkdir`, `readlink`, `rename`, `rmdir`, `stat`, `unlink` |
 | a POSIX host                                       | Windows has none of those primitives and is unsupported                                                   |

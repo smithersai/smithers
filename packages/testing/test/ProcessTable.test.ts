@@ -38,12 +38,19 @@ describe("ProcessTable.query", () => {
   })
 
   it("accepts an empty selected pid but refuses a failed full-table scan", () => {
-    expect(ProcessTable.query({ pid: 123, columns: ["stat"], timeoutMs: 2000, platform: "linux" }, (_command, args, options) => {
-      expect(args).toEqual(["-p", "123", "-ww", "-o", "stat="])
-      expect(options.timeout).toBe(2000)
-      return result("", 1)
-    })).toBe("")
-    expect(() => ProcessTable.query({ columns: ["pid"], platform: "linux" }, () => result("", 1))).toThrow("ps failed (1)")
+    expect(
+      ProcessTable.query(
+        { pid: 123, columns: ["stat"], timeoutMs: 2000, platform: "linux" },
+        (_command, args, options) => {
+          expect(args).toEqual(["-p", "123", "-ww", "-o", "stat="])
+          expect(options.timeout).toBe(2000)
+          return result("", 1)
+        }
+      )
+    ).toBe("")
+    expect(() => ProcessTable.query({ columns: ["pid"], platform: "linux" }, () => result("", 1))).toThrow(
+      "ps failed (1)"
+    )
     expect(() => ProcessTable.query({ pid: 123, columns: ["pid"], platform: "linux" }, () => result("partial", 1)))
       .toThrow("ps failed (1)")
     // A successful probe must contain evidence; only ps's explicit no-pid
@@ -54,7 +61,8 @@ describe("ProcessTable.query", () => {
 
   it("propagates spawn errors without treating truncated output as process evidence", () => {
     const error = Object.assign(new Error("spawnSync ps ENOBUFS"), { code: "ENOBUFS" })
-    expect(() => ProcessTable.query({ columns: ["pid"], platform: "linux" }, () => ({ ...result("partial"), error }))).toThrow(error)
+    expect(() => ProcessTable.query({ columns: ["pid"], platform: "linux" }, () => ({ ...result("partial"), error })))
+      .toThrow(error)
   })
 })
 

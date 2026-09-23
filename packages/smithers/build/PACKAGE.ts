@@ -203,10 +203,12 @@ const cacheServicePostgres = Smithers.Shell.Test({
   args: ["test", "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js"],
   // The required Linux lane owns this Docker-backed integration. The hosted
   // macOS runner has no Docker daemon, and Windows cannot run this Linux image.
-  env: process.platform === "linux" ? {
-    SMITHERS_CACHE_TEST_DATABASE_URL:
-      "postgres://postgres:smithers-build-cache-test@127.0.0.1:55434/smithers_build_cache_test"
-  } : {},
+  env: process.platform === "linux" ?
+    {
+      SMITHERS_CACHE_TEST_DATABASE_URL:
+        "postgres://postgres:smithers-build-cache-test@127.0.0.1:55434/smithers_build_cache_test"
+    } :
+    {},
   data: [
     Smithers.file("terraform/modules/cache/migrations/0001_initial.sql"),
     Smithers.file("terraform/modules/cache/service/storage.js"),

@@ -68,7 +68,11 @@ export const query = (input: Query, spawn: Spawn = spawnSync): string => {
   throw new Error(`ps failed (${result.status}): ${result.stderr}`)
 }
 
-/** Windows has no `ps`; query the operating system's process records directly. */
+/**
+ * Windows has no `ps`; query the operating system's process records directly.
+ *
+ * @since 1.0.0
+ */
 export const queryWindows = ({ columns, pid, timeoutMs }: Query, spawn: Spawn = spawnSync): string => {
   if (columns.includes("pgid")) throw new Error("Windows has no POSIX process groups")
   const expressions: Record<Exclude<Column, "pgid">, string> = {
@@ -82,7 +86,8 @@ export const queryWindows = ({ columns, pid, timeoutMs }: Query, spawn: Spawn = 
   }
   const fields = columns.map((column) => expressions[column as Exclude<Column, "pgid">]).join(", ")
   const filter = pid === undefined ? "" : ` -Filter 'ProcessId = ${pid}'`
-  const script = `$ErrorActionPreference = 'Stop'; foreach ($p in (Get-CimInstance Win32_Process${filter})) { [Console]::Out.WriteLine((@(${fields}) -join ' ')) }`
+  const script =
+    `$ErrorActionPreference = 'Stop'; foreach ($p in (Get-CimInstance Win32_Process${filter})) { [Console]::Out.WriteLine((@(${fields}) -join ' ')) }`
   const result = spawn("pwsh", ["-NoProfile", "-NonInteractive", "-Command", script], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

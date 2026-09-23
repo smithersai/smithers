@@ -79,51 +79,57 @@ describe("killProcess", () => {
     expect(parentPid(pid)).toBeUndefined()
   })
 
-  it.skipIf(process.platform === "win32")("observes the orphan a kill leaves: the grandchild is reparented away from its dead parent", async () => {
-    // A process group whose leader is the killed child. Killing the child
-    // orphans the group, which is the state every crash case then asserts on.
-    const parent = spawn("sh", ["-c", "sh -c 'sleep 30' & echo $! && sleep 30"], {
-      stdio: ["ignore", "pipe", "ignore"],
-      detached: true
-    })
-    const parentPidValue = parent.pid as number
-    const grandchild = await new Promise<number>((resolve) => {
-      parent.stdout?.setEncoding("utf8")
-      parent.stdout?.once("data", (chunk: string) => resolve(Number(chunk.trim())))
-    })
-    try {
-      expect(parentPid(grandchild)).toBe(parentPidValue)
-      await killProcess(parent)
-      const reparented = await waitForReparent(grandchild, parentPidValue)
-      expect(reparented).not.toBe(parentPidValue)
-      expect(isAlive(grandchild)).toBe(true)
-    } finally {
-      killGroup(parentPidValue)
+  it.skipIf(process.platform === "win32")(
+    "observes the orphan a kill leaves: the grandchild is reparented away from its dead parent",
+    async () => {
+      // A process group whose leader is the killed child. Killing the child
+      // orphans the group, which is the state every crash case then asserts on.
+      const parent = spawn("sh", ["-c", "sh -c 'sleep 30' & echo $! && sleep 30"], {
+        stdio: ["ignore", "pipe", "ignore"],
+        detached: true
+      })
+      const parentPidValue = parent.pid as number
+      const grandchild = await new Promise<number>((resolve) => {
+        parent.stdout?.setEncoding("utf8")
+        parent.stdout?.once("data", (chunk: string) => resolve(Number(chunk.trim())))
+      })
+      try {
+        expect(parentPid(grandchild)).toBe(parentPidValue)
+        await killProcess(parent)
+        const reparented = await waitForReparent(grandchild, parentPidValue)
+        expect(reparented).not.toBe(parentPidValue)
+        expect(isAlive(grandchild)).toBe(true)
+      } finally {
+        killGroup(parentPidValue)
+      }
     }
-  })
+  )
 
   it("times out with the label it was given", async () => {
     await expect(waitFor(() => false, "a condition that never holds", 100))
       .rejects.toThrow(/a condition that never holds/)
   })
 
-  it.skipIf(process.platform === "win32")("sees a whole process group, and stops seeing it once the group is gone", async () => {
-    // The group, not the pid, is the unit `NodeRuntime.layerHost` contains, so
-    // the fault tier asks about it directly. A detached child is its own group
-    // leader, which makes its pid the pgid.
-    const leader = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-      stdio: "ignore",
-      detached: true
-    })
-    const pgid = leader.pid as number
-    try {
-      expect(isGroupAlive(pgid)).toBe(true)
-    } finally {
-      killGroup(pgid)
+  it.skipIf(process.platform === "win32")(
+    "sees a whole process group, and stops seeing it once the group is gone",
+    async () => {
+      // The group, not the pid, is the unit `NodeRuntime.layerHost` contains, so
+      // the fault tier asks about it directly. A detached child is its own group
+      // leader, which makes its pid the pgid.
+      const leader = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+        stdio: "ignore",
+        detached: true
+      })
+      const pgid = leader.pid as number
+      try {
+        expect(isGroupAlive(pgid)).toBe(true)
+      } finally {
+        killGroup(pgid)
+      }
+      await waitFor(() => !isGroupAlive(pgid), `process group ${pgid} to leave`)
+      expect(isGroupAlive(pgid)).toBe(false)
     }
-    await waitFor(() => !isGroupAlive(pgid), `process group ${pgid} to leave`)
-    expect(isGroupAlive(pgid)).toBe(false)
-  })
+  )
 
   it("refuses to wait for the reparenting of a process that is already gone", async () => {
     const child = sleeper()

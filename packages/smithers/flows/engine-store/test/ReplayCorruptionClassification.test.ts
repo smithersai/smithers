@@ -11,8 +11,8 @@
  * transient host errors stay retryable and never reach the receiver. Both
  * classes journal their `reason` on the `replay_failed` provenance record.
  */
-import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Journal } from "@smthrs/journal"

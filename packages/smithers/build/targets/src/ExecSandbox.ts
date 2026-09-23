@@ -31,8 +31,8 @@
  *
  * @since 0.1.0
  */
-import { randomUUID } from "node:crypto"
 import { execFileSync } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
@@ -780,8 +780,10 @@ const runtimeReads = (hostFacts: Host): ReadonlyArray<string> => {
     "/etc/nsswitch.conf"
   ]
   const developerDirectory = hostFacts.developerDirectory
-  if (hostFacts.platform === "darwin" && developerDirectory !== undefined &&
-    /^\/Applications\/Xcode[^/]*\.app\/Contents\/Developer$/.test(developerDirectory)) {
+  if (
+    hostFacts.platform === "darwin" && developerDirectory !== undefined &&
+    /^\/Applications\/Xcode[^/]*\.app\/Contents\/Developer$/.test(developerDirectory)
+  ) {
     paths.push(developerDirectory)
   }
   if (hostFacts.home !== undefined) paths.push(NodePath.join(hostFacts.home, ".cache/node/corepack"))

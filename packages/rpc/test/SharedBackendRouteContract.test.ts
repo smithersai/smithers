@@ -11,14 +11,15 @@ describe("shared backend client route contract", () => {
       const path = route.path.replace(/^\/api\//, "")
       const mounted = router.includes(`r.${route.method === "GET" ? "Get" : "Post"}(\"${route.path}\"`) ||
         router.includes(`${route.method === "GET" ? "Get" : "Post"}(\"/${path}\"`)
-      expect(mounted, `${route.method} ${route.path} is not mounted in packages/backend/internal/compose/router.go`).toBe(true)
+      expect(mounted, `${route.method} ${route.path} is not mounted in packages/backend/internal/compose/router.go`)
+        .toBe(true)
       if (route.capability === "recommend") {
         expect(router).toContain("if extras.Recommender != nil")
-        expect(bootstrap).toContain('"recommend"')
+        expect(bootstrap).toContain("\"recommend\"")
       }
       if (route.capability === "model.turn") {
         expect(router).toContain("if extras.ModelStream != nil")
-        expect(bootstrap).toContain('"model.turn"')
+        expect(bootstrap).toContain("\"model.turn\"")
       }
     }
   })
