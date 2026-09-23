@@ -404,15 +404,12 @@ describe("PackageManager.storeRoot", () => {
     const right = NodePath.join(fixture, "right")
     const executable = NodePath.join(fixture, "pnpm.mjs")
     await Promise.all([Fs.mkdir(left), Fs.mkdir(right)])
-    await Fs.writeFile(
+    await writeExecutable(
       executable,
-      "#!/usr/bin/env node\n" +
-        "import { appendFileSync } from \"node:fs\"\n" +
+      "import { appendFileSync } from \"node:fs\"\n" +
         "appendFileSync(\"calls\", process.cwd() + \"\\n\")\n" +
-        "if (process.argv[2] === \"--version\") process.stdout.write(\"9.15.0\\n\")\n",
-      "utf8"
+        "if (process.argv[2] === \"--version\") process.stdout.write(\"9.15.0\\n\")\n"
     )
-    await Fs.chmod(executable, 0o755)
     const original = process.cwd()
     const run = (projectRoot: string) =>
       Effect.runPromise(
@@ -780,14 +777,15 @@ describe("PackageManager.storeRoot", () => {
       )
       const manager = await makePnpm(root, executable)
       await Effect.runPromise(manager.fetch)
-      expect(JSON.parse(await Fs.readFile(invocation, "utf8"))).toEqual([
+      const args: Array<string> = JSON.parse(await Fs.readFile(invocation, "utf8"))
+      expect(args.slice(0, -1)).toEqual([
         "fetch",
         "--frozen-lockfile",
         "--ignore-scripts",
         "--reporter=append-only",
-        "--store-dir",
-        NodePath.join(root, ".flows/store/pnpm")
+        "--store-dir"
       ])
+      expect(NodePath.resolve(args.at(-1)!)).toBe(NodePath.join(root, ".flows/store/pnpm"))
     })
   })
 
@@ -1485,15 +1483,16 @@ describe("PackageManager link", () => {
       )
       const manager = await makePnpm(root, executable)
       await Effect.runPromise(manager.link)
-      expect(JSON.parse(await Fs.readFile(invocation, "utf8"))).toEqual([
+      const args: Array<string> = JSON.parse(await Fs.readFile(invocation, "utf8"))
+      expect(args.slice(0, -1)).toEqual([
         "install",
         "--offline",
         "--frozen-lockfile",
         "--ignore-scripts",
         "--reporter=append-only",
-        "--store-dir",
-        NodePath.join(root, ".flows/store/pnpm")
+        "--store-dir"
       ])
+      expect(NodePath.resolve(args.at(-1)!)).toBe(NodePath.join(root, ".flows/store/pnpm"))
     })
   })
 
