@@ -120,7 +120,15 @@ func (h *WorkspaceTerminalHandler) checkOrigin(origin string, r *http.Request) b
 
 func forwardedRequestOrigin(r *http.Request) string {
 	proto := firstForwardedValue(r.Header.Get("X-Forwarded-Proto"))
+	if proto == "" && r.TLS != nil {
+		proto = "https"
+	}
+	// Load balancers that do not rewrite Host send no X-Forwarded-Host; the
+	// request's own Host is then the origin a same-origin client presents.
 	host := firstForwardedValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
 	if proto == "" || host == "" {
 		return ""
 	}

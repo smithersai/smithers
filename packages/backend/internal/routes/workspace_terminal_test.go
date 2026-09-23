@@ -152,6 +152,22 @@ func TestTerminalWebSocket_OriginValidation_AllowsForwardedProxyOrigin(t *testin
 	assert.False(t, handler.checkOrigin("https://evil.example", req))
 }
 
+func TestTerminalWebSocket_OriginValidation_AllowsTheAPIsOwnHost(t *testing.T) {
+	handler := &WorkspaceTerminalHandler{
+		Service:        &mockWorkspaceTerminalService{},
+		AllowedOrigins: []string{"https://smithers.sh"},
+	}
+	// The packaged native window relays its terminal socket with the API's own
+	// origin. A load balancer forwards the scheme but keeps the Host header.
+	req := httptest.NewRequest(http.MethodGet, "/repos/testowner/testrepo/workspace/sessions/abc-123/terminal", nil)
+	req.Host = "api.jjhub.tech"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	assert.True(t, handler.checkOrigin("https://api.jjhub.tech", req))
+	assert.False(t, handler.checkOrigin("http://api.jjhub.tech", req))
+	assert.False(t, handler.checkOrigin("https://evil.example", req))
+}
+
 func TestTerminalWebSocket_OriginValidation_CaseInsensitive(t *testing.T) {
 	handler := &WorkspaceTerminalHandler{
 		Service:        &mockWorkspaceTerminalService{},
