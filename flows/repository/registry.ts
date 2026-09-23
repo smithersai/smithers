@@ -13,7 +13,7 @@ import * as MarkdownFlow from "@smthrs/registry/MarkdownFlow"
 import { registryError } from "@smthrs/registry/RegistryError"
 import { Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
 import { fileURLToPath } from "node:url"
-import { FLOW_AUTHORING_PACK } from "../../packages/rpc/src/FlowAuthoring.ts"
+import { FLOW_AUTHORING_ENTRY, FLOW_AUTHORING_PACK, FLOW_AUTHORING_STAGES } from "../../packages/rpc/src/FlowAuthoring.ts"
 import { deploymentMinutes, deploymentTokens } from "./inspection.ts"
 import { JobInput, JobResult, OperationResult, SetupInput, TriggerRequest } from "./schema.ts"
 import { TriggerOutcome } from "./triggers.ts"
@@ -73,6 +73,15 @@ export const authoringBodies: Effect.Effect<ReadonlyMap<string, string>, Error, 
       if (text.trim() === "") return yield* Effect.fail(new Error(`The built-in flow ${name} has an empty body`))
       bodies.set(name, text)
     }
+    // A control session cannot start another agent inside one cell call: that
+    // nested run would join the journal transaction held by the parent call.
+    // Ship the same stage instructions in the entry prompt so the parent can
+    // work through them and use its own durable `ask` approval boundary.
+    const entry = bodies.get(FLOW_AUTHORING_ENTRY)!
+    const stages = FLOW_AUTHORING_STAGES.map((name, index) =>
+      `## Stage ${index + 1}: ${name}\n\n${MarkdownFlow.loadBody(bodies.get(name)!, "").text.trim()}`
+    )
+    bodies.set(FLOW_AUTHORING_ENTRY, `${entry.trimEnd()}\n\n${stages.join("\n\n")}\n`)
     return bodies
   }
 )

@@ -76,14 +76,22 @@ test("a freshly imported repository can run the flow the app's create door launc
   // The app half depends on this: only a Prompt body reaches the trace and pump.
   assert.equal(resolved.body._tag, "Prompt")
   assert.ok(resolved.body.text.trim().length > 0, "the entry body must carry a prompt")
-  // Every stage is reachable, and reachable BY A MODEL: the entry works
-  // through them as ordinary catalog calls, which only sees `visible()`.
+  for (const heading of [
+    "# Clarify the flow request", "# Provision what the new flow needs", "# Design the flow graph",
+    "# Scaffold the flow", "# Fix the flow until it verifies", "# Document the new flow"
+  ]) {
+    assert.ok(resolved.body.text.includes(heading), `the entry is missing ${heading}`)
+  }
+  assert.ok(resolved.body.text.includes("call `ask`"), "the design must reach the control approval gate")
+  assert.ok(!resolved.body.text.includes("Call one, do what it says"), "the entry must not require nested markdown calls")
+  // The entry owns the stage instructions. Stages remain independently
+  // runnable, but the parent must not see a nested call this host refuses.
   assert.deepEqual(
     resolved.listed.map((entry) => entry.name).filter((name) => name.startsWith("create-flow")).sort(),
     [...FLOW_AUTHORING_PACK].sort()
   )
   for (const stage of FLOW_AUTHORING_STAGES) {
-    assert.ok(resolved.visible.some((entry) => entry.name === stage), `${stage} must be callable by the entry`)
+    assert.ok(!resolved.visible.some((entry) => entry.name === stage), `${stage} must not be callable by the entry`)
   }
   // The 0.x name is not, and never was, in this registry.
   assert.equal(resolved.listed.some((entry) => entry.name === "create-workflow"), false)

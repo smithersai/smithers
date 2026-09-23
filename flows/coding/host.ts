@@ -244,6 +244,7 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
     })), Layer.orDie)
     const host = native.layerHost({ root: options.repositoryPath, stateRoot, credential: options.credential,
       expectedSourceRevision: options.runtimeSourceRevision,
+      approvalChannel: true,
       approvalAuthority: options.approvalAuthority ?? native.gatewayApprovalAuthority }, modules, registry)
     return Layer.effect(Serve.GatewayHost)(Effect.map(Serve.GatewayHost, gateway => ({
       launch: (health, bind, root) => gateway.launch({ ...health, gatewayId: options.gatewayId,

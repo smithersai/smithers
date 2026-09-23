@@ -31,9 +31,9 @@ export const FLOW_AUTHORING_ENTRY = "create-flow"
 /**
  * The stages the entry works through, in order.
  *
- * Each is an independently runnable prompt body. The entry reaches them as
- * ordinary catalog calls, which is why they are registered under their own
- * names rather than inlined into the parent.
+ * Each remains an independently runnable prompt body. The workspace host also
+ * embeds their instructions in the entry so its agent need not start another
+ * agent inside a cell call.
  *
  * @since 1.0.0
  * @category constants

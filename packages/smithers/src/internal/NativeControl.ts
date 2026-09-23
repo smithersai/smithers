@@ -160,6 +160,8 @@ export interface ExecutorOptions {
    * required and `launch` and `resumeRun` are unreachable.
    */
   readonly startsRuns?: boolean | undefined
+  /** A human can answer this executor's in-run waits. */
+  readonly approvalChannel?: boolean | undefined
   /**
    * Trusted native registrations using the existing executable catalog.
    * Built in the engine's registration phase with the guarded host platform;
@@ -1123,6 +1125,7 @@ export const make = (
           quotaPolicy,
           budget: Budget.layerFromEnvelope,
           orderTerminalStatus: supervisor.awaitSettled,
+          approvalChannel: options.approvalChannel,
           // Verdicts are journaled whenever a judge is bound; only the nudge
           // and memory insertion wait for `SMITHERS_SUPERVISOR_STEER=1`, and
           // memory writes for a memory database of the operator's own.
@@ -1242,7 +1245,7 @@ export const make = (
   }
 
   const layerControlFromEngine = (
-    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision">,
+    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel">,
     registry: Layer.Layer<Registry.Registry>,
     engine: EngineDurable,
     modules?: ModuleRegistration
@@ -1256,6 +1259,7 @@ export const make = (
         evaluator: config.evaluator,
         startsRuns: config.startsRuns,
         expectedSourceRevision: config.expectedSourceRevision,
+        approvalChannel: config.approvalChannel,
         mcpServers: config.mcpServers ?? [],
         executionRoot: config.executionRoot ?? root,
         ...(config.stateRoot === undefined ? {} : { stateRoot: config.stateRoot }),
@@ -1333,7 +1337,7 @@ export const make = (
   const layerMemory = (root: string, engine: EngineDurable = engineDurable(root)) =>
     MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
   const layerHost = (
-    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision">,
+    config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel">,
     modules?: ModuleRegistration,
     suppliedRegistry?: Layer.Layer<Registry.Registry>
   ) => {
