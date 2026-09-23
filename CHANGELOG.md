@@ -9,10 +9,13 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2840 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2846 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **evals:** Harbor and Pier environments on Smithers Cloud workspaces ([b8280fa3ef](https://github.com/smithersai/smithers/commit/b8280fa3ef52d1aa288bfd56f3debce9209e3655))
+- **evals:** Harbor and Pier adapter for the flows harness, and the SWE-bench env-var fix ([bf676de99c](https://github.com/smithersai/smithers/commit/bf676de99cda65926b7afac969fd882fafe09f7f))
+- **tui:** minimal terminal coding agent over the cell harness ([cf75a587a6](https://github.com/smithersai/smithers/commit/cf75a587a6de007b24211cfcb58baa49cc33224d))
 - **distribution:** prove self-host coding Flow in Python-free image ([ac12be33d5](https://github.com/smithersai/smithers/commit/ac12be33d597b266e5a2d8f9ad114ab17258c5f6))
 - **db:** reconcile product migration adoption and Plue schema boundary ([63a3b9cdd6](https://github.com/smithersai/smithers/commit/63a3b9cdd6c055f121cc609df951d21b6d276c51))
 - **agent:** let a host disarm the claim brake through Agent.Options ([cb8439fc31](https://github.com/smithersai/smithers/commit/cb8439fc314ddc5c78be0e49c8df77e334fb9b6a))
@@ -295,6 +298,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** provision filesystem helper and clear package gates ([1af8c2fae1](https://github.com/smithersai/smithers/commit/1af8c2fae1031662ee2f517f4af050eb2af86d6f))
+- **evals:** plue env deletes a failed boot and never copies to an auto-detected workspace ([d1d0970ee6](https://github.com/smithersai/smithers/commit/d1d0970ee681bc1f7ff746cc4cbd1f23c075d646))
+- **harness:** observe writes a bash call makes inside a container ([d2b56ee18f](https://github.com/smithersai/smithers/commit/d2b56ee18f4b98e4a36f0ee3a0d3479781147170))
 - **release:** keep private native gate independent of npm train ([ac9b05cb15](https://github.com/smithersai/smithers/commit/ac9b05cb1562ad9b304469796360da2a070b75ff))
 - **distribution:** build web assets on a compatible libc ([544822c8a3](https://github.com/smithersai/smithers/commit/544822c8a3ef973a00ad823721ddcdb06d18ebfd))
 - **matrix:** identify native target after route change ([a76e8d00ad](https://github.com/smithersai/smithers/commit/a76e8d00adeee3c7496005e89ee1b040a1e3b06e))
