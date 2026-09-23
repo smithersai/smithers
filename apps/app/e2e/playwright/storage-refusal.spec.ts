@@ -357,7 +357,9 @@ test("oversized physical event authority refuses without loading its bytes and t
   const sizeQuery = "SELECT length(CAST(value AS BLOB)) AS bytes, version_key FROM smithers_collection_rows WHERE collection_id = 'app-events' AND row_key = 's:oversized-evidence'"
   expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
   await page.goto("/")
-  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
+  // CI observed the 64 MiB OPFS refusal at 4.9 s, just before the default
+  // assertion expired. Allow the physical read and React error panel to settle.
+  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText("The app-events store exceeds", { exact: false })).toBeVisible()
   await expect(page.getByTestId("composer-input")).toHaveCount(0)
   expect(await queryDatabase(page, sizeQuery, true)).toEqual([{ bytes, version_key: "oversized-v1" }])
