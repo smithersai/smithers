@@ -38,6 +38,22 @@ const start = async (store: AppStore, suffix = "", raw = token) => {
 }
 
 describe("private delete-only remote retirement outbox", () => {
+  test("an ephemeral side turn keeps its proof across failed delivery, disposal, and retry", async () => {
+    const { storage, bytes } = memory()
+    const store = await open(storage)
+    expect(store.queueTurnErasure("explain-run", { legId: "explain-leg", token })).toBe(true)
+    expect(readResetErasures(storage)).toEqual([entry("explain-run", "explain-leg")])
+    expect(JSON.stringify([...bytes])).not.toContain(token)
+    await store.dispose?.()
+    const failed = createRemoteRetirementWorker(storage, async () => { throw new Error("offline") })
+    failed.wake(); await failed.settled(); await failed.dispose()
+    expect(readResetErasures(storage)).toEqual([entry("explain-run", "explain-leg")])
+    const erased: AgentTurnErasure[] = []
+    const retried = createRemoteRetirementWorker(storage, async value => { erased.push(value) })
+    retried.wake(); await retried.settled(); await retried.dispose()
+    expect(erased).toEqual([entry("explain-run", "explain-leg")])
+    expect(readResetErasures(storage)).toEqual([])
+  })
   test("reset stages its known queue before erase and a refused staging write preserves the original marker", () => {
     const { storage } = memory(); retire(storage)
     const original = storage.getItem(PRIVACY_RETIREMENT_KEY)

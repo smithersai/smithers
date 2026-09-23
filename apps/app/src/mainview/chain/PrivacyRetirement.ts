@@ -154,6 +154,11 @@ export const deriveTurnErasures = (legs: Iterable<{ readonly turnId: string; rea
   [...legs].map(leg => AgentTurnErasureSchema.parse({ runId: leg.turnId, legId: leg.journal.legId,
     retirementProof: digest(agentTurnJournalDigestInput("access", leg.journal.token)) }))
 
+/** Keep a side turn's delete-only proof before its in-memory replay token is released. */
+export const enqueueTurnErasure = (storage: StorageApi, entry: AgentTurnErasure): void => {
+  storeResetErasures(storage, mergeErasures(readResetErasures(storage), [entry]))
+}
+
 /** Ack only the exact scoped delete capability; never replace a newer intent with an old snapshot. */
 export const acknowledgeRemoteErasure = (storage: StorageApi, acknowledged: AgentTurnErasure): void => {
   const current = readPrivacyRetirement(storage)

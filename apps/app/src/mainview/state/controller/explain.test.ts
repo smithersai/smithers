@@ -5,6 +5,7 @@ import { createAppStore } from "../AppStore"
 import { memoryStorage } from "../TestFixtures"
 import { createControllerContext, type ControllerContext } from "./context"
 import { createExplainController } from "./explain"
+import { createWebAgent } from "../../native/WebAgent"
 
 const recordingController = () => {
   const launches: StartAgentTurnRequest[] = []
@@ -135,13 +136,15 @@ describe("explanations belong to the controller disposal scope", () => {
       await ctx.dispose()
       expect(identityListeners.size).toBe(0)
       const listenersAfterDispose = listeners.size
+      const afterDispose = dispatches.length
       for (const listener of queued) {
         listener({ runId: launches[0]!.runId, type: "delta", kind: "text", text: "late answer" })
         listener({ runId: launches[0]!.runId, type: "done", reason: "stop" })
       }
-      expect({ listeners: listenersAfterDispose, cancelled, lateDispatches: dispatches.length - before }).toEqual({
+      expect({ listeners: listenersAfterDispose, cancelled, failedCards: afterDispose - before, lateDispatches: dispatches.length - afterDispose }).toEqual({
         listeners: 0,
         cancelled: launches.map(({ runId }) => runId).reverse(),
+        failedCards: 2,
         lateDispatches: 0
       })
       for (const timer of timers) expect(clear).toHaveBeenCalledWith(timer)
@@ -248,4 +251,173 @@ describe("the explainer seat", () => {
     expect("model" in t.launches[0]!).toBe(false)
     await t.close()
   })
+})
+
+test("the Explainer posts a journal turn and projects the HTTP delivery into its card", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  let posted: StartAgentTurnRequest | undefined
+  const agent = createWebAgent({ fetchImpl: async (input, init) => {
+    if (String(input) === "/api/agent/turn/retire") return Response.json({ status: "retired" })
+    expect(String(input)).toBe("/api/agent/turn")
+    posted = JSON.parse(String(init?.body)) as StartAgentTurnRequest
+    const access = posted.journal!
+    const initial = { version: 1, runId: posted.runId, legId: access.legId, batch: 0, position: 0, hash: "0".repeat(64) }
+    const batch = { version: 1, runId: posted.runId, legId: access.legId, batch: 1, from: 1,
+      previousHash: initial.hash, hash: "1".repeat(64), frames: [
+        { runId: posted.runId, type: "delta", kind: "text", text: "Because the target failed." },
+        { runId: posted.runId, type: "done", reason: "stop" }
+      ] }
+    const cursor = { ...initial, batch: 1, position: 2, hash: batch.hash }
+    return new Response(`${JSON.stringify({ type: "accepted", cursor: initial })}\n${JSON.stringify({ type: "batch", batch, cursor })}\n`, {
+      status: 200, headers: { "content-type": "application/x-ndjson", "x-smithers-turn-journal": "1" }
+    })
+  } })
+  const ctx = createControllerContext(store, {
+    available: false, pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
+  }, agent, {})
+  try {
+    await createExplainController(ctx).explain("Why did it fail?")
+    for (let i = 0; i < 10; i++) await new Promise(resolve => setTimeout(resolve, 0))
+    expect(posted).toMatchObject({ purpose: "explain", role: "explainer", journal: { version: 1 } })
+    expect(posted?.journal?.token).toMatch(/^[0-9a-f]{64}$/)
+    expect(store.collections.cards.get(`explain-${posted!.runId}`)).toMatchObject({
+      status: "acted", payload: { phase: "answered", answer: "Because the target failed." }
+    })
+  } finally { await ctx.dispose(); await store.dispose?.() }
+})
+
+test("disposing a journal Explainer cancels its side turn and ignores later output", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const cancelled: string[] = []
+  let request: StartAgentTurnRequest | undefined
+  let deliver: ((delivery: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalDelivery) => Promise<void>) | undefined
+  const agent: AgentPort = {
+    available: true,
+    journal: {
+      subscribe: listener => { deliver = listener; return () => { deliver = undefined } },
+      read: async () => ({ status: "error", code: "not-found" }),
+      retire: async () => {}, disconnect: () => {}
+    },
+    subscribe: () => () => {},
+    startTurn: async value => { request = value; return { status: "started" } },
+    cancelTurn: async runId => { cancelled.push(runId) }
+  }
+  const ctx = createControllerContext(store, {
+    available: false, pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
+  }, agent, {})
+  try {
+    await createExplainController(ctx).explain("Why?")
+    expect(request?.journal).toBeDefined()
+    const late = deliver
+    await ctx.dispose()
+    const before = store.collections.cards.get(`explain-${request!.runId}`)
+    expect(cancelled).toEqual([request!.runId])
+    expect(before).toMatchObject({ payload: { phase: "failed", error: "The explanation was stopped." } })
+    expect(deliver).toBeUndefined()
+    await late?.({ type: "accepted", cursor: { version: 1, runId: request!.runId,
+      legId: request!.journal!.legId, batch: 0, position: 0, hash: "0".repeat(64) } })
+    expect(store.collections.cards.get(`explain-${request!.runId}`)).toEqual(before)
+  } finally { await ctx.dispose(); await store.dispose?.() }
+})
+
+test("replay and live delivery of one batch apply its text once, and a changed duplicate fails", async () => {
+  const held = Promise.withResolvers<void>()
+  const actions: Parameters<ControllerContext["store"]["dispatch"]>[0][] = []
+  let request: StartAgentTurnRequest | undefined
+  let deliver: ((delivery: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalDelivery) => Promise<void>) | undefined
+  let replayReads = 0
+  let erased = 0
+  const initial = (runId: string, legId: string) => ({ version: 1 as const, runId, legId, batch: 0, position: 0, hash: "0".repeat(64) })
+  const first = (runId: string, legId: string) => {
+    const start = initial(runId, legId)
+    const batch = { version: 1 as const, runId, legId, batch: 1, from: 1, previousHash: start.hash,
+      hash: "1".repeat(64), frames: [{ runId, type: "delta" as const, kind: "text" as const, text: "A" }] }
+    return { type: "batch" as const, batch, cursor: { ...start, batch: 1, position: 1, hash: batch.hash } }
+  }
+  const agent: AgentPort = {
+    available: true,
+    journal: {
+      subscribe: listener => { deliver = listener; return () => { deliver = undefined } },
+      read: async () => {
+        replayReads++
+        const start = initial(request!.runId, request!.journal!.legId), row = first(request!.runId, request!.journal!.legId)
+        return { status: "ok", after: start, next: row.cursor, head: row.cursor, terminal: false, more: false, batches: [row.batch] }
+      },
+      retire: async () => {}, disconnect: () => {}
+    },
+    subscribe: () => () => {},
+    startTurn: async value => { request = value; return { status: "error", message: "The POST lost its response." } },
+    cancelTurn: async () => {}
+  }
+  const controller = createExplainController({
+    store: {
+      collections: { seats: new Map(), models: new Map() },
+      dispatch: (action: (typeof actions)[number]) => {
+        actions.push(action)
+        const card = action.type === "card.upsert" && action.card.kind === "explain" ? action.card : undefined
+        return { isPersisted: { promise: card?.payload.answer === "A" && card.payload.phase === "asking" ? held.promise : Promise.resolve() } }
+      },
+      queueTurnErasure: () => { erased++; return true }
+    },
+    services: {}, agent, unref: () => {}, onDispose: () => {}
+  } as unknown as ControllerContext)
+  await controller.explain("Why?")
+  expect(actions.at(-1)).toMatchObject({ card: { payload: { phase: "asking" } } })
+  const runId = request!.runId, legId = request!.journal!.legId
+  await deliver!({ type: "accepted", cursor: initial(runId, legId) })
+  // The polling read starts from the accepted cursor. Hold its card commit,
+  // then deliver the same batch on the live stream during that await.
+  for (let i = 0; i < 150 && actions.filter(action => action.type === "card.upsert" && action.card.kind === "explain" && action.card.payload.answer === "A").length === 0; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  expect(replayReads).toBeGreaterThan(0)
+  const duplicate = deliver!(first(runId, legId))
+  held.resolve()
+  await duplicate
+  expect(actions.filter(action => action.type === "card.upsert" && action.card.kind === "explain" && action.card.payload.answer === "A")).toHaveLength(1)
+  const changed = first(runId, legId)
+  await deliver!({ ...changed, batch: { ...changed.batch, hash: "2".repeat(64) }, cursor: { ...changed.cursor, hash: "2".repeat(64) } })
+  expect(actions.at(-1)).toMatchObject({ card: { payload: { phase: "failed", error: "The explainer response failed an integrity check.", answer: "A" } } })
+  expect(erased).toBe(1)
+})
+
+test("terminal cleanup waits for the answered card's durable receipt", async () => {
+  const saved = Promise.withResolvers<void>()
+  let request: StartAgentTurnRequest | undefined
+  let deliver: ((delivery: import("@smthrs/rpc/AgentTurnJournal").AgentTurnJournalDelivery) => Promise<void>) | undefined
+  let queued = 0
+  const agent: AgentPort = {
+    available: true,
+    journal: {
+      subscribe: listener => { deliver = listener; return () => { deliver = undefined } },
+      read: async () => ({ status: "error", code: "not-found" }), retire: async () => {}, disconnect: () => {}
+    },
+    subscribe: () => () => {},
+    startTurn: async value => { request = value; return { status: "started" } },
+    cancelTurn: async () => {}
+  }
+  const controller = createExplainController({
+    store: {
+      collections: { seats: new Map(), models: new Map() },
+      dispatch: (action: Parameters<ControllerContext["store"]["dispatch"]>[0]) => ({
+        isPersisted: { promise: action.type === "card.upsert" && action.card.kind === "explain" && action.card.payload.phase === "answered"
+          ? saved.promise : Promise.resolve() }
+      }),
+      queueTurnErasure: () => { queued++; return true }
+    },
+    services: {}, agent, unref: () => {}, onDispose: () => {}
+  } as unknown as ControllerContext)
+  await controller.explain("Why?")
+  const runId = request!.runId, legId = request!.journal!.legId
+  const accepted = { version: 1 as const, runId, legId, batch: 0, position: 0, hash: "0".repeat(64) }
+  await deliver!({ type: "accepted", cursor: accepted })
+  const batch = { version: 1 as const, runId, legId, batch: 1, from: 1, previousHash: accepted.hash, hash: "1".repeat(64),
+    frames: [{ runId, type: "delta" as const, kind: "text" as const, text: "Because." }, { runId, type: "done" as const, reason: "stop" as const }] }
+  const completion = deliver!({ type: "batch", batch, cursor: { ...accepted, batch: 1, position: 2, hash: batch.hash } })
+  await Promise.resolve()
+  expect(queued).toBe(0)
+  saved.resolve()
+  await completion
+  await Promise.resolve()
+  expect(queued).toBe(1)
 })

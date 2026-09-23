@@ -1,8 +1,10 @@
 import { Schema } from "effect"
+import { canonicalize } from "@smthrs/canonical/Serializer"
 import { agentRole } from "@smthrs/rpc/AgentRoles"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import { bindingOf } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
+import type { AgentTurnCursor, AgentTurnJournalDelivery, AgentTurnJournalRequest } from "@smthrs/rpc/AgentTurnJournal"
 import type { ControllerContext } from "./context"
 import { assignedModel } from "./modelSeats"
 
@@ -75,15 +77,26 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
     if (!agent.available && !(bound !== undefined && ctx.services.bootstrap !== undefined && hasCapability(ctx.services.bootstrap, "model.turn"))) {
       return "There is no agent on this host to explain with."
     }
-    const runId = `explain-${Date.now()}`
+    const runId = `explain-${crypto.randomUUID()}`
     const cardId = `explain-${runId}`
     const now = Date.now()
     let answer = ""
     let settled = false
     let unsubscribe: () => void = () => {}
     let timer: ReturnType<typeof setTimeout> | undefined
+    let replayTimer: ReturnType<typeof setTimeout> | undefined
+    let cursor: AgentTurnCursor | undefined
+    const applied = new Map<number, string>()
+    let pending = Promise.resolve()
+    let lastCardCommit: Promise<unknown> = Promise.resolve()
+    let cleanup = Promise.resolve()
+    let launchFailure: string | undefined
+    const journal: AgentTurnJournalRequest | undefined = agent.journal === undefined ? undefined : {
+      version: 1, legId: crypto.randomUUID(),
+      token: [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, "0")).join("")
+    }
     const patch = (phase: "asking" | "answered" | "failed", error?: string): void => {
-      store.dispatch({
+      const receipt = store.dispatch({
         type: "card.upsert",
         actor: "smithers",
         card: {
@@ -96,20 +109,31 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
           payload: { question, answer, phase, answeredBy: bound?.id ?? ANSWERED_BY, ...(error === undefined ? {} : { error }) }
         }
       })
+      lastCardCommit = receipt?.isPersisted?.promise ?? Promise.resolve()
     }
     const finish = (phase: "answered" | "failed", error?: string): void => {
       if (settled) return
       settled = true
       if (timer !== undefined) clearTimeout(timer)
+      if (replayTimer !== undefined) clearTimeout(replayTimer)
       unsubscribe()
       patch(phase, error)
+      if (journal !== undefined) {
+        cleanup = lastCardCommit.catch(() => {}).then(async () => {
+          // Wait for the card receipt before releasing remote output. Even if
+          // that write fails, keep a delete-only proof for offline cleanup.
+          if (store.queueTurnErasure?.(runId, journal)) return
+          await agent.journal!.retire({ runId, journal })
+        })
+        void cleanup.catch(() => {})
+      }
     }
-    const closing = ctx.onDispose(() => {
-      if (settled) return
-      settled = true
-      if (timer !== undefined) clearTimeout(timer)
-      unsubscribe()
-      return agent.cancelTurn(runId).catch(() => {})
+    const closing = ctx.onDispose(async () => {
+      if (!settled) {
+        finish("failed", "The explanation was stopped.")
+        await agent.cancelTurn(runId).catch(() => {})
+      }
+      await cleanup
     })
     // A call made after scope closure must not acquire resources or write a card.
     if (settled) {
@@ -117,7 +141,9 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
       return
     }
     patch("asking")
-    unsubscribe = agent.subscribe((frame: AgentTurnFrame) => {
+    if (journal !== undefined) await lastCardCommit
+    if (settled) return
+    const applyFrame = (frame: AgentTurnFrame): void => {
       if (frame.runId !== runId || settled) return
       if (frame.type === "delta") {
         if (frame.kind === "text") {
@@ -131,9 +157,74 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
         else if (answer.trim() === "") finish("failed", "The explainer answered nothing.")
         else finish("answered")
       }
-    })
+    }
+    if (journal === undefined) {
+      unsubscribe = agent.subscribe(applyFrame)
+    } else {
+      const applyDelivery = (delivery: AgentTurnJournalDelivery): void => {
+        if (settled || delivery.cursor.runId !== runId || delivery.cursor.legId !== journal.legId) return
+        if (delivery.type === "accepted") {
+          if (cursor === undefined) cursor = delivery.cursor
+          else if (cursor.batch === 0 && cursor.hash !== delivery.cursor.hash) finish("failed", "The explainer response failed an integrity check.")
+          return
+        }
+        if (delivery.type !== "batch") return
+        const batch = delivery.batch
+        if (batch.runId !== runId || batch.legId !== journal.legId ||
+          delivery.cursor.batch !== batch.batch || delivery.cursor.hash !== batch.hash ||
+          delivery.cursor.position !== batch.from + batch.frames.length - 1) {
+          finish("failed", "The explainer response failed an integrity check.")
+          return
+        }
+        if (cursor !== undefined && batch.batch <= cursor.batch) {
+          if (applied.get(batch.batch) !== canonicalize(batch)) finish("failed", "The explainer response failed an integrity check.")
+          return
+        }
+        if (cursor === undefined || batch.batch !== cursor.batch + 1 || batch.from !== cursor.position + 1 || batch.previousHash !== cursor.hash) {
+          finish("failed", "The explainer response failed an integrity check.")
+          return
+        }
+        applied.set(batch.batch, canonicalize(batch))
+        cursor = delivery.cursor
+        for (const frame of batch.frames) applyFrame(frame)
+      }
+      const enqueue = (delivery: AgentTurnJournalDelivery): Promise<void> => {
+        const next = pending.then(async () => {
+          applyDelivery(delivery)
+          // A journal delivery is acknowledged only after the card projection is saved.
+          await lastCardCommit
+        })
+        pending = next.catch(() => finish("failed", "The explainer response could not be saved."))
+        return next
+      }
+      unsubscribe = agent.journal!.subscribe(enqueue)
+      const catchUp = async (): Promise<void> => {
+        if (settled) return
+        try {
+          const before = cursor
+          const reply = await agent.journal!.read({ runId, journal, after: before ?? null })
+          await pending
+          if (settled || before !== cursor) return
+          if (reply.status === "ok") {
+            if (cursor === undefined) await enqueue({ type: "accepted", cursor: reply.after })
+            for (const batch of reply.batches) await enqueue({ type: "batch", batch, cursor: {
+              version: 1, runId, legId: journal.legId, batch: batch.batch,
+              position: batch.from + batch.frames.length - 1, hash: batch.hash
+            } })
+          } else if (reply.status !== "error" || (reply.code !== "not-found" && reply.code !== "storage_failed")) {
+            finish("failed", "The explainer response could not be recovered.")
+          }
+        } catch { finish("failed", "The explainer response could not be recovered.") }
+      }
+      const scheduleReplay = (): void => {
+        if (settled) return
+        replayTimer = setTimeout(() => { void catchUp().finally(scheduleReplay) }, 1_000)
+        ctx.unref(replayTimer)
+      }
+      scheduleReplay()
+    }
     timer = setTimeout(() => {
-      finish("failed", "The explainer took too long to answer.")
+      finish("failed", launchFailure ?? "The explainer took too long to answer.")
       void agent.cancelTurn(runId).catch(() => {})
     }, timeoutMs)
     ctx.unref(timer)
@@ -150,11 +241,16 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
         instructions: explainInstructions(),
         purpose: "explain",
         role: "explainer",
+        ...(journal === undefined ? {} : { journal }),
         ...(bound === undefined ? {} : { model: bindingOf(bound) })
       })
-      if (result.status === "error") finish("failed", result.message)
+      if (result.status === "error") {
+        if (journal === undefined) finish("failed", result.message)
+        else launchFailure = result.message
+      }
     } catch (error) {
-      finish("failed", error instanceof Error ? error.message : String(error))
+      if (journal === undefined) finish("failed", error instanceof Error ? error.message : String(error))
+      else launchFailure = error instanceof Error ? error.message : String(error)
     }
   }
 

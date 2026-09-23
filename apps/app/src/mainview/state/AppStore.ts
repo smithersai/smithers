@@ -8,7 +8,7 @@ import type { CollectionPersistence,DurableRowSink } from "../chain/DurableColle
 import { createCollectionPersistence,durableCollectionOptions } from "../chain/DurableCollection"
 import type { PersistedLoadReport } from "../chain/PersistenceBudget"
 import { EMPTY_PERSISTED_LOAD,PERSISTED_JOURNAL_COMPACTION_BYTES,PERSISTED_LOAD_TOAST_KEY,PERSISTED_LOAD_TOAST_TITLE,persistedLoadNotice } from "../chain/PersistenceBudget"
-import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,retargetPrivacyRetirement,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
+import { PrivacyRetirementError,RESET_ERASURE_OUTBOX_KEY,addPendingTurnErasures,beginPrivacyRetirement,completePrivacyRetirement,deriveTurnErasures,enqueueTurnErasure,eraseLocalRecoveryCopies,preserveResetErasures,privacyStorage,readPrivacyRetirement,readResetErasures,retargetPrivacyRetirement,type PermittedStorageRows,type PrivacyRetirement } from "../chain/PrivacyRetirement"
 import { createRemoteRetirementWorker } from "../chain/RemoteRetirement"
 import {
 APP_SCHEMA_VERSION,
@@ -775,6 +775,8 @@ export interface AppStore {
   readonly readRecovery: () => Promise<StorageRecoverySnapshot>
   /** Content-free diagnostics; delete capabilities never leave the storage owner. */
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
+  /** Save a delete-only obligation before releasing an ephemeral side-turn token. */
+  readonly queueTurnErasure: (runId: string, journal: { readonly legId: string; readonly token: string }) => boolean
   /** Stop controller producers before replacing the revoked document's UI. */
   readonly onWriterLost?: (listener: () => void) => () => void
   /** Commit a pending draft, then release persistence resources acquired for this store. */
@@ -1899,6 +1901,13 @@ const initializeAppStore = async (
       const reset = privacyRecord === undefined ? [] : readResetErasures(privacyRecord)
       const remotePending = new Set([...(intent?.erasures ?? []), ...reset].map(entry => JSON.stringify([entry.runId, entry.legId]))).size
       return { phase: reset.length > 0 && (intent === undefined || intent.phase === "complete") ? "remote-pending" : intent?.phase ?? "none", remotePending }
+    },
+    queueTurnErasure: (runId, journal) => {
+      assertReadable()
+      if (privacyRecord === undefined) return false
+      enqueueTurnErasure(privacyRecord, deriveTurnErasures([{ turnId: runId, journal }])[0]!)
+      wakeRemoteRetirement()
+      return true
     },
     settled: () => { commitDraft(); return collectionPersistence.settled() },
     dispose: () => {
