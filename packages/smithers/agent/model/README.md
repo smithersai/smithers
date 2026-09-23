@@ -106,7 +106,7 @@ The root entry point exports these namespaces. Each is also importable from
 - **`Protocol`**: The wire contract of a model API family, split from the deployment that serves it.
   `Protocol`, `ProtocolBody`, `ProtocolStream`, `make`, `jsonEvent`
 - **`RequestExecutor`**: Executes provider requests with bounded retries, quota classification, and credential-safe diagnostics.
-  `ErrorClassifier`, `ExecuteOptions`, `RequestError`, `rebuildAfter`, `Transport`, `fixed`, `RequestExecutor`, `makeWith`, `make`, `layer`
+  `ErrorClassifier`, `ExecuteOptions`, `RequestError`, `rebuildAfter`, `defaultResponseStartMs`, `Transport`, `fixed`, `RequestExecutor`, `makeWith`, `make`, `layer`
 - **`Route`**: A resolved model route: an endpoint, a protocol, a framing, and the credentials to authorize with.
   `PreparedRequest`, `Config`, `Route`, `prepare`, `make`, `toModel`, `layer`, `anthropic`, `openai`, `openaiResponsesCompatible`, `openaiChatCompatible`
 - **`ToolStream`**: Pure accumulation of fragmented provider tool-call arguments.

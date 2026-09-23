@@ -244,7 +244,8 @@ it.
 | Export             | Kind        | Behavior                                                                                                                                                  |
 | ------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Endpoint`         | interface   | `{ method: "POST", url, query }`.                                                                                                                         |
-| `MakeOptions`      | interface   | `{ url, path?, query? }`. `query` accepts pairs or a record.                                                                                              |
+| `MakeOptions`                   | interface                 | `{ maxRetries?, responseStartMs? }`: retries after the first attempt (default `2`; `0` is a single attempt; negative is `0`), and how long an attempt may wait for its response to start (default `defaultResponseStartMs`; `0` disarms). |
+| `defaultResponseStartMs`        | constant                  | `60_000`: an attempt whose status and headers have not arrived by then fails as a retryable `transport` error. Reasoning streams are silent between chunks, so only the start is bounded. |
 | `make(input)`      | constructor | `Result<Endpoint, ModelError>`. Validates and normalizes: query pairs are sorted by name then value, and the path is joined onto the URL's existing path. |
 | `render(endpoint)` | formatting  | Renders the exact deterministic URL.                                                                                                                      |
 

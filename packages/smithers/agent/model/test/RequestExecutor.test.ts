@@ -1966,6 +1966,8 @@ describe("RequestExecutor", () => {
   })
 
   it("does not count a failure from a client it has already replaced", async () => {
+    // Attempts here are held open across two-minute clock jumps on purpose, so
+    // the response-start bound is disarmed; it has its own tests below.
     // A request still in flight on the old pool fails after the replacement
     // is in hand. That verdict is about a client nobody uses any more, so it
     // must not bring the replacement closer to being thrown away in turn.
@@ -1996,7 +1998,7 @@ describe("RequestExecutor", () => {
               rebuilds += 1
               return fresh
             })
-          })
+          }, { responseStartMs: 0 })
 
           const hung = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
           yield* settle
@@ -2040,6 +2042,7 @@ describe("RequestExecutor", () => {
   })
 
   it("does not let a stale success reset its replacement's failure count", async () => {
+    // Held open across clock jumps on purpose; see the test above.
     let rebuilds = 0
     let staleCalls = 0
     let freshCalls = 0
@@ -2065,7 +2068,7 @@ describe("RequestExecutor", () => {
             rebuilds++
             return rebuilds === 1 ? fresh : healthy
           })
-        })
+        }, { responseStartMs: 0 })
         const hung = yield* execute(executor, request()).pipe(Effect.forkChild)
         yield* settle
         const exhaust = () =>
@@ -2376,5 +2379,56 @@ describe("RequestExecutor", () => {
       expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), options)).attempts).toBe(3)
     }
     expect((await singleAttempt(answers({ status: 503, body: "unavailable" }), { maxRetries: -1 })).attempts).toBe(1)
+  })
+})
+
+describe("response start", () => {
+  // A provider that accepts the request and never answers held one TUI turn
+  // silent for the whole 300 s model-call budget before anything retried.
+  const stalledOnce = (attempts: { count: number }) =>
+    HttpClient.make((sent) =>
+      Effect.suspend(() => {
+        attempts.count += 1
+        return attempts.count === 1 ? Effect.never : Effect.succeed(response(sent, { status: 200, body: "ok" }))
+      })
+    )
+
+  it("retries an attempt whose response has not started within responseStartMs", async () => {
+    const attempts = { count: 0 }
+    const status = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(stalledOnce(attempts)), {
+            responseStartMs: 60_000
+          })
+          const fiber = yield* execute(executor, request()).pipe(Effect.forkChild)
+          while (attempts.count < 1) yield* Effect.yieldNow
+          yield* TestClock.adjust(59_999)
+          expect(attempts.count).toBe(1)
+          yield* TestClock.adjust(1)
+          yield* TestClock.adjust(10_000)
+          return (yield* Fiber.join(fiber)).status
+        }).pipe(Effect.provide(TestClock.layer()), Effect.provideService(HttpClient.TracerDisabledWhen, () => true))
+      )
+    )
+    expect(status).toBe(200)
+    expect(attempts.count).toBe(2)
+  })
+
+  it("arms 60 s by default and reports the stall as a retryable transport failure", async () => {
+    const never = HttpClient.make(() => Effect.never)
+    const error = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.makeWith(RequestExecutor.fixed(never), { maxRetries: 0 })
+          const fiber = yield* execute(executor, request()).pipe(Effect.flip, Effect.forkChild)
+          yield* TestClock.adjust(RequestExecutor.defaultResponseStartMs)
+          return yield* Fiber.join(fiber)
+        }).pipe(Effect.provide(TestClock.layer()), Effect.provideService(HttpClient.TracerDisabledWhen, () => true))
+      )
+    )
+    const failure = expectModelError(error)
+    expect(failure.code).toBe("transport")
+    expect(failure.retryable).toBe(true)
   })
 })

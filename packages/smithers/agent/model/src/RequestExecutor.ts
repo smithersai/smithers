@@ -849,7 +849,36 @@ export interface MakeOptions {
    * a count that is not a finite number is the default.
    */
   readonly maxRetries?: number | undefined
+  /**
+   * Milliseconds an attempt may wait for its response to start: the status
+   * line and headers, not the body. Defaults to {@link defaultResponseStartMs};
+   * 0 disarms it.
+   */
+  readonly responseStartMs?: number | undefined
 }
+
+/**
+ * How long an attempt may wait for the provider to start answering.
+ *
+ * A reasoning model streams nothing while it thinks, so no bound on the gap
+ * between body chunks is safe: a direct probe of the ChatGPT backend on
+ * 2026-09-22 went 5.3 s between chunks on one short proof, and a longer one
+ * goes minutes. The response itself starts at once: the same probes had
+ * headers at 0.9 s and 3.3 s, followed by `response.created` within 30 ms.
+ * A request the backend accepted and never answered held a TUI turn silent
+ * for the whole 300 s model-call budget (`CellTurn.defaultModelCallMs`)
+ * before the retry that then answered immediately. Sixty seconds is about
+ * eighteen times the slowest start measured, and a stall fails as `transport`,
+ * so it is retried and counts toward replacing the connection pool.
+ *
+ * Undici bounds the same wait itself (`headersTimeout`, 300 s by default);
+ * Bun's fetch, which a Bun host uses because Undici's pool does not run
+ * there, bounds nothing.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const defaultResponseStartMs = 60_000
 
 /**
  * Scoped provider request executor.
@@ -902,6 +931,9 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
     const maxRetries = options.maxRetries !== undefined && Number.isFinite(options.maxRetries)
       ? Math.max(0, Math.floor(options.maxRetries))
       : MAX_RETRIES
+    const responseStartMs = options.responseStartMs !== undefined && Number.isFinite(options.responseStartMs)
+      ? Math.max(0, Math.floor(options.responseStartMs))
+      : defaultResponseStartMs
     let http = transport.client
     /**
      * Which client `http` is: bumped by every replacement, and stamped on each
@@ -943,12 +975,25 @@ export const makeWith = (transport: Transport, options: MakeOptions = {}): Effec
         const client = http
         const on = generation
         const redactedNames = [...yield* Headers.CurrentRedactedNames, SENSITIVE_NAME]
-        const response = yield* client.execute(request).pipe(
+        const started = client.execute(request).pipe(
           // `model:call` on this model, not a plain `net:*` effect: the same host
           // answers many models and a grant for one is not a grant for the rest.
           KernelHttpClient.withModelCall(options.modelId),
           Effect.provideService(Headers.CurrentRedactedNames, redactedNames),
-          Effect.mapError((error) => mapHttpError(error, redactedNames)),
+          Effect.mapError((error) => mapHttpError(error, redactedNames))
+        )
+        const response = yield* (responseStartMs === 0 ? started : started.pipe(
+          Effect.timeoutOrElse({
+            duration: Duration.millis(responseStartMs),
+            orElse: () =>
+              Effect.fail(
+                new ModelError({
+                  code: "transport",
+                  message: `The provider did not start a response within ${responseStartMs / 1000} s`
+                })
+              )
+          })
+        )).pipe(
           // A response of any kind clears the count. Only the transport failing
           // says the client itself may be the problem; a 429 or a 500 arrived
           // over a connection that worked. A verdict on a client that has
