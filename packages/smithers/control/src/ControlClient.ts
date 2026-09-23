@@ -30,7 +30,6 @@ import {
  *
  * @category refinements
  * @since 0.1.0
- * @slop
  */
 export const isControlError = Schema.is(ControlErrorSchema)
 
@@ -239,7 +238,6 @@ const normalizeStreamRequest = <A, E, R>(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ClientConfig {
   readonly url: string
@@ -256,7 +254,6 @@ export interface ClientConfig {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (config: ClientConfig) => {
   const http = RpcClient.layerProtocolHttp({

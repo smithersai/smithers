@@ -29,7 +29,6 @@ import type {
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const emptyEnvelope: Envelope = {
   capabilities: [],
@@ -44,7 +43,6 @@ export const emptyEnvelope: Envelope = {
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const canonical = (value: unknown): string => canonicalize(value)
 
@@ -53,7 +51,6 @@ export const canonical = (value: unknown): string => canonicalize(value)
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const digest = (value: unknown) => Schema.decodeUnknownEffect(Sha256)(canonical(value)).pipe(Effect.orDie)
 
@@ -62,7 +59,6 @@ export const digest = (value: unknown) => Schema.decodeUnknownEffect(Sha256)(can
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const sameEnvelope = (left: Envelope, right: Envelope): boolean => canonical(left) === canonical(right)
 
@@ -71,7 +67,6 @@ export const sameEnvelope = (left: Envelope, right: Envelope): boolean => canoni
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const accepted = (receiptId: string, runId?: RunId): Receipt => {
   /* v8 ignore next 3 -- both runtimes call this from `launch`, which has the run it just started; the parameter stays optional for the receipt's shape rather than for a caller */
@@ -85,7 +80,6 @@ export const accepted = (receiptId: string, runId?: RunId): Receipt => {
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const alreadyApplied = (key: IdempotencyKey, receipt: Receipt): Receipt => {
   const receiptId = receipt._tag === "Accepted" || receipt._tag === "AlreadyApplied" ? receipt.receiptId : key
@@ -102,7 +96,6 @@ export const alreadyApplied = (key: IdempotencyKey, receipt: Receipt): Receipt =
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export interface PlanSource {
   readonly planId: string
@@ -125,7 +118,6 @@ export interface PlanSource {
  *
  * @since 0.1.0
  * @private
- * @slop
  */
 export const planCard = (source: PlanSource) =>
   Effect.gen(function*() {

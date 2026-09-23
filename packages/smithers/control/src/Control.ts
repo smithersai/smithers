@@ -50,7 +50,6 @@ import type {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface PlanInput {
   readonly flowId: FlowId
@@ -63,7 +62,6 @@ export interface PlanInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type RunInput = typeof RunInputSchema.Type & {
   /** Authenticated actor used only to scope durable idempotency. */
@@ -73,7 +71,6 @@ export type RunInput = typeof RunInputSchema.Type & {
 /**
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type { ApprovalTarget } from "./ControlSchema.ts"
 
@@ -86,7 +83,6 @@ export type { ApprovalTarget } from "./ControlSchema.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ApprovalInput extends ApprovalPayload {
   readonly principal?: Principal | undefined
@@ -97,7 +93,6 @@ export interface ApprovalInput extends ApprovalPayload {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type SteerInput = typeof SteerInputSchema.Type
 
@@ -106,7 +101,6 @@ export type SteerInput = typeof SteerInputSchema.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type SignalInput = typeof SignalInputSchema.Type & {
   /** Authenticated actor used only to scope durable idempotency. */
@@ -122,7 +116,6 @@ export type SignalInput = typeof SignalInputSchema.Type & {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface RunMutationInput {
   readonly runId: RunId
@@ -151,7 +144,6 @@ export interface RunMutationInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly plan: (
@@ -241,7 +233,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class Control extends Context.Service<Control, Service>()("/control/Control") {}
 
@@ -250,7 +241,6 @@ export class Control extends Context.Service<Control, Service>()("/control/Contr
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (implementation: Service): Service => Control.of(implementation)
 
@@ -262,7 +252,6 @@ const unavailable = (feature: string): Unavailable =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop: Layer.Layer<Control> = Layer.succeed(
   Control,

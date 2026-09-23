@@ -984,7 +984,9 @@ describe("SqlControlRuntime", () => {
       Effect.gen(function*() {
         const control = yield* Control
         const { runId } = yield* started
-        for (let index = 0; index < 1025; index++) {
+        // A few seeds are enough: the page is held before it reads, so the
+        // property under test is that holding it blocks no writer.
+        for (let index = 0; index < 3; index++) {
           yield* control.signal({
             runId,
             signal: { name: `seed-${index}`, payload: null },
@@ -996,12 +998,14 @@ describe("SqlControlRuntime", () => {
           Stream.runCollect,
           Effect.forkChild({ startImmediately: true })
         )
-        yield* Deferred.await(pageStarted).pipe(Effect.timeout("1 second"))
+        yield* Deferred.await(pageStarted)
+        // A writer blocked by the held page never settles, and the test
+        // timeout reports it; a wall-clock bound here false-reds under load.
         const receipt = yield* control.signal({
           runId,
           signal: { name: "during-snapshot", payload: null },
           idempotencyKey: "signal:during-snapshot"
-        }).pipe(Effect.timeout("1 second"))
+        })
         yield* Deferred.succeed(releasePage, undefined)
         const events = yield* Fiber.join(snapshot)
         return { events, receipt }
@@ -1016,7 +1020,7 @@ describe("SqlControlRuntime", () => {
     const signalNames = observed.events
       .filter((event) => event.kind === "control.signal.admitted")
       .map((event) => (event.payload as { readonly name: string }).name)
-    expect(signalNames).toContain("seed-1024")
+    expect(signalNames).toEqual(["seed-0", "seed-1", "seed-2"])
     expect(signalNames).not.toContain("during-snapshot")
   })
 

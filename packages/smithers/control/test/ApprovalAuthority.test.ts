@@ -10,13 +10,22 @@ const request: ApprovalAuthority.Request = { principal, target, decision: "appro
 
 describe("explicit approval authority", () => {
   it("does not turn an actor's kind or authentication into approval authority", async () => {
-    for (const actor of [principal, { ...principal, kind: "operator" }, { ...principal, kind: "bearer" }]) {
+    // The in-memory test adapter's identity is not a production approver: a
+    // caller that names kind "test" gets no authority from the local policy.
+    for (
+      const actor of [
+        principal,
+        { ...principal, kind: "operator" },
+        { ...principal, kind: "bearer" },
+        { id: "memory", kind: "test", stampedAt: 10 }
+      ]
+    ) {
       const error = await Effect.runPromise(
         Effect.flip(ApprovalAuthority.local.authorize({ ...request, principal: actor }))
       )
       expect(error._tag).toBe("/control/Unauthorized")
     }
-    for (const actor of [{ id: "local", kind: "operator" }, { id: "memory", kind: "test" }]) {
+    for (const actor of [{ id: "local", kind: "operator" }]) {
       await Effect.runPromise(ApprovalAuthority.local.authorize({ ...request, principal: { ...actor, stampedAt: 10 } }))
     }
   })

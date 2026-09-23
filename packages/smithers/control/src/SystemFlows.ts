@@ -9,7 +9,6 @@
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export interface SystemFlowEntry {
   readonly verb: string
@@ -43,7 +42,6 @@ export interface SystemFlowEntry {
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const catalog = [
   {

@@ -158,8 +158,9 @@ above are empty there.
 A `steer` whose `message.runId` disagrees with the run the call names is
 refused with `InvalidInput` before anything is admitted to the queue.
 
-Approval and denial default to the exact identities `local/operator` and
-`memory/test`, for both plan and node targets and all grant scopes. Authentication
+Approval and denial default to the exact identity `local/operator`, for both
+plan and node targets and all grant scopes. The memory adapter's own default
+also delegates its `memory/test` identity. Authentication
 and approval authority are independent: a custom operator identity has no
 authority until the host explicitly delegates it. Hosts may delegate exact
 identity tuples, including agents, with specific target kinds and approval

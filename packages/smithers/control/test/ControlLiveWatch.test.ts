@@ -13,7 +13,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Deferred, Effect, Fiber, Layer, PubSub, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
-import { InvalidInput, Unavailable } from "../src/ControlError.ts"
+import { InvalidInput, PersistenceError, Unavailable } from "../src/ControlError.ts"
 import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.ts"
 import type { ControlEvent, Envelope } from "../src/ControlSchema.ts"
 import { live, memoryRuntime, type Stack } from "./TestStack.ts"
@@ -92,7 +92,7 @@ describe("ControlLive.watch failures", () => {
     expect((observed.snapshot as Unavailable).feature).toBe("watch")
   })
 
-  it("reports a page read that fails after the high-water mark was pinned", async () => {
+  it("reports a page read that fails after the high-water mark was pinned as a persistence failure with its cause", async () => {
     const failingPages = Layer.effect(
       Journal.Journal,
       Effect.map(Journal.Journal, (journal) =>
@@ -116,8 +116,10 @@ describe("ControlLive.watch failures", () => {
       live({ runtime: memoryRuntime({ flows }), journal: failingPages })
     )
 
-    expect(error).toBeInstanceOf(Unavailable)
-    expect((error as Unavailable).feature).toBe("watch")
+    // A storage failure is not a missing feature: it keeps its cause so the
+    // operator can see what the journal reported.
+    expect(error).toBeInstanceOf(PersistenceError)
+    expect(error).toMatchObject({ operation: "watch", cause: { code: "unknown", message: "page read failed" } })
   })
 })
 
@@ -424,7 +426,7 @@ describe("ControlLive.watch durable gap checks", () => {
       { name: "an unused sequence and duplicate tail notice", notices: [0, 0, 3], durable: [0, 3], expected: [0, 3] },
       { name: "a dropped initial committed notice", notices: [2], durable: [1, 2], error: "PersistenceError" },
       { name: "a dropped later committed notice", notices: [0, 3], durable: [0, 1, 3], error: "PersistenceError" },
-      { name: "a failed durable gap read", notices: [2], durable: [], error: "Unavailable", fail: true }
+      { name: "a failed durable gap read", notices: [2], durable: [], error: "PersistenceError", fail: true }
     ]
   ) {
     it(`handles ${scenario.name}`, async () => {

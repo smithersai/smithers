@@ -12,6 +12,22 @@
 
 ### Changed
 
+- A journal read that fails during `watch` answers `PersistenceError` with
+  operation `watch` and the journal's error as its `cause`. It used to answer
+  `Unavailable`, which reads as a missing feature. A closed journal still
+  answers `Unavailable`.
+- `WebCryptoCipher.open` answers `PersistenceError` with operation
+  `credential.open` when a record does not open, naming a malformed nonce or a
+  failed authentication (a different key, changed metadata, or tampered
+  ciphertext), and logs the reason. `WebCryptoCipher.make` refuses a key that
+  is not 32 base64-encoded bytes with `InvalidInput`. Both used to answer
+  `Unavailable`, which is now kept for a host without Web Crypto.
+- Breaking: `ApprovalAuthority.local` no longer delegates the in-memory test
+  identity `memory`/`test`. A caller naming kind `test` held full approval
+  authority under the production default. `ControlRuntime.layerMemory`
+  delegates that identity in its own default policy.
+- Removed the 195 internal `@slop` review markers from `src` and the published
+  declarations. `test/ReviewMarkers.test.ts` keeps them out.
 - Breaking: approval decisions require an independent `ApprovalAuthority` host
   policy, checked before reads/replay and again at resolution. Custom agent,
   gateway, and operator identities need explicit delegation; attribution and

@@ -413,9 +413,10 @@ capabilities. Import `@smthrs/control/ApprovalAuthority` or its root namespace.
   Exact scopes are `once`, `run`, `remembered`; target kinds are `Plan`, `Node`.
 - `make(delegations)`: validates and snapshots up to 1,024 explicit delegations;
   returns `Effect<Service, InvalidInput>`. Empty configuration denies everyone.
-- `local`: default policy for the fixed `local/operator` and `memory/test`
-  identities only. Custom identities, including bearer and agent identities,
-  need explicit delegation. A principal's `kind` is not itself a role grant.
+- `local`: default policy for the fixed `local/operator` identity only. Custom
+  identities, including bearer and agent identities, need explicit delegation.
+  A principal's `kind` is not itself a role grant. The memory adapter's own
+  default also delegates its `memory/test` identity; `local` never does.
 
 `Control.approve` and `deny` check before reads and receipt replay. Both runtime
 adapters check again at resolution. Denial requires a delegated target kind but
@@ -761,7 +762,7 @@ The credential boundary. Only a `CredentialRef` crosses it. See
 | `list`    | `() => Effect<ReadonlyArray<CredentialRef>, Unavailable \| Unauthorized>`                                                          |
 | `get`     | `(id: string) => Effect<CredentialRef, Unavailable \| Unauthorized>`                                                               |
 | `create`  | `({ id, name, secret: Redacted<string> }) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict>`             |
-| `resolve` | `(reference: CredentialRef) => Effect<Redacted<string>, Unavailable \| Unauthorized>`                                              |
+| `resolve` | `(reference: CredentialRef) => Effect<Redacted<string>, Unavailable \| Unauthorized \| PersistenceError>`                          |
 | `rotate`  | `(reference: CredentialRef, secret: Redacted<string>) => Effect<CredentialRef, Unavailable \| Unauthorized \| CredentialConflict>` |
 | `revoke`  | `(reference: CredentialRef) => Effect<void, Unavailable \| Unauthorized>`                                                          |
 
@@ -810,16 +811,19 @@ concurrent rotations serialize.
 
 ## WebCryptoCipher
 
-| Export    | Kind      | Signature                                                             |
-| --------- | --------- | --------------------------------------------------------------------- |
-| `Options` | interface | `{ key: Redacted<string> }`, 32 raw bytes base64-encoded.             |
-| `make`    | effect    | `(options: Options) => Effect<CredentialCipher.Service, Unavailable>` |
-| `layer`   | layer     | `(options: Options) => Layer<CredentialCipher, Unavailable>`          |
+| Export    | Kind      | Signature                                                                             |
+| --------- | --------- | ------------------------------------------------------------------------------------- |
+| `Options` | interface | `{ key: Redacted<string> }`, 32 raw bytes base64-encoded.                             |
+| `make`    | effect    | `(options: Options) => Effect<CredentialCipher.Service, Unavailable \| InvalidInput>` |
+| `layer`   | layer     | `(options: Options) => Layer<CredentialCipher, Unavailable \| InvalidInput>`          |
 
 AES-256-GCM over the Web Crypto API, which serves both Node and the browser.
 The key is imported as a non-extractable `CryptoKey` and never reaches
-`CredentialStore`. A host without Web Crypto, or a key that is not 32 bytes,
-fails with `Unavailable` rather than a defect.
+`CredentialStore`. A host without Web Crypto fails with `Unavailable` rather
+than a defect, and a key that is not 32 base64-encoded bytes fails with
+`InvalidInput`. `open` fails with `PersistenceError` on operation
+`credential.open` when the stored nonce is malformed or the ciphertext fails
+authentication under this key and context.
 
 ## Migrations
 

@@ -17,7 +17,6 @@ import type { ApprovalTarget, PendingWait, RunId, RunSummary, SignalPayload } fr
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Launch {
   readonly plan: StoredPlan
@@ -29,7 +28,6 @@ export interface Launch {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Acceptance = "accepted" | "pending"
 
@@ -38,7 +36,6 @@ export type Acceptance = "accepted" | "pending"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CancelRequest {
   readonly runId: RunId
@@ -54,7 +51,6 @@ export interface CancelRequest {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CancelTerminal {
   readonly _tag: "Terminal"
@@ -83,7 +79,6 @@ export interface CancelTerminal {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type CancelRecord = "recorded" | "already-requested" | "unknown" | CancelTerminal
 
@@ -92,7 +87,6 @@ export type CancelRecord = "recorded" | "already-requested" | "unknown" | Cancel
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ResumeRequest {
   readonly runId: RunId
@@ -110,7 +104,6 @@ export interface ResumeRequest {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type ResumeUptake = "resuming" | "unknown"
 
@@ -119,7 +112,6 @@ export type ResumeUptake = "resuming" | "unknown"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Signal {
   /** Actor-scoped durable admission identity, present on control-plane delivery. */
@@ -143,7 +135,6 @@ export interface Signal {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type SignalDelivery = "delivered" | "no-match" | "unknown"
 
@@ -302,7 +293,6 @@ export const answerableWait = (
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   /** Read from the executor's database, never the control coordination copy. */
@@ -348,7 +338,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class ControlExecutor extends Context.Service<ControlExecutor, Service>()(
   "/control/ControlExecutor"
@@ -359,7 +348,6 @@ export class ControlExecutor extends Context.Service<ControlExecutor, Service>()
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (implementation: Service): Service => ControlExecutor.of(implementation)
 
@@ -369,7 +357,6 @@ export const make = (implementation: Service): Service => ControlExecutor.of(imp
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   make({
@@ -390,7 +377,6 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (implementation: Service): Layer.Layer<ControlExecutor> =>
   Layer.succeed(ControlExecutor)(make(implementation))
@@ -434,7 +420,6 @@ export const makeObserving = (service: Service): Service => {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<ControlExecutor> =>
   Layer.succeed(ControlExecutor)(makeNoop(overrides))

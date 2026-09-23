@@ -19,7 +19,6 @@ import { ControlPrincipal, ControlRpcs } from "./ControlRpcs.ts"
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = ControlRpcs.toLayer(
   Effect.gen(function*() {
@@ -104,7 +103,6 @@ const websocket = server.pipe(
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerHttp = Layer.mergeAll(
   http,

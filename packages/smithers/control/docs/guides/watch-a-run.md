@@ -119,11 +119,12 @@ delivery is derived rather than written.
 ## Failures
 
 Every member of `ControlError` can reach a watch stream. In practice you will
-meet two:
+meet three:
 
 - `InvalidInput` for an unscoped or malformed cursor, or both cursor forms together.
-- `Unavailable` with feature `watch` when the journal read fails, which is a
-  storage failure rather than a missing feature.
+- `PersistenceError` with operation `watch` when a journal read fails. Its
+  `cause` is the journal's own error.
+- `Unavailable` with feature `watch` when the composition has no open journal.
 
 A watch of a run that does not exist is not an error. The partition is empty.
 

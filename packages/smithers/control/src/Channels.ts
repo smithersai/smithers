@@ -20,7 +20,6 @@ import { alreadyApplied } from "./internal/planning.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface RawInbound {
   readonly body: Uint8Array
@@ -33,7 +32,6 @@ export interface RawInbound {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type InboundResult =
   | { readonly _tag: "Start"; readonly flowId: FlowId; readonly input: unknown }
@@ -45,7 +43,6 @@ export type InboundResult =
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Delivery {
   readonly cursor: string
@@ -58,7 +55,6 @@ export interface Delivery {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface DeliveryProjection {
   readonly cursor: string
@@ -75,7 +71,6 @@ export interface DeliveryProjection {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Channel<A = unknown> {
   readonly name: string
@@ -119,7 +114,6 @@ const eraseChannel = <A>(channel: Channel<A>): RegisteredChannel => ({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface IngestRequest {
   readonly channel: string
@@ -131,7 +125,6 @@ export interface IngestRequest {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ProjectRequest {
   readonly channel: string
@@ -143,7 +136,6 @@ export interface ProjectRequest {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Channels {
   readonly register: <A>(channel: Channel<A>) => Effect.Effect<void>
@@ -157,7 +149,6 @@ export interface Channels {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export const Channels: Context.Service<Channels, Channels> = Context.Service("/control/Channels")
 
@@ -306,15 +297,7 @@ const externalReceipt = (receipt: Receipt, key: IdempotencyKey): Receipt => {
   }
 }
 
-/**
- * Builds an in-memory channel registry and delivery map over Control's durable
- * mutation store. Inbound idempotency therefore survives coordinator restarts;
- * only registration and outbound projection cursors are process-local.
- *
- * @category constructors
- * @since 0.1.0
- * @slop
- */
+/** The slice of the control runtime's mutation store that inbound idempotency uses. */
 interface InboundReceiptStore {
   readonly lookupMutation: (
     key: IdempotencyKey,
@@ -327,6 +310,11 @@ interface InboundReceiptStore {
   ) => Effect.Effect<void, ControlError>
 }
 
+/**
+ * Builds an in-memory channel registry and delivery map over Control's durable
+ * mutation store. Inbound idempotency therefore survives coordinator restarts;
+ * only registration and outbound projection cursors are process-local.
+ */
 const makeWith = (runtime: InboundReceiptStore) =>
   Effect.gen(function*() {
     const channels = yield* Ref.make(new Map<string, RegisteredChannel>())
@@ -489,7 +477,6 @@ export const makeMemory = Effect.gen(function*() {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = Layer.effect(Channels, make)
 

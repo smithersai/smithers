@@ -108,12 +108,12 @@ The operation is not implemented in this composition. `feature` names the verb
 or capability that is missing, and `ticket` is a constant identifier for the
 integration behind it, stable enough to group reports by.
 
-| `feature`                                     | Cause                                                                                                             |
-| --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| any `Control` verb                            | `Control.layerNoop` is provided. Provide `ControlLive.layer`.                                                     |
-| `watch`                                       | A journal read failed. This is storage, not a missing feature.                                                    |
-| `credential storage`, `credential encryption` | A noop store or cipher is provided, or the host has no Web Crypto, or the key is not 32 raw bytes base64-encoded. |
-| `channel "<name>" is not registered`          | Call `channels.register` before the first request arrives.                                                        |
+| `feature`                                     | Cause                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| any `Control` verb                            | `Control.layerNoop` is provided. Provide `ControlLive.layer`.      |
+| `watch`                                       | The composition has no open journal.                               |
+| `credential storage`, `credential encryption` | A noop store or cipher is provided, or the host has no Web Crypto. |
+| `channel "<name>" is not registered`          | Call `channels.register` before the first request arrives.         |
 
 ### `CredentialConflict` (`credential_conflict`)
 
@@ -131,6 +131,11 @@ not survive as an unlaunched row no verb can end.
 A store operation failed. `operation` names what was being attempted and
 `cause` keeps the driver's own error. A `<operation>.idempotency` operation
 means the mutation and its receipt could not be committed atomically.
+
+Operation `watch` means a journal read failed while serving a watch.
+Operation `credential.open` means a stored credential did not open: its nonce
+is malformed, or its ciphertext failed authentication because the key is not
+the one that sealed it, its metadata changed, or its bytes were tampered with.
 
 ### `TransportError` (`transport_error`)
 

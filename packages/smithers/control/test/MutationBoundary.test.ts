@@ -224,11 +224,25 @@ describe("MutationBoundary.admit refuses what it cannot copy inertly", () => {
     // The budget is checked at every value, not only at strings. Filling it to
     // the last byte and then appending one more value of each type is what
     // proves the scalar accounting is enforced rather than merely computed.
-    // 18 bytes is the outer object's own overhead plus both keys.
-    const big = "a".repeat(4 * 1024 * 1024 - 18)
-    for (const tail of [null, true, 1, {}, [], "x"]) {
-      expect(refusal({ big, tail })).toBe("exceeds the JSON byte limit")
+    // 18 bytes is the outer object's own overhead plus both keys. A 1 KiB
+    // budget reaches the same boundary as the 4 MiB production one without
+    // building six multi-megabyte values.
+    const bounds = {
+      maxBytes: 1024,
+      maxStringBytes: 1024,
+      maxKeyBytes: 1024,
+      maxDepth: 128,
+      maxNodes: 100_000,
+      maxMembers: 100_000,
+      maxTotalMembers: 100_000
     }
+    const big = "a".repeat(1024 - 18)
+    for (const tail of [null, true, 1, {}, [], "x"]) {
+      const result = admit({ big, tail }, bounds)
+      expect(result.ok ? "admitted" : result.complaint).toBe("exceeds the JSON byte limit")
+    }
+    // The budget is inclusive: `{"big":"…"}` filled to exactly 1024 bytes is admitted.
+    expect(admit({ big: "a".repeat(1024 - 10) }, bounds).ok).toBe(true)
   })
 
   it("refuses an array with more members than the member budget", () => {

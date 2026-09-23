@@ -4,9 +4,12 @@
  * One adapter serves both hosts the project supports: `globalThis.crypto.subtle`
  * is the browser's own API and has been Node's since v19, so this module
  * imports nothing from `node:*` and still runs unmodified on the server. A host
- * without Web Crypto — an old runtime, a locked-down worker — fails with the
- * typed `Unavailable`, never a defect. The error model is documented in
- * `docs/pages/concepts/effect-integration.md`.
+ * without Web Crypto, such as an old runtime or a locked-down worker, fails
+ * with the typed `Unavailable`, never a defect. A key that is not 32
+ * base64-encoded bytes fails with `InvalidInput`. A record that does not open
+ * fails with `PersistenceError` on operation `credential.open`, which names
+ * whether the stored nonce was malformed or the ciphertext failed
+ * authentication (a different key, changed metadata, or tampered bytes).
  *
  * The key is host-managed and supplied at layer construction. It is held as a
  * non-extractable `CryptoKey`, so it cannot be read back out of the cipher, and
@@ -16,7 +19,7 @@
  */
 import { canonicalize } from "@smthrs/canonical"
 import { Effect, Layer, Redacted } from "effect"
-import type { Unavailable } from "./ControlError.ts"
+import { InvalidInput, PersistenceError, type Unavailable } from "./ControlError.ts"
 import * as CredentialCipher from "./CredentialCipher.ts"
 
 const algorithm = "AES-GCM"
@@ -69,6 +72,17 @@ const encodeContext = (context: CredentialCipher.Context): Effect.Effect<Uint8Ar
     catch: CredentialCipher.unavailable
   })
 
+const invalidKey = (): InvalidInput => new InvalidInput({ issue: "Credential key must be 32 base64-encoded bytes" })
+
+const unopenable = (reason: "malformed_nonce" | "authentication_failed", cause: unknown): PersistenceError =>
+  new PersistenceError({
+    operation: "credential.open",
+    message: reason === "malformed_nonce"
+      ? "Stored credential nonce is malformed"
+      : "Credential failed authentication: a different key, changed metadata, or tampered ciphertext",
+    cause
+  })
+
 /**
  * Host-managed key material for the cipher.
  *
@@ -77,7 +91,6 @@ const encodeContext = (context: CredentialCipher.Context): Effect.Effect<Uint8Ar
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Options {
   readonly key: Redacted.Redacted<string>
@@ -88,16 +101,15 @@ export interface Options {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
-export const make = (options: Options): Effect.Effect<CredentialCipher.Service, Unavailable> =>
+export const make = (options: Options): Effect.Effect<CredentialCipher.Service, Unavailable | InvalidInput> =>
   Effect.gen(function*() {
     const crypto = yield* subtle()
     const raw = yield* Effect.try({
       try: () => fromBase64(Redacted.value(options.key)),
-      catch: CredentialCipher.unavailable
+      catch: invalidKey
     })
-    if (raw.length !== 32) return yield* Effect.fail(CredentialCipher.unavailable())
+    if (raw.length !== 32) return yield* Effect.fail(invalidKey())
     const key = yield* Effect.tryPromise({
       try: () => crypto.importKey("raw", raw, algorithm, false, ["encrypt", "decrypt"]),
       catch: CredentialCipher.unavailable
@@ -120,19 +132,25 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
       }),
       open: Effect.fn("WebCryptoCipher.open")(function*(sealed, context) {
         const additionalData = yield* encodeContext(context)
-        const plaintext = yield* Effect.tryPromise({
-          try: () =>
-            crypto.decrypt(
-              {
-                name: algorithm,
-                iv: fromBase64(sealed.nonce),
-                additionalData: additionalData
-              },
-              key,
-              fromBase64(sealed.ciphertext)
-            ),
-          catch: CredentialCipher.unavailable
-        })
+        const plaintext = yield* Effect.try({
+          try: () => fromBase64(sealed.nonce),
+          catch: (cause) => unopenable("malformed_nonce", cause)
+        }).pipe(
+          Effect.flatMap((nonce) =>
+            Effect.tryPromise({
+              try: () =>
+                crypto.decrypt(
+                  { name: algorithm, iv: nonce, additionalData: additionalData },
+                  key,
+                  fromBase64(sealed.ciphertext)
+                ),
+              catch: (cause) => unopenable("authentication_failed", cause)
+            })
+          ),
+          Effect.tapError((error) =>
+            Effect.logWarning({ message: error.message, operation: error.operation, credentialId: context.id })
+          )
+        )
         return Redacted.make(new TextDecoder().decode(plaintext))
       })
     })
@@ -143,9 +161,8 @@ export const make = (options: Options): Effect.Effect<CredentialCipher.Service, 
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (
   options: Options
-): Layer.Layer<CredentialCipher.CredentialCipher, Unavailable> =>
+): Layer.Layer<CredentialCipher.CredentialCipher, Unavailable | InvalidInput> =>
   Layer.effect(CredentialCipher.CredentialCipher)(make(options))

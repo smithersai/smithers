@@ -108,7 +108,6 @@ import { plannable } from "./SystemFlows.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type DurableFlow = MemoryFlow
 
@@ -123,7 +122,6 @@ export type DurableFlow = MemoryFlow
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Options {
   readonly flows?: ReadonlyArray<DurableFlow> | undefined
@@ -365,7 +363,6 @@ const EngineStateProjection = Schema.Struct({ flowName: Schema.NonEmptyString })
  *
  * @category migrations
  * @since 0.1.0
- * @slop
  */
 export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient> = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
@@ -2105,7 +2102,6 @@ const makeRuntime = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (
   options: Options = {}
@@ -2121,7 +2117,6 @@ export const layer = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerWithStore = (
   options: Options = {}

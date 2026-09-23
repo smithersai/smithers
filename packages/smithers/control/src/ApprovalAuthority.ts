@@ -100,13 +100,14 @@ export const make = (
   )
 
 /**
- * Default trusted-local policy. Only the adapters' two fixed local identities
- * are approvers. A custom actor, gateway identity, or agent needs explicit
- * host delegation; setting Principal.kind is not itself an authorization.
+ * Default trusted-local policy. Only the local operator identity is an
+ * approver. A custom actor, gateway identity, or agent needs explicit host
+ * delegation; setting Principal.kind is not itself an authorization. The
+ * in-memory test adapter's `memory`/`test` identity is delegated only by that
+ * adapter's own default policy, never here.
  * @category policies
  * @since 1.0.0
  */
 export const local: Service = compile([
-  { principal: { id: "local", kind: "operator" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] },
-  { principal: { id: "memory", kind: "test" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
+  { principal: { id: "local", kind: "operator" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
 ])

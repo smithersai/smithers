@@ -18,7 +18,6 @@ import type { CredentialRef } from "./Credential.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type SignatureVerifier = (
   raw: RawInbound,
@@ -30,7 +29,6 @@ export type SignatureVerifier = (
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Config<A> {
   readonly name: string
@@ -94,7 +92,6 @@ const declaredLength = (headers: Readonly<Record<string, string | undefined>>): 
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = <A>(config: Config<A>): Channel<A> => {
   const decode = Schema.decodeUnknownEffect(config.schema)
@@ -131,7 +128,6 @@ export const make = <A>(config: Config<A>): Channel<A> => {
  *
  * @category handlers
  * @since 0.1.0
- * @slop
  */
 export const handler = (
   channel: string,

@@ -50,7 +50,6 @@ const unavailable = (operation: string) => (): Unavailable =>
  *
  * @category migrations
  * @since 0.1.0
- * @slop
  */
 export const migrate: Effect.Effect<void, Unavailable, SqlClient.SqlClient> = initial.pipe(
   Effect.mapError(unavailable("migrate"))
@@ -61,7 +60,6 @@ export const migrate: Effect.Effect<void, Unavailable, SqlClient.SqlClient> = in
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make: Effect.Effect<
   CredentialStore.Service,
@@ -141,7 +139,6 @@ export const make: Effect.Effect<
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<
   CredentialStore.CredentialStore,

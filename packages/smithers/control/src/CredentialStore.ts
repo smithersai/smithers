@@ -21,7 +21,6 @@ import { CredentialConflict, Unavailable } from "./ControlError.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SealedRecord {
   readonly id: string
@@ -40,7 +39,6 @@ export interface SealedRecord {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly list: () => Effect.Effect<ReadonlyArray<SealedRecord>, Unavailable>
@@ -55,7 +53,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class CredentialStore extends Context.Service<CredentialStore, Service>()(
   "/control/CredentialStore"
@@ -66,7 +63,6 @@ export class CredentialStore extends Context.Service<CredentialStore, Service>()
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (implementation: Service): Service => CredentialStore.of(implementation)
 
@@ -81,7 +77,6 @@ const unavailable = (): Unavailable =>
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service =>
   make({
@@ -97,7 +92,6 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<CredentialStore> =>
   Layer.succeed(CredentialStore)(makeNoop(overrides))
@@ -111,7 +105,6 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Credent
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeMemory = (): Service => {
   const records = new Map<string, SealedRecord>()
@@ -154,6 +147,5 @@ export const makeMemory = (): Service => {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerMemory: Layer.Layer<CredentialStore> = Layer.sync(CredentialStore)(makeMemory)

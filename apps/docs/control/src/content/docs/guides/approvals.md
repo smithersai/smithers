@@ -23,8 +23,9 @@ target reads or receipt replay, and the runtime checks it again at resolution.
 Refusal is `Unauthorized`; unavailable policy storage fails closed with
 `PersistenceError`.
 
-The default policy recognizes only the fixed local identities `local/operator`
-(durable adapter) and `memory/test` (memory adapter). A custom `principal` option,
+The default policy recognizes only the fixed local identity `local/operator`.
+The memory adapter's own default also recognizes its `memory/test` identity, and
+no production policy does. A custom `principal` option,
 an actor's `kind`, or a valid bearer credential does not delegate approval.
 Hosts may replace the policy explicitly:
 

@@ -25,14 +25,17 @@ type Result =
 /**
  * Copies one mutation without invoking getters or `toJSON`.
  *
+ * `bounds` defaults to the control mutation limits. Tests pass smaller ones to
+ * reach a byte-exact boundary without building multi-megabyte values.
+ *
  * @since 1.0.0-rc.0
  * @private
  */
-export const admit = (input: unknown): Result => {
-  const result = BoundedJson.admit(input, limits, { preflightObjects: false })
+export const admit = (input: unknown, bounds: BoundedJson.Limits = limits): Result => {
+  const result = BoundedJson.admit(input, bounds, { preflightObjects: false })
   if (result.ok) return { ok: true, value: result.value }
   const complaint = result.code === "members"
-    ? `contains more than ${limits.maxTotalMembers} JSON members`
+    ? `contains more than ${bounds.maxTotalMembers} JSON members`
     : result.code === "string"
     ? "contains oversized or ill-formed text"
     : result.code === "key"

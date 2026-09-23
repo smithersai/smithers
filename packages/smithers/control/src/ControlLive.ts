@@ -37,7 +37,7 @@ import {
 import type { CancelRecord } from "./ControlExecutor.ts"
 import { ControlExecutor } from "./ControlExecutor.ts"
 import * as ControlFacts from "./ControlFacts.ts"
-import { ControlRuntime } from "./ControlRuntime.ts"
+import { ControlRuntime, type RunPage } from "./ControlRuntime.ts"
 import type {
   ControlEvent,
   FireSummary,
@@ -76,6 +76,22 @@ const snapshotPartitionConcurrency = 8
 
 const unavailable = (feature: string): Unavailable =>
   new Unavailable({ feature, ticket: "control-runtime-engine-integration" })
+
+/**
+ * What a failed journal read during `watch` answers.
+ *
+ * A closed journal means this composition has no journal to watch, so the
+ * feature is unavailable. Any other code is a storage failure and keeps its
+ * cause, so the operator sees what the journal reported.
+ */
+const watchReadFailed = (cause: Journal.JournalError): Unavailable | PersistenceError =>
+  cause.code === "journal_closed"
+    ? unavailable("watch")
+    : new PersistenceError({
+      operation: "watch",
+      message: `Reading the control journal failed (${cause.code})`,
+      cause
+    })
 
 const accepted = (key: IdempotencyKey, runId?: RunId): Receipt =>
   runId === undefined
@@ -294,7 +310,6 @@ const eventFromEntry = (entry: JournalEvent.Entry): ControlEvent => ({
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<
   Control,
@@ -674,31 +689,6 @@ export const layer: Layer.Layer<
       })
 
     /**
-     * Resumes a parked run whose park a steer has just answered.
-     *
-     * Only two parks are the steer's to end. A run parked on `event` is
-     * waiting for something to arrive, and a steer is something arriving. A
-     * run parked on `released` lost its owner to a sweep
-     * (`@smthrs/engine-store` `DisasterRecovery.fence`) and nothing is coming
-     * to claim it, so the steer claims it.
-     *
-     * Every other park keeps waiting. An `approval`, `timer`, or `quota` park
-     * is waiting for a decision, a clock, or a budget that a message does not
-     * supply. A park with NO reason at all is an operator's own park, written
-     * through `ControlRuntime.writeStatus`, and it is the one park a steer must
-     * not end: an operator who stopped a run and then sent it a message is
-     * queuing the message for when they restart it, not asking for the stop to
-     * be undone. A park a control plane cannot explain is left alone for the
-     * same reason.
-     *
-     * A lost claim is not a failure here. It means another process already
-     * owns the run, or the run belongs to a driver this plane did not launch
-     * — an engine-created child keeps its park, because claiming it would
-     * strand it under this plane's fence where no engine re-drives it. The
-     * steer itself is already durable in the notification queue, so the
-     * owning driver delivers it at the run's next boundary.
-     */
-    /**
      * Makes a cancellation durable on the engine row through the executor.
      *
      * Absent executor, absent engine: the composition runs nothing, so there is
@@ -759,6 +749,31 @@ export const layer: Layer.Layer<
         )
       )
 
+    /**
+     * Resumes a parked run whose park a steer has just answered.
+     *
+     * Only two parks are the steer's to end. A run parked on `event` is
+     * waiting for something to arrive, and a steer is something arriving. A
+     * run parked on `released` lost its owner to a sweep
+     * (`@smthrs/engine-store` `DisasterRecovery.fence`) and nothing is coming
+     * to claim it, so the steer claims it.
+     *
+     * Every other park keeps waiting. An `approval`, `timer`, or `quota` park
+     * is waiting for a decision, a clock, or a budget that a message does not
+     * supply. A park with NO reason at all is an operator's own park, written
+     * through `ControlRuntime.writeStatus`, and it is the one park a steer must
+     * not end: an operator who stopped a run and then sent it a message is
+     * queuing the message for when they restart it, not asking for the stop to
+     * be undone. A park a control plane cannot explain is left alone for the
+     * same reason.
+     *
+     * A lost claim is not a failure here. It means another process already
+     * owns the run, or the run belongs to a driver this plane did not launch
+     * — an engine-created child keeps its park, because claiming it would
+     * strand it under this plane's fence where no engine re-drives it. The
+     * steer itself is already durable in the notification queue, so the
+     * owning driver delivers it at the run's next boundary.
+     */
     const wake = (
       run: RunSummary,
       messageId: string
@@ -928,12 +943,7 @@ export const layer: Layer.Layer<
           : filters
         const collected: Array<RunSummary> = []
         let sourceCursor = cursor
-        let sourceNext: Awaited<ReturnType<typeof runtime.queryRuns>> extends never ? never : undefined | {
-          readonly source: 0 | 1
-          readonly sequence: number
-          readonly createdAt: number
-          readonly runId: string
-        }
+        let sourceNext: RunPage["nextCursor"]
         while (true) {
           const result = yield* runtime.queryRuns({
             filters: sourceFilters,
@@ -974,7 +984,7 @@ export const layer: Layer.Layer<
           : { afterSequence: JournalEvent.Seq.make(filter.afterSequence) })
       }).pipe(
         Stream.map(eventFromEntry),
-        Stream.mapError(() => unavailable("watch"))
+        Stream.mapError(watchReadFailed)
       )
 
     /**
@@ -1029,7 +1039,7 @@ export const layer: Layer.Layer<
           }
           return JournalEvent.Seq.make(lower)
         })
-      ).pipe(Effect.mapError(() => unavailable("watch")))
+      ).pipe(Effect.mapError(watchReadFailed))
 
     const snapshotForRunAt = (
       runId: RunId,
@@ -1057,7 +1067,7 @@ export const layer: Layer.Layer<
               : Option.some<JournalEvent.Seq | undefined>(last.seq)
             return [entries, next] as const
           }),
-          Effect.mapError(() => unavailable("watch"))
+          Effect.mapError(watchReadFailed)
         )).pipe(Stream.map(eventFromEntry))
     }
 
@@ -1148,7 +1158,7 @@ export const layer: Layer.Layer<
                 ...(expected === undefined ? {} : { after: JournalEvent.Seq.make(expected) }),
                 limit: 1
               }).pipe(
-                Effect.mapError(() => unavailable("watch")),
+                Effect.mapError(watchReadFailed),
                 Effect.flatMap((page) => {
                   const missed = page.entries[0]
                   if (missed === undefined || missed.seq >= arrived) return Effect.void

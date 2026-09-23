@@ -132,8 +132,14 @@ base64-encoded, held redacted so it cannot be printed or serialized by
 accident.
 
 A host without Web Crypto, an old runtime or a locked-down worker, fails with
-the typed `Unavailable` rather than a defect. So does a key that is not 32
-bytes.
+the typed `Unavailable` rather than a defect. A key that is not 32
+base64-encoded bytes fails with `InvalidInput`.
+
+A record that does not open fails with `PersistenceError` on operation
+`credential.open`, and the host log records why. The message names a malformed
+stored nonce, or a failed authentication: the key is not the one that sealed
+the record, the record's id, name or version changed, or the ciphertext was
+tampered with.
 
 ## Durable storage
 

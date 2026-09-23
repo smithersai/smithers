@@ -26,6 +26,18 @@ const expectUnavailable = (error: Record<string, unknown>): void => {
   expect(error.ticket).toBe("control-credential-storage")
 }
 
+/** An open that failed authentication: the key, the metadata, or the bytes changed. */
+const expectAuthenticationFailure = (error: Record<string, unknown>): void => {
+  expect(error._tag).toBe("/control/PersistenceError")
+  expect(error.operation).toBe("credential.open")
+  expect(error.message).toContain("failed authentication")
+}
+
+const expectInvalidKey = (error: Record<string, unknown>): void => {
+  expect(error._tag).toBe("/control/InvalidInput")
+  expect(error.issue).toContain("32 base64-encoded bytes")
+}
+
 describe("WebCryptoCipher", () => {
   it("round-trips a secret without ever holding it in the clear", async () => {
     const result = await Effect.runPromise(
@@ -56,7 +68,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("refuses ciphertext sealed under a different host key", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const mine = yield* WebCryptoCipher.make({ key })
         const theirs = yield* WebCryptoCipher.make({ key: other })
@@ -66,7 +78,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("refuses a blob opened under another credential id", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const cipher = yield* WebCryptoCipher.make({ key })
         const sealed = yield* cipher.seal(Redacted.make("secret-a"), context)
@@ -76,7 +88,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("refuses a blob opened under a renamed credential", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const cipher = yield* WebCryptoCipher.make({ key })
         const sealed = yield* cipher.seal(Redacted.make("secret-a"), context)
@@ -86,7 +98,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("refuses a blob opened under another credential version", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const cipher = yield* WebCryptoCipher.make({ key })
         const sealed = yield* cipher.seal(Redacted.make("secret-a"), context)
@@ -96,7 +108,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("keeps delimiter-bearing contexts unambiguous", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const cipher = yield* WebCryptoCipher.make({ key })
         const sealed = yield* cipher.seal(
@@ -109,7 +121,7 @@ describe("WebCryptoCipher", () => {
   })
 
   it("refuses tampered ciphertext", async () => {
-    expectUnavailable(
+    expectAuthenticationFailure(
       await failureOf(Effect.gen(function*() {
         const cipher = yield* WebCryptoCipher.make({ key })
         const sealed = yield* cipher.seal(Redacted.make("sk-live-42"), context)
@@ -118,12 +130,23 @@ describe("WebCryptoCipher", () => {
     )
   })
 
-  it("reports unavailable key material for a key that is not 32 bytes", async () => {
-    expectUnavailable(await failureOf(WebCryptoCipher.make({ key: Redacted.make(btoa("short")) })))
+  it("refuses a key that is not 32 bytes as invalid input", async () => {
+    expectInvalidKey(await failureOf(WebCryptoCipher.make({ key: Redacted.make(btoa("short")) })))
   })
 
-  it("reports unavailable key material for a key that is not base64", async () => {
-    expectUnavailable(await failureOf(WebCryptoCipher.make({ key: Redacted.make("not base64!!!") })))
+  it("refuses a key that is not base64 as invalid input", async () => {
+    expectInvalidKey(await failureOf(WebCryptoCipher.make({ key: Redacted.make("not base64!!!") })))
+  })
+
+  it("refuses a stored nonce that is not base64 as a malformed record", async () => {
+    const error = await failureOf(Effect.gen(function*() {
+      const cipher = yield* WebCryptoCipher.make({ key })
+      const sealed = yield* cipher.seal(Redacted.make("sk-live-42"), context)
+      return yield* cipher.open({ ...sealed, nonce: "not base64!!!" }, context)
+    }))
+    expect(error._tag).toBe("/control/PersistenceError")
+    expect(error.operation).toBe("credential.open")
+    expect(error.message).toContain("malformed")
   })
 
   it("reports unavailable key material on a host without Web Crypto", async () => {

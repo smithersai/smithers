@@ -53,6 +53,12 @@ const expectUnavailable = (error: Record<string, unknown>, feature?: string): vo
   if (feature !== undefined) expect(error.feature).toBe(feature)
 }
 
+/** A stored record that does not open under its own metadata. */
+const expectOpenRefused = (error: Record<string, unknown>): void => {
+  expect(error._tag).toBe("/control/PersistenceError")
+  expect(error.operation).toBe("credential.open")
+}
+
 const expectUnauthorized = (error: Record<string, unknown>, message?: string): void => {
   expect(error._tag).toBe("/control/Unauthorized")
   if (message !== undefined) expect(error.message).toBe(message)
@@ -107,7 +113,7 @@ describe("Credential", () => {
   })
 
   it("refuses a sealed blob moved onto another credential record", async () => {
-    expectUnavailable(
+    expectOpenRefused(
       await failureOf(Effect.gen(function*() {
         const { credentials, store } = yield* boundary()
         const approved = yield* credentials.create({
@@ -129,8 +135,7 @@ describe("Credential", () => {
           version: first.version + 1
         })
         return yield* credentials.resolve(approved)
-      })),
-      "credential encryption"
+      }))
     )
   })
 

@@ -15,7 +15,6 @@ import { Origin } from "./Lineage.ts"
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const RunId = Schema.String
 
@@ -24,7 +23,6 @@ export const RunId = Schema.String
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type RunId = typeof RunId.Type
 
@@ -33,7 +31,6 @@ export type RunId = typeof RunId.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const FlowId = Schema.String
 
@@ -42,7 +39,6 @@ export const FlowId = Schema.String
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type FlowId = typeof FlowId.Type
 
@@ -51,7 +47,6 @@ export type FlowId = typeof FlowId.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const IdempotencyKey = Schema.String
 
@@ -60,7 +55,6 @@ export const IdempotencyKey = Schema.String
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type IdempotencyKey = typeof IdempotencyKey.Type
 
@@ -69,7 +63,6 @@ export type IdempotencyKey = typeof IdempotencyKey.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const Principal = Schema.Struct({
   id: Schema.String,
@@ -82,7 +75,6 @@ export const Principal = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type Principal = typeof Principal.Type
 
@@ -91,7 +83,6 @@ export type Principal = typeof Principal.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const Envelope = Schema.Struct({
   capabilities: Schema.Array(Schema.String),
@@ -108,7 +99,6 @@ export const Envelope = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type Envelope = typeof Envelope.Type
 
@@ -117,7 +107,6 @@ export type Envelope = typeof Envelope.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const GrantScope = Schema.Literals(["once", "run", "remembered"])
 
@@ -126,7 +115,6 @@ export const GrantScope = Schema.Literals(["once", "run", "remembered"])
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type GrantScope = typeof GrantScope.Type
 
@@ -136,7 +124,6 @@ export type GrantScope = typeof GrantScope.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const ApprovalTarget = Schema.Union([
   Schema.TaggedStruct("Plan", {
@@ -157,7 +144,6 @@ export const ApprovalTarget = Schema.Union([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ApprovalTarget = typeof ApprovalTarget.Type
 
@@ -167,7 +153,6 @@ export type ApprovalTarget = typeof ApprovalTarget.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const ApprovalPayload = Schema.Struct({
   target: ApprovalTarget,
@@ -180,7 +165,6 @@ export const ApprovalPayload = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ApprovalPayload = typeof ApprovalPayload.Type
 
@@ -194,7 +178,6 @@ export type ApprovalPayload = typeof ApprovalPayload.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanNodeStatus = Schema.Literals(["cached", "run"])
 
@@ -203,7 +186,6 @@ export const PlanNodeStatus = Schema.Literals(["cached", "run"])
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanNodeStatus = typeof PlanNodeStatus.Type
 
@@ -216,7 +198,6 @@ export type PlanNodeStatus = typeof PlanNodeStatus.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanNode = Schema.Struct({
   ...PersistedPlan.PlanNode.fields,
@@ -228,7 +209,6 @@ export const PlanNode = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanNode = typeof PlanNode.Type
 
@@ -244,7 +224,6 @@ export type PlanNode = typeof PlanNode.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanEdgeReason = Schema.Literals(["value", "continuation", "failure", "conflict", "lane-merge"])
 
@@ -253,7 +232,6 @@ export const PlanEdgeReason = Schema.Literals(["value", "continuation", "failure
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanEdgeReason = typeof PlanEdgeReason.Type
 
@@ -262,7 +240,6 @@ export type PlanEdgeReason = typeof PlanEdgeReason.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanEdge = Schema.Struct({
   from: Schema.NonEmptyString,
@@ -275,7 +252,6 @@ export const PlanEdge = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanEdge = typeof PlanEdge.Type
 
@@ -292,7 +268,6 @@ export type PlanEdge = typeof PlanEdge.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanGraphNode = Schema.Struct({
   id: Schema.NonEmptyString,
@@ -304,7 +279,6 @@ export const PlanGraphNode = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanGraphNode = typeof PlanGraphNode.Type
 
@@ -325,7 +299,6 @@ export type PlanGraphNode = typeof PlanGraphNode.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanGraph = Schema.Struct({
   edges: Schema.Array(PlanEdge),
@@ -358,7 +331,6 @@ export const PlanGraph = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanGraph = typeof PlanGraph.Type
 
@@ -375,7 +347,6 @@ export type PlanGraph = typeof PlanGraph.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const PlanCard = Schema.Struct({
   planId: Schema.String,
@@ -410,7 +381,6 @@ export const PlanCard = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type PlanCard = typeof PlanCard.Type
 
@@ -419,7 +389,6 @@ export type PlanCard = typeof PlanCard.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const RunStatus = Schema.Literals([
   "accepted",
@@ -436,7 +405,6 @@ export const RunStatus = Schema.Literals([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type RunStatus = typeof RunStatus.Type
 
@@ -563,7 +531,6 @@ export type PendingWait = typeof PendingWait.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const RunSummary = Schema.Struct({
   /** Whether lifecycle fields were observed in the engine or no engine row was visible. */
@@ -649,7 +616,6 @@ export const RunSummary = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type RunSummary = typeof RunSummary.Type
 
@@ -779,7 +745,6 @@ export const steerItem = (message: SteerMessage): SteerPayload.SteerPayload => {
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const SignalPayload = Schema.Struct({
   name: Schema.String,
@@ -791,7 +756,6 @@ export const SignalPayload = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type SignalPayload = typeof SignalPayload.Type
 
@@ -925,7 +889,6 @@ export type WatchCursor = typeof WatchCursor.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const WatchFilter = Schema.Struct({
   runId: Schema.optional(RunId),
@@ -941,7 +904,6 @@ export const WatchFilter = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type WatchFilter = typeof WatchFilter.Type
 
@@ -950,7 +912,6 @@ export type WatchFilter = typeof WatchFilter.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const ControlEvent = Schema.Struct({
   /** Present on `ControlLive.watch` events; absent on raw projections and older providers. */
@@ -967,7 +928,6 @@ export const ControlEvent = Schema.Struct({
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ControlEvent = typeof ControlEvent.Type
 
@@ -1113,7 +1073,6 @@ export type FireSummary = typeof FireSummary.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const ListRequest = Schema.Union([
   Schema.TaggedStruct("flows", {
@@ -1162,7 +1121,6 @@ export const ListRequest = Schema.Union([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ListRequest = typeof ListRequest.Type
 
@@ -1171,7 +1129,6 @@ export type ListRequest = typeof ListRequest.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const ListResponse = Schema.Union([
   Schema.TaggedStruct("flows", {
@@ -1200,7 +1157,6 @@ export const ListResponse = Schema.Union([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type ListResponse = typeof ListResponse.Type
 
@@ -1209,7 +1165,6 @@ export type ListResponse = typeof ListResponse.Type
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export const Receipt = Schema.Union([
   Schema.TaggedStruct("Accepted", { receiptId: Schema.String, runId: Schema.optional(RunId) }),
@@ -1228,6 +1183,5 @@ export const Receipt = Schema.Union([
  *
  * @since 0.1.0
  * @category models
- * @slop
  */
 export type Receipt = typeof Receipt.Type

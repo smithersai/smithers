@@ -46,7 +46,6 @@ import {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class ControlPrincipal extends Context.Service<ControlPrincipal, typeof Principal.Type>()(
   "/control/ControlPrincipal"
@@ -57,7 +56,6 @@ export class ControlPrincipal extends Context.Service<ControlPrincipal, typeof P
  *
  * @category middleware
  * @since 0.1.0
- * @slop
  */
 export class ControlAuth extends RpcMiddleware.Service<ControlAuth, {
   provides: ControlPrincipal
@@ -78,7 +76,6 @@ const mutationErrors = Schema.Union([
  *
  * @category groups
  * @since 0.1.0
- * @slop
  */
 export const ControlRpcs = RpcGroup.make(
   Rpc.make("Plan", {
@@ -186,7 +183,6 @@ export const ControlRpcs = RpcGroup.make(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Authenticator {
   readonly authenticate: (
@@ -203,7 +199,6 @@ export interface Authenticator {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface BearerAuthOptions {
   readonly token: string
@@ -251,7 +246,6 @@ const constantTimeTokenEqual = (expected: string, actual: string): boolean => {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const bearerAuthenticator = (options: BearerAuthOptions): Authenticator => ({
   authenticate: (headers) => {
@@ -270,7 +264,6 @@ export const bearerAuthenticator = (options: BearerAuthOptions): Authenticator =
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerAuth = (authenticator: Authenticator) =>
   Layer.succeed(
@@ -287,7 +280,6 @@ export const layerAuth = (authenticator: Authenticator) =>
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerBearerAuth = (options: BearerAuthOptions) => layerAuth(bearerAuthenticator(options))
 
@@ -296,7 +288,6 @@ export const layerBearerAuth = (options: BearerAuthOptions) => layerAuth(bearerA
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoopAuth = (principal: typeof Principal.Type = {
   id: "test-principal",

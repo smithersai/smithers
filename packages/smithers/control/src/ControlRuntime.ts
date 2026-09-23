@@ -118,7 +118,6 @@ export interface SignalCommand {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface StoredPlan {
   readonly card: PlanCard
@@ -132,7 +131,6 @@ export interface StoredPlan {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const ApprovalDecision = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Pending") }),
@@ -215,7 +213,6 @@ export const requireApproved = (
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface BulkGrant {
   readonly tokenId: string
@@ -229,7 +226,6 @@ export interface BulkGrant {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type LaunchResult =
   | {
@@ -266,7 +262,6 @@ export interface PlanOutcome {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface MutationRecord {
   readonly fingerprint: string
@@ -284,7 +279,6 @@ export interface MutationRecord {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type RunKeyClaim =
   | { readonly _tag: "Claimed" }
@@ -295,7 +289,6 @@ export type RunKeyClaim =
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface MemoryFlow {
   readonly flowId: FlowId
@@ -331,7 +324,6 @@ export interface MemoryFlow {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface MemoryOptions {
   readonly flows?: ReadonlyArray<MemoryFlow> | undefined
@@ -345,7 +337,6 @@ export interface MemoryOptions {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface PendingResume {
   readonly runId: RunId
@@ -377,7 +368,6 @@ export interface PendingResume {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   /** The owning host's policy, independent of authentication and attribution. */
@@ -586,7 +576,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class ControlRuntime extends Context.Service<ControlRuntime, Service>()(
   "/control/ControlRuntime"
@@ -597,7 +586,6 @@ export class ControlRuntime extends Context.Service<ControlRuntime, Service>()(
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (implementation: Service): Service => ControlRuntime.of(implementation)
 
@@ -662,7 +650,6 @@ const approvalToken = (token: MutableToken): ApprovalToken => ({
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRuntime, never, Crypto.Crypto> =>
   Layer.effect(
@@ -670,7 +657,17 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
     Effect.gen(function*() {
       const crypto = yield* Crypto.Crypto
       const now = options.now ?? Date.now
-      const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local
+      // The in-memory adapter stamps `memory`/`test` on a caller that names no
+      // principal, so its default policy delegates that identity as well as
+      // the local operator. Production policies never carry it.
+      const approvalAuthority = options.approvalAuthority ?? (yield* ApprovalAuthority.make([
+        {
+          principal: { id: "local", kind: "operator" },
+          scopes: ["once", "run", "remembered"],
+          targets: ["Plan", "Node"]
+        },
+        { principal: { id: "memory", kind: "test" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
+      ]).pipe(Effect.orDie))
       const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
       const configuredFlows = options.flows ?? plannable.map((entry): MemoryFlow => ({
         flowId: entry.flowId,
