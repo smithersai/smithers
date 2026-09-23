@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3143 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3149 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -327,6 +327,11 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **repository-jobs:** ignore stale signal projections with SQL attempt and operation guards ([c8205c352b](https://github.com/smithersai/smithers/commit/c8205c352b707d39c9bd6aea89c2941d308983ff))
+- **app:** scope HTTP turn recovery flags to each leg ([debebe6cb4](https://github.com/smithersai/smithers/commit/debebe6cb45201269713723e5b42ab37760447aa))
+- **tui:** make PTY approval checks deterministic ([f0559bdbfc](https://github.com/smithersai/smithers/commit/f0559bdbfcc62ec828b1af84c3653eef31d8c96d))
+- **tui:** drain stopped launches before closing the host ([179a521b34](https://github.com/smithersai/smithers/commit/179a521b345cfe2be670d75b330c14f5b74d29fa))
+- **tui:** enforce approvals and preserve undo and run state ([941bf571cb](https://github.com/smithersai/smithers/commit/941bf571cb8a697317629be6db89b3af5154a295))
 - **ci:** give cloud.sh a gate for every GitHub CI command ([7c0df69cc1](https://github.com/smithersai/smithers/commit/7c0df69cc115edb0ba245d147ef7625ede9ebcb2))
 - **native:** isolate backend credentials across target switches ([4aa37b6230](https://github.com/smithersai/smithers/commit/4aa37b6230f1404492aa593fcabdb4f3bfc27135))
 - **app:** fence repository create inventory by account owner revision ([306989594d](https://github.com/smithersai/smithers/commit/306989594d5a55c20e3a34b0763a486acdf13582))
@@ -2548,6 +2553,7 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(build):** pass macOS SDK root to sandboxed cgo fixture ([6739fbb84d](https://github.com/smithersai/smithers/commit/6739fbb84d41db94e7f6b04d883f3e9e2b677c11))
 - **test:** use native host paths and OS-specific process assertions ([eac3e679ad](https://github.com/smithersai/smithers/commit/eac3e679ad71106ee95027d2c8817a437bc05b73))
 - **test(workspace):** cover simultaneous writes with matching basenames ([d2fdf6ada4](https://github.com/smithersai/smithers/commit/d2fdf6ada4679ad0aeb6db7e81fb6d4e48009b96))
 - **build(node):** require Node >= 26.4 ([94347eea11](https://github.com/smithersai/smithers/commit/94347eea111d27d8572e4eefd8b0f64687520faf))
