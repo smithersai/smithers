@@ -1369,6 +1369,88 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       return accepted
     })
 
+  const windowsHost = (prefix: string) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "wsx-windows-" })
+      const base = (yield* fs.realPath(temporary)).replaceAll("\\", "/")
+      const native = (path: string) => path.replaceAll("\\", "/").replace(prefix, base)
+      const windows = (path: string) => path.replaceAll("\\", "/").replace(base, prefix).replaceAll("/", "\\")
+      const root = `${base}/root`
+      const outside = `${base}/outside`
+      yield* fs.makeDirectory(root)
+      yield* fs.makeDirectory(outside)
+      // Real files and symlinks, with a host adapter that returns native Windows
+      // path spellings on every OS where this regression suite runs.
+      const host: FileSystem.FileSystem = {
+        ...fs,
+        readFile: (path) => fs.readFile(native(path)),
+        writeFile: (path, data, options) => fs.writeFile(native(path), data, options),
+        makeDirectory: (path, options) => fs.makeDirectory(native(path), options),
+        remove: (path, options) => fs.remove(native(path), options),
+        realPath: (path) => fs.realPath(native(path)).pipe(Effect.map(windows)),
+        readLink: (path) => fs.readLink(native(path)).pipe(Effect.map(windows))
+      }
+      const sandbox = WorkspaceSandbox.makeFileSystem(host, yield* ArtifactStore.ArtifactStore, windows(root), {
+        reservedPaths: ["objects"]
+      })
+      return { fs, root, outside, sandbox }
+    })
+
+  for (const prefix of ["C:/host", "//server/share/host"]) {
+    it.effect(`copies back confined links with Windows canonical paths under ${prefix}`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const { fs, root, sandbox } = yield* windowsHost(prefix)
+          yield* fs.writeFileString(`${root}/real.txt`, "old")
+          yield* fs.makeDirectory(`${root}/sub`)
+          yield* fs.symlink("real.txt", `${root}/existing.txt`)
+          yield* fs.symlink("./sub/../fresh.txt", `${root}/relative.txt`)
+          yield* fs.symlink(`${root}/absolute.txt`, `${root}/absolute-link.txt`)
+          const accepted = yield* write(sandbox, [
+            ["existing.txt", "existing"],
+            ["relative.txt", "relative"],
+            ["absolute-link.txt", "absolute"]
+          ], ["*.txt"])
+          yield* sandbox.materialize(accepted)
+          expect(yield* fs.readFileString(`${root}/real.txt`)).toBe("existing")
+          expect(yield* fs.readFileString(`${root}/fresh.txt`)).toBe("relative")
+          expect(yield* fs.readFileString(`${root}/absolute.txt`)).toBe("absolute")
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+
+    it.effect(`reserves aliases with Windows canonical paths under ${prefix}`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const { fs, root, sandbox } = yield* windowsHost(prefix)
+          yield* fs.makeDirectory(`${root}/objects`)
+          yield* fs.writeFileString(`${root}/objects/blob`, "LIVE")
+          yield* fs.symlink(`${root}/objects`, `${root}/alias`)
+          const accepted = yield* write(sandbox, [["alias/blob", "changed"]], ["alias/**"])
+          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
+          expect(yield* fs.readFileString(`${root}/objects/blob`)).toBe("LIVE")
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+
+    it.effect(`refuses escaping links with Windows canonical paths under ${prefix}`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          const { fs, root, outside, sandbox } = yield* windowsHost(prefix)
+          yield* fs.writeFileString(`${outside}/existing.txt`, "OUTSIDE")
+          yield* fs.symlink(`${outside}/existing.txt`, `${root}/existing.txt`)
+          yield* fs.symlink(`${outside}/fresh.txt`, `${root}/absolute.txt`)
+          yield* fs.symlink("../outside/fresh.txt", `${root}/relative.txt`)
+          yield* fs.symlink(`${"../".repeat(40)}escape.txt`, `${root}/up.txt`)
+          for (const path of ["existing.txt", "absolute.txt", "relative.txt", "up.txt"]) {
+            const accepted = yield* write(sandbox, [[path, "PWNED"]], ["*.txt"])
+            expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "path_escapes_workspace" })
+          }
+          expect(yield* fs.readDirectory(outside)).toEqual(["existing.txt"])
+          expect(yield* fs.readFileString(`${outside}/existing.txt`)).toBe("OUTSIDE")
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+  }
+
   it.effect("interrupts a lock wait without removing another owner's lock or leaking a permit", () =>
     withCrypto(
       Effect.scoped(Effect.gen(function*() {

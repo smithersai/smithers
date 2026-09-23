@@ -616,14 +616,20 @@ const parentDirectory = (path: string): string | undefined => {
 /** Whether `path` is `root` itself or lies beneath it. Both sides canonical. */
 const contained = (root: string, path: string): boolean => `${path}/`.startsWith(`${root}/`)
 
+/** Native drive and UNC paths use either separator; POSIX names stay literal. */
+const isWindowsPath = (path: string): boolean => /^(?:[A-Za-z]:[/\\]|[/\\]{2})/.test(path)
+const slashHostPath = (path: string): string => isWindowsPath(path) ? path.replaceAll("\\", "/") : path
+
 /**
  * Collapses `.` and `..` segments in an absolute slash path without touching
  * the filesystem. `undefined` when the path climbs above the filesystem root —
  * a symlink referent that does so cannot be inside any workspace.
  */
 const collapseDots = (path: string): string | undefined => {
+  const volume = /^(?:[A-Za-z]:|\/\/[^/]+\/[^/]+)(?=\/|$)/.exec(path)
+  const prefix = volume === null ? "" : volume[0]
   const segments: Array<string> = []
-  for (const segment of path.split("/")) {
+  for (const segment of path.slice(prefix.length).split("/")) {
     if (segment === "" || segment === ".") continue
     if (segment === "..") {
       if (segments.length === 0) return undefined
@@ -632,7 +638,7 @@ const collapseDots = (path: string): string | undefined => {
     }
     segments.push(segment)
   }
-  return `/${segments.join("/")}`
+  return `${prefix}/${segments.join("/")}`
 }
 
 // -----------------------------------------------------------------------------
@@ -1307,6 +1313,7 @@ export const makeFileSystem = (
   })
   const realPathIfPresent = (path: string): Effect.Effect<string | undefined, WorkspaceError> =>
     fs.realPath(path).pipe(
+      Effect.map(slashHostPath),
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
       Effect.mapError(hostFailure)
     )
@@ -1316,7 +1323,7 @@ export const makeFileSystem = (
   const symlinkTarget = (path: string): Effect.Effect<string | undefined> =>
     fs.readLink(path).pipe(Effect.catch(() => Effect.succeed(undefined)))
   const canonicalRoot = fs.realPath(root === "" ? "." : root).pipe(
-    Effect.map((resolved) => resolved.replaceAll(/\/+$/g, "")),
+    Effect.map((resolved) => slashHostPath(resolved).replaceAll(/\/+$/g, "")),
     Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
     Effect.mapError(hostFailure)
   )
@@ -1365,11 +1372,14 @@ export const makeFileSystem = (
       if (root !== "" && !contained(canonical, speculative)) {
         return yield* Effect.fail(escapesWorkspace(path, speculative))
       }
-      const link = yield* symlinkTarget(target)
-      if (link === undefined) return
+      const nativeLink = yield* symlinkTarget(target)
+      if (nativeLink === undefined) return
+      const windows = isWindowsPath(canonical)
+      const link = windows ? nativeLink.replaceAll("\\", "/") : nativeLink
       if (fuel <= 0) return yield* Effect.fail(escapesWorkspace(path, link))
       // `speculative` is absolute, so the final component always has a parent.
-      const referent = collapseDots(link.startsWith("/") ? link : `${parentDirectory(speculative)!}/${link}`)
+      const absolute = link.startsWith("/") || (windows && /^[A-Za-z]:/.test(link))
+      const referent = collapseDots(absolute ? link : `${parentDirectory(speculative)!}/${link}`)
       if (referent === undefined || (root !== "" && !contained(canonical, referent))) {
         return yield* Effect.fail(escapesWorkspace(path, referent ?? link))
       }
