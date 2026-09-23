@@ -63,7 +63,8 @@ const containment = async (recovery) => {
     NODE_OPTIONS: `--import=${preload}`,
     SMITHERS_TEST_RECORDING: recording,
     SMITHERS_OPENAI_AUTH: "api-key",
-    OPENAI_API_KEY: "recorded-fixture-not-a-real-key"
+    OPENAI_API_KEY: "recorded-fixture-not-a-real-key",
+    AI_GATEWAY_API_KEY: "recorded-fixture-not-a-real-key"
   }
   for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key]

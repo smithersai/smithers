@@ -25,7 +25,11 @@ for (const vcs of ["git", "jj"]) {
       ok(directory, "git", ["commit", "-m", "initial"])
       ok(remote, "git", ["init", "--bare", "-b", "main"])
       ok(directory, "git", ["remote", "add", "origin", remote])
-      if (vcs === "jj") ok(directory, "jj", ["git", "init", "--colocate"])
+      if (vcs === "jj") {
+        ok(directory, "jj", ["git", "init", "--colocate"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.name", "Commit test"])
+        ok(directory, "jj", ["config", "set", "--repo", "user.email", "test@example.com"])
+      }
       writeFileSync(join(directory, "first.txt"), "first contributor\n")
       writeFileSync(join(directory, "second.txt"), "second contributor\n")
       writeFileSync(join(directory, ".env"), "ignored test data\n")
