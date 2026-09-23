@@ -13,9 +13,11 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as Path from "effect/Path"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { build } from "esbuild"
+import * as NativePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as BunFileSystem from "../src/BunFileSystem.ts"
@@ -40,6 +42,19 @@ describe("@smthrs/platform-bun barrel", () => {
     expect(BunFileSystem.layer).toBe(AtomicFileSystem.layer)
     expect(BunFileSystem.layerWith).toBe(AtomicFileSystem.layerWith)
     expect(BunHost.AtomicFileSystem).toBe(AtomicFileSystem)
+  })
+
+  it("uses native path semantics for absolute filesystem paths", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const path = yield* Path.Path
+        const root = process.cwd()
+        expect(path.sep).toBe(NativePath.sep)
+        expect(path.isAbsolute(root)).toBe(true)
+        expect(path.resolve(root, "..", "next")).toBe(NativePath.resolve(root, "..", "next"))
+        expect(path.join(root, "nested", "file.ts")).toBe(NativePath.join(root, "nested", "file.ts"))
+      }).pipe(Effect.provide(BunHost.layerAt(process.cwd())))
+    )
   })
 
   it("records what it spawns and retires the record when the scope closes", async () => {
@@ -96,7 +111,7 @@ describe("@smthrs/platform-bun barrel", () => {
     // key all have to be deliberate.
     expect(BunHost.implementationIds).toEqual({
       "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-      "effect/Path": "effect/Path",
+      "effect/Path": "@effect/platform-bun/BunPath",
       "effect/process/ChildProcessSpawner": "@effect/platform-bun/BunChildProcessSpawner",
       "@smthrs/jj/Jj": "@smthrs/jj/bun/BunJj",
       "effect/HttpClient": "@effect/platform-bun/BunHttpClient"

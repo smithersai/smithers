@@ -158,7 +158,7 @@ describe that substitution:
 ```ts
 {
   "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-  "effect/Path": "effect/Path",
+  "effect/Path": "@effect/platform-bun/BunPath",
   "effect/process/ChildProcessSpawner": "@effect/platform-bun/BunChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/bun/BunJj",
   "effect/HttpClient": "@effect/platform-bun/BunHttpClient"

@@ -3,7 +3,7 @@
  *
  * This module defines the `NodeHost` service union and a single `layer` that
  * provides the closed Host surface backed by Node: `@effect/platform-node`'s
- * filesystem, child-process spawner and Undici `HttpClient`, Effect's `Path`,
+ * filesystem, child-process spawner, Undici `HttpClient`, native `Path`,
  * and the Node `Jj` adapter from its own package. Use the layer when a Node
  * program wants every host capability from one place; use the individual
  * modules when a program should only be able to reach part of the host.
@@ -23,13 +23,14 @@ import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcess
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
+import * as NodePath from "@effect/platform-node/NodePath"
 import type { Jj, JjError } from "@smthrs/jj"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
 import type * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import type { FileSystem } from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as Path from "effect/Path"
+import type * as Path from "effect/Path"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { isAbsolute } from "node:path"
@@ -106,14 +107,14 @@ const absoluteRoot = (root: string): string => {
  */
 export const implementationIds: Readonly<Record<(typeof HostServiceIds)[number], string>> = {
   "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-  "effect/Path": "effect/Path",
+  "effect/Path": "@effect/platform-node/NodePath",
   "effect/process/ChildProcessSpawner": "@effect/platform-node/NodeChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/node/NodeJj",
   "effect/HttpClient": "@effect/platform-node/NodeHttpClient"
 }
 
 /** The two services `NodeChildProcessSpawner` resolves paths and files with. */
-const platform = Layer.mergeAll(AtomicFileSystem.layer, Path.layer)
+const platform = Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer)
 
 /**
  * What a caller may configure about a contained Node host.

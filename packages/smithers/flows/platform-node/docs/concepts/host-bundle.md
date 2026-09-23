@@ -32,7 +32,7 @@ mostly assembly:
 
 | Tag                   | Implementation                          |
 | --------------------- | --------------------------------------- |
-| `Path`                | Effect's `Path.layer`                   |
+| `Path`                | `NodePath.layer`                        |
 | `ChildProcessSpawner` | `NodeChildProcessSpawner.layer`         |
 | `HttpClient`          | `EgressHttpClient.layer(process.env)`   |
 | `Jj`                  | `@smthrs/jj`'s `NodeJj.layer`           |

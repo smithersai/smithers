@@ -26,6 +26,7 @@
 import * as BunChildProcessSpawner from "@effect/platform-bun/BunChildProcessSpawner"
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
 import * as BunHttpClient from "@effect/platform-bun/BunHttpClient"
+import * as BunPath from "@effect/platform-bun/BunPath"
 import type { Jj, JjError } from "@smthrs/jj"
 import * as BunJj from "@smthrs/jj/bun/BunJj"
 import type { HostServiceIds } from "@smthrs/kernel/HostServices"
@@ -36,7 +37,7 @@ import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import type * as Crypto from "effect/Crypto"
 import type { FileSystem } from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as Path from "effect/Path"
+import type * as Path from "effect/Path"
 import type { HttpClient } from "effect/unstable/http/HttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { isAbsolute } from "node:path"
@@ -184,7 +185,7 @@ const absoluteRoot = (factory: "layerAt" | "layerContainedAt", root: string): st
  */
 export const implementationIds: Readonly<Record<(typeof HostServiceIds)[number], string>> = {
   "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-  "effect/Path": "effect/Path",
+  "effect/Path": "@effect/platform-bun/BunPath",
   "effect/process/ChildProcessSpawner": "@effect/platform-bun/BunChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/bun/BunJj",
   "effect/HttpClient": "@effect/platform-bun/BunHttpClient"
@@ -214,7 +215,7 @@ const reaping = (options?: ContainedOptions): ProcessReaper.Options => ({
 })
 
 /** The two services `BunChildProcessSpawner` resolves paths and files with. */
-const platform = Layer.mergeAll(BunFileSystem.layer, Path.layer, BunCrypto.layer)
+const platform = Layer.mergeAll(BunFileSystem.layer, BunPath.layer, BunCrypto.layer)
 
 /** Effect's fetch client, told never to follow a redirect on its own. */
 const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(

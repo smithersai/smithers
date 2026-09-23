@@ -569,7 +569,7 @@ export const runHostContract = (
           })
           : Effect.gen(function*() {
             const path = yield* Path.Path
-            expect(path.normalize("/host-contract/./nested/../value")).toBe("/host-contract/value")
+            expect(path.normalize("/host-contract/./nested/../value")).toBe(`${path.sep}host-contract${path.sep}value`)
           }),
         layer
       ))

@@ -1,10 +1,22 @@
 import { expect, it } from "@effect/vitest"
 import { HostServiceIds } from "@smthrs/kernel/HostServices"
+import { Effect, Path } from "effect"
+import * as NativePath from "node:path"
 import * as NodeHost from "../src/NodeHost.ts"
 
 it("identifies every host implementation", () => {
   expect(Object.keys(NodeHost.implementationIds).sort()).toEqual([...HostServiceIds].sort())
 })
+it.effect("uses native path semantics for absolute filesystem paths", () =>
+  Effect.gen(function*() {
+    const path = yield* Path.Path
+    const root = process.cwd()
+    expect(path.sep).toBe(NativePath.sep)
+    expect(path.isAbsolute(root)).toBe(true)
+    expect(path.resolve(root, "..", "next")).toBe(NativePath.resolve(root, "..", "next"))
+    expect(path.join(root, "nested", "file.ts")).toBe(NativePath.join(root, "nested", "file.ts"))
+  }).pipe(Effect.provide(NodeHost.layerAt(process.cwd()))))
+
 it("refuses invalid roots with the NodeHost error before composition", () => {
   for (const factory of [NodeHost.layerAt, NodeHost.layerContainedAt]) {
     for (const root of ["", "relative", "x".repeat(1000)]) {
