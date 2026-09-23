@@ -412,6 +412,17 @@
         "require": "./dist/cjs/Repetition.js"
       },
       "reason": "The one bounded-repetition ceiling vocabulary, taken by @smthrs/flow Poll as onTimeout and @smthrs/patterns Loop as onMaxReached. It was the same two literals written out in both packages with no edge between them."
+    },
+    {
+      "name": "@smthrs/agent",
+      "subpath": "./ScriptedJudge",
+      "development": "./src/ScriptedJudge.ts",
+      "published": {
+        "types": "./dist/esm/ScriptedJudge.d.ts",
+        "import": "./dist/esm/ScriptedJudge.js",
+        "require": "./dist/cjs/ScriptedJudge.js"
+      },
+      "reason": "Explicit offline completion-judge fixture shared by whole-host tests. It rejects unknown questions and malformed evidence; production hosts must supply their configured evaluator."
     }
   ],
   "removed": [
