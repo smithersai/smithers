@@ -83,6 +83,18 @@ const pageForWindow = async (browser: Browser, windowUrl: string): Promise<Page>
   throw new Error(`CDP did not expose the packaged window target ${windowUrl}`)
 }
 
+/** Identify an already launched packaged window through CEF's live CDP target list. */
+export const existingNativeWindowTargetId = async (cdpEndpoint: string, windowUrl: string): Promise<string> => {
+  const response = await fetch(new URL("/json/list", loopbackEndpoint(cdpEndpoint)))
+  if (!response.ok) throw new Error(`CEF CDP target list returned HTTP ${response.status}`)
+  const targets = await response.json() as unknown
+  if (!Array.isArray(targets)) throw new Error("CEF CDP target list is malformed")
+  const matches = targets.filter((target): target is { readonly id: string; readonly url: string; readonly type: string } =>
+    object(target) && target.type === "page" && target.url === windowUrl && typeof target.id === "string" && target.id !== "")
+  if (matches.length !== 1) throw new Error(`CEF CDP did not identify exactly one packaged window at ${windowUrl}`)
+  return matches[0]!.id
+}
+
 /**
  * Launches the stable Electrobun artifact, attaches Playwright to its actual
  * CEF webview, and correlates that target with the authenticated native bridge.

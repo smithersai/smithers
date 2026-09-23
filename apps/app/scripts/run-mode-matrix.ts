@@ -91,7 +91,7 @@ for (const mode of selectedModes) {
   if (nativeDriver === undefined) {
     delete childEnvironment.SMITHERS_REAL_NATIVE_CDP_ENDPOINT
     delete childEnvironment.SMITHERS_REAL_NATIVE_WINDOW_URL
-    delete childEnvironment.SMITHERS_REAL_NATIVE_TARGET_NONCE
+    delete childEnvironment.SMITHERS_REAL_NATIVE_TARGET_ID
     delete childEnvironment.SMITHERS_NATIVE_MATRIX_PRELAUNCHED
   }
   const child = Bun.spawn(invocation, {

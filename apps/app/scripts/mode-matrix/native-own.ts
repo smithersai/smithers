@@ -4,6 +4,7 @@ import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { PackagedApp } from "../../e2e/packaged/PackagedApp"
+import { existingNativeWindowTargetId } from "./native-window"
 import type { ExecutionReceipt, ModeConfig } from "../../e2e/real/coverage/matrix"
 
 export interface NativeOwnSession {
@@ -115,8 +116,7 @@ export const startNativeOwn = async (
     if (!state.app.packaged || state.window?.renderer !== "cef" || !state.window.url) {
       throw new Error("native-own requires a packaged CEF window")
     }
-    const targetNonce = randomUUID()
-    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}; sessionStorage.setItem("smithersNativeMatrixTarget", ${JSON.stringify(targetNonce)})`)
+    const targetId = await existingNativeWindowTargetId(cdpEndpoint, state.window.url)
     const receiptPath = join(outputDir, "native-own.execution.json")
     const receipt: ExecutionReceipt = {
       mode: "native-own", revision, origin, ready: true,
@@ -145,7 +145,7 @@ export const startNativeOwn = async (
         SMITHERS_NATIVE_MATRIX_PRELAUNCHED: "native-own",
         SMITHERS_REAL_NATIVE_CDP_ENDPOINT: cdpEndpoint,
         SMITHERS_REAL_NATIVE_WINDOW_URL: state.window.url,
-        SMITHERS_REAL_NATIVE_TARGET_NONCE: targetNonce
+        SMITHERS_REAL_NATIVE_TARGET_ID: targetId
       },
       close
     }

@@ -1,8 +1,25 @@
 import { describe, expect, test } from "bun:test"
 import { resolve } from "node:path"
-import { parseNativeWindowDriverEnvelope } from "./native-window"
+import { existingNativeWindowTargetId, parseNativeWindowDriverEnvelope } from "./native-window"
 
 describe("packaged native-window matrix driver", () => {
+  test("finds the exact live CEF page ID and rejects an ambiguous target list", async () => {
+    let targets: unknown = [
+      { id: "other", type: "page", url: "http://127.0.0.1:4500/" },
+      { id: "packaged", type: "page", url: "http://127.0.0.1:4600/" }
+    ]
+    const cdp = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json(targets) })
+    try {
+      const endpoint = `http://127.0.0.1:${cdp.port}`
+      expect(await existingNativeWindowTargetId(endpoint, "http://127.0.0.1:4600/")).toBe("packaged")
+      targets = [{ id: "first", type: "page", url: "http://127.0.0.1:4600/" },
+        { id: "second", type: "page", url: "http://127.0.0.1:4600/" }]
+      await expect(existingNativeWindowTargetId(endpoint, "http://127.0.0.1:4600/")).rejects.toThrow("exactly one")
+    } finally {
+      await cdp.stop()
+    }
+  })
+
   test("resolves a secret-free CEF launch envelope for each native mode", () => {
     expect(parseNativeWindowDriverEnvelope(JSON.stringify({
       executable: "artifacts/Smithers.app/Contents/MacOS/launcher",

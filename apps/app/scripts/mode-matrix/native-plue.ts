@@ -1,8 +1,8 @@
-import { randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { PackagedApp } from "../../e2e/packaged/PackagedApp"
+import { existingNativeWindowTargetId } from "./native-window"
 import type { ExecutionReceipt, ModeConfig } from "../../e2e/real/coverage/matrix"
 
 export interface NativePlueSession {
@@ -60,8 +60,7 @@ export const startNativePlue = async (
     if (existsSync(join(home, "Library", "Application Support", "Smithers"))) {
       throw new Error("native-plue unexpectedly created owned backend or PostgreSQL state")
     }
-    const targetNonce = randomUUID()
-    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}; sessionStorage.setItem("smithersNativeMatrixTarget", ${JSON.stringify(targetNonce)})`)
+    const targetId = await existingNativeWindowTargetId(cdpEndpoint, state.window.url)
     const receiptPath = join(outputDir, "native-plue.execution.json")
     const receipt: ExecutionReceipt = {
       mode: "native-plue", revision, origin: origin.origin, ready: true,
@@ -85,7 +84,7 @@ export const startNativePlue = async (
         SMITHERS_NATIVE_MATRIX_PRELAUNCHED: "native-plue",
         SMITHERS_REAL_NATIVE_CDP_ENDPOINT: cdpEndpoint,
         SMITHERS_REAL_NATIVE_WINDOW_URL: state.window.url,
-        SMITHERS_REAL_NATIVE_TARGET_NONCE: targetNonce
+        SMITHERS_REAL_NATIVE_TARGET_ID: targetId
       },
       close
     }
