@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3105 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3121 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,11 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **app:** connect packaged selfhost to host model fixture ([d248967866](https://github.com/smithersai/smithers/commit/d2489678668983c1aae2a8f773356a2623d1e8b8))
+- **backend:** accept a terminal socket from the API's own host ([3d3e88aef2](https://github.com/smithersai/smithers/commit/3d3e88aef2856a74801b905b64874eb88c72bcc6))
+- **app:** drop decoded content encoding in the native API relay ([38846c64dd](https://github.com/smithersai/smithers/commit/38846c64dd322d61e67efafadac1fbd9d34df64f))
+- **std:** recognize native roots in glob diagnostics ([ea8865c317](https://github.com/smithersai/smithers/commit/ea8865c3173f270896e610c7e97f09fc19b847e7))
+- **backend:** bind hosted Flow judge through proxy placeholder ([f314e623d1](https://github.com/smithersai/smithers/commit/f314e623d1cd40f112030c0c48fb903af9874cd7))
 - **app:** use bearer identity on hosted Plue targets ([8da689b023](https://github.com/smithersai/smithers/commit/8da689b02317bdb5d0b5d86273def1f1a558f46d))
 - **app:** return a valid selected backend document ([ccc9402a99](https://github.com/smithersai/smithers/commit/ccc9402a9931bf10f4cee54c0a3d7fc142f54dea))
 - **migrate:** protect gateway state across escaped native paths ([2bd5717893](https://github.com/smithersai/smithers/commit/2bd571789318680664ebaca10c901ef53d4aa1d5))
@@ -2193,6 +2198,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **cli:** install the smthrs package; it ships smthrs and smithers ([16588f84cb](https://github.com/smithersai/smithers/commit/16588f84cb68978d725824ebbc1b674f3344de13))
 - **platform-node:** sync kernel vacancy API reference ([b15e70c10a](https://github.com/smithersai/smithers/commit/b15e70c10a2cf8d6b03fdc0c17338634077c9862))
 - **site:** refresh CLI and runtime references ([bbba6ca15b](https://github.com/smithersai/smithers/commit/bbba6ca15b3ea70adeb77be086c2a4463785933f))
 - synchronize generated package sites ([05ba881787](https://github.com/smithersai/smithers/commit/05ba8817877fbb6c3aef6937c1b42f34fbcca8c4))
@@ -2524,6 +2530,16 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(app):** restore the maximized Models card after owner chat ([5e6b061f15](https://github.com/smithersai/smithers/commit/5e6b061f15dab40c8a3927a6905b7fcaf2a50f93))
+- **test(app):** complete first visit before hosted issue slash commands ([af5cb1c9e3](https://github.com/smithersai/smithers/commit/af5cb1c9e3ab7a533679b6d1c2e5e6610cf668cc))
+- **test(app):** complete first visit before hosted landing ([297a8e3421](https://github.com/smithersai/smithers/commit/297a8e342163c4b20b4a463ba24c7a66d8f09d7a))
+- **test(std):** preserve native checkpoint command paths ([acce99cddc](https://github.com/smithersai/smithers/commit/acce99cddcd80e6b2d9d54d49fc5e9363693c3c3))
+- **test(app):** exercise hosted GitHub imports with token identity ([2381bb614c](https://github.com/smithersai/smithers/commit/2381bb614c55317f6f5652be3f5e5c26165d2415))
+- **test(build-cli):** declare the empty Node fixture lockfile ([4b6ec73d30](https://github.com/smithersai/smithers/commit/4b6ec73d307f0308fb80fea2bf30c69830ba2961))
+- **test(app):** budget the oversized OPFS fixture write ([901b924041](https://github.com/smithersai/smithers/commit/901b9240410c94cd202f9b3e7c4f596d43f11c45))
+- **test(build-cli):** keep cgo invalidation fixture small ([e36bb57fba](https://github.com/smithersai/smithers/commit/e36bb57fba8314cff5e86b0b60731cc64089fc1c))
+- **test(scripts):** create changelog exports without Git history ([0ccf021107](https://github.com/smithersai/smithers/commit/0ccf021107d0385daa1e9497e19633582f8f665a))
+- **test(fs):** canonicalize artifact fixture dependency links ([0d955c95f8](https://github.com/smithersai/smithers/commit/0d955c95f836b514f9de7a459ae796e868f5043c))
 - **test(app):** complete hosted onboarding and expose model fixture ([27db382946](https://github.com/smithersai/smithers/commit/27db38294623e8eddbe1632f005e871110920324))
 - **test(std):** check shell grants with POSIX and Windows paths ([828dcb422e](https://github.com/smithersai/smithers/commit/828dcb422e2dfb24d787702e12813a9a6b4fcdde))
 - **test(std):** use legal native search fixtures on Windows ([9dab35bfeb](https://github.com/smithersai/smithers/commit/9dab35bfebba98e2a15cc6bba78301052b858e81))
