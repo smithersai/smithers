@@ -79,7 +79,7 @@ describe("killProcess", () => {
     expect(parentPid(pid)).toBeUndefined()
   })
 
-  it("observes the orphan a kill leaves: the grandchild is reparented away from its dead parent", async () => {
+  it.skipIf(process.platform === "win32")("observes the orphan a kill leaves: the grandchild is reparented away from its dead parent", async () => {
     // A process group whose leader is the killed child. Killing the child
     // orphans the group, which is the state every crash case then asserts on.
     const parent = spawn("sh", ["-c", "sh -c 'sleep 30' & echo $! && sleep 30"], {
@@ -107,7 +107,7 @@ describe("killProcess", () => {
       .rejects.toThrow(/a condition that never holds/)
   })
 
-  it("sees a whole process group, and stops seeing it once the group is gone", async () => {
+  it.skipIf(process.platform === "win32")("sees a whole process group, and stops seeing it once the group is gone", async () => {
     // The group, not the pid, is the unit `NodeRuntime.layerHost` contains, so
     // the fault tier asks about it directly. A detached child is its own group
     // leader, which makes its pid the pgid.

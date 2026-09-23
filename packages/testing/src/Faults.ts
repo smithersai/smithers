@@ -18,7 +18,7 @@
  *
  * @since 1.0.0
  */
-import { execFileSync } from "node:child_process"
+import * as ProcessTable from "./ProcessTable.ts"
 
 const pollIntervalMs = 25
 const defaultTimeoutMs = 5_000
@@ -77,18 +77,10 @@ export const isGroupAlive = (pgid: number): boolean => {
  * @category getters
  */
 export const parentPid = (pid: number): number | undefined => {
-  try {
-    const output = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }).trim()
-    const parsed = Number(output.split(/\s+/)[0])
-    /* v8 ignore next -- the refusal half is unreachable on every supported platform: `ps` either
-       prints one ppid or exits non-zero into the catch below, so neither empty output nor an
-       unparsable first field can occur. It stays because a platform that did produce one would
-       otherwise report a parent of 0, which reads as "reparented to init" */
-    return output.length === 0 || !Number.isFinite(parsed) ? undefined : parsed
-  } catch {
-    // A pid that is gone makes `ps` exit non-zero, and that is the answer.
-    return undefined
-  }
+  const output = ProcessTable.query({ pid, columns: ["ppid"] }).trim()
+  const parsed = Number(output.split(/\s+/)[0])
+  /* v8 ignore next -- a selected pid yields one numeric parent or an empty row. */
+  return output.length === 0 || !Number.isFinite(parsed) ? undefined : parsed
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
