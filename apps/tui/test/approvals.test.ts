@@ -474,6 +474,11 @@ describe("key", () => {
     expect(Approvals.key("y", state({ meta: true }))).toBeUndefined()
   })
 
+  it("leaves a key the focused panel acts on to the panel", () => {
+    expect(Approvals.key("a", state({ reserved: ["a"] }))).toBeUndefined()
+    expect(Approvals.key("y", state({ reserved: ["a"] }))).toBe("once")
+  })
+
   it("offers a only where the store can grant it", () => {
     expect(Approvals.key("a", state({ pending: [pending(false)] }))).toBeUndefined()
   })

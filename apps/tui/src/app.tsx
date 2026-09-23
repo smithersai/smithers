@@ -413,6 +413,11 @@ export function App(props: AppProps) {
     : surface.startsWith("flow:")
     ? runs.panel(surface.slice(5))
     : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
+  /** Approval keys the focused panel acts on: its `a` runs the selected row's action or opens a flow's form. */
+  const panelKeys = panelFocus && panel !== undefined &&
+      (surface.startsWith("flow:") || panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action !== undefined)
+    ? ["a"]
+    : []
   const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tab.title, tone: lane(index) }]))
   const timeline = Timeline.merge(
     [
@@ -1023,6 +1028,23 @@ export function App(props: AppProps) {
     }
   }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd, workspace, runs, revision])
 
+  /** A prompt for the agent, taken literally: never a `!` shell line or a `/` command. */
+  const send = useCallback((text: string, followUp = false) => {
+    const running = live.current.turn
+    if (running === undefined && live.current.undoing !== undefined) {
+      setFollowUps((queued) => [...queued, text])
+      return
+    }
+    if (running === undefined) return startTurn(text)
+    if (followUp) {
+      setFollowUps((queued) => [...queued, text])
+      return
+    }
+    running.steering.steer(text)
+    writer.current.append({ type: "user", at: Date.now(), text, steered: true })
+    setTranscript((current) => Transcript.user(current, text, true, Date.now()))
+  }, [startTurn])
+
   const submit = useCallback((followUp = false, typed?: string) => {
     const input = composer.current
     if (input === null) return
@@ -1039,20 +1061,8 @@ export function App(props: AppProps) {
       return
     }
     if (text.startsWith("/") && command(text)) return
-    const running = live.current.turn
-    if (running === undefined && live.current.undoing !== undefined) {
-      setFollowUps((queued) => [...queued, text])
-      return
-    }
-    if (running === undefined) return startTurn(text)
-    if (followUp) {
-      setFollowUps((queued) => [...queued, text])
-      return
-    }
-    running.steering.steer(text)
-    writer.current.append({ type: "user", at: Date.now(), text, steered: true })
-    setTranscript((current) => Transcript.user(current, text, true, Date.now()))
-  }, [setText, runShell, command, startTurn])
+    send(text, followUp)
+  }, [setText, runShell, command, send])
 
   /** Tab inserts the selected completion; Enter also runs it when it is a whole command. */
   const acceptCompletion = useCallback((run: boolean) => {
@@ -1358,7 +1368,8 @@ export function App(props: AppProps) {
       ctrl: key.ctrl,
       meta: key.meta || key.option,
       armed: open === undefined && Approvals.armed(arming.current, live.current.approvals[0]?.requestId, live.current.now),
-      pending: live.current.approvals
+      pending: live.current.approvals,
+      reserved: panelKeys
     })
     if (choice !== undefined && props.host.approvals !== undefined) {
       key.preventDefault()
@@ -1426,9 +1437,10 @@ export function App(props: AppProps) {
       }
       if (key.name === "a") {
         const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
-        if (action !== undefined) {
+        // An agent wrote this prompt: it goes to the agent as text, never through `!` or `/` parsing.
+        if (action !== undefined && action.prompt.trim() !== "") {
           setPanelFocus(false)
-          submit(false, action.prompt)
+          send(action.prompt.trim())
         }
         return
       }
@@ -1676,6 +1688,7 @@ export function App(props: AppProps) {
           <View.Approval
             request={approvals[0]}
             scope={Approvals.scope(approvals[0])}
+            all={!panelKeys.includes("a")}
             armed={picker === undefined && form === undefined && Approvals.ready(arming.current, approvals[0].requestId, now, draft)}
             more={approvals.length - 1}
             {...(approvals[0].source === "chat"

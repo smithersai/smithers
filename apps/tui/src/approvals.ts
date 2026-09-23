@@ -386,12 +386,15 @@ export const key = (
     /** See `armed`. */
     readonly armed: boolean
     readonly pending: ReadonlyArray<Pending>
+    /** Keys the focused panel acts on; they reach the panel, never an approval. */
+    readonly reserved?: ReadonlyArray<string>
   }
 ): Choice | undefined => {
   const first = state.pending[0]
   if (first === undefined || !state.armed || state.draft !== "" || state.shift || state.ctrl || state.meta) {
     return undefined
   }
+  if (state.reserved?.includes(name) === true) return undefined
   if (name === "y") return "once"
   if (name === "n") return "deny"
   if (name === "a" && first.always) return "run"

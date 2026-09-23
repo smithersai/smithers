@@ -475,6 +475,8 @@ export function Approval(
     }
     /** What `a` grants, from `Approvals.scope`. */
     readonly scope: string
+    /** False while the focused panel owns `a`. */
+    readonly all?: boolean
     /** Keys show exactly when they answer; see `Approvals.ready`. */
     readonly armed: boolean
     readonly more: number
@@ -496,8 +498,8 @@ export function Approval(
             <span fg={color.faint}>{" allow  "}</span>
             <span fg={color.text}>n</span>
             <span fg={color.faint}>{" deny"}</span>
-            {props.request.always ? <span fg={color.text}>{"  a"}</span> : null}
-            {props.request.always ? <span fg={color.faint}>{` ${props.scope}`}</span> : null}
+            {props.request.always && props.all !== false ? <span fg={color.text}>{"  a"}</span> : null}
+            {props.request.always && props.all !== false ? <span fg={color.faint}>{` ${props.scope}`}</span> : null}
           </text>
         )
         : null}

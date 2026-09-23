@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -1092,6 +1092,35 @@ describe("approvals", () => {
     const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
     const outcome = Session.load(file).findLast((record) => record.type === "outcome")
     expect(outcome).toMatchObject({ type: "outcome", outcome: { answer: "Choice: deny" } })
+  }, 60_000)
+
+  it("a focused panel's a sends its action to the agent as text, never granting an approval or running a shell", async () => {
+    const cwd = repository()
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "panel-action-fixture.tsx")}`,
+      env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
+    })
+    await tui.until(drawn, 20_000)
+    await tui.type("publish")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Actions") && screen.includes("n deny"), 10_000, "panel and approval")
+    for (let index = 0; index < 4 && !tui.screen().includes("One action."); index++) {
+      await tui.press("\x1b[1;5C")
+      await Bun.sleep(200)
+    }
+    await tui.until((screen) => screen.includes("One action.") && screen.includes("n deny") && !screen.includes("a all bash"), 5_000, "panel focused")
+    await Bun.sleep(600)
+    await tui.press("a")
+    await tui.until((screen) => screen.includes("a all bash"), 5_000, "panel released")
+    for (let index = 0; index < 4 && !tui.screen().includes("steering"); index++) {
+      await tui.press("\x1b[1;5D")
+      await Bun.sleep(200)
+    }
+    await tui.until((screen) => /┃\s+!touch pwned/.test(screen) && screen.includes("steering"), 5_000, "action sent as a message")
+    await Bun.sleep(500)
+    expect(readFileSync(join(cwd, "host.log"), "utf8")).not.toContain("reply")
+    expect(existsSync(join(cwd, "pwned"))).toBe(false)
   }, 60_000)
 
   const prompt = "node check.mjs fails. Fix it and show it passes."
