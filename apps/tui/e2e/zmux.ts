@@ -141,6 +141,29 @@ export class Tui {
     await sleep(150)
   }
 
+  /** The visible screen as a standalone HTML page with its colors, for looking at. */
+  html(background = "#011627", foreground = "#d6deeb"): string {
+    const buffer = this.terminal.buffer.active
+    const hex = (value: number) => `#${value.toString(16).padStart(6, "0")}`
+    const escape = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    const rows: Array<string> = []
+    for (let row = 0; row < this.terminal.rows; row++) {
+      const line = buffer.getLine(buffer.viewportY + row)
+      let html = ""
+      for (let column = 0; column < this.cols; column++) {
+        const cell = line?.getCell(column)
+        if (cell === undefined || cell.getWidth() === 0) continue
+        const fg = cell.isFgRGB() ? hex(cell.getFgColor()) : foreground
+        const bg = cell.isBgRGB() ? hex(cell.getBgColor()) : "transparent"
+        const weight = cell.isBold() ? "font-weight:700;" : ""
+        const style = cell.isItalic() ? "font-style:italic;" : ""
+        html += `<span style="color:${fg};background:${bg};${weight}${style}">${escape(cell.getChars() || " ")}</span>`
+      }
+      rows.push(`<div>${html}</div>`)
+    }
+    return `<!doctype html><meta charset="utf-8"><body style="margin:0;background:${background}"><pre style="margin:0;padding:8px;font:13px/1.25 'JetBrains Mono','SF Mono',Menlo,monospace;color:${foreground}">${rows.join("")}</pre></body>`
+  }
+
   /** The visible screen, one string per row, trailing spaces trimmed. */
   screen(): string {
     const buffer = this.terminal.buffer.active
