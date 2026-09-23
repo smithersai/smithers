@@ -15,6 +15,7 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import * as Capability from "@smthrs/capability/Capability"
 import * as NodeControl from "@smthrs/cli/NodeControl"
 import { FlowEngine } from "@smthrs/engine"
@@ -30,6 +31,7 @@ import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Scope, Stream } from "effect"
+import * as ServiceContext from "effect/Context"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
@@ -130,7 +132,7 @@ export const make = (options: {
     Budget.layerUnbounded(),
     FlowEngine.layerMemory,
     snapshots,
-    // Measures the tree at both ends of every frame. Without it a sealed read
+    // Measures the tree at both ends of every worker frame. Without it a sealed read
     // is keyed on no workspace digest and replays its first answer after an
     // edit: write "one", read, write "two", read returned "one" twice.
     NodeControl.layerObserver(options.cwd),
@@ -212,7 +214,11 @@ export const make = (options: {
             input.onEvent(event)
             if (event._tag === "cell-produced") input.onCaption?.(Transcript.split(reply).prose)
           })
-        )
+        ),
+        // The coordinator has no filesystem or shell flow, so nothing it runs
+        // moves the tree. Measuring anyway walked the checkout twice a turn:
+        // a one-line `ctx.done()` answer showed 8 s late in this repository.
+        (effect) => (input.role === "coordinator" ? unobserved(effect) : effect)
       )
       const scope = yield* Effect.scope
       yield* engine.register(flow, () =>
@@ -237,6 +243,20 @@ export const make = (options: {
 
   return { cwd: options.cwd, judged, run, dispose: () => runtime.dispose() }
 }
+
+/**
+ * Runs `effect` without the workspace observer.
+ *
+ * On the effect, not the stream: `Stream.updateContext` does not reach the
+ * effect `Agent.run` resolves its services in. The cast is sound because the
+ * run reads the observer with `serviceOption`, so it is never a requirement.
+ */
+const unobserved = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.updateContext(
+    effect,
+    (context: ServiceContext.Context<R>) =>
+      ServiceContext.omit(WorkspaceObservation.Observer)(context) as ServiceContext.Context<R>
+  )
 
 const text = (content: ReadonlyArray<{ readonly type: string; readonly text?: string }>): string =>
   content.flatMap((part) => (part.type === "text" && part.text !== undefined ? [part.text] : [])).join("")

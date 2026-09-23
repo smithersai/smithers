@@ -394,6 +394,30 @@ describe("WorkspaceObservation", () => {
     rmSync(root, { recursive: true, force: true })
   })
 
+  it("measures through any host, whatever order the host lists a directory in", async () => {
+    const root = workspace()
+    write(root, "a.py", "one")
+    write(root, "src/b.py", "two")
+    write(root, "src/c.py", "three")
+    const portable = await Effect.runPromise(
+      Effect.map(FileSystem.FileSystem, WorkspaceObservation.fileSystemHost).pipe(Effect.provide(NodeFileSystem.layer))
+    )
+    // A host is free to answer in its own order; a Node listing is not sorted.
+    const reversed: WorkspaceObservation.Host = {
+      entries: (directory, keep) => Effect.map(portable.entries(directory, keep), (entries) => [...entries].reverse())
+    }
+
+    const observation = await Effect.runPromise(
+      Effect.flatMap(WorkspaceObservation.Observer, (observer) => observer.observe).pipe(
+        Effect.provide(WorkspaceObservation.layerHost(reversed, root))
+      )
+    )
+
+    expect(observation).toEqual(await measured(root))
+    expect(observation.paths).toBe(3)
+    rmSync(root, { recursive: true, force: true })
+  })
+
   it("builds an observer from a filesystem the caller already holds", async () => {
     const root = workspace()
     write(root, "a.py", "one")

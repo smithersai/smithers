@@ -708,6 +708,7 @@
     "check": "tsc -b tsconfig.json && tsc -p tsconfig.test.json --noEmit",
     "circular": "node scripts/circular.mjs",
     "test": "vitest",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose",
     "coverage": "vitest --coverage"
   },
   "dependencies": {

@@ -66,12 +66,14 @@ failures emit warning diagnostics with the failed operation, path, and cause.
 For a partial walk, the controller decides changed-ness from what the frame's
 calls declared.
 
-Two rules govern the layer:
+Three rules govern the layer:
 
 - Hand it the host's own `FileSystem`, not the kernel-guarded one. The walk is
   stat-only, never follows a symlink, and every path it builds starts from the
   root it was constructed with, so the guard has nothing to decide; guarding it
   bills one helper process per file, twice per frame.
+- On Node, prefer `NodeControl.layerObserver(root)`. It runs the same walk on
+  a host that makes one call per file instead of two, measured together.
 - A composition that provides no observer answers unobserved, and the loop
   falls back to declarations. `WorkspaceObservation.layerNoop` is the opposite
   case, an observer that fails on purpose so a host can prove the failing path.

@@ -86,6 +86,7 @@ import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
 import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
+import * as NodeWorkspaceObservation from "./NodeWorkspaceObservation.ts"
 import * as SourceRevision from "./SourceRevision.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
@@ -357,7 +358,7 @@ export const make = (
    * with: one pruned walk of the workspace root, taken at both ends of every
    * frame.
    *
-   * On {@link layerHostPlatform}, deliberately, and never on
+   * On the host's own Node filesystem, deliberately, and never on
    * {@link layerGuardedPlatform}. The observer is host equipment: the root is
    * this composition's, not a model's. It carries its own confinement
    * argument: it stats, it never opens, it follows no symlink, and every path it
@@ -365,12 +366,14 @@ export const make = (
    * states that argument in full. Guarding it decides nothing and costs one
    * helper process per file: SWE-bench wave 6 spent 912 s of a 1,200 s budget on
    * django's opening walk and never reached the agent's first tool call.
+   * `NodeWorkspaceObservation` states why it is Node's `fs` rather than
+   * Effect's `FileSystem`: one call per file instead of two, measured together.
    *
    * @category layers
    * @since 0.1.0
    */
   const layerObserver = (root: string): Layer.Layer<WorkspaceObservation.Observer> =>
-    WorkspaceObservation.layer(root).pipe(Layer.provide(layerHostPlatform))
+    WorkspaceObservation.layerHost(NodeWorkspaceObservation.host, root)
 
   /**
    * Provides the native flow registry the local CLI discovers flows with.

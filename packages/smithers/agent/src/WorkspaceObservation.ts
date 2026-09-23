@@ -83,6 +83,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import type * as PlatformError from "effect/PlatformError"
+import * as Result from "effect/Result"
 
 /**
  * Directory names never descended into.
@@ -164,23 +165,91 @@ export const Observer: Context.Service<Observer, Observer> = Context.Service<Obs
 
 const defaultMaxPaths = TreeFingerprint.maxPaths
 
+/**
+ * What one kept directory entry turned out to be.
+ *
+ * `Skipped` is a symlink or anything that is neither a file nor a directory.
+ * `Failed` is a measurement the host could not take; the walk decides what
+ * the failure means.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type Measured =
+  | { readonly _tag: "File"; readonly size: number; readonly modified: number }
+  | { readonly _tag: "Directory" }
+  | { readonly _tag: "Skipped" }
+  | { readonly _tag: "Failed"; readonly method: string; readonly cause: PlatformError.PlatformError }
+
+/**
+ * The host operation the walk is built on: one directory, listed and measured.
+ *
+ * One call per directory rather than per entry, so a host can measure a
+ * directory's entries together. {@link fileSystemHost} is the portable one; a
+ * Node host reads entry types off the listing and measures files concurrently.
+ * The order of the answer is free: the walk sorts it.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Host {
+  readonly entries: (
+    directory: string,
+    keep: (name: string) => boolean
+  ) => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly measured: Measured }>, PlatformError.PlatformError>
+}
+
+/**
+ * A {@link Host} over Effect's `FileSystem`, two host calls per entry.
+ *
+ * Symlinks are skipped before anything else looks at them. `readLink`
+ * succeeding is the definition of "this entry is a symlink", and it is the
+ * only question Effect's `FileSystem` can ask about a path without resolving
+ * it: `stat` follows, so on a host filesystem a linked directory would
+ * otherwise be descended into — out of the root, or around a cycle — and a
+ * linked file would contribute the size and mtime of whatever it points at.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const fileSystemHost = (fs: FileSystem.FileSystem): Host => ({
+  entries: (directory, keep) =>
+    Effect.flatMap(fs.readDirectory(directory), (names) =>
+      Effect.forEach(names.filter(keep), (name) => {
+        const path = `${directory}/${name}`
+        return Effect.gen(function*() {
+          const link = yield* fs.readLink(path).pipe(Effect.asSome, Effect.orElseSucceed(() => Option.none()))
+          if (Option.isSome(link)) return { _tag: "Skipped" } as const
+          const info = yield* Effect.result(fs.stat(path))
+          if (Result.isFailure(info)) return { _tag: "Failed", method: "stat", cause: info.failure } as const
+          if (info.success.type === "Directory") return { _tag: "Directory" } as const
+          if (info.success.type !== "File") return { _tag: "Skipped" } as const
+          return {
+            _tag: "File",
+            size: Number(info.success.size),
+            modified: Option.match(info.success.mtime, { onNone: () => 0, onSome: (at) => at.getTime() })
+          } as const
+        }).pipe(Effect.map((measured): { readonly name: string; readonly measured: Measured } => ({ name, measured })))
+      }))
+})
+
 /** Whether one entry name is skipped outright. */
 const ignored = (name: string, suffixes: ReadonlyArray<string>): boolean =>
   suffixes.some((suffix) => name.endsWith(suffix))
 
 /**
- * Walks one workspace and folds it into a single measurement.
+ * Walks one workspace through a {@link Host} and folds it into one measurement.
  *
  * The listing is built depth-first in sorted order so two measurements of an
- * unchanged tree are byte-identical, and the digest is taken over the whole
- * listing rather than per file: the controller only ever asks whether two
- * measurements are equal, so one hash is all it can use.
+ * unchanged tree are byte-identical whichever host took them, and the digest
+ * is taken over the whole listing rather than per file: the controller only
+ * ever asks whether two measurements are equal, so one hash is all it can use.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const observe = (
-  fs: FileSystem.FileSystem,
+export const observeHost = (
+  host: Host,
   root: string,
   options: Options = {}
 ): Effect.Effect<EngineLike.Observation> =>
@@ -188,6 +257,7 @@ export const observe = (
     const prune = new Set(options.prune ?? defaultPrune)
     const suffixes = options.ignoreSuffixes ?? defaultIgnoreSuffixes
     const maxPaths = options.maxPaths ?? defaultMaxPaths
+    const keep = (name: string): boolean => !prune.has(name) && !ignored(name, suffixes)
     const lines: Array<string> = []
     // Set the moment the walk turns back at the bound with entries still to
     // visit, which is what makes `complete` false. A walk that ends because it
@@ -204,41 +274,20 @@ export const observe = (
       })
     const walk = (directory: string): Effect.Effect<void> =>
       Effect.gen(function*() {
-        const entries = yield* fs.readDirectory(directory).pipe(
+        const entries = yield* host.entries(directory, keep).pipe(
           Effect.catch((cause) => failed("readDirectory", directory, cause).pipe(Effect.as([])))
         )
-        for (const name of [...entries].sort()) {
+        // Names in one directory are unique, so the order is total. `<` is the
+        // UTF-16 order `Array.prototype.sort` uses on strings.
+        for (const { name, measured } of [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))) {
           if (lines.length >= maxPaths) {
             bounded = true
             return
           }
-          if (prune.has(name) || ignored(name, suffixes)) continue
           const path = `${directory}/${name}`
-          // Symlinks are skipped before anything else looks at them. `readLink`
-          // succeeding is the definition of "this entry is a symlink", and it
-          // is the only question Effect's `FileSystem` can ask about a path
-          // without resolving it: `stat` follows, so on a host filesystem a
-          // linked directory would otherwise be descended into — out of the
-          // root, or around a cycle — and a linked file would contribute the
-          // size and mtime of whatever it points at.
-          const link = yield* fs.readLink(path).pipe(Effect.asSome, Effect.orElseSucceed(() => Option.none()))
-          if (Option.isSome(link)) continue
-          const info = yield* fs.stat(path).pipe(
-            Effect.asSome,
-            Effect.catch((cause) => failed("stat", path, cause).pipe(Effect.as(Option.none())))
-          )
-          if (Option.isNone(info)) continue
-          if (info.value.type === "Directory") {
-            yield* walk(path)
-            continue
-          }
-          if (info.value.type !== "File") continue
-          const size = info.value.size
-          const modified = Option.match(info.value.mtime, {
-            onNone: () => 0,
-            onSome: (at) => at.getTime()
-          })
-          lines.push(`${size} ${modified} ${JSON.stringify(path)}`)
+          if (measured._tag === "Failed") yield* failed(measured.method, path, measured.cause)
+          else if (measured._tag === "Directory") yield* walk(path)
+          else if (measured._tag === "File") lines.push(`${measured.size} ${measured.modified} ${JSON.stringify(path)}`)
         }
       })
     yield* walk(root.replaceAll(/\/+$/g, ""))
@@ -248,6 +297,18 @@ export const observe = (
       complete: !bounded && !unreadable
     })
   })
+
+/**
+ * Walks one workspace through Effect's `FileSystem`.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const observe = (
+  fs: FileSystem.FileSystem,
+  root: string,
+  options: Options = {}
+): Effect.Effect<EngineLike.Observation> => observeHost(fileSystemHost(fs), root, options)
 
 /**
  * Builds an {@link Observer} over one workspace root.
@@ -260,6 +321,18 @@ export const make = (
   root: string,
   options: Options = {}
 ): Observer => Observer.of({ observe: observe(fs, root, options) })
+
+/**
+ * Provides an {@link Observer} over the workspace root through a {@link Host}.
+ *
+ * @category layers
+ * @since 0.1.0
+ */
+export const layerHost = (
+  host: Host,
+  root: string,
+  options: Options = {}
+): Layer.Layer<Observer> => Layer.succeed(Observer)(Observer.of({ observe: observeHost(host, root, options) }))
 
 /**
  * Provides an {@link Observer} over the workspace root, from the `FileSystem`
