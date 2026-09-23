@@ -17,24 +17,31 @@ export interface Receipt {
 export const identity = (call: Cell.CallIdentity): string =>
   JSON.stringify([call.session, call.frame, call.cell, call.ordinal, call.declaration, call.layers])
 const maxBytes = 512_000
-const read = async (path: string): Promise<string | undefined> => {
+/** A text file's content; `null` when absent, `undefined` when unreadable, binary or large. */
+export const read = async (path: string): Promise<string | null | undefined> => {
   try {
     if ((await stat(path)).size > maxBytes) return undefined
     const bytes = await readFile(path)
     if (bytes.includes(0)) return undefined
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "" : undefined
+    const code = (error as NodeJS.ErrnoException).code
+    return code === "ENOENT" || code === "ENOTDIR" ? null : undefined
   }
 }
-export const patch = (path: string, before: string, after: string): Patch | undefined =>
+/** `null` is an absent file: its side of the patch is `/dev/null`, so creation and deletion reverse. */
+export const patch = (path: string, before: string | null, after: string | null): Patch | undefined =>
   before === after ? undefined : ({
     path,
-    patch: createTwoFilesPatch(`a/${path}`, `b/${path}`, before, after, "", "", {
-      context: 3,
-      timeout: 100,
-      maxEditLength: 10_000
-    }) ?? `Diff too large: ${path}`
+    patch: createTwoFilesPatch(
+      before === null ? "/dev/null" : `a/${path}`,
+      after === null ? "/dev/null" : `b/${path}`,
+      before ?? "",
+      after ?? "",
+      "",
+      "",
+      { context: 3, timeout: 100, maxEditLength: 10_000 }
+    ) ?? `Diff too large: ${path}`
   })
 export const paths = (flow: string, input: unknown): string[] => {
   if (input === null || typeof input !== "object") return []
@@ -148,9 +155,9 @@ export const capture = (
             for (const path of afterFiles.slice(0, 200)) {
               const old = before.has(path)
                 ? before.get(path)
-                : yield* Effect.promise(async () => (await git(cwd, ["show", `${revision}:${path}`])) ?? "")
+                : yield* Effect.promise(async () => (await git(cwd, ["show", `${revision}:${path}`])) ?? null)
               const next = yield* Effect.promise(() => read(resolve(cwd, path)))
-              if (old === undefined || next === undefined || old.length > maxBytes) {
+              if (old === undefined || next === undefined || (old !== null && old.length > maxBytes)) {
                 patches.push({ path, patch: `Binary or large file: ${path}` })
               } else {
                 const diff = patch(path, old, next)
@@ -163,8 +170,9 @@ export const capture = (
                 patch: `${afterFiles.length - 200} additional files; diff capture limited to 200 files.`
               })
             }
-            // Empty is meaningful: a rejected/no-op write must not show a proposed edit as real.
-            if (afterFiles.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+            // Empty is meaningful: a rejected/no-op write must not show a proposed edit as real,
+            // and a shell call observed by the VCS that changed nothing is captured, not unknown.
+            if (afterFiles.length > 0 || revision !== undefined) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
             return result
           })
       }))

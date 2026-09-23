@@ -6,6 +6,7 @@
  * run for real against a scratch repository.
  */
 import { afterEach, describe, expect, it } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -23,14 +24,22 @@ afterEach(async () => {
   tui = undefined
 })
 
-/** A scratch repository whose `node check.mjs` fails until `add` adds. */
-const repository = () => {
+/**
+ * A scratch repository whose `node check.mjs` fails until `add` adds. With
+ * `git`, it is committed, so shell calls are captured and can be undone.
+ */
+const repository = (options: { readonly git?: boolean } = {}) => {
   const directory = mkdtempSync(join(tmpdir(), "tui-repo-"))
   writeFileSync(join(directory, "math.js"), "export const add = (a, b) => a - b\n")
   writeFileSync(
     join(directory, "check.mjs"),
     "import { add } from \"./math.js\"\nif (add(2, 3) !== 5) { console.error(\"add is wrong\"); process.exit(1) }\nconsole.log(\"ok\")\n"
   )
+  if (options.git === true) {
+    for (const command of [["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"]]) {
+      if (spawnSync("git", command, { cwd: directory }).status !== 0) throw new Error(`git ${command[0]} failed`)
+    }
+  }
   return directory
 }
 
@@ -412,6 +421,106 @@ describe("runtime views", () => {
     },
     180_000
   )
+
+  /** Runs the fix-add turn in a git repository and selects the `Updated math.js` row in the Summary. */
+  const editRow = async (options: { readonly sessions?: string } = {}) => {
+    const started = await start({ cwd: repository({ git: true }), ...options })
+    await started.tui.type("node check.mjs fails. Fix it and show it passes.")
+    await started.tui.press(key.enter)
+    await started.tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
+    await started.tui.type("/summary")
+    await started.tui.press(key.enter)
+    await started.tui.until((screen) => screen.includes("u undo") && screen.includes("Asked:"), 5_000, "summary")
+    for (let step = 0; step < 8 && !/› .*Updated math\.js/.test(started.tui.screen()); step++) {
+      await started.tui.type("j")
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    await started.tui.until((screen) => /› .*Updated math\.js/.test(screen), 5_000, "edit row")
+    return started
+  }
+
+  it("u on the edit row confirms, restores math.js, and tells the transcript", async () => {
+    const { tui, cwd } = await editRow()
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => readFileSync(join(cwd, "math.js"), "utf8").includes("a - b") && screen.includes("Undid math.js"),
+      10_000,
+      "undone"
+    )
+    await tui.until((screen) => /› .*Undone: Updated math\.js/.test(screen), 5_000, "undone row")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("Undid math.js") && !screen.includes("u undo"), 5_000, "chat note")
+    await tui.type("still usable")
+    await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "usable composer")
+  }, 180_000)
+
+  it("u refuses when math.js changed since, and changes nothing", async () => {
+    const { tui, cwd } = await editRow()
+    writeFileSync(join(cwd, "math.js"), "export const add = (a, b) => b + a\n")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("changed since: math.js"), 10_000, "conflict")
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toBe("export const add = (a, b) => b + a\n")
+  }, 180_000)
+
+  it("esc in the undo dialog changes nothing", async () => {
+    const { tui, cwd } = await editRow()
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await tui.press(key.escape)
+    await tui.until((screen) => !screen.includes("Undo math.js?"), 5_000, "closed")
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    expect(tui.screen()).not.toContain("Undid")
+  }, 180_000)
+
+  it("u refuses while a turn runs, and the composer stays usable", async () => {
+    const { tui } = await start({ holdMs: 60_000 })
+    await tui.type("node check.mjs fails. Fix it and show it passes.")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("esc interrupt"), 10_000, "running turn")
+    await tui.press(key.ctrlS)
+    await tui.until((screen) => screen.includes("u undo"), 5_000, "summary")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "busy")
+    await tui.press(key.escape)
+    await tui.type("still usable")
+    await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "usable composer")
+  }, 60_000)
+
+  it("keeps the undo across a restart", async () => {
+    const first = await editRow()
+    await first.tui.type("u")
+    await first.tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
+    await first.tui.press(key.enter)
+    await first.tui.until((screen) => screen.includes("Undid math.js"), 10_000, "undone")
+    await first.tui.stop()
+    tui = await Tui.start({
+      cwd: first.cwd,
+      command: `bun ${join(app, "src", "main.tsx")} ${first.cwd} -c`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_REPLAY: fixture,
+        SMITHERS_TUI_SESSION_DIR: first.sessions
+      }
+    })
+    await tui.until((screen) => screen.includes("Undid math.js"), 20_000, "restored note")
+    await tui.type("/summary")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Undone: Updated math.js"), 5_000, "restored row")
+    for (let step = 0; step < 8 && !/› .*Undone: Updated math\.js/.test(tui.screen()); step++) {
+      await tui.type("j")
+      await new Promise((resolve) => setTimeout(resolve, 150))
+    }
+    await tui.until((screen) => /› .*Undone: Updated math\.js/.test(screen), 5_000, "undone row")
+    await tui.type("u")
+    await tui.until((screen) => screen.includes("Already undone"), 5_000, "already undone")
+  }, 180_000)
 
   it("renders agent-authored UI from a real cell and restores it after restart", async () => {
     const cwd = repository()

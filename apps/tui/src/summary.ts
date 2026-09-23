@@ -63,10 +63,18 @@ export const panel = (transcript: Transcript.Transcript, id = "summary", title =
           ? []
           : [{ kind: "diff", path: call.change.path, patch: Transcript.unified(call.change) }]
       )
+      const patched = item.calls.filter((call) => (call.patches?.length ?? 0) > 0)
+      const undone = patched.length > 0 && patched.every((call) => call.undone === true)
       rows.push({
         id: item.id,
-        label: cellLabel(item),
-        status: item.status === "rejected" ? "failed" : item.status === "writing" ? "running" : item.status,
+        label: undone ? `Undone: ${cellLabel(item)}`.slice(0, 240) : cellLabel(item),
+        status: undone
+          ? "cancelled"
+          : item.status === "rejected"
+          ? "failed"
+          : item.status === "writing"
+          ? "running"
+          : item.status,
         details: [
           ...(item.source === "" ? [] : [{ kind: "code" as const, code: item.source, language: "javascript" }]),
           ...item.calls.map((call): Panels.Block => ({

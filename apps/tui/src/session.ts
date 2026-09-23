@@ -42,6 +42,13 @@ export type Record =
     readonly outcome: { readonly _tag: string; readonly answer?: string; readonly message?: string }
   }
   | { readonly type: "shell"; readonly at: number; readonly result: Shell.Result; readonly excluded: boolean }
+  /** The user reversed these calls' captured changes (call identities, `Changes.identity`). */
+  | {
+    readonly type: "undo"
+    readonly at: number
+    readonly calls: ReadonlyArray<string>
+    readonly paths: ReadonlyArray<string>
+  }
 
 export interface Summary {
   readonly file: string
@@ -230,6 +237,10 @@ export const restore = (records: ReadonlyArray<Record>): {
             record.at
           )
         }
+        break
+      case "undo":
+        transcript = Transcript.undone(transcript, record.calls, record.paths, record.at)
+        entries.push({ kind: "undo", paths: record.paths })
         break
       case "session":
         break

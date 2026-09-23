@@ -30,6 +30,7 @@ import * as Summary from "./summary.ts"
 import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
 import * as Transcript from "./transcript.ts"
+import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
 import { type Tab, Workspace } from "./workspace.ts"
 
@@ -87,6 +88,7 @@ type Picker =
     readonly selected: number
     readonly turns: ReadonlyArray<Session.Turn>
   }
+  | { readonly kind: "undo"; readonly query: ""; readonly selected: number; readonly target: Undo.Target }
 
 /** A `text:` search in the palette, from launch through its real settlement. */
 interface TextSearch {
@@ -157,6 +159,9 @@ const pickerRows = (
       }))
     ]
   }
+  if (picker.kind === "undo") {
+    return [{ key: "undo", label: "Undo", value: "undo" }, { key: "cancel", label: "Cancel", value: "cancel" }]
+  }
   if (picker.kind === "fork") {
     const now = Date.now()
     return Fuzzy.filter(picker.turns, picker.query, (turn) => turn.text).map((turn) => ({
@@ -181,6 +186,8 @@ export function App(props: AppProps) {
   const [thinking, setThinking] = useState<Editor.Thinking>(undefined)
   const [turn, setTurn] = useState<TurnState | undefined>()
   const [shell, setShell] = useState<Shell.Running | undefined>()
+  /** When an undo started; set from the confirm until its real settlement. */
+  const [undoing, setUndoing] = useState<number | undefined>()
   const [followUps, setFollowUps] = useState<ReadonlyArray<string>>([])
   const [picker, setPicker] = useState<Picker | undefined>(
     props.pickSession === true
@@ -270,8 +277,8 @@ export function App(props: AppProps) {
   useEffect(() => setMenuIndex(0), [menuIdentity])
 
   // Key handlers read the latest values through these, never a stale render.
-  const live = useRef({ turn, shell, followUps, seat, thinking, picker, menu, menuIndex })
-  live.current = { turn, shell, followUps, seat, thinking, picker, menu, menuIndex }
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -280,7 +287,8 @@ export function App(props: AppProps) {
   useEffect(() => Clipboard.copyOnSelect(renderer, Clipboard.write, () => setStatus("Copied")), [renderer])
 
   // One clock drives foreground and background progress through real settlement.
-  const clockRunning = turn !== undefined || shell !== undefined || workspace.busy || search?.status === "running" ||
+  const clockRunning = turn !== undefined || shell !== undefined || undoing !== undefined || workspace.busy ||
+    search?.status === "running" ||
     snapshot.tabs.some((tab) => tab.endedAt !== undefined && now - tab.endedAt < 3000)
   useEffect(() => {
     if (!clockRunning) return
@@ -450,6 +458,41 @@ export function App(props: AppProps) {
       setShell(undefined)
     })
   }, [props.host.cwd, setStatus])
+
+  /** Reverses a Summary row's captured changes in the background; the composer stays usable. */
+  const runUndo = useCallback((target: Undo.Target) => {
+    const current = live.current
+    if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
+      return setStatus(Undo.message({ _tag: "Busy" }), "warning")
+    }
+    const startedAt = Date.now()
+    live.current.undoing = startedAt
+    setUndoing(startedAt)
+    const cwd = props.host.cwd
+    void Undo.plan(cwd, target)
+      .then((plan) => ("_tag" in plan ? plan : Undo.commit(cwd, plan).then((failure) => failure ?? plan)))
+      .catch((error): Undo.Failure => ({ _tag: "WriteFailed", path: "", message: String(error), restored: false }))
+      .then((settled) => {
+        if ("_tag" in settled) {
+          setStatus(Undo.message(settled), settled._tag === "Conflict" || settled._tag === "WriteFailed" ? "danger" : "warning")
+        } else {
+          const at = Date.now()
+          const paths = settled.files.map((file) => file.path)
+          writer.current.append({ type: "undo", at, calls: settled.calls, paths })
+          entries.current.push({ kind: "undo", paths })
+          setTranscript((current) => Transcript.undone(current, settled.calls, paths, at))
+          setStatus(Undo.done(settled))
+        }
+        live.current.undoing = undefined
+        setUndoing(undefined)
+        // A prompt sent while undoing waited, so the model never races the undo's writes.
+        const next = live.current.followUps[0]
+        if (next !== undefined && live.current.turn === undefined) {
+          setFollowUps((queued) => queued.slice(1))
+          startTurnRef.current(next)
+        }
+      })
+  }, [props.host.cwd, workspace, setStatus])
 
   const switchSeat = useCallback((next: string) => {
     setSeat(next)
@@ -663,6 +706,10 @@ export function App(props: AppProps) {
     }
     if (text.startsWith("/") && command(text)) return
     const running = live.current.turn
+    if (running === undefined && live.current.undoing !== undefined) {
+      setFollowUps((queued) => [...queued, text])
+      return
+    }
     if (running === undefined) return startTurn(text)
     if (followUp) {
       setFollowUps((queued) => [...queued, text])
@@ -732,6 +779,10 @@ export function App(props: AppProps) {
       )
     }
     setPicker(undefined)
+    if (open.kind === "undo") {
+      if (value === "undo") runUndo(open.target)
+      return
+    }
     if (open.kind === "fork") {
       const turn = open.turns.find((each) => String(each.index) === value)
       if (turn === undefined) return
@@ -783,7 +834,7 @@ export function App(props: AppProps) {
       }
     }
     resumeGuarded(value)
-  }, [switchSeat, openSession, forkSession, setStatus, workspace, setText, submit])
+  }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, setText, submit])
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
@@ -891,6 +942,21 @@ export function App(props: AppProps) {
       if (key.name === "x" && surface.startsWith("tab:")) {
         workspace.cancel(surface.slice(4))
         return
+      }
+      if (key.name === "u" && surface === "summary") {
+        const current = live.current
+        if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
+          return setStatus(Undo.message({ _tag: "Busy" }), "warning")
+        }
+        const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
+        const found = row === undefined ? { _tag: "NothingToUndo" as const } : Undo.target(transcript, row.id)
+        if ("_tag" in found) {
+          return setStatus(
+            Undo.message(found),
+            found._tag === "NothingToUndo" || found._tag === "AlreadyUndone" ? "warning" : "danger"
+          )
+        }
+        return setPicker({ kind: "undo", query: "", selected: 0, target: found })
       }
       if (key.name === "a") {
         const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
@@ -1006,6 +1072,7 @@ export function App(props: AppProps) {
               width={width}
               focused={panelFocus}
               worker={surface.startsWith("tab:")}
+              undo={surface === "summary"}
               scrollRef={panelScroll}
             />
           ) :
@@ -1161,6 +1228,9 @@ export function App(props: AppProps) {
           ...(search?.status === "running" && now - search.startedAt >= 300
             ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
             : []),
+          ...(undoing !== undefined && now - undoing >= 300
+            ? [{ id: "undo", text: `${tick} Undoing`, tone: "info" as const }]
+            : []),
           ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
         ]}
       />
@@ -1176,10 +1246,13 @@ export function App(props: AppProps) {
             ? "Search"
             : picker.kind === "fork"
             ? "Fork from Message"
+            : picker.kind === "undo"
+            ? `Undo ${picker.target.paths.length === 1 ? picker.target.paths[0] : `${picker.target.paths.length} files`}?`
             : "Resume session"}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
         >
+          {picker.kind === "undo" ? null : (
           <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: 1 }}>
             <input
               focused
@@ -1191,9 +1264,10 @@ export function App(props: AppProps) {
               focusedBackgroundColor={color.surface}
               cursorColor={color.brand}
               onInput={(query: string) =>
-                setPicker((current) => (current === undefined ? current : { ...current, query, selected: 0 }))}
+                setPicker((current) => (current === undefined || current.kind === "undo" ? current : { ...current, query, selected: 0 }))}
             />
           </box>
+          )}
           <box style={{ paddingLeft: 2, paddingRight: 2 }}>
             <View.List
               rows={rows}

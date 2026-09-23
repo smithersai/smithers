@@ -16,6 +16,7 @@ export const instructionNames = ["AGENTS.override.md", "AGENTS.md", "AGENTS.MD",
 export type Entry =
   | { readonly kind: "exchange"; readonly user: string; readonly answer: string }
   | { readonly kind: "shell"; readonly text: string }
+  | { readonly kind: "undo"; readonly paths: ReadonlyArray<string> }
 
 /** Instruction files, outermost first. */
 export const instructionFiles = (cwd: string, home = homedir()): ReadonlyArray<string> => {
@@ -51,6 +52,8 @@ export const system = (cwd: string, history: ReadonlyArray<Entry>): Array<string
         history.map((entry) =>
           entry.kind === "exchange"
             ? `User: ${entry.user}\nYou answered: ${entry.answer}`
+            : entry.kind === "undo"
+            ? `User reverted your earlier edits to: ${entry.paths.join(", ")}. Re-read them before editing.`
             : `User ran a shell command:\n${entry.text}`
         ).join("\n\n")
     )

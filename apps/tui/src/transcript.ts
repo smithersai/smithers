@@ -27,6 +27,8 @@ export interface Call {
   readonly change?: Change
   readonly startedAt: number
   readonly endedAt?: number
+  /** The user reversed this call's captured changes. */
+  readonly undone?: true
 }
 
 export interface Change {
@@ -447,6 +449,27 @@ export const patched = (transcript: Transcript, receipt: Changes.Receipt): Trans
       })
   )
 })
+
+/** Marks reversed calls by identity (stable across live and restored folds) and notes the undo. */
+export const undone = (
+  transcript: Transcript,
+  calls: ReadonlyArray<string>,
+  paths: ReadonlyArray<string>,
+  at: number
+): Transcript =>
+  note({
+    ...transcript,
+    items: transcript.items.map((item) =>
+      item.kind !== "cell" || !item.calls.some((call) => call.identity !== undefined && calls.includes(call.identity))
+        ? item
+        : ({
+          ...item,
+          calls: item.calls.map((call) =>
+            call.identity !== undefined && calls.includes(call.identity) ? { ...call, undone: true as const } : call
+          )
+        })
+    )
+  }, `Undid ${paths.join(", ")}`, at)
 
 export const caption = (transcript: Transcript, prose: string): Transcript =>
   updateCell(transcript, (cell) => ({ ...cell, prose }))

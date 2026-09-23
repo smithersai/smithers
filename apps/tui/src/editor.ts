@@ -116,6 +116,7 @@ export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
   ["/filter, /grep", "filter the chat like a log"],
   ["hjkl, arrows", "navigate a view; enter expands"],
   ["d, v", "toggle diff / split diff"],
+  ["u", "undo a summary row's changes"],
   ["r, x", "retry / stop selected worker"],
   ["@", "mention a file"],
   ["ctrl+g", "edit the prompt in $EDITOR"],

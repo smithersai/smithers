@@ -1,0 +1,248 @@
+/**
+ * Undo a turn's edits: reverse the file changes captured at the flow boundary
+ * (`changes.ts`), all or nothing. `target` picks the calls from a Summary row,
+ * `plan` computes every file's restored content without writing, and `commit`
+ * writes it, rolling back on an IO error.
+ */
+import { applyPatch, parsePatch, reversePatch, type StructuredPatch } from "diff"
+import { realpathSync } from "node:fs"
+import { mkdir, unlink, writeFile } from "node:fs/promises"
+import { dirname, resolve } from "node:path"
+import * as Changes from "./changes.ts"
+import type * as Transcript from "./transcript.ts"
+
+export type Failure =
+  | { readonly _tag: "Busy" }
+  | { readonly _tag: "NothingToUndo" }
+  | { readonly _tag: "AlreadyUndone" }
+  /** A writer call with no receipt: shell outside a repository, or a session from before capture. */
+  | { readonly _tag: "Uncaptured"; readonly flows: ReadonlyArray<string> }
+  /** A binary, large, or truncated change, labeled instead of diffed. */
+  | { readonly _tag: "Unrendered"; readonly paths: ReadonlyArray<string> }
+  /** Shell changes are recorded relative to the repository root, and this directory is not it. */
+  | { readonly _tag: "NotRoot"; readonly root: string }
+  /** The files changed since the turn. */
+  | { readonly _tag: "Conflict"; readonly paths: ReadonlyArray<string> }
+  | { readonly _tag: "WriteFailed"; readonly path: string; readonly message: string; readonly restored: boolean }
+
+/** The calls to reverse, newest first, and the paths they touched. */
+export interface Target {
+  readonly calls: ReadonlyArray<Transcript.Call>
+  readonly paths: ReadonlyArray<string>
+}
+export interface File {
+  readonly path: string
+  readonly current: string | null
+  readonly next: string | null
+}
+export interface Plan {
+  /** Identities of the reversed calls. */
+  readonly calls: ReadonlyArray<string>
+  readonly files: ReadonlyArray<File>
+}
+
+/** The flows that write files in the TUI's catalog (filesystem and shell). */
+export const writers: ReadonlyArray<string> = ["edit", "write", "apply_patch", "bash"]
+
+type Cell = Extract<Transcript.Item, { kind: "cell" }>
+
+const parsed = (patch: Changes.Patch): StructuredPatch | undefined => {
+  const all = parsePatch(patch.patch)
+  if (all.length !== 1) return undefined
+  const one = all[0]!
+  if (one.isBinary === true) return undefined
+  const flagged = one.isCreate === true || one.isDelete === true || one.isRename === true ||
+    one.oldFileName === "/dev/null" || one.newFileName === "/dev/null"
+  return one.hunks.length === 0 && !flagged ? undefined : one
+}
+const name = (value: string | undefined): string | undefined =>
+  value === undefined || value === "/dev/null" ? undefined : value.replace(/^[ab]\//, "")
+const sides = (patch: Changes.Patch, structured: StructuredPatch) => {
+  const before = structured.isCreate === true || structured.oldFileName === "/dev/null"
+    ? undefined
+    : name(structured.oldFileName) ?? patch.path
+  const after = structured.isDelete === true || structured.newFileName === "/dev/null"
+    ? undefined
+    : name(structured.newFileName) ?? patch.path
+  return { before, after }
+}
+
+/** The calls a Summary row stands for: a cell, or a prompt's whole turn. Pure, for the keypress. */
+export const target = (transcript: Transcript.Transcript, rowId: string): Target | Failure => {
+  const at = transcript.items.findIndex((item) => item.id === rowId)
+  const row = transcript.items[at]
+  let cells: Array<Cell> = []
+  if (row?.kind === "cell") cells = [row]
+  else if (row?.kind === "user" && row.queued === undefined) {
+    for (const item of transcript.items.slice(at + 1)) {
+      if (item.kind === "user" && item.queued === undefined) break
+      if (item.kind === "cell") cells.push(item)
+    }
+  } else return { _tag: "NothingToUndo" }
+  const all = cells.toReversed().flatMap((cell) => cell.calls.toReversed())
+  const uncaptured = [
+    ...new Set(all.filter((call) => writers.includes(call.flow) && call.patches === undefined).map((call) => call.flow))
+  ]
+  if (uncaptured.length > 0) return { _tag: "Uncaptured", flows: uncaptured }
+  const patched = all.filter((call) => (call.patches?.length ?? 0) > 0)
+  if (patched.length === 0) return { _tag: "NothingToUndo" }
+  const calls = patched.filter((call) => call.undone !== true)
+  if (calls.length === 0) return { _tag: "AlreadyUndone" }
+  const unrendered = [
+    ...new Set(calls.flatMap((call) => call.patches!.filter((patch) => parsed(patch) === undefined).map((patch) => patch.path)))
+  ]
+  if (unrendered.length > 0) return { _tag: "Unrendered", paths: unrendered }
+  const paths = new Set<string>()
+  for (const call of calls) {
+    for (const patch of call.patches!) {
+      const { before, after } = sides(patch, parsed(patch)!)
+      paths.add(after ?? before ?? patch.path)
+      if (before !== undefined) paths.add(before)
+    }
+  }
+  return { calls, paths: [...paths] }
+}
+
+/** The directory's VCS root, as capture saw it: jj first, then git. */
+const root = async (cwd: string): Promise<string | undefined> => {
+  for (const command of [["jj", "root"], ["git", "rev-parse", "--show-toplevel"]]) {
+    if (Bun.which(command[0]!) === null) continue
+    const child = Bun.spawn(command, { cwd, stdout: "pipe", stderr: "ignore" })
+    const output = await new Response(child.stdout).text()
+    if ((await child.exited) === 0) return output.trim()
+  }
+  return undefined
+}
+
+/** Every file's restored content, reading only. Collects every conflicting path. */
+export const plan = async (
+  cwd: string,
+  target: Target,
+  read: (path: string) => Promise<string | null | undefined> = Changes.read
+): Promise<Plan | Failure> => {
+  if (target.calls.some((call) => call.flow === "bash")) {
+    const found = await root(cwd)
+    const real = (path: string) => {
+      try {
+        return realpathSync(path)
+      } catch {
+        return path
+      }
+    }
+    if (found === undefined || real(found) !== real(cwd)) return { _tag: "NotRoot", root: found ?? cwd }
+  }
+  const seeded = new Map<string, string | null | undefined>()
+  const state = new Map<string, string | null | undefined>()
+  const poisoned = new Set<string>()
+  const now = async (path: string) => {
+    if (!state.has(path)) {
+      const value = await read(resolve(cwd, path))
+      seeded.set(path, value)
+      state.set(path, value)
+    }
+    return state.get(path)
+  }
+  for (const call of target.calls) {
+    for (const patch of call.patches!) {
+      const structured = parsed(patch)!
+      const { before, after } = sides(patch, structured)
+      const path = after ?? before!
+      const content = await now(path)
+      if (poisoned.has(path)) continue
+      const fits = after === undefined ? content === null : typeof content === "string"
+      const restored = !fits
+        ? false
+        : structured.hunks.length === 0
+        ? content ?? ""
+        : applyPatch(content ?? "", reversePatch(structured))
+      if (restored === false || (before === undefined && restored !== "")) {
+        poisoned.add(path)
+        continue
+      }
+      if (before === undefined) state.set(path, null)
+      else if (before !== path) {
+        if ((await now(before)) !== null) {
+          poisoned.add(before)
+          continue
+        }
+        state.set(before, restored)
+        state.set(path, null)
+      } else state.set(path, restored)
+    }
+  }
+  if (poisoned.size > 0) return { _tag: "Conflict", paths: [...poisoned].sort() }
+  const files: Array<File> = []
+  for (const [path, next] of state) {
+    const current = seeded.get(path)
+    if (current !== undefined && next !== undefined && current !== next) files.push({ path, current, next })
+  }
+  return { calls: target.calls.flatMap((call) => (call.identity === undefined ? [] : [call.identity])), files }
+}
+
+const put = async (path: string, content: string | null) => {
+  if (content === null) return unlink(path)
+  await mkdir(dirname(path), { recursive: true })
+  await writeFile(path, content)
+}
+
+/** Writes the plan; refuses if a file moved since `plan` read it, and rolls back on an IO error. */
+export const commit = async (
+  cwd: string,
+  plan: Plan,
+  read: (path: string) => Promise<string | null | undefined> = Changes.read
+): Promise<Failure | undefined> => {
+  const moved: Array<string> = []
+  for (const file of plan.files) {
+    if ((await read(resolve(cwd, file.path))) !== file.current) moved.push(file.path)
+  }
+  if (moved.length > 0) return { _tag: "Conflict", paths: moved.sort() }
+  const applied: Array<File> = []
+  for (const file of plan.files) {
+    try {
+      await put(resolve(cwd, file.path), file.next)
+      applied.push(file)
+    } catch (error) {
+      let restored = true
+      for (const done of applied.toReversed()) {
+        try {
+          await put(resolve(cwd, done.path), done.current)
+        } catch {
+          restored = false
+        }
+      }
+      return {
+        _tag: "WriteFailed",
+        path: file.path,
+        message: (error as NodeJS.ErrnoException).code ?? String(error),
+        restored
+      }
+    }
+  }
+  return undefined
+}
+
+/** Toast text. */
+export const message = (failure: Failure): string => {
+  switch (failure._tag) {
+    case "Busy":
+      return "Stop running work first"
+    case "NothingToUndo":
+      return "Nothing to undo"
+    case "AlreadyUndone":
+      return "Already undone"
+    case "Uncaptured":
+      return `Not undone · uncaptured: ${failure.flows.join(", ")}`
+    case "Unrendered":
+      return `Not undone · binary or large: ${failure.paths.join(", ")}`
+    case "NotRoot":
+      return `Not undone · shell changes: run from ${failure.root}`
+    case "Conflict":
+      return `Not undone · changed since: ${failure.paths.join(", ")}`
+    case "WriteFailed":
+      return `Undo failed · ${failure.path}: ${failure.message}${failure.restored ? "" : " · files partly changed"}`
+  }
+}
+
+/** Success toast text. */
+export const done = (plan: Plan): string =>
+  plan.files.length === 1 ? `Undid ${plan.files[0]!.path}` : `Undid ${plan.files.length} files`
