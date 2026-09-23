@@ -802,7 +802,12 @@ describe("the fixture under the real CLI", () => {
   };
 
   const smithers = (project, ...args) =>
-    spawnSync(process.execPath, [cli, ...args], { cwd: project, encoding: "utf8", timeout: 300_000 });
+    spawnSync(process.execPath, [cli, ...args], {
+      cwd: project,
+      encoding: "utf8",
+      timeout: 300_000,
+      env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    });
 
   it("prints the 0.x-project notice the first time a command runs in it", () => {
     const project = detached();
