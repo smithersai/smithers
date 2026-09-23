@@ -11,7 +11,7 @@
 
 <p align="center"><strong>The codebase maintainer agent</strong></p>
 
-Smithers instruments and automates a code repository so changes get cheaper, faster, and smarter. Agents plan, run, and review changes through flows declared beside the code.
+Smithers is an orchestration agent, primarily used to orchestrate maintaining a codebase, but it can be used for orchestration in general. Agents plan, run, and review changes through flows declared beside the code.
 
 ## Open Smithers
 
