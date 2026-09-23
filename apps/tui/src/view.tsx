@@ -2,8 +2,7 @@
  * What the screen draws, owing nothing to the app's state machine.
  *
  * The look is the Smithers app's (`apps/app`): Night Owl surfaces layered
- * page → panel → element, the user's messages as right-aligned brand-tinted
- * bubbles. The shapes are opencode's: a left `┃` bar and a filled panel
+ * page → panel → element. The user's messages keep the composer's shape. The shapes are opencode's: a left `┃` bar and a filled panel
  * instead of a boxed border, and a selected row filled with the brand color.
  */
 import { RGBA } from "@opentui/core"
@@ -19,6 +18,8 @@ type ShellItem = Extract<Transcript.Item, { kind: "shell" }>
 const shellLines = 20
 /** An edit's diff shows this many lines until expanded. */
 const diffLines = 12
+/** A finished cell's code shows this many lines until expanded; a live cell streams all of it. */
+const codeLines = 8
 
 export const bar = {
   topLeft: "",
@@ -72,7 +73,7 @@ export function Entry(props: {
   const { item } = props
   switch (item.kind) {
     case "user":
-      return <UserBubble text={item.text} queued={item.queued === true} />
+      return <UserMessage text={item.text} queued={item.queued === true} />
     case "cell":
       return <CellView cell={item} now={props.now} tick={props.tick} expanded={props.expanded} />
     case "shell":
@@ -94,16 +95,18 @@ export function Entry(props: {
   }
 }
 
-function UserBubble(props: { readonly text: string; readonly queued: boolean }) {
+/** The user's message keeps the composer's shape: a left bar on a filled panel. */
+function UserMessage(props: { readonly text: string; readonly queued: boolean }) {
   return (
-    <box style={{ alignItems: "flex-end", marginTop: 1, marginBottom: 1 }}>
-      <box
-        style={{ maxWidth: "80%", paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }}
-        backgroundColor={props.queued ? color.element : color.bubble}
-      >
+    <box
+      style={{ border: ["left"], marginTop: 1, marginBottom: 1 }}
+      borderColor={props.queued ? color.faint : color.brand}
+      customBorderChars={bar}
+    >
+      <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.surface}>
         <text fg={props.queued ? color.muted : color.text}>{props.text}</text>
+        {props.queued ? <text fg={color.faint} style={{ marginTop: 1 }}>steering</text> : null}
       </box>
-      {props.queued ? <text fg={color.faint}>steering · delivered before the next cell</text> : null}
     </box>
   )
 }
@@ -128,7 +131,7 @@ function ShellView(props: { readonly item: ShellItem; readonly tick: string; rea
         <text fg={color.success}>$ {item.command.split("\n")[0]}</text>
         {hidden > 0 ? <text fg={color.faint}>… {hidden} more lines (ctrl+o to expand)</text> : null}
         {shown === "" ? null : <text fg={color.muted}>{shown}</text>}
-        {result === undefined ? <text fg={color.info}>{props.tick} Running... (esc to cancel)</text> : null}
+        {result === undefined ? <text fg={color.info}>{props.tick} Running… (esc to cancel)</text> : null}
         {result?.cancelled === true ? <text fg={color.warning}>(cancelled)</text> : null}
         {result !== undefined && !result.cancelled && result.exitCode !== 0
           ? <text fg={color.warning}>(exit {result.exitCode ?? "?"})</text>
@@ -143,9 +146,11 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
   const { cell } = props
   const live = cell.status === "writing" || cell.status === "running"
   const elapsed = (cell.endedAt ?? props.now) - cell.startedAt
-  // The code is what the agent did, so it always shows; what it printed folds
-  // to a count until ctrl+o.
-  const code = cell.source
+  // A live cell streams its whole code. Once it ends, the call rows below say
+  // what it did, so the code and what it printed fold until ctrl+o.
+  const lines = cell.source.split("\n")
+  const hiddenCode = live || props.expanded || lines.length <= codeLines + 1 ? 0 : lines.length - codeLines
+  const code = hiddenCode === 0 ? cell.source : lines.slice(0, codeLines).join("\n")
   const printed = cell.printed.trimEnd()
   const printedRows = printed === "" ? 0 : printed.split("\n").length
   const tone = statusColor[cell.status]
@@ -165,6 +170,7 @@ function CellView(props: { readonly cell: Cell; readonly now: number; readonly t
       {code === "" ? null : (
         <box style={{ paddingLeft: 1, paddingRight: 1, marginTop: 1 }} backgroundColor={color.page}>
           <code content={code} filetype="javascript" syntaxStyle={syntax} streaming={cell.status === "writing"} />
+          {hiddenCode === 0 ? null : <text fg={color.faint}>… {hiddenCode} more lines</text>}
         </box>
       )}
       {cell.calls.length === 0 ? null : (
@@ -294,7 +300,13 @@ export function List(props: {
           </box>
         )
       })}
-      {rows.length > height ? <text fg={color.faint} style={{ paddingLeft: 3 }}>{props.selected + 1}/{rows.length}</text> : null}
+      {rows.length > height
+        ? (
+          <box style={{ paddingLeft: 3 }}>
+            <text fg={color.faint}>{props.selected + 1}/{rows.length}</text>
+          </box>
+        )
+        : null}
     </box>
   )
 }

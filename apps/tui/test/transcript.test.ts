@@ -78,6 +78,22 @@ describe("split", () => {
   })
 })
 
+describe("Jev context assessment", () => {
+  const reading = (scope: string, frame: number, outdatedContext?: number, irrelevantContext?: number) => ({
+    _tag: "supervisor-settled", scope, frame, outdatedContext, irrelevantContext
+  }) as never
+
+  it("keeps outdated and irrelevant separate across replay and ignores late older frames", () => {
+    const outdated = Transcript.apply(Transcript.empty, reading("run", 2, 0.8, 0.1), 0)
+    expect(outdated.contextAssessment).toEqual({ scope: "run", frame: 2, outdated: true, irrelevant: false })
+    const late = Transcript.apply(outdated, reading("run", 1, 0.1, 0.9), 1)
+    expect(late).toBe(outdated)
+    const irrelevant = Transcript.apply(late, reading("run", 3, 0.1, 0.9), 2)
+    expect(irrelevant.contextAssessment).toEqual({ scope: "run", frame: 3, outdated: false, irrelevant: true })
+    expect(Transcript.apply(irrelevant, reading("run", 4, 0.1, 0.1), 3).contextAssessment).toMatchObject({ outdated: false, irrelevant: false })
+  })
+})
+
 describe("failures", () => {
   it("marks the open cell failed and shows the message", () => {
     const writing = Transcript.apply(

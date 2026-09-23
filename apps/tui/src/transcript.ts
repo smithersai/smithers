@@ -75,6 +75,8 @@ export type Item =
 
 export interface Transcript {
   readonly items: ReadonlyArray<Item>
+  /** Latest Jev reading for this run; absent when no context assessment exists. */
+  readonly contextAssessment?: { readonly scope: string; readonly frame: number; readonly outdated: boolean; readonly irrelevant: boolean }
   /** The reply text of the model call in flight. */
   readonly streaming: string
   /** Whether the model is reasoning before it writes. */
@@ -319,6 +321,14 @@ const started = (call: AgentEvent.CellCallStarted["call"], at: number): Call => 
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
   switch (event._tag) {
+    case "supervisor-settled":
+      if (transcript.contextAssessment?.scope === event.scope && transcript.contextAssessment.frame > event.frame) return transcript
+      if (event.outdatedContext === undefined && event.irrelevantContext === undefined) return transcript
+      return { ...transcript, contextAssessment: {
+        scope: event.scope, frame: event.frame,
+        outdated: (event.outdatedContext ?? 0) >= 0.5,
+        irrelevant: (event.irrelevantContext ?? 0) >= 0.5
+      } }
     case "model-requested":
       return { ...transcript, streaming: "", thinking: false, requestedAt: at }
     case "model-delta": {

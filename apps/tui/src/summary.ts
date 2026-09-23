@@ -22,7 +22,10 @@ const verbs: Record<string, string> = {
   "tab.read": "Checked background work"
 }
 const callLabel = (call: Transcript.Call): string => {
-  if (call.status === "failed") return `Failed to ${call.verb?.pending ?? call.flow}: ${sentence(call.subject)}`
+  if (call.status === "failed") {
+    const failure = call.verb?.failure ?? `failed to call ${call.flow}`
+    return `${failure.charAt(0).toUpperCase()}${failure.slice(1)}: ${sentence(call.subject)}`
+  }
   if (call.status === "running") return `${call.verb?.pending ?? `Running ${call.flow}`}: ${sentence(call.subject)}`
   if (call.flow === "bash") {
     return `Ran ${sentence(call.subject)}${call.exit === undefined ? "" : ` (exit ${call.exit})`}`

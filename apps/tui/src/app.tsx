@@ -642,7 +642,12 @@ export function App(props: AppProps) {
     }
     if (panelFocus && panel !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
       key.preventDefault()
-      if (key.name === "escape" || key.name === "i") {
+      if (key.name === "escape") {
+        setSurface("chat")
+        setPanelFocus(false)
+        return
+      }
+      if (key.name === "i") {
         setPanelFocus(false)
         return
       }
@@ -831,7 +836,7 @@ export function App(props: AppProps) {
               ref={composer}
               focused={picker === undefined && !panelFocus}
               placeholder={working
-                ? "enter steers the next cell · alt+enter queues · esc stops"
+                ? "Steer, or alt+enter to queue"
                 : "Ask Smithers to change this repository"}
               placeholderColor={color.faint}
               textColor={color.text}
@@ -879,6 +884,12 @@ export function App(props: AppProps) {
               )}
           </text>
           <text wrapMode="none" style={{ flexShrink: 0 }}>
+            {transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
+              ? <span fg={color.warning}>{"context: "}{[
+                  transcript.contextAssessment.outdated ? "outdated" : "",
+                  transcript.contextAssessment.irrelevant ? "irrelevant" : ""
+                ].filter(Boolean).join(" + ")}{" · compact?  "}</span>
+              : null}
             <span fg={color.faint}>
               ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)}
               {usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`}
