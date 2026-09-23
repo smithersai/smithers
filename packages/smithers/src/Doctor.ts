@@ -61,7 +61,7 @@ export interface Report {
  * @category constants
  * @since 1.0.0
  */
-export const minimumNode = "22.19.0"
+export const minimumNode = "26.4.0"
 
 /**
  * Node versions supported by the CLI and its runtime dependencies.
@@ -69,13 +69,22 @@ export const minimumNode = "22.19.0"
  * @category constants
  * @since 1.0.0
  */
-export const supportedNodeRange = "^22.19.0 || >=24.11.0"
+export const supportedNodeRange = ">=26.4.0"
 
 const order = (version: string): ReadonlyArray<number> | undefined => {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version)
   if (match === null) return undefined
   const parts = match.slice(1).map(Number)
   return parts.every(Number.isSafeInteger) ? parts : undefined
+}
+
+const atLeast = (actual: ReadonlyArray<number>, floor: ReadonlyArray<number>): boolean => {
+  for (let index = 0; index < floor.length; index++) {
+    const left = actual[index] ?? 0
+    const right = floor[index]!
+    if (left !== right) return left > right
+  }
+  return true
 }
 
 /**
@@ -88,15 +97,9 @@ export const satisfiesNode = (version: string, minimum: string = minimumNode): b
   const actual = order(version)
   const required = order(minimum)
   if (actual === undefined || required === undefined) return false
-  const [major, minor] = actual as readonly [number, number, number]
-  if (major === 22 ? minor < 19 : major < 24 || major === 24 && minor < 11) return false
-  for (let index = 0; index < required.length; index++) {
-    const left = actual[index] ?? 0
-    const right = required[index]!
-    if (left !== right) return left > right
-  }
-  return true
+  return atLeast(actual, order(minimumNode)!) && atLeast(actual, required)
 }
+
 
 /** How many migrations one database file has recorded, or a reason it cannot say. */
 const ladder = (file: string): Check => {
@@ -287,7 +290,7 @@ export const inspect = (options: Options): Report => {
     level: satisfiesNode(nodeVersion) ? "ok" : "fail",
     detail: satisfiesNode(nodeVersion)
       ? `v${nodeVersion.replace(/^v/, "")}`
-      : `v${nodeVersion.replace(/^v/, "")} is unsupported; use Node 22.19+ within Node 22, or Node 24.11+`
+      : `v${nodeVersion.replace(/^v/, "")} is unsupported; use Node 26.4+`
   })
 
   if (options.jj !== undefined) {

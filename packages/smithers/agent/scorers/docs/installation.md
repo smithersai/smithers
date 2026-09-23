@@ -15,7 +15,7 @@ pnpm add @smthrs/scorers@next
 
 ## Requirements
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) 4.0.0-rc.115, the version this package is
   built against. Execution, validation, and persistence use `Effect`; schemas
   use `effect/Schema`. Declaration and pure grading helpers are synchronous;

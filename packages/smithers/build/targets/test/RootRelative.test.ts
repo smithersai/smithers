@@ -10,7 +10,7 @@ import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
 import * as Tsconfig from "../src/Tsconfig.ts"
 
-const runtime = Runtime.Node({ version: ">=22.19.0" })
+const runtime = Runtime.Node({ version: ">=26.4.0" })
 
 describe("Input.rootRelative", () => {
   it.each([

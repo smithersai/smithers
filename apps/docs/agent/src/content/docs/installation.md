@@ -12,7 +12,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/age
 pnpm add @smthrs/agent@next
 ```
 
-The package requires Node.js 22.19+ (Node 22) or 24.11+ and ships as both ESM and CommonJS
+The package requires Node.js 26.4.0 or later and ships as both ESM and CommonJS
 with TypeScript declarations. Its runtime dependencies, including
 [`effect`](https://effect.website) and the `@smthrs/*` packages the agent
 composes, install with it.

@@ -103,7 +103,7 @@ fetch-backed client configured with `RequestInit { redirect: "manual" }`, so a
 
 ## Runtimes
 
-Bun >=1.4.0 and Node.js >=22.19.0. The raw bundle's child-process spawner is
+Bun >=1.4.0 and Node.js >=26.4.0. The raw bundle's child-process spawner is
 Effect's Node spawner re-exported. Contained POSIX bundles use the prepared
 native adapter from `@smthrs/platform-node/ProcessReaper`. The bundle falls back to the
 `@effect/platform-node` adapters off Bun and so resolves `node:` built-ins,

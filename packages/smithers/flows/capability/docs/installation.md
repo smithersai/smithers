@@ -15,7 +15,7 @@ The 1.0 line publishes under the npm `next` tag, so the specifier is part of
 the command until 1.0 is final. `npm install @smthrs/capability@next` and
 `bun add @smthrs/capability@next` install the same package.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It has one runtime dependency,
 [`@smthrs/canonical`](/api/canonical), which supplies the record guard
 `Permission.isPermissionError` validates payloads with.

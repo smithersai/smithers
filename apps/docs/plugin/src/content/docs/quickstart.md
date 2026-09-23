@@ -16,7 +16,7 @@ defines the plugins and runs the host. There are no services to provide.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A TypeScript project with the package installed:
 
 ```bash

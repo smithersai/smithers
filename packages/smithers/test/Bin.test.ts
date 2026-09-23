@@ -1112,8 +1112,8 @@ describe("the smithers bin shim", processBudget, () => {
       expect(result.error).toBeUndefined()
       expect(result.status).toBe(0)
       expect(result.stdout).toContain(Version.packageVersion)
-      // Type stripping is experimental on Node 22; the shim silences that one
-      // warning so a development invocation is not prefixed with a paragraph.
+      // Type stripping is stable on Node 26, so a development invocation
+      // prints no experimental warning ahead of its output.
       expect(result.stderr).not.toContain("Type Stripping")
     } finally {
       rmSync(root, { recursive: true, force: true })

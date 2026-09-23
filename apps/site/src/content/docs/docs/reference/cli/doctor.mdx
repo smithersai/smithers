@@ -32,7 +32,7 @@ The checks, in order:
 | `registry <path>` | One `warn` per discovery warning, with its code and message. |
 | `state` | The `.flows/` state directory, or that it is not created yet. |
 | `database <path>` | For `control.db` and `engine.db`: how many migrations are applied, that the file is not created yet, or that Smithers 1.0 did not create it. |
-| `node` | The Node version, `fail` below the 22.19.0 floor the durable engine requires. |
+| `node` | The Node version, `fail` below the 26.4.0 floor the durable engine requires. |
 | `jj` | The `jj` binary path, or a `warn` when it is missing or not executable. |
 | `providers` | Which provider keys are set, and which are exported but empty. |
 | `backend` | A `fail` when `SMITHERS_BACKEND` names an unsupported backend. |

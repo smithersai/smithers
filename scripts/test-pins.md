@@ -10,9 +10,8 @@ behavior, not promises of planned behavior.
 ## Support posture
 
 The supported durable target is **Node.js with local SQLite**. Published
-manifests declare `engines.node` as `>=22.19.0` or `^22.19.0 || >=24.11.0`, and
-the release workflow runs the candidate tarballs on both `22.19.0` and
-`24.11.0`. That floor is the Node the published packages support, and it is a
+manifests declare `engines.node` as `>=26.4.0`, and the release workflow
+runs the candidate tarballs on `26.4.0`. That floor is the Node the published packages support, and it is a
 separate fact from the Node the toolchain runs: `.node-version` at the root
 holds one exact release, `ci.yml` reads it through `node-version-file`,
 `scripts/ci/cloud.sh` bootstraps a Cloud runner from it, and

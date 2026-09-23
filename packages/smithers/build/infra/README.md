@@ -25,7 +25,7 @@ belongs in which CI job, and the order to roll the two out in.
 ## Before you begin
 
 This directory is the `@smthrs/build-infra` workspace package at
-`packages/smithers/build/infra`. Use Node.js 22.19.0 or later with pnpm 11.25.0, and
+`packages/smithers/build/infra`. Use Node.js 26.4.0 or later with pnpm 11.25.0, and
 install from the repository root:
 
 ```sh

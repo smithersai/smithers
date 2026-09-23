@@ -38,7 +38,7 @@ export const Pack = Action.make("release/pack", {
   payload: { evidence: Evidence }, success: Candidate, error: ReleaseError, nondeterministic: true
 })
 export const Smoke = Action.make("release/smoke", {
-  payload: { candidate: Candidate, runtime: Schema.Literals(["22.19.0", "24.11.0"]) },
+  payload: { candidate: Candidate, runtime: Schema.Literals(["26.4.0"]) },
   success: Candidate, error: ReleaseError, nondeterministic: true
 })
 export const VerifyCandidate = Action.make("release/verify-candidate", {

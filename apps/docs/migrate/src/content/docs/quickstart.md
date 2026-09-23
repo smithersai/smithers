@@ -12,7 +12,7 @@ them.
 
 ## Before you start
 
-- Node.js 22.19+ (Node 22) or 24.11+.
+- Node.js 26.4.0 or later.
 - A Smithers 0.x project: JSX workflows under `.smithers/workflows/`, an
   `examples/` tree, or a `.smithers` pack.
 - A clean working copy in jj or git. Each unit is checkpointed before it edits

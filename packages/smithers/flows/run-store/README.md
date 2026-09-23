@@ -35,7 +35,7 @@ pnpm add @smthrs/run-store@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.
 one program are two sets of service tags, so a store layer built against one
 copy cannot be provided to a program holding the other.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Only the in-memory test layer binds a
 Node built-in; the root entry point names no driver and bundles for the
 browser.

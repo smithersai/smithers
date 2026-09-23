@@ -44,7 +44,7 @@ pnpm add @smthrs/flow@next effect@4.0.0-rc.115
 ```
 
 The Smithers 1.0 release candidates publish under the `next` dist tag. Node.js
-22.19.0 or later. `effect` is a peer at that exact version: two copies of
+26.4.0 or later. `effect` is a peer at that exact version: two copies of
 `effect` in one program are two sets of service tags.
 
 Running a flow adds an engine and a platform crypto service:

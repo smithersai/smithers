@@ -431,7 +431,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
     return receipt
   }
 
-  const smoke = async (candidate: Candidate, runtime: "22.19.0" | "24.11.0", signal?: AbortSignal): Promise<Candidate> => {
+  const smoke = async (candidate: Candidate, runtime: "26.4.0", signal?: AbortSignal): Promise<Candidate> => {
     await manifestFor(candidate)
     await run("pnpm", ["--package", `node@${runtime}`, "--package", "npm@11.16.0", "dlx", "node", "scripts/smoke-release.mjs", candidate.directory], signal ? { signal } : {})
     const evidence = await readJson<{ status: string; candidateIntegrity: string; toolchain: { node: string } }>(`${candidate.directory}/smoke-evidence.json`)
@@ -470,7 +470,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
     await approvedContent(input, signal)
     if (candidate.version !== input.version) throw new Error("Candidate version does not match the release input")
     const manifest = await manifestFor(candidate)
-    for (const runtime of ["22.19.0", "24.11.0"]) {
+    for (const runtime of ["26.4.0"]) {
       const smoke = await readJson<{ status: string; candidateIntegrity: string; toolchain: { node: string } }>(`${candidate.directory}/smoke-node-${runtime}.json`)
       if (smoke.status !== "passed" || smoke.candidateIntegrity !== candidate.digest || smoke.toolchain.node !== `v${runtime}`) throw new Error(`Missing verified Node ${runtime} smoke result`)
     }
@@ -481,7 +481,7 @@ export const operations = ({ root, run = commandRunner(root), tweet = postTweet,
       : `${receipt.exceptions.length} release.yml gate(s) did NOT run on this host and are not proved by this candidate:\n${receipt.exceptions.map((exception) => `  ${exception.name}: ${exception.reason}`).join("\n")}`
     const verified = {
       ...candidate,
-      approvalPrompt: `Publish Smithers ${input.version} to npm (${input.version.includes("-") ? "next" : "latest"})?\n${pending.length} pending of ${candidate.packageCount} packages.\nSource: ${candidate.sourceSha}\nCandidate integrity: ${candidate.digest}\nGates: ${receipt.ran.length} passed. ${exceptions}\nReview ${candidate.directory}/release-manifest.json, gate-evidence.json and both smoke-node-*.json files.\nProvenance: ${input.provenance ? "required" : "explicitly disabled"}.\nOnly these exact tested tarballs will be published.`
+      approvalPrompt: `Publish Smithers ${input.version} to npm (${input.version.includes("-") ? "next" : "latest"})?\n${pending.length} pending of ${candidate.packageCount} packages.\nSource: ${candidate.sourceSha}\nCandidate integrity: ${candidate.digest}\nGates: ${receipt.ran.length} passed. ${exceptions}\nReview ${candidate.directory}/release-manifest.json, gate-evidence.json and smoke-node-26.4.0.json.\nProvenance: ${input.provenance ? "required" : "explicitly disabled"}.\nOnly these exact tested tarballs will be published.`
     }
     if (!input.dryRun) await showReview(verified.approvalPrompt)
     return verified

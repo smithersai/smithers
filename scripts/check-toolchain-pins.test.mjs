@@ -3,7 +3,7 @@ import test from "node:test"
 import { check, findings, satisfies } from "./check-toolchain-pins.mjs"
 
 const workspace = {
-  runtime: { version: ">=22.19.0" },
+  runtime: { version: ">=26.4.0" },
   packageManager: { version: "11.21.0" },
   bunRuntime: { version: ">=1.3.0" },
   bunVersion: "1.3.14",
@@ -11,13 +11,13 @@ const workspace = {
 }
 const packageJson = JSON.stringify({
   packageManager: "pnpm@11.21.0",
-  engines: { node: ">=22.19.0", bun: ">=1.3.0" }
+  engines: { node: ">=26.4.0", bun: ">=1.3.0" }
 })
 const flake = `pnpmPinned = pkgs: pkgs.stdenvNoCC.mkDerivation rec {
   pname = "pnpm";
   version = "11.21.0";
 };
-packages = [ pkgs.nodejs_22 (pnpmPinned pkgs) ];
+packages = [ pkgs.nodejs_26 (pnpmPinned pkgs) ];
 assert pkgs.bun.version == "1.3.14";
 assert pkgs.jujutsu.version == "0.39.0";`
 // Quoted keys and values, because that is what the generator emits; a fixture
@@ -29,13 +29,13 @@ const ci = `      - uses: "actions/setup-node@v4"
         with:
           "bun-version": "1.3.14"
  "tool": "jj-cli@0.39.0"`
-const nodeVersion = "22.19.0\n"
+const nodeVersion = "26.4.0\n"
 
 test("an exact release satisfies its floor only within the declared major", () => {
-  assert.equal(satisfies("22.19.0", ">=22.19.0"), true)
-  assert.equal(satisfies("22.23.2", ">=22.19.0"), true)
-  assert.equal(satisfies("22.18.0", ">=22.19.0"), false)
-  assert.equal(satisfies("24.0.0", ">=22.19.0"), false)
+  assert.equal(satisfies("26.4.0", ">=26.4.0"), true)
+  assert.equal(satisfies("26.10.0", ">=26.4.0"), true)
+  assert.equal(satisfies("26.3.0", ">=26.4.0"), false)
+  assert.equal(satisfies("27.0.0", ">=26.4.0"), false)
 })
 
 test("files that agree with the workspace declaration produce no findings", () => {
@@ -46,17 +46,17 @@ test("every file that disagrees is named with both values", () => {
   const drifted = findings({
     workspace,
     packageJson: JSON.stringify({ packageManager: "pnpm@11.20.0", engines: { node: ">=22.0.0", bun: ">=1.2.0" } }),
-    flake: flake.replace("11.21.0", "11.19.0").replace("nodejs_22", "nodejs_24"),
+    flake: flake.replace("11.21.0", "11.19.0").replace("nodejs_26", "nodejs_24"),
     ci: ci.replace("1.3.14", "1.2.9"),
     nodeVersion: "20.11.0\n"
   })
   assert.deepEqual(drifted, [
     "package.json packageManager is \"pnpm@11.20.0\"; WORKSPACE.ts declares pnpm@11.21.0",
-    "package.json engines.node is \">=22.0.0\"; WORKSPACE.ts declares >=22.19.0",
+    "package.json engines.node is \">=22.0.0\"; WORKSPACE.ts declares >=26.4.0",
     "package.json engines.bun is \">=1.2.0\"; WORKSPACE.ts declares >=1.3.0",
     "flake.nix pins pnpm 11.19.0; WORKSPACE.ts declares 11.21.0",
-    "flake.nix uses nodejs_24; WORKSPACE.ts declares Node >=22.19.0",
-    ".node-version pins node 20.11.0; WORKSPACE.ts declares >=22.19.0",
+    "flake.nix uses nodejs_24; WORKSPACE.ts declares Node >=26.4.0",
+    ".node-version pins node 20.11.0; WORKSPACE.ts declares >=26.4.0",
     "ci.yml installs bun 1.2.9; WORKSPACE.ts declares >=1.3.0",
     "ci.yml pins bun 1.2.9; WORKSPACE.ts declares 1.3.14"
   ])
@@ -74,10 +74,10 @@ test("a flake without the pnpm pin or a Node package is a finding, not a pass", 
 test("the workflow must read the node file rather than name a release itself", () => {
   // A literal here is exactly how ci.yml came to install 22.19.0 while the
   // Cloud bootstrap downloaded 24.21.0 and package.json asked for >=22.19.0.
-  const inline = ci.replace('"node-version-file": ".node-version"', '"node-version": "22.19.0"')
+  const inline = ci.replace('"node-version-file": ".node-version"', '"node-version": "26.4.0"')
   assert.deepEqual(findings({ workspace, packageJson, flake, ci: inline, nodeVersion }), [
     "ci.yml sets up node without node-version-file",
-    "ci.yml pins node 22.19.0 inline; it must read .node-version"
+    "ci.yml pins node 26.4.0 inline; it must read .node-version"
   ])
   const elsewhere = ci.replace('".node-version"', '".nvmrc"')
   assert.ok(findings({ workspace, packageJson, flake, ci: elsewhere, nodeVersion })
@@ -85,7 +85,7 @@ test("the workflow must read the node file rather than name a release itself", (
 })
 
 test("the node file must hold one exact release", () => {
-  for (const held of ["", "lts/*", "22", ">=22.19.0"]) {
+  for (const held of ["", "lts/*", "26", ">=26.4.0"]) {
     assert.ok(findings({ workspace, packageJson, flake, ci, nodeVersion: held })
       .some((item) => item.startsWith(".node-version must hold one exact Node release")), JSON.stringify(held))
   }
@@ -94,7 +94,7 @@ test("the node file must hold one exact release", () => {
 test("the node file may run ahead of the floor the workspace declares", () => {
   // The floor is the oldest Node the code supports; the file is the exact
   // release every environment runs, and the maintainer's is newer than that.
-  assert.deepEqual(findings({ workspace, packageJson, flake, ci, nodeVersion: "26.5.0\n" }), [])
+  assert.deepEqual(findings({ workspace, packageJson, flake, ci, nodeVersion: "26.10.0\n" }), [])
 })
 
 test("the real repository is in sync", async () => {

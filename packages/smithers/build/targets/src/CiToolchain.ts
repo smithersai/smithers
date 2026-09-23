@@ -38,7 +38,7 @@ import * as Secret from "./Secret.ts"
  * @category schemas
  * @since 0.1.0
  */
-export const NodeRelease = Schema.Literals(["22.19.0"])
+export const NodeRelease = Schema.Literals(["26.4.0"])
 
 /**
  * The Node releases a runner may install.
@@ -941,10 +941,10 @@ export type Toolchain = typeof Toolchain.Type
  * ```ts
  * import { Smithers } from "@smthrs/targets"
  *
- * const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+ * const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
  *
  * export const needs = Smithers.CiToolchain.Needs({
- *   runtimes: [Smithers.CiToolchain.Node({ runtime, release: "22.19.0" })]
+ *   runtimes: [Smithers.CiToolchain.Node({ runtime, release: "26.4.0" })]
  * })
  * ```
  *

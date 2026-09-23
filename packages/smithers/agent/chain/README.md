@@ -26,7 +26,7 @@ loudly with `replay_divergence` instead of serving a stale one.
 
 `@smthrs/chain` is not on the npm registry. It is developed in the
 [Smithers repository](https://github.com/smithersai/smithers) and is used
-today from a checkout of it. It needs Node.js 22.19.0 or later and
+today from a checkout of it. It needs Node.js 26.4.0 or later and
 [Effect](https://effect.website).
 
 ## Run a chain

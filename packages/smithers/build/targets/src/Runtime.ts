@@ -60,7 +60,7 @@ export const maximumExecutableLength = 256
  * @category schemas
  * @since 0.1.0
  */
-export const NodeVersion = Schema.Literals([">=22.19.0"])
+export const NodeVersion = Schema.Literals([">=26.4.0"])
 
 /**
  * The Node version requirements this workspace supports.
@@ -298,7 +298,7 @@ export const isBunDeclaration: (value: unknown) => value is BunDeclaration = Sch
 /**
  * Declares Node as the workspace runtime.
  *
- * The PACKAGE.ts form (`{ version: ">=22.19.0" }`, one of the reviewed
+ * The PACKAGE.ts form (`{ version: ">=26.4.0" }`, one of the reviewed
  * {@link NodeVersion} requirements) keeps returning the classic
  * {@link NodeRuntime}. The WORKSPACE.ts forms — an exclusive
  * `{ manifest }` | `{ version }` union with a free-form version string —
@@ -308,7 +308,7 @@ export const isBunDeclaration: (value: unknown) => value is BunDeclaration = Sch
  * ```ts
  * import { Smithers } from "@smthrs/targets"
  *
- * export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+ * export const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
  * ```
  *
  * @category constructors
@@ -338,7 +338,7 @@ export function Node(
   if (version === undefined) {
     throw new Error("Runtime.Node requires a manifest or a version")
   }
-  if (version === ">=22.19.0") {
+  if (version === ">=26.4.0") {
     return NodeRuntime.make({
       name: "node",
       version,

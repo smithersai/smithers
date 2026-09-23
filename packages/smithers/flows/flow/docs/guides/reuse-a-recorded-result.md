@@ -89,7 +89,7 @@ inline `metadata` boundary declarations remain readable for existing callers.
 
 ```ts
 const environment = Action.layerCacheEnvironment({
-  layers: ["node@22.19.0", "toolchain@3.1.0"],
+  layers: ["node@26.4.0", "toolchain@3.1.0"],
   capabilities: { filesystem: ["read", "write"] }
 })
 ```

@@ -24,7 +24,7 @@ it:
 
 ## Requirements
 
-- Node.js 22.19+ (Node 22) or 24.11+ for the Node runtime, matching the package's
+- Node.js 26.4.0 or later for the Node runtime, matching the package's
   `engines` field.
 - [`effect`](https://effect.website) 4.0.0-rc.115, as an exact peer
   dependency. Pin the same version in the consuming project, so the service

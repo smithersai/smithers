@@ -8,7 +8,7 @@ import { verifySoak } from "./check-soak-campaign.mjs"
 import { parseWorkflow } from "./release-rehearsal.mjs"
 
 const artifact = () => ({ schemaVersion: 1, status: "complete",
-  runtime: { node: "v24.18.0", platform: "linux", arch: "x64" },
+  runtime: { node: "v26.10.0", platform: "linux", arch: "x64" },
   candidate: { head: "a".repeat(40), dirty: false, sourceSha256: "b".repeat(64) },
   workload: { requestedMinutes: 1, warmupMs: 20_000, sampleIntervalMs: 10_000, seed: 20260904 },
   samples: [20_000, 30_000, 40_000, 50_000, 60_000].map((elapsedMs, index) => ({ elapsedMs, cycle: index + 1,
@@ -37,12 +37,12 @@ test("soak evidence requires complete work, duration, seed, resources and post-w
 })
 
 test("soak receipts must match the scheduled runtime row", () => {
-  verifySoak(artifact(), { node: "24.18.0" })
-  assert.throws(() => verifySoak(artifact(), { node: "22.19.0" }), /runtime mismatch/)
-  const node22 = artifact()
-  node22.runtime.node = "v22.19.0"
-  verifySoak(node22, { node: "22.19.0" })
-  assert.throws(() => verifySoak(node22, { node: "24.18.0" }), /runtime mismatch/)
+  verifySoak(artifact(), { node: "26.10.0" })
+  assert.throws(() => verifySoak(artifact(), { node: "26.4.0" }), /runtime mismatch/)
+  const floor = artifact()
+  floor.runtime.node = "v26.4.0"
+  verifySoak(floor, { node: "26.4.0" })
+  assert.throws(() => verifySoak(floor, { node: "26.10.0" }), /runtime mismatch/)
 })
 
 test("the soak CLI refuses absent and truncated JSON artifacts", () => {
@@ -61,7 +61,7 @@ test("scheduled soak executes the scaled producer, verifies even on failure and 
   const workflow = parseWorkflow(readFileSync(new URL("../.github/workflows/reliability.yml", import.meta.url), "utf8"))
   assert.ok(workflow.on.schedule.length > 0)
   const job = workflow.jobs["sync-long-soak"]
-  assert.deepEqual(job.strategy.matrix.node, ["22.19.0", "24.18.0"])
+  assert.deepEqual(job.strategy.matrix.node, ["26.4.0", "26.10.0"])
   assert.equal(job.strategy["fail-fast"], false)
   assert.equal(job.env.SMITHERS_SOAK_NODE, "${{ matrix.node }}")
   assert.equal(job.steps.find((step) => step.uses?.startsWith("actions/setup-node@")).with["node-version"], "${{ matrix.node }}")

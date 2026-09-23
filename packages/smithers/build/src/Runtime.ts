@@ -292,7 +292,7 @@ const compare = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): num
  * Reports whether a measured version satisfies a declared requirement.
  *
  * The supported forms are an exact version and one comparator: `24.9.0`,
- * `=24.9.0`, `>=22.19.0`, `>22`, `<=24`, `<25`. Ranges, unions, and the `^`
+ * `=24.9.0`, `>=26.4.0`, `>22`, `<=24`, `<25`. Ranges, unions, and the `^`
  * and `~` operators are deliberately unsupported rather than approximated: a
  * half-implemented caret would accept versions the author meant to exclude.
  * An unsupported requirement is an error at verification, not a silent pass.

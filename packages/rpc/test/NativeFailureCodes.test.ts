@@ -176,7 +176,7 @@ describe("a native-host refusal as it reaches the app", () => {
   })
 
   test("survives a round trip through a card's stored shape", () => {
-    const refusal = nativeRefusal("node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI.")
+    const refusal = nativeRefusal("node_missing", "No Node.js >= 26.4 was found for the smithers-build CLI.")
     expect(refusalFromStored(storedRefusal(refusal))).toEqual(refusal)
   })
 
@@ -201,7 +201,7 @@ describe("a native-host refusal as it reaches the app", () => {
   })
 
   test("tells the chat model the fault class for a native code too, through the string channel", () => {
-    const note = agentFaultNote("native_node_missing — No Node.js >= 22.19 was found for the smithers-build CLI.")
+    const note = agentFaultNote("native_node_missing — No Node.js >= 26.4 was found for the smithers-build CLI.")
     expect(note).toContain("[fault=dependency code=native_node_missing]")
     expect(note).not.toContain("@fucory")
     expect(agentFaultNote("native_nothing_like_this — x")).toBeNull()

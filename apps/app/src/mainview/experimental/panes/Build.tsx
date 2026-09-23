@@ -178,7 +178,7 @@ function BuildBody({ props, set: runCommandSet }: ExperimentalPaneContext) {
               { label: "cache.directory", value: ".flows", mono: true },
               { label: "remote", value: "api.jjhub.tech", mono: true },
               { label: "namespace", value: "smithersai/smithers", mono: true },
-              { label: "runtime", value: "Node 22.19.0", mono: true },
+              { label: "runtime", value: "Node 26.4.0", mono: true },
               { label: "packageManager", value: "Pnpm 11.16.0", mono: true },
               { label: "environment", value: "Nix flake", mono: true },
               { label: "EXECUTION_FORMAT", value: 5, mono: true }

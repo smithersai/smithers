@@ -36,7 +36,7 @@ also needs the owning package's differential, fault and coverage gates.
 ## Scheduled observations
 
 The `benchmark-observations` job runs
-`node --expose-gc scripts/bench/gate.mjs --measure` on Ubuntu and Node 22.19.0.
+`node --expose-gc scripts/bench/gate.mjs --measure` on Ubuntu and Node 26.4.0.
 One cold corpus records first-process/JIT observations. One corpus warms up
 without contributing to the repeated samples. Three subsequent warm corpora
 reuse loaded code and JIT state but each uses new SQLite files and connections.

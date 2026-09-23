@@ -51,7 +51,7 @@ body needs no implementations.
 
 Inside the guest, the flow runs under `FlowEngine.layerMemory` with
 `Interpreter.layer`, `Action.layerImplementations`, the entry's own `layer`, and
-a `Crypto` built on WebCrypto, which Node 22 and Bun both expose as
+a `Crypto` built on WebCrypto, which Node 26 and Bun both expose as
 `globalThis.crypto`.
 
 That is the smallest composition in the tree that drives a flow to completion

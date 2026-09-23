@@ -44,7 +44,7 @@ use the selected process runner.
 
 | Requirement                                        | Why                                                                                                       |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Node.js >=22.19.0                                  | the minimum this package's `engines` field declares                                                       |
+| Node.js >=26.4.0                                  | the minimum this package's `engines` field declares                                                       |
 | CPython 3 at `/usr/bin/python3`                    | `AtomicFileSystem` runs every filesystem syscall through it                                               |
 | that interpreter's `os` module supporting `dir_fd` | with `O_NOFOLLOW` and `O_DIRECTORY`, for `open`, `mkdir`, `readlink`, `rename`, `rmdir`, `stat`, `unlink` |
 | a POSIX host                                       | Windows has none of those primitives and is unsupported                                                   |
@@ -342,8 +342,8 @@ single answer to copy.
    directories below its own anchor but not that anchor: with `exclude: ["**/"]`,
    `**` keeps the root and its files while pruning every directory.
    Node empties the answer instead.
-3. **A dotted segment after `**`.** On 22.19.0 `**/.hidden` matches nothing and
-   on 24 it matches the dotfiles. The adapter follows the newer reading.
+3. **A dotted segment after `**`.** Node 22 matched nothing for `**/.hidden`;
+   Node 24 and later match the dotfiles. The adapter follows the newer reading.
 
 **Removal.** `remove(path, { recursive: true })` walks iteratively with an
 explicit descriptor stack: depth is bounded at 512 levels and the total number

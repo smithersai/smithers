@@ -16,7 +16,7 @@ Smithers is at `1.0.0-rc.0` and has not reached npm yet. When it does, the
 release candidate publishes under the `next` tag, which is what the command
 above installs.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its only runtime dependencies are
 [`effect`](https://effect.website) and [`@smthrs/database`](https://database.smithers.sh/reference/api/).
 Composing a journal layer imports from both of them by name, so install them as

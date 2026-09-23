@@ -60,7 +60,7 @@ can replay the history instead of parsing it.
 ## One run, both channels
 
 This program writes a lifecycle event and a telemetry event to the same run,
-then reads the run back. It needs Node.js 22.19.0 or later, where the built-in
+then reads the run back. It needs Node.js 26.4.0 or later, where the built-in
 SQLite module lives, and it writes a real `history.db` in the working
 directory:
 

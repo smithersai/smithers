@@ -198,5 +198,5 @@ type parameters. See
 subpaths are not, which is exactly why they are subpaths.
 
 **Fix.** Keep both out of shared code. Durable execution is supported only on
-Node.js 22.19.0 or later with local SQLite; a browser can author and inspect
+Node.js 26.4.0 or later with local SQLite; a browser can author and inspect
 declarations through the root entry point.

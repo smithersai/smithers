@@ -33,7 +33,7 @@ export const bundle = async (entryPoint, outfile) => {
   }
   const result = await build({
     alias,
-    entryPoints: [entryPoint], outfile, write: false, bundle: true, platform: "node", format: "esm", target: "node22.19",
+    entryPoints: [entryPoint], outfile, write: false, bundle: true, platform: "node", format: "esm", target: "node26.4",
     banner: { js: "#!/usr/bin/env node\nimport {createRequire as __smithersCreateRequire} from 'node:module'; const require=__smithersCreateRequire(import.meta.url);" },
     plugins: [{
       name: "lazy-bun-sqlite",

@@ -14,7 +14,7 @@ change at the end.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later, which runs a `.ts` file directly by stripping its
+- Node.js 26.4.0 or later, which runs a `.ts` file directly by stripping its
   types.
 - A package whose `package.json` sets `"type": "module"`, with the
   dependencies installed:

@@ -53,7 +53,7 @@ and no schema for any other dialect. See
 `@smthrs/database` is not published to npm yet. Its source is on
 [GitHub](https://github.com/smithersai/smithers).
 
-It needs Node.js 22.19.0 or later for the built-in `node:sqlite` module, and
+It needs Node.js 26.4.0 or later for the built-in `node:sqlite` module, and
 `effect` and `@effect/sql-sqlite-node` at the exact version it is built
 against: two copies of `effect` in one tree split the `SqlClient` service
 identity, and a writer built against one cannot see a client provided from the

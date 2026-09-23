@@ -111,7 +111,7 @@ const isFlowTagged = (value: unknown, tag: string): value is AnyFlow =>
   value._tag === tag
 
 /**
- * The `Crypto` the guest composition provides: WebCrypto, which Node 22 and
+ * The `Crypto` the guest composition provides: WebCrypto, which Node 26 and
  * Bun both expose as `globalThis.crypto`.
  *
  * Built here rather than imported from a platform package so the guest bundle

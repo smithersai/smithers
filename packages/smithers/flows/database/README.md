@@ -40,7 +40,7 @@ pnpm add @effect/sql-sqlite-node@4.0.0-rc.115
 The driver-neutral root installs no SQLite adapter. Two
 copies of `effect` in one tree split the `SqlClient` service identity and a
 writer built against one copy cannot see a client provided from the other. The
-Node driver needs Node.js 22.19.0 or later for its built-in `node:sqlite`
+Node driver needs Node.js 26.4.0 or later for its built-in `node:sqlite`
 module.
 
 ## Write something through the boundary

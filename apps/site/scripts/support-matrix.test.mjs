@@ -60,7 +60,7 @@ test("the support reference states every released Node engine range and current 
 test("the release smoke row names the exact runtimes that certify the candidate tarballs", () => {
   const workflow = parseWorkflow(read(".github/workflows/release.yml"))
   const smokeSteps = workflow.jobs.publish.steps.filter((step) => step.run?.includes("node scripts/smoke-release.mjs "))
-  assert.equal(smokeSteps.length, 2, "the release requires two runtime smoke receipts")
+  assert.equal(smokeSteps.length, 1, "the release requires one smoke receipt on the supported Node floor")
   const pins = smokeSteps.map((step) => {
     const assertion = step.run.match(/test "\$\(node --version\)" = 'v([\d.]+)'/)
     assert.ok(assertion, `${step.name}: exact runtime assertion`)

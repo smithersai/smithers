@@ -174,7 +174,7 @@ See [remote caching](docs/workspace/remote-caching.md) for that distinction.
 
 ## Development
 
-Use Node.js 22.19 or newer. The repository's supported gates are:
+Use Node.js 26.4 or newer. The repository's supported gates are:
 
 From the Smithers repository root, run `pnpm check`, `pnpm lint`, `pnpm test`,
 `pnpm circular`, and `pnpm browser`. To work on only these packages, use pnpm's

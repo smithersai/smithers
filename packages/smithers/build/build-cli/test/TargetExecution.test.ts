@@ -87,7 +87,7 @@ describe.skipIf(process.platform === "win32")("target toolchain enforcement", ()
     const executable = await f.executable("pnpm", "11.25.0")
     const target = check(S.PackageManager.Pnpm({
       version: "11.21.0",
-      runtime: S.Runtime.Node({ version: ">=22.19.0", executable: process.execPath }),
+      runtime: S.Runtime.Node({ version: ">=26.4.0", executable: process.execPath }),
       executable
     }))
     expect(failure(await f.run(target))).toMatchObject({

@@ -34,7 +34,7 @@ export const compileCommonJs = async (src, cjs, esm) => {
     format: "cjs",
     bundle: false,
     platform: "node",
-    target: "node22",
+    target: "node26",
     sourcemap: true,
     define: {
       "import.meta.url": "__smthrsImportMetaUrl",

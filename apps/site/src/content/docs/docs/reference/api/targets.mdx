@@ -37,9 +37,9 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 | Import                         | Source          | Platform         |
 | ------------------------------ | --------------- | ---------------- |
-| `@smthrs/targets`              | `src/index.ts`  | Node.js 22.19.0+ |
-| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 22.19.0+ |
-| `@smthrs/targets/package.json` | `package.json`  | Node.js 22.19.0+ |
+| `@smthrs/targets`              | `src/index.ts`  | Node.js 26.4.0+  |
+| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 26.4.0+  |
+| `@smthrs/targets/package.json` | `package.json`  | Node.js 26.4.0+  |
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
@@ -136,7 +136,7 @@ Declares one secret source, read lazily at a host-owned request boundary. The de
 - **Type:** the `Runtime` module, and `type Runtime = Runtime.Runtime`
 - **Since:** `0.1.0`
 
-Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=22.19.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
+Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=26.4.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
 
 `Runtime.Node({ manifest })` reads `engines.node` during planning. Literal Node pins and exact Bun pins also retain their declared versions. Requirements support an exact version or one comparator (`=`, `>`, `>=`, `<`, or `<=`); compound ranges, caret/tilde ranges, and tags such as `latest` are refused. The planner measures each declared manifest's validated text and includes that digest in the target key. Missing, malformed, oversized, or outside-workspace manifests fail resolution.
 

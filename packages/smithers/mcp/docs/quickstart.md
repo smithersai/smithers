@@ -16,7 +16,7 @@ can call.
 
 ## Prerequisites
 
-Node.js 22.19+ (Node 22) or 24.11+, and a project that depends on `@smthrs/mcp`,
+Node.js 26.4.0 or later, and a project that depends on `@smthrs/mcp`,
 `@effect/platform-node`, and `effect`. See
 [Installation](./installation.md).
 

@@ -19,7 +19,7 @@ const workspaceSource = `import { Smithers as S } from "@smthrs/targets"
 
 const packageJson = S.file("//package.json")
 const workspaceConfig = S.file("//pnpm-workspace.yaml")
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
 const nodeModules = S.Npm.NodeModules({
   packageJson,

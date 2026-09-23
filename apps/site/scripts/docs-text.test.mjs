@@ -127,9 +127,9 @@ test("exports app screenshots with their captions for text readers", () => {
 })
 
 test("expands imported help and version fields", () => {
-  const result = docsText('<Code lang="text" code={help} />\nNode {versions.node}', { raw: { help: "Usage: smthrs flow list   \n" }, versions: { node: "22.19.0" } })
+  const result = docsText('<Code lang="text" code={help} />\nNode {versions.node}', { raw: { help: "Usage: smthrs flow list   \n" }, versions: { node: "26.4.0" } })
   assert.match(result, /```text\nUsage: smthrs flow list\n```/)
-  assert.match(result, /Node 22\.19\.0/)
+  assert.match(result, /Node 26\.4\.0/)
 })
 
 test("exports literal install commands and refuses unknown code bindings", () => {

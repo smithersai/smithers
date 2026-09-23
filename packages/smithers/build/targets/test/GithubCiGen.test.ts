@@ -41,8 +41,8 @@ import { packageManager, runtime } from "./toolchain.ts"
 const parseWorkflow = (source: string): ReturnType<typeof parseStrictWorkflow> =>
   parseStrictWorkflow(/^on\s*:/m.test(source) ? source : `on: workflow_dispatch\n${source}`)
 
-const node = CiToolchain.Node({ runtime, release: "22.19.0" })
-const bareNode = CiToolchain.Node({ runtime, release: "22.19.0", cachePackageStore: false })
+const node = CiToolchain.Node({ runtime, release: "26.4.0" })
+const bareNode = CiToolchain.Node({ runtime, release: "26.4.0", cachePackageStore: false })
 const rust = CiToolchain.Rust({ toolchain: RustToolchain.Pinned({}) })
 
 describe("CI concurrency", () => {
@@ -191,7 +191,7 @@ jobs:
       - uses: "${actions.setupPnpm}"
       - uses: "${actions.setupNode}"
         with:
-          "node-version": "22.19.0"
+          "node-version": "26.4.0"
           "cache": "pnpm"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Install jj"
@@ -212,7 +212,7 @@ jobs:
       - uses: "${actions.setupPnpm}"
       - uses: "${actions.setupNode}"
         with:
-          "node-version": "22.19.0"
+          "node-version": "26.4.0"
           "cache": "pnpm"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Browser bundle guard"
@@ -227,7 +227,7 @@ jobs:
       - uses: "${actions.setupPnpm}"
       - uses: "${actions.setupNode}"
         with:
-          "node-version": "22.19.0"
+          "node-version": "26.4.0"
       - run: "pnpm install --frozen-lockfile --ignore-scripts"
       - name: "Install pinned Rust toolchain"
         run: "rustup toolchain install"
@@ -1024,7 +1024,7 @@ describe("render", () => {
       jobs: [{
         id: "test",
         runsOn: "ubuntu-latest",
-        toolchain: CiToolchain.Needs({ runtimes: [CiToolchain.Node({ release: "22.19.0", npmRelease: "11.16.0" })] }),
+        toolchain: CiToolchain.Needs({ runtimes: [CiToolchain.Node({ release: "26.4.0", npmRelease: "11.16.0" })] }),
         steps: [{ name: "Required gate", verb: Verb.Test, pattern: "//scripts/..." }]
       }]
     }))
@@ -1039,7 +1039,7 @@ describe("render", () => {
     expect(steps[npmIndex]!.shell).toBe("bash")
     expect(steps[npmIndex]!.condition).toBeUndefined()
     expect(npmIndex).toBeLessThan(steps.findIndex((step) => step.name === "Required gate"))
-    expect(() => CiToolchain.Node({ release: "22.19.0", npmRelease: "10.9.3" as never })).toThrow()
+    expect(() => CiToolchain.Node({ release: "26.4.0", npmRelease: "10.9.3" as never })).toThrow()
   })
 
   it("points setup-node at a version file instead of naming a release", () => {
@@ -1067,7 +1067,7 @@ describe("render", () => {
   })
 
   it("refuses a Node declaration with both sources or neither, or a path off the checkout", () => {
-    for (const options of [{}, { release: "22.19.0" as const, versionFile: ".node-version" }]) {
+    for (const options of [{}, { release: "26.4.0" as const, versionFile: ".node-version" }]) {
       expect(() => CiToolchain.Node(options)).toThrow(/exactly one of release or versionFile/)
     }
     for (const versionFile of ["/etc/node-version", "../.node-version", "sub/../../escape"]) {

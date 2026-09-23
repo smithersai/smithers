@@ -42,9 +42,8 @@ export default Flow.make("smithers/Release", {
       Node.bindPlanned(Checks.call({ evidence: validated }), (checked) =>
         Node.bindPlanned(Build.call({ evidence: checked }), (built) =>
           Node.bindPlanned(Pack.call({ evidence: built }), (candidate) =>
-            Node.bindPlanned(Smoke.call({ candidate, runtime: "22.19.0" }), (node22) =>
-              Node.bindPlanned(Smoke.call({ candidate: node22, runtime: "24.11.0" }), (node24) =>
-                Node.bindPlanned(VerifyCandidate.call({ input, candidate: node24 }), (verified) => {
+            Node.bindPlanned(Smoke.call({ candidate, runtime: "26.4.0" }), (smoked) =>
+                Node.bindPlanned(VerifyCandidate.call({ input, candidate: smoked }), (verified) => {
                   if (input.dryRun) return Outcome.call({ status: "preview" as const, version: input.version, artifact: verified.directory, published: [] })
                   return Node.branch(HumanTask.action.call({
                     name: "npm-publication", kind: "confirm", prompt: verified.approvalPrompt, maxAttempts: 3
@@ -53,6 +52,6 @@ export default Flow.make("smithers/Release", {
                     then: () => Publish.call({ input, candidate: verified }),
                     else: () => Outcome.call({ status: "declined" as const, version: input.version, artifact: verified.directory, published: [] })
                   })
-                }))))))))
+                })))))))
   })
 })

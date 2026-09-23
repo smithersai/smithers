@@ -17,7 +17,7 @@ plugins import `Effect`, `Layer`, and `Option` directly, so `effect` belongs in
 your own dependency list at the release the kernel is built against. A different
 `effect` major gives you two copies of the runtime and two sets of service tags.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its runtime dependencies install with it:
 [`@smthrs/flow`](https://flow.smithers.sh/reference/api/) supplies `Action.CacheEnvironment` for
 [cache identity](/guides/cache-identity/), and

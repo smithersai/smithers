@@ -24,4 +24,4 @@ export const releaseVersion = "1.0.0-rc.1"
  * @category models
  * @since 1.0.0
  */
-export const nodeFloor = ">=22.19.0"
+export const nodeFloor = ">=26.4.0"

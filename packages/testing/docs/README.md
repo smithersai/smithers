@@ -38,7 +38,7 @@ The 1.0 release candidates publish under the `next` tag, and the first one is
 not on npm yet: until it is, build from a clone of
 [the repository](https://github.com/smithersai/smithers). `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
-Node.js 22.19.0 or later is required. [Installation](./installation.md) has the
+Node.js 26.4.0 or later is required. [Installation](./installation.md) has the
 rest.
 
 ## Certify an engine in fifteen lines

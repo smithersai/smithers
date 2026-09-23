@@ -7,7 +7,7 @@ sidebar:
 
 ## Requirements
 
-- Node.js 22.19.0 or later, from the package's `engines` field.
+- Node.js 26.4.0 or later, from the package's `engines` field.
 - [Effect](https://effect.website) 4.0.0-rc.115. The package depends on it
   directly, so installing the package brings it along; every code sample on
   this site imports `Effect` and `Layer` from `effect`.

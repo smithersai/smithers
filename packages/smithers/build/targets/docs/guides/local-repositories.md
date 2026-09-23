@@ -18,7 +18,7 @@ Name each repository in the root `S.Workspace` declaration under `repos`:
 ```ts
 import { Smithers as S } from "@smthrs/targets"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 
 export const Workspace = S.Workspace("parent", {
   repository: "git+https://example.com/parent.git",

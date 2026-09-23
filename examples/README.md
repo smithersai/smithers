@@ -49,7 +49,7 @@ also records its spawn and normal exit before and after the orphan's reaping.
 The companion `src/37-host-containment-host.ts` prints its process group id only
 after recording the child durably. Startup failures print the Effect cause to
 stderr and exit with status 1. The example summary preserves `hostStderr`,
-including Node runtime warnings such as Node 22's SQLite experimental notice.
+including Node runtime warnings such as an experimental-feature notice.
 
 ## Sandbox filesystem tools
 

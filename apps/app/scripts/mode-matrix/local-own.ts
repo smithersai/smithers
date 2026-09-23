@@ -34,17 +34,23 @@ const postgres18Bin = (): string => {
   throw new Error("local-own requires PostgreSQL 18 bin (set SMITHERS_POSTGRES_TEST_BIN)")
 }
 
-const node22Binary = (): string => {
+/** Node 26.4 or a later Node 26, the release line the packaged host runs. */
+const isSupportedNode = (version: string): boolean => {
+  const release = /^v26\.(\d+)\./.exec(version.trim())
+  return release !== null && Number(release[1]) >= 4
+}
+
+const node26Binary = (): string => {
   const configured = process.env.SMITHERS_NODE_BINARY?.trim()
   const nvmRoot = join(homedir(), ".nvm", "versions", "node")
   const nvmCandidates = existsSync(nvmRoot)
-    ? readdirSync(nvmRoot).filter((name) => /^v22\./.test(name)).sort().reverse().map((name) => join(nvmRoot, name, "bin", "node"))
+    ? readdirSync(nvmRoot).filter(isSupportedNode).sort((left, right) => right.localeCompare(left, "en", { numeric: true })).map((name) => join(nvmRoot, name, "bin", "node"))
     : []
-  const candidates = [configured, Bun.which("node"), ...nvmCandidates, "/opt/homebrew/opt/node@22/bin/node"]
+  const candidates = [configured, Bun.which("node"), ...nvmCandidates, "/opt/homebrew/opt/node@26/bin/node"]
   for (const candidate of candidates) {
-    if (candidate && existsSync(candidate) && output(candidate, ["--version"])?.startsWith("v22.")) return realpathSync(candidate)
+    if (candidate && existsSync(candidate) && isSupportedNode(output(candidate, ["--version"]) ?? "")) return realpathSync(candidate)
   }
-  throw new Error("local-own requires Node 22 (set SMITHERS_NODE_BINARY)")
+  throw new Error("local-own requires Node 26.4 or a later Node 26 (set SMITHERS_NODE_BINARY)")
 }
 
 const availablePort = (): Promise<number> => new Promise((resolvePort, reject) => {
@@ -84,7 +90,7 @@ const stop = async (child: ReturnType<typeof Bun.spawn> | undefined): Promise<vo
 export const startLocalOwn = async (rootDir: string, revision: string, outputDir: string): Promise<LocalOwnSession> => {
   if (!/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("local-own requires an exact revision")
   const postgresBin = postgres18Bin()
-  const nodeBinary = node22Binary()
+  const nodeBinary = node26Binary()
   const root = mkdtempSync(join(tmpdir(), "smithers-local-own-"))
   const appDir = resolve(rootDir, "apps/app")
   const backendBinary = join(root, "smithers-backend")

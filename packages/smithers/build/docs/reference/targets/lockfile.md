@@ -8,7 +8,7 @@ Generates the lockfile for the declared package manager.
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0", runtime })
 const workspace = Smithers.pnpmWorkspace("//pnpm-workspace.yaml")
 

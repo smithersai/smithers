@@ -54,7 +54,7 @@ under the `next` dist tag:
 pnpm add @smthrs/sandbox@next @smthrs/platform-node@next @smthrs/kernel@next effect@4.0.0-rc.115
 ```
 
-Node.js 22.19.0 or later. `@smthrs/platform-node` supplies the contained host
+Node.js 26.4.0 or later. `@smthrs/platform-node` supplies the contained host
 services `DirectorySandbox` requires. A raw spawner or a wrapper with only a
 kill deadline is refused before a workspace is created.
 

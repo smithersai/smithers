@@ -11,7 +11,7 @@ shell or an HTTP client.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later, and pnpm.
+- Node.js 26.4.0 or later, and pnpm.
 - `@smthrs/fs`, `@smthrs/core`, `effect`, and `@effect/platform-node` resolvable
   from your program.
 

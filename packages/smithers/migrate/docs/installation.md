@@ -48,7 +48,7 @@ yarn add -D @smthrs/migrate@next
 bun add -d @smthrs/migrate@next
 ```
 
-The package requires Node.js 22.19+ (Node 22) or 24.11+, and ships as both ESM and
+The package requires Node.js 26.4.0 or later, and ships as both ESM and
 CommonJS with TypeScript declarations.
 
 Syntax scanning uses TypeScript 7's version-pinned `unstable` API. It parses

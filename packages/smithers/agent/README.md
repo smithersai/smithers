@@ -32,7 +32,7 @@ is another implementation of `Agent.Service`, not a second loop beside this one.
 pnpm add @smthrs/agent@next
 ```
 
-Node.js 22.19+ (Node 22) or 24.11+. The shortest real use is one model-backed step: an
+Node.js 26.4.0 or later. The shortest real use is one model-backed step: an
 ordinary action that ships its own implementation and answers in the shape you
 declared.
 

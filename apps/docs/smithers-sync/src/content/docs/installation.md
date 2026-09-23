@@ -17,7 +17,7 @@ pnpm add @smthrs/sync@next effect@4.0.0-rc.115
 
 ## Requirements
 
-- Node.js 22.19.0 or later, or a browser with Web Crypto. The signing paths
+- Node.js 26.4.0 or later, or a browser with Web Crypto. The signing paths
   call `crypto.subtle` directly so one module serves both.
 - `effect` exactly at the version the package declares. It is a peer dependency
   so the follower and Smithers use one runtime.

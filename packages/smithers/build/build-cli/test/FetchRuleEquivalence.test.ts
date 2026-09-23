@@ -33,7 +33,7 @@ const fixture = async (url: string, sha256 = digest, out = "nested/payload.bin")
     workspace: S.Workspace("fixture", {
       repository: "git+https://example.invalid/fixture.git",
       cache: S.Cache({ directory: ".flows" }),
-      runtime: S.Runtime.Node({ version: ">=22.19.0" }),
+      runtime: S.Runtime.Node({ version: ">=26.4.0" }),
       packageManager: S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock") }),
       nodeModules: S.Npm.NodeModules({ packageJson })
     }),

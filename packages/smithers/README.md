@@ -21,7 +21,7 @@ The public parser is **Incur**, with **Zod** argument and option schemas. **Effe
 npm install --global smthrs@1.0.0-rc.0
 ```
 
-Node 22.19+ (Node 22) or 24.11+ is required. The package installs one executable under two names, `smthrs` and its `smithers` alias.
+Node 26.4.0 or later is required. The package installs one executable under two names, `smthrs` and its `smithers` alias.
 
 Name the version. This README describes 1.0.0-rc.0, and until that release candidate reaches the registry the unqualified package name still resolves to the 0.x line, whose commands and output it does not describe.
 

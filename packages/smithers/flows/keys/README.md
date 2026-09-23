@@ -26,7 +26,7 @@ The current version is `1.0.0-rc.0`, and release candidates carry the `next`
 tag, which is what `@next` selects. `effect` is a peer dependency at that exact
 version; [`@smthrs/canonical`](https://canonical.smithers.sh) and
 [`@smthrs/crypto`](https://crypto.smithers.sh) install with the package and are
-the only other runtime dependencies. Node.js 22.19.0 or later; the package
+the only other runtime dependencies. Node.js 26.4.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.
 
 ## Example

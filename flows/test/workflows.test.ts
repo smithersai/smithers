@@ -182,7 +182,7 @@ for (const decision of [true, false, "dry-run"] as const) {
       }).pipe(Effect.provide(engine()))))
       assert.equal(result.status, decision ? "published" : "declined")
     }
-    assert.deepEqual(calls, ["collect", "audit", "validate", "checks", "build", "pack", "smoke-22.19.0", "smoke-24.11.0", "verify", ...(decision === true ? ["publish"] : [])])
+    assert.deepEqual(calls, ["collect", "audit", "validate", "checks", "build", "pack", "smoke-26.4.0", "verify", ...(decision === true ? ["publish"] : [])])
   })
 }
 

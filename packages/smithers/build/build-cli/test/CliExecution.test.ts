@@ -29,7 +29,7 @@ export const Workspace = S.Workspace("fixture", {
 `
 
 const packageModule = `import { Smithers as S } from "@smthrs/targets"
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
 const install = S.Install({ packageManager })
 export const Package = S.Package({ targets: { run: S.Shell.Run({ shell: "echo hi" }), install } })

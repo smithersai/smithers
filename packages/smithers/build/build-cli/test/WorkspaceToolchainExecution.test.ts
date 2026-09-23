@@ -28,7 +28,7 @@ const manifestText = (manager = "11.25.0", description = "first"): string =>
     name: "workspace-toolchain-execution",
     private: true,
     type: "module",
-    engines: { node: ">=22.19.0" },
+    engines: { node: ">=26.4.0" },
     packageManager: `pnpm@${manager}`,
     description
   })
@@ -103,7 +103,7 @@ describe("manifest toolchain execution", () => {
   it.skipIf(process.platform === "win32").each([
     ["manifest Node", "S.Runtime.Node({ manifest })"],
     ["exact Node", "exact"],
-    ["classic Node floor", "S.Runtime.Node({ version: \">=22.19.0\" })"]
+    ["classic Node floor", "S.Runtime.Node({ version: \">=26.4.0\" })"]
   ])("executes Typecheck with %s and manifest-derived pnpm", async (_, declaration) => {
     // A Bun test host reports a compatibility process.versions.node value;
     // the workspace Node declaration must identify the actual selected Node.
@@ -138,7 +138,7 @@ describe("manifest toolchain execution", () => {
 
   it("keys a separate runtime manifest edit and a manager requirement change without reloading declarations", async () => {
     const root = await fixture("S.Runtime.Node({ manifest: S.file(\"//config/runtime.json\") })")
-    const runtimeText = JSON.stringify({ engines: { node: ">=22.19.0" }, description: "first" })
+    const runtimeText = JSON.stringify({ engines: { node: ">=26.4.0" }, description: "first" })
     await write(root, "config/runtime.json", runtimeText)
     const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
     const plan = () =>
@@ -202,7 +202,7 @@ ${
       options.runtime === undefined
         ? ""
         : `const runtime = S.Runtime.${options.runtime === "node" ? "Node" : "Bun"}({
-  version: ${JSON.stringify(options.runtime === "node" ? ">=22.19.0" : ">=1.4.0")},
+  version: ${JSON.stringify(options.runtime === "node" ? ">=26.4.0" : ">=1.4.0")},
   executable: ${JSON.stringify(runtime)}
 })`
     }
@@ -336,7 +336,7 @@ const oneShotFixture = async (runtime: "node" | "bun", runtimeArgs: ReadonlyArra
   const root = await nativeFixture({
     reference: "Runtime",
     runtime,
-    runtimeVersion: runtime === "node" ? "22.19.0" : "1.4.1"
+    runtimeVersion: runtime === "node" ? "26.4.0" : "1.4.1"
   })
   const launcher = Path.join(root, "node_modules/private-npm/bin/npx-cli.js")
   // Observational fixture traces are not Generate outputs. Keep them in the
@@ -368,7 +368,7 @@ const args = process.argv.slice(2)
 fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({tool: "runtime", args}) + "\\n")
 const executionArgs = args[0] === "--private-runtime-option" ? args.slice(1) : args
 if (JSON.stringify(args) === '["--version"]') process.stdout.write(${
-      JSON.stringify(runtime === "node" ? "22.19.0\n" : "1.4.1\n")
+      JSON.stringify(runtime === "node" ? "26.4.0\n" : "1.4.1\n")
     })
 else if (${JSON.stringify(runtime)} === "node" && executionArgs[0] === ${JSON.stringify(launcher)}) {
   const child = require("node:child_process").spawnSync(${

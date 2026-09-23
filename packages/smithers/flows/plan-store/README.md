@@ -43,7 +43,7 @@ workspace specifier:
 }
 ```
 
-It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.115. The root names no
+It needs Node.js 26.4.0 or later and `effect` 4.0.0-rc.115. The root names no
 database driver, so it bundles for the browser; the driver layers a durable
 composition adds are on the
 [installation page](https://plan-store.smithers.sh/installation/).

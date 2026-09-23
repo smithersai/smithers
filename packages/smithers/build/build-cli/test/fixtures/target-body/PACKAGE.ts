@@ -1,6 +1,6 @@
 import { Smithers as S } from "@smthrs/targets"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const bunRuntime = S.Runtime.Bun({ version: ">=1.4.0" })
 const packageManager = S.PackageManager.BunPackages({ runtime: bunRuntime })
 const installManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
@@ -68,7 +68,7 @@ const generate = S.Generate({
   args: ["-e", "require('node:fs').writeFileSync('generated.txt', 'generated\\n')"],
   changes: ["generated.txt"]
 })
-const node = S.CiToolchain.Node({ runtime, release: "22.19.0" })
+const node = S.CiToolchain.Node({ runtime, release: "26.4.0" })
 const ci = S.GithubCiGen({
   packageManager,
   mode: "write",

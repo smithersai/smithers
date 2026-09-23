@@ -63,7 +63,7 @@ pnpm add @smthrs/gateway@1.0.0-rc.0
 
 Name the version: these pages describe 1.0.0-rc.0, and until that release
 candidate reaches the registry the unqualified package name still resolves to
-the 0.x line. The package needs Node.js 22.19.0 or later. For the peers and the
+the 0.x line. The package needs Node.js 26.4.0 or later. For the peers and the
 services a running composition supplies, see [Installation](/installation/).
 
 ## The smallest real example

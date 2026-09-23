@@ -3,7 +3,7 @@ import { agents } from "./agents.ts"
 import { sandboxes } from "./sandbox.ts"
 
 const packageJson = S.file("//package.json")
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 
 export const Workspace = S.Workspace("__APP_NAME__", {
   repository: "git+https://example.invalid/__APP_NAME__.git",

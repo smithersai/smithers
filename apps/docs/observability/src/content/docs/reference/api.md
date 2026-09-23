@@ -115,7 +115,7 @@ const layerFetch: (options: Options) => Layer.Layer<
 ```
 
 `layer` with `FetchHttpClient.layer` already provided, which binds the host's
-global `fetch`. This is the default wiring on Node 22 and the only one that is
+global `fetch`. This is the default wiring on Node 26 and the only one that is
 browser-safe by construction.
 
 ```ts

@@ -19,7 +19,7 @@ newline-delimited JSON, and followed one run's summary until it settled.
 - A project with at least one run. If you have none,
   [the CLI quickstart](/pkg/cli/quickstart) takes an empty directory to a
   settled run in six commands.
-- `curl` and `jq`, and Node 22.19.0 or later for the last step.
+- `curl` and `jq`, and Node 26.4.0 or later for the last step.
 
 ## Serve the workspace
 

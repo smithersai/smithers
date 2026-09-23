@@ -24,7 +24,7 @@ or publication. A normal run defaults to `dryRun: true`: it does execute the
 models or validation commands, but only produces local preview/candidate
 artifacts. A dry run never asks for publication approval or publishes.
 
-Use Node 22.19+ or 24.11+, pnpm, Bun, and the repository's build prerequisites.
+Use Node 26.4+, pnpm, Bun, and the repository's build prerequisites.
 The live model uses the existing Smithers CLI seat resolver and its configured
 credentials; `--model` defaults to `openai:gpt-5.6-sol`. `--max-tokens` defaults
 to 250000 for the whole run. Credentials are not written into the run input.
@@ -155,8 +155,8 @@ pnpm release:workflow --run rc-prepare --input '{"version":"1.0.0-rc.0","from":"
 Publication requires the requested version already committed on a clean `main`.
 It runs the Smithers package/example/site/docs targets and release helper tests,
 builds from clean artifacts, packs the declared 49-package train in dependency
-order, and smoke-tests the same tarballs on Node 22.19.0 and 24.11.0 with npm
-11.16.0. Each stage is recorded by Smithers. Both smoke receipts and every
+order, and smoke-tests the same tarballs on Node 26.4.0 with npm
+11.16.0. Each stage is recorded by Smithers. The smoke receipt and every
 tarball must match the candidate manifest before the human approval is offered.
 
 ```sh

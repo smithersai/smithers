@@ -21,7 +21,7 @@ resolve.
 in one process split the service context and a flow authored against one
 instance is not runnable by an engine holding the other.
 
-Node 22.19.0 or later is required.
+Node 26.4.0 or later is required.
 
 ## What a real composition adds
 

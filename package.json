@@ -56,7 +56,7 @@
     "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
   },
   "engines": {
-    "node": ">=22.19.0",
+    "node": ">=26.4.0",
     "bun": ">=1.4.0"
   },
   "devDependencies": {

@@ -212,7 +212,7 @@ A workspace contains packages and their build targets. Select a file to inspect 
 
 ## Supported platforms
 
-The release candidate's required package platform is Linux with Node 22.19.0. macOS and Windows package checks are advisory and do not establish a support guarantee.
+The release candidate's required package platform is Linux with Node 26.4.0. macOS and Windows package checks are advisory and do not establish a support guarantee.
 
 Offline Chromium tests cover the included web UI. Packaged desktop and hosted deployments require separate acceptance evidence.
 
@@ -230,7 +230,7 @@ https://smithers.sh/docs/installation/
 
 ## Requirements
 
-- Node.js 22.19+ within Node 22, or Node.js 24.11+. The CLI declares the supported range as <code>^22.19.0 || >=24.11.0</code>. The durable engine runs on Node only.
+- Node.js 26.4.0 or later. The CLI declares the supported range as <code>>=26.4.0</code>. The durable engine runs on Node only.
 - No database server. Storage is local SQLite, and run state lives in the project's `.flows/` directory.
 
 See the [RC support matrix](/docs/reference/support-matrix/) for exact engine ranges, tested versions, advisory platforms, and hosting limits.
@@ -341,7 +341,7 @@ Create a flow that lives with your code, give it a small task, and inspect the r
 
 ## 1. Install the CLI
 
-Use Node.js 22.19+ within Node 22, or Node.js 24.11+. The durable engine runs on Node. You also need a provider credential for the model that will perform the task.
+Use Node.js 26.4.0 or later. The durable engine runs on Node. You also need a provider credential for the model that will perform the task.
 
 The 1.0 release candidate is not published to npm yet. Follow the [source-checkout installation](/docs/installation/#use-the-source-checkout-before-publication), including its PATH setting, then verify:
 
@@ -1076,7 +1076,7 @@ https://smithers.sh/docs/tutorials/first-target/
 
 Build a small target graph and observe its cache behavior. You will run a JavaScript program, reuse its result, and then change a declared input to make it run again. This tutorial does not call a model.
 
-You need the [Smithers CLI](/docs/installation/), a supported Node.js version (`^22.19.0 || >=24.11.0`), pnpm, and Git.
+You need the [Smithers CLI](/docs/installation/), a supported Node.js version (`>=26.4.0`), pnpm, and Git.
 
 ## Create the workspace
 
@@ -1187,7 +1187,7 @@ Time: about 20 minutes. You need Node.js and pnpm.
 
 ## Before you begin
 
-- You have Node.js 22.19.0 or later. The durable engine runs on Node only.
+- You have Node.js 26.4.0 or later. The durable engine runs on Node only.
 - You have pnpm for installing packages.
 - The [CLI quickstart](/docs/cli-quickstart/) is a useful warm-up, but this tutorial starts from an empty directory.
 
@@ -1203,7 +1203,7 @@ pnpm add @smthrs/flow@next @smthrs/engine@next @smthrs/engine-store@next @smthrs
 
 The `@next` suffix is required while 1.0 is a release candidate: `latest` still resolves the Smithers 0.x line. Effect is pinned to exactly `4.0.0-rc.115`.
 
-Add `"type": "module"` to the generated `package.json`, so the files in this tutorial run as ES modules. Every program here runs with `node <file>.ts`; Node 22.19.0 and later execute the TypeScript directly.
+Add `"type": "module"` to the generated `package.json`, so the files in this tutorial run as ES modules. Every program here runs with `node <file>.ts`; Node 26.4.0 and later execute the TypeScript directly.
 
 ```text
 You should see: pnpm writes a package.json and a lockfile and installs the
@@ -1410,7 +1410,7 @@ Time: about 15 minutes. You need the project from the first tutorial.
 
 - You have completed [Build your first durable flow](/docs/tutorials/first-flow/).
 - You have the first tutorial's project, including `durable-layer.ts` and its installed packages.
-- You have Node.js 22.19.0 or later.
+- You have Node.js 26.4.0 or later.
 
 ## 1. Declare the step and the flow
 
@@ -1563,7 +1563,7 @@ Time: about 15 minutes. You need the project from the first tutorial.
 
 - You have completed [Crash and resume a run](/docs/tutorials/crash-and-resume/) or the [CLI quickstart](/docs/cli-quickstart/).
 - You have the project from [Build your first durable flow](/docs/tutorials/first-flow/), including `durable-layer.ts` and its installed packages.
-- You have Node.js 22.19.0 or later.
+- You have Node.js 26.4.0 or later.
 
 ## 1. Declare the retry policy
 
@@ -1741,7 +1741,7 @@ Time: about 20 minutes. You need the project from the first tutorial.
 
 - You have completed [Retry a flaky action](/docs/tutorials/retry-policy/) or the [CLI quickstart](/docs/cli-quickstart/).
 - You have the project from [Build your first durable flow](/docs/tutorials/first-flow/), including `durable-layer.ts` and its installed packages.
-- You have Node.js 22.19.0 or later.
+- You have Node.js 26.4.0 or later.
 
 ## 1. Declare a flow that asks
 
@@ -1902,7 +1902,7 @@ Fork copies a run's history up to one frame so the copy can diverge from its par
 
 ## Before you begin
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A fresh directory for the tutorial files.
 - The libraries, installed in that directory:
 
@@ -2315,7 +2315,7 @@ In this tutorial you'll build an agent flow two ways. First, a markdown flow tha
 - A provider credential in the environment: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. [Configure model seats](/docs/guides/model-seats/) explains how a seat resolves from environment keys.
 - `AI_GATEWAY_API_KEY` for Jev, the completion judge. The CLI refuses to boot without it. The offline module below deliberately binds a scripted judge instead.
 - A git repository to work in. Part 2 reviews its uncommitted change.
-- Node.js 22.19.0 or later for part 3.
+- Node.js 26.4.0 or later for part 3.
 
 ## 1. Author a markdown flow
 
@@ -2598,7 +2598,7 @@ const main = program.pipe(
 NodeRuntime.runMain(main)
 ```
 
-Run it. Node 22.19.0 runs a TypeScript file directly, so there is no build step:
+Run it. Node 26.4.0 runs a TypeScript file directly, so there is no build step:
 
 ```bash
 node sandbox.ts
@@ -2629,7 +2629,7 @@ The offline host explicitly binds `ScriptedJudge.layer`, which reads completion 
 
 ## Before you begin
 
-Use the project from [Build your first agent flow](/docs/tutorials/first-agent-flow/), with its library install, and a supported Node.js version (`^22.19.0 || >=24.11.0`). Add the durable engine dependencies:
+Use the project from [Build your first agent flow](/docs/tutorials/first-agent-flow/), with its library install, and a supported Node.js version (`>=26.4.0`). Add the durable engine dependencies:
 
 ```bash
 pnpm add @smthrs/plan@next @smthrs/engine-store@next @smthrs/flows@next @smthrs/kernel@next @smthrs/run-store@next @effect/sql-sqlite-node@4.0.0-rc.115
@@ -2970,7 +2970,7 @@ The offline host explicitly binds `ScriptedJudge.layer`, which reads completion 
 ## Before you begin
 
 - The Smithers CLI and a project: run `smthrs init notes` in a fresh directory. The project gives you the `.flows/` state directory this tutorial's facts live in.
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - The libraries:
 
 ```bash
@@ -3409,7 +3409,7 @@ A markdown flow is one `flows/<name>/flow.mdx` file: frontmatter declares the ru
 
 ## Before you start
 
-- Install the CLI with `npm install --global @smthrs/cli@next`. Node 22.19+ within Node 22, or Node 24.11+, is required.
+- Install the CLI with `npm install --global @smthrs/cli@next`. Node 26.4.0 or later is required.
 - Set a provider credential. `smthrs doctor` lists the keys it reads: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `MOONSHOT_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `CEREBRAS_API_KEY`.
 
 ## 1. Scaffold the flow
@@ -3589,7 +3589,7 @@ For a prompt-driven agent run, use [Markdown flows](/docs/guides/markdown-flows/
 
 ## Install the dependencies
 
-You need Node.js 22.19.0 or later and a package with `"type": "module"` in its `package.json`:
+You need Node.js 26.4.0 or later and a package with `"type": "module"` in its `package.json`:
 
 ```bash
 pnpm add @smthrs/flow@next @smthrs/engine@next @smthrs/platform-node@next
@@ -4567,7 +4567,7 @@ Place an action body, or a whole child flow, on a provisioned machine while the 
 
 - The library packages: `pnpm add @smthrs/sandbox@next @smthrs/flow@next effect@4.0.0-rc.115`.
 - A durable engine composition to provide the sandbox layers into. The examples below compose one over a local SQLite file.
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 
 ## 1. Choose a provider
 
@@ -5797,7 +5797,7 @@ Smithers Cloud does not run checks from repository events yet; [Run CI on Smithe
 
 ## Before you start
 
-Commit your flow sources under `flows/` and configure their model seats. The runner needs Node.js 22.19.0 or later and the Smithers CLI. Store provider credentials in your CI system's secret store and expose only the variables the chosen seat needs.
+Commit your flow sources under `flows/` and configure their model seats. The runner needs Node.js 26.4.0 or later and the Smithers CLI. Store provider credentials in your CI system's secret store and expose only the variables the chosen seat needs.
 
 A fresh checkout has no `.flows/` history. Work that needs to survive the job belongs on a persistent host.
 
@@ -5888,7 +5888,7 @@ Exercise a flow in a test runner the way the shipped examples do: on the in-memo
 
 ## Before you start
 
-- Node.js 22.19.0 or later. The durable engine runs on Node only.
+- Node.js 26.4.0 or later. The durable engine runs on Node only.
 - The library dependencies, with Effect pinned exactly:
 
 ```bash
@@ -7304,8 +7304,8 @@ This is the support reference for 1.0.0-rc.0. Sources below link to the current 
 
 | Runtime                | RC boundary                                                                                                                                                                                                                                                                                                                                                                                                         | Source of truth                                                                                                                                                                                                                                                                                                                            |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Node.js                | Supported durable runtime via NodeRuntime and local SQLite. Release packages declare either `>=22.19.0` or `^22.19.0 \|\| >=24.11.0`; the CLI, agent, and `smthrs` launcher packages require the narrower range. CI pins `26.5.0`; the release smoke checks both floors listed below.                                                                                                                                                  | [Manifest inventory](#published-node-engine-ranges); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [release workflow](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                                                                      |
-| Node.js release smoke  | The release workflow requires the same candidate tarballs to pass on `22.19.0` and `24.11.0`, records actual Node/npm versions, and checks installation, imports, bundling, and typechecking. Treat a candidate as verified only when both runtime receipts and its archive are retained; configured gates alone are not a pass.                                                                                    | [release workflow and receipt upload](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml); [smoke implementation and version output](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs)                                                                                               |
+| Node.js                | Supported durable runtime via NodeRuntime and local SQLite. Every release package declares `>=26.4.0`. CI pins `26.5.0`; the release smoke checks the floor listed below.                                                                                                                                                                                                                                              | [Manifest inventory](#published-node-engine-ranges); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [release workflow](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                                                                      |
+| Node.js release smoke  | The release workflow requires the candidate tarballs to pass on `26.4.0`, records actual Node/npm versions, and checks installation, imports, bundling, and typechecking. Treat a candidate as verified only when its runtime receipt and its archive are retained; configured gates alone are not a pass.                                                                                                          | [release workflow and receipt upload](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml); [smoke implementation and version output](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs)                                                                                               |
 | Bun                    | The adapter declares `engines.bun: ">=1.4.0"`; CI pins `1.4.1`. BunRuntime now composes the durable engine with the native Bun SQL driver. Native Node↔Bun restart is covered by NativeRuntimeParity; the existing package-runner scope is listed below. Selecting NodeDatabase under Bun returns `unsupported_runtime` and directs callers to BunDatabase. This is not a claim that every application runs on Bun. | [adapter manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/package.json); [CI toolchains](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts); [native restart contract](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/test/NativeRuntimeParity.test.ts) |
 | Browsers               | bundle only. No durable flows, including when a caller supplies another SQL client.                                                                                                                                                                                                                                                                                                                                 | [browser bundle contract](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [aggregate boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/docs/concepts/aggregate-surface.md)                                                                                                |
 | Deno and edge runtimes | Not supported. Browser bundling does not establish Deno, Cloudflare, or Vercel engine support.                                                                                                                                                                                                                                                                                                                      | [browser contract scope](https://github.com/smithersai/smithers/blob/main/scripts/browser-contract.mjs); [native SQLite database boundary](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/docs/concepts/sqlite-only.md)                                                                                 |
@@ -7359,7 +7359,7 @@ These ten packages declare `bunTest` targets. The target uses Bun's package runn
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Global run listing | Loads the run population before paging. A page limit does not bound the underlying read or memory use. No scale claim. A named run has a separate direct lookup.                                                                                                                                                                                                                                                                                   | [ControlLive list path](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/ControlLive.ts); [SQL listRuns](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/src/SqlControlRuntime.ts)    |
 | Fault tier         | Bounded cases: hosted-provider faults, timer races, and other gaps remain. Passing the required fault job does not cover every failure mode.                                                                                                                                                                                                                                                                                                       | [fault coverage record](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md); [fault job](https://github.com/smithersai/smithers/blob/main/PACKAGE.ts)                                                        |
-| Soak               | The streaming case covers five subscribers and 500 events. `reliability.yml` schedules a daily `sync-long-soak` job: 60 minutes of the sync reconnect, stalled-consumer, compaction and retention workload on Node 22.19.0 and 24.18.0, with completed receipts required by `scripts/check-soak-campaign.mjs`. That is a declaration, not run evidence; hours-long growth, the CLI case 16 composition, and hosted soak are outside this evidence. | [scheduled soak job](https://github.com/smithersai/smithers/blob/main/.github/workflows/reliability.yml); [case 16 and omitted soak tiers](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md)               |
+| Soak               | The streaming case covers five subscribers and 500 events. `reliability.yml` schedules a daily `sync-long-soak` job: 60 minutes of the sync reconnect, stalled-consumer, compaction and retention workload on Node 26.4.0 and 26.10.0, with completed receipts required by `scripts/check-soak-campaign.mjs`. That is a declaration, not run evidence; hours-long growth, the CLI case 16 composition, and hosted soak are outside this evidence.  | [scheduled soak job](https://github.com/smithersai/smithers/blob/main/.github/workflows/reliability.yml); [case 16 and omitted soak tiers](https://github.com/smithersai/smithers/blob/main/scripts/repo-contract/fault-gaps.md)               |
 | Production canary  | Disabled for this repository. The job is guarded on `smithersai/flows`; it is not an RC validation surface.                                                                                                                                                                                                                                                                                                                                        | [canary job guard](https://github.com/smithersai/smithers/blob/main/.github/workflows/canary.yml)                                                                                                                                              |
 | Provider first use | A funded first-use provider run is not part of the automated release-smoke evidence. Tarball import/typecheck success does not demonstrate a provider conversation.                                                                                                                                                                                                                                                                                | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [release checks](https://github.com/smithersai/smithers/blob/main/.github/workflows/release.yml)                                                    |
 | Project migration  | A realistic migrated project is not part of the automated release-smoke evidence. Migration fixtures and source rewrites do not establish that end-to-end result.                                                                                                                                                                                                                                                                                  | [smoke scope](https://github.com/smithersai/smithers/blob/main/scripts/smoke-release.mjs); [migration verification guide](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/docs/guides/set-verification-commands.md) |
@@ -7368,58 +7368,58 @@ These ten packages declare `bunTest` targets. The target uses Bun's package runn
 
 The release roster comes from [readWorkspaceManifests and publishedPackages](https://github.com/smithersai/smithers/blob/main/scripts/pack-release.mjs). Every value below is the literal `engines.node` field.
 
-| Published package          | `engines.node`            | Source of truth                                                                                                    |
-| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `@smthrs/agent`            | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/package.json)                  |
-| `@smthrs/artifacts`        | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/package.json)        |
-| `@smthrs/build`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/package.json)                  |
-| `@smthrs/build-cli`        | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/build-cli/package.json)        |
-| `@smthrs/canonical`        | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/package.json)        |
-| `@smthrs/capability`       | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/package.json)       |
-| `@smthrs/cli`              | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/package.json)                        |
-| `@smthrs/control`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/package.json)                |
-| `@smthrs/core`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/package.json)             |
-| `@smthrs/create-app`       | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/create-app/package.json)             |
-| `@smthrs/crypto`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/package.json)           |
-| `@smthrs/database`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/package.json)         |
-| `@smthrs/engine`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/package.json)           |
-| `@smthrs/engine-store`     | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/package.json)     |
-| `@smthrs/errors`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/errors/package.json)                          |
-| `@smthrs/evals`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/package.json)            |
-| `@smthrs/flow`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/package.json)             |
-| `@smthrs/flows`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/package.json)                  |
-| `@smthrs/gateway`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/package.json)                |
-| `@smthrs/harness`          | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/package.json)          |
-| `@smthrs/integrations`     | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/package.json)     |
-| `@smthrs/jj`               | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/package.json)               |
-| `@smthrs/journal`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/package.json)          |
-| `@smthrs/kernel`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/package.json)           |
-| `@smthrs/keys`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/package.json)             |
-| `@smthrs/mcp`              | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/package.json)                    |
-| `@smthrs/memory`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/package.json)           |
-| `@smthrs/migrate`          | `^22.19.0 \|\| >=24.11.0` | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/package.json)                |
-| `@smthrs/model`            | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
-| `@smthrs/notifications`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
-| `@smthrs/observability`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
-| `@smthrs/patterns`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
-| `@smthrs/plan`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
-| `@smthrs/plan-store`       | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/package.json)       |
-| `@smthrs/platform-browser` | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/package.json) |
-| `@smthrs/platform-bun`     | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/package.json)     |
-| `@smthrs/platform-node`    | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/package.json)    |
-| `@smthrs/plugin`           | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/package.json)           |
-| `@smthrs/registry`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/package.json)         |
-| `@smthrs/run-store`        | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/package.json)        |
-| `@smthrs/sandbox`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/package.json)          |
-| `@smthrs/scorers`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/package.json)          |
-| `@smthrs/std`              | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/package.json)              |
-| `@smthrs/step-cache`       | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/package.json)       |
-| `@smthrs/sync`             | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/package.json)             |
-| `@smthrs/targets`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/targets/package.json)          |
-| `@smthrs/testing`          | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/testing/package.json)                         |
-| `@smthrs/time-travel`      | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/package.json)      |
-| `@smthrs/triggers`         | `>=22.19.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/package.json)         |
-| `smthrs`                   | `^22.19.0 \|\| >=24.11.0`               | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smthrs-deprecation/package.json)              |
+| Published package          | `engines.node` | Source of truth                                                                                                    |
+| -------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `@smthrs/agent`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/package.json)                  |
+| `@smthrs/artifacts`        | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/artifacts/package.json)        |
+| `@smthrs/build`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/package.json)                  |
+| `@smthrs/build-cli`        | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/build-cli/package.json)        |
+| `@smthrs/canonical`        | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/canonical/package.json)        |
+| `@smthrs/capability`       | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/capability/package.json)       |
+| `@smthrs/cli`              | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/package.json)                        |
+| `@smthrs/control`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/control/package.json)                |
+| `@smthrs/core`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/core/package.json)             |
+| `@smthrs/create-app`       | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/create-app/package.json)             |
+| `@smthrs/crypto`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/package.json)           |
+| `@smthrs/database`         | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/database/package.json)         |
+| `@smthrs/engine`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/package.json)           |
+| `@smthrs/engine-store`     | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/package.json)     |
+| `@smthrs/errors`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/errors/package.json)                          |
+| `@smthrs/evals`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/evals/package.json)            |
+| `@smthrs/flow`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/flow/package.json)             |
+| `@smthrs/flows`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/package.json)                  |
+| `@smthrs/gateway`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/package.json)                |
+| `@smthrs/harness`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/harness/package.json)          |
+| `@smthrs/integrations`     | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/package.json)     |
+| `@smthrs/jj`               | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/jj/package.json)               |
+| `@smthrs/journal`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/journal/package.json)          |
+| `@smthrs/kernel`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/package.json)           |
+| `@smthrs/keys`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/package.json)             |
+| `@smthrs/mcp`              | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/mcp/package.json)                    |
+| `@smthrs/memory`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/package.json)           |
+| `@smthrs/migrate`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/migrate/package.json)                |
+| `@smthrs/model`            | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/model/package.json)            |
+| `@smthrs/notifications`    | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/notifications/package.json)          |
+| `@smthrs/observability`    | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/package.json)    |
+| `@smthrs/patterns`         | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/package.json)         |
+| `@smthrs/plan`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan/package.json)             |
+| `@smthrs/plan-store`       | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/package.json)       |
+| `@smthrs/platform-browser` | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-browser/package.json) |
+| `@smthrs/platform-bun`     | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/package.json)     |
+| `@smthrs/platform-node`    | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-node/package.json)    |
+| `@smthrs/plugin`           | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/plugin/package.json)           |
+| `@smthrs/registry`         | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/package.json)         |
+| `@smthrs/run-store`        | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/run-store/package.json)        |
+| `@smthrs/sandbox`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sandbox/package.json)          |
+| `@smthrs/scorers`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/scorers/package.json)          |
+| `@smthrs/std`              | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/std/package.json)              |
+| `@smthrs/step-cache`       | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/step-cache/package.json)       |
+| `@smthrs/sync`             | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/sync/package.json)             |
+| `@smthrs/targets`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/build/targets/package.json)          |
+| `@smthrs/testing`          | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/testing/package.json)                         |
+| `@smthrs/time-travel`      | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/time-travel/package.json)      |
+| `@smthrs/triggers`         | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/triggers/package.json)         |
+| `smthrs`                   | `>=26.4.0`     | [manifest](https://github.com/smithersai/smithers/blob/main/packages/smthrs-deprecation/package.json)              |
 
 ---
 
@@ -9872,7 +9872,7 @@ const smithersCloudCache = S.Cache({
 })
 
 // Runtimes and their executables
-const node = S.Runtime.Node({ version: ">=22.19.0" })
+const node = S.Runtime.Node({ version: ">=26.4.0" })
 const nodeFromManifest = S.Runtime.Node({ manifest: packageJson })
 const bun = S.Runtime.Bun({ version: ">=1.4.0" })
 const runtimeExecutable = S.Runtime.bin
@@ -11129,9 +11129,9 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 | Import                         | Source          | Platform         |
 | ------------------------------ | --------------- | ---------------- |
-| `@smthrs/targets`              | `src/index.ts`  | Node.js 22.19.0+ |
-| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 22.19.0+ |
-| `@smthrs/targets/package.json` | `package.json`  | Node.js 22.19.0+ |
+| `@smthrs/targets`              | `src/index.ts`  | Node.js 26.4.0+  |
+| `@smthrs/targets/Target`       | `src/Target.ts` | Node.js 26.4.0+  |
+| `@smthrs/targets/package.json` | `package.json`  | Node.js 26.4.0+  |
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
@@ -11228,7 +11228,7 @@ Declares one secret source, read lazily at a host-owned request boundary. The de
 - **Type:** the `Runtime` module, and `type Runtime = Runtime.Runtime`
 - **Since:** `0.1.0`
 
-Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=22.19.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
+Declared JavaScript runtimes and the argv they run programs with. The name is both the namespace the constructors live under and the type they return. `Runtime.Node({ version: ">=26.4.0" })` and `Runtime.Bun({ version: ">=1.4.0" })` are the two constructors, `Runtime.Node({ manifest })` is the form that reads the pin from a declared manifest, and `Runtime.bin`, `Runtime.npx`, `Runtime.required`, `Runtime.run`, `Runtime.evaluate`, `Runtime.test`, and `Runtime.isRuntime` are the accessors a rule builds argv with. A runtime belongs to the workspace and is declared once in `WORKSPACE.ts`; a single target overrides the interpreter by naming its own `runtime`.
 
 `Runtime.Node({ manifest })` reads `engines.node` during planning. Literal Node pins and exact Bun pins also retain their declared versions. Requirements support an exact version or one comparator (`=`, `>`, `>=`, `<`, or `<=`); compound ranges, caret/tilde ranges, and tags such as `latest` are refused. The planner measures each declared manifest's validated text and includes that digest in the target key. Missing, malformed, oversized, or outside-workspace manifests fail resolution.
 
@@ -14460,7 +14460,7 @@ to measure a changed interpreter.
 import * as Runtime from "@smthrs/build/Runtime"
 
 const layer = Runtime.layerNode({
-  requirement: ">=22.19.0",
+  requirement: ">=26.4.0",
   platform: { os: "linux", arch: "x64", libc: "glibc" },
   environment: process.env
 })
@@ -17447,8 +17447,8 @@ Readiness as one report.
 | --- | --- | --- |
 | `Level` | `"ok" \| "warn" \| "fail"` | A `warn` stops nothing; a `fail` will stop the next command. |
 | `Check`, `Report` | `{ name, level, detail }`, `{ root, checks }` | The report is data. `--json` prints it verbatim. |
-| `minimumNode` | `"22.19.0"` | The floor the durable engine requires. |
-| `supportedNodeRange` | `"^22.19.0 \|\| >=24.11.0"` | The Node range supported by the CLI's runtime dependencies. |
+| `minimumNode` | `"26.4.0"` | The floor the durable engine requires. |
+| `supportedNodeRange` | `">=26.4.0"` | The Node range supported by the CLI's runtime dependencies. |
 | `satisfiesNode` | `(version, minimum?) => boolean` | Whether a Node version is supported and clears an optional higher floor. |
 | `Options` | interface | Every host fact is a parameter, so the report is deterministic in a test. |
 | `inspect` | `(options) => Report` | Runs every check. |
@@ -20028,13 +20028,13 @@ derived from one rather than colliding with it.
 
 ## Requirements and platform
 
-- Node.js 22.19.0 or later. The package also runs under Bun and in a browser:
+- Node.js 26.4.0 or later. The package also runs under Bun and in a browser:
   it imports no `node:` built-in.
 - One runtime dependency, `effect`.
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
   export map. The handwritten implementation is reachable only through
   `digestSync` and `syncCrypto`.
-- `Identity.capture` uses `structuredClone`, a global on Node.js 22, Bun, and
+- `Identity.capture` uses `structuredClone`, a global on Node.js 26, Bun, and
   modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
   Neither is read while the module evaluates.
 
@@ -20496,7 +20496,7 @@ than a typed failure because neither refusal is recoverable at run time.
 
 | Code                        | Refused when                                                    | Message                                                                                   |
 | --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0` |
+| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0` |
 | `unsupported_database_file` | the file has at least one table and no `flows_migrations` table | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`      |
 | `database_locked`           | a peer held the file for the whole open ladder                  | `<path> could not be inspected because another process holds it`                          |
 
@@ -22662,7 +22662,7 @@ import * as SandboxedFlow from "@smthrs/flows/SandboxedFlow"
 `@smthrs/flows/internal/*` and `@smthrs/flows/*/index` are blocked in the export
 map and are not public.
 
-Durable execution is supported on Node.js 22.19.0 or later with local SQLite.
+Durable execution is supported on Node.js 26.4.0 or later with local SQLite.
 The root entry point bundles for browsers, which buys authoring and inspection;
 it does not make a browser a durable host, and supplying another SQL client does
 not change that.
@@ -31912,18 +31912,18 @@ The transport a classifier asks: one JSON state and a map of typed questions
 go out, one raw answer per question comes back. Jev writes no text, so it can
 never name an option the question did not offer.
 
-| Export                                                                                          | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Evaluator`                                                                                     | service interface and tag | `evaluate({ state, questions }) => Effect<{ answers, confidence?, usage?, latencyMs }, EvaluatorError>`. `confidence` is the provider's own number per question, read from `providerMetadata.typesafe.confidence` and absent when the transport sent none. Tag id `/model/Evaluator`.                                                                                                                          |
-| `layerVercelGateway(options)`                                                                   | layer                     | Jev through the Vercel AI Gateway over the kernel `HttpClient`. One POST per evaluation, one deadline over the whole call, no retries. Options: `apiKey` (a `Redacted` or a `Config` read at construction), `model` (`typesafe-ai/jev`), `timeoutMs` (1500), `zeroDataRetention` (true), `baseUrl` (`https://ai-gateway.vercel.sh/v4/ai/evaluation-model`). Every request runs as a `model:call` on the model. |
-| `layerScripted(script)`                                                                         | layer                     | Answers from `(request) => answers` or `(request) => Effect<answers, EvaluatorError>`. A scripted answer may omit its `type`; the layer fills it from the question and decodes the result like a gateway body, so a script answering the wrong shape fails as `invalid_answer`.                                                                                                                                |
-| `layerFromEnvironment(environment, host)`                                                       | layer                     | Selects `layerVercelGateway` or throws an `EvaluatorError` at composition time when `AI_GATEWAY_API_KEY` is missing, empty or blank. Requires a host name for the refusal. Call before opening databases, sockets or processes. An offline host deliberately binds `layerScripted` with an evidence-based judge. Needs the kernel `HttpClient`.                                                                |
-| `environmentKey`                                                                                | constant                  | `"AI_GATEWAY_API_KEY"`, the variable `layerFromEnvironment` reads.                                                                                                                                                                                                                                                                                                                                             |
-| `layerUnavailable()`                                                                            | layer                     | Fails every request as `unreachable`; a classifier outage fixture, and the binding for a host composed to drive no run, never a completion-capable host's default.                                                                                                                                                                                                                                             |
-| `Question`, `RawAnswer`, `RawAnswers`                                                           | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                  |
-| `EvaluatorErrorCode`                                                                            | schema                    | `unreachable` (no response), `refused` (a status other than 200, 400 or 422, kept in `status`), `empty` (a 200 whose body carried no answers or could not be read), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                             |
-| `EvaluatorError`                                                                                | error                     | `{ code, status?, message }`. Evaluation failures are typed; missing host configuration is thrown synchronously by `layerFromEnvironment`.                                                                                                                                                                                                                                                                     |
-| `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                          |
+| Export                                                                                                                               | Kind                      | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Evaluator`                                                                                                                          | service interface and tag | `evaluate({ state, questions }) => Effect<{ answers, confidence?, usage?, latencyMs }, EvaluatorError>`. `confidence` is the provider's own number per question, read from `providerMetadata.typesafe.confidence` and absent when the transport sent none. Tag id `/model/Evaluator`.                                                                                                                                                                                                                                             |
+| `layerVercelGateway(options)`                                                                                                        | layer                     | Jev through the Vercel AI Gateway over the kernel `HttpClient`. One deadline over the whole evaluation; a 429 or 503 is asked again after a doubling pause from `retryBackoffMs` (100 ms), and one shed on every attempt fails `refused`. Options: `apiKey` (a `Redacted` or a `Config` read at construction), `model` (`typesafe-ai/jev`), `timeoutMs` (3000), `attempts` (3), `zeroDataRetention` (true), `baseUrl` (`https://ai-gateway.vercel.sh/v4/ai/evaluation-model`). Every request runs as a `model:call` on the model. |
+| `layerScripted(script)`                                                                                                              | layer                     | Answers from `(request) => answers` or `(request) => Effect<answers, EvaluatorError>`. A scripted answer may omit its `type`; the layer fills it from the question and decodes the result like a gateway body, so a script answering the wrong shape fails as `invalid_answer`.                                                                                                                                                                                                                                                   |
+| `layerFromEnvironment(environment, host)`                                                                                            | layer                     | Selects `layerVercelGateway` or throws an `EvaluatorError` at composition time when `AI_GATEWAY_API_KEY` is missing, empty or blank. Requires a host name for the refusal. Call before opening databases, sockets or processes. An offline host deliberately binds `layerScripted` with an evidence-based judge. Needs the kernel `HttpClient`.                                                                                                                                                                                   |
+| `environmentKey`                                                                                                                     | constant                  | `"AI_GATEWAY_API_KEY"`, the variable `layerFromEnvironment` reads.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `layerUnavailable()`                                                                                                                 | layer                     | Fails every request as `unreachable`; a classifier outage fixture, and the binding for a host composed to drive no run, never a completion-capable host's default.                                                                                                                                                                                                                                                                                                                                                                |
+| `Question`, `RawAnswer`, `RawAnswers`                                                                                                | schemas                   | The wire shapes. A boolean answer is `{ type: "boolean", probability }`, a choice `{ type: "choice", choice, probabilities? }`, a score `{ type: "score", score, probabilities? }`. The question schema enforces 2 to 255 choice options and at least 2 distinct score rungs.                                                                                                                                                                                                                                                     |
+| `EvaluatorErrorCode`                                                                                                                 | schema                    | `unreachable` (no response), `refused` (a status other than 200, 400 or 422, kept in `status`), `empty` (a 200 whose body carried no answers or could not be read), `timeout` (this call's deadline), `invalid_answer`, `invalid_question` (a 400 or 422, or a rejected question).                                                                                                                                                                                                                                                |
+| `EvaluatorError`                                                                                                                     | error                     | `{ code, status?, message }`. Evaluation failures are typed; missing host configuration is thrown synchronously by `layerFromEnvironment`.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `defaultAttempts`, `retryBackoffMs`, `protocolVersion`, `specificationVersion` | constants                 | The gateway defaults and the protocol versions sent as `ai-gateway-protocol-version` (`0.0.1`) and `ai-evaluation-model-specification-version` (`4`).                                                                                                                                                                                                                                                                                                                                                                             |
 
 The wire protocol is the AI SDK gateway provider's own, as recorded on
 2026-09-17. Vercel may change it without notice; a changed response surfaces
@@ -32528,7 +32528,7 @@ const layerFetch: (options: Options) => Layer.Layer<
 ```
 
 `layer` with `FetchHttpClient.layer` already provided, which binds the host's
-global `fetch`. This is the default wiring on Node 22 and the only one that is
+global `fetch`. This is the default wiring on Node 26 and the only one that is
 browser-safe by construction.
 
 ```ts
@@ -35560,7 +35560,7 @@ each the namespace of the module above. `@smthrs/platform-bun/internal/*` and
 `@smthrs/platform-bun/*/index` are blocked in the export map;
 `@smthrs/platform-bun/package.json` is exported.
 
-Supported runtimes are Bun >=1.4.0 and Node.js >=22.19.0.
+Supported runtimes are Bun >=1.4.0 and Node.js >=26.4.0.
 
 ## BunHost
 
@@ -35669,7 +35669,7 @@ describe that substitution:
 ```ts
 {
   "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-  "effect/Path": "effect/Path",
+  "effect/Path": "@effect/platform-bun/BunPath",
   "effect/process/ChildProcessSpawner": "@effect/platform-bun/BunChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/bun/BunJj",
   "effect/HttpClient": "@effect/platform-bun/BunHttpClient"
@@ -35812,7 +35812,7 @@ use the selected process runner.
 
 | Requirement                                        | Why                                                                                                       |
 | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Node.js >=22.19.0                                  | the minimum this package's `engines` field declares                                                       |
+| Node.js >=26.4.0                                  | the minimum this package's `engines` field declares                                                       |
 | CPython 3 at `/usr/bin/python3`                    | `AtomicFileSystem` runs every filesystem syscall through it                                               |
 | that interpreter's `os` module supporting `dir_fd` | with `O_NOFOLLOW` and `O_DIRECTORY`, for `open`, `mkdir`, `readlink`, `rename`, `rmdir`, `stat`, `unlink` |
 | a POSIX host                                       | Windows has none of those primitives and is unsupported                                                   |
@@ -36110,8 +36110,8 @@ single answer to copy.
    directories below its own anchor but not that anchor: with `exclude: ["**/"]`,
    `**` keeps the root and its files while pruning every directory.
    Node empties the answer instead.
-3. **A dotted segment after `**`.** On 22.19.0 `**/.hidden` matches nothing and
-   on 24 it matches the dotfiles. The adapter follows the newer reading.
+3. **A dotted segment after `**`.** Node 22 matched nothing for `**/.hidden`;
+   Node 24 and later match the dotfiles. The adapter follows the newer reading.
 
 **Removal.** `remove(path, { recursive: true })` walks iteratively with an
 explicit descriptor stack: depth is bounded at 512 levels and the total number
@@ -36129,8 +36129,12 @@ for a path whose ancestors do not exist, exactly as `fs.rm` does.
 returning `(pgid) => { ownGroup, members } | undefined`. Each member carries
 `pid`, `startedAtMs`, and `zombie`. Linux reads `/proc` directly and needs no
 `ps` binary for live cleanup; other POSIX hosts use `/bin/ps`. Unreadable or
-malformed process data returns `undefined`, so cleanup cannot claim success.
-`ProcessReaper.processLifecycle` uses the probe for the current platform.
+malformed process data returns `undefined`, so the snapshot cannot claim
+success. `ProcessReaper.groupVacant(pgid)` asks the kernel first with signal 0:
+only `ESRCH` returns `true`, which proves the group has no process at all and
+needs no `ps` fork. A live member, a zombie, or any other error returns `false`,
+and the snapshot decides. `ProcessReaper.processLifecycle` uses both probes for
+the current platform.
 
 `HostLiveness.isAlive({ hostId })` is the probe a durable engine consults before
 it takes a run whose recorded owner it is not: an owner on a different host reads
@@ -44744,7 +44748,7 @@ Raised as defects by `NodeDatabase.layer` before a connection is created; match 
 
 | Code | Where raised | Cause | Fix |
 | --- | --- | --- | --- |
-| `unsupported_runtime` | `NodeDatabase.layer` | The durable engine was opened under Bun (`process.versions.bun` is set) | Run the durable engine on Node.js 22.19.0 or later |
+| `unsupported_runtime` | `NodeDatabase.layer` | The durable engine was opened under Bun (`process.versions.bun` is set) | Run the durable engine on Node.js 26.4.0 or later |
 | `unsupported_database_file` | `NodeDatabase.layer` | The file has at least one table and no `flows_migrations` table | The file is a 0.x `smithers.db`, which 1.0.0-rc.0 does not load; open a 1.0 database |
 | `database_locked` | `NodeDatabase.layer` | A peer held the file for the whole open ladder, so it was never inspected | Stop the process holding the file and open it again |
 
@@ -45818,7 +45822,7 @@ The checks, in order:
 | `registry <path>` | One `warn` per discovery warning, with its code and message. |
 | `state` | The `.flows/` state directory, or that it is not created yet. |
 | `database <path>` | For `control.db` and `engine.db`: how many migrations are applied, that the file is not created yet, or that Smithers 1.0 did not create it. |
-| `node` | The Node version, `fail` below the 22.19.0 floor the durable engine requires. |
+| `node` | The Node version, `fail` below the 26.4.0 floor the durable engine requires. |
 | `jj` | The `jj` binary path, or a `warn` when it is missing or not executable. |
 | `providers` | Which provider keys are set, and which are exported but empty. |
 | `backend` | A `fail` when `SMITHERS_BACKEND` names an unsupported backend. |
@@ -48639,7 +48643,7 @@ https://smithers.sh/docs/migration/compatibility/
 
 The release policy freezes this wording:
 
-> Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. It provides no JSX workflow API, no `smthrs/jsx-runtime` or `smthrs/jsx-dev-runtime`, no React reconciler, no `<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Loop>`, `<Ralph>`, `<Branch>`, `<Approval>`, `<Signal>`, `<Timer>`, `<Subflow>`, `<Worktree>`, or `<Saga>` components, no `createSmithers`, `runWorkflow`, `renderFrame`, or `SmithersCtx`, no `smthrs` facade, no 0.x CLI verbs beyond those listed in the 1.0 command table, no 0.x gateway protocol, and no ability to load, resume, or migrate 0.x run databases. No shim, adapter, or compatibility layer will be published. Flows are written against `@smthrs/flow` (`Flow`, `Action`, durable waits, `RetryPolicy`), `@smthrs/engine`, `@smthrs/control`, and Effect `4.0.0-rc.115`, and run on Node.js 22.19.0 or later with local SQLite. Existing 0.x projects migrate their source with the `migrate-smithers-v1` workflow (`smthrs migrate`), which rewrites workflows, imports, configuration, scripts, and docs and reports every construct it could not translate. Runtime behavior between 0.x and 1.0 is not equivalent and is not intended to be.
+> Smithers 1.0.0-rc.0 is a source migration, not a compatible upgrade. It provides no JSX workflow API, no `smthrs/jsx-runtime` or `smthrs/jsx-dev-runtime`, no React reconciler, no `<Workflow>`, `<Task>`, `<Sequence>`, `<Parallel>`, `<Loop>`, `<Ralph>`, `<Branch>`, `<Approval>`, `<Signal>`, `<Timer>`, `<Subflow>`, `<Worktree>`, or `<Saga>` components, no `createSmithers`, `runWorkflow`, `renderFrame`, or `SmithersCtx`, no `smthrs` facade, no 0.x CLI verbs beyond those listed in the 1.0 command table, no 0.x gateway protocol, and no ability to load, resume, or migrate 0.x run databases. No shim, adapter, or compatibility layer will be published. Flows are written against `@smthrs/flow` (`Flow`, `Action`, durable waits, `RetryPolicy`), `@smthrs/engine`, `@smthrs/control`, and Effect `4.0.0-rc.115`, and run on Node.js 26.4.0 or later with local SQLite. Existing 0.x projects migrate their source with the `migrate-smithers-v1` workflow (`smthrs migrate`), which rewrites workflows, imports, configuration, scripts, and docs and reports every construct it could not translate. Runtime behavior between 0.x and 1.0 is not equivalent and is not intended to be.
 
 > Storage in rc.0 is local SQLite only. PostgreSQL and PGlite are unsupported: `SMITHERS_BACKEND=pglite|postgres` and `--backend pglite|postgres` exit with `unsupported_database`.
 
@@ -48665,7 +48669,7 @@ rc.0 keeps run state in local SQLite under `.flows/` and nowhere else. PostgreSQ
 
 Flows written for 1.0 run on:
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - Effect exactly `4.0.0-rc.115`. The pin is exact, not a range; the platform package enforces it through peer dependencies.
 - The `@smthrs/flow`, `@smthrs/engine`, and `@smthrs/control` packages, installed at the `@next` dist-tag. `latest` still resolves 0.x; see [Installation](/docs/installation/).
 

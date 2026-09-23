@@ -69,7 +69,7 @@ PackageManager.layerPnpm({
   requirement: ">=11.0.0"
 }).pipe(
   Layer.provide(Runtime.layerNode({
-    requirement: ">=22.19.0",
+    requirement: ">=26.4.0",
     platform: { os: "linux", arch: "x64", libc: "glibc" },
     environment: process.env
   }))

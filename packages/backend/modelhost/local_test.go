@@ -18,7 +18,7 @@ import (
 func TestLocalLauncherVerifiesBundleAndRunsOneTurn(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("Node 22 is required for the model host adapter smoke test")
+		t.Skip("Node 26.4+ is required for the model host adapter smoke test")
 	}
 	node, err = filepath.EvalSymlinks(node)
 	require.NoError(t, err)

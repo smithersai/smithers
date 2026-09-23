@@ -32,8 +32,7 @@ that gets keyed, journaled, or logged. For the reasoning behind that split, see
 The package is at 1.0.0-rc.0 and is not on the npm registry yet. It is a
 workspace package of the
 [Smithers repository](https://github.com/smithersai/smithers), so you use it
-from a package in a clone of that repository. It requires Node.js 22.19.0 or
-later. [Installation](/installation/) has the steps.
+from a package in a clone of that repository. It requires Node.js 26.4.0 or later. [Installation](/installation/) has the steps.
 
 ## Call a provider
 

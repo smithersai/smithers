@@ -3,9 +3,9 @@ import * as Runtime from "../src/Runtime.ts"
 
 describe("Runtime declarations", () => {
   it("hardcodes the name of each variant", () => {
-    expect(Runtime.Node({ version: ">=22.19.0" })).toEqual({
+    expect(Runtime.Node({ version: ">=26.4.0" })).toEqual({
       name: "node",
-      version: ">=22.19.0",
+      version: ">=26.4.0",
       executable: "node"
     })
     expect(Runtime.Bun({ version: ">=1.4.0" })).toEqual({
@@ -17,7 +17,7 @@ describe("Runtime declarations", () => {
 
   it("discriminates the union on `name`", () => {
     const declarations: ReadonlyArray<Runtime.NodeRuntime | Runtime.BunRuntime> = [
-      Runtime.Node({ version: ">=22.19.0" }),
+      Runtime.Node({ version: ">=26.4.0" }),
       Runtime.Bun({ version: ">=1.4.0" })
     ]
     const versions = declarations.map((runtime) => {
@@ -35,7 +35,7 @@ describe("Runtime declarations", () => {
         }
       }
     })
-    expect(versions).toEqual([">=22.19.0", ">=1.4.0"])
+    expect(versions).toEqual([">=26.4.0", ">=1.4.0"])
   })
 
   it("routes versions outside the PACKAGE.ts enumeration to the WORKSPACE.ts declaration", () => {
@@ -46,7 +46,7 @@ describe("Runtime declarations", () => {
     const pinned = Runtime.Node({ version: "24.9.0" })
     expect(Runtime.isNodeDeclaration(pinned)).toBe(true)
     expect(Runtime.isRuntime(pinned)).toBe(false)
-    expect(() => Runtime.Bun({ version: ">=22.19.0" })).toThrow()
+    expect(() => Runtime.Bun({ version: ">=26.4.0" })).toThrow()
   })
 
   it("rejects missing Node options and admits an exact Bun workspace pin", () => {
@@ -60,24 +60,24 @@ describe("Runtime declarations", () => {
   })
 
   it("honours an executable override and rejects unusable ones", () => {
-    expect(Runtime.Node({ version: ">=22.19.0", executable: "/opt/node/bin/node" }).executable).toBe(
+    expect(Runtime.Node({ version: ">=26.4.0", executable: "/opt/node/bin/node" }).executable).toBe(
       "/opt/node/bin/node"
     )
-    expect(() => Runtime.Node({ version: ">=22.19.0", executable: "  " })).toThrow(/must not be empty/)
-    expect(() => Runtime.Node({ version: ">=22.19.0", executable: "node\u0000" }))
+    expect(() => Runtime.Node({ version: ">=26.4.0", executable: "  " })).toThrow(/must not be empty/)
+    expect(() => Runtime.Node({ version: ">=26.4.0", executable: "node\u0000" }))
       .toThrow(/without control characters/)
-    expect(() => Runtime.Node({ version: ">=22.19.0", executable: "a".repeat(257) })).toThrow(
+    expect(() => Runtime.Node({ version: ">=26.4.0", executable: "a".repeat(257) })).toThrow(
       /bounded well-formed text/
     )
   })
 
   it("recognises only the declared variants", () => {
-    expect(Runtime.isRuntime(Runtime.Node({ version: ">=22.19.0" }))).toBe(true)
+    expect(Runtime.isRuntime(Runtime.Node({ version: ">=26.4.0" }))).toBe(true)
     expect(Runtime.isRuntime(Runtime.Bun({ version: ">=1.4.0" }))).toBe(true)
     expect(Runtime.isRuntime({ name: "deno", version: "2.1.4", executable: "deno" })).toBe(false)
     expect(Runtime.isRuntime({ name: "node", version: "24.9.0", executable: "node" })).toBe(false)
-    expect(Runtime.isRuntime({ name: "bun", version: ">=22.19.0", executable: "bun" })).toBe(false)
-    expect(Runtime.isRuntime({ name: "node", version: ">=22.19.0", executable: "" })).toBe(false)
+    expect(Runtime.isRuntime({ name: "bun", version: ">=26.4.0", executable: "bun" })).toBe(false)
+    expect(Runtime.isRuntime({ name: "node", version: ">=26.4.0", executable: "" })).toBe(false)
     expect(Runtime.isRuntime({ name: "node" })).toBe(false)
     expect(Runtime.isRuntime(null)).toBe(false)
     expect(Runtime.isRuntime("node")).toBe(false)
@@ -93,7 +93,7 @@ describe("Runtime declarations", () => {
   })
 
   it("builds argv for a script and for an inline program", () => {
-    const runtime = Runtime.Node({ version: ">=22.19.0" })
+    const runtime = Runtime.Node({ version: ">=26.4.0" })
     expect(Runtime.run(runtime, ["build.mjs", "--check"])).toEqual(["node", "build.mjs", "--check"])
     expect(Runtime.evaluate(runtime, "console.log(1)", ["x"])).toEqual([
       "node",

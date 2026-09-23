@@ -32,7 +32,7 @@ const fixture = async (test: TestContext, options: { gates?: ReleaseGateSet } = 
   const candidate: Candidate = { directory, digest: hash, sourceSha, version, packageCount: packages.length, approvalPrompt: "" }
   await writeFile(join(repo.root, directory, "manifest.json"), JSON.stringify(packages))
   await writeFile(join(repo.root, directory, "release-manifest.json"), JSON.stringify(manifest))
-  for (const runtime of ["22.19.0", "24.11.0"]) {
+  for (const runtime of ["26.4.0"]) {
     const smoke = { schemaVersion: 1, status: "passed", candidateIntegrity: hash, toolchain: { node: `v${runtime}` } }
     await writeFile(join(repo.root, directory, `smoke-node-${runtime}.json`), JSON.stringify(smoke))
     await writeFile(join(repo.root, directory, "smoke-evidence.json"), JSON.stringify(smoke))
@@ -116,7 +116,7 @@ test("registry conflicts, tampered smoke receipts and stale source each refuse t
   await assert.rejects(state.ops.publish({ input: state.input, candidate: state.candidate }), /Registry integrity mismatch/)
   assert.equal(state.publishes.length, 0)
   state.registry.set(`${entry.name}@${entry.version}`, entry.integrity)
-  await writeFile(join(state.root, state.directory, "smoke-node-22.19.0.json"), JSON.stringify({ status: "passed", candidateIntegrity: "wrong", toolchain: { node: "v22.19.0" } }))
+  await writeFile(join(state.root, state.directory, "smoke-node-26.4.0.json"), JSON.stringify({ status: "passed", candidateIntegrity: "wrong", toolchain: { node: "v26.4.0" } }))
   await assert.rejects(state.ops.publish({ input: state.input, candidate: state.candidate }), /Missing verified Node/)
   assert.equal(state.publishes.length, 0)
   await writeFile(join(state.root, "README.md"), "Changed source\n")

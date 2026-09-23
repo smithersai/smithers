@@ -13,7 +13,7 @@ recording what was applied, and a program that is safe to run again.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A package with `@smthrs/database`, `effect`, and `@effect/sql-sqlite-node`
   resolved. See [Installation](/installation/), which also covers where the
   package comes from while it is unpublished.

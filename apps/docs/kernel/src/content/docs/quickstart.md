@@ -17,7 +17,7 @@ request an operator resolves.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A package that depends on `@smthrs/kernel` and has
   `"@smthrs/testing": "workspace:*"` in devDependencies. See
   [Installation](/installation/) for how to get them.

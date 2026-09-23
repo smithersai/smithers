@@ -476,7 +476,7 @@ Git commands disable terminal credential prompts and interactive editors.
 
 ## Runtime
 
-The package requires Node 22.19+ (Node 22) or 24.11+. `src/main.js` installs the Effect
+The package requires Node 26.4.0 or later. `src/main.js` installs the Effect
 module resolution hook and boots the programmatic `tsx` loader that ships as a
 CLI dependency, which then loads the CLI's own modules and the workspace's
 `WORKSPACE.ts` and `PACKAGE.ts` declarations. See

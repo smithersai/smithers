@@ -22,7 +22,7 @@ The current version is `1.0.0-rc.0`, and release candidates carry the `next`
 tag, which is what `@next` selects. `effect` is the only runtime dependency.
 `digest` additionally needs an Effect `Crypto` service, which
 `@effect/platform-node`, `@effect/platform-bun`, and `@effect/platform-browser`
-each provide as a layer. The package requires Node.js 22.19.0 or later, and it
+each provide as a layer. The package requires Node.js 26.4.0 or later, and it
 imports no `node:` built-in, so it also runs under Bun and in a browser.
 
 ## Example

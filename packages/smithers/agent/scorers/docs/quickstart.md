@@ -12,7 +12,7 @@ in-memory, so the whole thing runs from one file with no setup.
 
 ## Prerequisites
 
-Node.js 22.19.0 or later, and a project that depends on `@smthrs/scorers` and
+Node.js 26.4.0 or later, and a project that depends on `@smthrs/scorers` and
 `@smthrs/database`. The in-memory SQLite example also needs the optional Node
 driver. See [Installation](./installation.md).
 

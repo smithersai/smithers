@@ -19,7 +19,7 @@ import * as Verb from "../src/Verb.ts"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
 
 const flake = Input.file("//flake.nix")
-const runtime = Runtime.Node({ version: ">=22.19.0" })
+const runtime = Runtime.Node({ version: ">=26.4.0" })
 const packageManager = PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 describe("Nix.Environment", () => {
@@ -175,7 +175,7 @@ describe("CiToolchain.Nix", () => {
     expect(() =>
       CiToolchain.Needs({
         nix,
-        runtimes: [CiToolchain.Node({ runtime, release: "22.19.0" })],
+        runtimes: [CiToolchain.Node({ runtime, release: "26.4.0" })],
         jj: CiToolchain.Jj({ release: "0.39.0" })
       })
     ).toThrowError(/a Nix environment supplies the toolchain; remove runtimes, jj from the job/)

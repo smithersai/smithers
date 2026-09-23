@@ -123,7 +123,7 @@ const codingProjectSources = [
 const codingProjectInputs = [...codingProjectSources, Smithers.glob("//flows/checks/**/flow.mdx"),
   // The built-in authoring bodies the host installs on every workspace.
   Smithers.glob("//flows/create-flow/**/flow.mdx")]
-const node = Smithers.Runtime.Node({ version: ">=22.19.0" })
+const node = Smithers.Runtime.Node({ version: ">=26.4.0" })
 const bun = Smithers.Runtime.Bun({ version: ">=1.4.0" })
 
 // Existing policy integration uses actual JJ and the Node SQLite fixture.

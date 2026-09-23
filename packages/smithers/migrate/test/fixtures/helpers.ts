@@ -158,7 +158,7 @@ export const bundleOnce = (options: {
     bundle: true,
     platform: "node",
     format: "esm",
-    target: "node22",
+    target: "node26",
     outfile: scratch,
     metafile: true,
     external: [...options.external ?? []],
@@ -213,13 +213,11 @@ export const buildBin = (): string => {
 /**
  * Node's own warnings, which are not the program's output.
  *
- * The repository pins Node 22.19.0, where `node:sqlite` is experimental and
- * every run of a binary that opens a database prints
- * `ExperimentalWarning: SQLite is an experimental feature` followed by the
- * `--trace-warnings` hint. Node 24, which a developer machine may be running,
- * prints neither, so an assertion that the program said nothing passes locally
- * and fails on the version CI runs. Dropping the runtime's own lines keeps the
- * assertion about the program.
+ * Node may print an `ExperimentalWarning` for a feature the binary uses, for
+ * example `node:sqlite` on Node 22, followed by the `--trace-warnings` hint.
+ * Whether it does depends on the host's Node release, so an assertion that the
+ * program said nothing would depend on the machine. Dropping the runtime's own
+ * lines keeps the assertion about the program.
  */
 const nodeWarning = /^(?:\(node:\d+\) \w*Warning:|\(Use `node --trace-warnings).*$\n?/gm
 

@@ -18,7 +18,7 @@ export function verifySoak(artifact, { minutes, seed, node } = {}) {
   assert.equal(artifact.schemaVersion, 1, fail)
   assert.equal(artifact.status, "complete", fail)
   assert.equal(artifact.failure, undefined, fail)
-  assert.match(artifact.runtime.node, /^v(?:22\.19\.0|24\.18\.0)$/, `${fail}: supported Node runtime`)
+  assert.match(artifact.runtime.node, /^v(?:26\.4\.0|26\.10\.0)$/, `${fail}: supported Node runtime`)
   if (node !== undefined) assert.equal(artifact.runtime.node, `v${node}`, `${fail}: runtime mismatch`)
   assert.ok(artifact.runtime.platform.length > 0 && artifact.runtime.arch.length > 0, fail)
   assert.match(artifact.candidate.head, /^[a-f0-9]{40}$/)

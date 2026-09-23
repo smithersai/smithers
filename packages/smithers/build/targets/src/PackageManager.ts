@@ -287,7 +287,7 @@ export function Pnpm(
   }
   const classic = options
   if (!Runtime.isRuntime(classic.runtime)) {
-    throw new TypeError(`pnpm requires a declared runtime, for example Runtime.Node({ version: ">=22.19.0" })`)
+    throw new TypeError(`pnpm requires a declared runtime, for example Runtime.Node({ version: ">=26.4.0" })`)
   }
   return PnpmPackageManager.make({
     name: "pnpm",
@@ -547,7 +547,7 @@ export const lockfileName = (declared: PackageManager | undefined): string => {
  *
  * const packageManager = Smithers.PackageManager.Pnpm({
  *   version: "11.21.0",
- *   runtime: Smithers.Runtime.Node({ version: ">=22.19.0" })
+ *   runtime: Smithers.Runtime.Node({ version: ">=26.4.0" })
  * })
  *
  * // ["pnpm", "exec", "vitest", "run"]

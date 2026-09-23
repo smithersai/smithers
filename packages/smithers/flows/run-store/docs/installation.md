@@ -15,7 +15,7 @@ command selects:
 pnpm add @smthrs/run-store@next effect@4.0.0-rc.115
 ```
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its dependencies install with it:
 [`@smthrs/database`](/api/database) for the durable write contract,
 [`@smthrs/journal`](/api/journal) for the `OwnerId` fencing token, and

@@ -64,7 +64,7 @@ pnpm add @smthrs/control@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-
 ```
 
 The `next` tag is where the 1.0 release candidates publish. The package needs
-Node.js 22.19.0 or later. For the collaborator packages a working composition
+Node.js 26.4.0 or later. For the collaborator packages a working composition
 adds, see [Installation](/installation/).
 
 ## The smallest real program

@@ -29,7 +29,7 @@
     "time-travel"
   ],
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=26.4.0"
   },
   "sideEffects": [],
   "exports": {

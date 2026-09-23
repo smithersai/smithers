@@ -97,7 +97,7 @@ describe("the native host on the routes only it serves", () => {
    * told the reader Smithers had run out of infra and to ask for more of it.
    */
   test("never tells a reader that a box of their own ran out of Smithers' infra", async () => {
-    const refusal = await classify(jsonError("node_missing", "No Node.js >= 22.19 was found for the smithers-build CLI."))
+    const refusal = await classify(jsonError("node_missing", "No Node.js >= 26.4 was found for the smithers-build CLI."))
     expect(faultOfStatus(503)).toBe("infra")
     expect(refusal.fault).toBe("dependency")
     expect(refusalLead(refusal)).not.toContain("@fucory")

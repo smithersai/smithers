@@ -7,7 +7,7 @@ sidebar:
 
 ## Requirements
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - `effect` 4.0.0-rc.115. The package's schemas, layers, and error classes are
   Effect values, so the version has to match the one your application uses.
 

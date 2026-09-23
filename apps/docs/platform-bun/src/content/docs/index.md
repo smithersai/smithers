@@ -31,7 +31,7 @@ already has:
   comes back to you as a `302` and the second origin is never contacted. A
   client that follows redirects on its own reaches a host nobody authorized.
 
-The bundle also runs on Node.js 22.19.0 or later. The raw child-process spawner
+The bundle also runs on Node.js 26.4.0 or later. The raw child-process spawner
 is Effect's Node spawner re-exported; contained POSIX variants use
 `ProcessReaper.layerSpawner` and its prepared native adapter. See
 [Runtime parity with Node](/concepts/runtime-parity/).

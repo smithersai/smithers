@@ -34,7 +34,7 @@ one copy cannot see a client provided from the other.
 
 | Requirement | Value            | Why                                                                                                                   |
 | ----------- | ---------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Node.js     | 22.19.0 or later | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                          |
+| Node.js     | 26.4.0 or later | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                          |
 | Bun         | 1.4.0 or later   | Select `BunDatabase` and the matching `@effect/sql-sqlite-bun` peer. NodeDatabase deliberately refuses use under Bun. |
 | Database    | SQLite           | rc.0 ships no Postgres or PGlite layer.                                                                               |
 

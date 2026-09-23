@@ -65,7 +65,7 @@ const smithersCloudCache = S.Cache({
 })
 
 // Runtimes and their executables
-const node = S.Runtime.Node({ version: ">=22.19.0" })
+const node = S.Runtime.Node({ version: ">=26.4.0" })
 const nodeFromManifest = S.Runtime.Node({ manifest: packageJson })
 const bun = S.Runtime.Bun({ version: ">=1.4.0" })
 const runtimeExecutable = S.Runtime.bin

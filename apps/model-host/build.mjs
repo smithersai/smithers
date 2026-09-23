@@ -13,7 +13,7 @@ const result = await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node22.19",
+  target: "node26.4",
   banner: { js: "#!/usr/bin/env node\nimport {createRequire as __smithersCreateRequire} from 'node:module'; const require=__smithersCreateRequire(import.meta.url);" }
 })
 if (result.outputFiles.length !== 1) throw new Error("Model host must be one immutable executable")

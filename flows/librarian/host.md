@@ -2,7 +2,7 @@
 
 `node flows/librarian/build.mjs` writes `dist/product-host/smithers.mjs` and its SHA-256 sidecar. The artifact contains the 1.0 gateway, durable engine, dependencies, and the two Librarian flow implementations. Provisioners stage these exact bytes; they must not run the unrelated `smthrs@0.33.0` package or install dependencies from the user's repository.
 
-Run with Node 22.19+ or Bun 1.4:
+Run with Node 26.4+ or Bun 1.4:
 
 ```
 bun /usr/local/lib/smithers/product-gateway.mjs serve --root /workspace/repo --host 0.0.0.0 --port 7331 --listen

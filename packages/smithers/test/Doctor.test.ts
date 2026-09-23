@@ -81,18 +81,18 @@ const setBackend = (value: string | undefined): void => {
 
 describe("the Node floor", () => {
   it("accepts the supported versions and refuses the ones below the floor", () => {
-    expect(Doctor.minimumNode).toBe("22.19.0")
-    for (const version of ["22.19.0", "v22.19.1", "24.11.0", "24.12.0", "25.0.0", "22.20.0"]) {
+    expect(Doctor.minimumNode).toBe("26.4.0")
+    for (const version of ["26.4.0", "v26.4.1", "26.10.0", "27.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(true)
     }
-    for (const version of ["22.18.9", "20.11.0", "v18.0.0", "23.0.0", "23.99.0", "24.0.0", "24.10.9"]) {
+    for (const version of ["26.3.9", "22.19.0", "24.11.0", "24.18.0", "25.9.0", "20.11.0", "v18.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(false)
     }
-    expect(Doctor.satisfiesNode("22", "22.0.1")).toBe(false)
-    expect(Doctor.satisfiesNode("24.11.0", "24.12.0")).toBe(false)
-    expect(Doctor.satisfiesNode("22.18.0", "20.0.0")).toBe(false)
-    expect(Doctor.satisfiesNode("24.11.0", "invalid")).toBe(false)
-    for (const version of ["24.11", "24.11.0-rc.1", "24.11.0garbage", "", "9007199254740992.0.0"]) {
+    expect(Doctor.satisfiesNode("26", "26.0.1")).toBe(false)
+    expect(Doctor.satisfiesNode("26.4.0", "26.5.0")).toBe(false)
+    expect(Doctor.satisfiesNode("26.3.0", "20.0.0")).toBe(false)
+    expect(Doctor.satisfiesNode("26.4.0", "invalid")).toBe(false)
+    for (const version of ["26.4", "26.4.0-rc.1", "26.4.0garbage", "", "9007199254740992.0.0"]) {
       expect(Doctor.satisfiesNode(version)).toBe(false)
     }
     const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
@@ -101,11 +101,11 @@ describe("the Node floor", () => {
 })
 
 describe("the report", () => {
-  it.each(["23.0.0", "24.10.9"])("explains why Node %s is unsupported", (nodeVersion) => {
+  it.each(["24.18.0", "26.3.9"])("explains why Node %s is unsupported", (nodeVersion) => {
     const report = Doctor.inspect({ root: project(), environment: {}, nodeVersion })
     expect(check(report, "node")).toMatchObject({
       level: "fail",
-      detail: `v${nodeVersion} is unsupported; use Node 22.19+ within Node 22, or Node 24.11+`
+      detail: `v${nodeVersion} is unsupported; use Node 26.4+`
     })
     expect(Doctor.failed(report)).toBe(true)
   })
@@ -142,7 +142,7 @@ describe("the report", () => {
   })
 
   it("warns when the project has no flows directory", () => {
-    const report = Doctor.inspect({ root: project(), environment: {}, nodeVersion: "24.11.0" })
+    const report = Doctor.inspect({ root: project(), environment: {}, nodeVersion: "26.4.0" })
 
     expect(check(report, "registry")).toMatchObject({ level: "warn" })
     expect(check(report, "registry")?.detail).toContain("smthrs init")
@@ -153,7 +153,7 @@ describe("the report", () => {
     const root = project()
     mkdirSync(join(root, "flows", "empty"), { recursive: true })
 
-    expect(check(Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" }), "registry"))
+    expect(check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), "registry"))
       .toMatchObject({ level: "warn" })
   })
 
@@ -163,7 +163,7 @@ describe("the report", () => {
     mkdirSync(join(root, "flows", "empty"), { recursive: true })
     writeFileSync(join(root, "flows", "review", "flow.mdx"), "# review\n")
 
-    const registry = check(Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" }), "registry")
+    const registry = check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), "registry")
 
     expect(registry).toMatchObject({ level: "ok" })
     expect(registry?.detail).toContain("1 flows discovered")
@@ -181,7 +181,7 @@ describe("the report", () => {
     mkdirSync(join(file, ".."), { recursive: true })
     writeFileSync(file, "export default {}\n")
 
-    const registry = check(Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" }), "registry")
+    const registry = check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), "registry")
 
     expect(registry).toMatchObject({ level: "ok" })
     expect(registry?.detail).toContain("1 flows discovered")
@@ -194,7 +194,7 @@ describe("the report", () => {
       Doctor.inspect({
         root,
         environment: {},
-        nodeVersion: "24.11.0",
+        nodeVersion: "26.4.0",
         discoveredFlows: [{ flowId: "review/read-pr", description: "Review a pull request" }]
       }),
       "registry"
@@ -208,7 +208,7 @@ describe("the report", () => {
     const report = Doctor.inspect({
       root,
       environment: {},
-      nodeVersion: "24.11.0",
+      nodeVersion: "26.4.0",
       discoveredFlows: [{ flowId: "review", description: "Review" }],
       discoveryWarnings: [
         { code: "invalid_metadata", path: `${root}/flows/review/flow.ts`, message: "Invalid metadata" },
@@ -231,7 +231,7 @@ describe("the report", () => {
     database.exec("INSERT INTO flows_migrations VALUES (1, 'journal/0001', '')")
     database.close()
 
-    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" })
+    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" })
 
     expect(check(report, `database ${file}`)?.detail).toContain("1 migrations applied")
     expect(check(report, `database ${join(root, ".flows", "engine.db")}`))
@@ -247,7 +247,7 @@ describe("the report", () => {
     database.close()
     mkdirSync(join(root, ".flows", "control.db"))
 
-    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" })
+    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" })
     expect(check(report, `database ${engine}`)?.detail).toContain("0 migrations applied, latest none")
     expect(check(report, `database ${join(root, ".flows", "control.db")}`)).toMatchObject({ level: "fail" })
   })
@@ -260,7 +260,7 @@ describe("the report", () => {
     database.exec("CREATE TABLE something_else (id INTEGER)")
     database.close()
 
-    expect(check(Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0" }), `database ${file}`))
+    expect(check(Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0" }), `database ${file}`))
       .toMatchObject({ level: "warn" })
   })
 
@@ -275,19 +275,19 @@ describe("the report", () => {
     const usable = Doctor.inspect({
       root: project(),
       environment: {},
-      nodeVersion: "24.11.0",
+      nodeVersion: "26.4.0",
       jj: { path: "/usr/bin/jj", executable: true }
     })
     const broken = Doctor.inspect({
       root: project(),
       environment: {},
-      nodeVersion: "24.11.0",
+      nodeVersion: "26.4.0",
       jj: { path: "jj", executable: false, hint: "No jj on PATH." }
     })
     const absent = Doctor.inspect({
       root: project(),
       environment: {},
-      nodeVersion: "24.11.0",
+      nodeVersion: "26.4.0",
       jj: { path: "jj", executable: false }
     })
 
@@ -297,11 +297,11 @@ describe("the report", () => {
   })
 
   it("distinguishes a missing provider key from one exported empty", () => {
-    const none = Doctor.inspect({ root: project(), environment: { OPENAI_API_KEY: "" }, nodeVersion: "24.11.0" })
+    const none = Doctor.inspect({ root: project(), environment: { OPENAI_API_KEY: "" }, nodeVersion: "26.4.0" })
     const some = Doctor.inspect({
       root: project(),
       environment: { ANTHROPIC_API_KEY: "sk-test", OPENAI_API_KEY: "", SMITHERS_OPENAI_AUTH: "chatgpt" },
-      nodeVersion: "24.11.0"
+      nodeVersion: "26.4.0"
     })
 
     expect(check(none, "providers")).toMatchObject({ level: "warn" })
@@ -315,7 +315,7 @@ describe("the report", () => {
     const report = Doctor.inspect({
       root: project(),
       environment: { SMITHERS_BACKEND: "postgres" },
-      nodeVersion: "24.11.0"
+      nodeVersion: "26.4.0"
     })
 
     expect(check(report, "backend")).toMatchObject({
@@ -358,7 +358,7 @@ describe("the report", () => {
     writeFileSync(join(root, "smithers.db"), "")
     mkdirSync(join(root, ".smithers"))
 
-    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0", cwd: root })
+    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0", cwd: root })
     const legacy = report.checks.filter((entry) => entry.name === "smithers 0.x")
 
     expect(legacy).toHaveLength(2)
@@ -380,7 +380,7 @@ describe("the report", () => {
     )
     database.close()
 
-    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "24.11.0", cwd: root })
+    const report = Doctor.inspect({ root, environment: {}, nodeVersion: "26.4.0", cwd: root })
     expect(report.checks.find((entry) => entry.name === "smithers 0.x")?.detail)
       .toContain("1 non-terminal runs")
   })

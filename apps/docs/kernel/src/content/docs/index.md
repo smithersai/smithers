@@ -49,7 +49,7 @@ around it:
 [Installation](/installation/) covers how to depend on it from a checkout,
 the import forms, and the three test subpaths.
 
-The package needs Node.js 22.19.0 or later. It carries no platform
+The package needs Node.js 26.4.0 or later. It carries no platform
 implementations of its own, so a composition that reaches a real machine also
 adds a bundle such as [`@smthrs/platform-node`](https://platform-node.smithers.sh/reference/api/).
 

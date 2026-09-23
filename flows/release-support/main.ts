@@ -17,7 +17,7 @@ import { ContentInput, ReleaseInput, StoredRun } from "./schema.ts"
 import { runtime } from "./runtime.ts"
 
 const root = resolve(import.meta.dirname, "../..")
-const help = `Smithers release workflows (Node 22.19+ or 24.11+, pnpm and jj required)
+const help = `Smithers release workflows (Node 26.4+, pnpm and jj required)
 
 pnpm release:content --input '{"version":"1.0.0-rc.0","from":"v0.35.0"}'
 pnpm release:workflow --input '{"phase":"publish","version":"1.0.0-rc.0","contentArtifact":".flows/releases/content/..."}'

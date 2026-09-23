@@ -31,7 +31,7 @@ pnpm add @smthrs/memory@next effect@4.0.0-rc.115
 
 ## Requirements
 
-- Node.js 22.19.0 or later. The package's `engines` field enforces this floor.
+- Node.js 26.4.0 or later. The package's `engines` field enforces this floor.
 - [Effect](https://effect.website) 4.0.0-rc.115, exactly. It is a peer
   dependency so the application and Smithers share one Effect runtime.
 

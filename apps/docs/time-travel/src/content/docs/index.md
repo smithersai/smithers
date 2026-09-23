@@ -35,7 +35,7 @@ publishes under the `next` tag, which is what this command selects.
 pnpm add @smthrs/time-travel@next
 ```
 
-Node.js 22.19.0 or later. The package ships ESM and CommonJS with TypeScript
+Node.js 26.4.0 or later. The package ships ESM and CommonJS with TypeScript
 declarations, and its root entry point bundles for the browser with no `node:`
 built-in.
 

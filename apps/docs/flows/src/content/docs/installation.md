@@ -28,7 +28,7 @@ module. Node host and SQLite adapters are optional and are selected below.
 
 ## Requirements
 
-- Node.js 22.19.0 or later with local SQLite, which is what `package.json`
+- Node.js 26.4.0 or later with local SQLite, which is what `package.json`
   declares in `engines`. That is what durable execution needs, and it is also
   what runs a `.ts` file directly, with no build step.
 - [`effect`](https://effect.website) 4.0.0-rc.115, as an exact peer dependency.
@@ -103,7 +103,7 @@ The root entry point bundles for a browser, and so does every package root it
 re-exports. What bundles is the authoring and inspection surface: you can
 declare flows, read a plan, and decode a journal event in a browser.
 
-Durable execution is a different claim: it needs Node.js 22.19.0 or later and
+Durable execution is a different claim: it needs Node.js 26.4.0 or later and
 local SQLite. A browser or edge runtime is not a supported durable host even
 when you supply another SQL client. Native modules are subpaths
 precisely so importing the root never opens `node:sqlite`.

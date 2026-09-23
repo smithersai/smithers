@@ -51,7 +51,7 @@ is on this site, and the source is
 [on GitHub](https://github.com/smithersai/smithers/tree/main/packages/errors).
 [Installation](./installation.md) has the dependency declaration, the root
 entry point, the two module subpaths, and the paths the exports map refuses.
-The package has no runtime dependencies and needs Node.js 22.19.0 or later.
+The package has no runtime dependencies and needs Node.js 26.4.0 or later.
 
 ## The shortest real example
 

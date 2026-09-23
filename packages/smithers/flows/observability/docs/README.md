@@ -42,7 +42,7 @@ identity, so `service.name` means the same thing whichever one you pick.
 pnpm add @smthrs/observability@next effect@4.0.0-rc.115
 ```
 
-Node.js 22.19.0 or later. For the import forms and the browser rule, see
+Node.js 26.4.0 or later. For the import forms and the browser rule, see
 [Installation](./installation.md).
 
 ## Export all three signals

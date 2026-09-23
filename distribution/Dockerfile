@@ -56,9 +56,9 @@ FROM oven/bun:1.4.0-debian AS bun-buildchain
 
 # Hutch's x64 devkit needs glibc 2.38+ to prepare the Vite aliases.
 # Keep the packaged Node binary on Bookworm for the Bookworm runtime image.
-FROM node:22.22.0-bookworm AS node-runtime
+FROM node:26.5.0-bookworm AS node-runtime
 
-FROM node:22.22.0-trixie AS web
+FROM node:26.5.0-trixie AS web
 COPY --from=bun-buildchain /usr/local/bin/bun /usr/local/bin/bun
 WORKDIR /src
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.mjs tsconfig.json tsconfig.base.json ./
@@ -72,7 +72,7 @@ COPY evals evals
 COPY scripts scripts
 COPY distribution/flow-host-manifest.mjs distribution/flow-host-manifest.mjs
 COPY --from=flows-jj /src/packages/smithers/flows/jj/wasm/flows_jj.wasm packages/smithers/flows/jj/wasm/flows_jj.wasm
-RUN corepack enable && corepack prepare pnpm@11.25.0 --activate \
+RUN npm install --global pnpm@11.25.0 --ignore-scripts --no-audit --no-fund \
   && node --version && pnpm --version && bun --version \
   && pnpm install --frozen-lockfile
 RUN pnpm --dir apps/app run build:web
@@ -124,7 +124,7 @@ RUN schema_version="$(find /opt/smithers/migrations -maxdepth 1 -type f -name '[
   && chmod 0444 /opt/smithers/bin/flow-hosts.json /opt/smithers/bin/*.sha256 \
   && cd /opt/smithers/bin \
   && sha256sum -c smithers-coding-host.sha256 smithers-librarian-host.sha256 smithers-model-host.sha256 \
-  && ./node --version | grep -Eq '^v22\.' \
+  && ./node --version | grep -Eq '^v26\.' \
   && ./jj --version | grep -Fx 'jj 0.44.0-47589ada70c12b3e829b5c98ab32503abad49eac' \
   && /opt/smithers/git/bin/git --version | grep -Fx 'git version 2.50.1' \
   && PATH=/opt/smithers/bin:$PATH ./smithers-coding-host --help >/dev/null \

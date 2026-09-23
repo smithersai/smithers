@@ -7,7 +7,7 @@ sidebar:
 
 This quickstart takes you from an empty file to a folded assistant message:
 first against a stub model that runs anywhere, then against a real provider
-route. You need Node.js 22.19.0 or later.
+route. You need Node.js 26.4.0 or later.
 
 ## 1. Get the package
 

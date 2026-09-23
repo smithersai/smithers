@@ -12,7 +12,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 pnpm add @smthrs/core@next effect@4.0.0-rc.115
 ```
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It has no platform bindings: it reads no
 file, opens no socket, and starts no process, so the same build runs in Node,
 in Bun, in a browser, and in a Cloudflare Worker.

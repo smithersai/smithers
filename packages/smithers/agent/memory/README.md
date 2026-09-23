@@ -31,7 +31,7 @@ cd smithers
 pnpm install
 ```
 
-It needs Node.js 22.19.0 or later and `effect` 4.0.0-rc.115 as a peer. The full
+It needs Node.js 26.4.0 or later and `effect` 4.0.0-rc.115 as a peer. The full
 requirements, and the two packages a file-backed store adds, are on the
 [installation page](https://memory.smithers.sh/installation/).
 

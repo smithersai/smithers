@@ -48,7 +48,7 @@ Every row here is a gap in coverage, not a gap in the product unless it says so.
 The runner-absence descriptions for case 16 and cases 28/29 above predate
 `.github/workflows/reliability.yml`'s `sync-long-soak` job. That job now selects
 the real sync TCP/SQLite reconnect, stalled-consumer, compaction and retention
-workload for 60 minutes on Node 22.19.0 and 24.18.0. It requires completed JSON
+workload for 60 minutes on Node 26.4.0 and 26.10.0. It requires completed JSON
 receipts through `scripts/check-soak-campaign.mjs`, checks resource growth and
 cleanup, and retains artifacts and logs for 30 days even when the workload fails.
 

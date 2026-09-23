@@ -10,7 +10,7 @@ authenticated call to the GitHub API through `GitHubClient`, and a comment on
 an issue posted as a durable flow step, journaled so a restart replays the
 recorded result instead of posting twice.
 
-You need Node 22.19 or later and a GitHub token with issues write access to a
+You need Node 26.4 or later and a GitHub token with issues write access to a
 repository you own. A classic token with `repo` scope on a test repository
 works.
 
@@ -56,7 +56,7 @@ const viewer = await Effect.runPromise(client.request("GET", "/user", undefined,
 console.log(viewer.login)
 ```
 
-Run it (Node 22.19 runs TypeScript directly):
+Run it (Node 26.4 runs TypeScript directly):
 
 ```bash
 node viewer.ts

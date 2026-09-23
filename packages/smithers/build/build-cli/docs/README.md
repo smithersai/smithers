@@ -42,7 +42,7 @@ const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("demo", {
   repository: "git+https://example.invalid/demo.git",
   cache: S.Cache({ directory: ".flows" }),
-  runtime: S.Runtime.Node({ version: ">=22.19.0" }),
+  runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Pnpm({
     manifest: packageJson,
     lockfile: S.file("//pnpm-lock.yaml")

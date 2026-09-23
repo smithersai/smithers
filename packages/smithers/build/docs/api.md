@@ -113,7 +113,7 @@ to measure a changed interpreter.
 import * as Runtime from "@smthrs/build/Runtime"
 
 const layer = Runtime.layerNode({
-  requirement: ">=22.19.0",
+  requirement: ">=26.4.0",
   platform: { os: "linux", arch: "x64", libc: "glibc" },
   environment: process.env
 })

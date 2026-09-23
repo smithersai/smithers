@@ -21,7 +21,7 @@ pnpm add @smthrs/mcp@next
 
 ## Requirements
 
-- Node.js 22.19+ (Node 22) or 24.11+.
+- Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) 4.0.0-rc.115, a peer dependency and the
   version this package is built against. Connection and tool-call operations
   return an `Effect`, and every schema is an `effect/Schema`. `McpFlows.mcp`

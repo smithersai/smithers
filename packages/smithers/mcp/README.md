@@ -22,7 +22,7 @@ flow, and nothing downstream needs to know the difference.
 `@smthrs/mcp` is not published to npm yet. Its source is on
 [GitHub](https://github.com/smithersai/smithers).
 
-It needs Node.js 22.19+ (Node 22) or 24.11+, [`effect`](https://effect.website), and a
+It needs Node.js 26.4.0 or later, [`effect`](https://effect.website), and a
 `ChildProcessSpawner`, which `@effect/platform-node` provides on Node. When it
 publishes, the install is one command:
 

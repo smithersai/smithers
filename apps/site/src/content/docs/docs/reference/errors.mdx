@@ -36,7 +36,7 @@ Raised as defects by `NodeDatabase.layer` before a connection is created; match 
 
 | Code | Where raised | Cause | Fix |
 | --- | --- | --- | --- |
-| `unsupported_runtime` | `NodeDatabase.layer` | The durable engine was opened under Bun (`process.versions.bun` is set) | Run the durable engine on Node.js 22.19.0 or later |
+| `unsupported_runtime` | `NodeDatabase.layer` | The durable engine was opened under Bun (`process.versions.bun` is set) | Run the durable engine on Node.js 26.4.0 or later |
 | `unsupported_database_file` | `NodeDatabase.layer` | The file has at least one table and no `flows_migrations` table | The file is a 0.x `smithers.db`, which 1.0.0-rc.0 does not load; open a 1.0 database |
 | `database_locked` | `NodeDatabase.layer` | A peer held the file for the whole open ladder, so it was never inspected | Stop the process holding the file and open it again |
 

@@ -56,7 +56,7 @@ each the namespace of the module above. `@smthrs/platform-bun/internal/*` and
 `@smthrs/platform-bun/*/index` are blocked in the export map;
 `@smthrs/platform-bun/package.json` is exported.
 
-Supported runtimes are Bun >=1.4.0 and Node.js >=22.19.0.
+Supported runtimes are Bun >=1.4.0 and Node.js >=26.4.0.
 
 ## BunHost
 
@@ -165,7 +165,7 @@ describe that substitution:
 ```ts
 {
   "effect/FileSystem": "@smthrs/platform-node/AtomicFileSystem",
-  "effect/Path": "effect/Path",
+  "effect/Path": "@effect/platform-bun/BunPath",
   "effect/process/ChildProcessSpawner": "@effect/platform-bun/BunChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/bun/BunJj",
   "effect/HttpClient": "@effect/platform-bun/BunHttpClient"

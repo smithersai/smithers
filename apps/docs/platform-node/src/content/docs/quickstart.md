@@ -13,7 +13,7 @@ which layer is responsible for each.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later, on a POSIX host.
+- Node.js 26.4.0 or later, on a POSIX host.
 - CPython 3 at `/usr/bin/python3`. Check with `/usr/bin/python3 --version`.
 - `jj` 0.39.0 or newer on `PATH`. Check with `jj --version`. Every complete
   `NodeHost` layer checks jj at construction, including this quickstart's

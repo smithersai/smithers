@@ -12,7 +12,7 @@ appear in, and disappear from, the process ledger.
 
 ## Prerequisites
 
-- Bun 1.4.0 or later, or Node.js 22.19.0 or later.
+- Bun 1.4.0 or later, or Node.js 26.4.0 or later.
 - A CPython 3 interpreter at `/usr/bin/python3`. Confirm it with
   `/usr/bin/python3 --version`. See [Installation](./installation.md) if yours
   lives elsewhere.

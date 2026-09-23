@@ -31,7 +31,7 @@ or one you add, and depends on it with a workspace specifier:
 
 ## Requirements
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) 4.0.0-rc.115. It is a peer dependency, so
   the application owns the single copy every layer resolves against.
 - [`@smthrs/capability`](https://capability.smithers.sh/reference/api/), the only package `@smthrs/jj`

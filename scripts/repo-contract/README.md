@@ -17,11 +17,11 @@ job id `browser` is pinned by the release roster test; it does not claim E2E
 execution. Every selected browser/E2E/faults suite name must map to its real
 Playwright or serial fault runner.
 
-Linux on Node 22.19.0 is the required release-candidate package platform.
+Linux on Node 26.4.0 is the required release-candidate package platform.
 macOS and Windows package rows are advisory, so the generated root README
 explicitly makes no support guarantee for them. The required web UI scope is
 offline Chromium. Packaged Electrobun and live hosted/provider journeys remain
-separate acceptance tiers. Node 24.18.0 is the additional local gateway baseline,
+separate acceptance tiers. Node 26.10.0 is the additional local gateway baseline,
 not a claim that every package was re-certified here on every newer Node.
 
 ### Bun coverage exceptions

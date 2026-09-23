@@ -316,13 +316,13 @@ derived from one rather than colliding with it.
 
 ## Requirements and platform
 
-- Node.js 22.19.0 or later. The package also runs under Bun and in a browser:
+- Node.js 26.4.0 or later. The package also runs under Bun and in a browser:
   it imports no `node:` built-in.
 - One runtime dependency, `effect`.
 - `@smthrs/crypto/internal/*` and `@smthrs/crypto/*/index` are blocked in the
   export map. The handwritten implementation is reachable only through
   `digestSync` and `syncCrypto`.
-- `Identity.capture` uses `structuredClone`, a global on Node.js 22, Bun, and
+- `Identity.capture` uses `structuredClone`, a global on Node.js 26, Bun, and
   modern browsers, and `Identity.processNonce` uses `crypto.getRandomValues`.
   Neither is read while the module evaluates.
 

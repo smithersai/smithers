@@ -53,7 +53,7 @@ pnpm add -D @smthrs/build-cli@next @smthrs/targets@next
 }
 ```
 
-It ships dual ESM/CommonJS output, targets Node.js 22.19.0 or later, and takes
+It ships dual ESM/CommonJS output, targets Node.js 26.4.0 or later, and takes
 the exact Effect RC as a peer dependency.
 
 ## The shortest real example
@@ -65,7 +65,7 @@ root:
 // .smithers/WORKSPACE.ts
 import { Smithers as S } from "@smthrs/targets"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 
 export const Workspace = S.Workspace("demo", {
   repository: "git+https://example.invalid/demo.git",

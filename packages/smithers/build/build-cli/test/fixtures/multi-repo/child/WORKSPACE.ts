@@ -1,6 +1,6 @@
 import { Smithers as S } from "@smthrs/targets"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 
 export const Workspace = S.Workspace("multi-repo-child", {
   repository: "git+https://example.invalid/multi-repo-child.git",

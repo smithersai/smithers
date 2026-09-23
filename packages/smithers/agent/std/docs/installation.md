@@ -12,7 +12,7 @@ pnpm add @smthrs/std@next
 ```
 
 The package publishes release candidates to the `next` dist-tag. It requires
-Node.js 22.19.0 or later and ships as both ESM and CommonJS with TypeScript
+Node.js 26.4.0 or later and ships as both ESM and CommonJS with TypeScript
 declarations. Its runtime dependencies install with it:
 [`effect`](https://effect.website), plus [`@smthrs/core`](/api/core) for the
 flow declaration type, [`@smthrs/kernel`](/api/kernel) for the permission-aware

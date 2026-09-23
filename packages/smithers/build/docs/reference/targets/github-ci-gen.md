@@ -21,7 +21,7 @@ package that owns it.
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+export const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 const ci = Smithers.GithubCiGen({
@@ -36,7 +36,7 @@ const ci = Smithers.GithubCiGen({
       id: "test",
       runsOn: "ubuntu-latest",
       toolchain: Smithers.CiToolchain.Needs({
-        runtimes: [Smithers.CiToolchain.Node({ runtime, release: "22.19.0" })]
+        runtimes: [Smithers.CiToolchain.Node({ runtime, release: "26.4.0" })]
       }),
       steps: [
         { name: "Workspace targets", verb: Smithers.Verb.Ci, pattern: "//packages/...", parallelism: 2 },

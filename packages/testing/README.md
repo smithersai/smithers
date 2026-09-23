@@ -32,7 +32,7 @@ not on npm yet: until it is, build from a clone of
 `effect` is a required peer at exactly `4.0.0-rc.115`. `vitest` and
 `@effect/vitest` are optional peers, needed only by the `Vitest` adapter.
 Everything else runs under any runner, because an assertion is an ordinary
-`Effect` and a conformance case is a plain value. Node.js 22.19.0 or later is
+`Effect` and a conformance case is a plain value. Node.js 26.4.0 or later is
 required.
 
 ## What is in it

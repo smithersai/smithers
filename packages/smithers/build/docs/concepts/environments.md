@@ -110,7 +110,7 @@ the closure, and a tool the closure lacks is absent rather than found on the
 host by accident. The install flow's package manager and runtime layers look
 executables up in the same `PATH`.
 
-**Version assertions.** A declared `Runtime.Node({ version: ">=22.19.0" })` and
+**Version assertions.** A declared `Runtime.Node({ version: ">=26.4.0" })` and
 a declared `PackageManager.Pnpm({ version: "11.21.0" })` become assertions
 against the closure. The planner probes each declared tool once per closure
 and fails the plan with `nix_version_mismatch`, naming both the declared

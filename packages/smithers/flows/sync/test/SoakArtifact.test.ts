@@ -25,7 +25,7 @@ const fixture = (): Artifact => {
   return {
     schemaVersion: 1,
     status: "complete",
-    runtime: { node: "v24.18.0", platform: "darwin", arch: "arm64" },
+    runtime: { node: "v26.10.0", platform: "darwin", arch: "arm64" },
     candidate: { head: "a".repeat(40), dirty: true, sourceSha256: "b".repeat(64) },
     workload: { requestedMinutes: 1, warmupMs: 20_000, sampleIntervalMs: 10_000, seed: 20260904 },
     samples,

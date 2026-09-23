@@ -1,6 +1,6 @@
 ---
 title: "Installation"
-description: "What the smithers-build binary requires: Node 22.19, a workspace dependency, the tsx loader it boots, and the TypeScript syntax declaration modules may use."
+description: "What the smithers-build binary requires: Node 26.4, a workspace dependency, the tsx loader it boots, and the TypeScript syntax declaration modules may use."
 sidebar:
   order: 1
 ---
@@ -11,7 +11,7 @@ dist-tag. For the full picture of the three packages, see the
 
 ## Requirements
 
-- Node.js 22.19+ (Node 22) or 24.11+, which is what the package declares in `engines`.
+- Node.js 26.4.0 or later, which is what the package declares in `engines`.
 - An npm-compatible package manager. The workspace declaration names the one
   targets run their tools through, pnpm or Bun.
 - Git, for the parts of a run that read the tree: write-set confinement, the

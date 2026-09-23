@@ -14,7 +14,7 @@ a Cloudflare Worker whose agent endpoint is deliberately a stub.
 
 ## Prerequisites
 
-- Node.js 22.19+ (Node 22) or 24.11+, and pnpm.
+- Node.js 26.4.0 or later, and pnpm.
 - `@smthrs/build-cli@next` and `@smthrs/targets@next` installed in the project
   from which you run the scaffold. See [Installation](./installation.md).
 

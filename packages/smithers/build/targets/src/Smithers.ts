@@ -7,7 +7,7 @@
  * ```ts
  * import { Smithers } from "@smthrs/targets"
  *
- * export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+ * export const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
  * export const cacheToken = Smithers.Secret("SMITHERS_CACHE_TOKEN")
  * ```
  *

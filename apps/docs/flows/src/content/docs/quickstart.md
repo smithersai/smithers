@@ -13,7 +13,7 @@ run of it that answers without reading the file again.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later. It runs the TypeScript file below directly, with no
+- Node.js 26.4.0 or later. It runs the TypeScript file below directly, with no
   build step and no loader flag.
 - A package that depends on `@smthrs/flows` and sets `"type": "module"`, because
   the program ends in a top-level `await`. The package is not on npm at

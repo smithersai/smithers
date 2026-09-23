@@ -36,7 +36,7 @@ their own.
 npm install --global smthrs@1.0.0-rc.0
 ```
 
-Node 22.19+ (Node 22) or 24.11+ is required. Name the version: these pages describe
+Node 26.4.0 or later is required. Name the version: these pages describe
 1.0.0-rc.0, and the unqualified package name still resolves to the 0.x line
 until the release candidate reaches the registry. The package installs one
 executable under two names, `smthrs` and its `smithers` alias. For the runner

@@ -42,7 +42,7 @@ import { Smithers as S } from "@smthrs/targets"
 
 const packageJson = S.file("//package.json")
 
-export const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+export const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 export const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 export const Workspace = S.Workspace("demo", {

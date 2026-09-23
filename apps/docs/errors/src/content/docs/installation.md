@@ -24,7 +24,7 @@ pnpm add @smthrs/errors@next
 ```
 
 The package has no runtime dependencies. Its only requirement is Node.js
-22.19.0 or later, declared in `engines`.
+26.4.0 or later, declared in `engines`.
 
 ## Import it
 

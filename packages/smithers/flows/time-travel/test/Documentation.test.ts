@@ -48,7 +48,7 @@ it("documents ReplayOptions.engineEvents and that inspect cannot supply it", () 
 })
 
 it("keeps the runtime requirement in its own README paragraph", () => {
-  expect(readRaw("../README.md")).toMatch(/\n\nNode\.js 22\.19\.0 or later\./)
+  expect(readRaw("../README.md")).toMatch(/\n\nNode\.js 26\.4\.0 or later\./)
 })
 
 it("states the fork replay limitation once, and links the other pages to it", () => {

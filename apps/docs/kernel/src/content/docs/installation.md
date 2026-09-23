@@ -31,7 +31,7 @@ or one you add under `packages/`, and depends on it with a workspace specifier:
 
 ## Requirements
 
-The package requires Node.js 22.19.0 or later and ships as ESM, CommonJS, and
+The package requires Node.js 26.4.0 or later and ships as ESM, CommonJS, and
 TypeScript declarations. Its Smithers dependencies install with it:
 [`@smthrs/capability`](https://capability.smithers.sh/reference/api/), [`@smthrs/jj`](https://jj.smithers.sh/reference/api/), and
 [`@smthrs/journal`](https://journal.smithers.sh/reference/api/). The host supplies the exact

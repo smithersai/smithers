@@ -20,7 +20,7 @@ pnpm add @smthrs/patterns@next
 ```
 
 The Smithers 1.0 release candidates publish under the `next` tag. The package
-needs Node.js 22.19.0 or later and shares its `effect` peer with the host.
+needs Node.js 26.4.0 or later and shares its `effect` peer with the host.
 
 ## Produce, review, revise
 

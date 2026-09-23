@@ -226,7 +226,7 @@ describe("DocsParity execution", () => {
         await write(
           `packages/${name}/PACKAGE.ts`,
           `import * as S from ${rulesModule}\n` +
-            `const runtime = S.Runtime.Node({ version: ">=22.19.0" })\n` +
+            `const runtime = S.Runtime.Node({ version: ">=26.4.0" })\n` +
             `const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })\n` +
             `const docs = S.DocsParity({ readme: S.file("README.md"), deps: [], cwd: "packages/${name}" })\n` +
             `export const Package = S.Package({ targets: { docs } })\n`

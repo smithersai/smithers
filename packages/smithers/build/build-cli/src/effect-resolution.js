@@ -180,7 +180,7 @@ const buildModuleBase = (url) => {
 /**
  * The resolution a declaration module gets: the ES-module format, always.
  *
- * On the Node version this repository pins (22.19.0) tsx answers a declaration
+ * On Node 22.19.0, which this repository once pinned, tsx answers a declaration
  * module whose nearest package.json declares no `type` with a CommonJS virtual
  * module. That module is a second instance of a file the ES-module graph may
  * already hold, so a workspace mixing `type` declarations across its packages

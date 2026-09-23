@@ -14,7 +14,7 @@ in the graph of `smithers-build test`.
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 
 // node scripts/pack-release.mjs dist/release-packs
 const releasePack = Smithers.NodeBinary({

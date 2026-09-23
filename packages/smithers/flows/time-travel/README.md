@@ -31,7 +31,7 @@ pnpm add @smthrs/time-travel@next
 actions keyed by the run ID execute again in the child. See
 [Keep sealed steps from re-executing](https://time-travel.smithers.sh/guides/fork-a-run/#keep-sealed-steps-from-re-executing).
 
-Node.js 22.19.0 or later. The package ships ESM and CommonJS with TypeScript
+Node.js 26.4.0 or later. The package ships ESM and CommonJS with TypeScript
 declarations, and its root entry point bundles for the browser with no `node:`
 built-in.
 

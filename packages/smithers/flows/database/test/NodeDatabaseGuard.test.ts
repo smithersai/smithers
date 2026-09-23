@@ -417,7 +417,7 @@ describe("NodeDatabase guard: Bun (X-18)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_runtime")
       expect(defect.message).toBe(
-        "Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0"
+        "Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0"
       )
     }))
 

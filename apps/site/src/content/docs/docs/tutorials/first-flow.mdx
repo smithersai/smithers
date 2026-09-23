@@ -13,7 +13,7 @@ Time: about 20 minutes. You need Node.js and pnpm.
 
 ## Before you begin
 
-- You have Node.js 22.19.0 or later. The durable engine runs on Node only.
+- You have Node.js 26.4.0 or later. The durable engine runs on Node only.
 - You have pnpm for installing packages.
 - The [CLI quickstart](/docs/cli-quickstart/) is a useful warm-up, but this tutorial starts from an empty directory.
 
@@ -29,7 +29,7 @@ pnpm add @smthrs/flow@next @smthrs/engine@next @smthrs/engine-store@next @smthrs
 
 The `@next` suffix is required while 1.0 is a release candidate: `latest` still resolves the Smithers 0.x line. Effect is pinned to exactly `4.0.0-rc.115`.
 
-Add `"type": "module"` to the generated `package.json`, so the files in this tutorial run as ES modules. Every program here runs with `node <file>.ts`; Node 22.19.0 and later execute the TypeScript directly.
+Add `"type": "module"` to the generated `package.json`, so the files in this tutorial run as ES modules. Every program here runs with `node <file>.ts`; Node 26.4.0 and later execute the TypeScript directly.
 
 ```text
 You should see: pnpm writes a package.json and a lockfile and installs the

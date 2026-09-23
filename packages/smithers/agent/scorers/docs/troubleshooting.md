@@ -210,7 +210,7 @@ that the number you passed is one.
 runs the durable engine on Node.js only and raises `unsupported_runtime`
 otherwise.
 
-**What to change.** Run on Node.js 22.19.0 or later, or compose
+**What to change.** Run on Node.js 26.4.0 or later, or compose
 `ScoreStore.layerNoop` when the process does not need persistence.
 
 ## Importing a module fails with ERR_PACKAGE_PATH_NOT_EXPORTED

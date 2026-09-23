@@ -24,17 +24,17 @@ describe("the Smithers namespace", () => {
     // The annotation is the assertion: `Smithers.Runtime` resolves in type
     // position as well as value position, so a PACKAGE.ts author never writes
     // `Smithers.Runtime.Runtime`.
-    const runtime: Smithers.Runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+    const runtime: Smithers.Runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 
     expect(runtime).toEqual({
       name: "node",
-      version: ">=22.19.0",
+      version: ">=26.4.0",
       executable: "node"
     })
   })
 
   it("declares a package manager over that runtime", () => {
-    const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+    const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
     const packageManager: Smithers.PackageManager = Smithers.PackageManager.Pnpm({
       version: "11.21.0",
       runtime

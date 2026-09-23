@@ -12,7 +12,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/not
 pnpm add @smthrs/notifications@next @smthrs/journal@next
 ```
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. It is built on
 [`effect`](https://effect.website) and [`@smthrs/journal`](https://journal.smithers.sh/reference/api/). Declare
 `@smthrs/journal` in your own package as well: the compositions below import it

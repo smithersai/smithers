@@ -39,7 +39,7 @@ for (const relative of entries) {
   }
 }
 const contents = [...members].map(([moduleId, names]) => `export {${[...names].sort().join(',')}} from ${JSON.stringify(moduleId)};`).join('')
-const bundled = await build({ stdin: { contents, resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node22.19' })
+const bundled = await build({ stdin: { contents, resolveDir: join(source, 'flows') }, bundle: true, write: false, platform: 'node', format: 'esm', metafile: true, minify: true, target: 'node26.4' })
 if (Object.values(bundled.metafile.outputs).some(file => file.imports.length > 0)) throw Error('Coding declarations must bundle every dependency')
 const api = bundled.outputFiles[0].text
 const exports = api.match(/export\{([^}]+)\};?\s*$/)

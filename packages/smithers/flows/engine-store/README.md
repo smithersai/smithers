@@ -25,7 +25,7 @@ tag:
 pnpm add @smthrs/engine-store@next
 ```
 
-Node.js 22.19.0 or later. The package ships as both ESM and CommonJS with
+Node.js 26.4.0 or later. The package ships as both ESM and CommonJS with
 TypeScript declarations.
 
 ## The shortest real use

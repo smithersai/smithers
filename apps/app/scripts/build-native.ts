@@ -44,19 +44,28 @@ const discoveredNode = configuredNode === undefined || configuredNode === ""
   ? Bun.which("node")
   : isAbsolute(configuredNode) ? configuredNode : Bun.which(configuredNode)
 if (discoveredNode === null || discoveredNode === undefined) {
-  throw new Error("SMITHERS_NODE_BINARY must name a build-time Node 22 executable.")
+  throw new Error("SMITHERS_NODE_BINARY must name a build-time Node 26.4+ executable.")
 }
 const nodeBinary = realpathSync(discoveredNode)
 const nodeVersion = Bun.spawnSync([nodeBinary, "--version"], { stdout: "pipe", stderr: "pipe" })
-if (nodeVersion.exitCode !== 0 || !/^v22\./.test(new TextDecoder().decode(nodeVersion.stdout).trim())) {
-  throw new Error("SMITHERS_NODE_BINARY must name Node 22.")
+const nodeRelease = /^v26\.(\d+)\./.exec(new TextDecoder().decode(nodeVersion.stdout).trim())
+if (nodeVersion.exitCode !== 0 || nodeRelease === null || Number(nodeRelease[1]) < 4) {
+  throw new Error("SMITHERS_NODE_BINARY must name Node 26.4 or a later Node 26.")
 }
-const corepackBinary = join(dirname(nodeBinary), "corepack")
-if (!existsSync(corepackBinary) || (statSync(corepackBinary).mode & 0o111) === 0) {
-  throw new Error(`The selected Node 22 distribution has no executable corepack: ${corepackBinary}`)
+// Node 26 ships no corepack, so the pinned pnpm comes from PATH and must be
+// exactly the release the root package.json declares.
+const pnpmPin = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { packageManager: string }).packageManager
+const discoveredPnpm = existsSync(join(dirname(nodeBinary), "pnpm")) ? join(dirname(nodeBinary), "pnpm") : Bun.which("pnpm")
+if (discoveredPnpm === null || discoveredPnpm === undefined || (statSync(discoveredPnpm).mode & 0o111) === 0) {
+  throw new Error(`The native build needs an executable ${pnpmPin} beside the selected Node or on PATH.`)
+}
+const pnpmBinary = discoveredPnpm
+const pnpmVersion = Bun.spawnSync([pnpmBinary, "--version"], { stdout: "pipe", stderr: "pipe" })
+if (pnpmVersion.exitCode !== 0 || `pnpm@${new TextDecoder().decode(pnpmVersion.stdout).trim()}` !== pnpmPin) {
+  throw new Error(`The native build needs ${pnpmPin}: ${pnpmBinary}`)
 }
 const nodeLicense = join(dirname(dirname(nodeBinary)), "LICENSE")
-if (!existsSync(nodeLicense)) throw new Error(`Node 22 license is unavailable: ${nodeLicense}`)
+if (!existsSync(nodeLicense)) throw new Error(`Node license is unavailable: ${nodeLicense}`)
 const nodeEnvironment = {
   PATH: process.env.PATH === undefined || process.env.PATH === ""
     ? dirname(nodeBinary)
@@ -189,7 +198,7 @@ await run(
   ["go", "build", "-trimpath", "-ldflags", `-X github.com/smithersai/smithers/packages/backend/internal/compose.BuildSHA=${revision}`, "-o", join(nativeDir, "bin", "smithers-backend"), "./apps/backend"]
 )
 await run("Node buildchain", [nodeBinary, "--version"], root, nodeEnvironment)
-await run("pinned pnpm buildchain", [corepackBinary, "pnpm", "--version"], root, nodeEnvironment)
+await run("pinned pnpm buildchain", [pnpmBinary, "--version"], root, nodeEnvironment)
 const codingHost = join(nativeDir, "bin", "smithers-coding-host")
 await run(
   "canonical coding host",
@@ -225,7 +234,7 @@ await run(
 )
 
 // Canonical host artifacts are executable ESM with `#!/usr/bin/env node`.
-// Ship the validated Node 22 build runtime and its license. An installed app
+// Ship the validated Node 26 build runtime and its license. An installed app
 // never depends on Homebrew, nvm, or a runtime download.
 const hostRuntime = join(nativeDir, "bin", "node")
 cpSync(nodeBinary, hostRuntime)
@@ -294,10 +303,10 @@ cpSync(ffi, join(nativeDir, "bin", ffiName))
 cpSync(jjExport, join(nativeDir, "bin", "smithers-jj-export"))
 bundlePostgres(postgresBundle, join(nativeDir, "postgres"))
 
-await run("web bundle", [corepackBinary, "pnpm", "run", "build:web"], appDir, nodeEnvironment)
+await run("web bundle", [pnpmBinary, "run", "build:web"], appDir, nodeEnvironment)
 await run(
   cefMatrix ? "stable Electrobun CEF matrix package" : "stable Electrobun package",
-  [corepackBinary, "pnpm", "exec", "electrobun", "build", "--env=stable"],
+  [pnpmBinary, "exec", "electrobun", "build", "--env=stable"],
   appDir,
   nodeEnvironment
 )

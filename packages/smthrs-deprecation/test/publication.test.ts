@@ -56,8 +56,8 @@ describe("the published manifest", () => {
 
   it("declares the repository's supported Node versions", () => {
     // This command runs the CLI directly, so the compatibility entry must
-    // carry the CLI's supported versions, including its Node 24 floor.
-    expect(manifest.engines?.node).toBe("^22.19.0 || >=24.11.0")
+    // carry the CLI's supported versions, including its Node 26.4 floor.
+    expect(manifest.engines?.node).toBe(">=26.4.0")
   })
 })
 

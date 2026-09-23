@@ -42,7 +42,7 @@ body:
     attributes:
       label: Environment
       description: Operating system, architecture, Node version, package manager, and relevant provider.
-      placeholder: macOS 15 arm64, Node 22.19.0, pnpm 10, OpenAI
+      placeholder: macOS 15 arm64, Node 26.10.0, pnpm 11, OpenAI
     validations:
       required: true
   - type: textarea

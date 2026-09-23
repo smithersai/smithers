@@ -14,7 +14,7 @@ import { buildAndCheckPackage } from "./package-targets.ts"
 // PACKAGE.ts
 import { Smithers } from "@smthrs/targets"
 
-export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+export const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 export const packageDefaults = Smithers.PackageDefaults({

@@ -32,7 +32,7 @@ pnpm add @smthrs/journal@next @smthrs/database@next effect@4.0.0-rc.115 @effect/
 in one program are two sets of service tags, so a journal layer built against
 one copy cannot be provided to a program holding the other.
 
-Node.js 22.19.0 or later is required for the Node SQLite driver. The package
+Node.js 26.4.0 or later is required for the Node SQLite driver. The package
 ships as both ESM and CommonJS with TypeScript declarations.
 
 ## Write one run and read it back

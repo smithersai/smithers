@@ -51,7 +51,7 @@ declaration before it keys and runs the node, and the rule asks
 import { Smithers as S } from "@smthrs/targets"
 
 // WORKSPACE.ts
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 export const Workspace = S.Workspace("example", {
   repository: "git+https://example.invalid/repo.git",
   cache: S.Cache({ directory: ".flows" }),

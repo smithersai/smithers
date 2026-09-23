@@ -22,7 +22,7 @@ program are two sets of service tags. Everything else installs with the
 package: the `yaml` parser frontmatter is read with, and the `@smthrs/*`
 packages the descriptor model is built from.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations.
 
 ## Import forms

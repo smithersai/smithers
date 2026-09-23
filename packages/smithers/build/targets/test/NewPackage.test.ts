@@ -23,7 +23,7 @@ afterEach(async () => {
 const template = PackageJsonTemplate.make({
   license: "MIT",
   author: "flows",
-  engines: { node: ">=22.19.0" },
+  engines: { node: ">=26.4.0" },
   scripts: PackageJsonTemplate.standardScripts
 })
 
@@ -97,7 +97,7 @@ describe("scaffold", () => {
     expect(manifest["version"]).toBe("0.1.0")
     expect(manifest["license"]).toBe("MIT")
     expect(manifest["author"]).toBe("flows")
-    expect(manifest["engines"]).toEqual({ node: ">=22.19.0" })
+    expect(manifest["engines"]).toEqual({ node: ">=26.4.0" })
     expect(manifest["scripts"]).toEqual(PackageJsonTemplate.standardScripts)
     // The manifest is already in the generated key order.
     expect(Object.keys(manifest).slice(0, 3)).toEqual(["name", "version", "license"])

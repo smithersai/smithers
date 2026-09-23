@@ -13,7 +13,7 @@ without an external binary and without an API key.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A package with the dependencies installed:
 
 ```bash

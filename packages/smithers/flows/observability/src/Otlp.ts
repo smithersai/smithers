@@ -217,7 +217,7 @@ export interface Options {
  * platform-neutral: a Node host may hand it `@effect/platform-node`'s Undici
  * client (re-exported by `@smthrs/platform-node`), a browser or test
  * hands it something else. Use {@link layerFetch} when the host's global
- * `fetch` is good enough. On Node 22 and every browser it is.
+ * `fetch` is good enough. On Node 26 and every browser it is.
  *
  * @category layers
  * @since 0.1.0

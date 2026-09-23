@@ -347,8 +347,8 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
 
   // Two steps the release deliberately extends rather than copies: it checks
   // out the full history the changelog gate reads, and it points npm at the
-  // registry it publishes to. Release also proves its Node 22 support floor;
-  // the smoke step checks the actual version before the Node 24 floor run.
+  // registry it publishes to. Release also proves its Node 26.4 support floor;
+  // the smoke step checks the actual version before it packs.
   // Their settings and action pins are checked below.
   const extended = ["actions/checkout", "actions/setup-node"]
   const toolchain = ciSteps.filter((step) => !/(?:smithers-build|smthrs)/.test(step))
@@ -374,7 +374,7 @@ test("every toolchain step in ci.yml's required test job also runs in release.ym
     const floorSubstitution = "          node-version-file: .node-version"
     if (action === "actions/setup-node") {
       assert.ok(sourceEntries.includes(floorSubstitution), "CI selects the repository's Node version file")
-      assert.ok(copiedEntries.includes("          node-version: 22.19.0"), "release proves its Node 22 support floor")
+      assert.ok(copiedEntries.includes("          node-version: 26.4.0"), "release proves its Node support floor")
     }
     assert.deepEqual(
       sourceEntries.filter((entry) => !(action === "actions/setup-node" && entry === floorSubstitution)

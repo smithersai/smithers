@@ -12,7 +12,7 @@ fails loudly on a value with no canonical form.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - The package and its `effect` peer dependency:
 
 ```bash

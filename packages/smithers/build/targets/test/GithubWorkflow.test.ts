@@ -230,7 +230,7 @@ describe("parseWorkflow", () => {
         "      - uses: actions/checkout@v4",
         "      - uses: actions/setup-node@v4",
         "        with:",
-        "          node-version: 22.19.0",
+        "          node-version: 26.4.0",
         "      - name: Typecheck",
         "        run: pnpm run check",
         ""

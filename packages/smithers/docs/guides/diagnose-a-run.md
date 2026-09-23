@@ -16,7 +16,7 @@ smthrs doctor
 `doctor` does not start a run. It reports the project root it resolved, how many flows
 the registry discovered and one line per discovery warning, both database files
 with how many migrations each has recorded, the running Node against the
-supported range (22.19+ on Node 22, or 24.11+), whether `jj` is executable,
+supported range (26.4.0 or later), whether `jj` is executable,
 which supported provider credential variables are set, and any Smithers 0.x
 state beside the project.
 

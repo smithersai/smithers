@@ -31,7 +31,7 @@ already makes this separation. See the [artifact host contract](packages/smither
 ## Runtime and dependency support
 
 The required release platform is Linux. The release workflow exercises Node
-22.19.0 and 24.11.0 as its two certified floors with npm and pnpm consumers.
+26.4.0 as its certified floor with npm and pnpm consumers.
 The `engines` lower bound is not certification of every later Node release.
 macOS checks are advisory. Hardened native filesystem confinement requires a
 trusted Python interpreter and descriptor-relative POSIX operations; Windows

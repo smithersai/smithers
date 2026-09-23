@@ -7,7 +7,7 @@ sidebar:
 
 ## Requirements
 
-- Node.js 22.19+ (Node 22) or 24.11+.
+- Node.js 26.4.0 or later.
 - pnpm, for the scaffold command and for the app's own scripts.
 
 ```bash
@@ -75,9 +75,9 @@ The template already declares its `@smthrs/testing`,
 the compatible Vitest 4 runner.
 
 For npm consumers of `@smthrs/create-app/testing`, use npm 11.16.0 or newer.
-The release smoke certifies npm 11.16.0 on Node 22.19.0 and 24.18.0. Node
-22.19.0's bundled npm 10.9.3 crashes in Arborist while resolving this valid
-optional-peer graph; the same manifest installs and runs with npm 11.16.0.
+The release smoke certifies npm 11.16.0 on Node 26.4.0. npm 10.9.3 crashes in
+Arborist while resolving this valid optional-peer graph; the same manifest
+installs and runs with npm 11.16.0.
 This is an installer requirement, separate from the supported Node runtime.
 
 ## Import forms

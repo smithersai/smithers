@@ -82,7 +82,7 @@ export const initialize = async (
     )
     const runtime = manager.startsWith("bun@")
       ? "S.Runtime.Bun({ version: \">=1.4.0\" })"
-      : "S.Runtime.Node({ version: \">=22.19.0\" })"
+      : "S.Runtime.Node({ version: \">=26.4.0\" })"
     const packageManager = manager.startsWith("bun@") ?
       "S.PackageManager.BunPackages({ runtime })"
       : manager.startsWith("yarn@") ?

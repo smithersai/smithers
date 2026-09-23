@@ -16,7 +16,7 @@ redacted.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later, where the built-in SQLite module lives.
+- Node.js 26.4.0 or later, where the built-in SQLite module lives.
 - An ESM package (`"type": "module"`, because the program ends in a top-level
   `await`) with the journal, the database it writes through, and `effect`
   installed. See [Installation](/installation/) for why `effect` is pinned.
@@ -105,7 +105,7 @@ Two choices in that block are worth naming:
 await Effect.runPromise(program.pipe(Effect.provide(journalLayer), Effect.orDie))
 ```
 
-Run it with Node, which strips the types itself on 22.19.0 and later:
+Run it with Node, which strips the types itself on 26.4.0 and later:
 
 ```bash
 node quickstart.ts

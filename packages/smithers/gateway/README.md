@@ -24,7 +24,7 @@ The mounts, the bind and credential policy, the projections and their rows, the 
 pnpm add @smthrs/gateway@1.0.0-rc.0
 ```
 
-Node 22.19.0 or later is required. `effect@4.0.0-rc.115` is a required peer.
+Node 26.4.0 or later is required. `effect@4.0.0-rc.115` is a required peer.
 The root and protocol subpaths install no native adapter. The optional peer
 `@effect/platform-node@4.0.0-rc.115` is required by `node/NodeGateway`,
 including the hosting example below. The Bun host at `bun/BunGateway` instead

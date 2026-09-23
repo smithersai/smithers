@@ -5,7 +5,7 @@ import * as LocalRepository from "../src/LocalRepository.ts"
 import * as RepoTarget from "../src/RepoTarget.ts"
 import * as Target from "../src/Target.ts"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 
 const workspace = (repos: Parameters<typeof S.Workspace>[1]["repos"]) =>
   S.Workspace("repo-test", {

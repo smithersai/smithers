@@ -12,7 +12,7 @@ corrupted on purpose.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - An empty directory to work in. The store writes under `.flows/objects`
   relative to the process working directory.
 - The package and the Node host layers:

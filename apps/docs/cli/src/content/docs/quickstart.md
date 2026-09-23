@@ -24,7 +24,7 @@ smthrs doctor
 ```
 
 `doctor` inspects discovery and existing state without creating execution databases. It reports the project root it resolved, both database
-files, the supported Node range (22.19+ on Node 22, or 24.11+), whether `jj` is on the
+files, the supported Node range (26.4.0 or later), whether `jj` is on the
 `PATH`, and which provider keys are set. A `fail` line is a fact that will stop
 the next command you run; fix those first.
 

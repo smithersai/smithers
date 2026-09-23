@@ -31,7 +31,7 @@ versions are exact so the host shares one compatible Effect runtime.
 
 ## Supported runtimes
 
-Bun 1.4.0 or later, and Node.js 22.19.0 or later. Both are declared in
+Bun 1.4.0 or later, and Node.js 26.4.0 or later. Both are declared in
 `engines`, and both are real: the bundle falls back to the
 `@effect/platform-node` adapters off Bun, so it runs unchanged under Node. See
 [Runtime parity with Node](./concepts/runtime-parity.md) for what that does and

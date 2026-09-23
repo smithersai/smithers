@@ -22,7 +22,7 @@ import * as Path from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import * as WorkspaceToolchain from "../src/WorkspaceToolchain.ts"
 
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
 const bun = S.Runtime.Bun({ version: ">=1.4.0" })
 
@@ -132,10 +132,10 @@ const assertTypecheckPlan = (toolchain: WorkspaceToolchain.WorkspaceToolchain): 
 describe("resolving workspace manifest declarations", () => {
   it("derives both requirements from the same measured manifest and passes the real target schema", async () => {
     const root = await directory()
-    const text = JSON.stringify({ engines: { node: ">=22.19.0" }, packageManager: "pnpm@11.25.0" })
+    const text = JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "pnpm@11.25.0" })
     await Fs.writeFile(Path.join(root, "package.json"), text)
     const toolchain = await WorkspaceToolchain.resolve(manifestWorkspace(), { root })
-    expect(toolchain.runtime).toMatchObject({ name: "node", version: ">=22.19.0", executable: "node" })
+    expect(toolchain.runtime).toMatchObject({ name: "node", version: ">=26.4.0", executable: "node" })
     expect(toolchain.packageManager).toMatchObject({ name: "pnpm", version: "11.25.0", executable: "pnpm" })
     expect(toolchain.manifestDigests).toEqual([{ path: "package.json", digest: Input.digestText(text) }])
     assertTypecheckPlan(toolchain)
@@ -163,7 +163,7 @@ describe("resolving workspace manifest declarations", () => {
 
   it.each(
     [
-      ["classic Node floor", S.Runtime.Node({ version: ">=22.19.0" })],
+      ["classic Node floor", S.Runtime.Node({ version: ">=26.4.0" })],
       ["exact Node", S.Runtime.Node({ version: "22.19.0" })],
       ["exact Bun", S.Runtime.Bun({ version: "1.4.1" })]
     ] as const
@@ -195,7 +195,7 @@ describe("resolving workspace manifest declarations", () => {
 
   it("deduplicates equivalent manifest paths while an explicit manager requirement overrides its field", async () => {
     const root = await directory()
-    const text = JSON.stringify({ engines: { node: ">=22.19.0" }, packageManager: "npm@99.0.0" })
+    const text = JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "npm@99.0.0" })
     await Fs.writeFile(Path.join(root, "package.json"), text)
     const toolchain = await WorkspaceToolchain.resolve(
       manifestWorkspace({
@@ -218,7 +218,7 @@ describe("resolving workspace manifest declarations", () => {
     await Fs.writeFile(
       Path.join(root, "package.json"),
       JSON.stringify({
-        engines: { node: ">=22.19.0" },
+        engines: { node: ">=26.4.0" },
         packageManager: "pnpm@11.25.0"
       })
     )
@@ -237,7 +237,7 @@ describe("resolving workspace manifest declarations", () => {
     await Fs.writeFile(
       Path.join(root, "package.json"),
       JSON.stringify({
-        engines: { node: ">=22.19.0" },
+        engines: { node: ">=26.4.0" },
         packageManager: "pnpm@11.25.0"
       })
     )
@@ -299,19 +299,19 @@ describe("resolving workspace manifest declarations", () => {
       ],
       [
         "compound Node requirement",
-        JSON.stringify({ engines: { node: "^22.19.0 || >=24.11.0" }, packageManager: "pnpm@11.25.0" }),
+        JSON.stringify({ engines: { node: "^26.4.0 || >=27.0.0" }, packageManager: "pnpm@11.25.0" }),
         /requirement|version/i
       ],
-      ["missing manager pin", JSON.stringify({ engines: { node: ">=22.19.0" } }), /packageManager/i],
-      ["wrong manager", JSON.stringify({ engines: { node: ">=22.19.0" }, packageManager: "npm@11.25.0" }), /pnpm/i],
+      ["missing manager pin", JSON.stringify({ engines: { node: ">=26.4.0" } }), /packageManager/i],
+      ["wrong manager", JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "npm@11.25.0" }), /pnpm/i],
       [
         "empty manager version",
-        JSON.stringify({ engines: { node: ">=22.19.0" }, packageManager: "pnpm@" }),
+        JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "pnpm@" }),
         /packageManager|version|pnpm/i
       ],
       [
         "unsupported manager version",
-        JSON.stringify({ engines: { node: ">=22.19.0" }, packageManager: "pnpm@latest" }),
+        JSON.stringify({ engines: { node: ">=26.4.0" }, packageManager: "pnpm@latest" }),
         /requirement|version/i
       ]
     ] as const
@@ -341,7 +341,7 @@ describe("resolving workspace manifest declarations", () => {
     await Fs.writeFile(
       Path.join(root, "package.json"),
       Buffer.concat([
-        Buffer.from("{\"engines\":{\"node\":\">=22.19.0\"},\"packageManager\":\"pnpm@11.25.0\",\"description\":\""),
+        Buffer.from("{\"engines\":{\"node\":\">=26.4.0\"},\"packageManager\":\"pnpm@11.25.0\",\"description\":\""),
         Buffer.from([0xc3, 0x28]),
         Buffer.from("\"}")
       ])
@@ -361,7 +361,7 @@ describe("resolving workspace manifest declarations", () => {
     await Fs.writeFile(
       Path.join(outside, "package.json"),
       JSON.stringify({
-        engines: { node: ">=22.19.0" },
+        engines: { node: ">=26.4.0" },
         packageManager: "pnpm@11.25.0"
       })
     )

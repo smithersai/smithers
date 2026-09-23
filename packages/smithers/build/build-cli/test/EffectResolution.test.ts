@@ -3,8 +3,8 @@
  *
  * tsx classifies a declaration module by its nearest package.json, so a
  * workspace that declares no `type` evaluates PACKAGE.ts and WORKSPACE.ts
- * through the CommonJS bridge on the Node version this repository pins
- * (22.19.0); a newer Node keeps the same file on the ES-module path. The
+ * through the CommonJS bridge on Node 22.19.0, which this repository once
+ * pinned; a newer Node keeps the same file on the ES-module path. The
  * ES-module hook re-parents the CLI-owned bare specifiers. CommonJS uses
  * ordinary installed dependencies and tsx maps `./x.js` onto `x.ts`.
  */

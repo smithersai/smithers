@@ -16,8 +16,8 @@
  * Separate npm and pnpm consumers then certify default libraries, selected
  * Node/browser/Bun adapters, create-app/testing, and migration install shapes
  * against the same tarballs before a successful smoke receipt is written.
- * Requires npm >=11.16.0 on PATH, including under Node 22.19.0. Its bundled
- * npm 10.9.3 crashes in Arborist when resolving the testing optional peers.
+ * Requires npm >=11.16.0 on PATH, including under Node 26.4.0. npm 10.9.3
+ * crashes in Arborist when resolving the testing optional peers.
  * Installs prefer cached metadata and package bytes. Every pnpm consumer uses
  * the workspace's store, with cache reuse reported beside command timings.
  * First-party bytes always come from the supplied candidate tarballs.

@@ -16,7 +16,7 @@ import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
 
 const cache = WorkspaceDeclaration.Cache({ directory: ".flows" })
 const rust = RustToolchain.Toolchain({ workspace: Input.file("//Cargo.toml"), channel: "1.91" })
-const runtime = Runtime.Node({ version: ">=22.19.0" })
+const runtime = Runtime.Node({ version: ">=26.4.0" })
 const packageManager = PackageManager.Pnpm({ version: "11.21.0", runtime })
 const nodeModules = WorkspaceDeclaration.NodeModules({ packageJson: Input.file("//package.json") })
 

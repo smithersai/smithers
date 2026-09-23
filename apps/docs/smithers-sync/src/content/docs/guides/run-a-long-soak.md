@@ -9,14 +9,14 @@ tier is off until `SMITHERS_SOAK_MINUTES` is set. Run from the sync package:
 
 ```sh
 SMITHERS_SOAK_MINUTES=60 \
-SMITHERS_SOAK_ARTIFACT=/tmp/sync-soak/node24.json \
+SMITHERS_SOAK_ARTIFACT=/tmp/sync-soak/node26.json \
 pnpm exec vitest run test/ServerLongSoak.test.ts --maxWorkers=1 --coverage.enabled=false
-node test/fixtures/verify-soak.ts /tmp/sync-soak/node24.json 60
+node test/fixtures/verify-soak.ts /tmp/sync-soak/node26.json 60
 ```
 
 The focused timed tier does not replace the full package coverage gate. It
 spawns the same Node executable with `--expose-gc`. Supported pinned lane
-runtimes are Node 22.19.0 and 24.18.0. Minutes must be finite and within 1..720.
+runtimes are Node 26.4.0 and 26.10.0. Minutes must be finite and within 1..720.
 The artifact path is required. For a bounded local rehearsal use 3 minutes,
 and label the receipt as local bounded evidence.
 

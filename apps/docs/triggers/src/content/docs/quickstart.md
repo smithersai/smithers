@@ -18,7 +18,7 @@ one launch carrying an idempotency key derived from the occurrence.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A TypeScript project that depends on `@smthrs/triggers` and
   `@smthrs/database`. See [Installation](/installation/).
 

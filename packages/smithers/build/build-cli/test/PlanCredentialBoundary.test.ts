@@ -87,7 +87,7 @@ it.skipIf(process.platform === "win32")(
     await write(
       "WORKSPACE.ts",
       `import { Smithers as S } from "@smthrs/targets"
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 export const Workspace = S.Workspace("plan-credential-forge", {
   repository: "git+https://example.invalid/plan-credential-forge.git",
   cache: S.Cache({ directory: ".flows" }), runtime,

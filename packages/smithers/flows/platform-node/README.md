@@ -33,7 +33,7 @@ general-purpose adapter makes, so this package implements them itself:
 [installation page](https://platform-node.smithers.sh/installation/) covers how
 to depend on it from a checkout and the `effect` version it pins.
 
-Running the bundle needs a POSIX host with Node.js 22.19.0 or later and CPython
+Running the bundle needs a POSIX host with Node.js 26.4.0 or later and CPython
 3, which `AtomicFileSystem` uses to reach the `dir_fd` syscalls Node does not
 expose. Windows is unsupported.
 

@@ -163,7 +163,7 @@ describe("S.Agents and S.Flags reference surfaces", () => {
 
 describe("Runtime.Node and PackageManager.Yarn forms", () => {
   it("keeps the PACKAGE.ts literal form and adds the exclusive union", () => {
-    const classic = Runtime.Node({ version: ">=22.19.0" })
+    const classic = Runtime.Node({ version: ">=26.4.0" })
     expect(Runtime.isRuntime(classic)).toBe(true)
     const pinned = Runtime.Node({ version: "26" })
     expect(Runtime.isNodeDeclaration(pinned)).toBe(true)
@@ -203,7 +203,7 @@ describe("Runtime.Node and PackageManager.Yarn forms", () => {
   })
 
   it("keeps the BUILD-era Pnpm form and its runtime requirement", () => {
-    const classic = PackageManager.Pnpm({ version: "11.21.0", runtime: Runtime.Node({ version: ">=22.19.0" }) })
+    const classic = PackageManager.Pnpm({ version: "11.21.0", runtime: Runtime.Node({ version: ">=26.4.0" }) })
     expect(PackageManager.isPackageManager(classic)).toBe(true)
     expect(() => PackageManager.Pnpm({ version: "11.21.0" } as never)).toThrow(/runtime/)
   })

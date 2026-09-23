@@ -44,7 +44,7 @@ runs:
       if: steps.gate.outputs.should-run == 'true'
       uses: actions/setup-node@v6.4.0
       with:
-        node-version: 22.19.0
+        node-version: 26.4.0
 
     - name: Install smithers dependencies
       if: steps.gate.outputs.should-run == 'true'

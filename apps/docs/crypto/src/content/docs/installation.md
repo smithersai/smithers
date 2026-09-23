@@ -24,7 +24,7 @@ only runtime dependency is [`effect`](https://effect.website).
 
 ## Runtime requirements
 
-- Node.js 22.19.0 or later, as declared in `engines`.
+- Node.js 26.4.0 or later, as declared in `engines`.
 - A global `TextEncoder`. Text hashing calls it directly, so it is a host
   prerequisite rather than an injected service. Supported Node, Bun, and
   modern browser targets provide it, and compatible worker and edge runtimes

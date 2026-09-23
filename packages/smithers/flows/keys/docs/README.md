@@ -49,7 +49,7 @@ pnpm add @smthrs/keys@next effect@4.0.0-rc.115
 ```
 
 The current version is `1.0.0-rc.0` and publishes on the `next` dist-tag, which
-is what `@next` selects. Node.js 22.19.0 or later. Hashing is host access, so
+is what `@next` selects. Node.js 26.4.0 or later. Hashing is host access, so
 derivation runs through Effect's `Crypto` service and you choose the
 implementation: [Installation](./installation.md) covers the layer to provide
 on Node.js, on Bun, and in a browser.

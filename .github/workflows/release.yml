@@ -85,7 +85,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22.19.0
+          node-version: 26.4.0
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
           bun-version: 1.4.1
@@ -239,7 +239,7 @@ jobs:
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22.19.0
+          node-version: 26.4.0
           cache: pnpm
           registry-url: https://registry.npmjs.org
       - name: Install certified npm
@@ -486,7 +486,7 @@ jobs:
         run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_DOCKER_SKIP_BUILD=1 bash distribution/test-image.sh smithers-distribution:release
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 22.19.0
+          node-version: 26.4.0
       # The macOS job gates the native pair. This job gates the web and local
       # pairs with fresh PostgreSQL and the distribution image.
       - name: Product deployment mode matrix
@@ -658,6 +658,21 @@ jobs:
         shell: bash
       # Pack from staging manifests whose exports point at built artifacts.
       # Repository manifests retain Effect's source-first export shape.
+      # Pack and smoke on the supported Node floor. The server step above
+      # selects the repository's pinned release, so reinstall the floor and its
+      # certified npm here rather than trust whichever Node ran last.
+      - name: Install the supported Node floor
+        if: env.CANDIDATE_RUN_ID == ''
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 26.4.0
+          registry-url: https://registry.npmjs.org
+      - name: Install certified npm for the Node floor
+        if: env.CANDIDATE_RUN_ID == ''
+        run: |
+          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
+          test "$(npm --version)" = '11.16.0'
+        shell: bash
       - name: Pack and smoke-test release artifacts
         if: env.CANDIDATE_RUN_ID == ''
         env:
@@ -665,36 +680,12 @@ jobs:
           SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/release-smoke-evidence
           SMITHERS_NATIVE_HELPERS_DIR: ${{ runner.temp }}/smithers-native
         run: |
-          test "$(node --version)" = 'v22.19.0'
+          test "$(node --version)" = 'v26.4.0'
           test "$(npm --version)" = '11.16.0'
           mkdir -p "$SMOKE_EVIDENCE_DIR"
           node scripts/pack-release.mjs "$PACK_DIR"
           node scripts/smoke-release.mjs "$PACK_DIR"
-          cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node22.json"
-      # Exercise the second advertised Node line from its minimum version,
-      # using the identical tarballs and a fresh isolated consumer installation.
-      - name: Install the supported Node 24 floor
-        if: env.CANDIDATE_RUN_ID == ''
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24.11.0
-          registry-url: https://registry.npmjs.org
-      - name: Install certified npm for Node 24
-        if: env.CANDIDATE_RUN_ID == ''
-        run: |
-          npm install --global 'npm@11.16.0' --ignore-scripts --no-audit --no-fund
-          test "$(npm --version)" = '11.16.0'
-        shell: bash
-      - name: Smoke release artifacts on the Node 24 floor
-        if: env.CANDIDATE_RUN_ID == ''
-        env:
-          PACK_DIR: ${{ runner.temp }}/release-packs
-          SMOKE_EVIDENCE_DIR: ${{ runner.temp }}/release-smoke-evidence
-        run: |
-          test "$(node --version)" = 'v24.11.0'
-          test "$(npm --version)" = '11.16.0'
-          node scripts/smoke-release.mjs "$PACK_DIR"
-          cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node24.json"
+          cp "$PACK_DIR/smoke-evidence.json" "$SMOKE_EVIDENCE_DIR/node26.json"
       - name: Restore and verify archived release candidate
         if: env.CANDIDATE_RUN_ID != ''
         env:

@@ -9,7 +9,7 @@ This quickstart writes one fact, recalls it, and then moves the store from an in
 
 ## Before you begin
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - `@smthrs/memory`, resolving in your project. [Installation](./installation.md)
   covers where to get it today and its SQLite driver. Install the dependencies
   used by the in-memory example:
@@ -52,7 +52,7 @@ const result = await Effect.runPromise(program.pipe(Effect.provide(memory)))
 console.log(result)
 ```
 
-Run it. Node.js 22.19 runs the TypeScript file directly:
+Run it. Node.js 26.4 runs the TypeScript file directly:
 
 ```bash
 node notebook.ts

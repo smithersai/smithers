@@ -12,7 +12,7 @@ you have a terminal outcome and the journal that produced it.
 
 ## 1. Get the package
 
-A chain runs on Node.js 22.19.0 or later and pulls in
+A chain runs on Node.js 26.4.0 or later and pulls in
 [Effect](https://effect.website), which every sample below imports.
 [Installation](./installation.md) covers where to get the package, the import
 paths it exposes, and the services a run needs.

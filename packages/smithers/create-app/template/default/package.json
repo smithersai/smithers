@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.25.0",
   "description": "A Smithers app: file-routed flows and panes, deployed as a Cloudflare Worker",
   "engines": {
-    "node": "^22.19.0 || >=24.11.0"
+    "node": ">=26.4.0"
   },
   "scripts": {
     "dev": "vite",

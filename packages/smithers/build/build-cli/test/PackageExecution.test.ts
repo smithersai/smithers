@@ -25,7 +25,7 @@ const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("fixture", {
   repository: "git+https://example.invalid/fixture.git",
   cache: S.Cache({ directory: ".flows" }),
-  runtime: S.Runtime.Node({ version: ">=22.19.0" }),
+  runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Yarn({ manifest: packageJson, lockfile: S.file("//yarn.lock") }),
   nodeModules: S.Npm.NodeModules({ packageJson }),
 ${extra}
@@ -1892,7 +1892,7 @@ describe("target body execution", () => {
               private: true,
               type: "module",
               packageManager: "pnpm@11.21.0",
-              engines: { node: ">=22.19.0" },
+              engines: { node: ">=26.4.0" },
               dependencies: { "fixture-dep": "link:dep" }
             },
             undefined,

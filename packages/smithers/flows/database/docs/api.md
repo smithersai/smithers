@@ -447,7 +447,7 @@ than a typed failure because neither refusal is recoverable at run time.
 
 | Code                        | Refused when                                                    | Message                                                                                   |
 | --------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=22.19.0` |
+| `unsupported_runtime`       | `process.versions.bun` is set                                   | `Use @smthrs/database/bun/BunDatabase under Bun; NodeDatabase requires Node.js >=26.4.0` |
 | `unsupported_database_file` | the file has at least one table and no `flows_migrations` table | `<path> is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`      |
 | `database_locked`           | a peer held the file for the whole open ladder                  | `<path> could not be inspected because another process holds it`                          |
 

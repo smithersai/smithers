@@ -25,7 +25,7 @@ composes with. Two more dependencies install with the package and are the only
 ones: [`@smthrs/canonical`](https://canonical.smithers.sh/reference/api/) for the serialization and
 [`@smthrs/crypto`](https://crypto.smithers.sh/reference/api/) for the digest.
 
-The package requires Node.js 22.19.0 or later and ships as ESM and CommonJS
+The package requires Node.js 26.4.0 or later and ships as ESM and CommonJS
 with TypeScript declarations.
 
 ## Provide a Crypto service

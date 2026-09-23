@@ -13,7 +13,7 @@ Smithers relies on to undo a step, and the change id that ties them together.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - `jj` on `PATH`. Check with `jj --version`; see
   [Installation](/installation/) if it is missing.
 - `@smthrs/jj` and its `effect` peer resolvable from the file you are about to

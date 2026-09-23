@@ -47,7 +47,7 @@ loop, the journal keys, and the sandbox.
 
 `@smthrs/chain` is not on the npm registry; it is used today from a checkout
 of the [Smithers repository](https://github.com/smithersai/smithers). It
-targets Node.js 22.19.0 or later and depends on
+targets Node.js 26.4.0 or later and depends on
 [Effect](https://effect.website). For requirements, import paths, and the
 services a run needs, see [Installation](./installation.md).
 

@@ -22,7 +22,7 @@ is, build the package from a clone of
 `4.0.0-rc.115`. Two copies of `effect` in one program are two sets of service
 tags, so the version is pinned rather than ranged.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. The `@smthrs/*` packages the assertions
 read install with it: [`@smthrs/core`](https://core.smithers.sh/reference/api/),
 [`@smthrs/engine`](https://engine.smithers.sh/reference/api/), [`@smthrs/flow`](https://flow.smithers.sh/reference/api/),

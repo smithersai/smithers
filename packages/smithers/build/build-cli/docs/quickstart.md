@@ -8,7 +8,7 @@ sidebar:
 This walks one workspace from nothing to a cached run. It takes about five
 minutes and runs one shell target, plus planning tools.
 
-You need Node 22.19+ (Node 22) or 24.11+, git, and a checkout that carries
+You need Node 26.4.0 or later, git, and a checkout that carries
 `@smthrs/build-cli` and `@smthrs/targets` as workspace dependencies. See
 [Installation](./installation.md).
 
@@ -25,7 +25,7 @@ const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("demo", {
   repository: "git+https://example.invalid/demo.git",
   cache: S.Cache({ directory: ".flows" }),
-  runtime: S.Runtime.Node({ version: ">=22.19.0" }),
+  runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Pnpm({
     manifest: packageJson,
     lockfile: S.file("//pnpm-lock.yaml")

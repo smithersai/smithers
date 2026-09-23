@@ -48,7 +48,7 @@ export const slope = (samples: ReadonlyArray<Sample>, metric: Metric): number =>
 export const verify = (artifact: Artifact, minimumMinutes: number): void => {
   assert.equal(artifact.schemaVersion, 1)
   assert.equal(artifact.status, "complete")
-  assert.match(artifact.runtime.node, /^v(?:22\.19\.0|24\.18\.0)$/)
+  assert.match(artifact.runtime.node, /^v(?:26\.4\.0|26\.10\.0)$/)
   assert.ok(artifact.runtime.platform.length > 0 && artifact.runtime.arch.length > 0)
   assert.match(artifact.candidate.head, /^[a-f0-9]{40}$/)
   assert.equal(typeof artifact.candidate.dirty, "boolean")

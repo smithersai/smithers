@@ -55,7 +55,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.nodejs_22
+            pkgs.nodejs_26
             (pnpmPinned pkgs)
             (assert pkgs.bun.version == "1.4.1"; pkgs.bun)
             (assert pkgs.jujutsu.version == "0.39.0"; pkgs.jujutsu)

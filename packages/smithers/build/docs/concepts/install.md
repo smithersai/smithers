@@ -14,7 +14,7 @@ asks the `Install` target for the tree:
 ```ts
 import { Smithers } from "@smthrs/targets"
 
-export const runtime = Smithers.Runtime.Node({ version: ">=22.19.0" })
+export const runtime = Smithers.Runtime.Node({ version: ">=26.4.0" })
 export const packageManager = Smithers.PackageManager.Pnpm({ version: "11.21.0", runtime })
 export const nodeModules = Smithers.Install({ packageManager })
 ```
@@ -35,7 +35,7 @@ PackageManager.layerPnpm({
   requirement: "11.21.0"
 }).pipe(
   Layer.provideMerge(Runtime.layerNode({
-    requirement: ">=22.19.0",
+    requirement: ">=26.4.0",
     platform: { os: "linux", arch: "x64", libc: "glibc" }
   }))
 )

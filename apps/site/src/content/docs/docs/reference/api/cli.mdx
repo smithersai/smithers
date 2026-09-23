@@ -312,8 +312,8 @@ Readiness as one report.
 | --- | --- | --- |
 | `Level` | `"ok" \| "warn" \| "fail"` | A `warn` stops nothing; a `fail` will stop the next command. |
 | `Check`, `Report` | `{ name, level, detail }`, `{ root, checks }` | The report is data. `--json` prints it verbatim. |
-| `minimumNode` | `"22.19.0"` | The floor the durable engine requires. |
-| `supportedNodeRange` | `"^22.19.0 \|\| >=24.11.0"` | The Node range supported by the CLI's runtime dependencies. |
+| `minimumNode` | `"26.4.0"` | The floor the durable engine requires. |
+| `supportedNodeRange` | `">=26.4.0"` | The Node range supported by the CLI's runtime dependencies. |
 | `satisfiesNode` | `(version, minimum?) => boolean` | Whether a Node version is supported and clears an optional higher floor. |
 | `Options` | interface | Every host fact is a parameter, so the report is deterministic in a test. |
 | `inspect` | `(options) => Report` | Runs every check. |

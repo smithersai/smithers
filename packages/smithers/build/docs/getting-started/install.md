@@ -15,7 +15,7 @@ link, override, or vendored dependency is required.
 
 ## Requirements
 
-- Node.js 22.19.0 or newer, which is what the packages declare in `engines`.
+- Node.js 26.4.0 or newer, which is what the packages declare in `engines`.
 - An npm-compatible package manager. Your workspace declaration names the one
   targets run their tools through: pnpm or Bun. The install flow
   has a live implementation only for pnpm, and a Bun declaration fails with a
@@ -81,7 +81,7 @@ workspace-relative directory. The workspace declaration names it:
 import { Smithers as S } from "@smthrs/targets"
 
 const packageJson = S.file("//package.json")
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const packageManager = S.PackageManager.Pnpm({ version: "11.21.0", runtime })
 
 export const Workspace = S.Workspace("demo", {

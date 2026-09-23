@@ -434,7 +434,7 @@ describe("template merge", () => {
     type: "module",
     license: "MIT",
     author: "flows",
-    engines: { node: ">=22.19.0" },
+    engines: { node: ">=26.4.0" },
     scripts: PackageJsonTemplate.standardScripts
   })
 
@@ -451,7 +451,7 @@ describe("template merge", () => {
       [[lib, "//packages/widget:lib"]]
     )
     expect(fields["author"]).toBe("flows")
-    expect(fields["engines"]).toEqual({ node: ">=22.19.0" })
+    expect(fields["engines"]).toEqual({ node: ">=26.4.0" })
     // The package wins on license; scripts merge rather than replace.
     expect(fields["license"]).toBe("Apache-2.0")
     expect(fields["scripts"]).toEqual({

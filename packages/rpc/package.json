@@ -29,7 +29,7 @@
     "dprint": "0.55.2",
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
-    "@types/node": "25.9.5",
+    "@types/node": "26.4.1",
     "vitest": "5.0.0"
   }
 }

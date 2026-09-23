@@ -24,7 +24,7 @@ does not satisfy the peer range, and two copies of `effect` in one program are
 two sets of service tags.
 
 The package ships as ESM and CommonJS with TypeScript declarations, and its
-`engines` field asks for Node.js 22.19.0 or later, which is the toolchain that
+`engines` field asks for Node.js 26.4.0 or later, which is the toolchain that
 installs and builds it rather than a runtime the code needs. Its other runtime
 dependencies install with it:
 

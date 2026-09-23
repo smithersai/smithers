@@ -11,7 +11,7 @@ import * as PackageManager from "@smthrs/targets/PackageManager"
 import * as Runtime from "@smthrs/targets/Runtime"
 
 /** The runtime every test target runs under. */
-export const runtime = Runtime.Node({ version: ">=22.19.0" })
+export const runtime = Runtime.Node({ version: ">=26.4.0" })
 
 /** The package manager every test target runs its tool through. */
 export const packageManager = PackageManager.Pnpm({ version: "11.21.0", runtime })

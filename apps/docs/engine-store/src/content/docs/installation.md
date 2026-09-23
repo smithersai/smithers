@@ -16,7 +16,7 @@ tag:
 pnpm add @smthrs/engine-store@next
 ```
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. Its runtime dependencies, including
 [`effect`](https://effect.website) and the `@smthrs/*` storage packages it
 composes, install with it. Every surface on this site is an Effect service:

@@ -34,7 +34,7 @@ one entry of it, and nothing else.
 `@smthrs/mcp` is not published to npm yet. Its source is on
 [GitHub](https://github.com/smithersai/smithers).
 
-It needs Node.js 22.19+ (Node 22) or 24.11+. Opening a connection requires two services
+It needs Node.js 26.4.0 or later. Opening a connection requires two services
 from the caller's environment: Effect's `ChildProcessSpawner`, because an MCP
 server is a subprocess, and a `Scope`, because closing the scope tears that
 subprocess down. `@effect/platform-node` supplies the spawner on Node. For the

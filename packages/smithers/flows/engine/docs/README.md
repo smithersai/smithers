@@ -32,7 +32,7 @@ when running a step twice would be worse than running it late.
 pnpm add @smthrs/engine@next @smthrs/flow@next
 ```
 
-Node 22.19.0 or later, plus a platform crypto service.
+Node 26.4.0 or later, plus a platform crypto service.
 
 Everything here is built on [Effect](https://effect.website). Flows, actions,
 and the engine itself are Effect values, you compose them as layers, and the

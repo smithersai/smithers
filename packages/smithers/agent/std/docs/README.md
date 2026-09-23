@@ -48,8 +48,7 @@ pnpm add @smthrs/std@next @effect/platform-node@4.0.0-rc.115 @effect/platform-no
 
 The package publishes release candidates to the `next` dist-tag. The handlers
 ask the host for services such as `FileSystem`, `Path`, and
-`ChildProcessSpawner`. `@effect/platform-node` supplies them on Node.js 22.19.0
-or later. For the browser-safe subset and the service each handler requires, see
+`ChildProcessSpawner`. `@effect/platform-node` supplies them on Node.js 26.4.0 or later. For the browser-safe subset and the service each handler requires, see
 [Installation](./installation.md).
 
 ## Read a file, bounded and disclosed

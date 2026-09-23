@@ -49,7 +49,7 @@ release candidate publishes under the `next` tag, which is what this installs:
 pnpm add @smthrs/run-store@next effect@4.0.0-rc.115 @effect/sql-sqlite-node@4.0.0-rc.115
 ```
 
-Node.js 22.19.0 or later. [Installation](./installation.md) covers the import
+Node.js 26.4.0 or later. [Installation](./installation.md) covers the import
 forms and the two services a composition has to supply.
 
 ## Take a run, do the work, settle it

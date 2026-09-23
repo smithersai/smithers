@@ -188,7 +188,7 @@ argument is validated before the import is attempted, so a mistyped key raises
 `INVALID_INPUT` instead of sending an operator to look at Node versions.
 
 **What to do.** Change the runtime, not the call. Web Crypto and Ed25519 are
-both available on Node.js 22.19.0 and later, which is the version this package
+both available on Node.js 26.4.0 and later, which is the version this package
 requires. Seeing `UNSUPPORTED` means the code is running somewhere
 else: an old Node.js, a restricted edge runtime, or an insecure browser context
 where `crypto.subtle` is not exposed.

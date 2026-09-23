@@ -24,7 +24,7 @@ The installed manifest resolves to the synchronized RC:
 
 ## Requirements
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - [`effect`](https://effect.website) 4.0.0-rc.115, which supplies the `Effect`,
   `Schema`, `Clock`, and SQL client types this package's signatures use.
 - [`@smthrs/control`](https://control.smithers.sh/reference/api/), the authoritative launch boundary. The

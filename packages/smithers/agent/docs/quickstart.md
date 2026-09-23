@@ -15,7 +15,7 @@ A runnable version of this walkthrough lives in the Smithers repository, as
 
 ## Prerequisites
 
-- Node.js 22.19+ (Node 22) or 24.11+.
+- Node.js 26.4.0 or later.
 - A package with the dependencies installed:
 
 ```bash

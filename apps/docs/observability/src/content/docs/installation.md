@@ -12,7 +12,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 pnpm add @smthrs/observability@next
 ```
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations.
 
 ## Pin the same Effect release

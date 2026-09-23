@@ -56,7 +56,7 @@ class, no registration call, and no inheritance.
 pnpm add @smthrs/plugin@next effect@4.0.0-rc.115
 ```
 
-Node.js 22.19.0 or later is required. For the runtime requirements, the import
+Node.js 26.4.0 or later is required. For the runtime requirements, the import
 forms, and the subpaths the export map blocks, see
 [Installation](/installation/).
 

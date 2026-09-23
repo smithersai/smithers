@@ -39,8 +39,7 @@ effort for containment.
 ## Two consequences you can rely on
 
 **The bundle runs unchanged under Node.** Nothing in it requires the Bun
-runtime, so a program composed on `BunHost.layer` executes on Node 22.19.0 or
-later as well. That is not a compatibility shim; it is what "the same modules"
+runtime, so a program composed on `BunHost.layer` executes on Node 26.4.0 or later as well. That is not a compatibility shim; it is what "the same modules"
 means. The package declares both floors in `engines`.
 
 **Recorded durable behavior does not require a Bun-specific flow.** The same

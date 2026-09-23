@@ -18,7 +18,7 @@ landing page.
 
 - A project that can import `@smthrs/ui-styleguide`. See
   [Installation](./installation.md).
-- Node.js 22.19.0 or later, for `--experimental-strip-types`.
+- Node.js 26.4.0 or later, for `--experimental-strip-types`.
 
 ## Write the generator
 

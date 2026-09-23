@@ -14,7 +14,7 @@ the agent loop does; driving the whole loop comes after.
 ## Before you start
 
 Install the package as described in [Installation](/installation/). You
-need Node.js 22.19+ (Node 22) or 24.11+.
+need Node.js 26.4.0 or later.
 
 ## Write the program
 
@@ -82,7 +82,7 @@ console.log("second outcome:", JSON.stringify(second.outcome))
 node quickstart.ts
 ```
 
-Node 22.19 runs the TypeScript file directly. The output is:
+Node 26.4 runs the TypeScript file directly. The output is:
 
 ```text
 first prints: "hello!"

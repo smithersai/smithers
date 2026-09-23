@@ -3,9 +3,9 @@
 Use the Node release in `.node-version` at the root. It is the one release CI
 installs and the Cloud runner bootstraps, and fnm, nvm and asdf read that file,
 so `fnm use` or `nvm use` in the checkout gives you the same Node the gates run.
-Published packages support a wider range (`engines.node`, Node 22.19+ within
-Node 22 or Node 24.11+); that floor is what consumers may run, not what this
-workspace develops on. Install the pinned package manager (`pnpm@11.25.0`), then
+Published packages support a wider range (`engines.node`, Node 26.4.0 or
+later); that floor is what consumers may run, not what this workspace develops
+on. Install the pinned package manager (`pnpm@11.25.0`), then
 dependencies with `pnpm install`.
 
 Before opening a pull request, run every gate:
@@ -366,15 +366,14 @@ gh workflow run release.yml -f releaseTag=v<version> -f dryRun=true
 ```
 
 `node scripts/release-rehearsal.mjs --tag v<version>` runs the same workflow's
-`run:` bodies locally, against the tree you have. The workflow pins two Node
-lines, 22.19.0 for the gates and 24.11.0 for the floor smoke test, and each
+`run:` bodies locally, against the tree you have. The workflow pins the
+supported floor, Node 26.4.0, for the gates and the smoke test, and each
 `setup-node` step switches PATH to the toolchain pinned for its version, so
-pass a bin directory for each:
+pass a bin directory for it:
 
 ```sh
 node scripts/release-rehearsal.mjs --tag v<version> \
-  --node 22.19.0=/path/to/node-22.19.0/bin \
-  --node 24.11.0=/path/to/node-24.11.0/bin
+  --node 26.4.0=/path/to/node-26.4.0/bin
 ```
 
 A version with no `--node` pin keeps the toolchain already on PATH, and the

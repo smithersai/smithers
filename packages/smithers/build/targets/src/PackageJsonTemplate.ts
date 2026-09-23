@@ -184,7 +184,7 @@ export const assertNotManagerOwned = (where: string, fields: Readonly<Record<str
  * export const template = Smithers.PackageJsonTemplate.make({
  *   license: "MIT",
  *   author: "flows",
- *   engines: { node: ">=22.19.0" },
+ *   engines: { node: ">=26.4.0" },
  *   scripts: Smithers.PackageJsonTemplate.standardScripts
  * })
  * ```

@@ -34,15 +34,6 @@ if (installed) {
     process.exit(1)
   }
 } else {
-  // Type stripping is experimental on Node 22, and its warning would prepend a
-  // paragraph of noise to every development invocation. Only that one warning
-  // is dropped; everything else still reaches stderr.
-  const emitWarning = process.emitWarning.bind(process)
-  process.emitWarning = (warning, ...rest) => {
-    const type = typeof rest[0] === "string" ? rest[0] : rest[0]?.type
-    if (type === "ExperimentalWarning" && String(warning).includes("Type Stripping")) return
-    emitWarning(warning, ...rest)
-  }
   entry = new URL("../src/routesBin.ts", import.meta.url)
 }
 

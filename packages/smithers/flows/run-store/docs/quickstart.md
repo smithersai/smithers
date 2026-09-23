@@ -14,7 +14,7 @@ normal run, and read back the row a restart would have found.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - The package installed:
 
 ```bash

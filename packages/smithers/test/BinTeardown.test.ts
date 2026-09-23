@@ -176,7 +176,7 @@ describe("smithers entrypoint", () => {
         failure(
           new entrypoint.database.UnsupportedDatabase({
             code: "unsupported_runtime",
-            message: "the durable engine requires Node.js >=22.19.0"
+            message: "the durable engine requires Node.js >=26.4.0"
           })
         )
       )
@@ -188,7 +188,7 @@ describe("smithers entrypoint", () => {
 
     expect(written).toEqual([
       "NoMatchingWait: no wait matched\n",
-      "unsupported_runtime: the durable engine requires Node.js >=22.19.0\n",
+      "unsupported_runtime: the durable engine requires Node.js >=26.4.0\n",
       "a bare string\n"
     ])
   })

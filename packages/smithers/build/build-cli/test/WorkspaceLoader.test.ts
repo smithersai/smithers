@@ -14,7 +14,7 @@ const workspace = S.Workspace("unit", {
   runtime: S.Runtime.Node({ version: "26" }),
   packageManager: S.PackageManager.Pnpm({
     version: "11.21.0",
-    runtime: S.Runtime.Node({ version: ">=22.19.0" })
+    runtime: S.Runtime.Node({ version: ">=26.4.0" })
   }),
   nodeModules: S.Npm.NodeModules({ packageJson: S.file("//package.json") })
 })

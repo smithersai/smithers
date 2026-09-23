@@ -21,7 +21,7 @@ module the `Canonical` codec is built on, the examples in these pages import
 program are two sets of service tags. Effect 3 does not satisfy that peer
 dependency, and the schema APIs these pages use exist only in Effect 4.
 
-The package requires Node.js 22.19.0 or later and ships as both ESM and
+The package requires Node.js 26.4.0 or later and ships as both ESM and
 CommonJS with TypeScript declarations. The serializer has no native bindings,
 no platform layer, and no filesystem or network access, so it runs unchanged in
 Node.js, in Bun, and in a browser bundle.

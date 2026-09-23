@@ -238,10 +238,9 @@ test("only the re-run guard, candidate preparation and publication select a path
     "Build all workspaces from clean artifacts",
     "Review declaration API drift",
     "Retrieve native helpers for npm",
+    "Install the supported Node floor",
+    "Install certified npm for the Node floor",
     "Pack and smoke-test release artifacts",
-    "Install the supported Node 24 floor",
-    "Install certified npm for Node 24",
-    "Smoke release artifacts on the Node 24 floor",
     "Restore and verify archived release candidate",
     "Collect ci-test-tier-evidence",
     "Upload ci-test-tier-evidence",
@@ -267,17 +266,14 @@ test("release builds the checked public graph and pins npm before smoke", () => 
   assert.ok(release.jobs.publish.steps.indexOf(install) < release.jobs.publish.steps.indexOf(step("Workspace targets")))
 })
 
-test("both supported runtime floors smoke the same tarballs and retain separate receipts", () => {
-  const node22 = step("Pack and smoke-test release artifacts")
-  const node24 = step("Smoke release artifacts on the Node 24 floor")
-  assert.equal(node24.env.PACK_DIR, node22.env.PACK_DIR)
-  assert.equal(node24.env.SMOKE_EVIDENCE_DIR, node22.env.SMOKE_EVIDENCE_DIR)
-  assert.equal(step("Install the supported Node 24 floor").with["node-version"], "24.11.0")
-  assert.match(step("Install certified npm for Node 24").run, /npm install --global 'npm@11\.16\.0'/)
+test("the supported Node floor packs and smokes the tarballs and retains its receipt", () => {
+  const smoke = step("Pack and smoke-test release artifacts")
+  assert.equal(step("Install the supported Node floor").with["node-version"], "26.4.0")
+  assert.match(step("Install certified npm for the Node floor").run, /npm install --global 'npm@11\.16\.0'/)
   const names = release.jobs.publish.steps.map((candidate) => candidate.name)
-  assert.ok(names.indexOf(node22.name) < names.indexOf("Install the supported Node 24 floor"))
-  assert.ok(names.indexOf("Install certified npm for Node 24") < names.indexOf(node24.name))
-  assert.ok(names.indexOf(node24.name) < names.indexOf("Archive tested release artifacts"))
+  assert.ok(names.indexOf("Install the supported Node floor") < names.indexOf("Install certified npm for the Node floor"))
+  assert.ok(names.indexOf("Install certified npm for the Node floor") < names.indexOf(smoke.name))
+  assert.ok(names.indexOf(smoke.name) < names.indexOf("Archive tested release artifacts"))
   const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-runtime-smoke-workflow-")))
   try {
     const bin = join(root, "bin")
@@ -302,18 +298,13 @@ test("both supported runtime floors smoke the same tarballs and retain separate 
       MOCK_NODE_DRIVER: driver, PACK_DIR: join(root, "packs"), SMOKE_EVIDENCE_DIR: join(root, "receipts"), TRACE: join(root, "trace.jsonl") }
     const run = (body, version) => spawnSync("bash", ["-e", "-c", body], { cwd: root,
       env: { ...env, MOCK_NODE_VERSION: version }, encoding: "utf8" })
-    const first = run(node22.run, "v22.19.0")
-    assert.equal(first.status, 0, first.stderr)
-    const preserved = readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node22.json"))
-    assert.notEqual(run(node24.run, "v22.19.0").status, 0, "a skipped setup action cannot mislabel Node22 as Node24")
-    assert.equal(existsSync(join(env.SMOKE_EVIDENCE_DIR, "node24.json")), false)
-    const second = run(node24.run, "v24.11.0")
-    assert.equal(second.status, 0, second.stderr)
-    assert.deepEqual(readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node22.json")), preserved)
-    assert.deepEqual(JSON.parse(readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node24.json"), "utf8")), { bytes: "fixed candidate bytes", node: "v24.11.0" })
+    assert.notEqual(run(smoke.run, "v26.5.0").status, 0, "a skipped setup action cannot mislabel another Node as the floor")
+    assert.equal(existsSync(join(env.SMOKE_EVIDENCE_DIR, "node26.json")), false)
+    const floor = run(smoke.run, "v26.4.0")
+    assert.equal(floor.status, 0, floor.stderr)
+    assert.deepEqual(JSON.parse(readFileSync(join(env.SMOKE_EVIDENCE_DIR, "node26.json"), "utf8")), { bytes: "fixed candidate bytes", node: "v26.4.0" })
     const calls = readFileSync(env.TRACE, "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    assert.deepEqual(calls, [["scripts/pack-release.mjs", env.PACK_DIR, "v22.19.0"],
-      ["scripts/smoke-release.mjs", env.PACK_DIR, "v22.19.0"], ["scripts/smoke-release.mjs", env.PACK_DIR, "v24.11.0"]])
+    assert.deepEqual(calls, [["scripts/pack-release.mjs", env.PACK_DIR, "v26.4.0"], ["scripts/smoke-release.mjs", env.PACK_DIR, "v26.4.0"]])
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
@@ -326,7 +317,7 @@ test("archived retries restore an explicit immutable artifact without rebuilding
       contexts.env = jobEnv(contexts)
       assert.equal(condition(step("Build all workspaces from clean artifacts").if, contexts), !restore)
       assert.equal(condition(step("Pack and smoke-test release artifacts").if, contexts), !restore)
-      for (const name of ["Install the supported Node 24 floor", "Install certified npm for Node 24", "Smoke release artifacts on the Node 24 floor"]) {
+      for (const name of ["Install the supported Node floor", "Install certified npm for the Node floor"]) {
         assert.equal(condition(step(name).if, contexts), !restore)
       }
       assert.equal(condition(step("Restore and verify archived release candidate").if, contexts), restore)
@@ -507,25 +498,25 @@ test("the driver switches PATH to the toolchain each setup-node step pins", () =
       "name: Fixture", "jobs:", "  publish:", "    steps:",
       "      - uses: actions/setup-node@v4",
       "        with:",
-      "          node-version: 22.19.0",
+      "          node-version: 26.5.0",
       "      - name: Gate on the default line",
-      "        run: test \"$(node --version)\" = 'v22.19.0'",
-      "      - name: Install the supported Node 24 floor",
+      "        run: test \"$(node --version)\" = 'v26.5.0'",
+      "      - name: Install the supported Node floor",
       "        uses: actions/setup-node@v4",
       "        with:",
-      "          node-version: 24.11.0",
+      "          node-version: 26.4.0",
       "      - name: Gate on the floor line",
-      "        run: test \"$(node --version)\" = 'v24.11.0'"
+      "        run: test \"$(node --version)\" = 'v26.4.0'"
     ].join("\n"))
     const result = spawnSync(process.execPath, [
       join(root, "scripts/release-rehearsal.mjs"), "--workflow", "workflow.yml",
       "--transcript", join(root, "transcript.json"),
-      "--node", `22.19.0=${toolchain("22.19.0")}`, "--node", `24.11.0=${toolchain("24.11.0")}`
+      "--node", `26.5.0=${toolchain("26.5.0")}`, "--node", `26.4.0=${toolchain("26.4.0")}`
     ], { encoding: "utf8", timeout: 30_000 })
     assert.equal(result.status, 0, result.stdout + result.stderr)
     const transcript = JSON.parse(readFileSync(join(root, "transcript.json"), "utf8"))
     assert.deepEqual(transcript.steps.map((entry) => entry.status), ["skipped", "passed", "skipped", "passed"])
-    assert.match(result.stdout, /PATH now resolves Node 24\.11\.0/)
+    assert.match(result.stdout, /PATH now resolves Node 26\.4\.0/)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

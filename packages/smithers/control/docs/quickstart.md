@@ -17,7 +17,7 @@ stream that says it again from durable evidence.
 
 ## Prerequisites
 
-- Node.js 22.19.0 or later.
+- Node.js 26.4.0 or later.
 - A package with the dependency installed:
 
 ```bash

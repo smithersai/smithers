@@ -96,7 +96,7 @@ const packageJson = S.file("//package.json")
 export const Workspace = S.Workspace("ui-devkit-refusal", {
   repository: "git+https://example.invalid/ui-devkit-refusal.git",
   cache: S.Cache({ directory: ".flows" }),
-  runtime: S.Runtime.Node({ version: ">=22.19.0" }),
+  runtime: S.Runtime.Node({ version: ">=26.4.0" }),
   packageManager: S.PackageManager.Pnpm({ manifest: packageJson, lockfile: S.file("//pnpm-lock.yaml") }),
   nodeModules: S.Npm.NodeModules({ packageJson }),
   sandboxes: S.Sandboxes({ default: S.Sandbox.None() })

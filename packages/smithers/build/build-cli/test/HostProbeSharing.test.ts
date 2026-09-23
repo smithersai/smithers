@@ -52,7 +52,7 @@ it.skipIf(process.platform === "win32")(
       await write(
         "WORKSPACE.ts",
         `import { Smithers as S } from "@smthrs/targets"
-const runtime = S.Runtime.Node({ version: ">=22.19.0" })
+const runtime = S.Runtime.Node({ version: ">=26.4.0" })
 const foundry = S.Foundry.Toolchain({ config: S.file("//foundry.toml") })
 export const Workspace = S.Workspace("owned-host-probe-sharing", {
   repository: "git+https://example.invalid/owned-host-probe-sharing.git",

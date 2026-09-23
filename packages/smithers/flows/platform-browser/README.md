@@ -149,7 +149,7 @@ fix is at https://platform-browser.smithers.sh/troubleshooting/.
 Every entry point bundles for a browser, `BrowserHost` included: no published
 module resolves a `node:` built-in, so no bundler asks for a polyfill it cannot
 supply. The package ships as ESM and CommonJS with TypeScript declarations, and
-its `engines` field asks for Node.js 22.19.0 or later, which is the toolchain
+its `engines` field asks for Node.js 26.4.0 or later, which is the toolchain
 that installs and builds it rather than a runtime the code needs.
 
 A tab runs the memory engine and the capability kernel over these adapters. The

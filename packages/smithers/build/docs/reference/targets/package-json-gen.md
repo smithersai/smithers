@@ -17,7 +17,7 @@ import { packageManager } from "../../PACKAGE.ts"
 export const template = Smithers.PackageJsonTemplate.make({
   license: "MIT",
   author: "Smithers",
-  engines: { node: ">=22.19.0" },
+  engines: { node: ">=26.4.0" },
   scripts: Smithers.PackageJsonTemplate.standardScripts
 })
 

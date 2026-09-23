@@ -82,7 +82,7 @@ function DatabaseBody({ props, set: runCommandSet }: ExperimentalPaneContext) {
               { label: "filename", value: ".smithers/smithers.db", mono: true },
               { label: "ladder", value: "40 attempts · 5 → 250 ms" },
               { label: "guard", value: "flows_migrations present", mono: true },
-              { label: "nodeFloor", value: ">=22.19.0", mono: true },
+              { label: "nodeFloor", value: ">=26.4.0", mono: true },
               { label: "release", value: "1.0.0-rc.0", mono: true },
               { label: "ignored", value: "SMITHERS_TEST_PG_URL", mono: true }
             ]} />
