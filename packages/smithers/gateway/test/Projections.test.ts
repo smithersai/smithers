@@ -16,6 +16,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Control } from "@smthrs/control/Control"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { ApprovalPayload, ApprovalTarget, PlanCard } from "@smthrs/control/ControlSchema"
+import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { RunStore } from "@smthrs/run-store/RunStore"
 import { Deferred, Effect, Fiber, Schema, type Scope, Stream } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -625,19 +626,24 @@ describe("the flow-durations projection", () => {
     Effect.gen(function*() {
       const projections = yield* Projections
       const sql = yield* SqlClient.SqlClient
+      const writer = yield* DurableWriter
       // Real persisted run rows: the last twenty terminal runs are beyond the
       // generic listing ceiling and interleaved with unfinished executions.
-      for (let index = 0; index < 541; index++) {
-        const runId = `history-${String(index).padStart(3, "0")}`
-        const status = index > 500 && index % 2 === 0 ?
-          "suspended"
-          : (["completed", "failed", "cancelled"] as const)[index % 3]!
-        yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
+      // Commit the historical fixture together; snapshots still read durable
+      // rows without paying for 1,623 separate commits on the Windows runner.
+      yield* writer.write(Effect.gen(function*() {
+        for (let index = 0; index < 541; index++) {
+          const runId = `history-${String(index).padStart(3, "0")}`
+          const status = index > 500 && index % 2 === 0 ?
+            "suspended"
+            : (["completed", "failed", "cancelled"] as const)[index % 3]!
+          yield* sql`INSERT INTO flows_runs (run_id, status, created_at_ms, state_json)
           VALUES (${runId}, ${status}, ${index}, ${
-          JSON.stringify({ version: 1, flowName: "system/test", payload: {} })
-        })`
-        yield* executed(runId, "compile", "build", 1_000, index > 500 ? 100 : 99_000)
-      }
+            JSON.stringify({ version: 1, flowName: "system/test", payload: {} })
+          })`
+          yield* executed(runId, "compile", "build", 1_000, index > 500 ? 100 : 99_000)
+        }
+      }))
       const selector = { _tag: "flow-durations" as const, flowId: "system/test" }
       expect((yield* projections.snapshot(selector)).rows).toEqual([
         { flowId: "system/test", actionTag: "build", samples: 20, p50Ms: 100, p90Ms: 100 }
