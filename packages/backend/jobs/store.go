@@ -122,16 +122,20 @@ func (store *Store) AdmitInTx(ctx context.Context, tx pgx.Tx, input Admission) (
 		var existingID string
 		var existingFingerprint []byte
 		var existingReceipt json.RawMessage
+		var samePayload bool
 		err = tx.QueryRow(ctx, `
-			SELECT id, payload_fingerprint, request_receipt
+			SELECT id, payload_fingerprint, request_receipt, payload=$5::jsonb
 			FROM product_job_requests
 			WHERE tenant_id=$1 AND principal_id=$2 AND operation=$3 AND request_id=$4`,
 			input.Scope.TenantID, input.Scope.PrincipalID, input.Operation, input.RequestID,
-		).Scan(&existingID, &existingFingerprint, &existingReceipt)
+			payload,
+		).Scan(&existingID, &existingFingerprint, &existingReceipt, &samePayload)
 		if err != nil {
 			return RequestReceipt{}, err
 		}
-		if !bytes.Equal(existingFingerprint, fingerprint[:]) {
+		// Exact number spellings may differ (1e3 and 1000), including from
+		// fingerprints written before number-preserving canonicalization.
+		if !bytes.Equal(existingFingerprint, fingerprint[:]) && !samePayload {
 			return RequestReceipt{}, ErrPayloadConflict
 		}
 		if err := json.Unmarshal(existingReceipt, &receipt); err != nil {

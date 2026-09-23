@@ -12,6 +12,17 @@ import (
 // cancelled immediately. Claimed work remains fenced to its owner, whose
 // heartbeat observes the request and acknowledges the terminal receipt.
 func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operationID string) (Operation, error) {
+	return store.requestCancellation(ctx, scope, operationID, false)
+}
+
+// RequestCancellationForWorker records intent without settling ready work.
+// The worker must complete its durable projection or cleanup before writing a
+// cancellation receipt. Reconciliation remains required after failure or crash.
+func (store *Store) RequestCancellationForWorker(ctx context.Context, scope Scope, operationID string) (Operation, error) {
+	return store.requestCancellation(ctx, scope, operationID, true)
+}
+
+func (store *Store) requestCancellation(ctx context.Context, scope Scope, operationID string, requireWorker bool) (Operation, error) {
 	if err := scope.validate(); err != nil {
 		return Operation{}, err
 	}
@@ -46,6 +57,14 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 		}
 		return operation, nil
 	}
+	if requireWorker {
+		if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
+			SET reconcile_required=true, updated_at=clock_timestamp()
+			WHERE operation_id=$1`, operationID); err != nil {
+			return Operation{}, err
+		}
+		operation.NeedsReconciliation = true
+	}
 	if operation.CancellationRequested {
 		if err := tx.Commit(ctx); err != nil {
 			return Operation{}, err
@@ -58,7 +77,7 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 		return Operation{}, err
 	}
 	data := json.RawMessage(`{"kind":"requested"}`)
-	if dispatchStatus == "ready" && !externalStarted {
+	if dispatchStatus == "ready" && !externalStarted && !requireWorker {
 		data = json.RawMessage(`{"kind":"cancelled-before-dispatch"}`)
 		if _, err := tx.Exec(ctx, `UPDATE product_job_requests
 			SET state='cancelled', terminal_receipt=$2, updated_at=clock_timestamp()
@@ -73,7 +92,7 @@ func (store *Store) RequestCancellation(ctx context.Context, scope Scope, operat
 			return Operation{}, err
 		}
 	} else {
-		// External work must be reconciled promptly even when previously parked.
+		// Required worker reconciliation must run promptly even when parked.
 		if dispatchStatus == "ready" {
 			if _, err := tx.Exec(ctx, `UPDATE product_job_dispatches
 				SET next_attempt_at=clock_timestamp(), updated_at=clock_timestamp()

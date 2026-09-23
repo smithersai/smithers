@@ -12,12 +12,13 @@ import (
 )
 
 type claimRecord struct {
-	Status            string
-	State             State
-	Policy            EffectPolicy
-	ExternalStartedAt *time.Time
-	ExternalAttempt   int
-	CancelRequested   bool
+	Status              string
+	State               State
+	Policy              EffectPolicy
+	ExternalStartedAt   *time.Time
+	ExternalAttempt     int
+	CancelRequested     bool
+	NeedsReconciliation bool
 }
 
 // Claim takes one ready external operation without blocking other workers.
@@ -154,7 +155,7 @@ func lockClaim(ctx context.Context, tx pgx.Tx, claim Claim) (claimRecord, error)
 	err := tx.QueryRow(ctx, `
 		SELECT dispatch.status, request.state, dispatch.effect_policy, dispatch.external_started_at,
 		       dispatch.external_attempt,
-		       request.cancellation_requested
+		       request.cancellation_requested, dispatch.reconcile_required
 		FROM product_job_dispatches dispatch
 		JOIN product_job_requests request ON request.id=dispatch.operation_id
 		WHERE dispatch.operation_id=$1 AND dispatch.claim_token=$2
@@ -162,7 +163,7 @@ func lockClaim(ctx context.Context, tx pgx.Tx, claim Claim) (claimRecord, error)
 		  AND dispatch.status='claimed'
 		  AND dispatch.lease_expires_at > clock_timestamp()
 		FOR UPDATE OF dispatch, request`, claim.OperationID, claim.Token, claim.Generation, claim.WorkerID).Scan(
-		&record.Status, &record.State, &record.Policy, &record.ExternalStartedAt, &record.ExternalAttempt, &record.CancelRequested,
+		&record.Status, &record.State, &record.Policy, &record.ExternalStartedAt, &record.ExternalAttempt, &record.CancelRequested, &record.NeedsReconciliation,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return claimRecord{}, ErrClaimLost
@@ -441,13 +442,13 @@ func (store *Store) Abandon(ctx context.Context, claim Claim, cause error, delay
 	if cause != nil {
 		message = cause.Error()
 	}
-	if err := recoverClaim(ctx, tx, claim.Scope, claim.OperationID, record.Policy, record.ExternalStartedAt != nil, record.CancelRequested, message, delay); err != nil {
+	if err := recoverClaim(ctx, tx, claim.Scope, claim.OperationID, record.Policy, record.ExternalStartedAt != nil, record.CancelRequested, record.NeedsReconciliation, message, delay); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID string, policy EffectPolicy, externalStarted, cancelRequested bool, message string, delay time.Duration) error {
+func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID string, policy EffectPolicy, externalStarted, cancelRequested, reconciliationRequired bool, message string, delay time.Duration) error {
 	if externalStarted && policy == EffectUnsafe {
 		receipt, _ := json.Marshal(map[string]any{"kind": "uncertain", "reason": message})
 		if _, err := tx.Exec(ctx, `UPDATE product_job_requests
@@ -464,7 +465,7 @@ func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID strin
 		_, err := appendEvent(ctx, tx, scope, operationID, "operation.uncertain", StateUncertain, receipt)
 		return err
 	}
-	if cancelRequested && !externalStarted {
+	if cancelRequested && !externalStarted && !reconciliationRequired {
 		receipt := json.RawMessage(`{"kind":"cancelled-before-external-effect"}`)
 		if _, err := tx.Exec(ctx, `UPDATE product_job_requests
 			SET state='cancelled', terminal_receipt=$2, updated_at=clock_timestamp()
@@ -480,7 +481,7 @@ func recoverClaim(ctx context.Context, tx pgx.Tx, scope Scope, operationID strin
 		_, err := appendEvent(ctx, tx, scope, operationID, "operation.cancelled", StateCancelled, receipt)
 		return err
 	}
-	reconcile := externalStarted && (policy == EffectReconcile || cancelRequested)
+	reconcile := (externalStarted && (policy == EffectReconcile || cancelRequested)) || (cancelRequested && reconciliationRequired)
 	nextState := StateAccepted
 	if reconcile {
 		nextState = StateWaiting
@@ -555,25 +556,25 @@ func (store *Store) recoverOne(ctx context.Context, operations []string) (bool, 
 	var scope Scope
 	var operationID string
 	var policy EffectPolicy
-	var externalStarted, cancelRequested bool
+	var externalStarted, cancelRequested, reconciliationRequired bool
 	err = tx.QueryRow(ctx, `
 		SELECT request.tenant_id, request.principal_id, dispatch.operation_id,
 		       dispatch.effect_policy, dispatch.external_started_at IS NOT NULL,
-		       request.cancellation_requested
+		       request.cancellation_requested, dispatch.reconcile_required
 		FROM product_job_dispatches dispatch
 		JOIN product_job_requests request ON request.id=dispatch.operation_id
 		WHERE dispatch.status='claimed' AND dispatch.lease_expires_at <= clock_timestamp()
 		  AND (cardinality($1::text[]) = 0 OR request.operation = ANY($1::text[]))
 		ORDER BY dispatch.lease_expires_at, dispatch.operation_id
 		FOR UPDATE OF dispatch, request SKIP LOCKED
-		LIMIT 1`, operations).Scan(&scope.TenantID, &scope.PrincipalID, &operationID, &policy, &externalStarted, &cancelRequested)
+		LIMIT 1`, operations).Scan(&scope.TenantID, &scope.PrincipalID, &operationID, &policy, &externalStarted, &cancelRequested, &reconciliationRequired)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	if err := recoverClaim(ctx, tx, scope, operationID, policy, externalStarted, cancelRequested, "claim lease expired", 0); err != nil {
+	if err := recoverClaim(ctx, tx, scope, operationID, policy, externalStarted, cancelRequested, reconciliationRequired, "claim lease expired", 0); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -606,6 +607,21 @@ func (store *Store) ResolveUncertain(ctx context.Context, scope Scope, operation
 		return err
 	}
 	defer rollback(tx)
+	// Cancellation and worker mutations acquire dispatch before request. Use
+	// the same order so resolving an uncertain operation cannot deadlock with
+	// a concurrent cancellation that is checking its terminal state.
+	var lockedID string
+	err = tx.QueryRow(ctx, `SELECT dispatch.operation_id
+		FROM product_job_dispatches dispatch
+		JOIN product_job_requests request ON request.id=dispatch.operation_id
+		WHERE request.tenant_id=$1 AND request.principal_id=$2 AND request.id=$3
+		FOR UPDATE OF dispatch`, scope.TenantID, scope.PrincipalID, operationID).Scan(&lockedID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
 	operation, err := queryOperation(ctx, tx, scope, operationID, true)
 	if err != nil {
 		return err

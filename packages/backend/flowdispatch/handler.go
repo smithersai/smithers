@@ -199,7 +199,9 @@ func (service *Service) handleApproval(ctx context.Context, lease *jobs.Lease) e
 	if err != nil {
 		return safeFailure{code: "launch_projection_unavailable", retryable: true}
 	}
-	if origin.Operation != OperationLaunch || origin.State.Terminal() || origin.CancellationRequested {
+	// Once a delivery may have reached Control, replay its durable receipt even
+	// if the launch settled meanwhile. Product state only gates a first call.
+	if origin.Operation != OperationLaunch || (len(claim.ExternalReceipt) == 0 && (origin.State.Terminal() || origin.CancellationRequested)) {
 		return service.fail(lease, "approval_no_longer_available", RuntimeCheckpoint{})
 	}
 	runtime, identity, err := service.resolve(ctx, payload.Target, payload.Identity)
@@ -258,9 +260,9 @@ func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) err
 		return err
 	}
 
-	// A terminal run cannot consume a signal. Establish that canonical fact
-	// before mutation so product code can start a new run instead of polling a
-	// wait that can never reappear.
+	// Observation verifies the requested run's Flow identity. Its terminal
+	// state cannot distinguish a lost acknowledgment for a delivered signal
+	// from a run that never took it; only Control's mutation receipt can.
 	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
 	observation, err := runtime.Observe(callContext, checkpoint.RunID, "", 1)
 	cancel()
@@ -272,9 +274,6 @@ func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) err
 		return service.fail(lease, "invalid_runtime_observation", checkpoint)
 	}
 	checkpoint.Run = &observation.Run
-	if observation.Terminal {
-		return service.fail(lease, "runtime_run_terminal", checkpoint)
-	}
 
 	callContext, cancel = context.WithTimeout(ctx, service.runtimeCallTimeout)
 	result, err := runtime.Signal(callContext, flowruntime.FlowRuntimeSignal{
@@ -292,6 +291,15 @@ func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) err
 		return service.fail(lease, "invalid_signal_receipt", checkpoint)
 	}
 	checkpoint.MutationReceipt = &result.Receipt
+	if result.Receipt.Tag == "Terminal" {
+		if result.Receipt.RunID != checkpoint.RunID || !terminalStatus(result.Receipt.Status) {
+			return service.fail(lease, "invalid_signal_receipt", checkpoint)
+		}
+		checkpoint.Run = &flowruntime.FlowRuntimeRun{
+			RunID: checkpoint.RunID, FlowID: checkpoint.FlowID, Status: result.Receipt.Status,
+		}
+		return service.fail(lease, "runtime_run_terminal", checkpoint)
+	}
 	if err := service.project(context.WithoutCancel(ctx), lease, jobs.StateCompleted, checkpoint); err != nil {
 		return err
 	}
@@ -309,7 +317,10 @@ func (service *Service) resolve(
 	callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
 	defer cancel()
 	runtime, err := service.resolver.ResolveFlowRuntime(callContext, target)
-	if err != nil || runtime == nil {
+	if err != nil {
+		return nil, flowruntime.FlowRuntimeIdentity{}, err
+	}
+	if runtime == nil {
 		return nil, flowruntime.FlowRuntimeIdentity{}, safeFailure{code: "runtime_unavailable", retryable: true}
 	}
 	identity, err := runtime.Identity(callContext)
@@ -547,32 +558,84 @@ func validMutationResult(result flowruntime.FlowRuntimeMutationResult, operation
 }
 
 func validObservationPage(previous string, observation flowruntime.FlowRuntimeObservation) bool {
-	// Control journals start at sequence zero. An absent cursor means no
-	// event has been consumed; an explicit "0" means event zero was consumed.
-	before := int64(-1)
-	if previous != "" {
-		parsed, err := strconv.ParseInt(previous, 10, 64)
-		if err != nil || parsed < 0 {
-			return false
-		}
-		before = parsed
+	before, ok := parseObservationCursor(previous)
+	if !ok {
+		return false
 	}
-	next, err := strconv.ParseInt(observation.NextCursor, 10, 64)
-	if err != nil || next < before || (observation.HasMore && next == before) {
+	next, ok := parseObservationCursor(observation.NextCursor)
+	if !ok || compareObservationCursor(next, before) < 0 || (observation.HasMore && compareObservationCursor(next, before) == 0) {
 		return false
 	}
 	last := before
 	for _, event := range observation.Events {
-		sequence := event.Sequence
+		cursor := flowruntime.EventCursor{Sequence: event.Sequence}
 		if event.Cursor != nil {
-			sequence = event.Cursor.Sequence
+			cursor = *event.Cursor
 		}
-		if sequence <= last || sequence > next {
+		if !validJournalInteger(cursor.Sequence) || (cursor.Offset != nil && !validJournalInteger(*cursor.Offset)) ||
+			compareObservationCursor(cursor, last) <= 0 {
 			return false
 		}
-		last = sequence
+		last = cursor
 	}
-	return true
+	// Never commit progress beyond the events actually returned, particularly
+	// a complete sequence marker when its last observed member was partial.
+	return compareObservationCursor(last, next) == 0
+}
+
+func parseObservationCursor(value string) (flowruntime.EventCursor, bool) {
+	// The empty seed precedes sequence zero; legacy decimals consume the whole
+	// source entry. v1 preserves Control's offset within an expanded entry.
+	if value == "" {
+		return flowruntime.EventCursor{Sequence: -1}, true
+	}
+	parts := strings.Split(value, ":")
+	if len(parts) == 3 && parts[0] == "v1" {
+		sequence, sequenceOK := parseJournalInteger(parts[1])
+		offset, offsetOK := parseJournalInteger(parts[2])
+		return flowruntime.EventCursor{Sequence: sequence, Offset: &offset}, sequenceOK && offsetOK
+	}
+	sequence, ok := parseJournalInteger(value)
+	return flowruntime.EventCursor{Sequence: sequence}, ok
+}
+
+func parseJournalInteger(value string) (int64, bool) {
+	if value == "" || (len(value) > 1 && value[0] == '0') {
+		return 0, false
+	}
+	for _, digit := range value {
+		if digit < '0' || digit > '9' {
+			return 0, false
+		}
+	}
+	number, err := strconv.ParseInt(value, 10, 64)
+	return number, err == nil && validJournalInteger(number)
+}
+
+func validJournalInteger(value int64) bool {
+	// Match the canonical Control WatchCursor's exclusive safe-integer bound.
+	return value >= 0 && value < 9007199254740991
+}
+
+func compareObservationCursor(left, right flowruntime.EventCursor) int {
+	switch {
+	case left.Sequence < right.Sequence:
+		return -1
+	case left.Sequence > right.Sequence:
+		return 1
+	case left.Offset == nil && right.Offset == nil:
+		return 0
+	case left.Offset == nil:
+		return 1
+	case right.Offset == nil:
+		return -1
+	case *left.Offset < *right.Offset:
+		return -1
+	case *left.Offset > *right.Offset:
+		return 1
+	default:
+		return 0
+	}
 }
 
 func mustJSON(value any) json.RawMessage {

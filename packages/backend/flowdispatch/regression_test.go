@@ -1,0 +1,431 @@
+package flowdispatch
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/flowruntime"
+	"github.com/smithersai/smithers/packages/backend/jobs"
+)
+
+func cursorEvent(sequence int64, offsets ...int64) flowruntime.Event {
+	cursor := &flowruntime.EventCursor{Sequence: sequence}
+	if len(offsets) != 0 {
+		cursor.Offset = &offsets[0]
+	}
+	return flowruntime.Event{Sequence: sequence, Cursor: cursor}
+}
+
+func TestObservationCursorPreservesExpansionProgress(t *testing.T) {
+	cases := []struct {
+		name, before, next string
+		events             []flowruntime.Event
+		hasMore            bool
+	}{
+		{name: "empty beginning"},
+		{name: "first partial event", next: "v1:0:0", events: []flowruntime.Event{cursorEvent(0, 0)}, hasMore: true},
+		{name: "next partial event", before: "v1:0:0", next: "v1:0:1", events: []flowruntime.Event{cursorEvent(0, 1)}, hasMore: true},
+		{name: "final expansion member", before: "v1:0:1", next: "0", events: []flowruntime.Event{cursorEvent(0)}},
+		{name: "all expanded members", next: "0", events: []flowruntime.Event{cursorEvent(0, 0), cursorEvent(0, 1), cursorEvent(0)}},
+		{name: "legacy checkpoint", before: "0", next: "1", events: []flowruntime.Event{{Sequence: 1}}},
+		{name: "expanded after legacy checkpoint", before: "0", next: "1", events: []flowruntime.Event{cursorEvent(1, 0), cursorEvent(1)}},
+		{name: "empty partial page", before: "v1:1:0", next: "v1:1:0"},
+		{name: "empty legacy page", before: "1", next: "1"},
+		{name: "highest safe journal integer", next: "9007199254740990", events: []flowruntime.Event{cursorEvent(9007199254740990)}},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			require.True(t, validObservationPage(item.before, flowruntime.Observation{
+				Events: item.events, NextCursor: item.next, HasMore: item.hasMore,
+			}))
+		})
+	}
+}
+
+func TestObservationCursorRejectsInvalidProgress(t *testing.T) {
+	cases := []struct {
+		name, before, next string
+		events             []flowruntime.Event
+		hasMore            bool
+	}{
+		{name: "duplicate partial", before: "v1:0:0", next: "v1:0:0", events: []flowruntime.Event{cursorEvent(0, 0)}},
+		{name: "regressing offset", before: "v1:0:1", next: "0", events: []flowruntime.Event{cursorEvent(0, 0)}},
+		{name: "partial after complete", before: "0", next: "v1:0:0", events: []flowruntime.Event{cursorEvent(0, 0)}},
+		{name: "duplicate final", next: "0", events: []flowruntime.Event{cursorEvent(0), cursorEvent(0)}},
+		{name: "complete then partial", next: "0", events: []flowruntime.Event{cursorEvent(0), cursorEvent(0, 0)}},
+		{name: "skipped final expansion", next: "0", events: []flowruntime.Event{cursorEvent(0, 0)}},
+		{name: "unobserved progress", next: "1"},
+		{name: "empty page claims more", hasMore: true},
+		{name: "partial page without progress", before: "v1:0:0", next: "v1:0:0", hasMore: true},
+		{name: "negative sequence", next: "0", events: []flowruntime.Event{cursorEvent(-1)}},
+		{name: "negative offset", next: "0", events: []flowruntime.Event{cursorEvent(0, -1)}},
+		{name: "unsafe sequence", next: "9007199254740991", events: []flowruntime.Event{cursorEvent(9007199254740991)}},
+		{name: "unsafe offset", next: "0", events: []flowruntime.Event{cursorEvent(0, 9007199254740991)}},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			require.False(t, validObservationPage(item.before, flowruntime.Observation{
+				Events: item.events, NextCursor: item.next, HasMore: item.hasMore,
+			}))
+		})
+	}
+	for _, invalid := range []string{"-1", "+0", "00", " 0", "0 ", "1.0", "9007199254740991", "9223372036854775808", "v2:0:0", "v1:0", "v1:0:0:0", "v1:00:0", "v1:0:+0", "v1:0:-1", "v1:0:9007199254740991"} {
+		t.Run("invalid cursor "+invalid, func(t *testing.T) {
+			require.False(t, validObservationPage(invalid, flowruntime.Observation{NextCursor: invalid}))
+		})
+	}
+}
+
+type observationFixturePage struct {
+	AfterCursor string              `json:"afterCursor"`
+	Events      []flowruntime.Event `json:"events"`
+	NextCursor  string              `json:"nextCursor"`
+	HasMore     bool                `json:"hasMore"`
+}
+
+func sharedCursorPages(t *testing.T) []observationFixturePage {
+	t.Helper()
+	data, err := os.ReadFile("../../smithers/gateway/testdata/runtime-bridge-v1.json")
+	require.NoError(t, err)
+	var fixture struct {
+		CursorPages []observationFixturePage `json:"cursorPages"`
+	}
+	require.NoError(t, json.Unmarshal(data, &fixture))
+	require.Len(t, fixture.CursorPages, 6)
+	return fixture.CursorPages
+}
+
+func TestObservationCursorsAcceptSharedGatewayWirePages(t *testing.T) {
+	for i, page := range sharedCursorPages(t) {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			require.True(t, validObservationPage(page.AfterCursor, flowruntime.Observation{
+				Events: page.Events, NextCursor: page.NextCursor, HasMore: page.HasMore,
+			}))
+		})
+	}
+}
+
+type pagedObservationRuntime struct {
+	*recordingRuntime
+	pages   []observationFixturePage
+	cursors []string
+}
+
+func (runtime *pagedObservationRuntime) Observe(_ context.Context, runID, cursor string, _ int) (flowruntime.Observation, error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	index := len(runtime.cursors)
+	if index >= len(runtime.pages) || runtime.pages[index].AfterCursor != cursor {
+		return flowruntime.Observation{}, &testRuntimeFailure{code: "unexpected_observation_cursor"}
+	}
+	runtime.cursors = append(runtime.cursors, cursor)
+	page := runtime.pages[index]
+	status := "running"
+	if index == len(runtime.pages)-1 {
+		status = "completed"
+	}
+	return flowruntime.Observation{
+		Run:    flowruntime.Run{RunID: runID, FlowID: "coding/dispatch", Status: status},
+		Events: page.Events, NextCursor: page.NextCursor, HasMore: page.HasMore, Terminal: terminalStatus(status),
+	}, nil
+}
+
+func TestWorkerReconnectsFromPersistedPartialObservationCursor(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	runtime := &pagedObservationRuntime{recordingRuntime: newRecordingRuntime(), pages: sharedCursorPages(t)}
+	projector := &recordingProjector{}
+	service, err := New(Config{
+		Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return runtime, nil
+		}), Projector: projector, ObservationDelay: time.Millisecond, ObservationPages: 1,
+	})
+	require.NoError(t, err)
+	request := testLaunchRequest("expanded-journal", ApprovalManual)
+	receipt, err := service.Admit(context.Background(), request)
+	require.NoError(t, err)
+	startTestWorker(t, service, "expanded-journal-owner")
+	operation := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
+		return operation.State.Terminal()
+	})
+	require.Equal(t, jobs.StateCompleted, operation.State, string(operation.TerminalReceipt))
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	require.Equal(t, []string{"", "", "v1:0:0", "v1:0:1", "0", "1"}, runtime.cursors)
+	require.Len(t, runtime.launches, 1, "observation retries must not relaunch the run")
+	checkpoint, err := decodeCheckpoint(operation.ExternalReceipt)
+	require.NoError(t, err)
+	require.Equal(t, "1", checkpoint.Cursor)
+}
+
+type signalReceiptRuntime struct {
+	*recordingRuntime
+	lostAck  bool
+	terminal bool
+}
+
+func (runtime *signalReceiptRuntime) Signal(_ context.Context, input flowruntime.Signal) (flowruntime.MutationResult, error) {
+	runtime.mu.Lock()
+	defer runtime.mu.Unlock()
+	runtime.signals = append(runtime.signals, input)
+	if runtime.terminal {
+		return flowruntime.MutationResult{Operation: "signal", ApplicationRequestID: input.ApplicationRequestID,
+			Receipt: flowruntime.Receipt{Tag: "Terminal", RunID: input.RunID, Status: "completed"}}, nil
+	}
+	runtime.status = "completed"
+	if runtime.lostAck && len(runtime.signals) == 1 {
+		return flowruntime.MutationResult{}, &testRuntimeFailure{code: "transport", retryable: true}
+	}
+	return flowruntime.MutationResult{Operation: "signal", ApplicationRequestID: input.ApplicationRequestID,
+		Receipt: flowruntime.Receipt{Tag: "AlreadyApplied", ReceiptID: input.ApplicationRequestID, RunID: input.RunID}}, nil
+}
+
+func TestSignalReconcilesCanonicalReceiptAfterRunCompletes(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		name := "lost acknowledgement"
+		if terminal {
+			name = "terminal refusal"
+		}
+		t.Run(name, func(t *testing.T) {
+			store, _ := newFlowDispatchStore(t)
+			runtime := &signalReceiptRuntime{recordingRuntime: newRecordingRuntime(), lostAck: !terminal, terminal: terminal}
+			runtime.status = "waiting"
+			projector := &recordingProjector{}
+			service, err := New(Config{
+				Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+					return runtime, nil
+				}), Projector: projector, ObservationDelay: time.Millisecond,
+			})
+			require.NoError(t, err)
+			launch := testLaunchRequest("signal-receipt", ApprovalManual)
+			receipt, err := service.Signal(context.Background(), SignalRequest{
+				Scope: launch.Scope, RequestID: launch.RequestID, Target: launch.Target,
+				FlowID: launch.FlowID, RunID: "run-1", Name: "reply", Payload: []byte(`{}`),
+				AuthorizationContext: launch.AuthorizationContext, Projection: launch.Projection,
+			})
+			require.NoError(t, err)
+			startTestWorker(t, service, "signal-receipt-owner")
+			operation := waitOperation(t, store, launch.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
+				return operation.State.Terminal()
+			})
+			if terminal {
+				require.Equal(t, jobs.StateFailed, operation.State, "a Terminal signal receipt means no signal was delivered")
+				require.Contains(t, string(operation.TerminalReceipt), "runtime_run_terminal")
+			} else {
+				require.Equal(t, jobs.StateCompleted, operation.State, "replay the delivered signal before treating the run as unavailable")
+				runtime.mu.Lock()
+				calls := append([]flowruntime.Signal(nil), runtime.signals...)
+				runtime.mu.Unlock()
+				require.Len(t, calls, 2)
+				require.Equal(t, calls[0].ApplicationRequestID, calls[1].ApplicationRequestID)
+			}
+			projector.mu.Lock()
+			defer projector.mu.Unlock()
+			require.NotEmpty(t, projector.updates)
+			require.Equal(t, operation.State, projector.updates[len(projector.updates)-1].State)
+		})
+	}
+}
+
+type approvalReceiptRuntime struct {
+	*recordingRuntime
+	store             *jobs.Store
+	scope             jobs.Scope
+	launchOperationID string
+	approvals         atomic.Int32
+}
+
+func (runtime *approvalReceiptRuntime) Approve(ctx context.Context, input flowruntime.Decision) (flowruntime.MutationResult, error) {
+	result, err := runtime.recordingRuntime.Approve(ctx, input)
+	if err != nil || runtime.approvals.Add(1) > 1 {
+		result.Receipt.Tag = "AlreadyApplied"
+		return result, err
+	}
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for {
+		operation, err := runtime.store.Get(ctx, runtime.scope, runtime.launchOperationID)
+		if err != nil {
+			return flowruntime.MutationResult{}, err
+		}
+		if operation.State.Terminal() {
+			return flowruntime.MutationResult{}, &testRuntimeFailure{code: "transport", retryable: true}
+		}
+		select {
+		case <-ctx.Done():
+			return flowruntime.MutationResult{}, ctx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func TestApprovalReconcilesLostAcknowledgementAfterLaunchCompletes(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	runtime := &approvalReceiptRuntime{recordingRuntime: newRecordingRuntime(), store: store}
+	runtime.requireApproval = true
+	service, err := New(Config{
+		Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return runtime, nil
+		}), ObservationDelay: time.Millisecond,
+	})
+	require.NoError(t, err)
+	request := testLaunchRequest("approval-lost-ack", ApprovalManual)
+	launch, err := service.Admit(context.Background(), request)
+	require.NoError(t, err)
+	runtime.scope, runtime.launchOperationID = request.Scope, launch.OperationID
+	startTestWorker(t, service, "approval-replay-owner")
+	waitOperation(t, store, request.Scope, launch.OperationID, func(operation jobs.Operation) bool {
+		checkpoint, err := decodeCheckpoint(operation.ExternalReceipt)
+		return err == nil && checkpoint.PlanID != "" && len(checkpoint.Approval) != 0
+	})
+	approval, err := service.Approve(context.Background(), request.Scope, launch.OperationID, "approval-replay", request.AuthorizationContext)
+	require.NoError(t, err)
+	operation := waitOperation(t, store, request.Scope, approval.OperationID, func(operation jobs.Operation) bool {
+		return operation.State.Terminal()
+	})
+	require.Equal(t, jobs.StateCompleted, operation.State, "a settled launch must not hide the successful approval receipt")
+	require.Equal(t, int32(2), runtime.approvals.Load())
+	require.Contains(t, string(operation.TerminalReceipt), "AlreadyApplied")
+}
+
+func TestResolverPreservesFailureClassification(t *testing.T) {
+	for _, item := range []struct {
+		name      string
+		err       error
+		code      string
+		retryable bool
+	}{
+		{name: "permanent identity refusal", err: &testRuntimeFailure{code: "runtime_identity_conflict"}, code: "runtime_identity_conflict"},
+		{name: "temporary typed failure", err: fmt.Errorf("wrapped: %w", &testRuntimeFailure{code: "runtime_start_failed", retryable: true}), code: "runtime_start_failed", retryable: true},
+		{name: "unknown transport", err: errors.New("unavailable"), code: "runtime_unavailable", retryable: true},
+		{name: "nil runtime", code: "runtime_unavailable", retryable: true},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			service := &Service{
+				resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+					return nil, item.err
+				}), runtimeCallTimeout: time.Second,
+			}
+			_, _, err := service.resolve(context.Background(), flowruntime.Target{}, flowruntime.Identity{})
+			require.Error(t, err)
+			code, retryable := runtimeFailure(err)
+			require.Equal(t, item.code, code)
+			require.Equal(t, item.retryable, retryable)
+		})
+	}
+}
+
+func TestCancellationBeforeDispatchRetriesProjectionInWorker(t *testing.T) {
+	store, _ := newFlowDispatchStore(t)
+	var projections atomic.Int32
+	var resolutions atomic.Int32
+	service, err := New(Config{
+		Store: store,
+		Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			resolutions.Add(1)
+			return nil, errors.New("cancelled launch must not resolve a runtime")
+		}),
+		Projector: ProjectorFunc(func(_ context.Context, update ProjectionUpdate) error {
+			if update.State != jobs.StateCancelled {
+				return fmt.Errorf("unexpected projection state %s", update.State)
+			}
+			if projections.Add(1) == 1 {
+				return errors.New("transient projection failure")
+			}
+			return nil
+		}),
+	})
+	require.NoError(t, err)
+	request := testLaunchRequest("cancel-unstarted-projection", ApprovalManual)
+	receipt, err := service.Admit(context.Background(), request)
+	require.NoError(t, err)
+	pending, err := service.CancelRequest(context.Background(), request.Scope, request.RequestID)
+	require.NoError(t, err, "cancellation admission must not perform product projection")
+	require.True(t, pending.CancellationRequested)
+	require.False(t, pending.State.Terminal(), "the worker must settle only after projection succeeds")
+	require.Zero(t, projections.Load())
+	startTestWorker(t, service, "cancellation-projection-owner")
+	operation := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
+		return operation.State == jobs.StateCancelled
+	})
+	require.GreaterOrEqual(t, projections.Load(), int32(2))
+	require.Zero(t, resolutions.Load())
+	require.Contains(t, string(operation.TerminalReceipt), "cancelled-before-runtime-launch")
+}
+
+func TestCancellationBeforeDispatchSurvivesExpiredClaim(t *testing.T) {
+	store, pool := newFlowDispatchStore(t)
+	var projections atomic.Int32
+	var resolutions atomic.Int32
+	service, err := New(Config{
+		Store: store,
+		Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			resolutions.Add(1)
+			return nil, errors.New("cancelled launch must not resolve a runtime")
+		}),
+		Projector: ProjectorFunc(func(_ context.Context, update ProjectionUpdate) error {
+			if update.State == jobs.StateCancelled {
+				projections.Add(1)
+			}
+			return nil
+		}),
+	})
+	require.NoError(t, err)
+	request := testLaunchRequest("cancel-unstarted-expired-claim", ApprovalManual)
+	receipt, err := service.Admit(context.Background(), request)
+	require.NoError(t, err)
+	claim, err := store.Claim(context.Background(), "crashed-cancellation-owner", time.Minute)
+	require.NoError(t, err)
+	require.Equal(t, receipt.OperationID, claim.OperationID)
+	_, err = service.CancelRequest(context.Background(), request.Scope, request.RequestID)
+	require.NoError(t, err)
+	_, err = pool.Exec(context.Background(), `UPDATE product_job_dispatches
+		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, receipt.OperationID)
+	require.NoError(t, err)
+	recovered, err := store.RecoverExpiredForOperations(context.Background(), []string{OperationLaunch}, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	pending, err := store.Get(context.Background(), request.Scope, receipt.OperationID)
+	require.NoError(t, err)
+	require.False(t, pending.State.Terminal(), "expired recovery must preserve the pending projection")
+	startTestWorker(t, service, "replacement-cancellation-owner")
+	operation := waitOperation(t, store, request.Scope, receipt.OperationID, func(operation jobs.Operation) bool {
+		return operation.State == jobs.StateCancelled
+	})
+	require.Equal(t, int32(1), projections.Load())
+	require.Zero(t, resolutions.Load())
+	require.Contains(t, string(operation.TerminalReceipt), "cancelled-before-runtime-launch")
+}
+
+func TestCancellationRejectsNonLaunchOperations(t *testing.T) {
+	for _, operation := range []string{OperationApprove, OperationSignal} {
+		t.Run(operation, func(t *testing.T) {
+			store, _ := newFlowDispatchStore(t)
+			service, err := New(Config{
+				Store: store, Resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+					return nil, errors.New("unused")
+				}),
+			})
+			require.NoError(t, err)
+			scope := jobs.Scope{TenantID: "tenant", PrincipalID: "owner"}
+			receipt, err := store.Admit(context.Background(), jobs.Admission{
+				Scope: scope, Operation: operation, RequestID: "non-launch",
+				Payload: []byte(`{}`), AuthorizationContext: []byte(`{}`), EffectPolicy: jobs.EffectReconcile,
+			})
+			require.NoError(t, err)
+			_, err = service.Cancel(context.Background(), scope, receipt.OperationID)
+			require.ErrorIs(t, err, ErrNotLaunchOperation)
+			pending, err := store.Get(context.Background(), scope, receipt.OperationID)
+			require.NoError(t, err)
+			require.Equal(t, jobs.StateAccepted, pending.State)
+			require.False(t, pending.CancellationRequested)
+		})
+	}
+}

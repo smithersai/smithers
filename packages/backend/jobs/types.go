@@ -5,10 +5,12 @@
 package jobs
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -188,8 +190,16 @@ func canonicalJSON(value json.RawMessage, requireObject bool) (json.RawMessage, 
 		return nil, errors.New("jobs: payload is required")
 	}
 	var decoded any
-	if err := json.Unmarshal(value, &decoded); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(value))
+	// Payloads and receipts can contain integer identities or exact decimals.
+	// Decoding through float64 would alter both their values and fingerprints.
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
 		return nil, fmt.Errorf("jobs: invalid JSON: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, errors.New("jobs: invalid JSON: trailing data")
 	}
 	if requireObject {
 		if _, ok := decoded.(map[string]any); !ok {

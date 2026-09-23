@@ -190,16 +190,14 @@ func (service *Service) admitApproval(
 // claimable until its worker has delivered cancellation and observed Control's
 // terminal truth.
 func (service *Service) Cancel(ctx context.Context, scope jobs.Scope, operationID string) (jobs.Operation, error) {
-	operation, err := service.store.RequestCancellation(ctx, scope, operationID)
+	operation, err := service.store.Get(ctx, scope, operationID)
 	if err != nil {
 		return jobs.Operation{}, err
 	}
-	if operation.State == jobs.StateCancelled {
-		if err := service.projectImmediateCancellation(ctx, operation); err != nil {
-			return operation, err
-		}
+	if operation.Operation != OperationLaunch {
+		return jobs.Operation{}, ErrNotLaunchOperation
 	}
-	return operation, nil
+	return service.store.RequestCancellationForWorker(ctx, scope, operationID)
 }
 
 // CancelRequest reconnects to a launch through its public durable request id.
@@ -213,24 +211,6 @@ func (service *Service) CancelRequest(ctx context.Context, scope jobs.Scope, req
 
 func (service *Service) Get(ctx context.Context, scope jobs.Scope, operationID string) (jobs.Operation, error) {
 	return service.store.Get(ctx, scope, operationID)
-}
-
-func (service *Service) projectImmediateCancellation(ctx context.Context, operation jobs.Operation) error {
-	if service.projector == nil {
-		return nil
-	}
-	var payload launchPayload
-	if json.Unmarshal(operation.Payload, &payload) != nil {
-		return errors.New("flow dispatch: invalid launch projection")
-	}
-	return service.projector.ProjectFlowRuntime(context.WithoutCancel(ctx), ProjectionUpdate{
-		OperationID: operation.ID,
-		Scope:       operation.Scope,
-		State:       jobs.StateCancelled,
-		Checkpoint: RuntimeCheckpoint{
-			Version: 1, Target: payload.Target, FlowID: payload.FlowID, Projection: payload.Projection,
-		},
-	})
 }
 
 // RunWorker consumes only Flow bridge operations from the shared jobs table.

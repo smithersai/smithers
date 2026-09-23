@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const maxReplayPage = 1000
@@ -221,38 +220,46 @@ type Subscription struct {
 	cursor       int64
 	pollInterval time.Duration
 	authorize    AuthorizeFunc
-	connection   *pgxpool.Conn
 	buffer       []Event
-	closed       bool
+	closed       context.Context
+	close        context.CancelFunc
 }
 
-// Subscribe LISTENs before its first replay, closing the connect/replay race.
-// NOTIFY only wakes Next; periodic replay repairs missing notifications.
+// Subscribe polls the durable journal without holding a database connection
+// between pages. Idle subscriptions therefore cannot exhaust admission or
+// replay capacity. New events are observed within pollInterval (five seconds
+// by default), plus query time; the cursor closes the connect/replay race.
 func (store *Store) Subscribe(ctx context.Context, scope Scope, cursor int64, pollInterval time.Duration, authorize AuthorizeFunc) (*Subscription, error) {
 	if err := scope.validate(); err != nil {
 		return nil, err
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if cursor < 0 {
+		return nil, errors.New("jobs: cursor cannot be negative")
+	}
 	if pollInterval <= 0 {
 		pollInterval = 5 * time.Second
 	}
-	connection, err := store.pool.Acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := connection.Exec(ctx, `LISTEN smithers_product_jobs`); err != nil {
-		connection.Release()
-		return nil, err
-	}
-	return &Subscription{store: store, scope: scope, cursor: cursor, pollInterval: pollInterval, authorize: authorize, connection: connection}, nil
+	closed, closeSubscription := context.WithCancel(context.Background())
+	return &Subscription{store: store, scope: scope, cursor: cursor, pollInterval: pollInterval, authorize: authorize, closed: closed, close: closeSubscription}, nil
 }
 
 func (subscription *Subscription) Cursor() int64 { return subscription.cursor }
 
-// Next is not safe for concurrent callers.
+// Next is not safe for concurrent callers. Close may interrupt a pending Next.
 func (subscription *Subscription) Next(ctx context.Context) (Event, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(subscription.closed, cancel)
+	defer stop()
 	for {
-		if subscription.closed {
+		if subscription.closed.Err() != nil {
 			return Event{}, errors.New("jobs: subscription is closed")
+		}
+		if err := ctx.Err(); err != nil {
+			return Event{}, err
 		}
 		if subscription.authorize != nil {
 			if err := subscription.authorize(ctx, subscription.scope); err != nil {
@@ -274,24 +281,16 @@ func (subscription *Subscription) Next(ctx context.Context) (Event, error) {
 			continue
 		}
 		subscription.cursor = page.Cursor
-		waitContext, cancel := context.WithTimeout(ctx, subscription.pollInterval)
-		_, err = subscription.connection.Conn().WaitForNotification(waitContext)
-		cancel()
-		if err != nil && !errors.Is(err, context.DeadlineExceeded) {
-			return Event{}, err
-		}
-		if ctx.Err() != nil {
-			return Event{}, ctx.Err()
+		timer := time.NewTimer(subscription.pollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+		case <-timer.C:
 		}
 	}
 }
 
-func (subscription *Subscription) Close(ctx context.Context) error {
-	if subscription.closed {
-		return nil
-	}
-	subscription.closed = true
-	_, err := subscription.connection.Exec(ctx, `UNLISTEN smithers_product_jobs`)
-	subscription.connection.Release()
-	return err
+func (subscription *Subscription) Close(_ context.Context) error {
+	subscription.close()
+	return nil
 }

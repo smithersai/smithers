@@ -695,10 +695,7 @@ func TestOrderedReplayPaginationExpiryRepairAndRevocation(t *testing.T) {
 
 	subscription, err := store.Subscribe(context.Background(), scope, snapshot.Cursor, 20*time.Millisecond, nil)
 	require.NoError(t, err)
-	// Suppress the wake hint to prove periodic authoritative replay repairs a
-	// dropped notification rather than relying on in-memory delivery.
-	_, err = subscription.connection.Exec(context.Background(), `UNLISTEN smithers_product_jobs`)
-	require.NoError(t, err)
+	// The subscription repairs from the durable cursor without a wake hint.
 	newReceipt, err := store.Admit(context.Background(), testAdmission(scope, "after-drop", EffectIdempotent, `{"n":4}`))
 	require.NoError(t, err)
 	nextContext, cancel := context.WithTimeout(context.Background(), time.Second)
