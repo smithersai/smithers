@@ -147,6 +147,33 @@ export const presentation = {
   result: "patch"
 } as const
 
+/**
+ * Every path a patch writes, in the order it names them, including a move's
+ * destination. The patch is read by the parser {@link run} uses, so a header
+ * `run` accepts is never missed.
+ *
+ * Returns `undefined` when `run` would refuse the patch. A caller asking
+ * permission for the call then asks for everything the flow declares.
+ *
+ * @category parsing
+ * @since 1.0.0-rc.1
+ */
+export const paths = (patch: string): ReadonlyArray<string> | undefined => {
+  let parsed: ApplyPatchText.ParsedPatch
+  try {
+    parsed = ApplyPatchText.parsePatch(patch)
+  } catch {
+    return undefined
+  }
+  return [
+    ...new Set(
+      parsed.hunks.flatMap((hunk) =>
+        hunk.kind === "update" && hunk.movePath !== undefined ? [hunk.path, hunk.movePath] : [hunk.path]
+      )
+    )
+  ]
+}
+
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8", { fatal: true })
 

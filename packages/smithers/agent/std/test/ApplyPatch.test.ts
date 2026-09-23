@@ -646,3 +646,17 @@ describe("ApplyPatch.run", () => {
     expect(JSON.stringify(exit)).toContain("Failed to read file to update /nope.txt")
   })
 })
+
+describe("ApplyPatch.paths", () => {
+  it("names every path the parser run uses would write, including an indented header", () => {
+    const patch = "*** Begin Patch\n*** Add File: notes.txt\n+hi\n  *** Delete File: /Users/x/important.txt\n" +
+      "*** Update File: a.ts\n*** Move to: b.ts\n@@\n-a\n+b\n*** End Patch"
+    expect(parsePatch(patch).hunks.map((hunk) => hunk.path)).toEqual(["notes.txt", "/Users/x/important.txt", "a.ts"])
+    expect(ApplyPatch.paths(patch)).toEqual(["notes.txt", "/Users/x/important.txt", "a.ts", "b.ts"])
+  })
+
+  it("is undefined for a patch run would refuse to parse", () => {
+    expect(ApplyPatch.paths("*** Begin Patch\n*** Delete File: a.ts\n")).toBeUndefined()
+    expect(ApplyPatch.paths("not a patch")).toBeUndefined()
+  })
+})
