@@ -26,6 +26,10 @@ const poll = async (cycles: Cycle[], options: {
   inspectAt?: number
   cloneStored?: boolean
   pageSize?: number
+  pageCursor?: boolean
+  failJournalRequest?: number
+  initialRun?: RuntimeRun
+  resumeOnBoot?: boolean
   flowId?: string
 } = {}) => {
   const flowId = options.flowId ?? summary.flowId
@@ -36,11 +40,16 @@ const poll = async (cycles: Cycle[], options: {
   const cards = new Map([[card.id, card]])
   const scope = { repo: "o/r", runId: "run-1" }, key = runtimeRunKey(scope)
   const runtimeRuns = new Map<string, RuntimeRun>()
-  if (options.initialEvents) runtimeRuns.set(key, observeRuntimeRun(undefined, {
+  if (options.initialRun) {
+    runtimeRuns.set(key, options.initialRun)
+    card = projectRuntimeCard(card, [options.initialRun], []) as typeof card
+    cards.set(card.id, card)
+  } else if (options.initialEvents) runtimeRuns.set(key, observeRuntimeRun(undefined, {
     scope, journal: { mode: "full", events: options.initialEvents }
   }, Date.now(), 0))
   let iteration = -1
   let rowsRequested = 0
+  let eventRequests = 0
   const journalRequests: unknown[] = []
   const updates: typeof card[] = []
   const messages: string[] = []
@@ -51,7 +60,8 @@ const poll = async (cycles: Cycle[], options: {
       const projection = payload.selector._tag
       if (projection === "run-summary") iteration++
       const cycle = cycles[iteration]!
-      if ((projection === "run-events" && cycle.journalFailure) || (projection === "run-summary" && cycle.summaryFailure)) {
+      if (projection === "run-events") eventRequests++
+      if ((projection === "run-events" && (cycle.journalFailure || eventRequests === options.failJournalRequest)) || (projection === "run-summary" && cycle.summaryFailure)) {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
@@ -72,15 +82,18 @@ const poll = async (cycles: Cycle[], options: {
           cards.set(card.id, card)
         }
       }
-      const last = cycle.events.at(-1)
-      const offset = last === undefined ? 0 : cycle.events.filter((row) => row.sequence === last.sequence).length - 1
+      const last = options.pageCursor && projection === "run-events" ? (rows as ReturnType<typeof event>[]).at(-1) : cycle.events.at(-1)
+      const offset = last === undefined ? 0 : cycle.events.findIndex((row) => row === last) - cycle.events.findIndex((row) => row.sequence === last.sequence)
       return Response.json({ ok: true, payload: {
-        rows, ...(cycle.revision === undefined ? {} : { cursor: cursor(projection, cycle.revision, offset) })
+        rows, ...(options.pageCursor && projection === "run-events" && last !== undefined
+          ? { cursor: cursor(projection, last.sequence, offset) }
+          : cycle.revision === undefined ? {} : { cursor: cursor(projection, cycle.revision, offset) })
       } })
     }
   })
   const ctx = {
     finishTutorialChange: async () => {},
+    resumeFlowAuthoring: () => {},
     store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, collections: { cards, runtimeRuns, runtimeApprovals: new Map() }, dispatch: (action: any) => {
       if (action.type === "message.appended") messages.push(action.text)
       const previous = runtimeRuns.get(key)
@@ -107,8 +120,12 @@ const poll = async (cycles: Cycle[], options: {
       })
     }
   }
-  await createWorkflowPumpController(ctx as unknown as ControllerContext, () => 1).pumpWorkflowRun(card.id)
-  return { card, updates, rowsRequested, journalRequests, messages }
+  const pump = createWorkflowPumpController(ctx as unknown as ControllerContext, () => 1)
+  if (options.resumeOnBoot) {
+    pump.resumeWorkflowRuns()
+    for (let tick = 0; tick < 100 && (iteration < 0 || ctx.runPumps.size > 0); tick++) await Bun.sleep(1)
+  } else await pump.pumpWorkflowRun(card.id)
+  return { card, run: runtimeRuns.get(key), updates, rowsRequested, journalRequests, messages }
 }
 
 test("a failed run keeps raw evidence on its card and announces only typed human copy", async () => {
@@ -154,6 +171,41 @@ test("four unchanged iterations read and dispatch a 20,000-row journal only once
   expect(result.journalRequests).toHaveLength(2)
   expect(result.updates).toHaveLength(1)
   expect(result.card.payload.events).toHaveLength(20_000)
+})
+test("a completed run drains a gateway-capped 17,000-event journal over bounded cycles", async () => {
+  const events = Array.from({ length: 17_000 }, (_, i) => event(i + 1))
+  const result = await poll(Array.from({ length: 2 }, () => ({ events, revision: 17_000, status: "completed", verdict: "done" })),
+    { pageSize: 1_000, pageCursor: true })
+  expect(result.journalRequests).toHaveLength(18)
+  expect(result.journalRequests[16]).toEqual(cursor("run-events", 16_000))
+  expect(result.card.payload.phase).toBe("completed")
+  expect(result.card.payload.events).toEqual(events)
+  expect(result.run?.journalPending).toBe(false)
+  expect(result.messages).toEqual(["done"])
+})
+
+test("a terminal run retries a later-page gateway failure without losing its prefix", async () => {
+  const events = Array.from({ length: 17_000 }, (_, i) => event(i + 1))
+  const result = await poll(Array.from({ length: 3 }, () => ({ events, revision: 17_000, status: "completed", verdict: "done" })),
+    { pageSize: 1_000, pageCursor: true, failJournalRequest: 17 })
+  expect(result.journalRequests).toHaveLength(19)
+  expect(result.journalRequests[16]).toEqual(cursor("run-events", 16_000))
+  expect(result.journalRequests[17]).toEqual(cursor("run-events", 16_000))
+  expect(result.card.payload.events).toEqual(events)
+  expect(result.run?.journalPending).toBe(false)
+})
+
+test("boot resumes a terminal card whose persisted journal has more pages", async () => {
+  const events = Array.from({ length: 17_000 }, (_, i) => event(i + 1))
+  const first = await poll([{ events, revision: 17_000, status: "completed", verdict: "done" }],
+    { pageSize: 1_000, pageCursor: true })
+  expect(first.card.payload.events).toHaveLength(16_000)
+  expect(first.run?.journalPending).toBe(true)
+  const resumed = await poll([{ events, revision: 17_000, status: "completed", verdict: "done" }],
+    { pageSize: 1_000, pageCursor: true, initialRun: first.run, resumeOnBoot: true })
+  expect(resumed.journalRequests[0]).toEqual(cursor("run-events", 16_000))
+  expect(resumed.card.payload.events).toEqual(events)
+  expect(resumed.run?.journalPending).toBe(false)
 })
 test("only new rows append, including distinct events sharing a sequence", async () => {
   const first = [event(1)]

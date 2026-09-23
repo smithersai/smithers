@@ -22,6 +22,8 @@ export const RuntimeRunSchema = z.object({
   id: z.string(), scope: RuntimeScopeSchema,
   summary: SummarySchema.optional(), summaryCursor: RuntimeCursorSchema.optional(),
   events: z.array(EventSchema), cursor: RuntimeCursorSchema.optional(),
+  /** The last journal read stopped before its suffix was exhausted. */
+  journalPending: z.boolean().optional(),
   transcript: z.array(TranscriptSchema).optional(), transcriptCursor: RuntimeCursorSchema.optional(),
   observer: RuntimeObserverSchema.optional(), steps: z.array(z.string()),
   /** A recorded old card is evidence, never manufactured lifecycle history. */
@@ -54,7 +56,8 @@ export const RuntimeRunObservationSchema = z.object({
   transcript: z.array(TranscriptSchema).optional(), transcriptCursor: RuntimeCursorSchema.optional(),
   /** Absent means a full snapshot; present anchors an appended transcript suffix. */
   transcriptAfter: z.object({ length: z.number().int().nonnegative(), cursor: RuntimeCursorSchema.optional() }).strict().optional(),
-  journal: z.object({ mode: z.enum(["full", "suffix"]), after: RuntimeCursorSchema.optional(), events: z.array(EventSchema) }).strict().optional()
+  journal: z.object({ mode: z.enum(["full", "suffix"]), after: RuntimeCursorSchema.optional(), events: z.array(EventSchema) }).strict().optional(),
+  journalComplete: z.boolean().optional()
 }).strict().refine(value => value.summary !== undefined || value.transcript !== undefined || value.journal !== undefined, "An observation needs recorded evidence")
   .refine(value => value.transcriptAfter === undefined || value.transcript !== undefined, "A transcript suffix needs its rows")
 export type RuntimeRunObservation = z.infer<typeof RuntimeRunObservationSchema>
@@ -139,6 +142,7 @@ export const observeRuntimeRun = (previous: RuntimeRun | undefined, observation:
     ...(summary === undefined ? {} : { summary, summaryCursor: observation.summaryCursor ?? previous?.summaryCursor }),
     ...(transcript === undefined ? {} : { transcript: [...transcript], transcriptCursor: observation.transcriptCursor ?? previous?.transcriptCursor }),
     ...(journal === undefined ? {} : { events, cursor: eventCursor(scope.runId, events) }),
+    ...(observation.journalComplete === undefined ? {} : { journalPending: !observation.journalComplete }),
     steps: words === undefined || steps.includes(words) ? steps : [...steps, words].slice(-8),
     observer: { state: "connected" }, observedAt: at, revision
   }
@@ -155,7 +159,8 @@ export const changedRuntimeRunObservation = (previous: RuntimeRun | undefined, o
   const next = observeRuntimeRun(previous, observation, at, (previous?.revision ?? 0) + 1)
   if (next === previous) return undefined
   const reduced: RuntimeRunObservation = { scope: observation.scope,
-    ...(observation.summary === undefined ? {} : { summary: observation.summary, summaryCursor: observation.summaryCursor }) }
+    ...(observation.summary === undefined ? {} : { summary: observation.summary, summaryCursor: observation.summaryCursor }),
+    ...(observation.journalComplete === undefined ? {} : { journalComplete: observation.journalComplete }) }
   if (observation.transcript !== undefined) {
     const before = previous?.transcript
     const after = next.transcript!

@@ -140,7 +140,9 @@ export const createWorkflowPumpController = (
           card.payload.phase === "running" ||
           card.payload.phase === "waiting-approval" ||
           card.payload.phase === "reconnecting" ||
-          (TERMINAL_PHASES.has(card.payload.phase) && engineProjectionPending(card.payload.events)))
+          (TERMINAL_PHASES.has(card.payload.phase) &&
+            (engineProjectionPending(card.payload.events) ||
+              store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true)))
     ) as Array<Extract<Card, { kind: "run-trace" }>>
 
   const pokeableWait = (cardId: string, ms: number): Promise<void> =>
@@ -263,8 +265,9 @@ export const createWorkflowPumpController = (
         if (card.payload.authoring !== undefined && card.payload.runId === "") return
         const alreadyTerminal = TERMINAL_PHASES.has(card.payload.phase)
         const projectionPending = engineProjectionPending(card.payload.events)
+        const journalPending = store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true
         if (
-          (alreadyTerminal && !observeOnce && !projectionPending) ||
+          (alreadyTerminal && !observeOnce && !projectionPending && !journalPending) ||
           card.payload.phase === "no-capacity" ||
           card.payload.phase === "quiet" ||
           card.payload.phase === "stopped"
@@ -278,7 +281,7 @@ export const createWorkflowPumpController = (
          * act on is the silent stall in a different costume.
          */
         const quietFor = Date.now() - lastProgressAt
-        if (quietFor >= RUN_QUIET_AFTER_MS && (card.payload.statusRollup === undefined || failures > 0 || projectionPending)) {
+        if (quietFor >= RUN_QUIET_AFTER_MS && (card.payload.statusRollup === undefined || failures > 0 || projectionPending || journalPending)) {
           patchRunCard(cardId, alreadyTerminal
             ? { observationError: "The run has settled, but its recorded engine evidence has not finished synchronizing." }
             : { phase: "quiet", quietForMs: quietFor })
@@ -374,11 +377,13 @@ export const createWorkflowPumpController = (
         let journalObservation: RuntimeRunObservation["journal"]
         let journalRead = false
         let journalAdvanced = false
+        let journalComplete: boolean | undefined
         let eventReadError: string | undefined
         // A native projection can append after its control verdict settled,
         // without changing the summary cursor. Its own marker closes this read.
-        if (revision === undefined || revision !== journalRevision || projectionPending) {
+        if (revision === undefined || revision !== journalRevision || projectionPending || journalPending) {
           const journal = await readJournalPages(repo, runId, binding, journalCursor)
+          journalComplete = journal.complete
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           const current = store.committedRuntimeRun(runtimeRunKey(card.payload))
           // An inspection that won this race already replaced our prefix.
@@ -405,6 +410,7 @@ export const createWorkflowPumpController = (
           }
           const complete: RuntimeRunObservation = {
             scope: { repo, runId, ...(workspaceId === undefined ? {} : { workspaceId }) }, summary: row, summaryCursor: summary.cursor,
+            ...(journalComplete === undefined ? {} : { journalComplete }),
             ...(transcriptObservation === undefined ? {} : { transcript: transcriptObservation, transcriptCursor }),
             ...(journalObservation === undefined ? {} : { journal: { mode: "full", events: journalObservation.mode === "full" ? journalObservation.events : [...(committed?.events ?? []), ...journalObservation.events] } })
           }
@@ -460,7 +466,8 @@ export const createWorkflowPumpController = (
           // from, read back from the evidence this cycle just persisted.
           if (!alreadyTerminal && !(phase === "completed" && row.flowId === "repository/setup")) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
             ? "The run was cancelled." : `The run failed: ${runFailureOf({ workflow: row.flowId, error: row.verdict, events: store.committedRuntimeRun(runtimeRunKey(card.payload))?.events }).message}` })
-          if (eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
+          if (store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true ||
+            eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
             previous = row
             await pokeableWait(cardId, RUN_POLL_MS)
             continue
