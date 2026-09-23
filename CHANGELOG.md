@@ -9,10 +9,15 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2849 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2886 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **tui:** always show cell code; fold printed output behind ctrl+o ([6123a74d26](https://github.com/smithersai/smithers/commit/6123a74d264bd61c8991f42eb1264cc06ea77731))
+- **evals:** run the Harbor adapter on Smithers Cloud at max effort with a Codex account pool ([5d76b7d480](https://github.com/smithersai/smithers/commit/5d76b7d48021d86c300a76b3fa350e69b2a074d4))
+- **tui:** slash, argument and @file completion, filterable dialogs, Night Owl panels ([e1d2b0bccc](https://github.com/smithersai/smithers/commit/e1d2b0bccc12614d199b896519ae99ef92a2f737))
+- **std:** honor ignore files in glob, grep and search ([4ef0c0071e](https://github.com/smithersai/smithers/commit/4ef0c0071e446260fc7a5e5737237d32215fa6b7))
+- **tui:** pi's keys, ! shell commands, steering, sessions, zmux e2e ([c424bc98ed](https://github.com/smithersai/smithers/commit/c424bc98ed8277487d80dfec00b5eb442d6cac20))
 - **evals:** Harbor and Pier environments on Smithers Cloud workspaces ([b8280fa3ef](https://github.com/smithersai/smithers/commit/b8280fa3ef52d1aa288bfd56f3debce9209e3655))
 - **evals:** Harbor and Pier adapter for the flows harness, and the SWE-bench env-var fix ([bf676de99c](https://github.com/smithersai/smithers/commit/bf676de99cda65926b7afac969fd882fafe09f7f))
 - **tui:** minimal terminal coding agent over the cell harness ([cf75a587a6](https://github.com/smithersai/smithers/commit/cf75a587a6de007b24211cfcb58baa49cc33224d))
@@ -298,6 +303,24 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** install filesystem helper at sandbox default path ([80ab794d9e](https://github.com/smithersai/smithers/commit/80ab794d9e129f8665f353a6671e6ebbd979b1b5))
+- **evals:** wait for the plan's concurrent-workspace slot like cluster capacity ([96eca7097b](https://github.com/smithersai/smithers/commit/96eca7097b51ac837623528f073350b989903956))
+- **app:** register coding connection flows and decode revocation ([faf5fafd83](https://github.com/smithersai/smithers/commit/faf5fafd837e00e99e95ab2742e6aef5f442c217))
+- **app:** distinguish shared runtime bridge failures ([1ead6ba2e8](https://github.com/smithersai/smithers/commit/1ead6ba2e8ed83fe4edaf22660869ab990b1fe36))
+- **app:** resume provider connections after identity changes ([1afd7997ac](https://github.com/smithersai/smithers/commit/1afd7997accf9c7569a6e00b992ea719507eb4d5))
+- **ci:** lint the distribution workflow ([e120081865](https://github.com/smithersai/smithers/commit/e120081865c631ff9bd1f282659b29da91890c96))
+- **app:** keep missing repository recovery near the header ([614534859b](https://github.com/smithersai/smithers/commit/614534859b5c49c8803283f3b3148d8e0fda658f))
+- **evals:** reach the sandbox egress proxy from every plue exec, run the CLI outside the checkout ([ba4dbb322b](https://github.com/smithersai/smithers/commit/ba4dbb322bff58025242cef518cab67e25e55cdd))
+- **std:** finish gitignore-aware search so grep and glob peers agree ([d0f96e54b5](https://github.com/smithersai/smithers/commit/d0f96e54b5c3606cc2189fff6190184664280952))
+- **ci:** provision native and database dependencies for backend tests ([40f71de172](https://github.com/smithersai/smithers/commit/40f71de1728984e1dec55f1a36090c6e6c31126a))
+- **backend:** synchronize coding host schema and generated models ([8a58f1597a](https://github.com/smithersai/smithers/commit/8a58f1597a5d03da583149a55fed622e880589c7))
+- **tui:** lock the @smthrs/std workspace dependency ([fe9d8915f3](https://github.com/smithersai/smithers/commit/fe9d8915f32017846538c69b54452442d9d09434))
+- **ci:** install native filesystem tools and let active runs finish ([d037b1b4c3](https://github.com/smithersai/smithers/commit/d037b1b4c329c23cbeb110ba1b478c9029ad5145))
+- **engine:** preserve admitted attempts and close terminal clocks ([29e2c3855d](https://github.com/smithersai/smithers/commit/29e2c3855d8eddd7aab2b3147cea74dce5aa5003))
+- **ffi:** satisfy Rust formatting and clippy gates ([d05ef2f70b](https://github.com/smithersai/smithers/commit/d05ef2f70b6509e283ba3663fce3c8c75695bdbe))
+- **gateway:** preserve exact state across replay and projection windows ([7deb0dd440](https://github.com/smithersai/smithers/commit/7deb0dd44011cf5af069e8d5f93af24e8491186a))
+- **backend:** reconcile durable jobs and preserve replay cursors ([e15385e80d](https://github.com/smithersai/smithers/commit/e15385e80d191a56fee5731db5a524328f0da480))
+- **process:** preserve cancellation and lifecycle boundaries ([3e35f0bbb0](https://github.com/smithersai/smithers/commit/3e35f0bbb0dcb2263aef3fa1e9e51aad4d7ac88a))
 - **release:** align CLI package tests with rc.1 ([43dea7edc8](https://github.com/smithersai/smithers/commit/43dea7edc8ebd2e476a841dfc95da3e315551f92))
 - **release:** preserve helper path in process tests ([0453fa16c4](https://github.com/smithersai/smithers/commit/0453fa16c497e9bb3c2f35e882db64affec1645a))
 - **release:** provision filesystem helper and clear package gates ([1af8c2fae1](https://github.com/smithersai/smithers/commit/1af8c2fae1031662ee2f517f4af050eb2af86d6f))
@@ -1862,6 +1885,8 @@ the release notes at
 
 ### ♻️ Refactors
 
+- **server:** drop the live tutorial and provider proxy routes ([96d67de521](https://github.com/smithersai/smithers/commit/96d67de5217ce2f36b03e58f74029324c43524d1))
+- **app:** remove the practice repository and live tutorial ([2ef2eabc65](https://github.com/smithersai/smithers/commit/2ef2eabc659165d4d3eae83829ddc88eaebcb4d9))
 - **flows:** one node model, one graph, one flow authoring API over @smthrs/flow ([525197db11](https://github.com/smithersai/smithers/commit/525197db11ecac003faedde84bd66e1d2f21c500))
 - **backend:** isolate cloud adapters from default app ([7800625501](https://github.com/smithersai/smithers/commit/7800625501d76d851f9fed22d9f838838dd52fb8))
 - **backend:** route cluster endpoints through infrastructure DTOs ([5a68958e70](https://github.com/smithersai/smithers/commit/5a68958e702346e9145c5814b7f90cd0f847e533))
@@ -2355,6 +2380,10 @@ the release notes at
 
 ### 🧹 Chores
 
+- **targets:** index native backend and host contract inputs ([e8794c03ae](https://github.com/smithersai/smithers/commit/e8794c03ae2fa8bac259d46050c9223c811b49de))
+- delete the tutorial coordinator and executor apps ([2fce79a97c](https://github.com/smithersai/smithers/commit/2fce79a97cfe948963aba161b2b2183b502b48b5))
+- gitignore throwaway tmp and repro scripts ([cd60094355](https://github.com/smithersai/smithers/commit/cd600943559d2c62a7dd45781a80778d30313502))
+- **targets:** refresh the repository target index ([777db615f4](https://github.com/smithersai/smithers/commit/777db615f4b825e36d2f4954db012ad94c8b1035))
 - add a root tui script ([a60a0f4997](https://github.com/smithersai/smithers/commit/a60a0f499734cd7790f9f79e036e55462c0b010a))
 - remove unreferenced backend composition backup ([e773b7174f](https://github.com/smithersai/smithers/commit/e773b7174fa6eeecb81ee0fbb8afe08063cd0150))
 - remove tracked patch backup source copies ([5e8a79167b](https://github.com/smithersai/smithers/commit/5e8a79167bcd82e353a03e47d5d1e5215cdfe67d))
@@ -2384,6 +2413,14 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(app):** wire complete runner inventory and classify harness metadata ([1fd84cc884](https://github.com/smithersai/smithers/commit/1fd84cc884281ca2f2535522d1f4d819278ecc9b))
+- **test(app):** migrate repository coverage after tutorial removal ([2105eebf95](https://github.com/smithersai/smithers/commit/2105eebf95039f5d66b45d14fe51165b43a614af))
+- **test(backend):** isolate system command failure fixtures ([c2723dd50a](https://github.com/smithersai/smithers/commit/c2723dd50a75dcca739eac13ae28b8c578d5b693))
+- **style(app):** style approval, commit-pick and run cards with house controls ([18c9011617](https://github.com/smithersai/smithers/commit/18c9011617328587fe37fdc7a1b96303b22d2ca1))
+- **test(tui):** render the zmux screen as a colored HTML page ([16f5b7c645](https://github.com/smithersai/smithers/commit/16f5b7c645da9eede0c251f8d61fdc2dacd69491))
+- **test(std):** cover ignore-file handling across glob, grep and search ([0a4b99022e](https://github.com/smithersai/smithers/commit/0a4b99022e1e8e3f1f363930a6398c4625ac585e))
+- **test(gateway):** cover replay reconciliation and retain full coverage ([a632082fbb](https://github.com/smithersai/smithers/commit/a632082fbb10cddbb4bbbd16ce4db786994d9152))
+- **test(ci):** include the root TUI command in the script contract ([57a9d91769](https://github.com/smithersai/smithers/commit/57a9d917694f98d934869a1aee0f3998e46c10de))
 - **test(gateway):** cover plans without execution digest ([8cb825bbf9](https://github.com/smithersai/smithers/commit/8cb825bbf9379b5e7c92b728599589b4f2ce59e1))
 - **test(coding):** retire Plue Python adapter fixtures ([1ca8e42b8e](https://github.com/smithersai/smithers/commit/1ca8e42b8e704f6bcb912cc9ea29148420a013d4))
 - **test(native):** exercise installed process shutdown and Plue lifecycle ([28b1a76bee](https://github.com/smithersai/smithers/commit/28b1a76beee650d4ec0b0b39f71177c77b6c2639))
