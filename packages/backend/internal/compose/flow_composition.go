@@ -94,6 +94,11 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 
 func codingHostEnvironment(role Role) map[string]string {
 	environment := make(map[string]string)
+	if role.hosted() {
+		// The platform binds the real judge credential to the workspace egress
+		// proxy. Only its name crosses into the guest process environment.
+		environment["AI_GATEWAY_API_KEY"] = "AI_GATEWAY_API_KEY"
+	}
 	for _, name := range []string{"SMITHERS_WORKSPACE_JJ_EXPORT_BINARY", "SMITHERS_JJ_PATH"} {
 		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 			environment[name] = value
@@ -112,6 +117,9 @@ func codingHostEnvironment(role Role) map[string]string {
 
 func librarianHostEnvironment(role Role) map[string]string {
 	environment := make(map[string]string)
+	if role.hosted() {
+		environment["AI_GATEWAY_API_KEY"] = "AI_GATEWAY_API_KEY"
+	}
 	if role == RoleLocal {
 		for _, name := range []string{"AI_GATEWAY_API_KEY", "SMITHERS_EVALUATOR_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
 			if value := strings.TrimSpace(os.Getenv(name)); value != "" {

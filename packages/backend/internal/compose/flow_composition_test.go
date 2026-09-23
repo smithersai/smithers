@@ -23,6 +23,17 @@ func TestCodingHostEnvironmentKeepsOwnerProviderInsideLocalRuntime(t *testing.T)
 	}
 }
 
+func TestHostedFlowHostsUseProxyJudgePlaceholder(t *testing.T) {
+	t.Setenv("AI_GATEWAY_API_KEY", "operator-secret-must-stay-out-of-guest")
+	for _, role := range []Role{RoleHostedAPI, RoleHostedWorker} {
+		for _, environment := range []map[string]string{codingHostEnvironment(role), librarianHostEnvironment(role)} {
+			if environment["AI_GATEWAY_API_KEY"] != "AI_GATEWAY_API_KEY" {
+				t.Fatalf("%s Flow host must receive the proxy placeholder, got %q", role, environment["AI_GATEWAY_API_KEY"])
+			}
+		}
+	}
+}
+
 func TestFlowHostProductAPIURLUsesRuntimeReachableOrigin(t *testing.T) {
 	cases := []struct {
 		name    string
