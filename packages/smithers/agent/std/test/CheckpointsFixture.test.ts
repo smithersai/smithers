@@ -37,8 +37,8 @@ const relativePathsAvailable = (): boolean => {
 }
 
 /** A repository holding one file, at one commit. */
-const repository = (): string => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "flows-checkpoint-")))
+const repository = (prefix = "flows-checkpoint-"): string => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
   // Check exact fixture bytes even with the Windows checkout default enabled.
   writeFileSync(join(root, ".gitattributes"), "* -text\n")
   writeFileSync(join(root, "mod.py"), "value = 'pristine'\n")
@@ -62,15 +62,27 @@ const repository = (): string => {
  * reachable at all — which is the constraint that put `.flows-checkpoints`
  * inside the tree it belongs to.
  */
+const mountedProcess = [
+  "const { spawnSync } = require(\"node:child_process\")",
+  "const [cwd, file, ...args] = process.argv.slice(1)",
+  "const result = spawnSync(file, args, { cwd, stdio: \"inherit\" })",
+  "if (result.error) throw result.error",
+  "process.exit(result.status ?? 1)"
+].join("\n")
+
 const mounted = (root: string): Container.Container =>
   Container.make({
     exec: (request) =>
       Effect.succeed({
-        file: request.file,
+        file: process.execPath,
         args: [
-          "-c",
-          `cd ${(request.cwd ?? "/testbed").replace(/^\/testbed/, root)} && ${request.args.slice(1).join(" ")}`
-        ]
+          "--eval",
+          mountedProcess,
+          (request.cwd ?? "/testbed").replace(/^\/testbed/, () => root),
+          request.file,
+          ...request.args
+        ],
+        env: request.env
       })
   })
 
@@ -405,7 +417,7 @@ describe("Checkpoints over a real repository", () => {
   }, 60_000)
 
   it("runs a real command against the pinned tree, through the container's own path", async () => {
-    const root = repository()
+    const root = repository("flows checkpoint's-")
     git(root, ["update-ref", TestRunner.captureBase, "HEAD"])
     writeFileSync(join(root, "mod.py"), "value = 'fixed'\n")
 
@@ -426,6 +438,8 @@ describe("Checkpoints over a real repository", () => {
           )
         })
         const live = yield* Bash.run(call)
+        expect(atBase.exitCode, atBase.stderr).toBe(0)
+        expect(live.exitCode, live.stderr).toBe(0)
         return [atBase.stdout, live.stdout]
       }).pipe(Effect.provide(services(root)))
     )
