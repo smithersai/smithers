@@ -712,8 +712,8 @@ ctx.done(seen.join(","))`
     const settled = settledCalls(eventsOf(outcome))
     expect(settled.map((event) => event.result.outcome)).toEqual(["failure", "failure", "success"])
     expect(settled[0]?.result.code).toBe("flow_failed")
-    expect(settled[0]?.result.message).toContain('only inside container "testbed"')
-    expect(settled[1]?.result.message).toContain('not "other"')
+    expect(settled[0]?.result.message).toContain("only inside container \"testbed\"")
+    expect(settled[1]?.result.message).toContain("not \"other\"")
     // Only the sealed container was reached; no host command was spawned.
     expect(spawned.some((argv) => argv.includes("/host/tests") || argv.includes("solve.sh"))).toBe(false)
     expect(spawned.find((argv) => argv.includes("echo ok"))).toBe(`docker exec -- testbed bash -lc 'echo ok'`)
