@@ -193,3 +193,7 @@ docs/reviews/
 /apps/server/smithers-server
 /apps/tutorial-coordinator/smithers-tutorial-coordinator
 /packages/smthrs-deprecation/smthrs
+
+# Throwaway discovery and repro scripts; they say "not shipped" in their headers.
+apps/app/scripts/tmp-*
+zz-*-repro.*
