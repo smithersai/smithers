@@ -15,7 +15,7 @@ import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
 import type * as Flows from "./flows.ts"
 import type * as Monitors from "./monitors.ts"
-import type * as Panels from "./panels.ts"
+import * as Panels from "./panels.ts"
 import * as Shell from "./shell.ts"
 import * as Transcript from "./transcript.ts"
 import type * as Workspace from "./workspace.ts"
@@ -330,7 +330,7 @@ export const restore = (records: ReadonlyArray<Record>): {
         transcript = Transcript.caption(transcript, record.prose)
         break
       case "panel":
-        panels.set(record.panel.id, record.panel)
+        Panels.keep(panels, record.panel)
         break
       case "tab":
         tabs.set(record.tab.id, record.tab)

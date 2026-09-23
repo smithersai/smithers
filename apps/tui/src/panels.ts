@@ -30,6 +30,19 @@ export const Panel = Schema.Struct({
   rows: Schema.Array(Row).check(Schema.isMaxLength(500))
 })
 export type Panel = typeof Panel.Type
+/** Custom views a session keeps. */
+export const limit = 24
+
+/** Adds or refreshes `panel` as the newest view, dropping the oldest past `limit`. */
+export const keep = (panels: Map<string, Panel>, panel: Panel): void => {
+  panels.delete(panel.id)
+  panels.set(panel.id, panel)
+  for (const id of panels.keys()) {
+    if (panels.size <= limit) break
+    panels.delete(id)
+  }
+}
+
 export const decode = (value: unknown): Panel => {
   const panel = Schema.decodeUnknownSync(Panel)(value)
   if (JSON.stringify(panel).length > 1_000_000) throw new Error("Panel exceeds 1 MB")

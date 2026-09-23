@@ -86,7 +86,7 @@ export class Workspace {
       if (settled === tab) this.tabs.set(tab.id, tab)
       else this.save(settled)
     }
-    for (const panel of options.restored?.panels ?? []) this.panels.set(panel.id, panel)
+    for (const panel of options.restored?.panels ?? []) Panels.keep(this.panels, panel)
   }
   subscribe = (listener: () => void): () => void => {
     this.listeners.add(listener)
@@ -118,13 +118,12 @@ export class Workspace {
       queueMicrotask(() => this.launch(requested, next.writer, next.history))
     }
   }
+  /** Custom views kept; publishing one more replaces the least recently published. */
+  static readonly maxPanels = Panels.limit
   publish = (value: Panels.Panel): void => {
     const panel = Panels.decode(value)
-    if (!this.panels.has(panel.id) && this.panels.size >= 24) {
-      throw new Error("Limit of 24 views reached; reuse an existing panel id")
-    }
     this.options.persist({ type: "panel", panel })
-    this.panels.set(panel.id, panel)
+    Panels.keep(this.panels, panel)
     this.changed()
   }
   request = (request: Request): { id: string; status: Tab["status"] } => this.open(request, this.seat(request))

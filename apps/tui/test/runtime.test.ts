@@ -739,3 +739,19 @@ describe("tab flows through the real flow binding", () => {
     expect(call(all, "tab.list", {})).toMatchObject({ outcome: "success", value: [{ id: "run-1", status: "failed" }] })
   })
 })
+
+describe("custom view limit", () => {
+  it("replaces the least recently published view instead of refusing the next one", () => {
+    const { workspace, records } = setup()
+    for (let n = 0; n < Workspace.maxPanels; n++) workspace.publish({ ...panel, id: `v${n}` })
+    workspace.publish({ ...panel, id: "v0", summary: "Republished." })
+    workspace.publish({ ...panel, id: "new" })
+    const ids = workspace.snapshot().panels.map((each) => each.id)
+    expect(ids).toHaveLength(Workspace.maxPanels)
+    expect(ids).not.toContain("v1")
+    expect(ids).toContain("v0")
+    expect(ids.at(-1)).toBe("new")
+    const restored = Session.restore(records).workspace.panels.map((each) => each.id)
+    expect(restored).toEqual(ids)
+  })
+})
