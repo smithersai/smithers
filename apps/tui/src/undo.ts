@@ -6,7 +6,7 @@
  */
 import { applyPatch, parsePatch, reversePatch, type StructuredPatch } from "diff"
 import { realpathSync } from "node:fs"
-import { chmod, mkdir, unlink, writeFile } from "node:fs/promises"
+import { chmod, mkdir, stat, unlink, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import * as Changes from "./changes.ts"
 import * as Subprocess from "./subprocess.ts"
@@ -87,7 +87,7 @@ export const target = (transcript: Transcript.Transcript, rowId: string): Target
   // from other workers. An empty receipt made no edits and can coexist with a
   // named-file call in the same turn.
   const uncaptured = [
-    ...new Set(all.filter((call) => writers.includes(call.flow) &&
+    ...new Set(all.filter((call) => writers.includes(call.flow) && call.denied !== true &&
       (call.patches === undefined || (call.flow === "bash" && call.patches.length > 0))).map((call) => call.flow))
   ]
   if (uncaptured.length > 0) return { _tag: "Uncaptured", flows: uncaptured }
@@ -200,6 +200,15 @@ export const put = async (path: string, content: string | null, mode?: number): 
   if (mode !== undefined) await chmod(path, mode)
 }
 
+const modeOf = async (path: string): Promise<number | undefined> => {
+  try {
+    return (await stat(path)).mode & 0o7777
+  } catch (error) {
+    if (["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "")) return undefined
+    throw error
+  }
+}
+
 /** Writes the plan; refuses if a file moved since `plan` read it, and rolls back on an IO error. */
 export const commit = async (
   cwd: string,
@@ -208,8 +217,14 @@ export const commit = async (
   write: typeof put = put
 ): Promise<Failure | undefined> => {
   const moved: Array<string> = []
+  const modes = new Map<string, number | undefined>()
   for (const file of plan.files) {
     if ((await read(resolve(cwd, file.path))) !== file.current) moved.push(file.path)
+    try {
+      modes.set(file.path, await modeOf(resolve(cwd, file.path)))
+    } catch (error) {
+      return { _tag: "WriteFailed", path: file.path, message: (error as NodeJS.ErrnoException).code ?? String(error), restored: true }
+    }
   }
   if (moved.length > 0) return { _tag: "Conflict", paths: moved.sort() }
   const applied: Array<File> = []
@@ -221,8 +236,11 @@ export const commit = async (
       let restored = true
       // The failed write may have truncated its file before throwing.
       for (const done of [file, ...applied.toReversed()]) {
+        const path = resolve(cwd, done.path)
+        const mode = modes.get(done.path)
         try {
-          if ((await read(resolve(cwd, done.path))) !== done.current) await write(resolve(cwd, done.path), done.current)
+          if ((await read(path)) !== done.current || (await modeOf(path)) !== mode) await write(path, done.current, mode)
+          if ((await read(path)) !== done.current || (await modeOf(path)) !== mode) restored = false
         } catch {
           restored = false
         }

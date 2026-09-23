@@ -13,6 +13,8 @@ import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Stream } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { FlowError, type Port, type Settled, terminal } from "./flows.ts"
+import * as Approvals from "./approvals.ts"
+import type { Host } from "./host.ts"
 
 type ControlEvent = ControlSchema.ControlEvent
 interface Opened {
@@ -44,6 +46,7 @@ const answerOf = (events: ReadonlyArray<ControlEvent>): string => Diagnosis.reso
 export const make = (options: {
   readonly cwd: string
   readonly environment: Readonly<Record<string, string | undefined>>
+  readonly approvals: NonNullable<Host["approvals"]>
   /** Where `control.db` and `engine.db` live; default `<cwd>/.flows`, like `smthrs up`. */
   readonly stateRoot?: string
 }): Port => {
@@ -113,11 +116,19 @@ export const make = (options: {
     },
     plan: (flow, input) =>
       control((service) => service.plan({ flowId: flow, input: input as Control.PlanInput["input"] })).then((card) => ({
-        all: card.envelope.capabilities.includes("*"),
+        // Wildcards use the same y/n/a rows as every consequential envelope.
+        all: false,
         raw: card
       })),
-    start: (card) =>
-      control((service) =>
+    start: async (card, source = "chat", signal) => {
+      const raw = card.raw as ControlSchema.PlanCard
+      try {
+        await options.approvals.authorize(Approvals.project(raw.flowId, raw.envelope.capabilities, options.cwd, source), signal)
+        if (signal?.aborted) throw new FlowError("refused", "Stopped")
+      } catch (error) {
+        throw new FlowError("refused", signal?.aborted ? "Stopped" : typed(error).message)
+      }
+      return control((service) =>
         Effect.gen(function*() {
           const raw = card.raw as ControlSchema.PlanCard
           // Scope `run`, as `smthrs up`: this launch and its whole run, not every future launch.
@@ -146,7 +157,8 @@ export const make = (options: {
             )
           )
         })
-      ),
+      )
+    },
     resume: async (runId): Promise<{ runId: string } | Settled> => {
       const receipt = await control((service) =>
         service.resume({ runId, idempotencyKey: `tui:resume:${runId}:${Date.now()}` })

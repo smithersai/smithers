@@ -12,7 +12,7 @@ export interface Field {
   readonly label: string
   readonly kind: "text" | "number" | "boolean" | "select"
   readonly required: boolean
-  readonly options?: ReadonlyArray<string>
+  readonly options?: ReadonlyArray<Value>
 }
 export type Value = string | number | boolean
 export type Draft = Readonly<Record<string, Value>>
@@ -42,9 +42,9 @@ const control = (ast: SchemaAST.AST): Pick<Field, "kind" | "options"> => {
     return { kind: "number" }
   }
   if (ast._tag === "Boolean") return { kind: "boolean" }
-  if (ast._tag === "Literal") return { kind: "select", options: [String(ast.literal)] }
+  if (ast._tag === "Literal") return { kind: "select", options: [ast.literal as Value] }
   if (ast._tag === "Union" && ast.types.length > 0 && ast.types.every((member) => member._tag === "Literal")) {
-    return { kind: "select", options: ast.types.map((member) => String((member as SchemaAST.Literal).literal)) }
+    return { kind: "select", options: ast.types.map((member) => (member as SchemaAST.Literal).literal as Value) }
   }
   return { kind: "text" }
 }
@@ -62,6 +62,10 @@ export const fields = (schema: Schema.Top): Array<Field> => {
 
 const coerce = (field: Field, value: unknown): Value | undefined => {
   if (value === undefined || value === null) return undefined
+  if (field.kind === "select") {
+    return field.options?.find((option) => option === value) ??
+      field.options?.find((option) => String(option) === String(value))
+  }
   if (field.kind === "number") {
     const number = typeof value === "number" ? value : Number(String(value).trim())
     return Number.isFinite(number) && String(value).trim() !== "" ? number : undefined

@@ -89,6 +89,7 @@ export interface Host {
   /** Absent on hosts that approve nothing, such as test fakes. */
   readonly approvals?: {
     readonly mode: Approvals.Mode
+    readonly authorize: (requests: ReadonlyArray<Approvals.Request>, signal?: AbortSignal) => Promise<void>
     readonly pending: () => Promise<ReadonlyArray<Approvals.Pending>>
     /** Resolves with the store's error code when it refused the answer. */
     readonly reply: (
@@ -309,6 +310,8 @@ export const make = (options: {
 
   const approvals: NonNullable<Host["approvals"]> = {
     mode: approvalMode,
+    authorize: (requests, signal) => approvalMode === "all" ? Promise.resolve() :
+      runtime.runPromise(Effect.flatMap(GrantStore.GrantStore, (grants) => Approvals.check(grants, requests)), { signal }),
     pending: () =>
       runtime.runPromise(Effect.gen(function*() {
         return Approvals.pending(yield* (yield* GrantStore.GrantStore).list)

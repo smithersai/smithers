@@ -8,6 +8,7 @@
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Activity from "./activity.ts"
+import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
 import type * as Shell from "./shell.ts"
 
@@ -30,6 +31,8 @@ export interface Call {
   readonly endedAt?: number
   /** The user reversed this call's captured changes. */
   readonly undone?: true
+  /** Authorization refused before the writer could execute. */
+  readonly denied?: true
 }
 
 export interface Change {
@@ -408,6 +411,7 @@ const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: nu
         calls[at_] = {
           ...calls[at_]!,
           status: ok ? "ok" : "failed",
+          ...(Approvals.denied(event.result) ? { denied: true as const } : {}),
           ...(ok || event.result.message === undefined ? {} : { message: event.result.message }),
           ...(exit === undefined || exit === 0 ? {} : { exit }),
           ...(calls[at_]!.change === undefined || startLine(event.result.value) === undefined

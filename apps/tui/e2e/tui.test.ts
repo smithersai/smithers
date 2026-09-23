@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -653,6 +653,30 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("Already undone"), 5_000, "already undone")
   }, 60_000)
 
+  it("undo refuses while a project flow is active", async () => {
+    const cwd = repository()
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000)
+    await tui.type("delegate fix")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Requested the fix.") && screen.includes("Fixer · done"))
+    await tui.type("/flow review title=x")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("review · running"))
+    await tui.type("/tabs")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("r retry"))
+    await tui.press("u")
+    const screen = await tui.until((screen) => screen.includes("Stop running work first") || screen.includes("Undo math.js?"))
+    expect(screen).toContain("Stop running work first")
+    expect(screen).not.toContain("Undo math.js?")
+    expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+  }, 60_000)
+
   it("/new waits for a running undo, which settles in its own session", async () => {
     const { tui, cwd } = await editRow()
     // A FIFO holds the undo's read of math.js open: a deliberately unresolved undo.
@@ -886,6 +910,49 @@ describe("flows", () => {
 })
 
 describe("approvals", () => {
+  it("project flows use approval rows without blocking the composer", async () => {
+    const cwd = repository()
+    const folder = join(cwd, "flows", "consequential")
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, "flow.ts"), readFileSync(join(app, "test", "fixtures", "flows-project", "flows", "consequential", "flow.ts")))
+    symlinkSync(join(app, "..", "..", "node_modules"), join(cwd, "node_modules"))
+    const started = await start({ cwd, approve: "ask" })
+    await started.tui.type("/flow consequential")
+    await started.tui.press(key.enter)
+    await started.tui.until((screen) => screen.includes("fs:write:/**") && screen.includes("n deny"), 30_000)
+    await started.tui.type("draft")
+    await started.tui.until((screen) => /┃\s+draft/.test(screen) && !screen.includes("n deny"))
+    await started.tui.press(key.ctrlC)
+    await started.tui.until((screen) => screen.includes("n deny"))
+    await started.tui.press("n")
+    await started.tui.until((screen) => screen.includes("consequential · failed") && !screen.includes("n deny"))
+    const sessions = join(started.sessions, readdirSync(started.sessions)[0]!)
+    const records = Session.load(join(sessions, readdirSync(sessions).find((name) => name.endsWith(".jsonl"))!))
+    expect(records.filter((record) => record.type === "flow").every((record) => record.run.runId === undefined)).toBe(true)
+  }, 60_000)
+
+  it("advertised approval keys work with Summary focus", async () => {
+    const cwd = repository()
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "approval-fixture.tsx")}`,
+      env: { PATH: process.env.PATH!, HOME: process.env.HOME!, SMITHERS_TUI_SESSION_DIR: join(cwd, "sessions") }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000)
+    await tui.type("run")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("? bash true") && screen.includes("n deny"))
+    await tui.press(key.ctrlS)
+    await tui.until((screen) => screen.includes("u undo") && screen.includes("n deny"))
+    await tui.press("n")
+    await Bun.sleep(600)
+    expect(tui.screen()).not.toContain("? bash true")
+    const folder = join(cwd, "sessions", readdirSync(join(cwd, "sessions"))[0]!)
+    const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
+    const outcome = Session.load(file).findLast((record) => record.type === "outcome")
+    expect(outcome).toMatchObject({ type: "outcome", outcome: { answer: "Choice: deny" } })
+  }, 60_000)
+
   const prompt = "node check.mjs fails. Fix it and show it passes."
   const asking = /\? (bash|edit|write|apply_patch) .*y allow/
 

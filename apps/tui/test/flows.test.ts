@@ -98,6 +98,23 @@ const call = (event: string, nodeId: number) => ({
 })
 
 describe("flow runs", () => {
+  it("keeps the newest discovery when refresh responses overlap", async () => {
+    const f = setup()
+    const first = pending<ReadonlyArray<Listed>>()
+    const second = pending<ReadonlyArray<Listed>>()
+    const queue = [first, second]
+    Object.assign(f.port, { discover: () => queue.shift()!.promise })
+    f.runs.refresh()
+    f.runs.refresh()
+    const newest = [{ name: "new", description: "", modelInvocable: true }]
+    second.resolve(newest)
+    await tick()
+    first.resolve([{ name: "old", description: "", modelInvocable: true }])
+    await tick()
+    expect(f.runs.listed()).toEqual(newest)
+    f.runs.dispose()
+  })
+
   it("persists and acknowledges before any port call and deduplicates", () => {
     const f = setup()
     expect(f.runs.request({ id: "r1", flow: "review", input: {}, by: "agent" })).toEqual({ id: "r1", status: "requested" })
@@ -235,15 +252,20 @@ describe("flow runs", () => {
     await tick()
     expect(f.calls.at(-1)).toBe("start")
     f.runs.cancel("r1")
-    expect(f.runs.get("r1")?.status).toBe("cancelled")
+    expect(f.runs.get("r1")?.status).toBe("requested")
+    expect(f.runs.busy).toBe(true)
     f.starts[0]!.resolve("run-1")
     await tick()
     expect(f.calls).toContain("cancel:run-1")
-    expect(f.calls).not.toContain("watch:run-1")
+    expect(f.calls).toContain("watch:run-1")
+    expect(f.runs.busy).toBe(true)
+    expect(f.runs.get("r1")?.status).toBe("running")
+    f.watches[0]!.done.resolve({ kind: "cancelled" })
+    await tick()
     expect(f.runs.get("r1")?.status).toBe("cancelled")
   })
 
-  it("a refused late stop stays visible on the cancelled run", async () => {
+  it("a refused late stop stays monitored and can be retried", async () => {
     const f = setup({ refuseCancel: true })
     f.auto.start = false
     f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
@@ -252,7 +274,31 @@ describe("flow runs", () => {
     f.starts[0]!.resolve("run-1")
     await tick()
     await tick()
-    expect(f.runs.get("r1")).toMatchObject({ status: "cancelled", runId: "run-1", message: "Cancel refused" })
+    expect(f.runs.get("r1")).toMatchObject({ status: "running", runId: "run-1", message: "Cancel refused" })
+    expect(f.runs.busy).toBe(true)
+    expect(f.calls).toContain("watch:run-1")
+    f.runs.cancel("r1")
+    await tick()
+    expect(f.calls.filter((call) => call === "cancel:run-1")).toHaveLength(2)
+  })
+
+  it("a stop during launch survives disposal and persists a retryable remote run", async () => {
+    const f = setup({ refuseCancel: true })
+    f.auto.start = false
+    f.runs.request({ id: "r1", flow: "review", input: {}, by: "user" })
+    await tick()
+    f.runs.cancel("r1")
+    f.runs.dispose()
+    f.starts[0]!.resolve("run-1")
+    await tick()
+    expect(f.calls).toContain("cancel:run-1")
+    expect(f.records.at(-1)).toMatchObject({ type: "flow", run: { status: "failed", runId: "run-1", message: "Cancel refused" } })
+    const restored = setup({ restored: f.runs.snapshot() })
+    restored.runs.retry("r1")
+    await tick()
+    expect(restored.calls).toContain("cancel:run-1")
+    expect(restored.calls).toContain("watch:run-1")
+    expect(restored.calls).not.toContain("start")
   })
 
   it("the coordinator context bounds a run's message", async () => {

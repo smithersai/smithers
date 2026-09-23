@@ -195,9 +195,26 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
   for (const record of records) if (record.type === "tab") last.set(key(record.tab), record)
   const settled = new Set<TabRecord>()
   for (const record of before) if (record.type === "tab") settled.add(last.get(key(record.tab))!)
-  const kept = [...before, ...[...settled].filter((record) => !before.includes(record))]
-  const writer = create(cwd, "chat", { parent: source, seed: kept })
-  return { _tag: "Forked", writer, records: kept, text: at.text }
+  const copies = new Map<string, string>()
+  try {
+    const kept = [...before, ...[...settled].filter((record) => !before.includes(record))].map((record): Record => {
+      if (record.type !== "tab") return record
+      const original = record.tab.file
+      if (!copies.has(original)) {
+        const worker = create(cwd, "worker", {
+          parent: original,
+          seed: existsSync(original) ? load(original).filter((record) => record.type !== "session") : []
+        })
+        copies.set(original, worker.file)
+      }
+      return { ...record, tab: { ...record.tab, file: copies.get(original)! } }
+    })
+    const writer = create(cwd, "chat", { parent: source, seed: kept })
+    return { _tag: "Forked", writer, records: kept, text: at.text }
+  } catch (error) {
+    for (const file of copies.values()) rmSync(file, { force: true })
+    throw error
+  }
 }
 
 /** What a session file rebuilds: the screen, the agent's context, and the prompt history. */

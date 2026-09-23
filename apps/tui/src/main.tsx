@@ -72,7 +72,7 @@ if (values.print !== undefined) {
 }
 
 // Opens nothing until a flow runs; discovery alone never imports a flow module.
-const flows = FlowControl.make({ cwd, environment: available.environment })
+const flows = FlowControl.make({ cwd, environment: available.environment, approvals: host.approvals! })
 const resumeFile = values.continue === true ? Session.latest(cwd) : undefined
 const branch = spawnSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8" }).stdout?.trim()
 const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })

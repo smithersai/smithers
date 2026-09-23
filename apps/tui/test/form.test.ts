@@ -9,6 +9,17 @@ const schema = Schema.Struct({
   mode: Schema.Literals(["a", "b"])
 })
 
+it("preserves numeric literal choices in valid payloads", () => {
+  const schema = Schema.Struct({ count: Schema.Literals([1, 2]), fixed: Schema.Literal(3) })
+  const fields = Form.fields(schema)
+  const draft = Form.draft(fields, { count: 1, fixed: 3 })
+  const result = Form.payload(schema, fields, {}, draft)
+  expect(result).toEqual({ payload: { count: 1, fixed: 3 } })
+  expect("payload" in result && Form.valid(schema, result.payload)).toBe(true)
+  const selected = fields[0]!.options![1]!
+  expect(Form.payload(schema, fields, {}, { ...draft, count: selected })).toEqual({ payload: { count: 2, fixed: 3 } })
+})
+
 it("derives one field per payload property", () => {
   expect(Form.fields(schema)).toEqual([
     { name: "title", label: "Title", kind: "text", required: true },

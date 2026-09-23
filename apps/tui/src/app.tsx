@@ -372,7 +372,7 @@ export function App(props: AppProps) {
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const lastCtrlC = useRef(0)
-  const files = useRef(Files.lister(props.host.cwd))
+  const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
   /** The draft a palette command with an argument displaced; restored by the next submit. */
   const parkedDraft = useRef<string | undefined>(undefined)
   const dimensions = useTerminalDimensions()
@@ -619,7 +619,7 @@ export function App(props: AppProps) {
   /** Reverses a Summary or worker tab row's captured changes in the background; the composer stays usable. */
   const runUndo = useCallback((target: Undo.Target, tab: string | undefined) => {
     const current = live.current
-    if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
+    if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy || runs.busy) {
       return setStatus(Undo.message({ _tag: "Busy" }), "warning")
     }
     const startedAt = Date.now()
@@ -654,7 +654,7 @@ export function App(props: AppProps) {
           startTurnRef.current(next)
         }
       })
-  }, [props.host.cwd, workspace, setStatus])
+  }, [props.host.cwd, workspace, runs, setStatus])
 
   const switchSeat = useCallback((next: string) => {
     setSeat(next)
@@ -1064,7 +1064,7 @@ export function App(props: AppProps) {
     if ((key.name === "left" || key.name === "right") && field?.kind === "select" && field.options !== undefined) {
       key.preventDefault()
       const options = field.options
-      const at = options.indexOf(String(open.draft[field.name] ?? ""))
+      const at = options.indexOf(open.draft[field.name] ?? "")
       const next = options[(at + (key.name === "left" ? -1 : 1) + options.length) % options.length]!
       return changeForm({ ...open, draft: { ...open.draft, [field.name]: next }, error: undefined })
     }
@@ -1186,6 +1186,34 @@ export function App(props: AppProps) {
       setNavigation(Panels.initial())
       return
     }
+    const choice = Approvals.key(key.name, {
+      draft: text,
+      shift: key.shift,
+      ctrl: key.ctrl,
+      meta: key.meta || key.option,
+      armed: open === undefined && Approvals.armed(arming.current, live.current.approvals[0]?.requestId, live.current.now),
+      pending: live.current.approvals
+    })
+    if (choice !== undefined && props.host.approvals !== undefined) {
+      key.preventDefault()
+      const [first, ...rest] = live.current.approvals
+      const requestId = first!.requestId
+      answered.current.add(requestId)
+      arming.current = Approvals.answered(requestId)
+      live.current.approvals = rest
+      setApprovals(rest)
+      // A refused answer leaves the call waiting: show its row again.
+      const retry = (code: string) => {
+        answered.current.delete(requestId)
+        arming.current = Approvals.failed(arming.current, requestId)
+        setStatus(`Approval failed: ${code}`, "warning")
+      }
+      props.host.approvals.reply(first!, choice).then(
+        (code) => code === undefined ? undefined : retry(code),
+        (error) => retry(String(error))
+      )
+      return
+    }
     if (panelFocus && panel !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
       key.preventDefault()
       if (key.name === "escape") {
@@ -1214,7 +1242,7 @@ export function App(props: AppProps) {
       if (key.name === "a" && surface.startsWith("flow:")) return openForm(surface.slice(5))
       if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
         const current = live.current
-        if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy) {
+        if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy || runs.busy) {
           return setStatus(Undo.message({ _tag: "Busy" }), "warning")
         }
         const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
@@ -1247,34 +1275,6 @@ export function App(props: AppProps) {
     }
     if (open !== undefined) return dialogKey(key, open)
     if (completing !== undefined && menuKey(key, completing)) return
-    const choice = Approvals.key(key.name, {
-      draft: text,
-      shift: key.shift,
-      ctrl: key.ctrl,
-      meta: key.meta || key.option,
-      armed: Approvals.armed(arming.current, live.current.approvals[0]?.requestId, live.current.now),
-      pending: live.current.approvals
-    })
-    if (choice !== undefined && props.host.approvals !== undefined) {
-      key.preventDefault()
-      const [first, ...rest] = live.current.approvals
-      const requestId = first!.requestId
-      answered.current.add(requestId)
-      arming.current = Approvals.answered(requestId)
-      live.current.approvals = rest
-      setApprovals(rest)
-      // A refused answer leaves the call waiting: show its row again.
-      const retry = (code: string) => {
-        answered.current.delete(requestId)
-        arming.current = Approvals.failed(arming.current, requestId)
-        setStatus(`Approval failed: ${code}`, "warning")
-      }
-      props.host.approvals.reply(first!, choice).then(
-        (code) => code === undefined ? undefined : retry(code),
-        (error) => retry(String(error))
-      )
-      return
-    }
     if (key.name === "escape") {
       if (running !== undefined) {
         restoreQueued(running.steering.take())
@@ -1501,11 +1501,12 @@ export function App(props: AppProps) {
           <View.Approval
             request={approvals[0]}
             scope={Approvals.scope(approvals[0])}
-            armed={Approvals.ready(arming.current, approvals[0].requestId, now, draft)}
+            armed={picker === undefined && form === undefined && Approvals.ready(arming.current, approvals[0].requestId, now, draft)}
             more={approvals.length - 1}
             {...(approvals[0].source === "chat"
               ? {}
-              : { worker: snapshot.tabs.find((tab) => tab.id === approvals[0]!.source)?.title ?? approvals[0].source })}
+              : { worker: snapshot.tabs.find((tab) => tab.id === approvals[0]!.source)?.title ??
+                flowRuns.find((run) => `flow:${run.id}` === approvals[0]!.source)?.flow ?? approvals[0].source })}
           />
         )}
         <box

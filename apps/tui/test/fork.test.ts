@@ -48,6 +48,20 @@ const session = (status: Tab["status"], settled?: string) => {
 }
 
 describe("workers across a fork", () => {
+  it("undo in a fork writes only its copied worker history", () => {
+    const { chat, worker, forked, workspace } = session("done")
+    const sourceChat = readFileSync(chat.file, "utf8")
+    const sourceWorker = readFileSync(worker.file, "utf8")
+    workspace.undone("fix", ["call"], ["a.ts"], 5)
+    const file = workspace.snapshot().tabs[0]!.file
+    expect(readFileSync(worker.file, "utf8")).toBe(sourceWorker)
+    expect(readFileSync(chat.file, "utf8")).toBe(sourceChat)
+    expect(file).not.toBe(worker.file)
+    expect(Session.load(file).at(-1)).toMatchObject({ type: "undo", calls: ["call"] })
+    expect(Session.restore(Session.load(forked.writer.file)).workspace.tabs[0]!.file).toBe(file)
+    workspace.dispose()
+  })
+
   it("recovers a running tab from its worker file and records it in the fork, not the source", () => {
     const { chat, forked, workspace } = session("running")
     const before = readFileSync(chat.file, "utf8")

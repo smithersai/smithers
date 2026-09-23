@@ -20,8 +20,8 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Layer, Option } from "effect"
-import { lstatSync, readlinkSync, realpathSync } from "node:fs"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { lstatSync, readlinkSync } from "node:fs"
+import { dirname, isAbsolute, join, relative } from "node:path"
 import * as Changes from "./changes.ts"
 
 /** `ask` waits for y/n, `all` asks nothing, `deny` refuses every consequential call. */
@@ -73,28 +73,31 @@ export const consequential = (capability: Capability.Capability, cwd: string): b
  * Components that do not exist yet are kept as written.
  */
 export const real = (path: string): string => {
-  let head = resolve(path)
-  const rest: Array<string> = []
-  for (let hops = 0; hops < 64;) {
+  let head = "/"
+  const rest = (isAbsolute(path) ? path : `${process.cwd()}/${path}`).split("/")
+  let hops = 0
+  while (rest.length > 0) {
+    const part = rest.shift()!
+    if (part === "" || part === ".") continue
+    if (part === "..") {
+      head = dirname(head)
+      continue
+    }
+    const next = join(head, part)
+    let link: string | undefined
     try {
-      return join(realpathSync(head), ...rest)
+      if (lstatSync(next).isSymbolicLink()) link = readlinkSync(next)
     } catch {
-      try {
-        if (lstatSync(head).isSymbolicLink()) {
-          head = resolve(dirname(head), readlinkSync(head))
-          hops++
-          continue
-        }
-      } catch {
-        // Absent: keep its name and resolve its parent.
-      }
-      const parent = dirname(head)
-      if (parent === head) return join(head, ...rest)
-      rest.unshift(basename(head))
-      head = parent
+      // Absent components retain their names.
+    }
+    if (link === undefined) head = next
+    else {
+      if (++hops > 64) throw new Error("Too many symlinks")
+      if (isAbsolute(link)) head = "/"
+      rest.unshift(...link.split("/"))
     }
   }
-  return join(head, ...rest)
+  return head
 }
 
 /** Keys that never change what a call does, per flow. */
@@ -129,7 +132,7 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
       const root = real(cwd)
       for (const path of paths) {
         // The store classifies lexically, so hand it the path the write reaches.
-        const target = real(resolve(cwd, path))
+        const target = real(isAbsolute(path) ? path : `${cwd}/${path}`)
         const inside = relative(root, target)
         add(
           Capability.make("fs:write", target),
@@ -141,6 +144,30 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
       add(Capability.make("proc:spawn", call.flowName), subject)
     } else {
       add(capability, subject)
+    }
+  }
+  return [...found.values()]
+}
+
+/** A project plan grants its declared envelope, not a built-in writer's input shape. */
+export const project = (flow: string, capabilities: ReadonlyArray<string>, cwd: string, source: string): ReadonlyArray<Request> => {
+  const found = new Map<string, Request>()
+  for (const declared of capabilities) {
+    const parsed = Capability.parsePattern(declared)
+    if (Option.isNone(parsed)) throw new HarnessError({ code: "engine_failed", message: `Invalid capability: ${declared}` })
+    const pattern = parsed.value
+    for (const action of Capability.Action.literals) {
+      if (pattern.action !== "*" && pattern.action !== action && pattern.action !== `${action.split(":")[0]}:*`) continue
+      // A glob cannot prove symlink containment. Ask for broad write authority.
+      const resource = action === "fs:write"
+        ? Capability.isLiteralResource(pattern.resource)
+          ? real(isAbsolute(pattern.resource) ? pattern.resource : `${cwd}/${pattern.resource}`)
+          : "/**"
+        : action === "proc:spawn" ? flow : pattern.resource
+      const capability = Capability.make(action, resource)
+      if (!consequential(capability, cwd)) continue
+      const subject = Capability.format(capability)
+      found.set(subject, { capability, meta: { flow, subject, source } })
     }
   }
   return [...found.values()]
@@ -179,8 +206,12 @@ export const notices = () => {
 /** `Agent.Options.authorize`: waits for every consequential request, in order. */
 export const authorize = (grants: GrantStore.Service, options: { readonly cwd: string; readonly source: string }) =>
 (call: Cell.Call): Effect.Effect<void, HarnessError> =>
+  check(grants, requests(call, options.cwd, options.source))
+
+/** Both worker calls and project launches wait on this same store. */
+export const check = (grants: GrantStore.Service, requests: ReadonlyArray<Request>): Effect.Effect<void, HarnessError> =>
   Effect.forEach(
-    requests(call, options.cwd, options.source),
+    requests,
     (request) =>
       grants.check(request.capability, { ...request.meta }).pipe(
         Effect.mapError((cause) =>

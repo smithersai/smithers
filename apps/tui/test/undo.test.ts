@@ -88,6 +88,53 @@ const undo = async (cwd: string, transcript: Transcript.Transcript, rowId: strin
 const write = (cwd: string, path: string, content: string) => () => put(cwd, path, content)
 
 describe("undo", () => {
+  it("rollback restores bytes and original mode after a later write fails", async () => {
+    const cwd = scratch()
+    put(cwd, "secret", "secret\n")
+    chmodSync(join(cwd, "secret"), 0o600)
+    put(cwd, "second", "new\n")
+    const plan = { calls: ["c"], files: [
+      { path: "secret", current: "secret\n", next: null },
+      { path: "second", current: "new\n", next: "old\n" }
+    ] }
+    const result = await Undo.commit(cwd, plan, undefined, async (path, content, mode) => {
+      if (path.endsWith("/second") && content === "old\n") throw new Error("injected IO failure")
+      await Undo.put(path, content, mode)
+    })
+    expect(result).toMatchObject({ _tag: "WriteFailed", restored: true })
+    expect(get(cwd, "secret")).toBe("secret\n")
+    expect(statSync(join(cwd, "secret")).mode & 0o7777).toBe(0o600)
+  })
+
+  it("rollback reports unrestored when bytes match but mode does not", async () => {
+    const cwd = scratch()
+    put(cwd, "secret", "secret\n")
+    chmodSync(join(cwd, "secret"), 0o600)
+    const result = await Undo.commit(cwd, { calls: [], files: [
+      { path: "secret", current: "secret\n", next: "old\n" }
+    ] }, undefined, async (path) => {
+      chmodSync(path, 0o644)
+      throw new Error("chmod refused")
+    })
+    expect(result).toMatchObject({ _tag: "WriteFailed", restored: false })
+  })
+
+  it("undoes captured edits when a later writer was denied before execution", async () => {
+    const cwd = scratch()
+    put(cwd, "a.ts", "before\n")
+    const r = recorder(cwd)
+    r.prompt("change")
+    r.cell()
+    await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "after\n"))
+    const identity = { session: "test", frame: 1, cell: 1, ordinal: 99 }
+    r.records.push({ type: "event", at: 10, event: { _tag: "cell-call-started", call: { flowName: "bash", input: { command: "true" }, identity } } as never })
+    r.records.push({ type: "event", at: 11, event: { _tag: "cell-call-settled", flowName: "bash", identity, result: { outcome: "failure", code: "capability_refused", message: "Denied: bash true" } } as never })
+    r.settle()
+    const result = await undo(cwd, r.transcript(), r.transcript().items[0]!.id)
+    expect("_tag" in result).toBe(false)
+    expect(get(cwd, "a.ts")).toBe("before\n")
+  })
+
   it("reverses a captured edit", async () => {
     const cwd = scratch()
     put(cwd, "a.ts", "before\n")

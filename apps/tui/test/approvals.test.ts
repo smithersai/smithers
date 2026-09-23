@@ -16,6 +16,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Approvals from "../src/approvals.ts"
 import * as Runtime from "../src/runtime.ts"
+import * as ApplyPatch from "@smthrs/std/ApplyPatch"
+import { readFileSync } from "node:fs"
 
 const cwd = "/work/repo"
 
@@ -81,6 +83,25 @@ const settledPending = (grants: GrantStore.Service, count: number) =>
   })
 
 describe("classification", () => {
+  it("authorizes the destination reached by a symlink followed by dot-dot", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tui-approval-path-"))
+    try {
+      const cwd = join(root, "workspace")
+      mkdirSync(cwd)
+      mkdirSync(join(root, "outside", "sub"), { recursive: true })
+      symlinkSync(join(root, "outside", "sub"), join(cwd, "link"))
+      const input = { input: `*** Begin Patch\n*** Add File: ${cwd}/link/../target.txt\n+written\n*** End Patch` }
+      const requests = Approvals.requests(callOf("apply_patch", input), cwd, "worker")
+      await Effect.runPromise(ApplyPatch.run(input).pipe(Effect.provide(NodeServices.layer)))
+      const actual = realpathSync(join(root, "outside", "target.txt"))
+      expect(readFileSync(actual, "utf8")).toBe("written\n")
+      expect(requests[0]!.capability.resource).toBe(actual)
+      expect(requests[0]!.meta.subject).toBe(actual)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("asks for exactly the flows that change files or run commands", () => {
     const asked = descriptors.filter((descriptor) =>
       Approvals.requests(callOf(descriptor.name, inputs[descriptor.name] ?? {}), cwd, "chat").length > 0

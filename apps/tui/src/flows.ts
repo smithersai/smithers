@@ -39,8 +39,8 @@ export interface Port {
   readonly discover: () => Promise<ReadonlyArray<Listed>>
   readonly input: (flow: string) => Promise<Schema.Top | undefined>
   readonly plan: (flow: string, input: unknown) => Promise<Card>
-  /** Approves the card for this run and launches it. */
-  readonly start: (card: Card) => Promise<string>
+  /** Approves and launches. A signal interrupts approval only; an admitted launch still returns its receipt. */
+  readonly start: (card: Card, source?: string, signal?: AbortSignal) => Promise<string>
   readonly resume: (runId: string) => Promise<{ readonly runId: string } | Settled>
   readonly watch: (runId: string, onEvent: (event: ControlEvent) => void) => Watch
   readonly events: (runId: string) => Promise<ReadonlyArray<ControlEvent>>
@@ -69,6 +69,8 @@ export interface Run {
   readonly endedAt?: number
   readonly message?: string
   readonly answer?: string
+  /** A stop must follow an in-flight launch through its remote receipt. */
+  readonly stopRequested?: true
 }
 export interface Request {
   readonly id?: string
@@ -90,10 +92,12 @@ export class FlowRuns {
   private cards = new Map<string, Card>()
   private schemas = new Map<string, Schema.Top>()
   private watches = new Map<string, Watch>()
+  private launching = new Map<string, AbortController>()
   /** Bumped by every restart of a run; a continuation from an older attempt drops its result. */
   private attempts = new Map<string, number>()
   private loaded = new Set<string>()
   private cache: ReadonlyArray<Listed> = []
+  private discovery = 0
   private listeners = new Set<() => void>()
   private closed = false
   constructor(
@@ -127,13 +131,19 @@ export class FlowRuns {
   schema = (id: string): Schema.Top | undefined => this.schemas.get(id)
   /** The last discovery; `refresh` updates it in the background. */
   listed = (): ReadonlyArray<Listed> => this.cache
+  private async discover() {
+    const version = ++this.discovery
+    const listed = await this.options.port!.discover()
+    if (version === this.discovery && !this.closed) {
+      this.cache = listed
+      this.changed()
+    }
+    return listed
+  }
   refresh = (): void => {
     const port = this.options.port
     if (port === undefined || this.closed) return
-    port.discover().then((listed) => {
-      this.cache = listed
-      this.changed()
-    }, () => { /* A failed listing leaves the last one; running a flow reports its own failure. */ })
+    this.discover().catch(() => { /* A failed listing leaves the last one; running a flow reports its own failure. */ })
   }
   private save(run: Run) {
     this.options.persist({ type: "flow", run })
@@ -195,8 +205,7 @@ export class FlowRuns {
   private async prepare(id: string, attempt: number) {
     const port = this.options.port!
     try {
-      const listed = await port.discover()
-      this.cache = listed
+      const listed = await this.discover()
       const run = this.runs.get(id)
       if (run === undefined || this.attempts.get(id) !== attempt || this.closed) return
       const found = listed.find((each) => each.name === run.flow)
@@ -233,19 +242,32 @@ export class FlowRuns {
     await this.launch(id, attempt, card)
   }
   private async launch(id: string, attempt: number, card: Card) {
-    const runId = await this.options.port!.start(card)
-    if (this.attempts.get(id) !== attempt && !this.closed) return this.stopLate(id, runId)
-    if (this.update(id, attempt, { status: "running", runId, message: undefined }) === undefined) return
-    this.follow(id, attempt, runId)
-  }
-  /** A stop landed while `start` was in flight: stop the run it launched too. */
-  private stopLate(id: string, runId: string) {
-    this.options.port!.cancel(runId).catch((error) => {
-      const current = this.runs.get(id)
-      if (current?.status === "cancelled" && !this.closed) {
-        this.save({ ...current, runId, message: error instanceof Error ? error.message : String(error) })
+    const controller = new AbortController()
+    this.launching.set(id, controller)
+    try {
+      const runId = await this.options.port!.start(card, `flow:${id}`, controller.signal)
+      const run = this.runs.get(id)!
+      if (this.closed) {
+        // Preserve the receipt even after the UI detached; retry must target this run.
+        this.save({ ...run, runId, status: "failed", message: interrupted, endedAt: Date.now() })
+      } else {
+        if (this.update(id, attempt, { status: "running", runId, message: undefined }) === undefined) return
+        this.follow(id, attempt, runId)
       }
-    })
+      if (run.stopRequested) await this.stop(id, runId)
+    } finally {
+      this.launching.delete(id)
+    }
+  }
+  private async stop(id: string, runId: string) {
+    try {
+      await this.options.port!.cancel(runId)
+    } catch (error) {
+      const current = this.runs.get(id)
+      if (current !== undefined && (active(current) || this.closed)) {
+        this.save({ ...current, message: error instanceof Error ? error.message : String(error) })
+      }
+    }
   }
   private follow(id: string, attempt: number, runId: string) {
     this.events.set(id, [])
@@ -294,14 +316,15 @@ export class FlowRuns {
   cancel = (id: string): void => {
     const run = this.runs.get(id)
     if (run === undefined || !active(run)) return
+    if (this.launching.has(id)) {
+      this.save({ ...run, stopRequested: true, message: "Stopping" })
+      this.launching.get(id)!.abort()
+      return
+    }
     if (run.runId !== undefined && (run.status === "running" || run.status === "waiting")) {
       // The watch settles the status; a refused cancel keeps it running.
-      this.options.port!.cancel(run.runId).catch((error) => {
-        const current = this.runs.get(id)
-        if (current !== undefined && !this.closed) {
-          this.save({ ...current, message: error instanceof Error ? error.message : String(error) })
-        }
-      })
+      this.save({ ...run, stopRequested: true })
+      void this.stop(id, run.runId)
       return
     }
     this.attempt(id)
@@ -317,6 +340,12 @@ export class FlowRuns {
     }
     const attempt = this.attempt(id)
     const { endedAt: _ended, answer: _answer, ...rest } = run
+    if (run.runId !== undefined && run.stopRequested && run.status === "failed") {
+      this.save({ ...rest, status: "running", message: undefined })
+      this.follow(id, attempt, run.runId)
+      void this.stop(id, run.runId)
+      return
+    }
     if (run.runId !== undefined && run.message === interrupted) {
       const runId = run.runId
       this.save({ ...rest, status: "running", message: undefined })
@@ -327,7 +356,7 @@ export class FlowRuns {
       }, (error) => this.fail(id, attempt, error))
       return
     }
-    const { runId: _runId, ...fresh } = rest
+    const { runId: _runId, stopRequested: _stop, ...fresh } = rest
     this.save({ ...fresh, status: "requested", message: undefined, startedAt: Date.now() })
     queueMicrotask(() => void this.prepare(id, attempt))
   }
@@ -399,6 +428,7 @@ export class FlowRuns {
     )
   dispose = (): void => {
     this.closed = true
+    for (const controller of this.launching.values()) controller.abort()
     for (const watch of this.watches.values()) watch.close()
     this.watches.clear()
   }
