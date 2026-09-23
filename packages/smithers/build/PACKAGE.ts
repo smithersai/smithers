@@ -189,7 +189,7 @@ const cacheServicePostgresDatabase = Smithers.Docker.Service({
  * suite runs under `smithers-build test` and in the CI lane that invokes it.
  *
  * The migration, the storage module, and the suite are the read set; the
- * shell text runs from the workspace root, as every `Shell` declaration
+ * Bun runs from the workspace root, as every `Shell` declaration
  * does. The sandbox opens loopback alone, which is where the published port
  * is.
  *
@@ -197,7 +197,8 @@ const cacheServicePostgresDatabase = Smithers.Docker.Service({
  * @category test
  */
 const cacheServicePostgres = Smithers.Shell.Test({
-  shell: "bun test packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js",
+  bin: Smithers.Runtime.bin,
+  args: ["test", "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js"],
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   // The required Linux lane owns this Docker-backed integration. The hosted
   // macOS runner has no Docker daemon, and Windows cannot run this Linux image.
@@ -211,7 +212,7 @@ const cacheServicePostgres = Smithers.Shell.Test({
     Smithers.file("terraform/modules/cache/service/test/postgres_test.js")
   ],
   services: process.platform === "linux" ? [cacheServicePostgresDatabase] : [],
-  sandbox: { network: "loopback" },
+  sandbox: process.platform === "linux" ? { network: "loopback" } : "none",
   timeout: "10m"
 })
 

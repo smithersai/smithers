@@ -17,6 +17,7 @@ import type * as NodeTest from "@smthrs/targets/NodeTest"
 import type * as Shell from "@smthrs/targets/Shell"
 import * as Target from "@smthrs/targets/Target"
 import type * as Vitest from "@smthrs/targets/Vitest"
+import * as Runtime from "@smthrs/targets/Runtime"
 import * as Fs from "node:fs"
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
@@ -113,12 +114,15 @@ describe("self-hosted cache service targets", () => {
 
   it("runs postgres_test.js against a pinned Postgres service with the URL it skips without", () => {
     const attrs = attrsOf<(typeof Shell.TestAttrs)["Type"]>(Package.cacheServicePostgres)
-    expect(attrs.shell).toContain("terraform/modules/cache/service/test/postgres_test.js")
+    expect(attrs.bin).toEqual(Runtime.bin)
+    expect(attrs.args).toEqual(["test", "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js"])
     if (process.platform !== "linux") {
       expect(attrs.services).toHaveLength(0)
       expect(attrs.env).toEqual({})
+      expect(attrs.sandbox).toBe("none")
       return
     }
+    expect(attrs.sandbox).toEqual({ network: "loopback" })
     expect(attrs.services).toHaveLength(1)
     const service = attrs.services![0]!
     expect(Target.metadata(service).target).toBe("Docker.Service")
