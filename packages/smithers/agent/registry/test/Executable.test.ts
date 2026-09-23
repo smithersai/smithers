@@ -26,7 +26,7 @@ import * as Option from "effect/Option"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import { execFile } from "node:child_process"
-import { relative } from "node:path"
+import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
@@ -853,7 +853,7 @@ describe("the module specifier", () => {
     ["non-ASCII", "/repo/üní/flow.ts"],
     ["plain", "/repo/plain/flow.ts"]
   ])("matches pathToFileURL for a %s in a POSIX path", (_label, path) => {
-    expect(Executable.fileSpecifier(path)).toBe(pathToFileURL(path).href)
+    expect(Executable.fileSpecifier(path)).toBe(pathToFileURL(path, { windows: false }).href)
   })
 
   it("escapes the characters a path and a URL both claim", () => {
@@ -1377,7 +1377,7 @@ describe("the project registry", () => {
       // unreadable root as an empty project would hide every flow behind a
       // permissions mistake.
       expect(failure.code).toBe("read_failed")
-      expect(failure.path).toBe(`${projectRoot}/flows`)
+      expect(failure.path).toBe(join(projectRoot, "flows"))
     }))
 
   it.effect("keeps a pack's flows when the project has no flows directory of its own", () =>
