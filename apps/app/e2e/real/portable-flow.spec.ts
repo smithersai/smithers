@@ -18,8 +18,8 @@ authenticatedTest("an owned repository runs a declared Flow and exposes its dura
     expect(list.status()).toBe(200)
     const catalog = await list.json() as { readonly ok?: boolean; readonly payload?: { readonly items?: ReadonlyArray<{ readonly flowId?: string }> } }
     expect(catalog.ok).toBe(true)
-    const flow = catalog.payload?.items?.find(({ flowId }) => flowId?.toLowerCase().includes("librarian"))
-    expect(flow?.flowId, "the packaged librarian Flow must be in the product catalog").toEqual(expect.any(String))
+    const flow = catalog.payload?.items?.find(({ flowId }) => flowId === "librarian/history")
+    expect(flow?.flowId, "the packaged history Flow must be in the product catalog").toBe("librarian/history")
 
     const accepted = page.waitForResponse((response) => {
       if (response.request().method() !== "POST" || new URL(response.url()).pathname !== "/api/workflow/rpc") return false

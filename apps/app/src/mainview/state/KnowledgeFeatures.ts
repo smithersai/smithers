@@ -20,6 +20,10 @@ export const knowledgeFlowAvailable = (name: string, features: KnowledgeFeatures
   return true
 }
 
+/** A runtime-listed Flow can run even when its older built-in UI door is off. */
+export const runtimeFlowAvailable = (name: string, features: KnowledgeFeatures = {}): boolean =>
+  name.startsWith("librarian/") || knowledgeFlowAvailable(name, features)
+
 /** Restored cards must obey the same release flags as new command dispatch. */
 export const knowledgeCardAvailable = (kind: string, features: KnowledgeFeatures = {}): boolean => {
   if (["world", "wiki", "wiki-list", "wiki-links", "wiki-graph"].includes(kind)) return features.wiki === true

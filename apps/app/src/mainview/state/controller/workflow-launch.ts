@@ -6,7 +6,7 @@ import { workflowLaunchOf, type WorkflowLaunch } from "../WorkflowLaunch"
 import type { ControllerContext } from "./context"
 import { TOAST_SUPERSEDED } from "./failures"
 import { isFlowNotFound, type GatewayWorkspaceBinding } from "./gateway"
-import { knowledgeFlowAvailable } from "../KnowledgeFeatures"
+import { runtimeFlowAvailable } from "../KnowledgeFeatures"
 import { planCardSnapshot } from "../../cards/PlanNodes"
 import { runFailureOf } from "../RunFailure"
 import { digest } from "@smthrs/core/Digest"
@@ -98,7 +98,7 @@ export const createWorkflowLaunchController = (
             if (isFlowNotFound(result.code)) {
               const list = await ctx.gateway.listFlows(request.repo, binding)
               if (!current()) return TOAST_SUPERSEDED
-              const names = list.status === "ok" ? list.value.filter(flow => knowledgeFlowAvailable(flow.flowId, ctx.services.features)).slice(0, 8).map(flow => flow.flowId).join(", ") : ""
+              const names = list.status === "ok" ? list.value.filter(flow => runtimeFlowAvailable(flow.flowId, ctx.services.features)).slice(0, 8).map(flow => flow.flowId).join(", ") : ""
               return await fail({ ...result, message: `There's no flow called ${request.workflow} on ${request.repo}.${names ? ` The workspace has: ${names}.` : ""}` })
             }
             return await fail(result)

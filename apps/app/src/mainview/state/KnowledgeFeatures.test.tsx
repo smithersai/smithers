@@ -10,7 +10,7 @@ import { parseSubmit, recommendedNames } from "../flows/registry"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { smithersInstructions } from "./Instructions"
-import { knowledgeCardAvailable, knowledgeFlowAvailable, wikiFlagEnabled } from "./KnowledgeFeatures"
+import { knowledgeCardAvailable, knowledgeFlowAvailable, runtimeFlowAvailable, wikiFlagEnabled } from "./KnowledgeFeatures"
 import { parseRecommendation } from "./Recommend"
 import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
 
@@ -44,14 +44,17 @@ describe("optional generated knowledge", () => {
     expect(JSON.stringify(search)).not.toContain('"kind":"note"')
   })
 
-  test("generic launch and direct librarian calls cannot provision a disabled feature", async () => {
+  test("built-in knowledge doors stay disabled while runtime flows reach the identity guard", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const calls: string[] = []
     const controller = createAppController(store, unavailableRepositories, silentAgent, {
       fetchImpl: async input => { calls.push(String(input)); return new Response("{}") }
     })
-    for (const name of ["librarian/wiki", "librarian/history", "wiki", "checks/wiki"]) {
+    for (const name of ["wiki", "checks/wiki"]) {
       expect(await controller.runWorkflow(name, "owner/repo")).toBe("This feature is not enabled.")
+    }
+    for (const name of ["librarian/wiki", "librarian/history"]) {
+      expect(await controller.runWorkflow(name, "owner/repo")).toBe("Sign in with GitHub first: flows run on your own workspace.")
     }
     expect(await controller.createWiki("owner/repo")).toBe("This feature is not enabled.")
     expect(await controller.bootstrapHistory("owner/repo")).toBe("This feature is not enabled.")
@@ -89,6 +92,7 @@ describe("optional generated knowledge", () => {
     for (const name of ["coding/request", "coding/prototype", "commits.list", "files.read", "history-tools/custom"]) {
       expect(knowledgeFlowAvailable(name)).toBe(true)
     }
+    expect(runtimeFlowAvailable("librarian/history")).toBe(true)
   })
 })
 
