@@ -239,6 +239,78 @@ describe("completion", () => {
   }, 60_000)
 })
 
+describe("search palette", () => {
+  it("ctrl+k opens Search without deleting the rest of the line", async () => {
+    const { tui } = await start()
+    await tui.type("look at ")
+    await tui.press(key.ctrlA)
+    await tui.press(key.ctrlK)
+    await tui.until((screen) => screen.includes("Search") && screen.includes("/model"), 5_000, "palette")
+    await tui.press(key.escape)
+    await tui.until((screen) => !screen.includes("Pick a model") && /┃\s+look at/.test(screen), 5_000, "draft kept")
+  }, 60_000)
+
+  it("enter on a file inserts an @mention after the draft", async () => {
+    const { tui } = await start()
+    await tui.type("look at ")
+    await tui.press(key.ctrlK)
+    await tui.until((screen) => screen.includes("Search"), 5_000, "palette")
+    await tui.type("check")
+    await tui.until((screen) => screen.includes("check.mjs"), 5_000, "file row")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+look at @check\.mjs/.test(screen), 5_000, "mention")
+  }, 60_000)
+
+  it("text: searches file text with rg and inserts @path:line", async () => {
+    const { tui } = await start()
+    await tui.press(key.ctrlK)
+    await tui.until((screen) => screen.includes("Search"), 5_000, "palette")
+    await tui.type("text:a - b")
+    await tui.until((screen) => screen.includes("math.js:1"), 10_000, "rg hit")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+@math\.js:1/.test(screen), 5_000, "line mention")
+  }, 60_000)
+
+  it("runs a command, and ? lists prefixes that switch the mode", async () => {
+    const { tui } = await start()
+    await tui.press(key.ctrlK)
+    await tui.type("/sess")
+    await tui.until((screen) => /\/session\s+Show the session file/.test(screen), 5_000, "command row")
+    await tui.press(key.enter)
+    await tui.until((screen) => /exchanges · ↑0/.test(screen), 5_000, "session note")
+    await tui.press(key.ctrlK)
+    await tui.type("?")
+    await tui.until((screen) => screen.includes("session:") && screen.includes("worker tabs"), 5_000, "prefix list")
+    await tui.press(key.enter)
+    await tui.type("hotk")
+    await tui.until((screen) => /\/hotkeys\s+Show the keys/.test(screen), 5_000, "typed after the prefix")
+  }, 60_000)
+
+  it("session: resumes a past session", async () => {
+    const first = await start()
+    await first.tui.type("!echo remembered-output")
+    await first.tui.press(key.enter)
+    await first.tui.until((screen) => screen.includes("remembered-output"))
+    await first.tui.stop()
+    tui = await Tui.start({
+      cwd: first.cwd,
+      command: `bun ${join(app, "src", "main.tsx")} ${first.cwd}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_REPLAY: fixture,
+        SMITHERS_TUI_SESSION_DIR: first.sessions
+      }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.press(key.ctrlK)
+    await tui.type("session:")
+    await tui.until((screen) => /Search[\s\S]*_[0-9a-f]{8}-/.test(screen), 5_000, "session row")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Resumed") && screen.includes("remembered-output"), 5_000, "resumed")
+  }, 90_000)
+})
+
 describe("model dialog", () => {
   it("filters as you type and picks with enter", async () => {
     const { tui } = await start()
@@ -406,7 +478,9 @@ it(
     const records = readFileSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line))
     expect(records.filter((record) => record.type === "tab" && record.tab.status === "requested")).toHaveLength(1)
-    await tui.type("/tabs")
+    await tui.press(key.ctrlK)
+    await tui.type("tab:inv")
+    await tui.until((screen) => screen.includes("Search") && /Investigation\s+running/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
     await tui.until(
       (screen) => screen.includes("r retry") && screen.includes("Investigation · running"),

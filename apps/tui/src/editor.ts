@@ -105,6 +105,7 @@ export const keys: ReadonlyArray<readonly [key: string, action: string]> = [
   ["ctrl+c", "clear; twice to exit"],
   ["ctrl+d", "exit when the editor is empty"],
   ["up, down", "prompt history"],
+  ["ctrl+k", "search files, commands, text:, session:, tab:"],
   ["ctrl+l", "pick a model"],
   ["ctrl+p, shift+ctrl+p", "next, previous model"],
   ["shift+tab", "cycle reasoning effort"],

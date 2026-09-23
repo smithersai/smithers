@@ -66,6 +66,10 @@ const argumentItems = (name: string, typed: string, sources: Sources): Array<Sug
   return undefined
 }
 
+/** `@path` or `@path:line` with a trailing space; a path with whitespace is quoted. */
+export const mention = (path: string, line?: number): string =>
+  `@${/\s/.test(path) ? `"${path}"` : path}${line === undefined ? "" : `:${line}`} `
+
 const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1)
 
 /** Files by name first, then by path; shorter paths win ties. */
@@ -96,14 +100,14 @@ export const complete = (text: string, cursor: number, sources: Sources): Comple
     if (items === undefined) return undefined
     return { kind: "argument", query: `${name} ${typed}`, start: 0, end: text.length, items }
   }
-  const mention = /(^|\s)@(\S*)$/.exec(before)
-  if (mention === null) return undefined
-  const query = mention[2]!
+  const found = /(^|\s)@(\S*)$/.exec(before)
+  if (found === null) return undefined
+  const query = found[2]!
   const start = cursor - query.length - 1
   const end = cursor + /^\S*/.exec(text.slice(cursor))![0].length
   const items = rankFiles(sources.files(), query).slice(0, fileLimit).map((path) => ({
     label: path,
-    insert: `@${/\s/.test(path) ? `"${path}"` : path} `,
+    insert: mention(path),
     submit: false
   }))
   return { kind: "file", query, start, end, items }

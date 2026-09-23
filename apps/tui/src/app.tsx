@@ -20,7 +20,9 @@ import * as Fuzzy from "./fuzzy.ts"
 import type * as Host from "./host.ts"
 import type { Model } from "./models.ts"
 import { PanelView } from "./panel-view.tsx"
+import * as Palette from "./palette.ts"
 import * as Panels from "./panels.ts"
+import * as Search from "./search.ts"
 import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
@@ -72,6 +74,21 @@ type Picker =
     readonly selected: number
     readonly sessions: ReadonlyArray<Session.Summary>
   }
+  | {
+    readonly kind: "palette"
+    readonly query: string
+    readonly selected: number
+    /** Read on the first `session:`; undefined until then. */
+    readonly sessions?: ReadonlyArray<Session.Summary>
+  }
+
+/** A `text:` search in the palette, from launch through its real settlement. */
+interface TextSearch {
+  readonly query: string
+  readonly startedAt: number
+  readonly status: "running" | "done"
+  readonly hits: ReadonlyArray<Search.Hit>
+}
 
 interface Toast {
   readonly text: string
@@ -84,8 +101,15 @@ const pickerRows = (
   models: ReadonlyArray<Model>,
   seat: string,
   filter: Timeline.Filter,
-  tabs: ReadonlyArray<Tab>
+  tabs: ReadonlyArray<Tab>,
+  files: () => ReadonlyArray<string>,
+  hits: ReadonlyArray<Search.Hit>
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "palette") {
+    const sources = { commands: Editor.commands, files, sessions: picker.sessions, tabs, hits, now: Date.now() }
+    // The value is the JSON of a `Palette.Value`, so every dialog picks a string.
+    return Palette.rows(Palette.parse(picker.query), sources).map((row) => ({ ...row, value: JSON.stringify(row.value) }))
+  }
   if (picker.kind === "filter") {
     const rows = [
       { key: "source:chat", label: "Chat", current: !filter.sources.includes(Timeline.chat), value: `source:${Timeline.chat}` },
@@ -127,15 +151,7 @@ const pickerRows = (
       }))
     ]
   }
-  const now = Date.now()
-  return Fuzzy.filter(picker.sessions, picker.query, (session) => `${session.name ?? ""} ${session.firstPrompt}`).map((
-    session
-  ) => ({
-    key: session.file,
-    label: (session.name ?? session.firstPrompt).split("\n")[0]!.slice(0, 60),
-    detail: View.ago(session.modified, now),
-    value: session.file
-  }))
+  return Palette.sessionRows(picker.sessions, picker.query, Date.now()).map(({ file, ...row }) => ({ ...row, value: file }))
 }
 
 export function App(props: AppProps) {
@@ -158,6 +174,8 @@ export function App(props: AppProps) {
   )
   const [expanded, setExpanded] = useState(false)
   const [toast, setToast] = useState<Toast | undefined>()
+  const [search, setSearch] = useState<TextSearch | undefined>()
+  const searchGeneration = useRef(0)
   const [draft, setDraft] = useState("")
   const [cursor, setCursor] = useState(0)
   const [menuIndex, setMenuIndex] = useState(0)
@@ -247,7 +265,7 @@ export function App(props: AppProps) {
   useEffect(() => Clipboard.copyOnSelect(renderer, Clipboard.write, () => setStatus("Copied")), [renderer])
 
   // One clock drives foreground and background progress through real settlement.
-  const clockRunning = turn !== undefined || shell !== undefined || workspace.busy ||
+  const clockRunning = turn !== undefined || shell !== undefined || workspace.busy || search?.status === "running" ||
     snapshot.tabs.some((tab) => tab.endedAt !== undefined && now - tab.endedAt < 3000)
   useEffect(() => {
     if (!clockRunning) return
@@ -260,6 +278,58 @@ export function App(props: AppProps) {
     const timer = setTimeout(() => setToast(undefined), 3000)
     return () => clearTimeout(timer)
   }, [toast])
+
+  // `text:` runs rg in the background; a newer query, leaving text mode, or closing cancels it.
+  const parsedPalette = picker?.kind === "palette" ? Palette.parse(picker.query) : undefined
+  const textQuery = parsedPalette?.mode === "text" && parsedPalette.query.length >= 2 ? parsedPalette : undefined
+  const textKey = textQuery === undefined ? "" : `${textQuery.query}\0${textQuery.regex ?? ""}`
+  useEffect(() => {
+    const generation = ++searchGeneration.current
+    setSearch(undefined)
+    if (textQuery === undefined) return
+    let running: ReturnType<typeof Search.run> | undefined
+    const timer = setTimeout(() => {
+      running = Search.run({
+        cwd: props.host.cwd,
+        query: textQuery.query,
+        ...(textQuery.regex === undefined ? {} : { regex: textQuery.regex })
+      })
+      setSearch({ query: textQuery.query, startedAt: Date.now(), status: "running", hits: [] })
+      void running.done.then((outcome) => {
+        if (generation !== searchGeneration.current || outcome._tag === "cancelled") return
+        if (outcome._tag === "done") {
+          setSearch({ query: textQuery.query, startedAt: 0, status: "done", hits: outcome.hits })
+          return
+        }
+        setSearch(undefined)
+        setStatus(
+          outcome.reason === "missing-rg"
+            ? "rg not found"
+            : outcome.reason === "bad-pattern"
+            ? `Bad pattern: ${outcome.message}`
+            : `rg: ${outcome.message}`,
+          "danger"
+        )
+      })
+    }, 150)
+    return () => {
+      clearTimeout(timer)
+      running?.cancel()
+    }
+  }, [textKey, props.host.cwd])
+
+  // `session:` reads the session files once per palette opening.
+  const needsSessions = parsedPalette?.mode === "sessions" && picker?.kind === "palette" && picker.sessions === undefined
+  useEffect(() => {
+    if (!needsSessions) return
+    let sessions: ReadonlyArray<Session.Summary> = []
+    try {
+      sessions = Session.list(props.host.cwd)
+    } catch (error) {
+      setStatus(String(error), "danger")
+    }
+    setPicker((current) => (current?.kind === "palette" ? { ...current, sessions } : current))
+  }, [needsSessions, props.host.cwd])
 
   const setText = useCallback((text: string, at?: number) => {
     const input = composer.current
@@ -595,6 +665,12 @@ export function App(props: AppProps) {
     switchSeat(next.seat)
   }, [props.models, switchSeat, setStatus])
 
+  /** `/new` and `/resume` wait for running work, from any door. */
+  const resumeGuarded = (file: string) => {
+    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy) openSession(file)
+    else setStatus("Stop running work first", "warning")
+  }
+
   const pick = useCallback((open: Picker, value: string) => {
     if (open.kind === "filter") {
       // Toggles keep the dialog open, like a log view's filter menu.
@@ -614,13 +690,46 @@ export function App(props: AppProps) {
       try { saveTheme(value) } catch { setStatus("Could not save theme", "warning") }
       return
     }
-    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy) openSession(value)
-    else setStatus("Stop running work first", "warning")
-  }, [switchSeat, openSession, setStatus, workspace])
+    if (open.kind === "palette") {
+      const chosen = JSON.parse(value) as Palette.Value
+      switch (chosen.kind) {
+        case "file":
+        case "hit": {
+          const input = composer.current
+          if (input === null) return
+          const next = Palette.insertAt(
+            input.plainText,
+            input.cursorOffset,
+            Palette.mention(chosen.path, chosen.kind === "hit" ? chosen.line : undefined)
+          )
+          setPanelFocus(false)
+          return setText(next.text, next.cursor)
+        }
+        case "command": {
+          const found = Editor.commands.find((each) => each.name === chosen.name)
+          if (found !== undefined && Editor.takesArgument(found)) {
+            setPanelFocus(false)
+            return setText(`/${chosen.name} `)
+          }
+          return submit(false, `/${chosen.name}`)
+        }
+        case "session":
+          return resumeGuarded(chosen.file)
+        case "tab":
+          setSurface(`tab:${chosen.id}`)
+          setPanelFocus(true)
+          setNavigation(Panels.initial())
+          return
+        case "prefix":
+          return setPicker({ kind: "palette", query: chosen.prefix, selected: 0 })
+      }
+    }
+    resumeGuarded(value)
+  }, [switchSeat, openSession, setStatus, workspace, setText, submit])
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
-    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs)
+    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs, files.current, search?.hits ?? [])
     const move = (step: number) => {
       key.preventDefault()
       if (rows.length > 0) setPicker({ ...open, selected: (open.selected + step + rows.length) % rows.length })
@@ -677,6 +786,12 @@ export function App(props: AppProps) {
       if (open !== undefined) setPicker(undefined)
       setPanelFocus(false)
       setText("")
+      return
+    }
+    if (key.ctrl && key.name === "k") {
+      // Also keeps the composer's default Ctrl+K (delete to line end) from firing.
+      key.preventDefault()
+      setPicker(open?.kind === "palette" ? undefined : { kind: "palette", query: "", selected: 0 })
       return
     }
     if (key.ctrl && key.name === "s") {
@@ -801,7 +916,9 @@ export function App(props: AppProps) {
   const usage = transcript.usage
   const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
-  const rows = picker === undefined ? [] : pickerRows(picker, props.models, seat, filter, snapshot.tabs)
+  const rows = picker === undefined
+    ? []
+    : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [])
   const tabCount = Math.max(2, Math.floor(width / 24))
   const firstTab = Math.max(
     0,
@@ -983,6 +1100,9 @@ export function App(props: AppProps) {
             } ${tab.title} · ${tab.status}`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
+          ...(search?.status === "running" && now - search.startedAt >= 300
+            ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
+            : []),
           ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
         ]}
       />
@@ -994,6 +1114,8 @@ export function App(props: AppProps) {
             ? "Select theme"
             : picker.kind === "filter"
             ? "Filter chat"
+            : picker.kind === "palette"
+            ? "Search"
             : "Resume session"}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
@@ -1018,7 +1140,11 @@ export function App(props: AppProps) {
               selected={picker.selected}
               height={Math.min(rows.length, Math.max(3, Math.floor(dimensions.height / 2) - 6))}
               background={color.surface}
-              empty={picker.kind === "resume" ? "No sessions in this directory" : `No ${picker.kind} matches "${picker.query}"`}
+              empty={picker.kind === "resume"
+                ? "No sessions in this directory"
+                : picker.kind === "palette"
+                ? search?.status === "running" ? "Searching" : "No matches"
+                : `No ${picker.kind} matches "${picker.query}"`}
             />
           </box>
         </View.Dialog>

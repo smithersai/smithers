@@ -30,6 +30,8 @@ export const key = {
   ctrlC: "\x03",
   ctrlD: "\x04",
   ctrlO: "\x0f",
+  ctrlK: "\x0b",
+  ctrlA: "\x01",
   up: "\x1b[A",
   down: "\x1b[B",
   tab: "\t",

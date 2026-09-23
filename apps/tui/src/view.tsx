@@ -364,7 +364,7 @@ export function ToastStack(
   }
 ) {
   return (
-    <box style={{ position: "absolute", top: 1, right: 2, maxWidth: 60, zIndex: 50 }}>
+    <box style={{ position: "absolute", top: 1, right: 2, maxWidth: 60, zIndex: 150 }}>
       {props.rows.map((row) => (
         <box
           key={row.id}
