@@ -705,6 +705,36 @@ describe("WorkspaceSandbox filesystem host", () => {
     return ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(fs)))
   }
 
+  for (const root of ["C:\\work\\repo", "\\\\server\\share\\repo"]) {
+    it.effect(`accepts absolute transaction paths under the native root ${root}`, () =>
+      withCrypto(Effect.gen(function*() {
+        const files = new Map([[`${root}/dir/in.txt`, encoder.encode("seed")]])
+        const accepted = yield* Effect.gen(function*() {
+          const sandbox = WorkspaceSandbox.makeFileSystem(
+            yield* FileSystem.FileSystem,
+            yield* ArtifactStore.ArtifactStore,
+            root
+          )
+          return yield* sandbox.execute({
+            descriptor: descriptor({ readSet: [read("dir/in.txt", "seed")], writeSet: [`${root}\\out.txt`] }),
+            workflow: Effect.gen(function*() {
+              const fs = yield* FileSystem.FileSystem
+              for (const spelling of [root, root.replaceAll("\\", "/")]) {
+                expect(yield* fs.exists(spelling)).toBe(true)
+                expect(yield* fs.readDirectory(`${spelling}/`)).toEqual(["dir"])
+                expect(yield* fs.readFileString(`${spelling}/dir/in.txt`)).toBe("seed")
+              }
+              yield* fs.writeFileString(`${root}\\out.txt`, "new")
+            })
+          })
+        }).pipe(Effect.provide(hostLayer(files)))
+        expect(accepted._tag).toBe("Accepted")
+        if (accepted._tag !== "Accepted") throw new Error("expected accepted execution")
+        expect(accepted.result.files.map((change) => change.path)).toEqual(["out.txt"])
+        expect([...files.keys()]).toEqual([`${root}/dir/in.txt`])
+      })))
+  }
+
   it.effect("seeds only the declared read set, so an undeclared file is simply not there", () =>
     Effect.gen(function*() {
       const files = new Map<string, Uint8Array>([

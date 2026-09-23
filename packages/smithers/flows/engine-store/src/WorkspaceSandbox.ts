@@ -535,10 +535,11 @@ const invalidPath = (path: string): WorkspaceError =>
  */
 const normalizePath = (root: string, path: string, allowRoot = false): Result.Result<string, WorkspaceError> => {
   const slashed = path.replaceAll("\\", "/")
-  const rooted = slashed === root
+  const slashedRoot = root.replaceAll("\\", "/")
+  const rooted = slashed === slashedRoot
     ? ""
-    : root !== "" && slashed.startsWith(`${root}/`)
-    ? slashed.slice(root.length + 1)
+    : slashedRoot !== "" && slashed.startsWith(`${slashedRoot}/`)
+    ? slashed.slice(slashedRoot.length + 1)
     : slashed
   const parts = rooted.split("/")
   if (rooted.startsWith("/") || parts.some((part) => part === "..")) return Result.fail(invalidPath(path))
