@@ -1,5 +1,6 @@
 import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
+import { join } from "node:path"
 import { describe, expect, test } from "vitest"
 import {
   decodeJwtClaims,
@@ -29,6 +30,7 @@ interface Fake {
   readonly env?: Record<string, string | undefined>
   readonly versions?: Record<string, string | null>
   readonly platform?: string
+  readonly home?: string
 }
 
 const jwt = (claims: Record<string, unknown>): string =>
@@ -38,14 +40,15 @@ const host = (fake: Fake = {}): HarnessHost & { readonly probed: Array<string> }
   const files = fake.files ?? {}
   const binaries = new Set(fake.binaries ?? [])
   const probed: Array<string> = []
+  const separator = fake.platform === "win32" ? "\\" : "/"
   return {
     env: { PATH: "/usr/bin:/bin", ...fake.env },
-    home: HOME,
+    home: fake.home ?? HOME,
     platform: fake.platform ?? "darwin",
     listDir: (dir) => {
       const entries = new Set<string>()
       for (const path of [...Object.keys(files), ...binaries]) {
-        if (path.startsWith(`${dir}/`)) entries.add(path.slice(dir.length + 1).split("/")[0] ?? "")
+        if (path.startsWith(`${dir}${separator}`)) entries.add(path.slice(dir.length + 1).split(separator)[0] ?? "")
       }
       return [...entries]
     },
@@ -61,6 +64,27 @@ const host = (fake: Fake = {}): HarnessHost & { readonly probed: Array<string> }
 }
 
 describe("the candidate dirs", () => {
+  test("callers without a platform keep the native path convention", () => {
+    expect(harnessCandidateDirs({ home: HOME, listDir: () => [] })[0]).toBe(join(HOME, ".local", "bin"))
+  })
+
+  test("Windows host paths and PATH separators do not depend on the runner", () => {
+    const h = host({
+      platform: "win32",
+      home: "C:\\Users\\u",
+      env: { PATH: "D:\\first;D:\\second" },
+      binaries: [
+        "C:\\Users\\u\\.local\\bin\\claude",
+        "C:\\Users\\u\\.nvm\\versions\\node\\v24.1.0\\bin\\node",
+        "D:\\first\\claude",
+        "D:\\second\\codex"
+      ]
+    })
+    expect(harnessCandidateDirs(h)).toContain("C:\\Users\\u\\.nvm\\versions\\node\\v24.1.0\\bin")
+    expect(findBinary("claude", h)).toBe("C:\\Users\\u\\.local\\bin\\claude")
+    expect(findBinary("codex", h)).toBe("D:\\second\\codex")
+  })
+
   test("explicit dirs come before PATH, nvm highest first", () => {
     const h = host({
       binaries: [
@@ -114,6 +138,25 @@ describe("the candidate dirs", () => {
 })
 
 describe("the table", () => {
+  test("Windows host credentials and home labels use the supplied platform", async () => {
+    const h = host({
+      platform: "win32",
+      home: "C:\\Users\\u",
+      env: { PATH: "D:\\tools", CODEX_HOME: "D:\\config\\codex" },
+      binaries: ["D:\\tools\\codex", "D:\\tools\\hermes"],
+      files: {
+        "D:\\config\\codex\\auth.json": JSON.stringify({ tokens: { id_token: jwt({ email: "a@b.c" }) } }),
+        "C:\\Users\\u\\.hermes\\auth.json": JSON.stringify({ providers: { local: "fixture" } })
+      }
+    })
+    const rows = await detectHarnessesWith(h)
+    expect(rows.find((row) => row.id === "codex")).toMatchObject({ status: "signed-in", account: { email: "a@b.c" } })
+    expect(rows.find((row) => row.id === "hermes")).toMatchObject({
+      status: "signed-in",
+      account: { label: "~\\.hermes\\auth.json" }
+    })
+  })
+
   test("covers every contract id in order with an interactive launch", () => {
     expect(DETECTORS.map((detector) => detector.id)).toEqual([...HARNESS_IDS])
     for (const detector of DETECTORS) {

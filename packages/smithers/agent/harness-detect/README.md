@@ -15,6 +15,7 @@ The package spawns nothing, reads no file, and knows no runtime. Every host
 fact arrives through an injected `HarnessHost`, which is what makes the whole
 table assertable over fixtures instead of over whatever happens to be
 installed on the developer's laptop.
+Path formatting and `PATH` separators follow `host.platform`.
 
 ## What it detects
 

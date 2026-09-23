@@ -15,12 +15,12 @@
  */
 import type { HarnessModelSpec } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "@smthrs/rpc/LocalApp"
-import { join } from "node:path"
 import type { HarnessHost, HarnessId } from "./HarnessHost.ts"
 import {
   envDir,
   firstEnv,
   hasNonEmptyStringDeep,
+  hostPath,
   nonEmptyString,
   readJson,
   readJsonAny,
@@ -130,6 +130,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `claude --help`: "--model <model> … an alias for the latest model (e.g. 'fable', 'opus', or 'sonnet') or a model's full name (e.g. 'claude-fable-5')". */
     models: { flag: ["--model"], suggestions: ["claude-fable-5", "fable", "opus", "sonnet"] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const state = readJson(host, join(host.home, ".claude.json"))
       const oauth = state?.oauthAccount
       const configDir = envDir(host, "CLAUDE_CONFIG_DIR", join(host.home, ".claude"))
@@ -156,6 +157,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `codex --help`: "-m, --model <MODEL>"; the ids are the GPT-5.6 family packages/smithers/agent/model/src/DeferredTools.ts lists. */
     models: { flag: ["-m"], suggestions: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = readJson(host, join(envDir(host, "CODEX_HOME", join(host.home, ".codex")), "auth.json"))
       const tokens = auth?.tokens
       if (typeof tokens === "object" && tokens !== null) {
@@ -180,6 +182,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `gemini --help`: "-m, --model  Model [string]"; it names no ids, so the field is free text. */
     models: { flag: ["--model"], suggestions: [] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const root = envDir(host, "GEMINI_DIR", join(host.home, ".gemini"))
       if (host.isFile(join(root, "oauth_creds.json"))) {
         const accounts = readJson(host, join(root, "google_accounts.json"))
@@ -198,6 +201,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `kimi --help`: "--model -m TEXT  LLM model to use"; it names no ids. */
     models: { flag: ["--model"], suggestions: [] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const share = envDir(host, "KIMI_SHARE_DIR", join(host.home, ".kimi"))
       if (host.isFile(join(share, "credentials", "kimi-code.json"))) {
         return { status: "signed-in", account: { label: "kimi-code" } }
@@ -217,6 +221,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       list: ["opencode", "models"]
     },
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       const providers = auth === null ? [] : Object.keys(auth).filter((id) => hasNonEmptyStringDeep(auth[id]))
       if (providers.length > 0) return { status: "signed-in", account: { label: providers.join(", ") } }
@@ -246,6 +251,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     launch: ["opencode", "--model", OPENCODE_KIMI_MODEL],
     models: { flag: ["--model"], suggestions: [OPENCODE_KIMI_MODEL], list: ["opencode", "models", "kimi-for-coding"] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["kimi-for-coding"])) {
         return { status: "signed-in", account: { label: "kimi-for-coding" } }
@@ -270,6 +276,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
       list: ["opencode", "models", "cerebras"]
     },
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = readJson(host, join(host.home, ".local", "share", "opencode", "auth.json"))
       if (auth !== null && hasNonEmptyStringDeep(auth["cerebras"])) {
         return { status: "signed-in", account: { label: "cerebras" } }
@@ -284,6 +291,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     binary: "crush",
     launch: ["crush"],
     signal: (host) => {
+      const { join } = hostPath(host)
       const key = firstEnv(host.env, ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY"])
       if (key !== undefined) return apiKey(key)
       const configs = [
@@ -300,6 +308,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     binary: "amp",
     launch: ["amp"],
     signal: (host) => {
+      const { join } = hostPath(host)
       const key = firstEnv(host.env, ["AMP_API_KEY"])
       if (key !== undefined) return apiKey(key)
       const secrets = join(host.home, ".config", "amp", "secrets.json")
@@ -316,6 +325,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `cursor-agent --help`: "--model <model>  Model to use (e.g., gpt-5, sonnet-4, sonnet-4-thinking)". */
     models: { flag: ["--model"], suggestions: ["gpt-5", "sonnet-4", "sonnet-4-thinking"] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const key = firstEnv(host.env, ["CURSOR_API_KEY"])
       if (key !== undefined) return apiKey(key)
       const auth = host.platform === "darwin"
@@ -334,6 +344,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     /* `hermes --help`: "-m MODEL, --model MODEL  Model override for this invocation (e.g. anthropic/claude-sonnet-4.6)"; `hermes model` is an interactive picker, not a list. */
     models: { flag: ["--model"], suggestions: ["anthropic/claude-sonnet-4.6"] },
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = join(host.home, ".hermes", "auth.json")
       if (hasNonEmptyStringDeep(readJsonAny(host, auth))) {
         return { status: "signed-in", account: { label: tilde(host, auth) } }
@@ -348,6 +359,7 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     binary: "pi",
     launch: ["pi"],
     signal: (host) => {
+      const { join } = hostPath(host)
       const auth = join(host.home, ".pi", "agent", "auth.json")
       return hasNonEmptyStringDeep(readJsonAny(host, auth))
         ? { status: "signed-in", account: { label: tilde(host, auth) } }

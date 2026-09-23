@@ -5,8 +5,19 @@
  *
  * @since 0.1.0
  */
-import { resolve } from "node:path"
+import * as NodePath from "node:path"
 import type { HarnessHost } from "../HarnessHost.ts"
+
+/**
+ * Path rules for the injected host, with native defaults for legacy directory callers.
+ *
+ * @category internal
+ * @since 0.1.0
+ */
+export const hostPath = (
+  host: { readonly platform?: string | undefined }
+): Pick<typeof NodePath, "join" | "resolve" | "sep" | "delimiter"> =>
+  host.platform === undefined ? NodePath : host.platform === "win32" ? NodePath.win32 : NodePath.posix
 
 /**
  * A JSON object at `path`, or null when the file is missing, unreadable, or not an object.
@@ -84,7 +95,7 @@ export const firstEnv = (env: HarnessHost["env"], names: ReadonlyArray<string>):
  */
 export const envDir = (host: HarnessHost, name: string, fallback: string): string => {
   const value = host.env[name]
-  return nonEmptyString(value) ? resolve(value) : fallback
+  return nonEmptyString(value) ? hostPath(host).resolve(value) : fallback
 }
 
 /**
@@ -94,4 +105,4 @@ export const envDir = (host: HarnessHost, name: string, fallback: string): strin
  * @since 0.1.0
  */
 export const tilde = (host: HarnessHost, path: string): string =>
-  path.startsWith(`${host.home}/`) ? `~${path.slice(host.home.length)}` : path
+  path.startsWith(`${host.home}${hostPath(host).sep}`) ? `~${path.slice(host.home.length)}` : path

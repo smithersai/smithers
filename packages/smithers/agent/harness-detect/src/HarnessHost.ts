@@ -8,10 +8,10 @@
  *
  * @since 0.1.0
  */
-import { delimiter, join } from "node:path"
 // Type-only: the ids are read as `typeof HARNESS_IDS`, so the built JS
 // carries no runtime import of the contract package.
 import type { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
+import { hostPath } from "./internal/Read.ts"
 
 /**
  * One coding-agent CLI the contract knows about.
@@ -54,11 +54,16 @@ export interface HarnessHost {
  * developer's CLIs actually live, so the candidate dirs are searched first.
  * `~/.opencode/bin` is where the opencode installer puts its binary; the rest
  * follow the contract.
+ * Path formatting follows `host.platform` when supplied; callers omitting it
+ * retain the native path convention.
  *
  * @category detection
  * @since 0.1.0
  */
-export const harnessCandidateDirs = (host: Pick<HarnessHost, "home" | "listDir">): ReadonlyArray<string> => {
+export const harnessCandidateDirs = (
+  host: Pick<HarnessHost, "home" | "listDir"> & Partial<Pick<HarnessHost, "platform">>
+): ReadonlyArray<string> => {
+  const { join } = hostPath(host)
   const nvmRoot = join(host.home, ".nvm", "versions", "node")
   const nvm = [...host.listDir(nvmRoot)]
     .map((entry) => ({ entry, version: NODE_DIR.exec(entry) }))
@@ -98,6 +103,7 @@ const compareSemver = (left: RegExpExecArray, right: RegExpExecArray): number =>
  * @since 0.1.0
  */
 export const findBinary = (name: string, host: HarnessHost): string | null => {
+  const { delimiter, join } = hostPath(host)
   const fromPath = (host.env.PATH ?? "").split(delimiter).filter((dir) => dir !== "")
   for (const dir of [...harnessCandidateDirs(host), ...fromPath]) {
     const candidate = join(dir, name)
