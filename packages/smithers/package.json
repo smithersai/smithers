@@ -55,6 +55,7 @@
     "./Application": "./src/Application.ts",
     "./Audience": "./src/Audience.ts",
     "./Bug": "./src/Bug.ts",
+    "./BunControl": "./src/BunControl.ts",
     "./ClaudeMirror": "./src/ClaudeMirror.ts",
     "./Cli": "./src/Cli.ts",
     "./CliError": "./src/CliError.ts",
@@ -177,6 +178,16 @@
         "require": {
           "types": "./dist/cjs/Bug.d.ts",
           "default": "./dist/cjs/Bug.js"
+        }
+      },
+      "./BunControl": {
+        "import": {
+          "types": "./dist/esm/BunControl.d.ts",
+          "default": "./dist/esm/BunControl.js"
+        },
+        "require": {
+          "types": "./dist/cjs/BunControl.d.ts",
+          "default": "./dist/cjs/BunControl.js"
         }
       },
       "./ClaudeMirror": {

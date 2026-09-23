@@ -478,6 +478,17 @@
         "require": "./dist/cjs/RuntimeBridge.js"
       },
       "reason": "Versioned JSON adapter from the Go product backend to the canonical Flow and Control runtime."
+    },
+    {
+      "name": "@smthrs/cli",
+      "subpath": "./BunControl",
+      "development": "./src/BunControl.ts",
+      "published": {
+        "types": "./dist/esm/BunControl.d.ts",
+        "import": "./dist/esm/BunControl.js",
+        "require": "./dist/cjs/BunControl.js"
+      },
+      "reason": "Public Bun composition of the existing native control host (the private internal/BunControl adapters), so a Bun process such as apps/tui runs a project's file flows in-process without the Node SQLite adapters. No new host behavior."
     }
   ],
   "removed": [
