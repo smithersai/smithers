@@ -194,11 +194,13 @@ export interface Options {
    */
   readonly maxEntries?: number | undefined
   readonly detachedChildPolicy?: DetachedChildPolicy | undefined
-  readonly rateLimit?: (options: {
-    readonly runId: string
-    readonly frame: Frame
-    readonly nowMs: number
-  }) => Effect.Effect<RateLimitDecision, TimeTravelFailure> | undefined
+  readonly rateLimit?:
+    | ((options: {
+      readonly runId: string
+      readonly frame: Frame
+      readonly nowMs: number
+    }) => Effect.Effect<RateLimitDecision, TimeTravelFailure>)
+    | undefined
   readonly childLivenessEvidence?: (
     childRunId: string,
     row: RunStore.RunRow,
@@ -741,12 +743,9 @@ const preflight = (context: Context, progress: Progress) =>
       }
     }
 
-    const rateLimit = options.rateLimit?.({
-      runId: options.runId,
-      frame: options.frame,
-      nowMs
-    }) ?? Effect.succeed({ allowed: true } as const)
-    const decision = yield* rateLimit
+    const decision: RateLimitDecision = options.rateLimit === undefined
+      ? { allowed: true }
+      : yield* options.rateLimit({ runId: options.runId, frame: options.frame, nowMs })
     const auditDetail = initialDetail(context.claimed.row.status)
     const audit: Audit = {
       id: auditId,

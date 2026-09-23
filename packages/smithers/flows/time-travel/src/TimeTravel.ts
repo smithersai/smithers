@@ -335,11 +335,19 @@ export type RateLimitDecision = Rewind.RateLimitDecision
  */
 export interface Options {
   /**
-   * Deadline per handler revert/rollback and jj compensation call, and for
-   * awaiting startup recovery. Defaults to three minutes. Must be finite and
-   * positive. Timeout failures carry `compensation_failed` with the cause.
+   * Deadline per handler revert/rollback and jj compensation call. Defaults to
+   * three minutes. Must be finite and positive. Timeout failures carry
+   * `compensation_failed` with the cause.
    */
   readonly compensationTimeout?: Duration.Input | undefined
+  /**
+   * Deadline for startup recovery of every pending audit together. One audit
+   * may spend a compensation deadline on its jj restore and another on each
+   * handler rollback, so this is a separate budget. Defaults to ten
+   * compensation deadlines (thirty minutes by default). Must be finite and
+   * positive. A timeout fails the build with `compensation_failed`.
+   */
+  readonly recoveryTimeout?: Duration.Input | undefined
   /**
    * Whether the owner recorded on a run is still working, asked before startup
    * recovery takes an interrupted rewind's run over or rewind cancels a running
@@ -370,11 +378,13 @@ export interface Options {
    * Defaults to no limiter: every rewind is allowed, and the audit records
    * `{ allowed: true, checkedAtMs }`.
    */
-  readonly rateLimit?: (input: {
-    readonly runId: string
-    readonly frame: Frame
-    readonly nowMs: number
-  }) => Effect.Effect<RateLimitDecision, TimeTravelError> | undefined
+  readonly rateLimit?:
+    | ((input: {
+      readonly runId: string
+      readonly frame: Frame
+      readonly nowMs: number
+    }) => Effect.Effect<RateLimitDecision, TimeTravelError>)
+    | undefined
 }
 
 /**
@@ -429,6 +439,16 @@ export const makeWith = (
     if (!Duration.isFinite(compensationTimeout) || Duration.toMillis(compensationTimeout) <= 0) {
       return yield* Effect.fail(error("invalid", "compensationTimeout must be a finite positive duration"))
     }
+    const recoveryTimeout = yield* Effect.try({
+      try: () =>
+        options.recoveryTimeout === undefined
+          ? Duration.times(compensationTimeout, 10)
+          : Duration.fromInputUnsafe(options.recoveryTimeout),
+      catch: (cause) => error("invalid", "recoveryTimeout must be a finite positive duration", cause)
+    })
+    if (!Duration.isFinite(recoveryTimeout) || Duration.toMillis(recoveryTimeout) <= 0) {
+      return yield* Effect.fail(error("invalid", "recoveryTimeout must be a finite positive duration"))
+    }
     const services = yield* Effect.context<Requirements>()
     const historyLimit = yield* HistoryLimit.resolve(options.maxHistoryEntries, HistoryLimit.defaultMaxHistoryEntries)
     const owner = yield* mintOwner
@@ -471,7 +491,7 @@ export const makeWith = (
       { startImmediately: true }
     )
     const outcomes = yield* Fiber.join(recovery).pipe(
-      Effect.timeout(compensationTimeout),
+      Effect.timeout(recoveryTimeout),
       Effect.catchTag("TimeoutError", (cause) =>
         Effect.fail(error("compensation_failed", "startup recovery exceeded its deadline", cause))),
       Effect.onError(() =>

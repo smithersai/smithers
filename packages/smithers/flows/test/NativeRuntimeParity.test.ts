@@ -1,5 +1,5 @@
 import { expect, it } from "@effect/vitest"
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,7 +7,10 @@ import { fileURLToPath } from "node:url"
 
 const fixture = fileURLToPath(new URL("./fixtures/native-runtime.ts", import.meta.url))
 
-it.each([["node", "bun"], ["bun", "node"]] as const)(
+// SandboxedFlow's bun cases skip the same way on a machine without bun.
+const bunInstalled = spawnSync("bun", ["--version"], { stdio: "ignore" }).status === 0
+
+it.skipIf(!bunInstalled).each([["node", "bun"], ["bun", "node"]] as const)(
   "resumes a %s-created durable run in %s without repeating its completed action",
   (first, second) => {
     const directory = mkdtempSync(join(tmpdir(), "flows-native-parity-"))

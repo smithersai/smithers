@@ -4,6 +4,7 @@ import { jjError } from "@smthrs/jj"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -57,6 +58,19 @@ const registryOf = (handlers: Parameters<typeof EffectHandlerRegistry.make>[0]) 
   )
 
 const jjOf = (overrides: Partial<Jj.Jj> = {}) => Layer.succeed(Jj.Jj, Jj.makeNoop(overrides))
+
+/**
+ * The two workspace steps in the order Rewind runs them, without the durable
+ * write Rewind makes between them.
+ */
+const restoreWorkspace = (
+  plan: Compensation.Plan,
+  handlerReceipts: ReadonlyArray<EffectHandlerRegistry.RollbackReceipt>,
+  timeout?: Duration.Input
+) =>
+  Compensation.prepareWorkspace(plan, handlerReceipts, timeout).pipe(
+    Effect.flatMap((result) => Compensation.restorePreparedWorkspace(result, timeout))
+  )
 
 describe("Compensation.assess", () => {
   it.effect("blocks a sealed effect that never recorded a cache key", () =>
@@ -379,7 +393,7 @@ describe("Compensation.compensate", () => {
     }))
 })
 
-describe("Compensation.restoreWorkspace", () => {
+describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
   const compensable = record({ id: "write", kind: "fs", tier: "compensable", seq: 1 })
 
   const planFor = (
@@ -393,7 +407,7 @@ describe("Compensation.restoreWorkspace", () => {
       const plan = yield* planFor([], "target")
 
       const result = yield* (
-        Compensation.restoreWorkspace(plan, []).pipe(
+        restoreWorkspace(plan, []).pipe(
           Effect.provide(registryOf([])),
           Effect.provide(
             jjOf({
@@ -417,7 +431,7 @@ describe("Compensation.restoreWorkspace", () => {
       const plan = yield* planFor([compensable], "target")
 
       const result = yield* (
-        Compensation.restoreWorkspace(plan, []).pipe(
+        restoreWorkspace(plan, []).pipe(
           Effect.provide(registryOf([])),
           Effect.provide(
             jjOf({
@@ -458,7 +472,7 @@ describe("Compensation.restoreWorkspace", () => {
 
       const failure = yield* (
         Effect.flip(
-          Compensation.restoreWorkspace(plan, [receipt]).pipe(
+          restoreWorkspace(plan, [receipt]).pipe(
             Effect.provide(registry),
             Effect.provide(
               jjOf({ snapshot: () => Effect.fail(jjError({ code: "not_installed", method: "snapshot" })) })
@@ -490,7 +504,7 @@ describe("Compensation.restoreWorkspace", () => {
 
       const failure = yield* (
         Effect.flip(
-          Compensation.restoreWorkspace(plan, [receipt]).pipe(
+          restoreWorkspace(plan, [receipt]).pipe(
             Effect.provide(registry),
             Effect.provide(
               jjOf({ snapshot: () => Effect.fail(jjError({ code: "not_installed", method: "snapshot" })) })
@@ -533,7 +547,7 @@ describe("Compensation.restoreWorkspace", () => {
 
       const failure = yield* (
         Effect.flip(
-          Compensation.restoreWorkspace(plan, [receipt]).pipe(
+          restoreWorkspace(plan, [receipt]).pipe(
             Effect.provide(registry),
             Effect.provide(
               jjOf({
@@ -585,7 +599,7 @@ describe("Compensation.restoreWorkspace", () => {
 
         const failure = yield* (
           Effect.flip(
-            Compensation.restoreWorkspace(plan, [receipt]).pipe(
+            restoreWorkspace(plan, [receipt]).pipe(
               Effect.provide(registry),
               Effect.provide(
                 jjOf({
@@ -658,7 +672,7 @@ describe("Compensation.restoreWorkspace", () => {
 
         const failure = yield* (
           Effect.flip(
-            Compensation.restoreWorkspace(scenario.plan, [receipt]).pipe(
+            restoreWorkspace(scenario.plan, [receipt]).pipe(
               Effect.provide(registry),
               Effect.provide(jjOf())
             )
@@ -688,7 +702,7 @@ describe("Compensation.restoreWorkspace", () => {
 
       const failure = yield* (
         Effect.flip(
-          Compensation.restoreWorkspace({ effects: [compensable], assessments: [] }, [receipt]).pipe(
+          restoreWorkspace({ effects: [compensable], assessments: [] }, [receipt]).pipe(
             Effect.provide(registry),
             Effect.provide(jjOf())
           )
@@ -702,7 +716,7 @@ describe("Compensation.restoreWorkspace", () => {
     }))
 })
 
-describe("Compensation.execute", () => {
+describe("Compensation.compensate then the workspace restore", () => {
   it.effect("compensates handlers first and then restores the workspace", () =>
     Effect.gen(function*() {
       const order: Array<string> = []
@@ -729,7 +743,8 @@ describe("Compensation.execute", () => {
       )
 
       const result = yield* (
-        Compensation.execute(plan).pipe(
+        Compensation.compensate(plan).pipe(
+          Effect.flatMap((receipts) => restoreWorkspace(plan, receipts)),
           Effect.provide(layer),
           Effect.provide(
             jjOf({
@@ -891,7 +906,7 @@ describe("Compensation deadlines", () => {
           ? Compensation.compensate(plan, undefined, "1 second")
           : operation === "rollback"
           ? Compensation.rollback({ handlerReceipts: [{ id: "receipt", effect: send, data: {} }] }, "1 second")
-          : Compensation.restoreWorkspace(plan, [], "1 second")
+          : restoreWorkspace(plan, [], "1 second")
         const fiber = yield* Effect.forkChild(
           work.pipe(
             Effect.provide(registry),

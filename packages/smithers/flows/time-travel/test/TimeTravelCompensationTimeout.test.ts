@@ -45,6 +45,109 @@ describe("TimeTravel compensation deadline", () => {
       }))
   }
 
+  for (const duration of [0, -1, Infinity, "invalid"] as Array<Duration.Input>) {
+    it.effect(`refuses an invalid recovery deadline ${duration} before scanning audits`, () =>
+      Effect.gen(function*() {
+        const store = { ...MemoryTimeTravelStore.make(), pendingAudits: () => Effect.die("must not scan") }
+        const failure = yield* Effect.flip(Effect.scoped(
+          Effect.void.pipe(
+            Effect.provide(layerWith({ recoveryTimeout: duration }).pipe(Layer.provide(dependencies(store))))
+          )
+        ))
+        expect(failure).toMatchObject({
+          code: "invalid",
+          message: "recoveryTimeout must be a finite positive duration"
+        })
+      }))
+  }
+
+  it.effect("recovers audits whose rollbacks together exceed one compensation deadline", () =>
+    Effect.gen(function*() {
+      const store = MemoryTimeTravelStore.make()
+      for (const id of ["first", "second"]) {
+        yield* store.writeAudit({
+          id,
+          runId: id,
+          frame: { lineageId: `${id}/root`, seq: 0 },
+          status: "in_progress",
+          detail: {
+            version: 1,
+            phase: "preflight_complete",
+            originalStatus: "suspended",
+            suffixCount: 1,
+            warnings: [],
+            cancelledChildren: [],
+            compensation: {
+              handlerReceipts: [{
+                id: `${id}:receipt`,
+                data: {},
+                effect: {
+                  id: `${id}:send`,
+                  kind: "send",
+                  tier: "irreversible",
+                  status: "succeeded",
+                  runId: id,
+                  lineageId: `${id}/root`,
+                  seq: 1,
+                  durableBoundary: true,
+                  providerStream: false
+                }
+              }]
+            }
+          }
+        })
+      }
+      const runs = RunStore.makeNoop({
+        get: (runId) =>
+          Effect.succeed({
+            runId,
+            status: "suspended",
+            owner: null,
+            createdAtMs: 0,
+            startedAtMs: null,
+            heartbeatAtMs: null,
+            claim: null,
+            claimedAtMs: null,
+            finishedAtMs: null,
+            parentRunId: null,
+            cancelRequestedAtMs: null,
+            stateJson: "{}"
+          }),
+        claim: () => Effect.succeed({ _tag: "Claimed", claimedAtMs: 0 }),
+        activate: () => Effect.succeed({ _tag: "Activated" }),
+        heartbeat: () => Effect.succeed({ _tag: "Updated" }),
+        transitionOwned: () => Effect.succeed({ _tag: "Transitioned" as const })
+      })
+      const rolledBack: Array<string> = []
+      const handler = CompensationHandlers.layer([{
+        kind: "send",
+        tier: "irreversible",
+        requiresIdempotencyKey: false,
+        residue: () => "residue",
+        revert: () => Effect.succeed({}),
+        // Each rollback takes 60% of the one-second compensation deadline.
+        rollback: (effect) =>
+          Effect.sleep("600 millis").pipe(Effect.andThen(Effect.sync(() => rolledBack.push(effect.id))))
+      }])
+      const fiber = yield* Effect.forkChild(
+        Effect.scoped(Effect.void.pipe(
+          Effect.provide(
+            layerWith({ compensationTimeout: "1 second" }).pipe(
+              Layer.provide(handler),
+              Layer.provide(Layer.succeed(RunStore.RunStore, runs)),
+              Layer.provide(dependencies(store))
+            )
+          )
+        )),
+        { startImmediately: true }
+      )
+      for (let step = 0; step < 4; step += 1) yield* TestClock.adjust("300 millis")
+      const result = yield* Fiber.await(fiber)
+      expect(Exit.isSuccess(result)).toBe(true)
+      expect(rolledBack).toEqual(["first:send", "second:send"])
+      expect(store.state().audits.map((audit) => audit.status)).toEqual(["failed", "failed"])
+    }))
+
   it.effect("finishes startup and releases ownership when a rollback handler never completes", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make()
@@ -157,7 +260,7 @@ describe("TimeTravel compensation deadline", () => {
         const fiber = yield* Effect.forkChild(
           Effect.scoped(
             Effect.void.pipe(Effect.provide(
-              layerWith(configured ? { compensationTimeout: "1 second" } : {}).pipe(
+              layerWith(configured ? { recoveryTimeout: "1 second" } : {}).pipe(
                 Layer.provide(dependencies(store))
               )
             ))
@@ -165,7 +268,7 @@ describe("TimeTravel compensation deadline", () => {
           { startImmediately: true }
         )
         yield* Deferred.await(entered)
-        yield* TestClock.adjust(configured ? "2 seconds" : "3 minutes")
+        yield* TestClock.adjust(configured ? "2 seconds" : "30 minutes")
         const result = yield* Fiber.await(fiber)
         expect(result._tag).toBe("Failure")
         if (Exit.isFailure(result)) {

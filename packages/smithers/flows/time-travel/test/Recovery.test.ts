@@ -630,6 +630,53 @@ describe("Recovery", () => {
       expect(pulses).toHaveLength(afterReturn)
     }))
 
+  it.effect("persists a rollback that finished after the heartbeat lost the fence", () =>
+    Effect.gen(function*() {
+      // The lease guard interrupts the body when the fence is lost, but a
+      // rollback is atomic. Its non-idempotent fact must reach the audit before
+      // that interrupt lands, or the next pass rolls the handlers back twice.
+      const store = MemoryTimeTravelStore.make()
+      seed(store, audit("compensated", compensation))
+      const rolling = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const lost = yield* Deferred.make<void>()
+      let rollbacks = 0
+      const restores: Array<string> = []
+      const runs = makeRuns({
+        heartbeat: () => Deferred.succeed(lost, undefined).pipe(Effect.as({ _tag: "FenceLost" as const })),
+        transitionOwned: () => Effect.succeed({ _tag: "FenceLost" as const })
+      })
+      const registry = Effect.runSync(
+        EffectHandlerRegistry.make([{
+          kind: "send",
+          tier: "irreversible",
+          requiresIdempotencyKey: true,
+          residue: () => "message residue",
+          revert: () => Effect.succeed({ value: "sent" }),
+          rollback: () =>
+            Effect.sync(() => rollbacks++).pipe(
+              Effect.andThen(Deferred.succeed(rolling, undefined)),
+              Effect.andThen(Deferred.await(release))
+            )
+        }])
+      )
+      const jj = Jj.makeNoop({ restore: (changeId) => Effect.sync(() => void restores.push(changeId)) })
+
+      const fiber = yield* Effect.forkChild(runRecovery(store, runs, jj, registry, true), { startImmediately: true })
+      yield* Deferred.await(rolling)
+      yield* TestClock.adjust(Ownership.heartbeatInterval)
+      yield* Deferred.await(lost)
+      yield* Effect.yieldNow
+      yield* Deferred.succeed(release, undefined)
+      const outcomes = yield* Fiber.join(fiber)
+
+      expect(outcomes[0]).toMatchObject({ _tag: "Busy", auditId: "audit-compensated" })
+      expect(rollbacks).toBe(1)
+      expect(restores).toEqual(["current"])
+      expect(store.state().audits[0]!.status).toBe("in_progress")
+      expect((store.state().audits[0]!.detail as AuditDetail).compensation).toBeUndefined()
+    }))
+
   it.effect("lets ownership restoration finish after intentional release stops the heartbeat", () =>
     Effect.gen(function*() {
       const store = MemoryTimeTravelStore.make()

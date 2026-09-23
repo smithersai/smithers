@@ -308,14 +308,14 @@ describe("Rewind protocol fault matrix", () => {
       }))
   }
 
-  // `Compensation.restoreWorkspace` rolls back every handler receipt itself on
-  // both of its failure paths, so the outer failure branch must not roll them
+  // `prepareWorkspace` and `restorePreparedWorkspace` roll back every handler
+  // receipt themselves on their failure paths, so the outer failure branch must not roll them
   // back a second time. A handler's `rollback` re-performs the side effect the
   // revert undid and nothing requires it to be idempotent, so a jj snapshot or
   // restore failure at this phase used to duplicate the external effect. The
   // fault matrix cannot see it: its hooks fire BETWEEN phases, never inside
   // this one.
-  it.effect("rolls each handler receipt back exactly once when restoreWorkspace fails", () =>
+  it.effect("rolls each handler receipt back exactly once when the workspace restore fails", () =>
     Effect.gen(function*() {
       for (
         const scenario of [

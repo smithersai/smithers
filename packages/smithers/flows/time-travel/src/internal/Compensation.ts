@@ -422,40 +422,6 @@ export const restorePreparedWorkspace = (
   }))
 
 /**
- * Prepares and restores a workspace without a durable protocol boundary.
- * Rewind uses the two operations separately to persist the rollback pointer.
- *
- * @since 0.1.0
- * @category compensation
- */
-export const restoreWorkspace = (
-  plan: Plan,
-  handlerReceipts: ReadonlyArray<RollbackReceipt>,
-  timeout: Duration.Input = defaultTimeout
-): Effect.Effect<Result, TimeTravelError, EffectHandlerRegistry | Jj> =>
-  Effect.uninterruptible(
-    prepareWorkspace(plan, handlerReceipts, timeout).pipe(
-      Effect.flatMap((result) => restorePreparedWorkspace(result, timeout))
-    )
-  )
-
-/**
- * Runs tier-3 compensation and then tier-2 workspace restoration.
- *
- * @since 0.1.0
- * @category compensation
- */
-export const execute = (
-  plan: Plan,
-  timeout: Duration.Input = defaultTimeout
-): Effect.Effect<Result, TimeTravelError, EffectHandlerRegistry | Jj> =>
-  Effect.uninterruptible(
-    compensate(plan, undefined, timeout).pipe(
-      Effect.flatMap((receipts) => restoreWorkspace(plan, receipts, timeout))
-    )
-  )
-
-/**
  * Reverses every mutation represented by a compensation result.
  *
  * Workspace restoration is undone first, followed by handler receipts in the

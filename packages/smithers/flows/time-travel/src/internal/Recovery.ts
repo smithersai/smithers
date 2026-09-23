@@ -393,13 +393,19 @@ const recoverOne = (
               }
 
               if (detail.compensation !== undefined) {
-                yield* Compensation.rollback(detail.compensation, options.compensationTimeout)
+                const compensated = detail.compensation
                 const { compensation: _, ...stripped } = detail
-                detail = stripped
                 // A successful rollback is a non-idempotent fact. Persist it
                 // before the ownership restoration can fail, so another recovery
-                // pass never repeats those handler rollbacks.
-                yield* store.updateAudit(audit.id, { detail })
+                // pass never repeats those handler rollbacks. The guard
+                // interrupts this body when the fence is lost, so the rollback
+                // and its record are one uninterruptible unit.
+                yield* Effect.uninterruptible(
+                  Compensation.rollback(compensated, options.compensationTimeout).pipe(
+                    Effect.andThen(Effect.sync(() => (detail = stripped))),
+                    Effect.andThen(store.updateAudit(audit.id, { detail: stripped }))
+                  )
+                )
               }
               detail = yield* resolvePending(runs, audit, detail, options, false)
               yield* lease.releasing

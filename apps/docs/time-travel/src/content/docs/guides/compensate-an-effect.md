@@ -73,7 +73,9 @@ requests and cleanup in the adapter; do not mask an indefinite wait. Time travel
 applies `TimeTravel.Options.compensationTimeout` to each handler call and jj
 snapshot or restore, including rollback. The default is three minutes. A timeout
 fails with `compensation_failed` and retains the timeout in its cause. Startup
-recovery runs in a child fiber and is awaited with the same deadline.
+recovery runs in a child fiber and is awaited with
+`TimeTravel.Options.recoveryTimeout`, which bounds every pending audit together
+and defaults to ten compensation deadlines.
 
 Before restoring a workspace, rewind snapshots its current state and durably
 records both current and target pointers. Startup recovery restores the recorded

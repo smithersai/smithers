@@ -10,7 +10,7 @@ import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
-import { layerWith, TimeTravel } from "../src/TimeTravel.ts"
+import { layerWith, type Options, TimeTravel } from "../src/TimeTravel.ts"
 import { TimeTravelStore } from "../src/TimeTravelStore.ts"
 
 const row: RunStore.RunRow = {
@@ -467,6 +467,16 @@ describe("TimeTravel rewind rate limiter", () => {
       )
     )
   }
+
+  it("refuses at compile time a limiter that can return no decision", () => {
+    // A limiter with a missing return branch used to compile, and the rewind
+    // treated its `undefined` as an allowing decision.
+    const options: Options = {
+      // @ts-expect-error a rate limiter must return a decision effect
+      rateLimit: () => undefined
+    }
+    expect(options.rateLimit).toBeTypeOf("function")
+  })
 
   it.effect("refuses `rate_limited` through the composition and records the decision", () =>
     Effect.gen(function*() {

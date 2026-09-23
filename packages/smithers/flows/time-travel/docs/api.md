@@ -112,11 +112,13 @@ interface Service {
 
 How the service is composed.
 
-| Field               | Type                                                    | Meaning                                                                                                                                                                                                         |
-| ------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `isAlive`           | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/api/run-store). |
-| `maxHistoryEntries` | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
-| `rateLimit`         | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                        |
+| Field                 | Type                                                    | Meaning                                                                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compensationTimeout` | `Duration.Input`                                        | Deadline per handler revert or rollback and per jj snapshot or restore. Defaults to three minutes. Refused `invalid` at build unless finite and positive.                                                       |
+| `recoveryTimeout`     | `Duration.Input`                                        | Deadline for startup recovery of every pending audit together. Defaults to ten compensation deadlines. Refused `invalid` at build unless finite and positive.                                                   |
+| `isAlive`             | `Ownership.LivenessCheck`                               | Whether the owner recorded on a run is still working, asked before startup recovery takes an interrupted rewind's run over. Defaults to `Ownership.leaseLiveness()` from [`@smthrs/run-store`](/api/run-store). |
+| `maxHistoryEntries`   | `number`                                                | The most journal entries one replay, fork, or rewind may read. Defaults to `defaultMaxHistoryEntries`. Refused `invalid` at build unless it is a positive integer.                                              |
+| `rateLimit`           | `(input) => Effect<RateLimitDecision, TimeTravelError>` | Whether one more rewind may start. Defaults to no limiter: every rewind is allowed. See [Rate limiting rewinds](#rate-limiting-rewinds).                                                                        |
 
 ### Rate limiting rewinds
 

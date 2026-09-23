@@ -255,7 +255,9 @@ const counter = (tag: string, maxRounds?: number): CounterFlow => {
 const CountTo = counter("e2e/count-to")
 const Bounded = counter("e2e/bounded", 3)
 
-describe("a lineage counts to 100", () => {
+// A hundred real-database rounds measured about 30 s on a loaded host, the
+// whole default budget. The contract is the count, not the latency.
+describe("a lineage counts to 100", { timeout: 180_000 }, () => {
   it.effect("chains one execution per round under the lineage, and answers with the target", () =>
     Effect.gen(function*() {
       const calls: Array<number> = []
@@ -831,7 +833,8 @@ const Gated = Flow.make("e2e/gated", {
     )
 })
 
-describe("the system wait actions park and wake durably", () => {
+// The timer round trip measured about 22 s on a loaded host.
+describe("the system wait actions park and wake durably", { timeout: 120_000 }, () => {
   it.effect("parks a sleep under timer with its deadline, and the clock's fire resumes it", () =>
     Effect.gen(function*() {
       const marks: Array<string> = []
