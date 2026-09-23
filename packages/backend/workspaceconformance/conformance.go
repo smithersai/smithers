@@ -86,6 +86,26 @@ func RunCore(t *testing.T, harness CoreHarness) {
 		if string(content) != string(harness.FileContent) {
 			t.Fatalf("ReadFile content = %q; want %q", content, harness.FileContent)
 		}
+		// Repository code can plant a predictable temporary symlink before an
+		// admitted write. The file outside the workspace must remain untouched.
+		fixture, err := harness.Runtime.ExecuteCommand(harness.Context("plant-temp-symlink"), harness.Spec.ID, workspace.Command{Args: []string{
+			"/bin/sh", "-c", `outside=$(mktemp) || exit; printf outside-sentinel > "$outside"; ln -s "$outside" "$1/$2.tmp" || exit; printf '%s' "$outside"`,
+			"symlink-fixture", createdWorkspace.Root, harness.FilePath,
+		}})
+		if err != nil || fixture.ExitCode != 0 {
+			t.Fatalf("plant temporary symlink: %#v, %v", fixture, err)
+		}
+		outside := fixture.Stdout
+		if err := harness.Runtime.WriteFile(harness.Context("write-over-temp-symlink"), harness.Spec.ID, harness.FilePath, harness.FileContent, harness.FileMode); err != nil {
+			t.Fatalf("WriteFile with planted temporary symlink: %v", err)
+		}
+		check, err := harness.Runtime.ExecuteCommand(harness.Context("check-temp-symlink"), harness.Spec.ID, workspace.Command{Args: []string{
+			"/bin/sh", "-c", `cat -- "$1"; rm -f -- "$1" "$2/$3.tmp"`,
+			"symlink-check", outside, createdWorkspace.Root, harness.FilePath,
+		}})
+		if err != nil || check.ExitCode != 0 || check.Stdout != "outside-sentinel" {
+			t.Fatalf("temporary symlink wrote outside workspace: %#v, %v", check, err)
+		}
 	}
 
 	if err := harness.Runtime.StopWorkspace(harness.Context("stop"), harness.Spec.ID); err != nil {
