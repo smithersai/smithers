@@ -513,6 +513,44 @@ def check_retried_attempts_are_kept() -> None:
         assert health.main([directory, str(out), "tb4-X"]) == 3, "2 retried infra attempts of 3 in the hour trip"
 
 
+def check_guest_restart_watchdog() -> None:
+    """A worker replacement restarts the guest; the durable exec's command
+    dies with it but the CLI keeps waiting for an exit status that never
+    comes (arm B's r2 preflight: 60 min idle, up to --timeout 28800). A
+    long exec watches the guest's boot_id and fails as guest_restarted."""
+    import time as _time
+    with tempfile.TemporaryDirectory() as directory:
+        cli = Path(directory) / "smithers"
+        cli.write_text("#!/bin/sh\n"
+                       "case \"$*\" in\n"
+                       "  *boot_id*) printf '%s' '{\"exit_code\":0,\"stdout\":\"boot-2\\n\",\"stderr\":\"\"}';;\n"
+                       "  *) sleep 30; printf '%s' '{\"exit_code\":0,\"stdout\":\"late\",\"stderr\":\"\"}';;\n"
+                       "esac\n")
+        cli.chmod(0o755)
+        saved = (plue_env._WATCH_EVERY_SEC, plue_env._WATCH_MIN_SEC)
+        plue_env._WATCH_EVERY_SEC, plue_env._WATCH_MIN_SEC = 0.3, 0
+        try:
+            ops = fake_ops(cli)
+            ops._plue_boot_id = "boot-1"
+            started = _time.monotonic()
+            try:
+                asyncio.run(ops._plue_exec("codex exec", timeout_sec=28800))
+            except plue_env.PlueError as error:
+                assert error.code == "guest_restarted", error.code
+                assert not plue_env.reattachable(error)
+            else:
+                raise AssertionError("a restarted guest fails the exec")
+            assert _time.monotonic() - started < 10, "it fails at the next check, not at the timeout"
+            ops._plue_boot_id = "boot-2"  # same guest: the exec runs to its end
+            plue_env._WATCH_EVERY_SEC = 0.3
+            cli.write_text(cli.read_text().replace("sleep 30", "sleep 1"))
+            assert asyncio.run(ops._plue_exec("short", timeout_sec=28800))[0] == "late"
+        finally:
+            plue_env._WATCH_EVERY_SEC, plue_env._WATCH_MIN_SEC = saved
+            for name in ("SMITHERS_CLI", "PLUE_REPO"):
+                os.environ.pop(name, None)
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -680,6 +718,7 @@ if __name__ == "__main__":
     check_guest_prelude()
     check_storage_limit()
     check_retried_attempts_are_kept()
+    check_guest_restart_watchdog()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

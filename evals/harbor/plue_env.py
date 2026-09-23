@@ -109,6 +109,13 @@ _DELETE_ATTEMPTS = 3
 # 71c3ed6a+ detaches the command in the guest and keeps its output); the CLI
 # already reconnects on its own, so these are the waits after it gives up.
 _EXEC_REATTACH_BACKOFF_SEC = (10, 30, 60, 120, 240)
+# A worker replacement restarts the guest: the durable exec's command dies
+# with it while the CLI waits for an exit status that never comes. Execs
+# longer than _WATCH_MIN_SEC re-read the guest's boot_id every
+# _WATCH_EVERY_SEC and fail as guest_restarted when it changed.
+_WATCH_MIN_SEC = 600
+_WATCH_EVERY_SEC = 300
+BOOT_ID = "cat /proc/sys/kernel/random/boot_id"
 _DELETE_BACKOFF_SEC = 10
 # Harbor versions whose Trial._separate_verifier_env is copied below.
 _VERIFIER_PATCH_HARBOR = ("0.23.0",)
@@ -619,6 +626,14 @@ class _PlueOps:
             proc.kill()
             await proc.wait()
             raise PlueError(f"timed out after {timeout}s", "timeout", command)
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except BaseException:  # noqa: BLE001 - reaping is best effort
+                    pass
+            raise
         result = subprocess.CompletedProcess(command, proc.returncode or 0, out, err)
         if check and result.returncode != 0:
             envelope = {}
@@ -648,6 +663,8 @@ class _PlueOps:
     _plue_deferred: PlueError | None = None
     # The image's WORKDIR: the default cwd of every exec, as under Docker.
     _plue_workdir: str | None = None
+    # The guest's boot_id when setup ran; a different one means it restarted.
+    _plue_boot_id: str = ""
 
     def _plue_ledger(self) -> SlotLedger | None:
         return SlotLedger.from_environment()
@@ -721,7 +738,9 @@ class _PlueOps:
         await self._plue_reserve()
         if self._plue_image:
             self._plue_workdir = await asyncio.to_thread(image_config.working_dir, self._plue_image)
-        await self._plue_exec(f"{IMAGE_TMP}; mkdir -p {' '.join(_DIRS)}", user="root", timeout_sec=120)
+        out, _, _ = await self._plue_exec(f"{IMAGE_TMP}; mkdir -p {' '.join(_DIRS)}; {BOOT_ID}",
+                                          user="root", timeout_sec=120)
+        self._plue_boot_id = (out.strip().splitlines() or [""])[-1].strip()
         for src, dst in self._plue_copies:
             await self._plue_upload(Path(self.environment_dir) / src, dst)
         for mode_bits, target in self._plue_chmods:
@@ -841,6 +860,8 @@ class _PlueOps:
         args += ["--command", with_egress(command)]
         for wait in (*_EXEC_REATTACH_BACKOFF_SEC, None):
             try:
+                if self._plue_boot_id and timeout > _WATCH_MIN_SEC:
+                    return await self._plue_exec_watched(args, timeout)
                 return await self._plue_exec_once(args, timeout)
             except PlueError as error:
                 if wait is None or not reattachable(error):
@@ -848,6 +869,42 @@ class _PlueOps:
                 self.logger.info("plue: exec %s lost its transport (%s); reattaching in %ss", exec_id, error, wait)
                 await asyncio.sleep(wait)
         raise AssertionError("unreachable")
+
+    async def _plue_exec_watched(self, args: list[str], timeout: int) -> tuple[str, str, int]:
+        """_plue_exec_once, failed as guest_restarted when the guest's
+        boot_id changes while it runs."""
+        task = asyncio.ensure_future(self._plue_exec_once(args, timeout))
+        try:
+            while True:
+                done, _ = await asyncio.wait({task}, timeout=_WATCH_EVERY_SEC)
+                if done:
+                    return task.result()
+                now = await self._plue_current_boot_id()
+                if now and now != self._plue_boot_id:
+                    raise PlueError(
+                        f"the guest restarted (boot_id {self._plue_boot_id} -> {now}); "
+                        "the command died with it and its outcome is unknown", "guest_restarted", args)
+        finally:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except BaseException:  # noqa: BLE001 - the cancelled exec's own error is moot
+                    pass
+
+    async def _plue_current_boot_id(self) -> str:
+        """The guest's boot_id now, or "" when it cannot be read."""
+        try:
+            result = await self._run("workspace", "exec", *self._ws(), "--user", "root", "--timeout", "60",
+                                     "--format", "json", "--exec-id", f"boot-{uuid.uuid4().hex[:12]}",
+                                     "--command", BOOT_ID, timeout=120, check=False)
+            payload = _envelope(result.stdout.decode(errors="replace"))
+            payload = payload.get("data", payload)
+            if int(payload.get("exit_code", 1)) != 0:
+                return ""
+            return (payload.get("stdout") or "").strip()
+        except (PlueError, ValueError, OSError):
+            return ""
 
     async def _plue_exec_once(self, args: list[str], timeout: int) -> tuple[str, str, int]:
         result = await self._run(*args, timeout=timeout + 60, check=False)
