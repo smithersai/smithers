@@ -123,10 +123,10 @@ it.
 matches by request shape with `modelId` erased, and dies on a request the
 fixture does not describe.
 
-## Three modules stay off the root barrel
+## Four modules stay off the root barrel
 
 The root entry point exports one namespace per module, and each is also
-importable from `@smthrs/testing/<Module>`. Three are reachable only by
+importable from `@smthrs/testing/<Module>`. Four are reachable only by
 subpath.
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
@@ -153,6 +153,10 @@ const reparented = await waitForReparent(orphan, engine.process.pid!)
 Pids, process groups, and ports are machine global, so give a suite that uses
 `Faults` its own tree and its own runner config: `fileParallelism: false`, a
 finite timeout, and coverage off.
+
+`ProcessTable` spawns `ps` through `node:child_process`, which browser test
+hosts cannot load, so it stays at `@smthrs/testing/ProcessTable`. See
+[Inspect real processes](#inspect-real-processes).
 
 `@smthrs/testing/package.json` is also exported. `internal/*` and nested
 `*/index` subpaths are not public.

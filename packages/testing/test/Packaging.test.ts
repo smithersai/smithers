@@ -112,3 +112,42 @@ describe("the publish allowlist", () => {
     expect(orphans).toEqual([])
   })
 })
+
+describe("the subpath-only modules", () => {
+  // `ProcessTable` shipped as a fourth subpath-only module while every page
+  // still said "three", so a reader importing it from the root got a package
+  // export error with no page naming the subpath.
+  const barrel = readFileSync(join(sourceRoot, "index.ts"), "utf8")
+  const subpathOnly = Object.keys(manifest.exports)
+    .filter((key) => /^\.\/[A-Z]\w*$/.test(key))
+    .map((key) => key.slice(2))
+    .filter((name) => !barrel.includes(`export * as ${name} from`))
+    .sort()
+  const page = (path: string) => readFileSync(join(packageRoot, path), "utf8")
+  const section = (text: string, heading: string) => {
+    const start = text.indexOf(heading)
+    expect(start, heading).toBeGreaterThanOrEqual(0)
+    const next = text.indexOf("\n## ", start + heading.length)
+    return text.slice(start, next === -1 ? undefined : next)
+  }
+
+  it("are Faults, ProcessTable, TestHost and Vitest", () => {
+    expect(subpathOnly).toEqual(["Faults", "ProcessTable", "TestHost", "Vitest"])
+  })
+
+  it.each([
+    ["docs/api.md", "Four modules are reachable only by subpath."],
+    ["docs/installation.md", "## Four modules stay off the root barrel"],
+    ["README.md", "## Four modules stay off the root barrel"]
+  ])("are each named where %s lists them", (path, heading) => {
+    const listed = section(page(path), heading)
+    for (const name of subpathOnly) expect(listed, `${path}: ${name}`).toContain(`\`${name}\``)
+  })
+
+  it("each have an API reference section", () => {
+    const api = page("docs/api.md")
+    for (const name of subpathOnly.filter((name) => name !== "TestHost")) {
+      expect(api, name).toContain(`\n## ${name}\n`)
+    }
+  })
+})

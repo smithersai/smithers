@@ -120,7 +120,7 @@ tree: [`@smthrs/cli`](/api/cli) is the `smithers` command line, and
 ## Next steps
 
 - [Installation](./installation.md): the import forms, the optional peers, and
-  the three modules that stay off the root barrel.
+  the four modules that stay off the root barrel.
 - [Quickstart](./quickstart.md): run the nine conformance pins and read what
   each one proved.
 - [Test tiers](./concepts/test-tiers.md): why a harness here is a layer set

@@ -61,7 +61,7 @@ import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-## Three modules stay off the root barrel
+## Four modules stay off the root barrel
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
 interpreter, `TestClock`, and seeded PRNG. Each layer build starts with a fresh
@@ -97,6 +97,13 @@ by subpath keeps that decision visible at the import site:
 
 ```ts
 import { killProcess, waitForReparent } from "@smthrs/testing/Faults"
+```
+
+`ProcessTable` is absent because it spawns `ps` through `node:child_process`,
+which browser test hosts cannot load:
+
+```ts
+import * as ProcessTable from "@smthrs/testing/ProcessTable"
 ```
 
 ## What is not public
