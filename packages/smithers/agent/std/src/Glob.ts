@@ -3,7 +3,10 @@
  *
  * It has the same two peer implementations as `grep` and corresponds to
  * `rg --files -g`: `*`, `**`, `?`, and brace alternatives are supported;
- * results are path sorted; hidden files are opt-in; ignore files are disabled;
+ * results are path sorted; hidden files are opt-in; root and nested .gitignore
+ * files apply by default (even outside git repositories). `noIgnore: true` opts
+ * out. Parent/global ignore files, .git/info/exclude, .ignore and .rgignore
+ * are not read. Caller globs filter the remaining files without overriding ignores;
  * and the fixed skip-directory convention still permits an explicitly named
  * skipped directory as the root.
  *
@@ -82,8 +85,8 @@ export const Input = Schema.Struct({
     description: "Search root the pattern is relative to; defaults to . (the host workspace)."
   }),
   hidden: Schema.optional(Schema.Boolean).annotate({ description: "Ripgrep --hidden." }),
-  noIgnore: Schema.optional(Schema.Literal(true)).annotate({
-    description: "Ignore files are never consulted; only true is accepted."
+  noIgnore: Schema.optional(Schema.Boolean).annotate({
+    description: "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
   }),
   limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({
     description: `Maximum paths, capped at ${MAX_ENTRIES}.`
@@ -184,17 +187,6 @@ export const presentation = {
 export const run = Effect.fn("Glob.run")(function*(
   input: typeof Input.Type
 ): Effect.fn.Return<typeof Output.Type, StdError.StdError, Search.Search> {
-  // `Input` admits only `true`, so a decoded call never trips this. `run` is
-  // exported, and a caller reaching it without decoding still gets the refusal
-  // rather than a listing that quietly ignored what it asked for.
-  if (input.noIgnore !== undefined && input.noIgnore !== true) {
-    return yield* Effect.fail(
-      new StdError.StdError({
-        code: "invalid_input",
-        message: "Invalid ripgrep options: ignore-file handling is not supported; use noIgnore: true"
-      })
-    )
-  }
   const patternError = Contract.validateGlob(input.pattern)
   if (patternError !== undefined) return yield* Effect.fail(patternError)
   const search = yield* Search.Search
@@ -202,6 +194,7 @@ export const run = Effect.fn("Glob.run")(function*(
     pattern: input.pattern,
     root: input.root ?? ".",
     hidden: input.hidden ?? false,
+    noIgnore: input.noIgnore ?? false,
     limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
   })
 })

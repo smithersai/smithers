@@ -28,6 +28,8 @@ export interface GrepInput {
   readonly afterContext: number
   readonly maxCount?: number | undefined
   readonly filesWithMatches: boolean
+  /** Opt out of root-scoped .gitignore rules; defaults to false. */
+  readonly noIgnore?: boolean | undefined
   readonly hidden: boolean
   readonly symbols: boolean
   readonly limit: number
@@ -110,6 +112,8 @@ export interface GrepOutput {
 export interface GlobInput {
   readonly pattern: string
   readonly root: string
+  /** Opt out of root-scoped .gitignore rules; defaults to false. */
+  readonly noIgnore?: boolean | undefined
   readonly hidden: boolean
   readonly limit: number
 }

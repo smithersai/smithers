@@ -356,6 +356,8 @@ export const unsatisfiableNotice = (options: {
   readonly path: Path.Path
   readonly root: string
   readonly globs: ReadonlyArray<string>
+  readonly noIgnore?: boolean | undefined
+  readonly ignored?: boolean | undefined
   readonly hidden: boolean
 }): Effect.Effect<string | undefined> =>
   Effect.gen(function*() {
@@ -382,5 +384,11 @@ export const unsatisfiableNotice = (options: {
         }.`
       )
     }
+    const ignored = options.noIgnore ? false : options.ignored ??
+      (yield* Walk.files(options.fileSystem, options.path, options.root, options.hidden).pipe(
+        Effect.map((walked) => walked.ignored),
+        Effect.orElseSucceed(() => false)
+      ))
+    if (ignored) sentences.push("No results; ignore files excluded paths. Retry with noIgnore: true to include them.")
     return sentences.length === 0 ? undefined : sentences.join(" ")
   })

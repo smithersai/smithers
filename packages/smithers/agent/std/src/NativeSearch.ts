@@ -54,6 +54,18 @@ const execute = (
 const skipGlobs = [...Walk.skippedDirectories].map((directory) => `!**/${directory}/**`)
 const hiddenGlobs = ["!.*", "!**/.*", "!**/.*/**"]
 
+// Only .gitignore within the requested root participates. Disable user config,
+// parent/global rules and other ignore sources so the result is host independent.
+const ignoreFlags = (noIgnore: boolean | undefined): ReadonlyArray<string> => [
+  "--no-config",
+  "--no-require-git",
+  "--no-ignore-global",
+  "--no-ignore-parent",
+  "--no-ignore-exclude",
+  "--no-ignore-dot",
+  ...(noIgnore ? ["--no-ignore"] : [])
+]
+
 /**
  * Reports what `rg` rejected, or `undefined` when it produced an answer.
  *
@@ -162,7 +174,7 @@ const grep = (
     const args: Array<string> = [
       "--json",
       "--stats",
-      "--no-ignore",
+      ...ignoreFlags(input.noIgnore),
       "--no-messages",
       "--sort",
       "path",
@@ -183,7 +195,11 @@ const grep = (
     if (input.beforeContext > 0) args.push("--before-context", String(input.beforeContext))
     if (input.afterContext > 0) args.push("--after-context", String(input.afterContext))
     if (input.maxCount !== undefined) args.push("--max-count", String(input.maxCount))
-    const globs = [...input.globs.map(Contract.canonicalGlob), ...(input.hidden ? [] : hiddenGlobs), ...skipGlobs]
+    // Positive rg --glob flags override .gitignore. Apply caller globs to the
+    // admitted paths in-process instead, using the same matcher as portable.
+    const admitted = (file: string) => root.explicitFile ||
+      Contract.includedByGlobs(input.globs, path.relative(input.root, file), path.basename(file))
+    const globs = [...(input.hidden ? [] : hiddenGlobs), ...skipGlobs]
     for (const glob of globs) args.push("--glob", glob)
     args.push("--", input.pattern, root.target)
 
@@ -191,7 +207,7 @@ const grep = (
       "--files-with-matches",
       "--text",
       "--null",
-      "--no-ignore",
+      ...ignoreFlags(input.noIgnore),
       "--no-messages",
       "--sort",
       "path"
@@ -204,7 +220,7 @@ const grep = (
     // files that produced output — the files with a match. The contract counts
     // every file the search covered, which is what `--files` lists, and listing
     // reads no file contents.
-    const listingArgs: Array<string> = ["--files", "--null", "--no-ignore", "--no-messages"]
+    const listingArgs: Array<string> = ["--files", "--null", ...ignoreFlags(input.noIgnore), "--no-messages"]
     if (input.hidden) listingArgs.push("--hidden")
     for (const glob of globs) listingArgs.push("--glob", glob)
     listingArgs.push("--", root.target)
@@ -223,7 +239,7 @@ const grep = (
         return yield* Effect.fail(new StdError.StdError({ code: "request_failed", message }))
       }
     }
-    const binaryFiles = new Set(nulSeparated(binaryResult.stdout).map(root.absolute))
+    const binaryFiles = new Set(nulSeparated(binaryResult.stdout).map(root.absolute).filter(admitted))
     if (root.explicitFile && binaryFiles.size > 0) {
       return yield* Effect.fail(
         new StdError.StdError({
@@ -258,6 +274,7 @@ const grep = (
           return yield* Effect.fail(malformedJson())
         }
         const absolute = root.absolute(file)
+        if (!admitted(absolute)) continue
         files.add(absolute)
         lines.push({ file: absolute, line, text: preview(text), kind: type })
       } else if (type === "begin") {
@@ -297,12 +314,13 @@ const grep = (
       path,
       root: input.root,
       globs: input.globs,
-      hidden: input.hidden
+      hidden: input.hidden,
+      noIgnore: input.noIgnore
     })
     return {
       matches: Grouping.annotate(shown, contents),
       files: input.filesWithMatches ? [...files].sort().slice(0, input.limit) : [],
-      filesSearched: nulSeparated(listingResult.stdout).length,
+      filesSearched: nulSeparated(listingResult.stdout).map(root.absolute).filter(admitted).length,
       skippedBinary: binaryFiles.size,
       truncated,
       ...(truncated
@@ -324,9 +342,8 @@ const glob = (
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const root = yield* resolveRoot(input.root)
-    const args: Array<string> = ["--files", "--null", "--no-ignore", "--no-messages", "--sort", "path"]
+    const args: Array<string> = ["--files", "--null", ...ignoreFlags(input.noIgnore), "--no-messages", "--sort", "path"]
     if (input.hidden) args.push("--hidden")
-    args.push("--glob", Contract.canonicalGlob(input.pattern))
     for (const glob of [...(input.hidden ? [] : hiddenGlobs), ...skipGlobs]) args.push("--glob", glob)
     args.push("--", root.target)
     const result = yield* execute(root.cwd, args, environment)
@@ -334,14 +351,17 @@ const glob = (
     if (rejected !== undefined) {
       return yield* Effect.fail(new StdError.StdError({ code: "invalid_pattern", message: rejected }))
     }
-    const paths = nulSeparated(result.stdout).map(root.absolute).sort()
+    const paths = nulSeparated(result.stdout).map(root.absolute).filter((file) => root.explicitFile ||
+      Contract.includedByGlobs([input.pattern], path.relative(input.root, file), path.basename(file))
+    ).sort()
     const shown = paths.slice(0, input.limit)
     const unsatisfiable = paths.length > 0 ? undefined : yield* Contract.unsatisfiableNotice({
       fileSystem,
       path,
       root: input.root,
       globs: [input.pattern],
-      hidden: input.hidden
+      hidden: input.hidden,
+      noIgnore: input.noIgnore
     })
     return {
       paths: shown,

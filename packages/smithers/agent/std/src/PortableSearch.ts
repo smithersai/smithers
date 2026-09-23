@@ -8,106 +8,12 @@ import { type Context, Effect, Layer, Stream } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Grouping from "./internal/Grouping.ts"
 import * as LinearRegex from "./internal/LinearRegex.ts"
-import { escapeRegex, notFound } from "./internal/SearchContract.ts"
+import { escapeRegex } from "./internal/SearchContract.ts"
 import { notice, truncateBytes } from "./internal/Text.ts"
 import * as Walk from "./internal/Walk.ts"
 import * as Search from "./Search.ts"
 import * as Contract from "./SearchContract.ts"
 import * as StdError from "./StdError.ts"
-
-/**
- * How many filesystem questions one directory level asks at a time.
- *
- * A metadata call through the layer costs far more in fiber scheduling than in
- * kernel time, so asking one entry at a time is what makes a walk slow: the
- * same probe measured 28.8 µs sequentially and 6.0 µs at this width on the
- * SWE-bench pytest tree. The bound keeps the file-descriptor and thread-pool
- * pressure of a wide directory predictable.
- */
-const concurrency = 16
-
-/**
- * Answers whether each path is a symbolic link, which neither peer follows.
- *
- * `FileSystem.stat` resolves links, so the only probe available is `readLink`,
- * and every probe is one more call in a loop that already makes one per entry.
- * The walk therefore probes directories, where following a link would duplicate
- * a subtree or loop forever, and the callers probe the far smaller set of files
- * they are about to report — batched, never one at a time.
- */
-const symbolicLinks = (
-  fileSystem: FileSystem.FileSystem,
-  candidates: ReadonlyArray<string>
-): Effect.Effect<ReadonlyArray<boolean>> =>
-  Effect.forEach(
-    candidates,
-    (candidate) => fileSystem.readLink(candidate).pipe(Effect.as(true), Effect.orElseSucceed(() => false)),
-    { concurrency }
-  )
-
-/**
- * One walk: the files under the root, and whether the root was one file.
- */
-interface Walked {
-  readonly explicitFile: boolean
-  readonly files: ReadonlyArray<string>
-}
-
-/**
- * Lists the files a search under `root` reaches.
- *
- * Only the root the caller named is allowed to fail the walk. Every entry
- * below it that the process cannot inspect — a dangling symlink, a symlink
- * loop, a directory it may not list — is skipped and the walk continues, which
- * is what `rg --no-messages` does with the same tree. Turning one of those into
- * a typed failure would make a whole repository unsearchable because of one
- * link, and would answer differently from the native peer.
- */
-const walkFiles = (
-  fileSystem: FileSystem.FileSystem,
-  path: Path.Path,
-  root: string,
-  hidden: boolean
-): Effect.Effect<Walked, StdError.StdError> =>
-  Effect.gen(function*() {
-    const info = yield* fileSystem.stat(root).pipe(Effect.mapError(() => notFound(root)))
-    if (info.type === "File") return { explicitFile: true, files: [path.normalize(root)] }
-    const files: Array<string> = []
-    const directories: Array<string> = [root]
-    while (directories.length > 0) {
-      const directory = directories.pop()
-      if (directory === undefined) continue
-      const children: ReadonlyArray<string> = yield* fileSystem.readDirectory(directory).pipe(
-        Effect.catch(() =>
-          directory === root
-            ? Effect.fail(notFound(directory))
-            : Effect.succeed<ReadonlyArray<string>>([])
-        )
-      )
-      const candidates = children
-        .filter((child) => !Walk.skippedDirectories.has(child) && (hidden || !child.startsWith(".")))
-        .map((child) => path.join(directory, child))
-      const entries = yield* Effect.forEach(candidates, (candidate) =>
-        fileSystem.stat(candidate).pipe(
-          Effect.map((candidateInfo): { readonly candidate: string; readonly type: string | undefined } => ({
-            candidate,
-            type: candidateInfo.type
-          })),
-          Effect.orElseSucceed(() => ({ candidate, type: undefined }))
-        ), { concurrency })
-      const nested: Array<string> = []
-      for (const entry of entries) {
-        if (entry.type === "Directory") nested.push(entry.candidate)
-        else if (entry.type === "File") files.push(path.normalize(entry.candidate))
-      }
-      const links = yield* symbolicLinks(fileSystem, nested)
-      for (let index = 0; index < nested.length; index++) {
-        const candidate = nested[index]
-        if (candidate !== undefined && links[index] !== true) directories.push(candidate)
-      }
-    }
-    return { explicitFile: false, files: files.sort() }
-  })
 
 /**
  * Narrows a walk to the files a search reports.
@@ -120,7 +26,7 @@ const walkFiles = (
 const candidates = (
   fileSystem: FileSystem.FileSystem,
   path: Path.Path,
-  walked: Walked,
+  walked: Walk.Walked,
   root: string,
   globs: ReadonlyArray<string>
 ): Effect.Effect<ReadonlyArray<string>> =>
@@ -129,7 +35,7 @@ const candidates = (
     const included = walked.files.filter((file) =>
       Contract.includedByGlobs(globs, path.relative(root, file), path.basename(file))
     )
-    const links = yield* symbolicLinks(fileSystem, included)
+    const links = yield* Walk.symbolicLinks(fileSystem, included)
     return included.filter((_, index) => links[index] !== true)
   })
 
@@ -149,7 +55,7 @@ const grep = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const walked = yield* walkFiles(fileSystem, path, input.root, input.hidden)
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
     const insensitive = input.ignoreCase || (input.smartCase && !/[A-Z]/.test(input.pattern))
     const regex = LinearRegex.compile(
       input.fixedStrings ? escapeRegex(input.pattern) : input.pattern,
@@ -284,7 +190,9 @@ const grep = (
       path,
       root: input.root,
       globs: input.globs,
-      hidden: input.hidden
+      hidden: input.hidden,
+      noIgnore: input.noIgnore,
+      ignored: walked.ignored
     })
     return {
       matches: shownMatches,
@@ -305,7 +213,7 @@ const glob = (
   Effect.gen(function*() {
     const fileSystem = yield* FileSystem.FileSystem
     const path = yield* Path.Path
-    const walked = yield* walkFiles(fileSystem, path, input.root, input.hidden)
+    const walked = yield* Walk.files(fileSystem, path, input.root, input.hidden, input.noIgnore)
     const included = yield* candidates(fileSystem, path, walked, input.root, [input.pattern])
     const matching = [...included].sort()
     const paths = matching.slice(0, input.limit)
@@ -314,7 +222,9 @@ const glob = (
       path,
       root: input.root,
       globs: [input.pattern],
-      hidden: input.hidden
+      hidden: input.hidden,
+      noIgnore: input.noIgnore,
+      ignored: walked.ignored
     })
     return {
       paths,

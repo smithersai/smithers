@@ -5,8 +5,10 @@
  * Smithers Ripgrep ASCII v1; `-F` (`fixedStrings`); `-i` (`ignoreCase`) and `-S`
  * (`smartCase`); ordered `-g` include/exclude globs; `-A`, `-B`, and `-C`
  * context; per-file `--max-count`; `--files-with-matches`; `--hidden`; and
- * deterministic path/line ordering. Ignore files and file-type registries are
- * outside v1: `noIgnore` accepts only `true` (the default), and there is no
+ * deterministic path/line ordering. Root and nested .gitignore files apply by default, including outside git
+ * repositories. `noIgnore: true` opts out. Parent/global ignore files,
+ * .git/info/exclude, .ignore and .rgignore are not read. File-type registries
+ * are outside v1, and there is no
  * `types` field to pass. Patterns are capped at 4096 ASCII bytes and counted
  * repetitions at 1000. Invalid UTF-8 is replacement-decoded; NUL-bearing
  * files are skipped and counted, while an explicitly named binary file is a
@@ -101,8 +103,8 @@ export const Input = Schema.Struct({
   symbols: Schema.optional(Schema.Boolean).annotate({
     description: "Report the definition enclosing each returned hit; true by default."
   }),
-  noIgnore: Schema.optional(Schema.Literal(true)).annotate({
-    description: "Ignore files are never consulted; only true is accepted."
+  noIgnore: Schema.optional(Schema.Boolean).annotate({
+    description: "Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply."
   }),
   limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({
     description: `Global result limit, capped at ${MAX_GREP_MATCHES}.`
@@ -245,12 +247,6 @@ export const presentation = {
 } as const
 
 const normalize = (input: typeof Input.Type): Search.GrepInput | StdError.StdError => {
-  // `Input` admits only `true`, so a decoded call never trips this. `run` is
-  // exported, and a caller reaching it without decoding still gets the refusal
-  // rather than a search that quietly ignored what it asked for.
-  if (input.noIgnore !== undefined && input.noIgnore !== true) {
-    return invalidInput("ignore-file handling is not supported; use noIgnore: true")
-  }
   if (input.ignoreCase === true && input.smartCase === true) {
     return invalidInput("-i and -S are mutually exclusive")
   }
@@ -282,6 +278,7 @@ const normalize = (input: typeof Input.Type): Search.GrepInput | StdError.StdErr
     maxCount: input.maxCount,
     filesWithMatches: input.filesWithMatches ?? false,
     hidden: input.hidden ?? false,
+    noIgnore: input.noIgnore ?? false,
     symbols: input.symbols ?? true,
     limit: Math.min(input.limit ?? MAX_GREP_MATCHES, MAX_GREP_MATCHES)
   }
