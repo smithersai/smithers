@@ -3,7 +3,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { Cause, Effect, Layer, Option } from "effect"
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { relative, sep } from "node:path"
+import { basename, isAbsolute, join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as FileRouter from "../src/FileRouter.ts"
@@ -29,18 +29,18 @@ describe("FileRouter", () => {
     ])
     expect(result.routes.find((route) => route.name === "review")?.segments).toEqual(["review"])
     expect(result.routes.find((route) => route.name === "domains/list")?.segments).toEqual(["domains", "list"])
-    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toMatch(/review\/flow\.ts$/)
+    expect(result.routes.find((route) => route.name === "review")?.sourcePath).toBe(join(root, "review", "flow.ts"))
   })
 
   it("preserves registry entry precedence and diagnostics", async () => {
     const result = await scan()
 
     expect(result.routes.find((route) => route.name === "mixed")?.kind).toBe("module")
-    expect(result.routes.find((route) => route.name === "mixed")?.sourcePath).toMatch(/mixed\/flow\.ts$/)
+    expect(result.routes.find((route) => route.name === "mixed")?.sourcePath).toBe(join(root, "mixed", "flow.ts"))
     expect(result.warnings).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "multiple_entry_files", path: expect.stringMatching(/mixed$/) }),
-      expect.objectContaining({ code: "root_level_entry", path: expect.stringMatching(/flows\/flow\.ts$/) }),
-      expect.objectContaining({ code: "name_field_ignored", path: expect.stringMatching(/review\/flow\.ts$/) })
+      expect.objectContaining({ code: "multiple_entry_files", path: join(root, "mixed") }),
+      expect.objectContaining({ code: "root_level_entry", path: join(root, "flow.ts") }),
+      expect.objectContaining({ code: "name_field_ignored", path: join(root, "review", "flow.ts") })
     ]))
   })
 
@@ -48,9 +48,9 @@ describe("FileRouter", () => {
     const result = await scan()
     const review = result.routes.find((route) => route.name === "review")
 
-    expect(Option.getOrUndefined(review?.ui ?? Option.none())).toMatch(/review\/ui\.tsx$/)
-    expect(result.routes.some((route) => route.sourcePath.endsWith("/ui.tsx"))).toBe(false)
-    expect(result.routes.some((route) => route.sourcePath.endsWith("/flow.test.ts"))).toBe(false)
+    expect(Option.getOrUndefined(review?.ui ?? Option.none())).toBe(join(root, "review", "ui.tsx"))
+    expect(result.routes.some((route) => basename(route.sourcePath) === "ui.tsx")).toBe(false)
+    expect(result.routes.some((route) => basename(route.sourcePath) === "flow.test.ts")).toBe(false)
   })
 
   it("routes skills as metadata while leaving skill parsing lazy", async () => {
@@ -75,7 +75,7 @@ describe("FileRouter", () => {
     const result = await pending
 
     expect(result.routes.length).toBeGreaterThan(0)
-    expect(result.routes.every((route) => route.sourcePath.startsWith("/"))).toBe(true)
+    expect(result.routes.every((route) => isAbsolute(route.sourcePath))).toBe(true)
     expect(Object.isFrozen(result)).toBe(true)
     expect(Object.isFrozen(result.routes)).toBe(true)
   })
