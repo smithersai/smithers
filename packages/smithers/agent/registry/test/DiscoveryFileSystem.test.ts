@@ -9,6 +9,7 @@ import { type FileSystemCalls, type Node, virtualFileSystem } from "./support/Vi
 
 type FileNode = Extract<Node, { readonly kind: "file" }>
 
+// The virtual tree uses POSIX paths independently of the runner OS.
 const root = "/vfs"
 const expectedEntrySizeLimit = 4 * 1024 * 1024
 
@@ -24,7 +25,7 @@ const scan = (nodes: Map<string, Node>, source: Partial<Source> = {}, calls?: Fi
         naming: "path",
         ...source
       })
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
 const scanError = (nodes: Map<string, Node>, source: Partial<Source> = {}) =>
@@ -39,7 +40,7 @@ const scanError = (nodes: Map<string, Node>, source: Partial<Source> = {}) =>
           ...source
         })
       )
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
 const skill = (description: string, name?: string): FileNode => ({
@@ -79,7 +80,7 @@ describe("Discovery host failures", () => {
             path
           ).scan({ source: "virtual", root, naming: "path" })
         )
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
     expect(error).toMatchObject({ code: "read_failed", cause })
     expect(error.message).toContain("SMITHERS_WORKSPACE_JJ_EXPORT_BINARY")
@@ -583,7 +584,7 @@ describe("Discovery module entries", () => {
 
 describe("Registry over a virtual host", () => {
   const registryLayer = (nodes: Map<string, Node>, sources: ReadonlyArray<Source>) => {
-    const platform = Layer.merge(Layer.succeed(FileSystem.FileSystem)(virtualFileSystem(nodes)), NodePath.layer)
+    const platform = Layer.merge(Layer.succeed(FileSystem.FileSystem)(virtualFileSystem(nodes)), NodePath.layerPosix)
     return Registry.layer({ sources }).pipe(
       Layer.provide(Layer.merge(Discovery.layer.pipe(Layer.provide(platform)), platform))
     )
@@ -702,7 +703,7 @@ describe("Discovery concurrency", () => {
       Effect.gen(function*() {
         const path = yield* Path.Path
         return yield* Discovery.make(fs, path).scan({ source: "virtual", root, naming: "path" })
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
 
   it("keeps several directory stats in flight at once", async () => {

@@ -68,6 +68,7 @@ const installedManifest = {
   flows: ["flows"]
 }
 
+// The in-memory pack trees use POSIX paths; real disk fixtures use NodePath.layer.
 const tree = (entries: ReadonlyArray<readonly [string, Node]>): Map<string, Node> => new Map(entries)
 
 const readPack = (nodes: Map<string, Node>, dir: string) =>
@@ -75,7 +76,7 @@ const readPack = (nodes: Map<string, Node>, dir: string) =>
     Effect.gen(function*() {
       const path = yield* Path.Path
       return yield* Pack.read(virtualFileSystem(nodes), path, dir)
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
 const readPackError = (nodes: Map<string, Node>, dir: string) =>
@@ -83,7 +84,7 @@ const readPackError = (nodes: Map<string, Node>, dir: string) =>
     Effect.gen(function*() {
       const path = yield* Path.Path
       return yield* Effect.flip(Pack.read(virtualFileSystem(nodes), path, dir))
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
 const packSources = (pack: Pack.Installed) =>
@@ -93,18 +94,18 @@ const packSources = (pack: Pack.Installed) =>
       return yield* Pack.sources(pack, path)
     }).pipe(
       Effect.provide(NodeFileSystem.layer),
-      Effect.provide(NodePath.layer)
+      Effect.provide(NodePath.layerPosix)
     )
   )
 
-const packSourcesError = (pack: Pack.Installed) =>
+const packSourcesError = (pack: Pack.Installed, paths = NodePath.layerPosix) =>
   Effect.runPromise(
     Effect.gen(function*() {
       const path = yield* Path.Path
       return yield* Effect.flip(Pack.sources(pack, path))
     }).pipe(
       Effect.provide(NodeFileSystem.layer),
-      Effect.provide(NodePath.layer)
+      Effect.provide(paths)
     )
   )
 
@@ -126,7 +127,7 @@ const withRegistry = <A, E>(
           Layer.provide(Layer.succeed(Path.Path)(path))
         )
       )
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
   )
 
 const both = tree([
@@ -294,7 +295,7 @@ describe("Pack.sources", () => {
     const basePath = await Effect.runPromise(
       Effect.gen(function*() {
         return yield* Path.Path
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
     const escapingPath: Path.Path = {
       ...basePath,
@@ -332,7 +333,7 @@ describe("Pack.sources", () => {
     symlinkSync(outside, join(packDir, "flows"), "dir")
 
     try {
-      const error = await packSourcesError(installed(packDir, localManifest, "installed"))
+      const error = await packSourcesError(installed(packDir, localManifest, "installed"), NodePath.layer)
 
       expect(error).toMatchObject({ code: "invalid_pack", path: join(packDir, "pack.json") })
       expect(error.message).toContain("flows")
@@ -395,7 +396,7 @@ describe("pack discovery confinement", () => {
             throw new Error("Outside directory must not be read")
           }
         }, path).scan(sources[0]!)
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
     expect(result.entries).toEqual([])
     expect(result.warnings).toEqual([expect.objectContaining({ code: "outside_root", path: "/pack/flows" })])
@@ -419,7 +420,7 @@ describe("pack discovery confinement", () => {
               }))
               : Effect.succeed(location)
         }, path).scan({ source: "confined", root: "/pack", confinementRoot: "/pack", naming: "path" })
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
     expect(result.entries.map((entry) => entry.name)).toEqual(["flows/review"])
     expect(result.warnings).toEqual([
@@ -662,7 +663,7 @@ describe("Pack.checkCompatible", () => {
     Effect.gen(function*() {
       const path = yield* Path.Path
       return yield* Pack.checkCompatible(pack, path, runtimeVersion)
-    }).pipe(Effect.provide(NodePath.layer))
+    }).pipe(Effect.provide(NodePath.layerPosix))
 
   it.each([">= 1.0.0", ">=1.0", "^1", "1.0.0 - 2.0.0"])(
     "accepts the readable npm range %j",
@@ -697,7 +698,7 @@ describe("Pack.checkCompatible", () => {
           yield* Effect.flip(Pack.checkCompatible(requiring(">=2.0.0", dir), path, "1.0.0-rc.0")),
           path.join(dir, "pack.json")
         ] as const
-      }).pipe(Effect.provide(NodePath.layer))
+      }).pipe(Effect.provide(NodePath.layerPosix))
     )
 
     expect(read).toBe("/packs/vendor/pack.json")
