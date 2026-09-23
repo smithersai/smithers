@@ -66,3 +66,34 @@ fn packaged_helper_writes_and_reads_without_an_interpreter() {
         b"written by packaged Rust helper\n"
     );
 }
+
+#[test]
+fn packaged_stat_preserves_creation_time_for_roots_directories_and_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = fs::canonicalize(dir.path()).unwrap();
+    let info = fs::metadata(&root).unwrap();
+    let nested = root.join("nested");
+    fs::create_dir(&nested).unwrap();
+    let file = nested.join("proof.txt");
+    fs::write(&file, "creation time").unwrap();
+    for path in [&root, &nested, &file] {
+        let expected = fs::metadata(path).unwrap().created();
+        let actual = invoke(json!({
+            "operation":"stat", "boundaryRoot":root, "logicalRoot":root,
+            "rootIdentity":format!("{}:{}", info.dev(), info.ino()), "path":path
+        }));
+        assert_eq!(actual["ok"], true, "{actual}");
+        match expected {
+            Ok(created) => {
+                let milliseconds = created
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64()
+                    * 1000.0;
+                let birthtime = actual["value"]["birthtime"].as_f64().unwrap();
+                assert!((birthtime - milliseconds).abs() < 1.0);
+            }
+            Err(_) => assert!(actual["value"]["birthtime"].is_null()),
+        }
+    }
+}

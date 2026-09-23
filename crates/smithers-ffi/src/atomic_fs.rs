@@ -232,7 +232,58 @@ fn digest_with_hook(
     }
     Ok(value)
 }
-fn stat_json(stat: libc::stat) -> Value {
+fn birthtime_at(dir: &File, name: &OsStr, stat: &libc::stat) -> io::Result<Option<f64>> {
+    #[cfg(target_os = "linux")]
+    {
+        let name = cstring(name)?;
+        let mut extended: libc::statx = unsafe { std::mem::zeroed() };
+        // Keep lookup relative to the pinned directory and never follow a link.
+        // Linux's legacy stat does not contain creation time, even when the
+        // filesystem exposes it through statx.
+        if unsafe {
+            libc::statx(
+                dir.as_raw_fd(),
+                name.as_ptr(),
+                libc::AT_SYMLINK_NOFOLLOW | libc::AT_NO_AUTOMOUNT,
+                libc::STATX_INO | libc::STATX_BTIME,
+                &mut extended,
+            )
+        } < 0
+        {
+            let failure = io::Error::last_os_error();
+            return match failure.raw_os_error() {
+                Some(libc::ENOSYS | libc::EOPNOTSUPP | libc::EINVAL) => Ok(None),
+                _ => Err(failure),
+            };
+        }
+        if extended.stx_mask & libc::STATX_BTIME == 0 {
+            return Ok(None);
+        }
+        if extended.stx_mask & libc::STATX_INO == 0
+            || extended.stx_ino != stat.st_ino
+            || libc::makedev(extended.stx_dev_major, extended.stx_dev_minor) != stat.st_dev
+        {
+            return Err(error(libc::EBUSY, "entry changed during stat"));
+        }
+        Ok(Some(
+            extended.stx_btime.tv_sec as f64 * 1000.0
+                + extended.stx_btime.tv_nsec as f64 / 1_000_000.0,
+        ))
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (dir, name);
+        Ok(Some(
+            stat.st_birthtime as f64 * 1000.0 + stat.st_birthtime_nsec as f64 / 1_000_000.0,
+        ))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        let _ = (dir, name, stat);
+        Ok(None)
+    }
+}
+fn stat_json(stat: libc::stat, birthtime: Option<f64>) -> Value {
     let kind = match stat.st_mode & libc::S_IFMT {
         libc::S_IFREG => "File",
         libc::S_IFDIR => "Directory",
@@ -243,11 +294,6 @@ fn stat_json(stat: libc::stat) -> Value {
         libc::S_IFCHR => "CharacterDevice",
         _ => "Unknown",
     };
-    #[cfg(target_os = "macos")]
-    let birthtime =
-        Some(stat.st_birthtime as f64 * 1000.0 + stat.st_birthtime_nsec as f64 / 1_000_000.0);
-    #[cfg(not(target_os = "macos"))]
-    let birthtime: Option<f64> = None;
     #[cfg(target_os = "macos")]
     let (mtime_ns, atime_ns) = (stat.st_mtime_nsec, stat.st_atime_nsec);
     #[cfg(not(target_os = "macos"))]
@@ -687,17 +733,29 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
         "exists" | "stat" | "realPath" => {
             let path = field(request, "path")?;
             let parts = confined(request, path)?;
-            let stat = if parts.is_empty() {
-                fstat(&root)?
+            let (stat, birthtime) = if parts.is_empty() {
+                let stat = fstat(&root)?;
+                let birthtime = if operation == "stat" {
+                    birthtime_at(&root, OsStr::new("."), &stat)?
+                } else {
+                    None
+                };
+                (stat, birthtime)
             } else {
                 let (dir, name) = parent(&root, request, path, false, 0)?;
-                match lstat_at(&dir, name) {
+                let stat = match lstat_at(&dir, name) {
                     Ok(stat) => stat,
                     Err(e) if operation == "exists" && e.raw_os_error() == Some(libc::ENOENT) => {
                         return Ok(json!(false))
                     }
                     Err(e) => return Err(e),
-                }
+                };
+                let birthtime = if operation == "stat" {
+                    birthtime_at(&dir, name, &stat)?
+                } else {
+                    None
+                };
+                (stat, birthtime)
             };
             if stat.st_mode & libc::S_IFMT == libc::S_IFLNK {
                 return Err(error(libc::ELOOP, "symlink denied"));
@@ -709,7 +767,7 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
                 return Err(error(libc::EPERM, "hard-linked file denied"));
             }
             if operation == "stat" {
-                return Ok(stat_json(stat));
+                return Ok(stat_json(stat, birthtime));
             }
             let relative = parts
                 .iter()
