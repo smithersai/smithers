@@ -1,6 +1,7 @@
 /** Shared native lifecycle; the engine and stores live in Runtime.ts.
  * @since 1.0.0
  */
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
@@ -20,7 +21,6 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
-import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -113,7 +113,7 @@ export const makeNative = (platform: NativePlatform) => {
       : resolve(decodeField("workspaceRoot", Schema.NonEmptyString, workspaceRoot, nonEmpty))
     return Runtime.storage(validatedFilename, root).pipe(
       Layer.provideMerge(databaseLayer(validatedFilename)),
-      Layer.provide(Path.layer)
+      Layer.provide(NodePath.layer)
     )
   }
 
@@ -138,7 +138,7 @@ export const makeNative = (platform: NativePlatform) => {
     const validated = validate(options)
     return Runtime.layer(validated, stepBoundary, workspaceSandbox, registerFlows, ...registry).pipe(
       Layer.provideMerge(databaseLayer(validated.filename)),
-      Layer.provide(Path.layer)
+      Layer.provide(NodePath.layer)
     )
   }
 

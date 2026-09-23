@@ -1,8 +1,9 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import { checkFileSystemBatch } from "@smthrs/kernel/test/contract"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, FileSystem, Layer, Path, Result } from "effect"
+import { Effect, FileSystem, Layer, Result } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -34,7 +35,7 @@ afterEach(async () => {
 const guarded = (root: string, options: AtomicFileSystem.Options = {}) =>
   KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layerWith(options)),
-    Layer.provide(Path.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(Workspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )

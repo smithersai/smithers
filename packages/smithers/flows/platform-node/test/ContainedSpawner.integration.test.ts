@@ -14,9 +14,10 @@
  */
 import * as NodeChildProcessSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { ContainedSpawner, ProcessLedger } from "@smthrs/kernel"
-import { Deferred, Effect, Fiber, Path } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import type * as Scope from "effect/Scope"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
@@ -54,7 +55,7 @@ const withLedger = <A, E>(
       Effect.provide(ProcessReaper.layerSpawner(options)),
       Effect.provide(NodeChildProcessSpawner.layer),
       Effect.provide(NodeFileSystem.layer),
-      Effect.provide(Path.layer),
+      Effect.provide(NodePath.layer),
       Effect.provideService(ProcessLedger.ProcessLedger, ledger)
     )
   })

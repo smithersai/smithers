@@ -1,12 +1,13 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { expect, it } from "@effect/vitest"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj/Jj"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
-import { Context, Effect, Exit, Layer, Path } from "effect"
+import { Context, Effect, Exit, Layer } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -81,7 +82,7 @@ it("uses the caller's SQL instance for every migrated store without opening a se
           NodeDatabase.layer({ filename: ":memory:" }),
           NodeFileSystem.layer,
           NodeCrypto.layer,
-          Path.layer,
+          NodePath.layer,
           Jj.layerNoop({})
         )),
         Effect.scoped
@@ -114,7 +115,7 @@ it("isolates store instances from an enclosing control database in the same laye
         yield* engineStore.create("engine-only", "{}")
         expect((yield* Effect.flip(controlStore.get("engine-only"))).code).toBe("not_found_row")
       }).pipe(
-        Effect.provide(Layer.mergeAll(control, NodeFileSystem.layer, NodeCrypto.layer, Path.layer)),
+        Effect.provide(Layer.mergeAll(control, NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer)),
         Effect.scoped
       )
     )

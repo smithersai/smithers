@@ -19,11 +19,12 @@
  *
  * `it.live` throughout: the helper is a real subprocess on real elapsed time.
  */
+import * as BunPath from "@effect/platform-bun/BunPath"
 import { describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, FileSystem, Layer, Path } from "effect"
+import { Effect, FileSystem, Layer } from "effect"
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -33,7 +34,7 @@ import * as BunFileSystem from "../src/BunFileSystem.ts"
 const guarded = (root: string) =>
   KernelFileSystem.layer.pipe(
     Layer.provide(BunFileSystem.layer),
-    Layer.provide(Path.layer),
+    Layer.provide(BunPath.layer),
     Layer.provide(Workspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )

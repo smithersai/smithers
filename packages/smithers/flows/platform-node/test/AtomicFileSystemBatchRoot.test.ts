@@ -1,7 +1,8 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, FileSystem, Layer, Path, Result } from "effect"
+import { Effect, FileSystem, Layer, Result } from "effect"
 import { createHash } from "node:crypto"
 import { mkdir, mkdtemp, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -28,7 +29,7 @@ it.each(["before grant", "during grant"])("refuses a logical workspace retargete
     await symlink(original, logical)
     const host = KernelFileSystem.layer.pipe(
       Layer.provide(AtomicFileSystem.layer),
-      Layer.provide(Path.layer),
+      Layer.provide(NodePath.layer),
       Layer.provide(Workspace.layer(logical)),
       Layer.provide(Layer.succeed(GrantStore.GrantStore, {
         ...GrantStore.makeNoop,

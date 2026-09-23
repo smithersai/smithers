@@ -9,12 +9,12 @@
  * than letting a fake stand in for the boundary.
  */
 import { NodeChildProcessSpawner, NodeFileSystem } from "@effect/platform-node"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import { ContainerSandbox, MicrosandboxSandbox } from "@smthrs/sandbox"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as Path from "effect/Path"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as Microsandbox from "microsandbox"
 import { spawnSync } from "node:child_process"
@@ -28,7 +28,7 @@ const entry = new URL("./fixtures/sandboxed-child.ts", import.meta.url)
 
 const platform = Layer.provideMerge(
   NodeChildProcessSpawner.layer,
-  Layer.merge(NodeFileSystem.layer, Path.layer)
+  Layer.merge(NodeFileSystem.layer, NodePath.layer)
 )
 
 const spawner = Effect.gen(function*() {

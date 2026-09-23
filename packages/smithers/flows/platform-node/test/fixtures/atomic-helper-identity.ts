@@ -1,7 +1,8 @@
+import * as NodePath from "@effect/platform-node/NodePath"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, FileSystem, Layer, Path } from "effect"
+import { Effect, FileSystem, Layer } from "effect"
 import { spawn } from "node:child_process"
 import { join } from "node:path"
 import * as AtomicFileSystem from "../../src/AtomicFileSystem.ts"
@@ -11,7 +12,7 @@ const expected = "native helper identity: λ 🌱\n"
 const file = join(root, "content.txt")
 const guarded = KernelFileSystem.layer.pipe(
   Layer.provide(AtomicFileSystem.layer),
-  Layer.provide(Path.layer),
+  Layer.provide(NodePath.layer),
   Layer.provide(Workspace.layer(root)),
   Layer.provide(GrantStore.layerNoop)
 )

@@ -1,10 +1,10 @@
 import * as NodeSpawner from "@effect/platform-node/NodeChildProcessSpawner"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
-import * as Path from "effect/Path"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { spawn, spawnSync } from "node:child_process"
@@ -20,7 +20,7 @@ import { Control, prepare, targetPidOf } from "../src/internal/ProcessSupervisor
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
-const rawLayer = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, Path.layer)))
+const rawLayer = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 const layers = Layer.succeed(ChildProcessSpawner)(
   makeSpawner((command) => PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined))
 )

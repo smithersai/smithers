@@ -11,11 +11,12 @@
 // mtimes, and poll loops — so the suite uses `it.live`; `it.effect`'s
 // TestClock never advances for them.
 
+import * as NodePath from "@effect/platform-node/NodePath"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
-import { Effect, FileSystem, Layer, Path } from "effect"
+import { Effect, FileSystem, Layer } from "effect"
 import { link, mkdir, mkdtemp, readlink, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -37,7 +38,7 @@ afterEach(async () => {
 const guarded = (root: string) =>
   KernelFileSystem.layer.pipe(
     Layer.provide(AtomicFileSystem.layer),
-    Layer.provide(Path.layer),
+    Layer.provide(NodePath.layer),
     Layer.provide(Workspace.layer(root)),
     Layer.provide(GrantStore.layerNoop)
   )
