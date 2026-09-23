@@ -58,7 +58,7 @@ const flakyStorage = (): StorageApi & { refuseCommit: (skip: number) => void; re
  * `AppController.runCommand` → registry → `configureRepositorySetup` →
  * `upsert` → the persisted payload, with nothing doubled in between.
  */
-async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonly observedRun?: boolean } = {}) {
+async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonly observedRun?: boolean; readonly holdCardWrite?: boolean } = {}) {
   const storage = flakyStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
   /*
@@ -71,8 +71,11 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
   let bombs = 0
   let arming = false
   const explode = options.explodeAfterCardWrite === true
+  let holdWrite = false
+  let releaseWrite: (() => void) | undefined
+  let writeGate = Promise.resolve()
   const cards = store.collections.cards
-  const controllerStore = !explode ? store : {
+  const controllerStore = !explode && !options.holdCardWrite ? store : {
     ...store,
     collections: { ...store.collections, cards: new Proxy(cards, {
       get: (target, property) => {
@@ -86,10 +89,12 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
     }) },
     dispatch: (transition: Parameters<typeof store.dispatch>[0]) => {
       const transaction = store.dispatch(transition)
-      if (transition.type !== "card.upsert" || !arming) return transaction
+      if (transition.type !== "card.upsert" || (!arming && !holdWrite)) return transaction
+      const shouldExplode = arming
       arming = false
+      holdWrite = false
       return new Proxy(transaction, { get: (target, property, receiver) => property === "isPersisted"
-        ? { ...target.isPersisted, promise: target.isPersisted.promise.then(value => { bombs = 1; return value }) }
+        ? { ...target.isPersisted, promise: (shouldExplode ? target.isPersisted.promise : writeGate.then(() => target.isPersisted.promise)).then(value => { if (shouldExplode) bombs = 1; return value }) }
         : Reflect.get(target, property, receiver) })
     }
   } as typeof store
@@ -212,10 +217,12 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
   const refuseObservationWrite = () => { storage.refuseCommitNaming("read again") }
   /** The next card write lands, and the step that runs after it throws. */
   const explodeAfterNextCardWrite = () => { arming = true }
+  const holdNextCardWrite = () => { writeGate = new Promise<void>(resolve => { releaseWrite = resolve }); holdWrite = true }
+  const releaseCardWrite = () => { releaseWrite?.() }
   /** Hold the press's own run read, and let it go. */
   const holdRunRead = () => { gate = new Promise<void>(resolve => { openGate = resolve }) }
   const releaseRunRead = () => { openGate?.(); gate = undefined }
-  return { store, controller, holdRunRead, releaseRunRead, pick, press, pressRunAccess, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, refuseObservationWrite, explodeAfterNextCardWrite, close }
+  return { store, controller, holdRunRead, releaseRunRead, holdNextCardWrite, releaseCardWrite, pick, press, pressRunAccess, select, setup, transcript, toastDetails, settle, refuseCardWrite, refuseCommandWrite, refuseOperationWrite, refuseObservationWrite, explodeAfterNextCardWrite, close }
 }
 
 /*
@@ -468,4 +475,65 @@ test("two lost acts inside one window each get their own line", async () => {
     expect(t.toastDetails()).toEqual([STORAGE_FULL, STORAGE_FULL])
     expect(t.transcript()).toEqual([STORAGE_FULL, STORAGE_FULL])
   } finally { await t.close() }
+})
+
+test("check fields and add/remove controls keep sequential edits while persistence is held", async () => {
+  const t = await walk({ holdCardWrite: true })
+  try {
+    const card = t.store.collections.cards.get(id)!
+    if (card.kind !== "repository-setup") throw Error("Missing setup")
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: {
+      ...card.payload, view: "checks", draft: { ...card.payload.draft, checks: [
+        { id: "original", name: "Original", kind: "command", rule: "bun test", paths: [], policy: "report" }
+      ] }
+    } } }).isPersisted.promise
+    await waitFor(() => document.querySelector('.repository-setup fieldset input') !== null)
+    const input = (label: string) => [...document.querySelectorAll<HTMLElement>(".repository-setup label")]
+      .find(node => node.textContent?.startsWith(label))?.querySelector("input, textarea") as HTMLInputElement | HTMLTextAreaElement
+    const type = (node: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+      node.value = value
+      node.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    const press = (label: string) => [...document.querySelectorAll<HTMLButtonElement>(".repository-setup button")]
+      .find(node => node.textContent === label)!.click()
+    t.holdNextCardWrite()
+    type(input("Name"), "New name")
+    type(input("Command"), "bun test new")
+    t.releaseCardWrite()
+    await waitFor(() => t.setup().draft.checks[0]?.rule === "bun test new")
+    expect(t.setup().draft.checks[0]).toMatchObject({ name: "New name", rule: "bun test new" })
+    t.holdNextCardWrite()
+    press("Add command")
+    press("Add AI check")
+    press("Remove check")
+    t.releaseCardWrite()
+    await waitFor(() => t.setup().draft.checks.length === 2 && t.setup().draft.checks.every(check => check.id !== "original"))
+    expect(t.setup().draft.checks.map(check => check.kind)).toEqual(["command", "ai"])
+  } finally { t.releaseCardWrite(); await t.close() }
+})
+
+test("Case and Expected edits both survive a held persistence receipt", async () => {
+  const t = await walk({ holdCardWrite: true })
+  try {
+    const card = t.store.collections.cards.get(id)!
+    if (card.kind !== "repository-setup") throw Error("Missing setup")
+    await t.store.dispatch({ type: "card.upsert", actor: "system", card: { ...card, payload: {
+      ...card.payload, view: "evals", draft: { ...card.payload.draft, cases: [
+        { id: "case-one", name: "Case one", input: "Original case", expected: "Original expected", required: true }
+      ] }
+    } } }).isPersisted.promise
+    await waitFor(() => document.querySelector('.repository-setup details textarea') !== null)
+    const field = (label: string) => [...document.querySelectorAll<HTMLElement>(".repository-setup label")]
+      .find(node => node.textContent?.startsWith(label))!.querySelector("textarea")!
+    const type = (node: HTMLTextAreaElement, value: string) => {
+      node.value = value
+      node.dispatchEvent(new Event("input", { bubbles: true }))
+    }
+    t.holdNextCardWrite()
+    type(field("Case"), "New case")
+    type(field("Expected"), "New expected")
+    t.releaseCardWrite()
+    await waitFor(() => t.setup().draft.cases[0]?.expected === "New expected")
+    expect(t.setup().draft.cases[0]).toMatchObject({ input: "New case", expected: "New expected", edited: true })
+  } finally { t.releaseCardWrite(); await t.close() }
 })

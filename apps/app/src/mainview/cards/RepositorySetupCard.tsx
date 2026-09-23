@@ -65,7 +65,7 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
   const needsSubject = state.job === "issues" || state.job === "review" || state.job === "ci"
   const workKind = state.job === "issues" ? "issue" : "pr"
   const work = (field: "prompt" | "source" | "number", value: unknown) => onRunCommand("setup.work", flowArgs("setup.work", { cardId: card.id, stepId: manual!.stepId, field, value }))
-  const updateCheck = (id: string, key: string, value: unknown) => set("checks", draft.checks.map(check => check.id === id ? { ...check, [key]: value } : check))
+  const updateCheck = (id: string, key: string, value: unknown) => set(`check.${id}.${key}`, value)
   const receipt = state.receipt?.requestId === state.request?.id ? state.receipt : undefined
   const runAccess = (observed: SetupReceipt) => observed.runId && state.workspaceId && <div className="setup-actions">
     <button type="button" onClick={() => onRunCommand("runs.open", flowArgs("runs.open", { runId: observed.runId!, repo: state.repo, sourceCard: card.id }))}>{observed.jobRunId ? "Setup run" : "Run"}</button>
@@ -120,16 +120,16 @@ export function RepositorySetupCard({ card, onRunCommand, signedOut, ciConfigure
         <label className="setup-field">{check.kind === "ai" ? "Rule" : "Command"}<textarea rows={check.kind === "ai" ? 5 : 2} {...editor(check.rule)} onInput={event => updateCheck(check.id, "rule", event.currentTarget.value)} /></label>
         <label className="setup-field">Paths<input {...editor(check.paths.join(", "))} onInput={event => updateCheck(check.id, "paths", event.currentTarget.value.split(",").map(path => path.trim()).filter(Boolean))} /></label>
         <div className="setup-actions"><label>Policy<select value={check.policy} onChange={event => updateCheck(check.id, "policy", event.target.value)}><option value="report">Report findings</option><option value="required">Required before landing</option></select></label>
-          <button type="button" onClick={() => set("checks", draft.checks.filter(item => item.id !== check.id))}>Remove check</button></div>
+          <button type="button" onClick={() => set("checks.remove", check.id)}>Remove check</button></div>
       </fieldset>)}
-      <div className="setup-actions">{(["command", "ai"] as const).map(kind => <button key={kind} type="button" onClick={() => set("checks", [...draft.checks, { id: crypto.randomUUID(), name: kind === "ai" ? "Observability" : "Repository check", kind, rule: "", paths: [], policy: "report" }])}>Add {kind === "ai" ? "AI check" : "command"}</button>)}</div>
+      <div className="setup-actions">{(["command", "ai"] as const).map(kind => <button key={kind} type="button" onClick={() => set("checks.add", { id: crypto.randomUUID(), name: kind === "ai" ? "Observability" : "Repository check", kind, rule: "", paths: [], policy: "report" })}>Add {kind === "ai" ? "AI check" : "command"}</button>)}</div>
     </>}
     {state.view === "evals" && <>
       {draft.cases.map(test => {
         const observed = state.evaluation?.results.find(result => result.caseId === test.id)
         return <details key={test.id}><summary>{test.name}{observed ? ` · ${observed.status}` : ""}</summary>
-          <label className="setup-field">Case<textarea rows={2} {...editor(test.input)} onInput={event => set("cases", draft.cases.map(item => item.id === test.id ? { ...item, input: event.currentTarget.value } : item))} /></label>
-          <label className="setup-field">Expected<textarea rows={3} {...editor(test.expected)} onInput={event => set("cases", draft.cases.map(item => item.id === test.id ? { ...item, expected: event.currentTarget.value } : item))} /></label>
+          <label className="setup-field">Case<textarea rows={2} {...editor(test.input)} onInput={event => set(`case.${test.id}.input`, event.currentTarget.value)} /></label>
+          <label className="setup-field">Expected<textarea rows={3} {...editor(test.expected)} onInput={event => set(`case.${test.id}.expected`, event.currentTarget.value)} /></label>
           {observed && <div><p>{observed.observed}</p><ul>{observed.evidence.map((evidence, index) => <li key={index}><code>{evidence}</code></li>)}</ul></div>}
         </details>
       })}

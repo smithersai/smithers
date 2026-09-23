@@ -128,7 +128,7 @@ test.each([...REPOSITORY_JOBS])("every %s advertised field and enum is accepted 
     }
     expect(current().draft.checks[1]).toEqual(initialChecks[1])
     expect(current().draft.cases[1]).toEqual(initialCases[1])
-    for (const [field, value] of [["replies", "automatic"], ["step.research.mode", "always"], ["check.command.policy", "required"], ["case.case-a.expected", "fabricated pass"]] as const) {
+    for (const [field, value] of [["replies", "automatic"], ["step.research.mode", "always"], ["check.missing.policy", "required"], ["case.missing.expected", "fabricated pass"], ["check.command.policy", "always"], ["case.case-a.expected", ""]] as const) {
       const before = structuredClone(current())
       expect(await controller.configureRepositorySetup(card.id, field, value)).not.toEqual({ value: "Draft updated." })
       expect(current()).toEqual(before)

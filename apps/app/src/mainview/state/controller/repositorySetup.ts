@@ -117,6 +117,19 @@ export const applySetupEdit = (
   } else if (pieces[0] === "step" && pieces.length === 3 && ["mode", "prompt"].includes(pieces[2]!)) {
     if (!next.steps.some(step => step.id === pieces[1])) return { error: "That flow is not in this setup." }
     next = { ...next, steps: next.steps.map(step => step.id === pieces[1] ? { ...step, [pieces[2]!]: value } : step) }
+  } else if (field === "checks.add") {
+    next = { ...next, checks: [...next.checks, value as SetupDraft["checks"][number]] }
+  } else if (field === "checks.remove") {
+    if (typeof value !== "string" || !next.checks.some(check => check.id === value)) return { error: "That check is not in this setup." }
+    next = { ...next, checks: next.checks.filter(check => check.id !== value) }
+  } else if (field.startsWith("check.")) {
+    const match = /^check\.(.+)\.(name|rule|paths|policy)$/.exec(field)
+    if (!match || !next.checks.some(check => check.id === match[1])) return { error: "That check is not in this setup." }
+    next = { ...next, checks: next.checks.map(check => check.id === match[1] ? { ...check, [match[2]!]: value } : check) }
+  } else if (field.startsWith("case.")) {
+    const match = /^case\.(.+)\.(input|expected)$/.exec(field)
+    if (!match || !next.cases.some(test => test.id === match[1])) return { error: "That case is not in this setup." }
+    next = { ...next, cases: next.cases.map(test => test.id === match[1] ? { ...test, [match[2]!]: value, edited: true } : test) }
   } else if (pieces.length === 1 && Object.prototype.hasOwnProperty.call(next, field)) {
     next = { ...next, [field]: value }
   } else return { error: "That setting cannot be edited." }
