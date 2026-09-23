@@ -211,6 +211,35 @@ test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud 
   }
 })
 
+test("a Plue bearer target reads its selected identity on a cloud host", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const requested: string[] = []
+  let selectedReads = 0
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    bootstrap: WEB,
+    applicationTarget: resolveApplicationTarget({
+      apiVersion: 1, mode: "web-plue", apiOrigin: "", auth: { kind: "bearer" },
+      cors: "same-origin", developerExternal: false
+    }, "https://smithers.sh"),
+    applicationIdentity: {
+      current: async () => {
+        selectedReads += 1
+        return { username: "smithers-canary", admin: true, scopes: null }
+      }
+    },
+    fetchImpl: async input => {
+      requested.push(new URL(String(input), "https://smithers.sh").pathname)
+      return Response.json({}, { status: 404 })
+    }
+  })
+  await controller.loadSession()
+  expect(selectedReads).toBe(1)
+  expect(requested).not.toContain("/api/auth/session")
+  expect(store.collections.identitySessions.get("identity")).toMatchObject({
+    state: "signed-in", login: "smithers-canary"
+  })
+})
+
 test("a refused Cloud seam on web still offers reauthentication when GitHub is already connected", async () => {
   const h = await setup()
   await h.signIn()

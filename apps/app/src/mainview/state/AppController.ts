@@ -937,11 +937,11 @@ export const createAppController = (
     return refusal
   }
 
-  // The deployed cloud app has its own identity seam and GitHub OAuth route.
-  // The generic application client describes an owner-backed/self-hosted
-  // backend; selecting it on a cloud bootstrap incorrectly turns the GitHub
-  // door into the inline local-credentials panel.
-  const applicationIdentity = services.bootstrap?.host === "cloud"
+  // A cloud browser session uses its hosted identity seam. A selected Plue
+  // bearer/token target reads the same backend through its application client.
+  const cloudSession = services.bootstrap?.host === "cloud" &&
+    (services.applicationTarget === undefined || services.applicationTarget.auth.kind === "session")
+  const applicationIdentity = cloudSession
     ? undefined
     : services.applicationIdentity
   let localAuth: LocalAuthController | undefined
