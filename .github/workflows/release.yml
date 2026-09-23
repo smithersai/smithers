@@ -239,7 +239,7 @@ jobs:
         run: |
           rustup toolchain install 1.98.0
           cargo +1.98.0 build --locked --release --package smithers-ffi --bin smithers-jj-export
-          echo "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=$GITHUB_WORKSPACE/target/release/smithers-jj-export" >> "$GITHUB_ENV"
+          sudo install -m 0755 target/release/smithers-jj-export /usr/local/bin/smithers-jj-export
         shell: bash
       - name: Install system packages
         run: |
