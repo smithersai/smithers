@@ -13,6 +13,7 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { type Crypto, Effect, Exit, Layer, Schema, Scope } from "effect"
+import { TestClock } from "effect/testing"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -724,7 +725,9 @@ it("pages a thousand-way fan-in through the durable envelope, once across resume
             deferredName: gate.name,
             exit: Exit.succeed(4)
           })
-          expect((yield* settledRun(runs, runId)).status).toBe("completed")
+          // Join the re-drive explicitly; this fixture does not advance the lease clock.
+          yield* Wide.execute({}, { executionId: runId, discard: true })
+          expect((yield* runs.get(runId)).status).toBe("completed")
           // Exactly once across the resume: the same page ids, the same rows.
           expect(yield* pages()).toEqual(before)
           expect(new Set(before.map((page) => page.sourceId)).size).toBe(before.length)
@@ -732,7 +735,10 @@ it("pages a thousand-way fan-in through the durable envelope, once across resume
       })).pipe(
         Effect.provide(jj),
         Effect.provide(StepBoundary.layerTest()),
-        Effect.provide(TestStores.layerAt(join(root, "state.sqlite")))
+        Effect.provide(TestStores.layerAt(join(root, "state.sqlite"))),
+        // Paging and replay are independent of the runner's elapsed wall time.
+        // A real-clock lease can expire while this large graph is encoded.
+        Effect.provide(TestClock.layer())
       )
     )
   } finally {
