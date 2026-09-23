@@ -79,6 +79,7 @@ Ctrl+O read it.
 | Contributed keys | Keys a repository or a cell adds (`alt+r`); listed in the hints and the `?` popup under their owner |
 | r, x | In a worker or flow tab: resume / stop. A worker resumes with its prior steps on its original model |
 | m, w | In a failed worker tab: choose a model for resume / wait for reset |
+| s, c | In a worker tab: steer it from the composer (Esc returns) / show its lane in the chat |
 | a | In a flow tab: approve or fill in |
 | Tab/Down, Shift+Tab/Up, Space, Left/Right, Enter, Esc | In a flow form: next, previous field, toggle, choose, run, close (the run stays parked) |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
@@ -198,6 +199,17 @@ five settled answers (1,500 characters each) as context, and remains usable
 while workers run. Progress uses the shared toast stack,
 with a 300 ms delay and real completion/failure as its end. A `tree:<rootId>`
 tab appears when a worker gains children; its rows update from tab state.
+
+Each worker's tab, and its row in the list beside the chat at 100 columns or
+wider, shows a status glyph in its color (`◌` requested, `◷` queued, a spinner
+running, `◔` waiting on children, `⏸` parked, `✓` done, `✗` failed, `■`
+stopped), its model and its clock. Tabs are
+never shortened: when they overflow, `‹ n` and `n ›` count and open the hidden
+ones. Click a tab or a worker to open it. A worker's tab heads its transcript,
+drawn with the chat's own cells, with its status, model, clock and tokens, and
+buttons for the actions its status allows: **x** Stop, **r** Resume, **m**
+Switch model, **w** Wait for reset, **s** Steer, **c** Open in chat. **j**/**k**
+pick a row and **u** undoes its changes.
 
 Workers run locally. Restarting the TUI restores their transcripts and
 auto-relaunches running and waiting workers; parked workers relaunch at reset.

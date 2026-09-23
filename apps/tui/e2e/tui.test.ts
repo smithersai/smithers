@@ -809,12 +809,13 @@ describe("runtime views", () => {
     await tui.type("tab:fix")
     await tui.until((screen) => screen.includes("Search") && /Fixer\s+done/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("u Undo changes"), 5_000, "worker tab")
-    for (let step = 0; step < 8 && !/› .*math\.js/.test(tui.screen()); step++) {
+    await tui.until((screen) => screen.includes("c Open in chat") && screen.includes("u Undo changes") && screen.includes("Fixer"), 5_000, "worker tab")
+    // j picks the edit cell; u undoes that row, not the whole worker.
+    for (let step = 0; step < 8 && !/› .*ctx\.call\("edit"\)/.test(tui.screen()); step++) {
       await tui.type("j")
       await new Promise((resolve) => setTimeout(resolve, 150))
     }
-    await tui.until((screen) => /› .*math\.js/.test(screen), 5_000, "edit row")
+    await tui.until((screen) => /› .*ctx\.call\("edit"\)/.test(screen), 5_000, "edit row")
     await tui.type("u")
     await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
     await tui.press(key.enter)
@@ -848,7 +849,7 @@ describe("runtime views", () => {
     await tui.type("investigate")
     await tui.press(key.enter)
     // The only history is a worker that took milliseconds, so the new one is soon past its estimate.
-    await tui.until((screen) => /Investigation\s+late/.test(screen), 10_000, "estimate on the tab")
+    await tui.until((screen) => /Investigation[^\n]* late/.test(screen), 10_000, "estimate on the tab")
     await tui.type("what is the ETA on all tasks")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("ETA investigation:running:class"), 30_000, "tab.eta answer")
@@ -879,7 +880,7 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("review · running"))
     await tui.type("/tabs")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("r Resume") && screen.includes("u Undo changes"), 5_000, "worker footer")
+    await tui.until((screen) => screen.includes("c Open in chat") && screen.includes("u Undo changes"), 5_000, "worker footer")
     await tui.press("u")
     const screen = await tui.until((screen) => screen.includes("Stop running work first") || screen.includes("Undo math.js?"))
     expect(screen).toContain("Stop running work first")
@@ -1035,12 +1036,12 @@ it(
     await tui.until((screen) => screen.includes("Search") && /Investigation\s+running/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
     await tui.until(
-      (screen) => screen.includes("r Resume") && screen.includes("x Stop") && screen.includes("Investigation · running"),
+      (screen) => screen.includes("x Stop") && screen.includes("Investigation · running"),
       5_000,
       "inspect running worker"
     )
     await tui.type("x")
-    await tui.until((screen) => screen.includes("Investigation · cancelled"), 5_000, "actual worker settlement")
+    await tui.until((screen) => screen.includes("Investigation · cancelled") && screen.includes("r Resume"), 5_000, "actual worker settlement")
     await tui.press(key.escape)
     await tui.until((screen) => screen.includes("Still here.") && !screen.includes("r Resume"), 5_000, "escape returns to chat")
     await tui.type("still usable")
@@ -1048,6 +1049,48 @@ it(
   },
   60_000
 )
+
+describe("worker tabs", () => {
+  const launch = async () => {
+    tui = await Tui.start({
+      cwd: repository(),
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-tabs-")) }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    await tui.type("investigate")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Requested the investigation."), 5_000, "acknowledged")
+    await tui.click("Investigation")
+    await tui.until((screen) => screen.includes("x Stop") && screen.includes("s Steer"), 5_000, "worker tab by click")
+    return tui
+  }
+
+  it("heads a running worker with its status, model and clock, and renders its transcript", async () => {
+    const tui = await launch()
+    await tui.until(
+      (screen) => screen.includes("worker ·") && /\d+\.\ds/.test(screen) && screen.includes("Investigate the failing check."),
+      5_000,
+      "header and transcript"
+    )
+  }, 60_000)
+
+  it("steers a running worker from its tab and goes back to the chat from its button", async () => {
+    const tui = await launch()
+    await tui.type("s")
+    await tui.until((screen) => screen.includes("steer ↳ Investigation"), 5_000, "steer composer")
+    await tui.type("also check the docs")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("also check the docs") && screen.includes("steering"), 5_000, "steer in the worker transcript")
+    // Steering ends with the tab it started in.
+    await tui.press("\x1b[1;5D")
+    await tui.until((screen) => !screen.includes("steer ↳"), 5_000, "steering ends on leaving")
+    await tui.press("\x1b[1;5C")
+    await tui.until((screen) => screen.includes("s Steer") && !screen.includes("steer ↳"), 5_000, "back without steering")
+    await tui.click("c Open in chat")
+    await tui.until((screen) => screen.includes("Requested the investigation.") && !screen.includes("x Stop"), 5_000, "chat")
+  }, 60_000)
+})
 
 describe("flows", () => {
   const ctrlRight = "\x1b[1;5C"
@@ -1124,7 +1167,7 @@ describe("flows", () => {
 
   it("/smithers opens a Smithers tab that closes once the user moves on", async () => {
     const { tui } = await open()
-    const tabBar = (screen: string) => screen.split("\n").find((line) => line.includes("Chat  Summary")) ?? ""
+    const tabBar = (screen: string) => screen.split("\n").find((line) => /Chat\s+Summary/.test(line)) ?? ""
     expect(tabBar(tui.screen())).not.toContain("Smithers")
     await tui.type("/smithers")
     await tui.press(key.enter)
@@ -1154,14 +1197,14 @@ describe("custom agents", () => {
     await tui.type("/agent review look at math.js")
     await tui.press(key.escape)
     await tui.press(key.enter)
-    await tui.until((screen) => /◌ review: look at/.test(screen), 20_000, "agent tab")
+    await tui.until((screen) => /review: look at math\.js replay/.test(screen), 20_000, "agent tab")
     await tui.type("still here")
     await tui.until((screen) => /┃\s+still here/.test(screen), 5_000, "composer usable while the agent runs")
     // The toast follows the run until it really stops; x in the tab asks it to.
     await tui.until((screen) => /review: look at math.js · running/.test(screen), 5_000, "running toast")
     await tui.press(key.ctrlBracket)
     await tui.press(key.ctrlBracket)
-    await tui.until((screen) => screen.includes("r Resume"), 5_000, "agent tab")
+    await tui.until((screen) => screen.includes("x Stop"), 5_000, "agent tab")
     await tui.type("x")
     await tui.until((screen) => /■ review: look at/.test(screen), 20_000, "stopped from the real outcome")
   }, 120_000)

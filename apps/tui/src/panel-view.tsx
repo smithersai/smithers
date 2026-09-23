@@ -7,7 +7,8 @@ import { color, syntax } from "./theme.ts"
 import { bar } from "./view.tsx"
 
 /** A stopped worker's compact action card; technical details open with Ctrl+O. */
-export function FailureCard({ tab, transcript, details }: { tab: Workspace.Tab; transcript: Transcript.Transcript; details: boolean }) {
+/** `hints: false` where the actions are buttons of their own, as in a worker's tab. */
+export function FailureCard({ tab, transcript, details, hints = true }: { tab: Workspace.Tab; transcript: Transcript.Transcript; details: boolean; hints?: boolean }) {
   const failure = tab.failure
   if (failure === undefined) return null
   const fault = failure.fault === "wait"
@@ -16,7 +17,7 @@ export function FailureCard({ tab, transcript, details }: { tab: Workspace.Tab; 
   return <box style={{ flexShrink: 0, paddingLeft: 1, marginBottom: 1 }}>
     <text fg={color.danger}>{failure.headline}  ·  {fault}</text>
     <text fg={color.muted}>{Workspace.failureLine(tab, transcript)}</text>
-    <text fg={color.brand}>[r] Resume here   [m] Switch model   {failure.actions.includes("wait") ? "[w] Wait for reset   " : ""}[ctrl+o] Details</text>
+    {hints ? <text fg={color.brand}>[r] Resume here   [m] Switch model   {failure.actions.includes("wait") ? "[w] Wait for reset   " : ""}[ctrl+o] Details</text> : null}
     {details ? <text fg={color.faint}>{tab.detail?.includes(tab.message ?? "") && tab.detail !== ""
       ? tab.detail
       : [tab.message, tab.detail].filter((part) => part !== undefined && part !== "").join("\n")}</text> : null}

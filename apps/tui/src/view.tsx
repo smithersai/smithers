@@ -610,7 +610,7 @@ export function Approval(
   )
 }
 
-/** Toasts ride the top right, like the app's toast stack. */
+/** Toasts stack right-aligned above the composer, like the app's toast stack, and never cover content. */
 export function ToastStack(
   props: {
     readonly rows: ReadonlyArray<
@@ -618,12 +618,13 @@ export function ToastStack(
     >
   }
 ) {
+  if (props.rows.length === 0) return null
   return (
-    <box style={{ position: "absolute", top: 1, right: 2, maxWidth: 60, zIndex: 150 }}>
+    <box style={{ flexShrink: 0, alignItems: "flex-end" }}>
       {props.rows.map((row) => (
         <box
           key={row.id}
-          style={{ border: ["left"], marginBottom: 1 }}
+          style={{ border: ["left"], marginTop: 1, maxWidth: 60 }}
           borderColor={row.tone === "info" ? color.brand : color[row.tone]}
           customBorderChars={bar}
         >

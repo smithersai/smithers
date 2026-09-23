@@ -9,6 +9,7 @@ import * as FailureCopy from "@smthrs/model/FailureCopy"
 import { delegateModels, type DelegateModel } from "./models.ts"
 import * as Panels from "./panels.ts"
 import * as Session from "./session.ts"
+import * as Steering from "./steering.ts"
 import * as Summary from "./summary.ts"
 import * as Transcript from "./transcript.ts"
 import * as Tree from "./tree.ts"
@@ -94,6 +95,7 @@ export class Workspace {
   private transcripts = new Map<string, Transcript.Transcript>()
   private handles = new Map<string, Host.Turn>()
   private cancelRequested = new Set<string>()
+  private steering = new Map<string, { readonly queue: Steering.Queue; readonly writer: Session.Writer }>()
   private listeners = new Set<() => void>()
   private closed = false
   constructor(
@@ -437,8 +439,8 @@ export class Workspace {
   private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>, agent?: Agents.Profile) {
     if (this.closed || this.tabs.get(tab.id)?.status !== "requested") return
     const at = Date.now()
-    let transcript = Transcript.user(this.transcripts.get(tab.id) ?? Transcript.empty, tab.prompt, false, at)
-    this.transcripts.set(tab.id, transcript)
+    this.transcripts.set(tab.id, Transcript.user(this.transcripts.get(tab.id) ?? Transcript.empty, tab.prompt, false, at))
+    const steering = Steering.make()
     try {
       writer.append({ type: "user", at, text: tab.prompt })
       const handle = this.options.host.run({
@@ -449,11 +451,11 @@ export class Workspace {
         role: "worker",
         maxParks: Math.max(0, QuotaPolicy.defaultMaxParks - (tab.parks ?? 0)),
         ...(agent === undefined ? {} : { agent }),
+        steering: steering.source,
         runtime: {
           publish: (contribution) =>
             this.contribute(tab, contribution, writer, (next) => {
-              transcript = next
-              this.transcripts.set(tab.id, transcript)
+              this.transcripts.set(tab.id, next)
               this.changed()
             }),
           delegate: (request) => this.requestChild(tab, request),
@@ -463,22 +465,19 @@ export class Workspace {
         },
         onCaption: (prose) => {
           writer.append({ type: "caption", prose })
-          transcript = Transcript.caption(transcript, prose)
-          this.transcripts.set(tab.id, transcript)
+          this.transcripts.set(tab.id, Transcript.caption(this.transcript(tab.id), prose))
           this.changed()
         },
         onPatch: (receipt) => {
           writer.append({ type: "patch", receipt })
-          transcript = Transcript.patched(transcript, receipt)
-          this.transcripts.set(tab.id, transcript)
+          this.transcripts.set(tab.id, Transcript.patched(this.transcript(tab.id), receipt))
           this.changed()
         },
         onEvent: (event) => {
           if (this.tabs.get(tab.id)?.file !== writer.file) return
           const at = Date.now()
           if (event._tag !== "model-delta" && event._tag !== "aborted") writer.append({ type: "event", at, event })
-          if (event._tag !== "aborted") transcript = Transcript.apply(transcript, event, at)
-          this.transcripts.set(tab.id, transcript)
+          if (event._tag !== "aborted") this.transcripts.set(tab.id, Transcript.apply(this.transcript(tab.id), event, at))
           if (event._tag === "seat-failed-over") this.save({ ...(this.tabs.get(tab.id) ?? tab), activeSeat: event.to })
           if (event._tag === "model-parked") {
             const current = this.tabs.get(tab.id) ?? tab
@@ -500,9 +499,11 @@ export class Workspace {
         }
       })
       this.handles.set(tab.id, handle)
+      this.steering.set(tab.id, { queue: steering, writer })
       this.save({ ...(this.tabs.get(tab.id) ?? tab), status: this.tabs.get(tab.id)?.status === "parked" ? "parked" : "running", launchedAt: at })
       void handle.done.then((outcome) => {
         this.handles.delete(tab.id)
+        this.steering.delete(tab.id)
         const requestedCancel = this.cancelRequested.delete(tab.id)
         if (this.closed || this.tabs.get(tab.id)?.file !== writer.file) return
         const current = this.tabs.get(tab.id)
@@ -516,6 +517,12 @@ export class Workspace {
         const failure = described?.fault === "wait" && parks >= QuotaPolicy.defaultMaxParks
           ? { ...described, line: `Still limited after ${parks} waits.` }
           : described
+        let transcript = this.transcript(tab.id)
+        const undelivered = steering.take()
+        if (undelivered.length > 0) {
+          transcript = Transcript.note(transcript, `Not delivered: ${undelivered.join(" / ")}`, at)
+          this.transcripts.set(tab.id, transcript)
+        }
         writer.append({ type: "outcome", at, prompt: tab.prompt,
           outcome: outcome._tag === "done"
             ? { _tag: "done", answer: outcome.answer }
@@ -544,6 +551,7 @@ export class Workspace {
   /** Settles the tab, its timeline and its worker file as failed. */
   private fail(tab: Tab, writer: Session.Writer, error: unknown) {
     this.handles.delete(tab.id)
+    this.steering.delete(tab.id)
     const at = Date.now()
     const message = String(error)
     const failure = FailureCopy.describe(error, this.tabs.get(tab.id)?.activeSeat ?? tab.seat)
@@ -552,6 +560,17 @@ export class Workspace {
     } catch (error) { Log.write("worker.persist", error) }
     this.transcripts.set(tab.id, Transcript.failure(this.transcript(tab.id), failure.headline, at))
     this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: at, message, failure, detail: error instanceof Error ? error.stack : undefined })
+  }
+  /** Sends `text` to a running worker at its next cell boundary; false when it is not running. */
+  steer = (id: string, text: string): boolean => {
+    const target = this.steering.get(id)
+    if (target === undefined || this.tabs.get(id)?.status !== "running") return false
+    const at = Date.now()
+    target.queue.steer(text)
+    target.writer.append({ type: "user", at, text, steered: true })
+    this.transcripts.set(id, Transcript.user(this.transcript(id), text, true, at))
+    this.changed()
+    return true
   }
   /** Records an undo of a tab's calls in its own file and transcript. */
   undone = (id: string, calls: ReadonlyArray<string>, paths: ReadonlyArray<string>, at: number): void => {

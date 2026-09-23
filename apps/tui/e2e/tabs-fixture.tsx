@@ -1,0 +1,81 @@
+/** Deterministic host with workers in every status, for the tab strip, worker view and sidebar. */
+import { createCliRenderer } from "@opentui/core"
+import { createRoot } from "@opentui/react"
+import { App } from "../src/app.tsx"
+import type * as Host from "../src/host.ts"
+
+const workers: Record<string, { title: string; prompt: string; model?: "sol" | "luna" | "astra" }> = {
+  audit: { title: "Audit auth middleware", prompt: "Audit the auth middleware.", model: "sol" },
+  flaky: { title: "Fix flaky seat queue test", prompt: "Fix the flaky seat queue test.", model: "luna" },
+  strip: { title: "Refactor tab strip overflow", prompt: "Refactor the tab strip overflow." },
+  frame: { title: "Profile frame budget", prompt: "Profile the frame budget.", model: "astra" },
+  docs: { title: "Document which-key", prompt: "Document which-key." },
+  lint: { title: "Lint the key registry", prompt: "Lint the key registry." }
+}
+const event = (value: unknown) => value as Parameters<Host.TurnInput["onEvent"]>[0]
+const stream = (input: Host.TurnInput, prose: string, code: string, flow: string, subject: string, settle: boolean) => {
+  input.onEvent(event({ _tag: "model-requested" }))
+  input.onEvent(event({ _tag: "model-delta", delta: { type: "text-delta", text: `${prose}\n\`\`\`js\n${code}\n\`\`\`` } }))
+  input.onEvent(event({
+    _tag: "model-settled",
+    usage: { inputTokens: 18_400, outputTokens: 2_150 },
+    message: { role: "assistant", content: [{ type: "text", text: prose }] }
+  }))
+  input.onEvent(event({ _tag: "cell-produced", cell: { text: code } }))
+  const identity = { session: "fixture", frame: 1, cell: 1, ordinal: 0 }
+  input.onEvent(event({ _tag: "cell-call-started", call: { flowName: flow, input: { path: subject, command: subject }, identity } }))
+  if (!settle) return
+  input.onEvent(event({ _tag: "cell-call-settled", flowName: flow, identity, result: { outcome: "success", value: {} } }))
+  input.onEvent(event({ _tag: "cell-settled", outcome: { _tag: "settled" } }))
+}
+const pending = new Map<string, (outcome: Host.Outcome) => void>()
+const host: Host.Host = {
+  cwd: process.cwd(),
+  judged: false,
+  compaction: async () => undefined,
+  dispose: async () => {},
+  run: (input) => {
+    if (input.role === "worker") {
+      const id = input.source ?? ""
+      if (id === "flaky") {
+        stream(input, "Rerun the seat queue test 50 times.", "await ctx.call(\"bash\", { command: \"bun test seat\" })", "bash", "bun test test/seat.test.ts", true)
+        return { done: Promise.resolve({ _tag: "done", answer: "Fixed: the queue drained before the seat freed." }), cancel: () => {} }
+      }
+      if (id === "strip") {
+        return { done: Promise.resolve({ _tag: "failed", message: "Seat quota exhausted", detail: "" }), cancel: () => {} }
+      }
+      stream(input, "Read the middleware and its tests.", "const src = await ctx.call(\"read\", { path: \"src/auth.ts\" })", "read", "src/auth.ts", false)
+      return {
+        done: new Promise((resolve) => pending.set(id, resolve)),
+        cancel: () => pending.get(id)?.({ _tag: "cancelled" })
+      }
+    }
+    let answer = "Still here."
+    if (input.prompt === "delegate") {
+      for (const id of ["audit", "flaky", "strip"]) input.runtime!.delegate!({ id, ...workers[id]! })
+      answer = "Requested three workers."
+    }
+    if (input.prompt === "more") {
+      for (const id of ["frame", "docs", "lint"]) input.runtime!.delegate!({ id, ...workers[id]! })
+      answer = "Requested three more."
+    }
+    queueMicrotask(() =>
+      input.onEvent(event({
+        _tag: "resolved",
+        eventType: "flows.harness.resolved.v1",
+        message: { role: "assistant", content: [{ type: "text", text: answer }] }
+      }))
+    )
+    return { done: Promise.resolve({ _tag: "done", answer }), cancel: () => {} }
+  }
+}
+const renderer = await createCliRenderer({ exitOnCtrlC: false, targetFps: 30 })
+createRoot(renderer).render(
+  <App
+    host={host}
+    seat="test:chat"
+    workerSeat="openai:gpt-6-luna"
+    models={[{ seat: "openai:gpt-6-sol", label: "GPT-6 Sol", provider: "openai" }]}
+    contextWindow={() => 128_000}
+  />
+)

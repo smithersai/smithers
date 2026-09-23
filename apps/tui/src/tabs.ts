@@ -1,0 +1,102 @@
+/**
+ * What a worker tab says about itself, in one place for the tab strip, the
+ * worker list and the worker view: its status glyph and color, its model,
+ * its clock, and the actions its status allows.
+ */
+import * as Keys from "./keys.ts"
+import { delegateModels } from "./models.ts"
+import type { Model } from "./models.ts"
+import { color } from "./theme.ts"
+import type { Tab } from "./workspace.ts"
+
+/** `queued` waits for a free seat. */
+export type Status = Tab["status"]
+
+/** `tick` is the app clock's spinner frame, so every running glyph turns together. */
+export const style = (status: Status, tick: string): { readonly glyph: string; readonly tone: string } => {
+  switch (status) {
+    case "requested":
+      return { glyph: "◌", tone: color.muted }
+    case "queued":
+      return { glyph: "◷", tone: color.warning }
+    case "running":
+      return { glyph: tick, tone: color.info }
+    case "waiting":
+      return { glyph: "◔", tone: color.info }
+    case "parked":
+      return { glyph: "⏸", tone: color.warning }
+    case "done":
+      return { glyph: "✓", tone: color.success }
+    case "failed":
+      return { glyph: "✗", tone: color.danger }
+    case "cancelled":
+      return { glyph: "■", tone: color.faint }
+  }
+}
+
+export const live = (status: Status): boolean =>
+  status === "requested" || status === "queued" || status === "running" || status === "waiting" || status === "parked"
+
+const aliases = new Map<string, string>(Object.entries(delegateModels).map(([alias, seat]) => [seat, alias]))
+
+/** The shortest name that tells seats apart: `sol`, else the picker's label, else the model id. */
+export const model = (seat: string, models: ReadonlyArray<Model>): string =>
+  aliases.get(seat) ?? models.find((each) => each.seat === seat)?.label ??
+    (seat.startsWith("replay:") ? "replay" : seat.slice(seat.indexOf(":") + 1))
+
+/** From the request until settlement; a settled tab's clock stops. */
+export const elapsed = (tab: Pick<Tab, "startedAt" | "endedAt">, now: number): number =>
+  Math.max(0, (tab.endedAt ?? now) - tab.startedAt)
+
+export type ActionId = "stop" | "retry" | "model" | "wait" | "steer" | "open-chat"
+
+/** What an action's availability reads: the status, and a failure's own offers. */
+type Worker = Pick<Tab, "status" | "failure">
+
+/** Each worker action is a button in the worker view and a registry key (`panel` context). */
+const registered: ReadonlyArray<{ readonly id: ActionId; readonly binding: string; readonly when: (tab: Worker) => boolean }> = [
+  { id: "stop", binding: "stop", when: (tab) => live(tab.status) },
+  { id: "retry", binding: "retry", when: (tab) => tab.status === "failed" || tab.status === "cancelled" },
+  { id: "model", binding: "worker-model", when: (tab) => tab.status === "failed" },
+  { id: "wait", binding: "worker-wait", when: (tab) => tab.status === "failed" && tab.failure?.actions.includes("wait") === true },
+  { id: "steer", binding: "steer-worker", when: (tab) => tab.status === "running" },
+  { id: "open-chat", binding: "worker-chat", when: () => true }
+]
+
+export const bindings = registered.map(({ id, binding, when }) => {
+  const found = Keys.registry.find((each) => each.id === binding && each.context === "panel")
+  if (found === undefined) throw new Error(`Worker action ${id} has no panel key binding ${binding}`)
+  return { id, binding, keys: found.keys, label: found.label, when }
+})
+
+export const actions = (tab: Worker) => bindings.filter((binding) => binding.when(tab))
+
+/** The action a registry binding runs on this worker, if its state allows it. */
+export const actionFor = (binding: string, tab: Worker) => actions(tab).find((each) => each.binding === binding)
+
+/** Columns an overflow arrow takes: `‹ 12 `. */
+export const arrow = 5
+
+/**
+ * The widest run of whole tabs around `active` that fits `width`, with room
+ * for an arrow on each side that hides tabs. Never cuts a tab short.
+ */
+export const fit = (widths: ReadonlyArray<number>, active: number, width: number): { first: number; last: number } => {
+  const at = Math.max(0, Math.min(active, widths.length - 1))
+  let first = at
+  let last = Math.min(widths.length, at + 1)
+  const used = (from: number, to: number) =>
+    widths.slice(from, to).reduce((sum, each) => sum + each, 0) + (from > 0 ? arrow : 0) + (to < widths.length ? arrow : 0)
+  for (let grew = true; grew;) {
+    grew = false
+    if (last < widths.length && used(first, last + 1) <= width) {
+      last++
+      grew = true
+    }
+    if (first > 0 && used(first - 1, last) <= width) {
+      first--
+      grew = true
+    }
+  }
+  return { first, last }
+}

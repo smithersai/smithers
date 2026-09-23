@@ -41,6 +41,8 @@ import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
 import * as Smithers from "./smithers.ts"
 import * as Summary from "./summary.ts"
+import * as Tabs from "./tabs.ts"
+import { chip as workerChip, TabStrip, WorkerList, WorkerView } from "./tabs-view.tsx"
 import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
 import * as Activity from "./activity.ts"
@@ -408,6 +410,11 @@ export function App(props: AppProps) {
   const [filter, setFilter] = useState(Timeline.all)
   /** The chat card `tab` focused, by timeline row key; `enter` opens it. */
   const [cardFocus, setCardFocus] = useState<string | undefined>()
+  const [steerTarget, setSteerTarget] = useState<string | undefined>()
+  // Steering is for the tab it started in: any surface change ends it.
+  useEffect(() => setSteerTarget(undefined), [surface])
+  /** A worker whose chat lane the next render scrolls to. */
+  const revealWorker = useRef<string | undefined>(undefined)
   const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
@@ -568,35 +575,22 @@ export function App(props: AppProps) {
       setTranscript((current) => Transcript.card(current, card, run.startedAt))
     }
   }, [revision, runs, cardFlows])
+  const tabEta = (tab: Tab) => eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab)).trim()
+  const tick = spinner[Math.floor(now / 100) % spinner.length]!
   const surfaces = [
-    { id: "chat", title: "Chat" },
-    { id: "summary", title: "Summary" },
+    { id: "chat", label: "Chat" },
+    { id: "summary", label: "Summary" },
     // Built-in plugins' tabs sit beside Summary while open; runtime and problem views follow the work tabs.
-    ...pluginTabs.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title })),
-    ...snapshot.tabs.map((tab) => ({
-      id: `tab:${tab.id}`,
-      title: `${
-        tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
-          ? "◌ "
-          : tab.status === "parked"
-          ? "⏸ "
-          : tab.status === "queued"
-          ? "… "
-          : tab.status === "failed"
-          ? "✗ "
-          : tab.status === "done"
-          ? "✓ "
-          : "■ "
-      }${tab.status === "failed" ? tab.failure?.headline ?? tabTitle(tab) : tab.status === "parked" ? tabToast(tab) : tabTitle(tab)}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
-    })),
+    ...pluginTabs.map((panel) => ({ id: `ui:${panel.id}`, label: panel.title })),
+    ...snapshot.tabs.map((tab) => workerChip({ ...tab, title: tabTitle(tab) }, props.models, now, tick, tabEta(tab))),
     ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id) &&
       !snapshot.panels.some((panel) => panel.bind?.tree === tab.id))
-      .map((tab) => ({ id: `tree:${tab.id}`, title: `Tree: ${tab.title}` })),
+      .map((tab) => ({ id: `tree:${tab.id}`, label: `Tree: ${tab.title}` })),
     ...flowRuns.map((run) => ({
       id: `flow:${run.id}`,
-      title: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
+      label: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
     })),
-    ...uiPanels.filter((panel) => !pluginPanels.includes(panel)).map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
+    ...uiPanels.filter((panel) => !pluginPanels.includes(panel)).map((panel) => ({ id: `ui:${panel.id}`, label: panel.title }))
   ]
   const showTab = (id: string) => {
     setSurface(id)
@@ -610,6 +604,43 @@ export function App(props: AppProps) {
   useEffect(() => {
     if (surface.startsWith("flow:")) void runs.hydrate(surface.slice(5))
   }, [surface, runs])
+  const workerTab = surface.startsWith("tab:") ? snapshot.tabs.find((tab) => `tab:${tab.id}` === surface) : undefined
+  /** The worker the composer steers: set by `s` in its tab, and only while that tab shows and runs. */
+  const steered = workerTab !== undefined && workerTab.id === steerTarget && workerTab.status === "running"
+    ? workerTab
+    : undefined
+  /** Back to the chat with the worker's lane shown and scrolled into view. */
+  const openInChat = (id: string) => {
+    setFilter((current) => (current.sources.includes(id) ? Timeline.toggleSource(current, id) : current))
+    revealWorker.current = id
+    showTab("chat")
+  }
+  const workerAction = (tab: Tab, action: Tabs.ActionId) => {
+    switch (action) {
+      case "stop":
+        return workspace.cancel(tab.id)
+      case "retry":
+        try {
+          workspace.retry(tab.id)
+          return
+        } catch (error) {
+          return setStatus(error instanceof Error ? error.message : String(error), "warning")
+        }
+      case "model":
+        return setPicker({ kind: "worker-model", id: tab.id, query: "", selected: 0 })
+      case "wait":
+        try {
+          return workspace.waitForReset(tab.id)
+        } catch (error) {
+          return setStatus(error instanceof Error ? error.message : String(error), "warning")
+        }
+      case "steer":
+        setSteerTarget(tab.id)
+        return setPanelFocus(false)
+      case "open-chat":
+        return openInChat(tab.id)
+    }
+  }
   const basePanel = surface === "summary"
     ? Summary.panel(transcript)
     : surface.startsWith("tab:")
@@ -690,6 +721,16 @@ export function App(props: AppProps) {
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const dragScroll = useMemo(() => DragScroll.make(() => renderer.getSelection()?.isDragging === true), [renderer])
+  useEffect(() => {
+    const id = revealWorker.current
+    if (id === undefined || surface !== "chat") return
+    revealWorker.current = undefined
+    const row = timeline.findLast((each) => each.source === id)
+    if (row === undefined) return
+    reveal(row.key)
+    // The chat mounts on this render; lay it out, then aim again.
+    setTimeout(() => reveal(row.key), 60)
+  })
   const lastCtrlC = useRef(0)
   const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
   /** The draft a palette command with an argument displaced; restored by the next submit. */
@@ -746,8 +787,8 @@ export function App(props: AppProps) {
 
   // Key handlers read the latest values through these, never a stale render.
   // `now` is the clock the approval row rendered with, so its keys and its hints agree.
-  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey })
-  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey }
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey, steered })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey, steered }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -1355,13 +1396,18 @@ export function App(props: AppProps) {
     parkedDraft.current = undefined
     history.current.add(text)
     setText(parked ?? "")
+    const steering = live.current.steered
+    if (steering !== undefined && shellLine === undefined && !text.startsWith("/")) {
+      if (!workspace.steer(steering.id, text)) setStatus(`${steering.title} is not running`, "warning")
+      return
+    }
     if (shellLine !== undefined) {
       if (shellLine.command !== "") runShell(shellLine.command, shellLine.excluded)
       return
     }
     if (text.startsWith("/") && command(text)) return
     send(text, followUp)
-  }, [setText, runShell, command, send])
+  }, [setText, runShell, command, send, workspace, setStatus])
 
   /**
    * Runs a contributed action for the person who chose it: a key, a status
@@ -1805,37 +1851,23 @@ export function App(props: AppProps) {
         setPanelFocus(false)
         return
       }
-      if (key.name === "r" && (surface.startsWith("tab:") || surface.startsWith("flow:"))) {
+      if (key.name === "r" && surface.startsWith("flow:")) {
         try {
-          if (surface.startsWith("flow:")) runs.retry(surface.slice(5))
-          else workspace.retry(surface.slice(4))
+          runs.retry(surface.slice(5))
         } catch (error) {
           setStatus(error instanceof Error ? error.message : String(error), "warning")
         }
         return
       }
-      if (key.name === "m" && surface.startsWith("tab:")) {
-        setPicker({ kind: "worker-model", id: surface.slice(4), query: "", selected: 0 })
-        return
-      }
-      if (key.name === "w" && surface.startsWith("tab:")) {
-        try { workspace.waitForReset(surface.slice(4)) }
-        catch (error) { setStatus(error instanceof Error ? error.message : String(error), "warning") }
-        return
-      }
-      if (key.name === "x" && (surface.startsWith("tab:") || surface.startsWith("flow:"))) {
-        if (surface.startsWith("flow:")) runs.cancel(surface.slice(5))
-        else workspace.cancel(surface.slice(4))
-        return
-      }
+      if (key.name === "x" && surface.startsWith("flow:")) return runs.cancel(surface.slice(5))
       if (key.name === "a" && surface.startsWith("flow:")) return openForm(surface.slice(5))
       if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
         const current = live.current
         if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy || runs.busy) {
           return setStatus(Undo.message({ _tag: "Busy" }), "warning")
         }
-        const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
         const tab = surface.startsWith("tab:") ? surface.slice(4) : undefined
+        const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
         const found = row === undefined
           ? { _tag: "NothingToUndo" as const }
           : Undo.target(tab === undefined ? transcript : workspace.transcript(tab), row.id)
@@ -1846,6 +1878,15 @@ export function App(props: AppProps) {
           )
         }
         return setPicker({ kind: "undo", query: "", selected: 0, target: found, ...(tab === undefined ? {} : { tab }) })
+      }
+      if (workerTab !== undefined) {
+        const binding = Keys.bindingFor(key, "panel")
+        const action = binding === undefined ? undefined : Tabs.actionFor(binding.id, workerTab)
+        if (action !== undefined) return workerAction(workerTab, action.id)
+        if (key.name === "pageup" || key.name === "pagedown") return panelScroll.current?.(key.name === "pageup" ? -1 : 1)
+        // j/k pick the transcript row `u` undoes.
+        if (["j", "k", "up", "down"].includes(key.name)) return setNavigation((current) => Panels.navigate(current, key.name, panel.rows))
+        return
       }
       if (key.name === "a") {
         const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
@@ -1868,6 +1909,10 @@ export function App(props: AppProps) {
     if (open !== undefined) return dialogKey(key, open)
     if (completing !== undefined && menuKey(key, completing)) return
     if (key.name === "escape") {
+      if (live.current.steered !== undefined) {
+        setSteerTarget(undefined)
+        return setPanelFocus(true)
+      }
       if (running !== undefined) {
         restoreQueued(running.steering.take())
         return running.handle.cancel()
@@ -1929,7 +1974,6 @@ export function App(props: AppProps) {
   useKeyboard(handleKey)
 
   const working = turn !== undefined
-  const tick = spinner[Math.floor(now / 100) % spinner.length]!
   const model = props.models.find((each) => each.seat === seat)
   const label = model?.label ?? (seat.startsWith("replay:") ? `replay ${basename(seat)}` : seat)
   const bashMode = draft.startsWith("!")
@@ -1944,24 +1988,18 @@ export function App(props: AppProps) {
     return () => { active = false }
   }, [props.host, transcript.usage.context, window, writer.current.file])
   const usage = transcript.usage
-  const activeTabs = snapshot.tabs.filter((tab) =>
-    tab.status === "queued" || tab.status === "requested" || tab.status === "running" || tab.status === "waiting" || tab.status === "parked"
-  )
+  const activeTabs = snapshot.tabs.filter((tab) => Tabs.live(tab.status))
   const sideChat = focusMain && dimensions.width >= 120
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0 && (!focusMain || sideChat)
-  const width = sideChat ? 40 : Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
-  const mainWidth = Math.max(20, dimensions.width - width - (showSidebar ? 24 : 0) - 2)
-  const accent = bashMode ? color.success : working ? color.faint : color.brand
+  const width = sideChat ? 40 : Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 26 : 0)))
+  const mainWidth = Math.max(20, dimensions.width - width - (showSidebar ? 26 : 0) - 2)
+  const accent = bashMode ? color.success : steered !== undefined ? lanes.get(steered.id)?.tone ?? color.info : working ? color.faint : color.brand
   const tabsWidth = width - (focusMain ? 6 : 0)
-  const tabCount = Math.max(1, Math.floor(tabsWidth / 24))
-  const tabTitleWidth = Math.min(22, Math.max(1, Math.floor(tabsWidth / tabCount) - 2))
-  const firstTab = Math.max(
-    0,
-    Math.min(surfaces.findIndex((tab) => tab.id === surface) - Math.floor(tabCount / 2), surfaces.length - tabCount)
-  )
-  const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
   const footerContext = keyContext()
-  const footerHints = footerContext === "panel" && panel !== undefined
+  // A worker's own actions are buttons in its view; the footer carries the rest.
+  const footerHints = footerContext === "panel" && workerTab !== undefined
+    ? Keys.panelHints({ undo: true }).filter((binding) => binding.id !== "expand-row")
+    : footerContext === "panel" && panel !== undefined
     ? [
       ...Keys.panelHints({
         worker: surface.startsWith("tab:") || surface.startsWith("flow:"),
@@ -1995,17 +2033,7 @@ export function App(props: AppProps) {
       now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
     ).map((tab) => ({
       id: tab.id,
-      text: `${
-        tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
-          ? tick
-          : tab.status === "parked"
-          ? "⏸"
-          : tab.status === "queued"
-          ? "…"
-          : tab.status === "done"
-          ? "✓"
-          : "✗"
-      } ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
+      text: `${Tabs.style(tab.status, tick).glyph} ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
       tone: tab.status === "failed" ? "danger" as const : "info" as const
     })),
     ...flowRuns.filter((run) =>
@@ -2030,20 +2058,9 @@ export function App(props: AppProps) {
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
       <box style={{ flexDirection: focusMain && !sideChat ? "column" : "row", width: "100%", height: "100%", justifyContent: "center" }}>
         {showSidebar ? (
-          <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>
-            {activeTabs.map((tab) => {
-              const name = tab.description ?? tab.title
-              const time = eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab)).trim()
-              const room = time === "" ? 22 : 21 - time.length
-              const shown = name.length > room ? `${name.slice(0, room - 1)}…` : name
-              return (
-                <text key={tab.id} wrapMode="none" fg={surface === `tab:${tab.id}` ? color.brand : color.faint}
-                  onMouseDown={() => clickTab(`tab:${tab.id}`)}>
-                  {shown}
-                  {time === "" ? null : <span fg={color.faint}>{" ".repeat(22 - shown.length - time.length)}{time}</span>}
-                </text>
-              )
-            })}
+          <box style={{ width: 24, marginRight: 2, paddingTop: 3, flexDirection: "column", flexShrink: 0 }}>
+            <WorkerList tabs={activeTabs.map((tab) => ({ ...tab, title: tabTitle(tab) }))} active={surface} models={props.models} now={now} tick={tick} eta={tabEta}
+              onSelect={clickTab} />
           </box>
         ) : null}
       {focusMain && panel !== undefined ? (
@@ -2056,23 +2073,36 @@ export function App(props: AppProps) {
       <box style={{ flexDirection: "column", height: focusMain && !sideChat ? "55%" : "100%", width, paddingTop: 1 }}>
         <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1, width }}>
           {focusMain ? <text fg={color.brand} style={{ flexShrink: 0 }}>Chat  </text> : null}
-          {visibleTabs.map((tab) => (
-            <text key={tab.id} wrapMode="none" fg={surface === tab.id ? color.brand : color.faint} onMouseDown={() => clickTab(tab.id)}>
-              {" "}{tab.title.length > tabTitleWidth ? `${tab.title.slice(0, tabTitleWidth - 1)}…` : tab.title}{" "}
-            </text>
-          ))}
-          {Timeline.active(filter) && surface === "chat"
-            ? <text fg={color.warning} wrapMode="none" style={{ flexShrink: 0 }}>{filter.query === "" ? " filtered" : ` grep ${filter.query}`}</text>
-            : null}
+          {(() => {
+            const note = Timeline.active(filter) && surface === "chat"
+              ? filter.query === "" ? " filtered" : ` grep ${filter.query}`
+              : ""
+            return (
+              <>
+                <TabStrip chips={surfaces} active={surface} width={tabsWidth - note.length} onSelect={clickTab} />
+                {note === "" ? null : <text fg={color.warning} wrapMode="none" style={{ flexShrink: 0 }}>{note}</text>}
+              </>
+            )
+          })()}
         </box>
-        {panel !== undefined && !focusMain ?
+        {workerTab !== undefined && !focusMain ?
+          (
+            <WorkerView
+              tab={{ ...workerTab, title: tabTitle(workerTab) }}
+              transcript={workspace.transcript(workerTab.id)}
+              models={props.models}
+              now={now}
+              tick={tick}
+              tone={lanes.get(workerTab.id)?.tone ?? color.info}
+              width={width}
+              expanded={expanded}
+              onAction={(action) => workerAction(workerTab, action)}
+              selected={panel?.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.id}
+              scrollRef={panelScroll}
+            />
+          ) :
+          panel !== undefined && !focusMain ?
           (<>
-            {surface.startsWith("tab:") ? (() => {
-              const tab = snapshot.tabs.find((entry) => entry.id === surface.slice(4))
-              return tab?.status === "failed"
-                ? <FailureCard tab={tab} transcript={workspace.transcript(tab.id)} details={expanded} />
-                : null
-            })() : null}
             <PanelView
               panel={panel}
               navigation={navigation}
@@ -2192,6 +2222,7 @@ export function App(props: AppProps) {
               </box>
             </box>
           )}
+        {sideChat ? null : <View.ToastStack rows={toastRows} />}
         {approvals[0] === undefined ? null : (
           <View.Approval
             request={approvals[0]}
@@ -2214,7 +2245,9 @@ export function App(props: AppProps) {
             <textarea
               ref={composer}
               focused={picker === undefined && !panelFocus && form === undefined}
-              placeholder={working
+              placeholder={steered !== undefined
+                ? ""
+                : working
                 ? "Steer, or alt+enter to queue"
                 : "Ask Smithers to change this repository"}
               placeholderColor={color.faint}
@@ -2235,16 +2268,16 @@ export function App(props: AppProps) {
               style={{ minHeight: 1, maxHeight: Math.max(6, Math.floor(dimensions.height / 3)) }}
             />
             <text style={{ marginTop: 1, marginBottom: 1 }}>
-              {bashMode
+              {bashMode || steered !== undefined
                 ? (
                   <>
-                    <span fg={color.success}>{"shell"}</span>
+                    <span fg={accent}>{bashMode ? "shell" : `steer ↳ ${steered!.title}`}</span>
                     <span fg={color.faint}>{"  ·  "}</span>
                   </>
                 )
                 : null}
-              <span fg={color.text}>{label}</span>
-              {model === undefined ? null : <span fg={color.faint}>{" "}{model.provider}</span>}
+              <span fg={color.text}>{steered === undefined ? label : Tabs.model(steered.seat, props.models)}</span>
+              {model === undefined || steered !== undefined ? null : <span fg={color.faint}>{" "}{model.provider}</span>}
               {thinking === undefined ? null : <span fg={color.warning}>{"  "}{thinking}</span>}
             </text>
           </box>
@@ -2286,12 +2319,12 @@ export function App(props: AppProps) {
       </box>
       </box>
       {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext, merged)} width={dimensions.width} height={dimensions.height} /> : null}
-      {sideChat
-        ? toastRows.length === 0 ? null : <box style={{ position: "absolute", left: mainWidth - toastWidth,
+      {sideChat && toastRows.length > 0
+        ? <box style={{ position: "absolute", left: mainWidth - toastWidth,
           top: dimensions.height - toastHeight - 2, width: toastWidth, height: toastHeight }}>
           <View.ToastStack rows={toastRows} />
         </box>
-        : <View.ToastStack rows={toastRows} />}
+        : null}
       {picker === undefined ? null : (
         <View.Dialog
           title={picker.kind === "model" || picker.kind === "worker-model"

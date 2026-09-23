@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import * as Keys from "../src/keys.ts"
+import * as Tabs from "../src/tabs.ts"
 
 const read = (file: string) => readFileSync(join(import.meta.dir, "../src", file), "utf8")
 const app = read("app.tsx")
@@ -112,6 +113,8 @@ describe("key registry", () => {
   it("lists only keys some handler compares", () => {
     const names = new Set([...handlerKeys(app).map(({ name }) => Keys.normalizeName(name)), "?", "/", "@", "!", "shift+enter", "linefeed"])
     const composerKeys = [...app.matchAll(/\{ name: "([^"]+)"/g)].map((match) => match[1]!)
+    // A worker tab dispatches its actions through `Keys.bindingFor`, never a literal.
+    for (const action of Tabs.bindings) for (const spelling of action.keys) names.add(spelling)
     for (const name of composerKeys) names.add(Keys.normalizeName(name))
     const orphans = Keys.registry.flatMap((binding) =>
       binding.keys.filter((spelling) => !names.has(Keys.normalizeName(spelling.split("+").at(-1)!)) && !names.has(spelling))

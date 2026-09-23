@@ -16,7 +16,7 @@ for (const [cols, rows] of [[160, 50], [100, 40], [80, 30]] as const) it(`render
     await tui.type("follow up")
     const screen = await tui.until((screen) => screen.includes("follow up"))
     const lines = screen.split("\n")
-    const header = lines.find((line) => /\bChat {2,}(?:[◌●✓⏸✗…] )?(?:Chat|Summary|Recursive review|Agent package|TUI app)(?: {2,}|$)/.test(line))
+    const header = lines.find((line) => /\bChat {2,}(?:‹ \d+ +)?(?:\S )?(?:Chat|Summary|Recursive review|Agent package|TUI app)\b/.test(line))
     expect(header, screen).toBeDefined()
     expect(lines.some((line) => line.includes("Recursive review"))).toBe(true)
     expect(lines.some((line) => line.includes("Agent package"))).toBe(true)
