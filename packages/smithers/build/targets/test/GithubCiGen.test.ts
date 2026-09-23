@@ -93,10 +93,10 @@ describe("CiToolchain.Needs", () => {
           })
         }
         const step = toolchainSteps(goldenAttrs, job).find((step) => step.name === "Install native native-helper")!
-        const result = spawnSync("bash", ["-e", "-c", step.run!], {
+        const result = spawnSync("/bin/bash", ["--noprofile", "--norc", "-e", "-c", step.run!], {
           cwd: root,
           env: {
-            // Runner shell hooks can replace PATH before this script starts.
+            // Use the system shell, bypassing runner-installed bash wrappers.
             // Only the declared shim search path belongs to this fixture.
             PATH: `${bin}:${process.env.PATH}`,
             RUNNER_TEMP: runnerTemp,
