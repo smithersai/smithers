@@ -7,8 +7,8 @@
  * again rebuilds the screen and the conversation the next turn is told.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import { randomUUID } from "node:crypto"
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { createHash, randomUUID } from "node:crypto"
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type * as Changes from "./changes.ts"
@@ -77,9 +77,21 @@ export interface Summary {
 export const root = (): string =>
   process.env.SMITHERS_TUI_SESSION_DIR ?? join(homedir(), ".smithers", "tui", "sessions")
 
-/** pi's directory slug: the path with separators replaced, fenced by `--`. */
+const slug = (cwd: string): string => cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")
+
+/** pi's directory slug, fenced by `--`, plus a hash of the exact path: `/a/b-c` and `/a/b/c` never share a folder. */
 export const directory = (cwd: string): string =>
-  join(root(), `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`)
+  join(root(), `--${slug(cwd)}--${createHash("sha256").update(cwd).digest("hex").slice(0, 12)}`)
+
+/** The folder before the hash; shared by colliding paths, so its files are filtered by their header's cwd. */
+const legacyDirectory = (cwd: string): string => join(root(), `--${slug(cwd)}--`)
+
+/** Sessions hold prompts, code, diffs and shell output: owner-only folders and files. */
+const privateFolder = (folder: string): void => {
+  mkdirSync(folder, { recursive: true, mode: 0o700 })
+  chmodSync(folder, 0o700)
+}
+const append = (file: string, text: string): void => appendFileSync(file, text, { mode: 0o600 })
 
 export interface Writer {
   readonly file: string
@@ -97,6 +109,10 @@ export const create = (
 ): Writer => {
   const id = randomUUID()
   const folder = kind === "worker" ? join(directory(cwd), "workers") : directory(cwd)
+  const prepare = () => {
+    privateFolder(directory(cwd))
+    privateFolder(folder)
+  }
   const file = join(folder, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`)
   const header = (): Record => ({
     type: "session",
@@ -109,9 +125,10 @@ export const create = (
   let opened = false
   if (options.seed !== undefined && options.seed.length > 0) {
     try {
-      mkdirSync(folder, { recursive: true })
+      prepare()
       writeFileSync(file, [header(), ...options.seed].map((record) => JSON.stringify(record)).join("\n") + "\n", {
-        flag: "wx"
+        flag: "wx",
+        mode: 0o600
       })
     } catch (error) {
       rmSync(file, { force: true })
@@ -123,49 +140,108 @@ export const create = (
     file,
     append: (record) => {
       if (!opened) {
-        mkdirSync(folder, { recursive: true })
-        appendFileSync(file, JSON.stringify(header()) + "\n")
+        prepare()
+        append(file, JSON.stringify(header()) + "\n")
         opened = true
       }
-      appendFileSync(file, JSON.stringify(record) + "\n")
+      append(file, JSON.stringify(record) + "\n")
     }
   }
 }
 
 /** Continues an existing file. */
-export const reopen = (file: string): Writer => ({
-  file,
-  append: (record) => appendFileSync(file, JSON.stringify(record) + "\n")
-})
+export const reopen = (file: string): Writer => {
+  let repaired = false
+  return {
+    file,
+    append: (record) => {
+      if (!repaired && existsSync(file)) chmodSync(file, 0o600)
+      repaired = true
+      append(file, JSON.stringify(record) + "\n")
+    }
+  }
+}
 
-export const load = (file: string): ReadonlyArray<Record> =>
-  readFileSync(file, "utf8")
-    .split("\n")
-    .filter((line) => line.trim() !== "")
-    .map((line) => JSON.parse(line) as Record)
+/** Thrown for a record damaged before the file's last line; a torn last line (a crash mid-append) is dropped. */
+export class Corrupt extends Error {
+  constructor(readonly file: string, readonly line: number) {
+    super(`Session ${basename(file)} is damaged at line ${line}`)
+  }
+}
+
+const parse = (file: string, text: string): ReadonlyArray<Record> => {
+  const lines = text.split("\n")
+  const last = lines.findLastIndex((line) => line.trim() !== "")
+  const records: Array<Record> = []
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === "") continue
+    try {
+      records.push(JSON.parse(line) as Record)
+    } catch {
+      if (index !== last) throw new Corrupt(file, index + 1)
+    }
+  }
+  return records
+}
+
+export const load = (file: string): ReadonlyArray<Record> => parse(file, readFileSync(file, "utf8"))
+
+/** Moves a file that failed to load out of the listing, beside it as `.damaged`, and says so. */
+export const quarantine = (file: string, error: unknown): string => {
+  const reason = error instanceof Error ? error.message : String(error)
+  try {
+    renameSync(file, `${file}.damaged`)
+    return `${reason}; moved to ${basename(file)}.damaged`
+  } catch {
+    return reason
+  }
+}
+
+/** A listing parses only the header, the first prompt and names, and skips a damaged file instead of failing the list. */
+const summary = (file: string): (Summary & { readonly cwd?: string }) | undefined => {
+  let header: Record | undefined
+  let first: Record | undefined
+  let named: Record | undefined
+  try {
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      const type = /^\{"type":"(session|user|name)"/.exec(line)?.[1]
+      if (type === undefined || (type === "user" && first !== undefined)) continue
+      let record: Record
+      try {
+        record = JSON.parse(line) as Record
+      } catch {
+        continue
+      }
+      if (record.type === "session") header ??= record
+      else if (record.type === "user") first = record
+      else named = record
+    }
+    return {
+      file,
+      ...(header?.type === "session" && header.parent !== undefined ? { parent: header.parent } : {}),
+      name: named?.type === "name" ? named.name : undefined,
+      firstPrompt: first?.type === "user" ? first.text : basename(file),
+      modified: statSync(file).mtimeMs,
+      ...(header?.type === "session" ? { cwd: header.cwd } : {})
+    }
+  } catch {
+    return undefined
+  }
+}
+
+const summaries = (folder: string): ReadonlyArray<Summary & { readonly cwd?: string }> =>
+  existsSync(folder)
+    ? readdirSync(folder).filter((name) => name.endsWith(".jsonl")).flatMap((name) => summary(join(folder, name)) ?? [])
+    : []
 
 /** Sessions for `cwd`, newest first. */
-export const list = (cwd: string): ReadonlyArray<Summary> => {
-  const folder = directory(cwd)
-  if (!existsSync(folder)) return []
-  return readdirSync(folder)
-    .filter((name) => name.endsWith(".jsonl"))
-    .map((name) => {
-      const file = join(folder, name)
-      const records = load(file)
-      const named = records.findLast((record) => record.type === "name")
-      const first = records.find((record) => record.type === "user")
-      const header = records[0]
-      return {
-        file,
-        ...(header?.type === "session" && header.parent !== undefined ? { parent: header.parent } : {}),
-        name: named?.type === "name" ? named.name : undefined,
-        firstPrompt: first?.type === "user" ? first.text : basename(file),
-        modified: statSync(file).mtimeMs
-      }
-    })
+export const list = (cwd: string): ReadonlyArray<Summary> =>
+  [
+    ...summaries(directory(cwd)),
+    ...summaries(legacyDirectory(cwd)).filter((row) => row.cwd === cwd)
+  ]
+    .map(({ cwd: _cwd, ...row }) => row)
     .sort((a, b) => b.modified - a.modified)
-}
 
 export const latest = (cwd: string): string | undefined => list(cwd)[0]?.file
 

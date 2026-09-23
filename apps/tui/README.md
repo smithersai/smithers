@@ -108,8 +108,9 @@ Restoring a session reconstructs the same timeline from its saved events.
 Each turn is told the working directory, instruction files (the first of
 `AGENTS.override.md`, `AGENTS.md`, `CLAUDE.md` in every directory from the
 root down, after `~/.smithers/agent/AGENTS.md`), and the conversation so far.
-Sessions are JSONL under `~/.smithers/tui/sessions/<cwd>/`
-(`SMITHERS_TUI_SESSION_DIR` overrides). `/fork` starts a new session from the
+Sessions are owner-only JSONL under `~/.smithers/tui/sessions/<cwd>--<hash>/`
+(`SMITHERS_TUI_SESSION_DIR` overrides). A torn last line is dropped; a file
+damaged earlier is renamed `.damaged` and left out of the list. `/fork` starts a new session from the
 messages before a chosen one and puts that message back in the editor; the
 original stays resumable.
 

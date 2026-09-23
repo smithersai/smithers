@@ -218,9 +218,18 @@ export function App(props: AppProps) {
   const renderer = useRenderer()
   const [, refreshTheme] = useState(0)
   useState(() => setTheme(loadTheme()))
-  const [restored] = useState(() => ({
-    current: props.resume === undefined ? undefined : Session.restore(Session.load(props.resume))
-  }))
+  const [restored] = useState((): {
+    current: ReturnType<typeof Session.restore> | undefined
+    file: string | undefined
+    damaged?: string
+  } => {
+    if (props.resume === undefined) return { current: undefined, file: undefined }
+    try {
+      return { current: Session.restore(Session.load(props.resume)), file: props.resume }
+    } catch (error) {
+      return { current: undefined, file: undefined, damaged: Session.quarantine(props.resume, error) }
+    }
+  })
   const [transcript, setTranscript] = useState(restored.current?.transcript ?? Transcript.empty)
   const [compact, setCompact] = useState<number | undefined>()
   const [seat, setSeat] = useState(props.seat)
@@ -253,7 +262,7 @@ export function App(props: AppProps) {
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
   const history = useRef(new Editor.History(restored.current?.prompts ?? []))
   const writer = useRef<Session.Writer>(
-    props.resume === undefined ? Session.create(props.host.cwd) : Session.reopen(props.resume)
+    restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file)
   )
   const [workspace, setWorkspace] = useState(() =>
     new Workspace({
@@ -471,6 +480,9 @@ export function App(props: AppProps) {
     setTranscript((current) =>
       delivery._tag === "update" ? Transcript.note(current, text, delivery.at) : Transcript.alert(current, text, delivery.at))
   }
+  useEffect(() => {
+    if (restored.damaged !== undefined) setStatus(restored.damaged, "danger")
+  }, [])
 
   const completion = useMemo(
     () => (menuDismissed
@@ -805,7 +817,13 @@ export function App(props: AppProps) {
   }, [props.flows])
 
   const openSession = useCallback((file: string) => {
-    const state = adopt(Session.reopen(file), Session.load(file))
+    let records: ReadonlyArray<Session.Record>
+    try {
+      records = Session.load(file)
+    } catch (error) {
+      return setStatus(Session.quarantine(file, error), "danger")
+    }
+    const state = adopt(Session.reopen(file), records)
     setStatus(`Resumed ${state.name ?? basename(file)}`)
   }, [adopt, setStatus])
 
