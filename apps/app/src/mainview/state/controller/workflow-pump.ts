@@ -466,8 +466,16 @@ export const createWorkflowPumpController = (
           // from, read back from the evidence this cycle just persisted.
           if (!alreadyTerminal && !(phase === "completed" && row.flowId === "repository/setup")) store.dispatch({ type: "message.appended", actor: "system", text: phase === "completed" ? row.verdict : phase === "cancelled"
             ? "The run was cancelled." : `The run failed: ${runFailureOf({ workflow: row.flowId, error: row.verdict, events: store.committedRuntimeRun(runtimeRunKey(card.payload))?.events }).message}` })
-          if (store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true ||
-            eventReadError === undefined && engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)) {
+          // A refused evidence read is a terminal observation failure for this
+          // watcher. Keep the real run phase and the error on the card, then
+          // stop; retry is the explicit act that asks the gateway again. The
+          // old `journalPending || ...` condition kept polling forever when a
+          // native projection marker was present but its journal endpoint was
+          // unavailable.
+          if (eventReadError === undefined && (
+            store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true ||
+            engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)
+          )) {
             previous = row
             await pokeableWait(cardId, RUN_POLL_MS)
             continue

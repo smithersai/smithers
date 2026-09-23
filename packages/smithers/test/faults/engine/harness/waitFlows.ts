@@ -11,6 +11,7 @@
  */
 import { Action, DurableDeferred, Flow, HumanTask, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
+import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import { Node } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -137,7 +138,15 @@ export const hostOptions = (options: WaitOptions) => ({
  * @category layers
  */
 export const host = (mode: WaitMode, options: WaitOptions) => {
-  if (mode === "approval") return NodeRuntime.layerHost(hostOptions(options), approvalRegistration)
-  if (mode === "timer") return NodeRuntime.layerHost(hostOptions(options), timerRegistration(options))
-  return NodeRuntime.layerHost(hostOptions(options), eventRegistration(options))
+  // Fault cases start and replace hosts in quick succession. On a busy CI
+  // runner, several independent `jj --version` probes can take longer than
+  // the production layer's 5s startup bound even though the binary is healthy.
+  // Keep that production default unchanged and give this stress harness a
+  // wider probe budget so a scheduler delay is not reported as a host fault.
+  const registration = mode === "approval"
+    ? approvalRegistration
+    : mode === "timer" ? timerRegistration(options) : eventRegistration(options)
+  return NodeRuntime.layerHost(hostOptions(options), registration).pipe(
+    Layer.provide(Layer.succeed(NodeJj.StartupTimeoutMs, 30_000))
+  )
 }
