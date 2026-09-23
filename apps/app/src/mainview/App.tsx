@@ -43,6 +43,7 @@ import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
 import { ToastStack } from "./ToastStack"
 import { TranscriptMessage } from "./TranscriptMessage"
+import { ChatRunTimeline } from "./ChatRunTimeline"
 import { WikiDeleteDialog } from "./WikiDeleteDialog"
 import { WorldSurface } from "./WorldSurface"
 
@@ -601,6 +602,9 @@ function AppContent() {
             </div>
           </MessageScrollerProvider>
           </div>
+
+          {!signingUp && !repositoryNotice && session.surface === "chat" &&
+            <ChatRunTimeline cards={conversationCards} onRunCommand={controller.runCommand} />}
 
         </div>
 

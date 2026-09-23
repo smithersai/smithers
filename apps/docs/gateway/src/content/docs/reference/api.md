@@ -46,6 +46,19 @@ JSON routes.
 | `POST /runtime/v1/command` | JSON               | Versioned launch and Control mutations (optional)    |
 | `POST /runtime/v1/observe` | JSON               | Bounded journal replay and run projection (optional) |
 
+### Runtime observation cursors
+
+`POST /runtime/v1/observe` returns `nextCursor`; pass it back unchanged as
+`afterCursor` with the same `runId`. An empty cursor consumes no events. A
+decimal cursor, such as `"42"`, consumes the whole journal entry. A versioned
+cursor, such as `"v1:42:0"`, consumes only members through that zero-based
+expansion offset. Both numeric components are canonical nonnegative integers
+below `Number.MAX_SAFE_INTEGER`. Existing decimal cursors remain accepted.
+
+`hasMore` indicates another event page; `terminal` independently reports the
+run's current lifecycle. Backend failures retain their stable Control code and
+retryability without exposing backend message text.
+
 ### Types and constants
 
 | Export                       | Signature                                                                                            | Meaning                                                                                                         |
@@ -157,7 +170,7 @@ The read path, served as bounded snapshots and followed deltas.
 | `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events retained per run; older events enter the carried digest.                                   |
 | `maxEventsPerPage`        | `1_000`                                                                                                        | The most events one `run-events` page returns.                                                                     |
 | `maxEventBytes`           | `16 * 1024`                                                                                                    | Retained event size before clipping. Native engine events on `run-events` pages are exempt.                        |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for a retained event window, event page, or projected row set.                             |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for retained events plus digest identity state, an event page, or a projected row set.     |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
@@ -342,6 +355,14 @@ or clipping.
 already applied, so a client rendering a run card calls neither. See
 [Diagnose what happened to a run](/guides/diagnose-a-run/).
 
+`emptyDigest()` is the identity for `combine(earlier, later)`. Digests retain
+private in-memory scalar identity contributions so adjacent ranges deduplicate
+replayed calls and checkpoints and prefer native facts over telemetry. Keep the
+returned digest objects when combining ranges; serialized or spread copies
+retain only aggregate facts, not this reconciliation state. Gateway projection
+retention charges this state to the existing byte budget and returns
+`resource_limit` if exact state cannot fit.
+
 `Digest.nativeResolution` optionally retains `binding: { runId, executionId }`,
 `result: { runId, executionId, text }`, and `conflict: true` across bounded
 journal windows. `combine` preserves this evidence. `resolvedOutput` accepts
@@ -429,3 +450,35 @@ A controllable in-memory supervision runtime for tests.
 | `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
 
 See [Test against a real gateway](/guides/testing/).
+
+## `RunTrace`
+
+The pure journal projection shared by the app and terminal monitors. Import
+`@smthrs/gateway/RunTrace`; it requires no server or filesystem. Records without
+evidence do not acquire invented phases, successful checks, or file changes.
+
+- `traceFromJournal(run, records, options?)` builds a `TraceModel`: nested
+  spans, frame summaries, phase bands, milestone pins, and discipline notes.
+- `turnNarratives(model)` derives concise recorded turn text. `spanPath(model,
+  id)` finds recorded ancestry. `durationWords(ms)` formats elapsed time.
+- `waterfallGeometry`, `phaseExtent`, and `phaseBandGeometry` calculate layout
+  from recorded time. Historical inspection folds a journal prefix while the
+  full trace supplies stable geometry.
+- `callSubject` and `callSemantics` interpret captured flow descriptors, with
+  compatibility for older records. `CallMetadata` names their descriptor fields.
+- `spanMatches`, `traceFiltersFor`, `isTraceFilter`, and `TRACE_FILTER_IDS` own
+  the shared filter vocabulary. `TraceFilter` and `TraceView` type that state.
+- `JournalRecord`, `TraceRun`, `TraceOptions`, `TraceSpan`, `SpanKind`,
+  `SpanStatus`, `SpanDetail`, `TraceExtent`, `PhaseId`, `PhaseBand`, `Milestone`,
+  `TraceOwner`, `FrameLine`, `TraceNote`, and `TurnNarrative` describe the
+  projection. `TraceBuilder` is the mutable draft used while folding, never a
+  persisted graph or a second execution model.
+
+## `EngineTrace`
+
+`@smthrs/gateway/EngineTrace` decodes native journal envelopes through the
+contracts that wrote them. `engineTraceFromJournal(records)` produces spans;
+`engineExecutionEvidence(records)` returns typed `EngineExecutionEvidence` for
+result projections. `engineRunEvidence(records, rootId, cursorSeq?)` limits
+facts to recorded ancestry and the inspection cursor. `engineProjectionPending`
+reports unfinished observation independently of the run's terminal verdict.

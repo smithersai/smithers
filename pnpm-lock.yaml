@@ -1683,6 +1683,9 @@ importers:
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/flow
+      '@smthrs/gateway':
+        specifier: workspace:*
+        version: link:../../packages/smithers/gateway
       '@smthrs/harness':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/harness

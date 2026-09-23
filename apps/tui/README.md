@@ -42,6 +42,7 @@ providers this machine can reach. Print mode runs a task directly.
 | Ctrl+P, Shift+Ctrl+P | Next, previous model |
 | Shift+Tab | Cycle reasoning effort |
 | Ctrl+O | Expand cell code, output, diffs, and the key list |
+| Ctrl+T | Inspect the run timeline; arrows scrub, Home/End jump, Esc returns to live |
 | Ctrl+S | Open summary / switch focus between the view and chat |
 | Ctrl+Left, Ctrl+Right | Switch Chat, Summary, worker tabs, and custom views |
 | hjkl or arrows | In a view: move between rows, collapse/expand details |
@@ -72,6 +73,11 @@ brand bar on a filled panel. Each cell is a left bar colored by status with
 one row per flow call (`→ read`, `$ ran`, `← edited`); an edit draws its diff.
 The Summary view keeps cell code behind expandable rows. Panels, dialogs, and the
 completion menu follow opencode's shapes; fuzzy matching is pi's.
+
+The bottom timeline shows recorded phases, edits, stalls, and verification
+receipts. It follows running workers while chat stays usable. Inspection reads
+the journal up to the selected event, so later results do not appear early.
+Restoring a session reconstructs the same timeline from its saved events.
 
 ## Context and sessions
 

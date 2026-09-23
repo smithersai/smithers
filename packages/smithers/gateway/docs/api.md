@@ -449,3 +449,35 @@ A controllable in-memory supervision runtime for tests.
 | `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
 
 See [Test against a real gateway](./guides/testing.md).
+
+## `RunTrace`
+
+The pure journal projection shared by the app and terminal monitors. Import
+`@smthrs/gateway/RunTrace`; it requires no server or filesystem. Records without
+evidence do not acquire invented phases, successful checks, or file changes.
+
+- `traceFromJournal(run, records, options?)` builds a `TraceModel`: nested
+  spans, frame summaries, phase bands, milestone pins, and discipline notes.
+- `turnNarratives(model)` derives concise recorded turn text. `spanPath(model,
+  id)` finds recorded ancestry. `durationWords(ms)` formats elapsed time.
+- `waterfallGeometry`, `phaseExtent`, and `phaseBandGeometry` calculate layout
+  from recorded time. Historical inspection folds a journal prefix while the
+  full trace supplies stable geometry.
+- `callSubject` and `callSemantics` interpret captured flow descriptors, with
+  compatibility for older records. `CallMetadata` names their descriptor fields.
+- `spanMatches`, `traceFiltersFor`, `isTraceFilter`, and `TRACE_FILTER_IDS` own
+  the shared filter vocabulary. `TraceFilter` and `TraceView` type that state.
+- `JournalRecord`, `TraceRun`, `TraceOptions`, `TraceSpan`, `SpanKind`,
+  `SpanStatus`, `SpanDetail`, `TraceExtent`, `PhaseId`, `PhaseBand`, `Milestone`,
+  `TraceOwner`, `FrameLine`, `TraceNote`, and `TurnNarrative` describe the
+  projection. `TraceBuilder` is the mutable draft used while folding, never a
+  persisted graph or a second execution model.
+
+## `EngineTrace`
+
+`@smthrs/gateway/EngineTrace` decodes native journal envelopes through the
+contracts that wrote them. `engineTraceFromJournal(records)` produces spans;
+`engineExecutionEvidence(records)` returns typed `EngineExecutionEvidence` for
+result projections. `engineRunEvidence(records, rootId, cursorSeq?)` limits
+facts to recorded ancestry and the inspection cursor. `engineProjectionPending`
+reports unfinished observation independently of the run's terminal verdict.

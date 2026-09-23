@@ -7,6 +7,7 @@
  * settlement attach to that same cell.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Activity from "./activity.ts"
 import * as Changes from "./changes.ts"
 import type * as Shell from "./shell.ts"
 
@@ -80,6 +81,7 @@ export type Item = (
 }
 
 export interface Transcript {
+  readonly activity?: Activity.Activity
   readonly items: ReadonlyArray<Item>
   /** Latest Jev reading for this run; absent when no context assessment exists. */
   readonly contextAssessment?: { readonly scope: string; readonly frame: number; readonly outdated: boolean; readonly irrelevant: boolean }
@@ -122,7 +124,7 @@ const withId = (transcript: Transcript, item: Unsaved, at?: number): Transcript 
 })
 
 export const user = (transcript: Transcript, text: string, queued = false, at?: number): Transcript =>
-  withId(transcript, queued ? { kind: "user", text, queued } : { kind: "user", text }, at)
+  withId(queued ? transcript : { ...transcript, activity: Activity.empty }, queued ? { kind: "user", text, queued } : { kind: "user", text }, at)
 
 /** The id the next added item will get. */
 export const nextId = (transcript: Transcript): string => String(transcript.nextId)
@@ -158,7 +160,9 @@ export const note = (transcript: Transcript, text: string, at?: number): Transcr
   withId(transcript, { kind: "note", text }, at)
 
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
-  withId(settleOpen(transcript, at, "failed"), { kind: "error", text }, at)
+  withId({ ...settleOpen(transcript, at, "failed"),
+    activity: Activity.finish(transcript.activity ?? Activity.empty, text === "Stopped" ? "cancelled" : "failed", at, text)
+  }, { kind: "error", text }, at)
 
 /**
  * Splits a reply into the prose around its fences and the program inside
@@ -327,6 +331,13 @@ const started = (call: AgentEvent.CellCallStarted["call"], at: number): Call => 
 
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
+  if (event._tag === "supervisor-settled" && transcript.contextAssessment?.scope === event.scope &&
+    transcript.contextAssessment.frame > event.frame) return transcript
+  const activity = Activity.apply(transcript.activity ?? Activity.empty, event, at)
+  return applyEvent(activity === transcript.activity ? transcript : { ...transcript, activity }, event, at)
+}
+
+const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
   switch (event._tag) {
     case "supervisor-settled":
       if (transcript.contextAssessment?.scope === event.scope && transcript.contextAssessment.frame > event.frame) return transcript

@@ -49,7 +49,9 @@
     "./index": "./src/index.ts",
     "./node/NodeGateway": "./src/node/NodeGateway.ts",
     "./test/TestSuperviseRuntime": "./src/test/TestSuperviseRuntime.ts",
-    "./bun/BunGateway": "./src/bun/BunGateway.ts"
+    "./bun/BunGateway": "./src/bun/BunGateway.ts",
+    "./RunTrace": "./src/RunTrace.ts",
+    "./EngineTrace": "./src/EngineTrace.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -208,6 +210,26 @@
         "require": {
           "types": "./dist/cjs/bun/BunGateway.d.ts",
           "default": "./dist/cjs/bun/BunGateway.js"
+        }
+      },
+      "./RunTrace": {
+        "import": {
+          "types": "./dist/esm/RunTrace.d.ts",
+          "default": "./dist/esm/RunTrace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/RunTrace.d.ts",
+          "default": "./dist/cjs/RunTrace.js"
+        }
+      },
+      "./EngineTrace": {
+        "import": {
+          "types": "./dist/esm/EngineTrace.d.ts",
+          "default": "./dist/esm/EngineTrace.js"
+        },
+        "require": {
+          "types": "./dist/cjs/EngineTrace.d.ts",
+          "default": "./dist/cjs/EngineTrace.js"
         }
       }
     }

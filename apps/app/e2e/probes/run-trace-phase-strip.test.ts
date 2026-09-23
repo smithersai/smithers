@@ -12,7 +12,7 @@ beforeAll(async () => {
   if (status !== 0) throw new Error(`Trace browser fixture did not build: ${errors}`)
   const font = await readFile(Bun.resolveSync("@fontsource/inter/files/inter-latin-400-normal.woff2", import.meta.dir))
   const styles = `@font-face{font-family:Inter;font-weight:400;src:url(data:font/woff2;base64,${font.toString("base64")}) format('woff2')}` +
-    (await Promise.all(["tokens", "base", "cards"].map((name) =>
+    (await Promise.all(["tokens", "base", "cards", "chat"].map((name) =>
       readFile(new URL(`../../src/mainview/styles/${name}.css`, import.meta.url), "utf8")))).join("\n")
   server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) => {
     const path = new URL(request.url).pathname
@@ -21,14 +21,17 @@ beforeAll(async () => {
   } })
   browser = await chromium.launch()
 }, 30000)
-afterAll(async () => { await browser?.close(); await server?.stop(true) })
+afterAll(async () => {
+  try { await browser?.close() }
+  finally { await server?.stop(true) }
+}, 15_000)
 
 const open = async (scenario: string): Promise<Page> => {
   const page = await browser.newPage({ viewport: { width: 1100, height: 1000 } })
   page.on("pageerror", (error) => console.error(error))
   page.setDefaultTimeout(10000)
   await page.goto(`${server.url}?scenario=${scenario}`)
-  await page.locator(".run-phases").waitFor()
+  await page.locator(".run-phases").first().waitFor()
   await page.evaluate(() => document.fonts.ready)
   return page
 }
@@ -36,6 +39,37 @@ const cursor = (page: Page) => page.evaluate(() => String(window.runTraceBrowser
 const settled = async (page: Page, seq: string) => {
   await page.waitForFunction((value) => String(window.runTraceBrowser?.cursor) === value, seq)
 }
+
+test("chat keeps the monitor in view, the composer usable, and the shared cursor durable", async () => {
+  const page = await open("chat")
+  try {
+    const dock = page.getByTestId("chat-run-timeline")
+    const slider = dock.getByRole("slider", { name: "Run position" })
+    await slider.focus()
+    await page.keyboard.press("Home")
+    await settled(page, "1")
+    expect(await page.evaluate(() => window.runTraceBrowser.commands.at(-1)?.args)).toContain("sourceCard=flow-run-strip-browser")
+    const shape = await dock.locator("[data-phase-band]").evaluateAll(nodes => nodes.map(node => node.getAttribute("style")))
+    await page.evaluate(() => window.runTraceBrowser.appendMilestone())
+    expect(await cursor(page)).toBe("1")
+    await page.getByRole("textbox", { name: "Chat" }).fill("Keep checking the tests")
+    expect(await page.getByRole("textbox", { name: "Chat" }).inputValue()).toBe("Keep checking the tests")
+    await page.reload()
+    await settled(page, "1")
+    expect(await dock.locator("[data-phase-band]").evaluateAll(nodes => nodes.map(node => node.getAttribute("style")))).toEqual(shape)
+    await dock.getByRole("button", { name: "Latest", exact: true }).click()
+    await settled(page, "latest")
+    for (const width of [360, 900]) {
+      await page.setViewportSize({ width: width + 48, height: 740 })
+      await page.locator("#fixture").evaluate((node, width) => { node.style.width = `${width}px` }, width)
+      const bounds = await dock.boundingBox()
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width + 48)
+      expect(bounds!.y + bounds!.height).toBeLessThan(740)
+      expect(await dock.evaluate(node => node.scrollWidth <= node.clientWidth)).toBe(true)
+      if (process.env.STRIP_EVIDENCE_DIR) await page.screenshot({ path: `${process.env.STRIP_EVIDENCE_DIR}/chat-${width}.png` })
+    }
+  } finally { await page.close() }
+}, 30000)
 
 test("rendered milestone labels fit without intersections at 360, 400 and 900 pixels, including a resize", async () => {
   const page = await open("labels")

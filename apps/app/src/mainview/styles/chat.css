@@ -1272,3 +1272,21 @@
 /* The unknown-repository arrival is a single opening notice. */
 .app-shell .smithers-transcript[data-repository-missing] .sui-chat-messages > :first-child { margin-top: 0; }
 /* Lesson lines are centered; conversation bubbles retain normal reading alignment. */
+.chat-run-timeline {
+  flex: none;
+  width: min(100%, 72rem);
+  align-self: center;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-5) var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.chat-run-timeline-heading { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.chat-run-timeline-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); font-size: var(--fs-small); }
+.chat-run-timeline .run-outcome { margin: 0 0 0 auto; min-width: 0; flex-wrap: wrap; }
+.chat-run-timeline .run-phase-members { top: auto; bottom: 100%; }
+@media (max-width: 600px) {
+  .chat-run-timeline { padding-inline: var(--sp-3); }
+  .chat-run-timeline-heading { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+  .chat-run-timeline .run-outcome { font-size: var(--fs-small); }
+}

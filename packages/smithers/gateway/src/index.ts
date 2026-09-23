@@ -27,6 +27,16 @@ export * as Diagnosis from "./Diagnosis.ts"
 /**
  * @since 1.0.0 @category projections
  */
+export * as RunTrace from "./RunTrace.ts"
+
+/**
+ * @since 1.0.0 @category projections
+ */
+export * as EngineTrace from "./EngineTrace.ts"
+
+/**
+ * @since 1.0.0 @category projections
+ */
 export * as GatewayProjection from "./GatewayProjection.ts"
 
 /**

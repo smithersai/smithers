@@ -23,6 +23,7 @@
     "@smthrs/cli": "workspace:*",
     "@smthrs/engine": "workspace:*",
     "@smthrs/flow": "workspace:*",
+    "@smthrs/gateway": "workspace:*",
     "@smthrs/harness": "workspace:*",
     "@smthrs/kernel": "workspace:*",
     "@smthrs/model": "workspace:*",

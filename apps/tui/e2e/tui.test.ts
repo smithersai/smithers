@@ -49,6 +49,7 @@ const start = async (
     readonly args?: string
     readonly cwd?: string
     readonly sessions?: string
+    readonly cols?: number
     /** `all` unless a case is about approvals, so replays test what they test. */
     readonly approve?: "ask" | "all" | "deny"
   } = {}
@@ -57,6 +58,7 @@ const start = async (
   const sessions = options.sessions ?? mkdtempSync(join(tmpdir(), "tui-sessions-"))
   tui = await Tui.start({
     cwd,
+    cols: options.cols,
     command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${options.args ?? ""}`,
     env: {
       PATH: process.env.PATH ?? "",
@@ -168,13 +170,30 @@ describe("! shell commands", () => {
 })
 
 describe("turns", () => {
-  it("replays a whole recorded turn: cells stream, flows run, the answer lands", async () => {
-    const { tui, cwd } = await start()
+  it.each([40, 110])("replays a whole recorded turn at %i columns: cells stream, flows run, the answer lands", async (cols) => {
+    const { tui, cwd } = await start({ cols })
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
     await tui.until((screen) => /[●⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] (writing|cell)/.test(screen), 20_000, "first cell")
     await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
+    await tui.until(screen => screen.includes("ctrl+t timeline"), 5_000, "recorded timeline")
+    await tui.press("\x14")
+    await tui.until(screen => screen.includes("esc live"), 5_000, "timeline focus")
+    await tui.press("\x1b[H")
+    await tui.until(screen => screen.includes("#1 "), 5_000, "first journal position")
+    await tui.press("\x1b[F")
+    await tui.press("\x13")
+    await tui.until(screen => screen.includes("hjkl/"), 5_000, "summary keyboard focus")
+    await tui.press(key.escape)
+    await tui.until(screen => screen.includes("esc live"), 5_000, "summary handles Escape and restores the chat timeline")
+    await tui.press(key.escape)
+    await tui.type("keep the composer usable")
+    const inspected = await tui.until(screen => /┃\s+keep the composer usable/.test(screen), 5_000, "chat after inspection")
+    if (process.env.STRIP_EVIDENCE_DIR) {
+      writeFileSync(join(process.env.STRIP_EVIDENCE_DIR, `terminal-${cols}.txt`), inspected)
+      writeFileSync(join(process.env.STRIP_EVIDENCE_DIR, `terminal-${cols}.html`), tui.html())
+    }
   }, 180_000)
 
   it("folds a finished cell's code and what it printed until ctrl+o", async () => {

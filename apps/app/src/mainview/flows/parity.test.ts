@@ -345,6 +345,7 @@ describe("launch-law parity: every affordance is a command", () => {
        * cards/ and is pinned there.
        */
       "../ChatCards.tsx": 10,
+      "../ChatRunTimeline.tsx": 1,
       /* The turn's approval card: approve and deny. */
       "../cards/ApprovalCard.tsx": 2,
       /*

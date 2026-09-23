@@ -29,6 +29,8 @@ import * as Steering from "./steering.ts"
 import * as Summary from "./summary.ts"
 import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
+import * as Activity from "./activity.ts"
+import { ActivityView } from "./activity-view.tsx"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
@@ -223,6 +225,7 @@ export function App(props: AppProps) {
   const [panelFocus, setPanelFocus] = useState(false)
   const [navigation, setNavigation] = useState(Panels.initial)
   const [filter, setFilter] = useState(Timeline.all)
+  const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
   const snapshot = workspace.snapshot()
@@ -256,6 +259,23 @@ export function App(props: AppProps) {
     ],
     filter
   )
+  const activitySources = [
+    { id: "chat", title: "Chat", activity: transcript.activity },
+    ...snapshot.tabs.map(tab => ({ id: tab.id, title: tab.title, activity: workspace.transcript(tab.id).activity }))
+  ].filter((source): source is { id: string; title: string; activity: Activity.Activity } =>
+    source.activity !== undefined && source.activity.records.length > 0)
+  const latestActivity = [...activitySources].sort((a, b) =>
+    (b.activity.records.at(-1)?.occurredAt ?? 0) - (a.activity.records.at(-1)?.occurredAt ?? 0))
+  // A new turn or restored session cannot inherit a cursor from an old turn.
+  const pinnedActivity = activitySources.find(source => source.id === inspection?.source &&
+    source.activity.records[0] === inspection.first)
+  const monitored = (surface.startsWith("tab:") ? activitySources.find(source => source.id === surface.slice(4)) : pinnedActivity)
+    ?? latestActivity.find(source => source.activity.status === "running") ?? latestActivity[0]
+  const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
+  const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
+  const inspectActivity = (seq: number) => {
+    if (monitored !== undefined) { setPanelFocus(false); setInspection({ source: monitored.id, seq, first: monitored.activity.records[0]! }) }
+  }
   const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
@@ -887,6 +907,19 @@ export function App(props: AppProps) {
   useKeyboard((key: KeyEvent) => {
     const { turn: running, shell: shellRunning, picker: open, menu: completing } = live.current
     const text = composer.current?.plainText ?? ""
+    if (key.ctrl && key.name === "t" && showActivity && monitored !== undefined && open === undefined) {
+      key.preventDefault()
+      if (activeInspection !== undefined) setInspection(undefined)
+      else inspectActivity(monitored.activity.records.at(-1)!.sequence!)
+      return
+    }
+    if (activeInspection !== undefined && monitored !== undefined && open === undefined &&
+      !key.ctrl && !key.meta && !key.option && ["left", "right", "up", "down", "home", "end", "escape", "return"].includes(key.name)) {
+      key.preventDefault()
+      if (key.name === "escape" || key.name === "return") setInspection(undefined)
+      else inspectActivity(Activity.move(monitored.activity, activeInspection.seq, key.name)!)
+      return
+    }
     if (key.ctrl && key.name === "c") {
       key.preventDefault()
       const at = Date.now()
@@ -1101,6 +1134,9 @@ export function App(props: AppProps) {
                 : null}
             </scrollbox>
           )}
+        {!showActivity || monitored === undefined ? null :
+          <ActivityView activity={monitored.activity} width={width} now={now} title={monitored.title}
+            focused={activeInspection !== undefined} cursor={activeInspection?.seq} onSelect={inspectActivity} />}
         {followUps.length === 0 ? null : (
           <box style={{ marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
             {followUps.map((text, index) => <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>)}
