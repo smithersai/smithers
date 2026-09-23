@@ -374,18 +374,13 @@ const scenarios: Readonly<Record<string, Scenario>> = {
         // anything the model remembers about them. One model call for the whole
         // task is what the guard buys.
         //
-        // The re-check names `only: "one"` rather than repeating the baseline's
-        // input verbatim because this suite's engine is the real one: `check`
-        // is hermetic and sealed, so a second call with an identical input is
-        // served from its durable boundary instead of run, which is the
-        // property `read-only-cap-stops-a-reading-run` pins. Rule 7's
-        // identical-command discipline is proved against a real unhermetic
-        // command in `packages/smithers/agent/harness/test/ReplTurn.test.ts`; what this case
-        // proves is the guard.
+        // A declared write advances the live-tree epoch, so the identical
+        // sealed check runs again against the changed tree. Without that
+        // epoch the first failure would replay and this guard could not pass.
         respond: () =>
           `const before = await ctx.call("check", { command: "verify a/b.py" })
            await ctx.call("apply", { path: "a/b.py" })
-           const after = await ctx.call("check", { command: "verify a/b.py", only: "one" })
+           const after = await ctx.call("check", { command: "verify a/b.py" })
            if (before.exitCode !== 0 && after.exitCode === 0) ctx.done("verify a/b.py failed before the write and exits 0 after it")`,
         maxFrames: 4,
         flows: [Subject.checkSource(recorder)]
@@ -394,7 +389,7 @@ const scenarios: Readonly<Record<string, Scenario>> = {
     expected: answered("verify a/b.py failed before the write and exits 0 after it", 1, [
       "check",
       "apply",
-      "check:one"
+      "check"
     ])
   },
 
@@ -420,9 +415,9 @@ const scenarios: Readonly<Record<string, Scenario>> = {
         flows: [Subject.checkSource(recorder)]
       })
     },
-    // Two `check:green` calls, one handler run: the second names the identical
-    // input, so the engine serves it from the boundary the first one settled.
-    expected: answered("the baseline was already green", 2, ["check:green", "apply"])
+    // The write advances the live-tree epoch, so both identical checks run.
+    // Their green results still cannot satisfy the failed-before guard.
+    expected: answered("the baseline was already green", 2, ["check:green", "apply", "check:green"])
   },
 
   "checkpoint-mint-is-refused-catchably-without-a-store": {
