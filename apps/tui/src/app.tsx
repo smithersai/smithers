@@ -39,7 +39,7 @@ import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
-import { type Tab, Workspace } from "./workspace.ts"
+import { type Tab, tabToast, Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -1658,9 +1658,7 @@ export function App(props: AppProps) {
             id: tab.id,
             text: `${
               tab.status === "running" || tab.status === "requested" ? tick : tab.status === "done" ? "✓" : "✗"
-            } ${tab.title} · ${
-              approvals.some((request) => request.source === tab.id) ? "approval" : tab.status
-            }`,
+            } ${approvals.some((request) => request.source === tab.id) ? `${tab.title} · approval` : tabToast(tab)}`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
           ...flowRuns.filter((run) =>

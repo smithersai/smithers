@@ -41,7 +41,8 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
     },
     handler: (input) =>
       Effect.try({
-        try: () => handle(input),
+        // Optional fields arrive as `undefined`, which a cell result cannot carry.
+        try: () => JSON.parse(JSON.stringify(handle(input) ?? null)) as unknown,
         catch: (cause) => new Error(cause instanceof Error ? cause.message : "Runtime request failed")
       }),
     publicError: (error) => error.message

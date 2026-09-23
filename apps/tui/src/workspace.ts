@@ -48,18 +48,35 @@ export class Workspace {
   ) {
     for (const tab of options.restored?.tabs ?? []) {
       let records: ReadonlyArray<Session.Record> = []
+      let transcript: Transcript.Transcript | undefined
       try {
         records = Session.load(tab.file)
-        this.transcripts.set(tab.id, Session.restore(records).transcript)
+        transcript = Session.restore(records).transcript
       } catch { /* A persisted request can precede creation of its worker file. */ }
+      let settled = tab
       if (tab.status === "running" || tab.status === "requested") {
-        // Prefer a real worker completion receipt if the process exited before the parent saved it.
+        // Prefer the worker's own receipt if the process exited before the parent saved it.
         const receipt = records.findLast((record) => record.type === "outcome")
-        const recovered: Tab = receipt?.type === "outcome" && receipt.outcome._tag === "done"
-          ? { ...tab, status: "done", answer: receipt.outcome.answer ?? "", endedAt: receipt.at }
-          : { ...tab, status: "failed", message: "Interrupted; retry to continue.", endedAt: Date.now() }
-        this.save(recovered)
-      } else this.tabs.set(tab.id, tab)
+        const outcome = receipt?.type === "outcome" ? receipt.outcome : undefined
+        settled = receipt === undefined || outcome === undefined
+          ? { ...tab, status: "failed", message: "Interrupted; retry to continue.", endedAt: Date.now() }
+          : outcome._tag === "done"
+          ? { ...tab, status: "done", answer: outcome.answer ?? "", endedAt: receipt.at }
+          : outcome._tag === "cancelled"
+          ? { ...tab, status: "cancelled", endedAt: receipt.at }
+          : { ...tab, status: "failed", message: outcome.message ?? "Failed", endedAt: receipt.at }
+      }
+      // A worker whose host died has no outcome in its file; its timeline must not stay live.
+      if (transcript !== undefined && settled.status !== "done" && transcript.activity?.status === "running") {
+        transcript = Transcript.failure(
+          transcript,
+          settled.status === "cancelled" ? "Stopped" : settled.message ?? "Failed",
+          settled.endedAt ?? Date.now()
+        )
+      }
+      if (transcript !== undefined) this.transcripts.set(tab.id, transcript)
+      if (settled === tab) this.tabs.set(tab.id, tab)
+      else this.save(settled)
     }
     for (const panel of options.restored?.panels ?? []) this.panels.set(panel.id, panel)
   }
@@ -181,10 +198,20 @@ export class Workspace {
             ? { message: outcome.message }
             : {})
         })
-      }).catch((error) => this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: Date.now(), message: String(error) }))
+      }).catch((error) => this.fail(tab, writer, String(error)))
     } catch (error) {
-      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: Date.now(), message: String(error) })
+      this.fail(tab, writer, String(error))
     }
+  }
+  /** Settles the tab, its timeline and its worker file as failed. */
+  private fail(tab: Tab, writer: Session.Writer, message: string) {
+    this.handles.delete(tab.id)
+    const at = Date.now()
+    try {
+      writer.append({ type: "outcome", at, prompt: tab.prompt, outcome: { _tag: "failed", message } })
+    } catch { /* The tab row still settles when the worker file cannot be written. */ }
+    this.transcripts.set(tab.id, Transcript.failure(this.transcript(tab.id), message, at))
+    this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: at, message })
   }
   /** Records an undo of a tab's calls in its own file and transcript. */
   undone = (id: string, calls: ReadonlyArray<string>, paths: ReadonlyArray<string>, at: number): void => {
@@ -264,3 +291,8 @@ export class Workspace {
     for (const id of this.tabs.keys()) this.cancel(id)
   }
 }
+/** A tab's toast text after its glyph. */
+export const tabToast = (tab: Tab): string =>
+  `${tab.title} · ${
+    tab.status === "failed" && tab.message !== undefined ? tab.message.split("\n")[0]!.slice(0, 80) : tab.status
+  }`
