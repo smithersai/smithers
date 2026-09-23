@@ -24,7 +24,7 @@ import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, sep } from "node:path"
+import { join, normalize, sep } from "node:path"
 import * as DisasterRecovery from "../src/DisasterRecovery.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -585,8 +585,8 @@ describe("restore", () => {
       const target = join(base, "restored")
       const restored = yield* run(DisasterRecovery.restore({ backupDirectory, targetDirectory: target }))
 
-      expect(restored.databaseFile).toBe(join(target, DisasterRecovery.databaseFileName))
-      expect(restored.objectsDirectory).toBe(join(target, DisasterRecovery.objectsDirectoryName))
+      expect(normalize(restored.databaseFile)).toBe(join(target, DisasterRecovery.databaseFileName))
+      expect(normalize(restored.objectsDirectory)).toBe(join(target, DisasterRecovery.objectsDirectoryName))
       expect(restored.manifest).toEqual(manifest)
       expect(sha256(readFileSync(restored.databaseFile))).toBe(manifest.database.sha256)
       expect(sha256(readFileSync(join(restored.objectsDirectory, digest.slice(0, 2), digest)))).toBe(digest)
