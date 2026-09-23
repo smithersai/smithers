@@ -14,7 +14,7 @@ export interface Tab {
   readonly prompt: string
   readonly seat: string
   readonly file: string
-  readonly status: "requested" | "running" | "done" | "failed" | "cancelled"
+  readonly status: "queued" | "requested" | "running" | "done" | "failed" | "cancelled"
   readonly startedAt: number
   readonly endedAt?: number
   readonly message?: string
@@ -30,7 +30,12 @@ export interface Snapshot {
   readonly tabs: ReadonlyArray<Tab>
   readonly panels: ReadonlyArray<Panels.Panel>
 }
+/** Concurrent worker seats; later requests wait FIFO in `queued`. */
+export const seats = 3
+const active = (tab: Tab): boolean => tab.status === "running" || tab.status === "requested"
+const settled = (tab: Tab): boolean => tab.status === "done" || tab.status === "failed" || tab.status === "cancelled"
 export class Workspace {
+  private queue: Array<{ readonly id: string; readonly writer: Session.Writer; readonly history: ReadonlyArray<Context.Entry> }> = []
   private tabs = new Map<string, Tab>()
   private panels = new Map<string, Panels.Panel>()
   private transcripts = new Map<string, Transcript.Transcript>()
@@ -54,7 +59,7 @@ export class Workspace {
         transcript = Session.restore(records).transcript
       } catch { /* A persisted request can precede creation of its worker file. */ }
       let settled = tab
-      if (tab.status === "running" || tab.status === "requested") {
+      if (tab.status === "running" || tab.status === "requested" || tab.status === "queued") {
         // Prefer the worker's own receipt if the process exited before the parent saved it.
         const receipt = records.findLast((record) => record.type === "outcome")
         const outcome = receipt?.type === "outcome" ? receipt.outcome : undefined
@@ -91,12 +96,24 @@ export class Workspace {
   }
   snapshot = (): Snapshot => ({ tabs: [...this.tabs.values()], panels: [...this.panels.values()] })
   get busy(): boolean {
-    return [...this.tabs.values()].some((tab) => tab.status === "running" || tab.status === "requested")
+    return [...this.tabs.values()].some((tab) => active(tab) || tab.status === "queued")
   }
   private save(tab: Tab) {
     this.options.persist({ type: "tab", tab })
     this.tabs.set(tab.id, tab)
     this.changed()
+    if (settled(tab)) this.drain()
+  }
+  /** Starts queued requests, oldest first, while a seat is free. */
+  private drain() {
+    while (!this.closed && this.queue.length > 0 && [...this.tabs.values()].filter(active).length < seats) {
+      const next = this.queue.shift()!
+      const tab = this.tabs.get(next.id)
+      if (tab?.status !== "queued" || tab.file !== next.writer.file) continue
+      const requested: Tab = { ...tab, status: "requested" }
+      this.save(requested)
+      queueMicrotask(() => this.launch(requested, next.writer, next.history))
+    }
   }
   publish = (value: Panels.Panel): void => {
     const panel = Panels.decode(value)
@@ -116,23 +133,21 @@ export class Workspace {
         : delegateModels[request.model])) throw new Error("Request id already belongs to another task")
       return { id: existing.id, status: existing.status }
     }
-    if ([...this.tabs.values()].filter((tab) => tab.status === "running" || tab.status === "requested").length >= 3) {
-      throw new Error("Three workers are active; wait for a completion")
-    }
     const writer = Session.create(this.options.host.cwd, "worker")
     const tab: Tab = {
       ...request,
       seat: request.model === undefined ? this.options.workerSeat : delegateModels[request.model],
       file: writer.file,
-      status: "requested",
+      status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
       startedAt: Date.now()
     }
     // Persist FIRST; a receipt here acknowledges only the request, not the launch.
     this.save(tab)
     void this.describe(tab)
     const history = [...this.options.history()]
-    queueMicrotask(() => this.launch(tab, writer, history))
-    return { id: tab.id, status: "requested" }
+    if (tab.status === "queued") this.queue.push({ id: tab.id, writer, history })
+    else queueMicrotask(() => this.launch(tab, writer, history))
+    return { id: tab.id, status: tab.status }
   }
   private async describe(tab: Tab): Promise<void> {
     let description = tab.title.replace(/\s+/g, " ").trim().slice(0, 80)
@@ -257,6 +272,8 @@ export class Workspace {
         ? Summary.sentence(tab.answer ?? panel.summary)
         : tab?.status === "requested"
         ? "Requested."
+        : tab?.status === "queued"
+        ? "Queued."
         : tab?.status === "cancelled"
         ? "Stopped."
         : panel.summary)
@@ -274,15 +291,12 @@ export class Workspace {
     )
   cancel = (id: string): void => {
     const tab = this.tabs.get(id)
-    if (tab?.status === "requested") this.save({ ...tab, status: "cancelled", endedAt: Date.now() })
+    if (tab?.status === "requested" || tab?.status === "queued") this.save({ ...tab, status: "cancelled", endedAt: Date.now() })
     else this.handles.get(id)?.cancel()
   }
   retry = (id: string): void => {
     const tab = this.tabs.get(id)
     if (tab === undefined || (tab.status !== "failed" && tab.status !== "cancelled")) return
-    if ([...this.tabs.values()].filter((row) => row.status === "running" || row.status === "requested").length >= 3) {
-      throw new Error("Three workers are active")
-    }
     this.tabs.delete(id)
     this.request({ id, title: tab.title, prompt: tab.prompt })
   }

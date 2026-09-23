@@ -352,6 +352,88 @@ describe("background work", () => {
     expect(f.launched()).toBe(0)
     expect(f.workspace.read("fix").status).toBe("cancelled")
   })
+  describe("seat queue", () => {
+    // Three seats; each launch gets its own settle handle so tests complete a specific worker.
+    const seats = (refuse: (prompt: string) => boolean = () => false) => {
+      const settle = new Map<string, (outcome: Host.Outcome) => void>()
+      const started: string[] = []
+      const f = setup((input) => {
+        if (refuse(input.prompt)) throw new Error("Launch refused")
+        started.push(input.source!)
+        return {
+          done: new Promise<Host.Outcome>((done) => { settle.set(input.source!, done) }),
+          cancel: () => settle.get(input.source!)?.({ _tag: "cancelled" })
+        }
+      })
+      const job = (id: string) => ({ id, title: `Job ${id}`, prompt: `Do ${id}.` })
+      return { ...f, settle, started, job }
+    }
+    it("acknowledges a fourth delegation as queued at once and starts it when a seat frees", async () => {
+      const f = seats()
+      for (const id of ["a", "b", "c"]) f.workspace.request(f.job(id))
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c"])
+      expect(f.workspace.request(f.job("d"))).toEqual({ id: "d", status: "queued" })
+      expect(f.records.findLast((record) => record.type === "tab")).toMatchObject({ tab: { id: "d", status: "queued" } })
+      expect(f.workspace.read("d").status).toBe("queued")
+      expect(f.workspace.panel("d").summary).toBe("Queued.")
+      expect(f.workspace.busy).toBe(true)
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c"])
+      f.settle.get("b")!({ _tag: "done", answer: "B done" })
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c", "d"])
+      expect(f.workspace.read("d").status).toBe("running")
+      expect(f.workspace.read("b").status).toBe("done")
+      f.workspace.dispose()
+    })
+    it("starts queued work in request order and dedupes a repeated queued id", async () => {
+      const f = seats()
+      for (const id of ["a", "b", "c", "d", "e"]) f.workspace.request(f.job(id))
+      const before = f.records.length
+      expect(f.workspace.request(f.job("d"))).toEqual({ id: "d", status: "queued" })
+      expect(f.records).toHaveLength(before)
+      expect(f.workspace.snapshot().tabs.map((tab) => tab.id)).toEqual(["a", "b", "c", "d", "e"])
+      await tick()
+      f.settle.get("a")!({ _tag: "done", answer: "A" })
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c", "d"])
+      expect(f.workspace.read("e").status).toBe("queued")
+      f.settle.get("c")!({ _tag: "failed", message: "C broke", detail: "C broke" })
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c", "d", "e"])
+      f.workspace.dispose()
+    })
+    it("settles a queued delegation failed when its start fails and moves on to the next", async () => {
+      const f = seats((prompt) => prompt === "Do d.")
+      for (const id of ["a", "b", "c", "d", "e"]) f.workspace.request(f.job(id))
+      await tick()
+      f.settle.get("a")!({ _tag: "done", answer: "A" })
+      await tick()
+      await tick()
+      expect(f.workspace.read("d")).toMatchObject({ status: "failed", message: "Error: Launch refused" })
+      expect(f.started).toEqual(["a", "b", "c", "e"])
+      expect(f.workspace.read("e").status).toBe("running")
+      f.workspace.dispose()
+    })
+    it("cancels queued work without starting it and retries into the queue when seats are full", async () => {
+      const f = seats()
+      for (const id of ["a", "b", "c", "d"]) f.workspace.request(f.job(id))
+      await tick()
+      f.workspace.cancel("d")
+      expect(f.workspace.read("d").status).toBe("cancelled")
+      f.settle.get("a")!({ _tag: "done", answer: "A" })
+      await tick()
+      expect(f.started).toEqual(["a", "b", "c"])
+      f.workspace.request(f.job("x"))
+      await tick()
+      expect(f.workspace.read("x").status).toBe("running")
+      f.workspace.retry("d")
+      expect(f.workspace.read("d").status).toBe("queued")
+      f.workspace.dispose()
+      expect(f.workspace.read("d").status).toBe("cancelled")
+    })
+  })
   it("restores custom UI and marks a lost local worker interrupted instead of claiming success", async () => {
     const f = setup()
     f.workspace.request(request)

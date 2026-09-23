@@ -330,6 +330,8 @@ export function App(props: AppProps) {
       title: `${
         tab.status === "running" || tab.status === "requested"
           ? "◌ "
+          : tab.status === "queued"
+          ? "… "
           : tab.status === "failed"
           ? "✗ "
           : tab.status === "done"
@@ -1397,7 +1399,9 @@ export function App(props: AppProps) {
     return () => { active = false }
   }, [props.host, transcript.usage.context, window, writer.current.file])
   const usage = transcript.usage
-  const activeTabs = snapshot.tabs.filter((tab) => tab.status === "requested" || tab.status === "running")
+  const activeTabs = snapshot.tabs.filter((tab) =>
+    tab.status === "queued" || tab.status === "requested" || tab.status === "running"
+  )
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
   const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
@@ -1659,7 +1663,13 @@ export function App(props: AppProps) {
           ).map((tab) => ({
             id: tab.id,
             text: `${
-              tab.status === "running" || tab.status === "requested" ? tick : tab.status === "done" ? "✓" : "✗"
+              tab.status === "running" || tab.status === "requested"
+                ? tick
+                : tab.status === "queued"
+                ? "…"
+                : tab.status === "done"
+                ? "✓"
+                : "✗"
             } ${approvals.some((request) => request.source === tab.id) ? `${tab.title} · approval` : tabToast(tab)}`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
