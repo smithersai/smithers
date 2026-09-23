@@ -1993,6 +1993,7 @@ export const createAppController = (
           ? activeCatalogRepositoryId(store) !== null
           : [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())),
         recent: store.session().recentCommands ?? [],
+        maximizedCardId: store.session().maximizedCardId ?? null,
         identity: identity === undefined
           ? "unknown"
           : identity.state === "signed-in"

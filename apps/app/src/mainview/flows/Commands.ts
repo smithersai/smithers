@@ -477,6 +477,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
       source: named !== undefined ? "form" as const : invoker === "system" ? "automatic" as const : "command" as const, invocation, httpCall }
     const gesture = inheritedGesture?.name === name ? inheritedGesture
       : invoker === "user" && find(name) !== undefined ? lifecycle?.reserveGesture?.(request, args, named) : undefined
+    // A new human command is a return to the transcript. A stale maximized
+    // card from an earlier session must not hide the card this command renders.
+    // The explicit card.minimize flow remains the single presentation seam.
+    if (invoker === "user" && actions.snapshot().maximizedCardId != null) actions.minimizeCard()
     // Only the human's local form edit has a synchronous recovery preparation.
     // Agent input waits for capability authorization in settle before dispatch.
     let pendingFormInput: PendingFormInput | undefined

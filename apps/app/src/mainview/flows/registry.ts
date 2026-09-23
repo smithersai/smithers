@@ -378,6 +378,8 @@ export interface CommandState {
    * recentCommands). Optional so state fixtures stay minimal; missing = [].
    */
   readonly recent?: ReadonlyArray<string>
+  /** The active card frame, when a prior command left the transcript maximized. */
+  readonly maximizedCardId?: string | null
   /**
    * The identity answer, human-readable ("signed-in as will", "signed-out",
    * "unavailable", "unknown") — the model's truthful "am I logged in?"

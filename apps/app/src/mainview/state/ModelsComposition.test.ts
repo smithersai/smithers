@@ -59,3 +59,20 @@ test("the model flows run through the registry, and a requested test survives a 
   expect(second.collections.models.get("mine")?.lastTest?.result).toEqual(passed)
   expect(modelsCard(second)?.payload.testing).toEqual([])
 })
+
+test("a user command restores the transcript before rendering over a stale maximized card", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
+  const answering = host()
+  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: answering.fetchImpl })
+
+  await controller.commands.run("model.save", "--name mine --protocol openai-chat --model qwen-3-coder-480b --credential CEREBRAS_API_KEY --url https://api.cerebras.ai")
+  await controller.commands.run("card.maximize", MODELS_CARD_ID)
+  expect(store.session().maximizedCardId).toBe(MODELS_CARD_ID)
+
+  await controller.commands.run("model.save", "--name second --protocol openai-chat --model qwen-3-coder-480b --credential CEREBRAS_API_KEY --url https://api.cerebras.ai")
+  expect(store.session().maximizedCardId).toBeNull()
+  expect(store.collections.models.has("second")).toBe(true)
+
+  await controller.dispose()
+  await store.dispose?.()
+})
