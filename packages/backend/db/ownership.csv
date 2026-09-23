@@ -228,6 +228,7 @@ flow_runtime_host_bindings,product,product migration 0008
 storage_sets,private,Plue placement migration 0001
 storage_nodes,private,Plue placement migration 0001
 repository_placements,private,Plue placement migration 0002
+workflow_run_coding_reconciliations,private,Plue coding reconciliation state
 owner_model_credentials,product,product migration 0009
 owner_model_defaults,product,product migration 0009
 owner_model_credential_receipts,product,product migration 0009
