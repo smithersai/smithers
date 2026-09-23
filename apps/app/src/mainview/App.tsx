@@ -22,6 +22,7 @@ import { SetupChecklist } from "./cards/SetupChecklist"
 import { SignupCards } from "./cards/SignupCards"
 import { signupOpening } from "./state/Signup"
 import { CardView } from "./ChatCards"
+import { ChatFilterMenu } from "./ChatFilterMenu"
 import { Composer } from "./Composer"
 import { ConnectorsSurface } from "./ConnectorsSurface"
 import { useController } from "./ControllerContext"
@@ -43,6 +44,8 @@ import { ConfirmDialog } from "./SurfaceChrome"
 import { TabBodies } from "./tabs/TabBodies"
 import { ToastStack } from "./ToastStack"
 import { TranscriptMessage } from "./TranscriptMessage"
+import { SubagentRow } from "./SubagentRow"
+import { all as allChat, lanesFromCards, merge as mergeTimeline } from "./state/ChatTimeline"
 import { ChatRunTimeline } from "./ChatRunTimeline"
 import { WikiDeleteDialog } from "./WikiDeleteDialog"
 import { WorldSurface } from "./WorldSurface"
@@ -98,6 +101,8 @@ function AppContent() {
       activeTabId: session.activeTabId,
       tabMenuOpen: session.tabMenuOpen,
       addMenuOpen: session.addMenuOpen,
+      chatFilter: session.chatFilter,
+      chatFilterMenuOpen: session.chatFilterMenuOpen,
       paletteOpen: session.paletteOpen,
       dictating: session.dictating,
       inputMode: session.inputMode,
@@ -191,6 +196,9 @@ function AppContent() {
     }
     if (session.addMenuOpen === true && target.closest(".composer-add") === null) {
       controller.closeAddMenu()
+    }
+    if (session.chatFilterMenuOpen === true && target.closest(".chat-filter-control") === null) {
+      controller.runCommand("chat.filter")
     }
   }
   /*
@@ -367,7 +375,7 @@ function AppContent() {
    * longer a filler message to filter out here — the transcript is exactly
    * what the session actually said.
    */
-  const entries: ReadonlyArray<TranscriptEntry> = [
+  const mainEntries: ReadonlyArray<TranscriptEntry> = [
     ...(openingMessage === undefined ? [] : [{ kind: "init", message: openingMessage } as const]),
     ...(authMessage === undefined ? [] : [{ kind: "message", message: authMessage } as const]),
     ...messages.map((message): TranscriptEntry => ({ kind: "message", message })),
@@ -379,9 +387,12 @@ function AppContent() {
     if (entryOrdinal(left) !== entryOrdinal(right)) return entryOrdinal(left) - entryOrdinal(right)
     return entryCreatedAt(left) - entryCreatedAt(right)
   })
+  const lanes = lanesFromCards(conversationCards)
+  const entries = mergeTimeline(mainEntries, lanes, session.chatFilter ?? allChat)
 
   const latestEntry = entries.at(-1)
-  const latestReadId = latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
+  const latestReadId = latestEntry?.kind === "lane" ? `${latestEntry.lane.id}:${latestEntry.row.id}` :
+    latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
   const initialReadId = signingUp ? "signup" : repositoryNotice ? authMessage?.id : !session.firstRunDismissed ? "first-run-actions" : undefined
 
   // Chat stays mounted when closed.
@@ -460,6 +471,11 @@ function AppContent() {
         if (event.key === "Escape" && session.tabMenuOpen === true) {
           event.preventDefault()
           controller.runCommand("tab.menu")
+          return
+        }
+        if (event.key === "Escape" && session.chatFilterMenuOpen === true) {
+          event.preventDefault()
+          controller.runCommand("chat.filter")
           return
         }
         // §21.4 — an open menu closes before anything else the shell owns.
@@ -566,7 +582,8 @@ function AppContent() {
               actor: latestEntry?.kind === "message" && latestEntry.message.role === "user" ? "user" : "output",
               requestId: readRequestRef.current,
               userMessageId: messages.filter(message => message.role === "user").at(-1)?.id,
-              version: latestEntry?.kind === "card" ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
+              version: latestEntry?.kind === "lane" ? latestReadId :
+                latestEntry?.kind === "card" ? `${latestEntry.card.ordinal}:${latestEntry.card.kind}` : undefined }}>
             <div data-slot="message-scroller" className="sui-msg-scroller" data-streaming={typing ? "true" : "false"}>
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
@@ -575,9 +592,10 @@ function AppContent() {
             {!signingUp && !repositoryNotice && !session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
             {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
-            {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}
-              messageId={entry.kind === "card" ? entry.card.id : entry.message.id} style={{ contentVisibility: "visible" }}>
-              {entry.kind === "card" ?
+            {entries.map((entry) => <MessageScrollerItem key={entry.kind === "lane" ? `${entry.lane.id}:${entry.row.id}` : entry.kind === "card" ? entry.card.id : entry.message.id}
+              messageId={entry.kind === "lane" ? `${entry.lane.id}:${entry.row.id}` : entry.kind === "card" ? entry.card.id : entry.message.id} style={{ contentVisibility: "visible" }}>
+              {entry.kind === "lane" ? <SubagentRow lane={entry.lane} row={entry.row} first={entry.first} /> :
+              entry.kind === "card" ?
                 (
                   <CardView
                     key={entry.card.id}
@@ -590,6 +608,7 @@ function AppContent() {
                     triggerCatalogs={triggerCatalogs}
                     flowDurations={flowDurations}
                     fileCards={fileCards}
+                    timelineRowsShown={lanes.some(lane => lane.id === entry.card.id && lane.rows.length > 0)}
                     {...actions}
                   />
                 ) :
@@ -630,6 +649,7 @@ function AppContent() {
         {composerWrap}
       </div>
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
+        <ChatFilterMenu open={session.chatFilterMenuOpen === true} filter={session.chatFilter ?? allChat} lanes={lanes} onRunCommand={controller.runCommand} />
         <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())

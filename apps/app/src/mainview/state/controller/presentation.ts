@@ -6,6 +6,7 @@ import { DEFAULT_PALETTE,isPalette,PALETTES,WIKI_DISPLAY_NAME } from "../AppStat
 import { THEME_PICKER_CARD_ID } from "../AppStore"
 import { parseDiagnosticQuery,readDiagnostics } from "../Diagnostics"
 import type { ControllerContext,NetEntry } from "./context"
+import { all as allChat, CHAT_KINDS, lanesFromCards, toggle as toggleChat } from "../ChatTimeline"
 
 export interface PresentationController {
   readonly showChat: () => void
@@ -13,6 +14,10 @@ export interface PresentationController {
   readonly showConnectors: () => void
   readonly toggleDevtools: () => void
   readonly toggleSurfacesMenu: () => void
+  readonly toggleChatFilterMenu: () => { readonly value: string }
+  readonly toggleChatFilter: (target: string) => string | { readonly value: string }
+  readonly grepChatFilter: (query: string) => { readonly value: string }
+  readonly resetChatFilter: () => { readonly value: string }
   readonly toggleConnectMenu: () => void
   readonly closeConnectMenu: () => void
   readonly toggleAddMenu: () => void
@@ -111,6 +116,30 @@ export const createPresentationController = (
       actor: "user",
       open: !ctx.store.session().surfacesMenuOpen
     })
+  }
+
+  const toggleChatFilterMenu = (): { readonly value: string } => {
+    const open = ctx.store.session().chatFilterMenuOpen !== true
+    ctx.store.dispatch({ type: "chat-filter.menu.toggled", actor: ctx.commandActor, open })
+    return { value: open ? "Filter opened." : "Filter closed." }
+  }
+  const toggleChatFilter = (target: string): string | { readonly value: string } => {
+    const lanes = lanesFromCards([...ctx.store.collections.cards.values()])
+    const valid = ["chat", ...lanes.map(lane => lane.id), ...CHAT_KINDS]
+    if (!valid.includes(target)) return `Choose one of: ${valid.join(", ")}`
+    const filter = toggleChat(ctx.store.session().chatFilter ?? allChat, target)
+    ctx.store.dispatch({ type: "chat-filter.changed", actor: ctx.commandActor,
+      filter: { sources: [...filter.sources], kinds: [...filter.kinds], query: filter.query } })
+    return { value: `${target}: ${filter.sources.includes(target) || filter.kinds.includes(target as typeof CHAT_KINDS[number]) ? "hidden" : "shown"}.` }
+  }
+  const grepChatFilter = (query: string): { readonly value: string } => {
+    ctx.store.dispatch({ type: "chat-filter.changed", actor: ctx.commandActor,
+      filter: { sources: [...(ctx.store.session().chatFilter?.sources ?? [])], kinds: [...(ctx.store.session().chatFilter?.kinds ?? [])], query } })
+    return { value: query === "" ? "Search cleared." : `Search: ${query}` }
+  }
+  const resetChatFilter = (): { readonly value: string } => {
+    ctx.store.dispatch({ type: "chat-filter.changed", actor: ctx.commandActor, filter: { sources: [], kinds: [], query: "" } })
+    return { value: "Showing all." }
   }
 
   let catalogRead: Promise<void> | undefined
@@ -555,6 +584,10 @@ export const createPresentationController = (
     showConnectors,
     toggleDevtools,
     toggleSurfacesMenu,
+    toggleChatFilterMenu,
+    toggleChatFilter,
+    grepChatFilter,
+    resetChatFilter,
     toggleConnectMenu,
     closeConnectMenu,
     toggleAddMenu,

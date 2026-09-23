@@ -106,7 +106,15 @@ export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
     handler: () => actions.stop()
   }),
   flow(SEND),
-  flow(CLEAR)
+  flow(CLEAR),
+  flow({ name: "chat.filter", summary: "Open the chat filter", input: NoPayload,
+    handler: () => actions.toggleChatFilterMenu() }),
+  flow({ name: "chat.filter.toggle", summary: "Hide or show a chat source or kind", args: "<target>",
+    input: Schema.Struct({ target: Schema.String }), handler: ({ target }) => actions.toggleChatFilter(target) }),
+  flow({ name: "chat.filter.grep", summary: "Search visible chat rows", args: "[text]",
+    input: Schema.Struct({ text: Schema.optional(Schema.String) }), handler: ({ text }) => actions.grepChatFilter(text ?? "") }),
+  flow({ name: "chat.filter.reset", summary: "Show all chat rows", input: NoPayload,
+    handler: () => actions.resetChatFilter() })
   ]
 }
 

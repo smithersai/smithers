@@ -30,6 +30,7 @@ import type { CommandIntent } from "./CommandIntent"
 import { INPUT_MODES,type InputMode } from "./InputMode"
 import type { PendingRecoveryScope } from "./PendingRecovery"
 import type { RuntimeApprovalSubmission,RuntimeRunObservation,RuntimeScope } from "./RuntimeProjection"
+import { CHAT_KINDS } from "./ChatTimeline"
 
 export type {
 Card,CardPatch,CardPlanItem,EnvironmentImageRow,
@@ -880,6 +881,9 @@ export const SessionSchema = z.object({
   pendingTabCloseId: z.string().nullable().optional(),
   /** The composer's `+` menu (the /composer.add command's open state); optional like the menus above. */
   addMenuOpen: z.boolean().optional(),
+  /** Durable chat log filter; absent means every source and kind is shown. */
+  chatFilter: z.object({ sources: z.array(z.string()), kinds: z.array(z.enum(CHAT_KINDS)), query: z.string() }).optional(),
+  chatFilterMenuOpen: z.boolean().optional(),
   /*
    * The search palette (Search and Command Palette Spec 2026-09-07 §3, §5):
    * the overlay's open state, the item whose actions panel is open, the last
@@ -1325,6 +1329,8 @@ export type AppTransition =
     actor: "user"
     open: boolean
   }
+  | { type: "chat-filter.menu.toggled"; actor: Actor; open: boolean }
+  | { type: "chat-filter.changed"; actor: Actor; filter: NonNullable<Session["chatFilter"]> }
   | {
     /* The search palette opens/closes (Cmd+K, Escape, Enter on an item); a close remembers the query. */
     type: "palette.toggled"
@@ -1814,6 +1820,7 @@ export const initialSession = (theme: Session["theme"]): Session => ({
   tabMenuOpen: false,
   pendingTabCloseId: null,
   addMenuOpen: false,
+  chatFilterMenuOpen: false,
   activeRepoKey: null,
   revision: 0
 })

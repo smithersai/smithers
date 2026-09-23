@@ -17,6 +17,18 @@ test("a pending launch states only Requested and a refusal offers the existing R
   expect(render()).toContain(">Retry</button>")
 })
 
+test("embedded run cards do not repeat transcript rows placed in chat", () => {
+  const card: Extract<Card, { kind: "run-trace" }> = {
+    id: "run-one", kind: "run-trace", title: "Build", status: "active", createdAt: 1, ordinal: 1,
+    payload: { repo: "owner/repo", workflow: "build", runId: "one", phase: "completed", steps: [], result: null,
+      lastSeq: 1, facet: "transcript", transcriptRows: [{ sequence: 1, at: 2, kind: "answer", text: "row in chat" }] }
+  }
+  const render = (timelineRowsShown: boolean) => renderToStaticMarkup(<WorkflowRunCardBody card={card}
+    onStopRun={() => {}} onRetryRun={() => {}} onRunCommand={() => {}} timelineRowsShown={timelineRowsShown} />)
+  expect(render(true)).not.toContain("row in chat")
+  expect(render(false)).toContain("row in chat")
+})
+
 test("flow rows lead with their human description and retain an identifier fallback", () => {
   const card: Extract<Card, { kind: "workflow-list" }> = {
     id: "flows", kind: "workflow-list", title: "Flows", status: "active", createdAt: 1, ordinal: 1,

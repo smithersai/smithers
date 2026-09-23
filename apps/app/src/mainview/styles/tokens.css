@@ -28,6 +28,12 @@
 
 :root {
 	color-scheme: light;
+	--lane-0: #9b4d31;
+	--lane-1: #376f91;
+	--lane-2: #78639a;
+	--lane-3: #82651e;
+	--lane-4: #387667;
+	--lane-5: #a24f6b;
 	--g-accent: #3a756b;
 
 	/* ── Paper raw scale (the `paper` palette's source; still named directly by a few surfaces) ── */
@@ -203,6 +209,12 @@
 
 :root[data-theme="dark"] {
 	color-scheme: dark;
+	--lane-0: #eda381;
+	--lane-1: #8cc5e8;
+	--lane-2: #bea6e6;
+	--lane-3: #d9be70;
+	--lane-4: #8acaba;
+	--lane-5: #e5a1b8;
 	--g-accent: #9bd5c6;
 
 	/* ── night-owl · dark (the default palette, Night Owl) ───── */

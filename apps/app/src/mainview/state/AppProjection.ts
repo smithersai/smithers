@@ -210,6 +210,8 @@ export const APP_TRANSITION_TYPES = {
   "surfaces-menu.toggled": true,
   "connect-menu.toggled": true,
   "add-menu.toggled": true,
+  "chat-filter.menu.toggled": true,
+  "chat-filter.changed": true,
   "palette.toggled": true,
   "palette.actions.toggled": true,
   "palette.item.opened": true,
@@ -1876,6 +1878,14 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           collections.sessions.update(SESSION_ID, (draft) => {
             draft.addMenuOpen = transition.open
           })
+          break
+
+        case "chat-filter.menu.toggled":
+          collections.sessions.update(SESSION_ID, draft => { draft.chatFilterMenuOpen = transition.open })
+          break
+
+        case "chat-filter.changed":
+          collections.sessions.update(SESSION_ID, draft => { draft.chatFilter = transition.filter })
           break
 
         case "palette.toggled":

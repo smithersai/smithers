@@ -97,6 +97,8 @@ export const APP_TRANSITION_SCHEMAS = {
   "surfaces-menu.toggled": z.object({ "type": z.literal("surfaces-menu.toggled"), "actor": z.literal("user"), "open": z.boolean() }).strict(),
   "connect-menu.toggled": z.object({ "type": z.literal("connect-menu.toggled"), "actor": z.literal("user"), "open": z.boolean() }).strict(),
   "add-menu.toggled": z.object({ "type": z.literal("add-menu.toggled"), "actor": z.literal("user"), "open": z.boolean() }).strict(),
+  "chat-filter.menu.toggled": z.object({ type: z.literal("chat-filter.menu.toggled"), actor: ActorSchema, open: z.boolean() }).strict(),
+  "chat-filter.changed": z.object({ type: z.literal("chat-filter.changed"), actor: ActorSchema, filter: SessionSchema.shape.chatFilter.unwrap() }).strict(),
   "palette.toggled": z.object({ "type": z.literal("palette.toggled"), "actor": z.enum(["user", "system"]), "open": z.boolean(), "lastQuery": z.string().optional() }).strict(),
   "palette.actions.toggled": z.object({ "type": z.literal("palette.actions.toggled"), "actor": z.literal("user"), "ref": z.union([z.string(), z.null()]) }).strict(),
   "palette.item.opened": z.object({ "type": z.literal("palette.item.opened"), "actor": z.literal("user"), "ref": z.string(), "kind": z.string(), "at": z.number().finite() }).strict(),

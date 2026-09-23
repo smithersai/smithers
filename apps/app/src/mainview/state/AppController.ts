@@ -376,6 +376,10 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly describeAgentBackend: (backend: string) => string | { readonly value: string }
   /* The composer surfaces menu — the /surfaces command's open state. */
   readonly toggleSurfacesMenu: () => void
+  readonly toggleChatFilterMenu: () => { readonly value: string }
+  readonly toggleChatFilter: (target: string) => string | { readonly value: string }
+  readonly grepChatFilter: (query: string) => { readonly value: string }
+  readonly resetChatFilter: () => { readonly value: string }
   /*
    * The search palette (Search and Command Palette Spec 2026-09-07): the
    * overlay's rows read synchronously from the store (the button door), the
@@ -1001,6 +1005,10 @@ export const createAppController = (
     showConnectors,
     toggleDevtools,
     toggleSurfacesMenu,
+    toggleChatFilterMenu,
+    toggleChatFilter,
+    grepChatFilter,
+    resetChatFilter,
     toggleConnectMenu,
     closeConnectMenu,
     toggleAddMenu,
@@ -1749,6 +1757,10 @@ export const createAppController = (
     cloudTerminal,
     toggleDevtools,
     toggleSurfacesMenu,
+    toggleChatFilterMenu,
+    toggleChatFilter,
+    grepChatFilter,
+    resetChatFilter,
     moveCardHistory: (id, delta) => { store.dispatch({ type: "card.history.moved", actor: ctx.commandActor, id, delta }) },
     toggleDictation,
     cancelDictation,

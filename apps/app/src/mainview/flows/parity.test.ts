@@ -312,6 +312,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../experimental/panes/Tools.tsx": 1,
       "../experimental/panes/Triggers.tsx": 2,
       "../App.tsx": 4, // -1: the shell has four handlers; main's five-count baseline was already stale.
+      "../ChatFilterMenu.tsx": 2,
       // Shared by the workspace and tutorial: copy, message CTA, retry, and explain.
       "../TranscriptMessage.tsx": 4,
       "../LocalAuthPanel.tsx": 3,

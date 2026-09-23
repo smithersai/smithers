@@ -36,6 +36,25 @@
 	flex-direction: column;
 }
 
+.subagent-row,
+.chat-filter-swatch { --lane-color: var(--lane-0); }
+:is(.subagent-row, .chat-filter-swatch)[data-lane-color="1"] { --lane-color: var(--lane-1); }
+:is(.subagent-row, .chat-filter-swatch)[data-lane-color="2"] { --lane-color: var(--lane-2); }
+:is(.subagent-row, .chat-filter-swatch)[data-lane-color="3"] { --lane-color: var(--lane-3); }
+:is(.subagent-row, .chat-filter-swatch)[data-lane-color="4"] { --lane-color: var(--lane-4); }
+:is(.subagent-row, .chat-filter-swatch)[data-lane-color="5"] { --lane-color: var(--lane-5); }
+.subagent-row { border-left: 3px solid var(--lane-color); padding: 4px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subagent-lane-label { color: var(--lane-color); font-weight: 650; margin-bottom: 4px; }
+.chat-filter-control { position: relative; }
+.chat-filter-trigger { border: 1px solid var(--border-solid); border-radius: var(--r-sm); background: var(--surface); color: var(--text); padding: 6px 12px; }
+.chat-filter-trigger[data-active] { border-color: var(--text); font-weight: 650; }
+.chat-filter-menu { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 50; min-width: 220px; max-height: min(65vh, 440px); overflow: auto; padding: 6px; border: 1px solid var(--border-solid); border-radius: var(--r-sm); background: var(--surface); box-shadow: var(--shadow-2); }
+.chat-filter-menu button { display: flex; align-items: center; width: 100%; gap: 8px; padding: 6px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); text-align: left; }
+.chat-filter-menu button[aria-checked="false"] { opacity: .55; }
+.chat-filter-menu button:focus-visible, .chat-filter-trigger:focus-visible, .chat-filter-menu input:focus-visible { outline: 2px solid var(--ring-border); outline-offset: 2px; }
+.chat-filter-swatch { display: inline-block; width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--lane-color); }
+.chat-filter-menu input { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--border-solid); border-radius: 4px; background: var(--surface); color: var(--text); }
+
 .chat-frame[data-pane] .chat-column {
 	flex: 1 1 42%;
 }

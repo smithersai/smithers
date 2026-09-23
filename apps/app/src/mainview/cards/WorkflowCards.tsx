@@ -37,7 +37,8 @@ export const WorkflowRunCardBody = ({
   debugVerbose = false,
   workflowCatalogs,
   flowDurations,
-  fileCards
+  fileCards,
+  timelineRowsShown = false
 }: {
   readonly card: Extract<Card, { kind: "run-trace" }>
   readonly onStopRun: (cardId: string) => void
@@ -49,6 +50,7 @@ export const WorkflowRunCardBody = ({
   readonly flowDurations?: ReadonlyArray<FlowDurationsRow>
   /** The files already read into this conversation; the graph's Code tab renders the declared one. */
   readonly fileCards?: ReadonlyArray<Extract<Card, { kind: "file" }>>
+  readonly timelineRowsShown?: boolean
 }) => {
   const onRunCommand = runSourceCommand(card.id, sendRunCommand)
   const request = workflowLaunchOf(card)
@@ -86,7 +88,7 @@ export const WorkflowRunCardBody = ({
         flowDurations={flowDurations}
         fileCards={fileCards}
       />
-      {facet === "transcript" ?
+      {facet === "transcript" && !timelineRowsShown ?
         card.payload.transcriptRows === undefined || card.payload.transcriptRows.length === 0 ?
           <p className="smithers-card-note">The transcript is empty so far.</p> :
           (
@@ -460,6 +462,7 @@ export const workflowCardFamily: CardFamily<"run-trace" | "workflow-repo" | "wor
         workflowCatalogs={actions.workflowCatalogs}
         flowDurations={actions.flowDurations}
         fileCards={actions.fileCards}
+        timelineRowsShown={actions.timelineRowsShown}
       />
     ),
     pill: (card) => {

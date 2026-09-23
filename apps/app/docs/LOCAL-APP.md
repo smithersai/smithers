@@ -1,5 +1,11 @@
 # Smithers UI runtime contract
 
+## Chat timeline filter
+
+The chat timeline interleaves cloud agent and run transcript rows with messages and cards by timestamp. Each source keeps its own order. Local harness agents have no structured transcript rows, so their existing cards represent those lanes. The embedded cloud agent and run cards omit transcript rows already shown in chat; maximized cards retain their transcript.
+
+The Filter button opens a keyboard menu with Show all, Chat, each lane, Messages, Cards, Subagent rows, and Search. Arrow keys move between menu items, Enter or Space activates one, and Escape closes it. The same actions are available as `/chat.filter`, `/chat.filter.toggle <target>`, `/chat.filter.grep [text]`, and `/chat.filter.reset`, including through the agent door. `session.chatFilter` and `session.chatFilterMenuOpen` persist; every change is an actor-stamped transition.
+
 The same React application runs against two explicit hosts: Smithers Cloud and a
 local Bun origin. Electrobun is an optional native shell around the local
 origin; it is not a separate application or state model.

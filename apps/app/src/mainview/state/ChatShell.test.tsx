@@ -8,7 +8,7 @@ import type { AppController as AppControllerType } from "./AppController"
 import type { AppStore } from "./AppStore"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,settled,unavailableAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage,settled,settle,unavailableAgent,unavailableRepositories } from "./TestFixtures"
 
 
 /*
@@ -279,3 +279,36 @@ describe("chat-first shell: panes never replace the conversation", () => {
       expect(view.host.querySelector(".smithers-transcript")).not.toBeNull()
     }
   })})
+
+test("cloud subagent rows share the transcript and the filter menu works by keyboard", async () => {
+  const { store, controller } = await harness()
+  await store.dispatch({ type: "card.upsert", actor: "system", card: {
+    id: "agent-session-one", kind: "agent", title: "Delegate", status: "active", createdAt: 10, ordinal: 1,
+    payload: { cloud: true, displayName: "Delegate", sessionId: "one", repo: "owner/repo", provider: "codex",
+      workspaceId: null, state: "active", transcript: [
+        { id: 1, role: "user", sequence: 1, createdAt: "2026-09-14T09:00:01Z", parts: [{ type: "text", text: "first row" }] },
+        { id: 2, role: "assistant", sequence: 2, createdAt: "2026-09-14T09:00:02Z", parts: [{ type: "text", text: "second row" }] }
+      ] }
+  } }).isPersisted.promise
+  const view = mount(controller)
+  expect(view.host.querySelectorAll(".subagent-row")).toHaveLength(2)
+  expect(view.host.querySelector(".subagent-lane-label")?.textContent).toBe("↳ Delegate")
+  expect(view.host.querySelector("[data-testid=agent-session-transcript]")).toBeNull()
+  await view.act(() => view.host.querySelector<HTMLButtonElement>(".chat-filter-trigger")?.click())
+  await settle(3)
+  expect(view.host.querySelector(".chat-filter-menu")).not.toBeNull()
+  const key = (name: string) => document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: name, bubbles: true }))
+  await view.act(() => view.host.querySelector<HTMLButtonElement>(".chat-filter-menu button")?.focus())
+  await view.act(() => key("ArrowDown"))
+  await view.act(() => key("ArrowDown"))
+  expect(document.activeElement?.textContent).toContain("Delegate")
+  await view.act(() => key(" "))
+  await settle(3)
+  await view.act(() => {})
+  expect(store.session().chatFilter?.sources).toContain("agent-session-one")
+  expect(view.host.querySelectorAll(".subagent-row")).toHaveLength(0)
+  expect(view.host.querySelector("[data-testid=agent-session-transcript]")).toBeNull()
+  await view.act(() => key("Escape"))
+  await settle(3)
+  expect(store.session().chatFilterMenuOpen).toBe(false)
+})

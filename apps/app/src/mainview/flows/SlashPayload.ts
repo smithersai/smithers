@@ -362,6 +362,8 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "setup.discard.confirm": args => required("cardId", args, "Choose the setup whose draft to discard"),
   "appearance.theme": (args) => ok({ palette: args ?? "" }),
   "chat.send": (args) => required("text", args, "send needs the text to submit"),
+  "chat.filter.toggle": (args) => required("target", args, "Choose a filter target"),
+  "chat.filter.grep": (args) => ok({ text: args ?? "" }),
   "chat.clear": (args) => trimmed(args) === "" ? NONE : trimmed(args) === "--summarize"
     ? ok({ summarize: true })
     : no("chat.clear accepts only --summarize; omit it to archive locally"),
