@@ -191,6 +191,24 @@ it("accepts only named models in the delegate flow", async () => {
   expect(requests).toHaveLength(8)
 })
 
+it("lets the agent retry a tab and reports why a retry is refused", async () => {
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    delegate: () => ({ status: "requested" }),
+    read: () => ({}),
+    list: () => [],
+    retry: (id) => {
+      if (id !== "failed-one") throw new Error(`Only a failed or stopped tab can be retried; ${id} is running`)
+      return { id, status: "requested" }
+    }
+  }).bindings())
+  const retry = bindings.find((binding) => binding.descriptor.name === "tab.retry")!
+  const call = (id: string) => Effect.runPromise(retry.run({ input: { id } } as unknown as Parameters<typeof retry.run>[0]))
+  expect(await call("failed-one")).toMatchObject({ outcome: "success", value: { id: "failed-one", status: "requested" } })
+  expect(await call("busy")).toMatchObject({ outcome: "failure" })
+  expect(JSON.stringify(await call("busy"))).toContain("busy is running")
+})
+
 it("lists tabs and flows when the cell omits the input", async () => {
   const bindings = [
     ...await Effect.runPromise(Runtime.source({
@@ -311,10 +329,10 @@ const tick = async () => {
 const request = { id: "fix", title: "Fix addition", prompt: "Fix addition and run the checks." }
 
 describe("background work", () => {
-  it("caches one Luna description per tab and falls back to the title on failure", async () => {
+  it("caches one description per tab from the worker's own seat and falls back to the title on failure", async () => {
     const f = setup()
     let finish!: (text: string) => void
-    const calls: Array<{ title: string; prompt: string; model: string }> = []
+    const calls: Array<{ title: string; prompt: string; seat: string }> = []
     ;(f.host as { describe?: Host.Host["describe"] }).describe = (input) => {
       calls.push(input)
       return new Promise((resolve) => { finish = resolve })
@@ -322,7 +340,7 @@ describe("background work", () => {
     f.workspace.request(request)
     expect(f.workspace.snapshot().tabs[0]?.description).toBeUndefined()
     f.workspace.request(request)
-    expect(calls).toEqual([{ title: request.title, prompt: request.prompt, model: "luna" }])
+    expect(calls).toEqual([{ title: request.title, prompt: request.prompt, seat: "worker:test" }])
     finish("  Fix   addition\n and verify " + "x".repeat(90))
     await tick()
     const description = f.workspace.snapshot().tabs[0]?.description
@@ -342,6 +360,56 @@ describe("background work", () => {
     failed.complete({ _tag: "done", answer: "Done" })
     await tick()
   })
+  it("asks the named delegate model, never a fixed one, for the description", async () => {
+    const f = setup()
+    const seats: Array<string> = []
+    ;(f.host as { describe?: Host.Host["describe"] }).describe = async (input) => (seats.push(input.seat), "d")
+    f.workspace.request({ ...request, model: "cerebras" })
+    await tick()
+    expect(seats).toEqual([Models.delegateModels.cerebras])
+    f.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
+
+  it("retries a failed tab on the model it was requested with", async () => {
+    const f = setup()
+    f.workspace.request({ ...request, model: "astra" })
+    await tick()
+    f.complete({ _tag: "failed", message: "boom", detail: "boom" })
+    await tick()
+    expect(f.workspace.retry(request.id)).toEqual({ id: request.id, status: "requested" })
+    await tick()
+    expect(f.workspace.snapshot().tabs[0]?.seat).toBe(Models.delegateModels.astra)
+    expect(f.input().seat).toBe(Models.delegateModels.astra)
+    f.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
+
+  it("refuses to retry an unknown or unsettled tab with a reason", async () => {
+    const f = setup()
+    expect(() => f.workspace.retry("nope")).toThrow("Unknown tab")
+    f.workspace.request(request)
+    expect(() => f.workspace.retry(request.id)).toThrow("Only a failed or stopped tab can be retried")
+    await tick()
+    f.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
+
+  it("tells the coordinator every unsettled tab and only the newest settled answers, bounded", async () => {
+    const f = setup(() => ({ done: Promise.resolve({ _tag: "done", answer: "a".repeat(5000) }), cancel: () => {} }))
+    for (let index = 0; index < 8; index++) {
+      f.workspace.request({ id: `t${index}`, title: `Task ${index}`, prompt: `Task ${index}` })
+      await tick()
+      await tick()
+    }
+    const listed = JSON.parse(f.workspace.context()) as Array<{ id: string; title: string; status: string; answer?: string }>
+    expect(listed).toHaveLength(8)
+    const answered = listed.filter((tab) => tab.answer !== undefined)
+    expect(answered).toHaveLength(5)
+    expect(answered.every((tab) => tab.answer!.length <= 1500)).toBe(true)
+    expect(listed.find((tab) => tab.id === "t0")).toEqual({ id: "t0", title: "Task 0", status: "done" })
+  })
+
   it("uses the named delegate model for the worker and preserves the default seat", async () => {
     const named = setup()
     named.workspace.request({ ...request, model: "astra" })

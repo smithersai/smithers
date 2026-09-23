@@ -160,17 +160,20 @@ never takes keyboard focus. Documents are schema-validated, capped at 1 MB,
 and persisted in the session. The host renders them; generated code is never
 loaded into the UI process.
 
-The chat coordinator has `ui.publish`, `agent.delegate`, `tab.read`, and
-`tab.list`. Workers have the filesystem/shell flows and `ui.publish`.
+The chat coordinator has `ui.publish`, `agent.delegate`, `tab.read`,
+`tab.list`, and `tab.retry`. Workers have the filesystem/shell flows and `ui.publish`.
 Delegation takes `{id, title, prompt}`, persists before launch, and returns a
 `requested` receipt immediately. Reusing the id deduplicates the request.
+A tab's one-line description comes from the worker's own seat. A retry
+reruns the task on the model it was requested with.
 Up to three workers can run at once; they share the working directory, so
 independent tasks should name disjoint files. Worker transcripts persist in
 separate session files, and the chat interleaves their rows by time inside a
 colored rail titled `↳ <worker>`. `/filter` shows or hides the chat, each
 worker, and each kind of row; `/grep <text>` keeps rows containing the text and
-`/grep` alone clears it. Chat receives current worker status/results as context
-and remains usable while workers run. Progress uses the shared toast stack,
+`/grep` alone clears it. Chat receives every unsettled worker and the newest
+five settled answers (1,500 characters each) as context, and remains usable
+while workers run. Progress uses the shared toast stack,
 with a 300 ms delay and real completion/failure as its end.
 
 Workers run locally. Restarting the TUI restores their transcripts and marks

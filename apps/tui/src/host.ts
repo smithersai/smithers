@@ -30,7 +30,7 @@ import * as Classifier from "@smthrs/model/Classifier"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { delegateModels, type DelegateModel } from "./models.ts"
+import { delegateModels } from "./models.ts"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
@@ -83,7 +83,8 @@ export interface Turn {
 export interface Host {
   readonly cwd: string
   readonly compaction: (used: number, window: number) => Promise<number | undefined>
-  readonly describe?: (input: { title: string; prompt: string; model: DelegateModel }) => Promise<string>
+  /** A one-line tab description, asked of `seat`: the seat the task already goes to. */
+  readonly describe?: (input: { title: string; prompt: string; seat: string }) => Promise<string>
   /** Jev judges a monitor's change; Luna writes its update. Absent on test fakes. */
   readonly monitor?: {
     readonly judge: (input: Monitors.Judged) => Promise<boolean>
@@ -195,11 +196,11 @@ export const make = (options: {
     }
   }
 
-  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, model }) => runtime.runPromise(
+  const describeTab: NonNullable<Host["describe"]> = ({ title, prompt, seat: id }) => runtime.runPromise(
     Effect.gen(function*() {
-      const seat = yield* (yield* SeatResolver.SeatResolver).resolve(delegateModels[model])
+      const seat = yield* (yield* SeatResolver.SeatResolver).resolve(id)
       const events = Array.from(yield* Stream.runCollect(seat.model.stream(ModelRequest.ModelRequest.make({
-        modelId: delegateModels[model],
+        modelId: id,
         system: [ModelRequest.SystemPart.make({ text: "Summarize this background agent task in one short line (at most 80 characters). Reply with only the description." })],
         messages: [ModelRequest.Message.user([ModelRequest.TextPart.make({ text: `Title: ${title}\nTask: ${prompt}` })])],
         tools: [],

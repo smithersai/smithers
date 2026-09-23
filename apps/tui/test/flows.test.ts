@@ -415,6 +415,15 @@ describe("flow runs", () => {
     expect(f.calls.filter((each) => each === "start")).toHaveLength(3)
   })
 
+  it("returns a retry's receipt and refuses an unknown or unsettled run with a reason", async () => {
+    const f = setup()
+    expect(() => f.runs.retry("nope")).toThrow("Unknown tab")
+    f.runs.request({ id: "x", flow: "nope", input: {}, by: "user" })
+    await tick()
+    expect(f.runs.retry("x")).toEqual({ id: "x", status: "requested" })
+    expect(() => f.runs.retry("x")).toThrow("Only a failed or stopped run can be retried")
+  })
+
   it("queues a retry at the cap instead of throwing", async () => {
     const f = setup()
     f.runs.request({ id: "x", flow: "nope", input: {}, by: "user" })

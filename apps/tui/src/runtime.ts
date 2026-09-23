@@ -15,6 +15,7 @@ export interface Ports {
   readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel }) => unknown
   readonly read?: (id: string) => unknown
   readonly list?: () => unknown
+  readonly retry?: (id: string) => unknown
   /** The user's flow runs, served to cells by the Smithers plugin. */
   readonly flows?: SmithersPlugin.Ports
   readonly monitors?: Pick<Monitors.Monitors, "create" | "list" | "stop">
@@ -128,6 +129,14 @@ export const source = (ports: Ports): FlowBinding.Source =>
         Schema.Struct({ id: short }),
         (input) => ports.read!(input.id)
       ),
+      ...(ports.retry === undefined ? [] : [
+        bind(
+          "tab.retry",
+          "Run a failed or stopped background tab or flow run again, with its original task and model, when the user asks for it. Returns its new status at once; requested or queued is not started.",
+          Schema.Struct({ id: short }),
+          (input) => ports.retry!(input.id)
+        )
+      ]),
       bind(
         "tab.list",
         "List the background agent tabs and their actual status. Does not wait. Do not poll; the UI shows progress.",

@@ -368,22 +368,27 @@ export class FlowRuns {
     this.cards.delete(id)
     this.save({ ...run, status: "cancelled", endedAt: Date.now() })
   }
-  retry = (id: string): void => {
+  /** Runs a failed or stopped run again; the receipt says whether it waits for a seat. */
+  retry = (id: string): { id: string; status: Run["status"] } => {
     const run = this.runs.get(id)
-    if (run === undefined || (run.status !== "failed" && run.status !== "cancelled") || this.closed) return
+    if (run === undefined) throw new Error("Unknown tab")
+    if (run.status !== "failed" && run.status !== "cancelled") {
+      throw new Error(`Only a failed or stopped run can be retried; ${id} is ${run.status}`)
+    }
+    if (this.closed) throw new Error("Session closed")
     if (this.options.port === undefined) throw new Error("Flows unavailable")
     const { endedAt: _ended, answer: _answer, ...rest } = run
     if (this.full()) {
       const { runId: _runId, stopRequested: _stop, ...fresh } = rest
       this.save({ ...fresh, status: "queued", message: undefined, startedAt: Date.now() })
-      return
+      return { id, status: "queued" }
     }
     const attempt = this.attempt(id)
     if (run.runId !== undefined && run.stopRequested && run.status === "failed") {
       this.save({ ...rest, status: "running", message: undefined })
       this.follow(id, attempt, run.runId)
       void this.stop(id, run.runId)
-      return
+      return { id, status: "running" }
     }
     if (run.runId !== undefined && run.message === interrupted) {
       const runId = run.runId
@@ -393,11 +398,12 @@ export class FlowRuns {
           if (this.update(id, attempt, { runId: receipt.runId }) !== undefined) this.follow(id, attempt, receipt.runId)
         } else this.settle(id, attempt, receipt)
       }, (error) => this.fail(id, attempt, error))
-      return
+      return { id, status: "running" }
     }
     const { runId: _runId, stopRequested: _stop, ...fresh } = rest
     this.save({ ...fresh, status: "requested", message: undefined, startedAt: Date.now() })
     queueMicrotask(() => void this.prepare(id, attempt))
+    return { id, status: "requested" }
   }
   panel = (id: string): Panels.Panel => {
     const run = this.runs.get(id)

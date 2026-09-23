@@ -30,6 +30,9 @@ export interface Snapshot {
   readonly tabs: ReadonlyArray<Tab>
   readonly panels: ReadonlyArray<Panels.Panel>
 }
+/** Settled tabs whose answer every coordinator turn carries, and how much of each. */
+const contextAnswers = 5
+const contextAnswerChars = 1500
 /** Concurrent worker seats; later requests wait FIFO in `queued`. */
 export const seats = 3
 const active = (tab: Tab): boolean => tab.status === "running" || tab.status === "requested"
@@ -124,19 +127,22 @@ export class Workspace {
     this.panels.set(panel.id, panel)
     this.changed()
   }
-  request = (request: Request): { id: string; status: Tab["status"] } => {
+  request = (request: Request): { id: string; status: Tab["status"] } => this.open(request, this.seat(request))
+  private seat(request: Request): string {
+    return request.model === undefined ? this.options.workerSeat : delegateModels[request.model]
+  }
+  private open(request: Request, seat: string): { id: string; status: Tab["status"] } {
     if (this.closed) throw new Error("Session closed")
     const existing = this.tabs.get(request.id)
     if (existing !== undefined) {
-      if (existing.prompt !== request.prompt || existing.seat !== (request.model === undefined
-        ? this.options.workerSeat
-        : delegateModels[request.model])) throw new Error("Request id already belongs to another task")
+      if (existing.prompt !== request.prompt || existing.seat !== seat) throw new Error("Request id already belongs to another task")
       return { id: existing.id, status: existing.status }
     }
     const writer = Session.create(this.options.host.cwd, "worker")
+    const { model: _model, ...task } = request
     const tab: Tab = {
-      ...request,
-      seat: request.model === undefined ? this.options.workerSeat : delegateModels[request.model],
+      ...task,
+      seat,
       file: writer.file,
       status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
       startedAt: Date.now()
@@ -151,10 +157,13 @@ export class Workspace {
   }
   private async describe(tab: Tab): Promise<void> {
     let description = tab.title.replace(/\s+/g, " ").trim().slice(0, 80)
-    try {
-      const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, model: "luna" })
-      description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
-    } catch { /* Keep the title when Luna is unavailable. */ }
+    // The worker's own seat: the task never goes to a provider the user did not pick for it.
+    if (!tab.seat.startsWith("replay:")) {
+      try {
+        const generated = await this.options.host.describe?.({ title: tab.title, prompt: tab.prompt, seat: tab.seat })
+        description = generated?.replace(/\s+/g, " ").trim().slice(0, 80) || description
+      } catch { /* Keep the title when the seat cannot describe it. */ }
+    }
     const current = this.tabs.get(tab.id)
     if (current === undefined || current.file !== tab.file || this.closed) return
     this.save({ ...current, description })
@@ -279,26 +288,39 @@ export class Workspace {
         : panel.summary)
     return { ...panel, summary }
   }
-  context = (): string =>
-    JSON.stringify(
-      [...this.tabs.values()].map(({ id, title, status, answer, message }) => ({
-        id,
-        title,
-        status,
-        answer: answer?.slice(0, 6000),
-        message
-      }))
+  /**
+   * What every coordinator turn is told about the tabs: every unsettled tab,
+   * and the newest settled ones with a bounded answer. Older tabs keep only
+   * their status; `tab.read` returns any tab in full.
+   */
+  context = (): string => {
+    const settledTabs = [...this.tabs.values()].filter(settled).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    const recent = new Set(settledTabs.slice(0, contextAnswers))
+    return JSON.stringify(
+      [...this.tabs.values()].map((tab) => {
+        const full = !settled(tab) || recent.has(tab)
+        return {
+          id: tab.id,
+          title: tab.title,
+          status: tab.status,
+          ...(full && tab.answer !== undefined ? { answer: tab.answer.slice(0, contextAnswerChars) } : {}),
+          ...(full && tab.message !== undefined ? { message: tab.message.slice(0, 500) } : {})
+        }
+      })
     )
+  }
   cancel = (id: string): void => {
     const tab = this.tabs.get(id)
     if (tab?.status === "requested" || tab?.status === "queued") this.save({ ...tab, status: "cancelled", endedAt: Date.now() })
     else this.handles.get(id)?.cancel()
   }
-  retry = (id: string): void => {
+  /** Runs a failed or stopped tab's task again, on the seat it asked for. */
+  retry = (id: string): { id: string; status: Tab["status"] } => {
     const tab = this.tabs.get(id)
-    if (tab === undefined || (tab.status !== "failed" && tab.status !== "cancelled")) return
+    if (tab === undefined) throw new Error("Unknown tab")
+    if (tab.status !== "failed" && tab.status !== "cancelled") throw new Error(`Only a failed or stopped tab can be retried; ${id} is ${tab.status}`)
     this.tabs.delete(id)
-    this.request({ id, title: tab.title, prompt: tab.prompt })
+    return this.open({ id, title: tab.title, prompt: tab.prompt }, tab.seat)
   }
   dispose = (): void => {
     this.closed = true

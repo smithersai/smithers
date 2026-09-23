@@ -659,6 +659,7 @@ export function App(props: AppProps) {
         delegate: workspace.request,
         read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
         list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
+        retry: (id) => (runs.has(id) ? runs.retry(id) : workspace.retry(id)),
         monitors,
         ...(props.flows === undefined ? {} : {
           flows: {
@@ -893,17 +894,27 @@ export function App(props: AppProps) {
         setFilter((current) => ({ ...current, query: argument }))
         return true
       case "retry":
+      case "stop": {
+        if (argument === "") {
+          const ids = [...workspace.snapshot().tabs.map((tab) => tab.id), ...runs.snapshot().map((run) => run.id)]
+          setStatus(ids.length === 0 ? "No tabs" : `/${verb} <id>: ${ids.join(", ")}`, "warning")
+          return true
+        }
+        if (!runs.has(argument) && !workspace.snapshot().tabs.some((tab) => tab.id === argument)) {
+          setStatus(`Unknown tab: ${argument}`, "warning")
+          return true
+        }
         try {
-          if (runs.has(argument)) runs.retry(argument)
-          else workspace.retry(argument)
+          if (verb === "retry") {
+            if (runs.has(argument)) runs.retry(argument)
+            else workspace.retry(argument)
+          } else if (runs.has(argument)) runs.cancel(argument)
+          else workspace.cancel(argument)
         } catch (error) {
           setStatus(error instanceof Error ? error.message : String(error), "warning")
         }
         return true
-      case "stop":
-        if (runs.has(argument)) runs.cancel(argument)
-        else workspace.cancel(argument)
-        return true
+      }
       case "flows":
         runs.refresh()
         setPicker({ kind: "flows", query: "", selected: 0 })
