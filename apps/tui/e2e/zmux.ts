@@ -1,0 +1,188 @@
+/**
+ * Drives the TUI in a real PTY through zmux and reads the screen back.
+ *
+ * `zmuxd` owns the PTY; this client creates one session over its JSON-RPC
+ * socket, feeds every `pane_output` byte into a headless xterm, and answers
+ * `screen()` from that emulator. Keys go in as raw bytes, exactly what a
+ * terminal sends.
+ *
+ * The daemon binary comes from `$ZMUXD`, then `zmuxd` on `PATH`, then
+ * `~/zmux/zig-out/bin/zmuxd`. Releases: https://github.com/smithersai/zmux.
+ */
+import { Terminal } from "@xterm/headless"
+import { spawn, spawnSync, type ChildProcess } from "node:child_process"
+import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { createConnection, type Socket } from "node:net"
+import { homedir, tmpdir } from "node:os"
+import { join } from "node:path"
+
+export const zmuxd = (): string | undefined => {
+  if (process.env.ZMUXD !== undefined) return process.env.ZMUXD
+  const found = spawnSync("which", ["zmuxd"], { encoding: "utf8" }).stdout.trim()
+  if (found !== "") return found
+  const built = join(homedir(), "zmux", "zig-out", "bin", "zmuxd")
+  return existsSync(built) ? built : undefined
+}
+
+export const key = {
+  enter: "\r",
+  escape: "\x1b",
+  ctrlC: "\x03",
+  ctrlD: "\x04",
+  up: "\x1b[A",
+  down: "\x1b[B",
+  tab: "\t",
+  backspace: "\x7f"
+} as const
+
+interface Pending {
+  readonly resolve: (value: unknown) => void
+  readonly reject: (error: Error) => void
+}
+
+export class Tui {
+  private readonly terminal: Terminal
+  private readonly pending = new Map<number, Pending>()
+  private next = 1
+  private buffered = ""
+  private paneId = ""
+  exited: { readonly code: number | null } | undefined
+
+  private constructor(
+    private readonly daemon: ChildProcess,
+    private readonly socket: Socket,
+    private readonly directory: string,
+    readonly rows: number,
+    readonly cols: number
+  ) {
+    this.terminal = new Terminal({ rows, cols, allowProposedApi: true })
+    socket.setEncoding("utf8")
+    socket.on("data", (chunk: string) => this.receive(chunk))
+  }
+
+  /** Starts a private daemon and runs `command` in a new session. */
+  static async start(options: {
+    readonly command: string
+    readonly cwd: string
+    readonly env?: Readonly<Record<string, string>>
+    readonly rows?: number
+    readonly cols?: number
+  }): Promise<Tui> {
+    const binary = zmuxd()
+    if (binary === undefined) throw new Error("zmuxd not found: set ZMUXD or build ~/zmux (zig build)")
+    const directory = mkdtempSync(join(tmpdir(), "tui-zmux-"))
+    const path = join(directory, "z.sock")
+    const daemon = spawn(binary, ["--socket", path, "--idle-seconds", "0"], { stdio: "ignore" })
+    await waitFor(() => existsSync(path), 5_000, "zmuxd socket")
+    const socket = await new Promise<Socket>((resolve, reject) => {
+      const connection = createConnection(path, () => resolve(connection))
+      connection.once("error", reject)
+    })
+    const tui = new Tui(daemon, socket, directory, options.rows ?? 40, options.cols ?? 110)
+    const created = await tui.call("session.create", {
+      id: "tui",
+      rows: tui.rows,
+      cols: tui.cols,
+      cwd: options.cwd,
+      command: options.command,
+      env: { TERM: "xterm-256color", COLORTERM: "truecolor", ...options.env }
+    }) as { paneId?: string; id?: string }
+    tui.paneId = created.paneId ?? created.id ?? "tui"
+    return tui
+  }
+
+  call(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const id = this.next++
+    return new Promise((resolve, reject) => {
+      this.pending.set(id, { resolve, reject })
+      this.socket.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n")
+    })
+  }
+
+  private receive(chunk: string) {
+    this.buffered += chunk
+    let newline = this.buffered.indexOf("\n")
+    while (newline >= 0) {
+      const line = this.buffered.slice(0, newline)
+      this.buffered = this.buffered.slice(newline + 1)
+      newline = this.buffered.indexOf("\n")
+      if (line.trim() === "") continue
+      const message = JSON.parse(line) as {
+        id?: number
+        method?: string
+        params?: Record<string, unknown>
+        result?: unknown
+        error?: { message: string }
+      }
+      if (message.id !== undefined) {
+        const waiting = this.pending.get(message.id)
+        this.pending.delete(message.id)
+        if (message.error !== undefined) waiting?.reject(new Error(message.error.message))
+        else waiting?.resolve(message.result)
+      } else if (message.method === "pane_output") {
+        this.terminal.write(Buffer.from(String(message.params?.data_base64 ?? ""), "base64"))
+      } else if (message.method === "session_exited") {
+        this.exited = { code: (message.params?.exit_code as number | null | undefined) ?? null }
+      }
+    }
+  }
+
+  /** Sends raw bytes to the PTY. */
+  async press(bytes: string): Promise<void> {
+    await this.call("session.send", { sessionId: "tui", dataBase64: Buffer.from(bytes).toString("base64") })
+    await sleep(150)
+  }
+
+  /** Types text one character at a time, as a person does. */
+  async type(text: string): Promise<void> {
+    for (const character of text) {
+      await this.call("session.send", { sessionId: "tui", dataBase64: Buffer.from(character).toString("base64") })
+    }
+    await sleep(150)
+  }
+
+  /** The visible screen, one string per row, trailing spaces trimmed. */
+  screen(): string {
+    const buffer = this.terminal.buffer.active
+    const lines: Array<string> = []
+    for (let row = 0; row < this.terminal.rows; row++) {
+      lines.push(buffer.getLine(buffer.viewportY + row)?.translateToString(true) ?? "")
+    }
+    return lines.join("\n")
+  }
+
+  /** Waits until the screen satisfies `predicate`, or throws with the screen. */
+  async until(predicate: (screen: string) => boolean, timeoutMs = 15_000, label = "screen"): Promise<string> {
+    const deadline = Date.now() + timeoutMs
+    while (Date.now() < deadline) {
+      await new Promise<void>((resolve) => this.terminal.write("", resolve))
+      const screen = this.screen()
+      if (predicate(screen)) return screen
+      await sleep(100)
+    }
+    throw new Error(`timed out waiting for ${label}; screen:\n${this.screen()}`)
+  }
+
+  async waitForExit(timeoutMs = 5_000): Promise<{ readonly code: number | null }> {
+    await waitFor(() => this.exited !== undefined, timeoutMs, "process exit")
+    return this.exited!
+  }
+
+  async stop(): Promise<void> {
+    await this.call("daemon.shutdown", {}).catch(() => undefined)
+    this.socket.destroy()
+    this.daemon.kill()
+    this.terminal.dispose()
+    rmSync(this.directory, { recursive: true, force: true })
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const waitFor = async (check: () => boolean, timeoutMs: number, label: string) => {
+  const deadline = Date.now() + timeoutMs
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`)
+    await sleep(50)
+  }
+}

@@ -7,6 +7,7 @@
  * settlement attach to that same cell.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as Shell from "./shell.ts"
 
 export type CellStatus = "writing" | "running" | "done" | "failed" | "rejected"
 
@@ -22,7 +23,22 @@ export interface Call {
 }
 
 export type Item =
-  | { readonly kind: "user"; readonly id: string; readonly text: string }
+  | {
+    readonly kind: "user"
+    readonly id: string
+    readonly text: string
+    /** Sent mid-turn; true until the harness drains it at a cell boundary. */
+    readonly queued?: boolean
+  }
+  | {
+    readonly kind: "shell"
+    readonly id: string
+    readonly command: string
+    /** `!!`: shown, but kept out of the agent's context. */
+    readonly excluded: boolean
+    readonly output: string
+    readonly result?: Shell.Result
+  }
   | {
     readonly kind: "cell"
     readonly id: string
@@ -52,9 +68,25 @@ export interface Transcript {
   readonly requestedAt?: number
   readonly cells: number
   readonly nextId: number
+  readonly usage: Usage
 }
 
-export const empty: Transcript = { items: [], streaming: "", thinking: false, cells: 0, nextId: 0 }
+export interface Usage {
+  readonly input: number
+  readonly output: number
+  readonly cached: number
+  /** Input tokens of the latest model call: how full the context window is. */
+  readonly context: number
+}
+
+export const empty: Transcript = {
+  items: [],
+  streaming: "",
+  thinking: false,
+  cells: 0,
+  nextId: 0,
+  usage: { input: 0, output: 0, cached: 0, context: 0 }
+}
 
 type CellItem = Extract<Item, { kind: "cell" }>
 
@@ -66,7 +98,36 @@ const withId = (transcript: Transcript, item: Unsaved): Transcript => ({
   nextId: transcript.nextId + 1
 })
 
-export const user = (transcript: Transcript, text: string): Transcript => withId(transcript, { kind: "user", text })
+export const user = (transcript: Transcript, text: string, queued = false): Transcript =>
+  withId(transcript, queued ? { kind: "user", text, queued } : { kind: "user", text })
+
+/** The id the next added item will get. */
+export const nextId = (transcript: Transcript): string => String(transcript.nextId)
+
+export const shellStart = (transcript: Transcript, command: string, excluded: boolean): Transcript =>
+  withId(transcript, { kind: "shell", command, excluded, output: "" })
+
+const updateItem = <K extends Item["kind"]>(
+  transcript: Transcript,
+  id: string,
+  kind: K,
+  update: (item: Extract<Item, { kind: K }>) => Item
+): Transcript => ({
+  ...transcript,
+  items: transcript.items.map((item) => (item.id === id && item.kind === kind ? update(item as Extract<Item, { kind: K }>) : item))
+})
+
+export const shellOutput = (transcript: Transcript, id: string, text: string): Transcript =>
+  updateItem(transcript, id, "shell", (item) => ({ ...item, output: item.output + text }))
+
+export const shellDone = (transcript: Transcript, id: string, result: Shell.Result): Transcript =>
+  updateItem(transcript, id, "shell", (item) => ({ ...item, output: result.output, result }))
+
+/** A finished shell command, as a session file stores it. */
+export const shell = (transcript: Transcript, result: Shell.Result, excluded: boolean): Transcript => {
+  const id = nextId(transcript)
+  return shellDone(shellStart(transcript, result.command, excluded), id, result)
+}
 
 export const note = (transcript: Transcript, text: string): Transcript => withId(transcript, { kind: "note", text })
 
@@ -107,7 +168,7 @@ const lastCell = (transcript: Transcript): CellItem | undefined => {
   for (let at = transcript.items.length - 1; at >= 0; at--) {
     const item = transcript.items[at]!
     if (item.kind === "cell") return item
-    if (item.kind === "user") return undefined
+    if (item.kind === "user" && item.queued === undefined) return undefined
   }
   return undefined
 }
@@ -186,6 +247,26 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
       if (delta.type === "text-delta") return streamInto(transcript, delta.text, at)
       return transcript
     }
+    case "model-settled": {
+      const usage = event.usage
+      return {
+        ...transcript,
+        usage: {
+          input: transcript.usage.input + (usage.inputTokens ?? 0),
+          output: transcript.usage.output + (usage.outputTokens ?? 0),
+          cached: transcript.usage.cached + (usage.cachedInputTokens ?? 0),
+          context: usage.inputTokens ?? transcript.usage.context
+        }
+      }
+    }
+    case "steering-drained":
+      if (event.messages.length === 0) return transcript
+      return {
+        ...transcript,
+        items: transcript.items.map((item) =>
+          item.kind === "user" && item.queued === true ? { ...item, queued: false } : item
+        )
+      }
     case "model-retried":
       return note(transcript, `retrying · ${event.code}`)
     case "cell-produced": {

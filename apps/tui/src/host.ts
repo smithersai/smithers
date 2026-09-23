@@ -15,15 +15,18 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
+import * as NativeSearch from "@smthrs/std/NativeSearch"
 import * as NodeControl from "@smthrs/cli/NodeControl"
 import * as Capability from "@smthrs/capability/Capability"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Scope, Stream } from "effect"
@@ -31,14 +34,8 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
-import { existsSync, readFileSync } from "node:fs"
-import { join } from "node:path"
-
-/** One earlier exchange, replayed to the next turn as conversation context. */
-export interface Exchange {
-  readonly user: string
-  readonly answer: string
-}
+import * as Context from "./context.ts"
+import * as Replay from "./replay.ts"
 
 /** How a turn ended. */
 export type Outcome =
@@ -49,7 +46,11 @@ export type Outcome =
 export interface TurnInput {
   readonly prompt: string
   readonly seat: string
-  readonly history: ReadonlyArray<Exchange>
+  readonly history: ReadonlyArray<Context.Entry>
+  /** Where messages typed mid-turn wait for the next cell boundary. */
+  readonly steering?: Steering.Source
+  /** Reasoning effort; the provider's default when absent. */
+  readonly thinking?: ModelRequest.ReasoningEffort
   readonly onEvent: (event: AgentEvent.AgentEvent) => void
 }
 
@@ -99,23 +100,6 @@ const turnFlow = (index: number) =>
     body: () => Node.succeed(undefined)
   })
 
-const system = (cwd: string, history: ReadonlyArray<Exchange>): Array<string> => {
-  const parts = [
-    `You are a coding agent working in ${cwd}. Read before you change, keep edits small, and verify with the repository's own commands. Paths are relative to ${cwd}.`
-  ]
-  for (const name of ["AGENTS.md", "CLAUDE.md"]) {
-    const file = join(cwd, name)
-    if (existsSync(file)) parts.push(`${name}:\n${readFileSync(file, "utf8")}`)
-  }
-  if (history.length > 0) {
-    parts.push(
-      "The conversation so far, oldest first:\n" +
-        history.map((exchange) => `User: ${exchange.user}\nYou answered: ${exchange.answer}`).join("\n\n")
-    )
-  }
-  return parts
-}
-
 /** Builds a host for `cwd`. The runtime is shared by every turn. */
 export const make = (options: {
   readonly cwd: string
@@ -149,7 +133,11 @@ export const make = (options: {
   const run = (input: TurnInput): Turn => {
     const index = ++turns
     const program = Effect.gen(function*() {
-      const seat = yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
+      const seat = input.seat.startsWith("replay:")
+        ? Replay.seat({ file: input.seat.slice("replay:".length), holdMs: Number(env.SMITHERS_TUI_REPLAY_HOLD_MS ?? 0),
+          speed: Number(env.SMITHERS_TUI_REPLAY_SPEED ?? 1)
+        })
+        : yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
       const agent = yield* Agent.Agent
       const engine = yield* FlowRuntime.FlowRuntime
       const services = yield* Effect.context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>()
@@ -160,9 +148,17 @@ export const make = (options: {
         session: `tui-${process.pid}-${index}`,
         seat,
         prompt: input.prompt,
-        system: system(options.cwd, input.history),
+        system: Context.system(options.cwd, input.history),
+        ...(input.thinking === undefined
+          ? {}
+          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: input.thinking }) }),
         registry,
-        flows: [StandardFlows.filesystem(services), StandardFlows.shell(services)],
+        // `rg` searches this repository in seconds; the in-process walk took
+        // longer than grep's 120 s ceiling. It stays the fallback without rg.
+        flows: [
+          StandardFlows.filesystem(services, Bun.which("rg") === null ? undefined : NativeSearch.make(services)),
+          StandardFlows.shell(services)
+        ],
         capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
         // The same explicit cell budget `smithers run` uses; never unlimited.
         limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 },
@@ -171,6 +167,7 @@ export const make = (options: {
         ...(judged ? {} : { claimCap: 0 }),
         maxFrames: 40
       }).pipe(
+        Stream.provideService(Steering.Source, input.steering ?? Steering.makeNoop()),
         Stream.runForEach((event) =>
           Effect.sync(() => {
             if (event._tag === "resolved") answer = text(event.message.content)

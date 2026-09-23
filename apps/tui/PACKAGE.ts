@@ -43,7 +43,7 @@ const check = Smithers.Typecheck({
 // denominator is measured. See scripts/repo-contract/README.md.
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["test"]),
+  runner: Smithers.testSuite(["./test"]),
   srcs: sources,
   deps: [],
   cwd
