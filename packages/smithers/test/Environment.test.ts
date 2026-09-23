@@ -21,6 +21,8 @@ describe("the environment contract", () => {
       "SMITHERS_TEST_CWD",
       "SMITHERS_TEST_TIMEOUT_MS",
       "SMITHERS_BACKEND",
+      "SMITHERS_SUPERVISOR_STEER",
+      "SMITHERS_MEMORY_DB",
       "SMITHERS_BUG_ENDPOINT",
       "SMITHERS_JJ_PATH",
       "SMITHERS_DETACHED_ADMISSION_TIMEOUT_MS",

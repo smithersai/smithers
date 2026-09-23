@@ -20,7 +20,7 @@ await Effect.runPromise(
           providerCalls++
           if (providerCalls === 1) return cell(queuedCell)
           const saved = yield* read()
-          process.stdout.write(JSON.stringify({ status: "provider-pending", facts: saved.length, performed }) + "\n")
+          process.stdout.write(JSON.stringify({ status: "provider-pending", facts: saved, performed }) + "\n")
           return yield* Effect.never
         }))
     })
@@ -36,7 +36,7 @@ await Effect.runPromise(
               process.stdout.write(
                 JSON.stringify({
                   status: "right-pending",
-                  facts: saved.length,
+                  facts: saved,
                   performed,
                   settled: settled.map((row) => row.payload.payload)
                 }) + "\n"

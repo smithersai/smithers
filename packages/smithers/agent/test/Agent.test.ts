@@ -16,9 +16,11 @@ import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
 import * as EngineLike from "@smthrs/harness/EngineLike"
 import { HarnessError } from "@smthrs/harness/HarnessError"
+import * as Supervisor from "@smthrs/harness/Supervisor"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Recall from "@smthrs/memory/Recall"
 import * as MemorySource from "@smthrs/memory/Source"
+import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
@@ -275,6 +277,9 @@ const collect = (options: {
   readonly activeSeatSamples?: Array<number> | undefined
   /** Receives every event as it arrives, so a run that fails still shows what it emitted. */
   readonly sink?: Array<AgentEvent.AgentEvent> | undefined
+  readonly observe?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
+  readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
+  readonly supervisor?: Agent.Options["supervisor"]
 }) =>
   Effect.gen(function*() {
     const agent = yield* Agent.Agent
@@ -296,15 +301,16 @@ const collect = (options: {
       plugins: options.plugins,
       config: options.config,
       memory: options.memory,
+      supervisor: options.supervisor,
       maxFrames: options.maxFrames ?? 3
     }).pipe(
       Stream.runForEach((event) =>
         Effect.sync(() => {
           events.push(event)
           options.sink?.push(event)
-        })
+        }).pipe(Effect.andThen(options.observe?.(event) ?? Effect.void))
       ),
-      Effect.provide(Layer.merge(Agent.layerDefaults, scriptedCompletionJudge))
+      Effect.provide(Layer.merge(Agent.layerDefaults, options.evaluator ?? scriptedCompletionJudge))
     )
     if (options.activeSeatSamples !== undefined) {
       const state = yield* Metric.value(ObservabilityMetric.activeSeats)
@@ -312,6 +318,122 @@ const collect = (options: {
     }
     return events
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
+
+describe("supervisor memory through Agent.run", () => {
+  it.each(["recall", "absent", "failed"] as const)("binds the host memory port when recall is %s", async (mode) => {
+    const settled = Deferred.makeUnsafe<void>()
+    const notes: Array<MemoryStore.PutNoteInput> = []
+    const recalls: Array<Recall.Input> = []
+    const snapshots: Array<Supervisor.Snapshot> = []
+    const warnings: Array<string> = []
+    const namespace = mode === "recall" ? "repository" : "supervisor"
+    const sentence = "The repository runs its checks with tox."
+    const store = MemoryStore.makeNoop({
+      putNote: (input) =>
+        Effect.suspend(() => {
+          notes.push(input)
+          if (mode === "failed") return Effect.die(new Error("recorded memory write failure"))
+          return Effect.succeed({
+            ...input,
+            namespace: { kind: "agent" as const, id: namespace },
+            status: "accepted" as const,
+            createdAtMs: 1
+          })
+        })
+    })
+    const recall = Recall.Recall.of({
+      recall: (input) =>
+        Effect.suspend(() => {
+          recalls.push(input)
+          return mode === "failed"
+            ? Effect.die(new Error("recorded memory recall failure"))
+            : Effect.succeed(Array.from({ length: 8 }, (_, index) => ({
+              bank: `agent-${namespace}`,
+              key: `note-${index}`,
+              text: `Fact ${index}`,
+              score: 1
+            })))
+        })
+    })
+    const evaluator = Evaluator.layerScripted((request) => {
+      if (!Object.hasOwn(request.questions, "thrashing")) {
+        return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+      }
+      snapshots.push(Schema.decodeUnknownSync(Supervisor.Snapshot)(request.state))
+      return Object.fromEntries(
+        Object.keys(request.questions).map((key) => [
+          key,
+          key === "needs_help" ?
+            { choice: "none" }
+            : ["frustrated", "anxious", "scared", "confused", "confident"].includes(key) ?
+            { score: 0 }
+            : { probability: key === "on_target" || key.startsWith("remember_") ? 0.99 : 0.01 }
+        ])
+      )
+    })
+    const delegate = recordedCells([], ["console.log('observed')", "ctx.done('done')"])
+    let calls = 0
+    const model = Model.make({
+      stream: (request) => {
+        const first = calls++ === 0
+        const response = delegate.stream(request).pipe(Stream.map((event) =>
+          first && event.type === "text-delta"
+            ? ModelEvent.ModelEvent.TextDelta({ ...event, text: `${sentence}\n\n${event.text}` })
+            : event
+        ))
+        return first ? response : Stream.unwrap(Deferred.await(settled).pipe(Effect.as(response)))
+      }
+    })
+    const outcome = await drive(
+      collect({
+        registry: registryOf([]),
+        model,
+        evaluator,
+        supervisor: mode === "recall" ? { namespace, steer: false, remember: true } : undefined,
+        observe: (event) =>
+          event._tag === "supervisor-settled" && event.frame === 0
+            ? Deferred.succeed(settled, undefined).pipe(Effect.asVoid) :
+            Effect.void
+      }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        mode === "absent" ? (effect) => effect : Effect.provideService(Recall.Recall, recall),
+        Effect.provide(
+          Logger.layer([Logger.make((entry) => warnings.push(String(entry.message)))], { mergeWithExisting: false })
+        )
+      )
+    )
+    expect(outcome._tag).toBe("completed")
+    expect(snapshots[0]?.candidates).toEqual([sentence])
+    expect(snapshots[0]?.recalled).toEqual(
+      mode === "recall"
+        ? Array.from(
+          { length: Supervisor.recalledLimit },
+          (_, index) => ({ key: `note-${index}`, text: `Fact ${index}` })
+        ) :
+        []
+    )
+    expect(notes).toEqual([{
+      namespace: { kind: "agent", id: namespace },
+      id: expect.stringMatching(/^[0-9a-f]{64}$/),
+      text: sentence,
+      tags: ["source:supervisor"],
+      provenance: { runId: "session-1" },
+      status: "accepted"
+    }])
+    expect(recalls).toEqual(
+      mode === "absent" ? [] : [{
+        banks: [`agent-${namespace}`],
+        query: "The task for this run:\n\nwrite the first file",
+        maxTokens: Supervisor.recalledLimit * 256
+      }]
+    )
+    expect(warnings.filter((message) => message.includes("supervisor could not"))).toEqual(
+      mode === "failed"
+        ? ["The supervisor could not recall memory", "The supervisor could not write memory"] :
+        []
+    )
+  })
+})
 
 describe("Agent.run", () => {
   it.each([false, true])(

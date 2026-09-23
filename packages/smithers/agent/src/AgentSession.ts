@@ -95,7 +95,7 @@ import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { Agent } from "./Agent.ts"
+import { Agent, type Options as AgentOptions } from "./Agent.ts"
 import type * as Budget from "./Budget.ts"
 import { agentOutcome } from "./internal/AgentOutcome.ts"
 import { callId } from "./internal/CallIdentity.ts"
@@ -168,6 +168,8 @@ export interface Options {
    * @since 1.0.0-rc.0
    */
   readonly readOnlyCap?: number | undefined
+  /** What the supervisor may do with its readings; see `Agent.Options.supervisor`. */
+  readonly supervisor?: AgentOptions["supervisor"]
   /**
    * Wall-clock milliseconds one model call may spend before the boundary
    * interrupts it and re-issues it. Defaults to `CellTurn.defaultModelCallMs`;
@@ -310,7 +312,10 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
   // A pre-`refused` record has no such key, and the decoder fills it with
   // `false`, so a resumed run would derive a new identity for every
   // `claim-demanded` in its recorded prefix and publish the prefix twice.
-  ["control.agent.claim-demanded", new Set(["refused"])]
+  ["control.agent.claim-demanded", new Set(["refused"])],
+  // `supervisorSteer` was added to the one event every run journals first; a
+  // pre-supervisor record has no such key and decodes it `false`.
+  ["control.agent.discipline-armed", new Set(["supervisorSteer"])]
 ])
 
 /**
@@ -331,7 +336,12 @@ const lateFields: ReadonlyMap<string, ReadonlySet<string>> = new Map([
  */
 const unordered: ReadonlySet<string> = new Set([
   "control.agent.model-requested",
-  "control.agent.decision-settled"
+  "control.agent.decision-settled",
+  // Written by the supervisor fiber off the loop's hot path, at whatever
+  // ordinal the frame has reached when Jev answers; `scope` and `frame` are
+  // the coordinates, and no two readings of one run share them.
+  "control.agent.supervisor-settled",
+  "control.agent.supervisor-unjudged"
 ])
 
 /** The exclusion set for an event type that has never been enriched. */
@@ -746,6 +756,9 @@ export const trace = (
           // needed" from "never armed".
           unmovedCap: event.unmovedCap,
           unresolvedCap: event.unresolvedCap,
+          // Whether a supervisor reading may nudge the run; verdicts are
+          // journaled either way, so a wave reads this to know which.
+          supervisorSteer: event.supervisorSteer,
           calls: event.calls,
           memoryBytes: event.memoryBytes,
           steps: event.steps,
@@ -979,6 +992,38 @@ export const trace = (
           currentDigest: event.currentDigest,
           nextFrame: event.nextFrame
         }
+      }
+    case "supervisor-settled":
+      // Every field verbatim: the levels and the word are the transport's,
+      // and a reader re-applies thresholds to the three probabilities.
+      return {
+        eventType: "control.agent.supervisor-settled",
+        payload: {
+          scope: event.scope,
+          frame: event.frame,
+          thrashing: event.thrashing,
+          onTarget: event.onTarget,
+          suspect: event.suspect,
+          ...(event.outdatedContext === undefined ? {} : { outdatedContext: event.outdatedContext }),
+          ...(event.irrelevantContext === undefined ? {} : { irrelevantContext: event.irrelevantContext }),
+          frustrated: event.frustrated,
+          anxious: event.anxious,
+          scared: event.scared,
+          confused: event.confused,
+          confident: event.confident,
+          needsHelp: event.needsHelp,
+          crossed: event.crossed,
+          nudged: event.nudged,
+          inserted: event.inserted,
+          remembered: event.remembered,
+          latencyMs: event.latencyMs,
+          ...(event.usage === undefined ? {} : { usage: event.usage })
+        }
+      }
+    case "supervisor-unjudged":
+      return {
+        eventType: "control.agent.supervisor-unjudged",
+        payload: { scope: event.scope, frame: event.frame, reason: event.reason, detail: event.detail }
       }
     case "decision-settled": {
       // The state, the questions and the answers, because a decision is the
@@ -2470,7 +2515,8 @@ export const make = (
           narrowingCap: options.narrowingCap,
           unmovedCap: options.unmovedCap,
           unresolvedCap: options.unresolvedCap,
-          approvalChannel: options.approvalChannel ?? false
+          approvalChannel: options.approvalChannel ?? false,
+          supervisor: options.supervisor
         }).pipe(
           (stream) => agentOutcome(stream, record),
           Effect.provide(options.budget(card.envelope)),

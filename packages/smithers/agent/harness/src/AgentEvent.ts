@@ -120,6 +120,16 @@ export class DisciplineArmed extends Schema.TaggedClass<DisciplineArmed>(
     Schema.withConstructorDefault(Effect.succeed(0)),
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
+  /**
+   * Whether a supervisor reading past its threshold may nudge the run and
+   * insert recalled memory. False journals verdicts only. Defaulted so
+   * journals written before the supervisor existed decode unchanged. See
+   * `Supervisor`.
+   */
+  supervisorSteer: Schema.Boolean.pipe(
+    Schema.withConstructorDefault(Effect.succeed(false)),
+    Schema.withDecodingDefaultKey(Effect.succeed(false))
+  ),
   /** Maximum calls per cell, when this binding can enforce one. */
   calls: Schema.optional(Schema.Number),
   /** Maximum sandbox heap, when this binding can enforce one. */
@@ -812,6 +822,96 @@ export class DecisionSettled extends Schema.TaggedClass<DecisionSettled>(
   decidedBy: Schema.Literals(["jev", "seat", "human"])
 }) {}
 
+const Level = Schema.Literals(["none", "mild", "strong"])
+
+/**
+ * What Jev read off one frame of a running run, whether or not it nudged.
+ *
+ * Written by the supervisor fiber for every snapshot it read, at some time
+ * after the frame it is a reading of closed: the reading is taken off the
+ * cell loop's hot path, so its position among the frame's other events is not
+ * fixed and `scope` and `frame` are its coordinates. `frame` is the frame the
+ * snapshot was built from, not the frame that will read any nudge.
+ *
+ * `thrashing`, `onTarget` and `suspect` are the transport's probabilities
+ * verbatim, so a wave re-applies any threshold without re-asking. The five
+ * levels and `needsHelp` are the transport's words: nothing here is a default
+ * a failed reading fills in, because a failed reading writes
+ * {@link SupervisorUnjudged} and never this. `crossed` says whether the
+ * reading passed a nudge threshold; `nudged` whether a nudge was handed to
+ * the next boundary, which needs the host to have armed steering. `inserted`
+ * and `remembered` are the indexes of the recalled rows handed over and the
+ * candidates written to memory. `decision-settled` beside this carries the
+ * snapshot and every answer.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class SupervisorSettled extends Schema.TaggedClass<SupervisorSettled>(
+  "flows/harness/AgentEvent/SupervisorSettled"
+)("supervisor-settled", {
+  eventType: Schema.Literal("flows.harness.supervisor-settled.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame the snapshot was built from. */
+  frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** Probability the run is repeating itself without converging. */
+  thrashing: Schema.Number,
+  /** Probability the run is still working on the task as stated. */
+  onTarget: Schema.Number,
+  /** Probability the run's evidence is suspect. */
+  suspect: Schema.Number,
+  /** Probability visible earlier context is contradicted by later evidence. */
+  outdatedContext: Schema.optional(Schema.Number),
+  /** Probability visible earlier context is no longer useful for this task. */
+  irrelevantContext: Schema.optional(Schema.Number),
+  frustrated: Level,
+  anxious: Level,
+  scared: Level,
+  confused: Level,
+  confident: Level,
+  /** The one word a person is shown. */
+  needsHelp: Schema.Literals(["none", "clarification", "permission", "stuck", "risky_action"]),
+  /** Whether the reading crossed a nudge threshold. */
+  crossed: Schema.Boolean,
+  /** Whether a nudge was handed to the next boundary. */
+  nudged: Schema.Boolean,
+  /** Indexes of recalled rows handed to the next boundary. */
+  inserted: Schema.Array(Schema.Int),
+  /** Indexes of candidates written to memory. */
+  remembered: Schema.Array(Schema.Int),
+  /** Wall-clock milliseconds the evaluation took. */
+  latencyMs: Schema.Int,
+  /** Token usage reported by the evaluator, absent when it supplied none. */
+  usage: Schema.optional(Schema.Struct({ inputTokens: Schema.Number, outputTokens: Schema.Number }))
+}) {}
+
+/**
+ * A supervisor snapshot nobody could judge, and why.
+ *
+ * Written instead of {@link SupervisorSettled}, never beside it: no
+ * evaluator on the host, a refusal, a deadline, an answer that does not
+ * decode. `reason` is `unconfigured` or the transport's own error code. A
+ * reading that fails inserts nothing, remembers nothing and reports no level,
+ * so a wave counting calm runs counts only runs Jev read.
+ *
+ * @category events
+ * @since 1.0.0-rc.0
+ */
+export class SupervisorUnjudged extends Schema.TaggedClass<SupervisorUnjudged>(
+  "flows/harness/AgentEvent/SupervisorUnjudged"
+)("supervisor-unjudged", {
+  eventType: Schema.Literal("flows.harness.supervisor-unjudged.v1"),
+  /** The run's session. */
+  scope: Schema.String,
+  /** The frame the snapshot was built from. */
+  frame: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  /** `unconfigured`, or the transport's own error code. */
+  reason: Schema.Literals(["unconfigured", ...Evaluator.EvaluatorErrorCode.literals]),
+  /** The transport's own message. */
+  detail: Schema.String
+}) {}
+
 /**
  * The controller telling a run that its own evidence is complete.
  *
@@ -1110,6 +1210,8 @@ export const AgentEvent = Schema.Union([
   UnresolvedDemanded,
   ClaimDemanded,
   DecisionSettled,
+  SupervisorSettled,
+  SupervisorUnjudged,
   SufficiencyObserved,
   VacuousVerificationObserved,
   Suspended,
@@ -1171,6 +1273,8 @@ export const eventType = {
   resolved: "flows.harness.resolved.v1",
   steeringDrained: "flows.harness.steering-drained.v1",
   sufficiencyObserved: "flows.harness.sufficiency-observed.v1",
+  supervisorSettled: "flows.harness.supervisor-settled.v1",
+  supervisorUnjudged: "flows.harness.supervisor-unjudged.v1",
   suspended: "flows.harness.suspended.v1",
   transitionApplied: "flows.harness.transition-applied.v1",
   turnClosed: "flows.harness.turn-closed.v1",

@@ -548,8 +548,11 @@ const handBack = (demand: CompletionDemand, decision?: AgentEvent.DecisionSettle
  * contract and the flow catalog go in as `system` and the transcript goes in
  * the tail. So this is the closest thing the controller holds to the task as
  * the person stated it, and it cannot pick up a sentence the model wrote.
+ *
+ * @since 1.0.0-rc.0
+ * @private
  */
-const taskText = (window: ContextWindow.ContextWindow): string =>
+export const taskText = (window: ContextWindow.ContextWindow): string =>
   window.segments
     .filter((segment) => segment.zone === "prefix" && segment.kind === "instructions")
     .flatMap((segment) => segment.content)

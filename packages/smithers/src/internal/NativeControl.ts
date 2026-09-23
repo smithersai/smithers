@@ -75,6 +75,7 @@ import { hostname } from "node:os"
 import { join, resolve } from "node:path"
 import type * as Application from "../Application.ts"
 import * as CliError from "../CliError.ts"
+import * as Environment from "../Environment.ts"
 import * as Serve from "../Serve.ts"
 import * as AuthoredRebuild from "./AuthoredRebuild.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
@@ -870,7 +871,15 @@ export const make = (
         Layer.provide(grants),
         Layer.provideMerge(contained)
       )
-      const memory = MemoryStore.layer.pipe(Layer.provide(engine.stores), Layer.orDie)
+      // `SMITHERS_MEMORY_DB` moves the memory store to its own SQLite file, so
+      // runs of one repository in separate workspaces read and write one memory
+      // while every other store stays in this workspace's `engine.db`.
+      const memoryDatabase = Environment.read(environment, "SMITHERS_MEMORY_DB")
+      const memory = MemoryStore.layer.pipe(
+        Layer.provide(memoryDatabase === undefined ? engine.stores : native.database(memoryDatabase)),
+        Layer.provide(native.crypto),
+        Layer.orDie
+      )
       // AgentSession installs the effective budget from the approved card around
       // each `agent.run`. No card exists while this executor layer is built, so
       // unbounded is the only honest construction-time budget. The provider is
@@ -1107,7 +1116,10 @@ export const make = (
             limits: cellLimits,
             quotaPolicy,
             budget: Budget.layerFromEnvelope,
-            orderTerminalStatus: supervisor.awaitSettled
+            orderTerminalStatus: supervisor.awaitSettled,
+            // Verdicts are journaled whenever a judge is bound; only the nudge
+            // and memory insertion wait for `SMITHERS_SUPERVISOR_STEER=1`.
+            supervisor: { steer: Environment.read(environment, "SMITHERS_SUPERVISOR_STEER") === "1" }
           })
           const executor = yield* (catalog === undefined ? session : session.pipe(
             Effect.provideService(Executable.Catalog, catalog)

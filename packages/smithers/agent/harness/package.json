@@ -58,6 +58,7 @@
     "./Steering": "./src/Steering.ts",
     "./StructuredOutput": "./src/StructuredOutput.ts",
     "./Sufficiency": "./src/Sufficiency.ts",
+    "./Supervisor": "./src/Supervisor.ts",
     "./Tokens": "./src/Tokens.ts",
     "./Transcript": "./src/Transcript.ts",
     "./TruncatedOutput": "./src/TruncatedOutput.ts",
@@ -305,6 +306,16 @@
         "require": {
           "types": "./dist/cjs/Sufficiency.d.ts",
           "default": "./dist/cjs/Sufficiency.js"
+        }
+      },
+      "./Supervisor": {
+        "import": {
+          "types": "./dist/esm/Supervisor.d.ts",
+          "default": "./dist/esm/Supervisor.js"
+        },
+        "require": {
+          "types": "./dist/cjs/Supervisor.d.ts",
+          "default": "./dist/cjs/Supervisor.js"
         }
       },
       "./Tokens": {

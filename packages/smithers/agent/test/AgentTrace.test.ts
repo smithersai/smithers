@@ -126,6 +126,30 @@ const assistant = ModelRequest.Message.assistant([
 ])
 
 describe("trace", () => {
+  it.each([false, true])("preserves supervisor readings and optional evidence (present=%s)", (present) => {
+    const payload = {
+      scope: "session-1",
+      frame: 2,
+      thrashing: 0.1,
+      onTarget: 0.9,
+      suspect: 0.2,
+      frustrated: "mild" as const,
+      anxious: "none" as const,
+      scared: "strong" as const,
+      confused: "none" as const,
+      confident: "strong" as const,
+      needsHelp: "permission" as const,
+      crossed: true,
+      nudged: false,
+      inserted: [1],
+      remembered: [0],
+      latencyMs: 23,
+      ...(present ? { outdatedContext: 0, irrelevantContext: 0.8, usage: { inputTokens: 7, outputTokens: 3 } } : {})
+    }
+    const event = new AgentEvent.SupervisorSettled({ eventType: "flows.harness.supervisor-settled.v1", ...payload })
+    expect(AgentSession.trace(event)).toEqual({ eventType: "control.agent.supervisor-settled", payload })
+  })
+
   it.each(
     [
       [
@@ -193,6 +217,10 @@ describe("trace", () => {
             // — journaled for the same reason and read the same way.
             unmovedCap: 1,
             unresolvedCap: 1,
+            // Whether the supervisor's readings may nudge the run. Verdicts
+            // are journaled either way, so this is what tells a wave which
+            // runs' readings were ever put in front of the model.
+            supervisorSteer: false,
             calls: 64,
             memoryBytes: 134_217_728,
             steps: 1_000,

@@ -45,6 +45,8 @@ export const names: ReadonlyArray<Name> = [
   entry("TEST_CWD", "The repository's path inside that container"),
   entry("TEST_TIMEOUT_MS", "Wall-clock budget for one `test` invocation"),
   entry("BACKEND", "Database backend; only `sqlite` is supported"),
+  entry("SUPERVISOR_STEER", "`1` arms supervisor nudges and memory insertion; verdicts are journaled either way"),
+  entry("MEMORY_DB", "Path of a separate SQLite file for the memory store, shared across runs that name it"),
   entry("BUG_ENDPOINT", "Where `smthrs bug` posts its report"),
   entry("JJ_PATH", "Explicit path to the jj binary"),
   entry("DETACHED_ADMISSION_TIMEOUT_MS", "How long `up -d` waits for the detached run's admission line"),

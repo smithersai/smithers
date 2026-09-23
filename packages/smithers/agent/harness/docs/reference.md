@@ -35,6 +35,7 @@ importable as `@smthrs/harness/<Module>`.
 | `CallLedger` | `bound`, `width`, `members`, `Entry`, `Ledger`, `subject`, `target`, `digest`, `payload`, `Settlement`, `entry`, `settled`, `remember`, `render` | The call ledger: what this run has already asked, rendered every frame. |
 | `NarrowedCheck` | `retained`, `maxTerms`, `targeting`, `names`, `lex`, `terms`, `conditions`, `Check`, `Narrowing`, `check`, `narrows`, `find`, `demand`, `Only`, `findOnly`, `demandOnly`, `remember`, `Ledger` | The narrowing ledger: which checks this run has run, and over which tree. |
 | `CellValidation` | `Validation`, `normalize`, `validate` | Cell validation at the boundary. |
+| `Supervisor` | `frameBytes`, `recentFrames`, `candidateLimit`, `recalledLimit`, `taskBytes`, `thrashingAt`, `offTargetAt`, `suspectAt`, `acceptAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `Snapshot`, `classifierFor`, `classifier`, `Reading`, `UnjudgedReason`, `Unjudged`, `read`, `Options`, `defaultOptions`, `Memory`, `memoryNone`, `Verdict`, `nudge`, `recalledInsert`, `judge`, `head`, `tail`, `task`, `candidates` | The reading Jev takes of a run while it is still running. |
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
 | `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
@@ -83,6 +84,8 @@ Serializable events emitted by harness adapters.
 | `UnresolvedDemanded` | class | events | The controller refusing one completion that stepped around a failing check. |
 | `NarrowOnlyDemanded` | class | events | The controller refusing one completion that holds a single reading. |
 | `ClaimDemanded` | class | events | What Jev read off one completion claim, whether or not it braked. |
+| `SupervisorSettled` | class | events | What Jev read off one frame of a running run, whether or not it nudged. |
+| `SupervisorUnjudged` | class | events | A supervisor snapshot nobody could judge, and why. |
 | `DecisionAnswer` | const | models | One classifier answer as `decision-settled` journals it, tagged by kind. |
 | `decisionAnswers` | const | conversions | The answers of one evaluation in the shape `DecisionSettled` carries. |
 | `DecisionSettled` | class | events | One decision a classifier made, with everything a reader needs to make it again: the state it read, the questions it was asked, and what it answered. |
@@ -632,6 +635,51 @@ The completion nothing in the record contradicts.
 | `demand` | const | constructors | States what the record does not record, and names the two ways out. |
 | `quote` | const | conversions | The canonical JSON of a value, which is how this brake quotes one. |
 | `prose` | const | conversions | The head of a prose field, bounded by `proseBytes`. |
+
+## Supervisor
+
+`import * as Supervisor from "@smthrs/harness/Supervisor"`
+
+The reading Jev takes of a run while it is still running.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `frameBytes` | const | constants | The most of one frame's cell, prose or prints the snapshot carries, in UTF-8 bytes. |
+| `recentFrames` | const | constants | How many of the newest frames a snapshot carries. |
+| `candidateLimit` | const | constants | The most sentences one snapshot offers as memory candidates. |
+| `recalledLimit` | const | constants | The most recalled rows one snapshot offers for insertion. |
+| `taskBytes` | const | constants | The most of the task the snapshot carries, in UTF-8 bytes. |
+| `thrashingAt` | const | constants | At or above this probability of `thrashing`, a nudge is issued. |
+| `offTargetAt` | const | constants | At or below this probability of `on_target`, a nudge is issued. |
+| `suspectAt` | const | constants | At or above this probability of `suspect`, a nudge is issued. |
+| `acceptAt` | const | constants | At or above this probability, a candidate is remembered or a row inserted. |
+| `Level` | const | schemas | The three rungs every operational-state question is scored on. |
+| `levels` | const | constants | The rungs as the score question declares them, in order. |
+| `Help` | const | schemas | The one word a person is shown about a run. |
+| `emotions` | const | constants | The five operational states, in the order they are asked and journaled. |
+| `Emotion` | type | models | One of `emotions`. |
+| `Frame` | const | schemas | One recent frame as the snapshot carries it. |
+| `Signals` | const | schemas | The counts the deterministic controls keep, handed over as they stand. |
+| `Recalled` | const | schemas | One row recalled from memory, offered for insertion. |
+| `Snapshot` | const | schemas | Everything one supervisor reading is a reading of. |
+| `classifierFor` | const | classifiers | The classifier for a snapshot with these many candidates and recalled rows. |
+| `classifier` | const | classifiers | The classifier over a bare snapshot: the fixed questions and no per-item booleans. |
+| `Reading` | interface | models | What one evaluation came back with, decoded. |
+| `UnjudgedReason` | type | models | Why one snapshot went unjudged. |
+| `Unjudged` | interface | models | The typed failure a snapshot nobody could judge settles with. |
+| `read` | const | conversions | Asks Jev about one snapshot; fails, typed, whenever an answer could not be obtained. |
+| `Options` | interface | models | What a host arms the supervisor with. |
+| `defaultOptions` | const | constants | Verdicts journaled, nudges off, memory writes on. |
+| `Memory` | const | services | The memory a supervisor reads rows from and writes accepted sentences to. |
+| `memoryNone` | const | constructors | A memory with nothing behind it. |
+| `Verdict` | interface | models | What one reading does to the run, decided from the reading and the options. |
+| `nudge` | const | conversions | The nudge a crossed reading puts in front of the run, naming its evidence. |
+| `recalledInsert` | const | conversions | Renders one recalled row as the run reads it. |
+| `judge` | const | conversions | Decides what one reading does, under the options the host armed. |
+| `head` | const | conversions | The head of a frame's cell or prose, bounded by `frameBytes`. |
+| `tail` | const | conversions | The newest `frameBytes` of a frame's prints. |
+| `task` | const | conversions | The task as the snapshot carries it, both ends kept. |
+| `candidates` | const | conversions | The sentences a frame wrote that might be worth keeping. |
 
 ## Sufficiency
 

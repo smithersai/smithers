@@ -198,6 +198,32 @@ describe("AgentEvent", () => {
         currentDigest: "digest-after",
         nextFrame: 7
       }),
+      new AgentEvent.SupervisorSettled({
+        eventType: "flows.harness.supervisor-settled.v1",
+        scope: "session-1",
+        frame: 3,
+        thrashing: 0.62,
+        onTarget: 0.4,
+        suspect: 0.1,
+        frustrated: "strong",
+        anxious: "mild",
+        scared: "none",
+        confused: "none",
+        confident: "none",
+        needsHelp: "stuck",
+        crossed: true,
+        nudged: false,
+        inserted: [],
+        remembered: [0],
+        latencyMs: 310
+      }),
+      new AgentEvent.SupervisorUnjudged({
+        eventType: "flows.harness.supervisor-unjudged.v1",
+        scope: "session-1",
+        frame: 4,
+        reason: "timeout",
+        detail: "The gateway did not answer within 1500 ms"
+      }),
       new AgentEvent.Resolved({
         eventType: "flows.harness.resolved.v1",
         message: assistantMessage

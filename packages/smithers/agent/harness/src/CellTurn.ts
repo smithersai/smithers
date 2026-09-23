@@ -38,11 +38,13 @@ import * as Frame from "./internal/frame.ts"
 import { NonNegativeSafeInt } from "./internal/nonNegativeSafeInt.ts"
 import { printsObservation } from "./internal/printsObservation.ts"
 import { refusal } from "./internal/refusal.ts"
+import * as Supervision from "./internal/supervision.ts"
 import { untrustedData } from "./internal/untrustedData.ts"
 import * as NarrowedCheck from "./NarrowedCheck.ts"
 import * as Sandbox from "./Sandbox.ts"
 import * as Steering from "./Steering.ts"
 import * as Sufficiency from "./Sufficiency.ts"
+import * as Supervisor from "./Supervisor.ts"
 import { journalVersion } from "./Transcript.ts"
 import * as TruncatedOutput from "./TruncatedOutput.ts"
 import * as UnresolvedFailure from "./UnresolvedFailure.ts"
@@ -792,6 +794,14 @@ export interface Input {
   /** Re-read and journal the callable catalog before each frame, including the first. */
   readonly refreshFlows?: Effect.Effect<ReadonlyArray<Descriptor.FlowDescriptor>, HarnessError> | undefined
   readonly limits?: Sandbox.Limits | undefined
+  /**
+   * What the supervisor may do with a reading; omitted takes
+   * `Supervisor.defaultOptions`, which journals every verdict and nudges
+   * nothing. Runtime configuration rather than durable state: what it says is
+   * journaled once on `discipline-armed`, and a resumed run is armed by the
+   * host that resumes it. See `Supervisor`.
+   */
+  readonly supervisor?: Supervisor.Options | undefined
 }
 
 /**
@@ -2338,6 +2348,20 @@ interface Settling {
   readonly state: State
   readonly engine: EngineLike.EngineLike
   readonly steering: Steering.Source
+  /** The supervisor's mailbox, taken at the boundary that delivers it. */
+  readonly supervision: Supervision.Handle
+  /**
+   * This frame's snapshot, offered to the supervisor by the first boundary
+   * that executes live; empty for a frame that ran no cell. See {@link drain}.
+   */
+  readonly offer: Effect.Effect<void>
+  /**
+   * Whether this frame's boundary executed rather than replayed, known once
+   * {@link drain} has run. A replayed frame is never offered: its reading, if
+   * one was taken, is already in the journal, and a fresh one would be a
+   * second reading of a frame the run has moved past.
+   */
+  readonly live: { value: boolean }
   readonly emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
   /** The window the kept answer was given against, in-frame re-asks included. */
   readonly contextWindow: ContextWindow.ContextWindow
@@ -2377,13 +2401,35 @@ const drain = (settling: Settling, wouldIdle: boolean): Effect.Effect<Steering.D
       success: Steering.DrainRecord,
       execute: Frame.hasNextFrame(state)
         ? settling.steering.drain({ boundary: `${state.frame}:${boundary}`, wouldIdle }).pipe(
-          Effect.map(Steering.drainRecord)
+          Effect.map(Steering.drainRecord),
+          // The supervisor's nudge rides the same recorded drain, ahead of
+          // the operator's messages and only at a boundary the run continues
+          // through: a boundary that would idle is a completion or the last
+          // frame, and a nudge there would turn a finished answer into a
+          // follow-up. Inside the record, so a replayed boundary delivers
+          // what it delivered the first time. See `internal/supervision`.
+          Effect.flatMap((record) =>
+            wouldIdle
+              ? Effect.succeed(record)
+              : settling.supervision.take(state.frame).pipe(
+                Effect.map((messages) => ({ ...record, inserts: [...messages, ...record.inserts] }))
+              )
+          ),
+          // Executed, not replayed: the one fact that says this frame is the
+          // run's present rather than its past.
+          Effect.tap(() => Effect.sync(() => void (settling.live.value = true)))
         )
         : Effect.succeed({ inserts: [], seatChanges: [], queued: false })
     })
     yield* settling.emit(
       new AgentEvent.SteeringDrained({ eventType: eventType.steeringDrained, messages: drained.inserts })
     )
+    // The frame is offered to the supervisor from here, after its own take
+    // and only from a live boundary the run continues through, so the
+    // reading it produces is delivered by the boundary after this one and a
+    // replayed frame is never read twice. A boundary that would idle offers
+    // nothing: the run is completing or out of frames.
+    if (settling.live.value && !wouldIdle) yield* settling.offer
     return drained
   })
 
@@ -2485,7 +2531,9 @@ const frame = (
   realm: Sandbox.Realm,
   steering: Steering.Source,
   emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>,
-  readCompletion: typeof CompletionClaim.read
+  readCompletion: typeof CompletionClaim.read,
+  supervision: Supervision.Handle,
+  taskOf: (window: ContextWindow.ContextWindow) => string
 ): Effect.Effect<Step, HarnessError | Sandbox.SandboxError | Model.ModelFailure, Evaluator.Evaluator> =>
   Effect.gen(function*() {
     // Compaction happens before the turn opens, so the digest the turn records
@@ -2503,11 +2551,19 @@ const frame = (
     )
 
     const { answer, cell: sealed, contextWindow } = yield* seal(state, engine, emit)
-    const settling = (boundary: string, printed: string, facts: Frame.StateChanges): Settling => ({
+    const settling = (
+      boundary: string,
+      printed: string,
+      facts: Frame.StateChanges,
+      offer: Effect.Effect<void> = Effect.void
+    ): Settling => ({
       input,
       state,
       engine,
       steering,
+      supervision,
+      offer,
+      live: { value: false },
       emit,
       contextWindow,
       answer,
@@ -2591,9 +2647,35 @@ const frame = (
       captures: ran.captures
     })
     yield* emit(accounting.observed)
-    const exit = settling(cell.digest, printed, accounting.facts)
+    // The supervisor's snapshot of this frame: what the frame wrote, what it
+    // printed, how it ended, and the counts the deterministic controls keep.
+    // Built here, on the loop's fiber, and offered by the frame's live
+    // boundary; see `drain` for when, and `Supervisor` for what it is for.
+    const written = Supervision.prose(assistantText(answer))
     const { mutated } = accounting
     const { readOnlyFrames } = accounting.facts
+    const exit = settling(
+      cell.digest,
+      printed,
+      accounting.facts,
+      supervision.offer({
+        frame: state.frame,
+        digest: cell.digest,
+        current: {
+          frame: state.frame,
+          cell: Supervisor.head(cell.text),
+          prose: Supervisor.head(written),
+          printed: Supervisor.tail(ran.frame.prints),
+          transition: outcome._tag === "settled" ? outcome.transition._tag : outcome._tag,
+          mutated
+        },
+        snapshot: {
+          task: Supervisor.task(taskOf(contextWindow)),
+          signals: Supervision.signals(state, accounting.facts, accounting.workspaceDigest, accounting.observed.paths),
+          candidates: Supervisor.candidates(written)
+        }
+      })
+    )
 
     // Read-only discipline is armed for the whole frame, not for one exit: a
     // raise, a refused park and a settled transition all continue the run, and
@@ -2863,6 +2945,10 @@ const frame = (
       if (judged.unproven !== undefined) return yield* Effect.fail(judged.unproven)
       const demanded = judged.demand
       if (demanded !== undefined) {
+        // Handed back, so the run continues and the frame is supervised
+        // after all, from the same live boundary rule `drain` applies: a
+        // replayed judgement replays a replayed drain, and offers nothing.
+        if (exit.live.value) yield* exit.offer
         yield* emit(demanded.event)
         yield* close(exit, "continue")
         return continuing(exit, {
@@ -2975,6 +3061,10 @@ export const run = (
       )
     const readCompletion: typeof CompletionClaim.read = (evidence) =>
       CompletionClaim.read({ ...evidence, task: completionTask(evidence.task, instructions) })
+    // The supervisor reads the task the completion brake reads: the stated
+    // task and every later instruction the run accepted from the person.
+    const taskOf = (window: ContextWindow.ContextWindow): string => completionTask(Frame.taskText(window), instructions)
+    const supervisorOptions = input.supervisor ?? Supervisor.defaultOptions
     const loop = Effect.gen(function*() {
       const engine = yield* EngineLike.EngineLike
       const sandbox = yield* Sandbox.Sandbox
@@ -3006,10 +3096,19 @@ export const run = (
             unresolvedCap: current.unresolvedCap,
             claimCap: current.claimCap,
             revalidations: current.revalidations,
+            supervisorSteer: supervisorOptions.steer,
             ...limits
           })
         )
       }
+      // The supervisor's fiber, on this loop's scope: it reads snapshots the
+      // frames offer and the loop never waits for it. See `Supervisor`.
+      const supervision = yield* Supervision.open({
+        session: current.session,
+        engine,
+        emit,
+        options: supervisorOptions
+      })
       // The run's realm: an `acquireRelease` on this loop's scope rather than
       // on one evaluation, so teardown is still scope closure and cancellation
       // is still fiber interruption. A resumed run rebuilds it by re-executing
@@ -3078,7 +3177,9 @@ export const run = (
           realm,
           steering,
           emit,
-          readCompletion
+          readCompletion,
+          supervision,
+          taskOf
         ).pipe(
           Effect.catch((error) => {
             const request = permissionRequired(error)

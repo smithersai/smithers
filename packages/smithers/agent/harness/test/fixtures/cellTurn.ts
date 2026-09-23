@@ -3,7 +3,7 @@ import { ModelEvent, ModelRequest } from "@smthrs/model"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Descriptor } from "@smthrs/registry"
 import { Clock, Effect, type Layer, Option, Stream } from "effect"
-import type * as AgentEvent from "../../src/AgentEvent.ts"
+import * as AgentEvent from "../../src/AgentEvent.ts"
 import * as CellHistory from "../../src/CellHistory.ts"
 import * as CellTurn from "../../src/CellTurn.ts"
 import * as ContextWindow from "../../src/ContextWindow.ts"
@@ -11,6 +11,7 @@ import * as EngineLike from "../../src/EngineLike.ts"
 import * as QuickJSSandbox from "../../src/QuickJSSandbox.ts"
 import type * as Sandbox from "../../src/Sandbox.ts"
 import * as Steering from "../../src/Steering.ts"
+import * as Supervisor from "../../src/Supervisor.ts"
 import * as ScriptedEngine from "./scriptedEngine.ts"
 import * as ScriptedModel from "./scriptedModel.ts"
 
@@ -177,6 +178,12 @@ export interface Options {
    * engine is.
    */
   readonly resolve?: EngineLike.EngineLike["resolve"]
+  /** What the supervisor may do with a reading; omitted journals verdicts and nudges nothing. */
+  readonly supervisor?: Supervisor.Options | undefined
+  /** The memory the supervisor reads and writes; omitted binds none. */
+  readonly memory?: Supervisor.Memory | undefined
+  /** Observes every event before the controller advances; omitted observes nothing. */
+  readonly observer?: ((event: AgentEvent.AgentEvent) => Effect.Effect<void>) | undefined
 }
 
 /**
@@ -236,7 +243,8 @@ export const run = async (options: Options): Promise<Run> => {
   const outcome = await CellTurn.run({
     state: options.state,
     flows: options.flows ?? [descriptor("fs/list", { capabilities: ["fs:read:**"] })],
-    limits: options.limits
+    limits: options.limits,
+    supervisor: options.supervisor
   }).pipe(
     Stream.runForEach((event) => Effect.sync(() => events.push(event))),
     Effect.provide(
@@ -251,6 +259,10 @@ export const run = async (options: Options): Promise<Run> => {
       options.history === undefined
         ? effect
         : Effect.provideService(effect, CellHistory.CellHistory, options.history),
+    (effect) =>
+      options.memory === undefined ? effect : Effect.provideService(effect, Supervisor.Memory, options.memory),
+    (effect) =>
+      options.observer === undefined ? effect : Effect.provideService(effect, AgentEvent.Observer, options.observer),
     Effect.provide(options.evaluator ?? confidentEvaluator),
     Effect.result,
     Effect.exit,

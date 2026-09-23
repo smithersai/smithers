@@ -35,7 +35,7 @@ describe("queued cell-call trace replay on SQLite", () => {
       })
       let live: { settled: Array<{ value: string }> } | undefined
       try {
-        const marker = await new Promise<{ facts: number; performed: string[] }>((resolve, reject) => {
+        const marker = await new Promise<{ facts: ReadonlyArray<unknown>; performed: string[] }>((resolve, reject) => {
           let stdout = ""
           const timer = setTimeout(() => reject(new Error(`child did not reach pending provider: ${stderr}`)), 120_000)
           child.once("exit", (code) => {
@@ -69,7 +69,17 @@ describe("queued cell-call trace replay on SQLite", () => {
             expect(abandoned.status).toBe("running")
             yield* TestClock.setTime((abandoned.heartbeatAtMs ?? 0) + 120_000)
             const before = yield* facts(runId)
-            expect(before.length).toBe(marker.facts)
+            // The supervisor may append a reading between the child's marker
+            // and SIGKILL. Every fact witnessed by that marker must survive
+            // unchanged; only its independent readings can follow it.
+            expect(before.slice(0, marker.facts.length)).toEqual(marker.facts)
+            for (const row of before.slice(marker.facts.length)) {
+              expect([
+                "control.agent.supervisor-settled",
+                "control.agent.supervisor-unjudged",
+                "control.agent.decision-settled"
+              ]).toContain(row.payload.eventType)
+            }
             const originalBytes = JSON.stringify(before)
             const calls = before.filter((row) => row.payload.eventType === "control.agent.cell-call-settled")
             expect(calls.map((row) => (row.payload.payload as { value: string }).value)).toEqual(

@@ -39,6 +39,7 @@
  * @since 0.1.0
  */
 import * as Capability from "@smthrs/capability/Capability"
+import * as Digest from "@smthrs/core/Digest"
 import type { FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
@@ -51,6 +52,9 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
+import * as Supervisor from "@smthrs/harness/Supervisor"
+import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import * as Recall from "@smthrs/memory/Recall"
 import type * as MemorySource from "@smthrs/memory/Source"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
@@ -230,7 +234,64 @@ export interface Options {
    */
   readonly approvalChannel?: boolean | undefined
   readonly limits?: Sandbox.Limits | undefined
+  /**
+   * What the supervisor may do with its readings; see `Supervisor`.
+   *
+   * Verdicts are journaled whenever an `Evaluator` is bound, whatever this
+   * says. `steer` arms nudges and memory insertion, and is off until the
+   * offline replay has measured their precision. `remember` writes accepted
+   * sentences to the bound memory store and is on by default; a host with no
+   * store bound writes nothing. `namespace` is the memory bank read from and
+   * written to, one per project or repository, `supervisor` when unnamed.
+   */
+  readonly supervisor?: {
+    readonly steer?: boolean | undefined
+    readonly remember?: boolean | undefined
+    readonly namespace?: string | undefined
+  } | undefined
 }
+
+/**
+ * The supervisor's memory port over whatever memory the host bound.
+ *
+ * Optional on both sides: a composition with no `MemoryStore` recalls nothing
+ * and writes nothing, and says so through `bound`. A store or recall that
+ * fails is logged and answered with nothing, because the supervisor runs off
+ * the loop's hot path and a memory fault must not become a run fault.
+ */
+const supervisorMemory = (options: Options): Effect.Effect<Supervisor.Memory> =>
+  Effect.gen(function*() {
+    const store = yield* Effect.serviceOption(MemoryStore.MemoryStore)
+    const recall = yield* Effect.serviceOption(Recall.Recall)
+    const namespace = options.supervisor?.namespace ?? "supervisor"
+    if (Option.isNone(store)) return Supervisor.memoryNone
+    return {
+      bound: true,
+      recall: (query, limit) =>
+        Option.isNone(recall) ? Effect.succeed([]) : recall.value.recall({
+          banks: [`agent-${namespace}`],
+          query,
+          maxTokens: limit * 256
+        }).pipe(
+          Effect.map((rows) => rows.slice(0, limit).map((row) => ({ key: row.key, text: row.text }))),
+          Effect.catchCause((cause) =>
+            Effect.as(Effect.logWarning("The supervisor could not recall memory", cause), [])
+          )
+        ),
+      remember: (text) =>
+        store.value.putNote({
+          namespace: { kind: "agent", id: namespace },
+          id: Digest.digest(text),
+          text,
+          tags: ["source:supervisor"],
+          provenance: { runId: options.session },
+          status: "accepted"
+        }).pipe(
+          Effect.asVoid,
+          Effect.catchCause((cause) => Effect.logWarning("The supervisor could not write memory", cause))
+        )
+    }
+  })
 
 /**
  * Assembles the initial context window for a run.
@@ -489,6 +550,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             claimCap: options.claimCap,
             approvalChannel: options.approvalChannel
           })
+          const memory = yield* supervisorMemory(options)
           return CellTurn.run({
             state,
             flows: [],
@@ -496,9 +558,14 @@ const runProductionUnmeasured: Service["run"] = (options) =>
               Effect.map((visible) => visible.filter((descriptor) => descriptor.modelInvocable))
             ),
             limits: options.limits,
-            contextWindowTokensFor: options.contextWindowTokensFor
+            contextWindowTokensFor: options.contextWindowTokensFor,
+            supervisor: {
+              steer: options.supervisor?.steer ?? false,
+              remember: options.supervisor?.remember ?? true
+            }
           }).pipe(
-            Stream.provideService(EngineLike.EngineLike, withRequestPlugins(port, kernel.plugins))
+            Stream.provideService(EngineLike.EngineLike, withRequestPlugins(port, kernel.plugins)),
+            Stream.provideService(Supervisor.Memory, memory)
           )
         })
       ).pipe(

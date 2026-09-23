@@ -436,6 +436,17 @@
       "reason": "Shared completion evidence schema and classifier used by the offline scripted judge and native host completion gates."
     },
     {
+      "name": "@smthrs/harness",
+      "subpath": "./Supervisor",
+      "development": "./src/Supervisor.ts",
+      "published": {
+        "types": "./dist/esm/Supervisor.d.ts",
+        "import": "./dist/esm/Supervisor.js",
+        "require": "./dist/cjs/Supervisor.js"
+      },
+      "reason": "The non-blocking Jev supervisor: its snapshot schema, classifier, thresholds and memory port, read by the offline SWE-bench replay and by hosts that adapt a memory store to it."
+    },
+    {
       "name": "@smthrs/std",
       "subpath": "./TreeFingerprint",
       "development": "./src/TreeFingerprint.ts",
