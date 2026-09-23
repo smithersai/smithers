@@ -1404,6 +1404,9 @@ export const make = (deps: Dependencies) => {
               yield* expireRow(ttlMs, row.value)
               return Option.none<CacheStore.CacheEntry>()
             })
+          // A run's admitted attempt is replay authority. Shared cache rows
+          // are replaceable and cannot overwrite its result or failure.
+          const existing = yield* attempts.get(attemptId)
           if (cacheDeclaration._tag === "Eligible") {
             const observed = yield* cache.get(keyDigest).pipe(Effect.catch((error) =>
               noteUnshareable({ stage: "entry", message: `cache lookup failed: ${error.message}` }).pipe(
@@ -1439,7 +1442,7 @@ export const make = (deps: Dependencies) => {
                   }
                 ))
               }
-              if (candidate._tag === "CandidateEvidence") {
+              if (candidate._tag === "CandidateEvidence" && Option.isNone(existing)) {
                 const boundary = yield* StepBoundary.StepBoundary
                 // Skyframe's dirty check, not "the declaration changed" (issue
                 // #90): the read-set digests folded into the step key are caller
@@ -1647,7 +1650,7 @@ export const make = (deps: Dependencies) => {
                   // hit is merely refused for this dispatch; the row survives.
                   yield* Metric.update(EngineStoreMetrics.stepCacheDecision.Unmeasurable, 1)
                 }
-              } else {
+              } else if (candidate._tag === "Refused") {
                 // A row whose recorded evidence cannot justify reuse — a
                 // foreign tier, an unverified capture, a recorded deviation.
                 yield* Metric.update(EngineStoreMetrics.stepCacheDecision.UnverifiableEvidence, 1)
@@ -1657,7 +1660,6 @@ export const make = (deps: Dependencies) => {
             }
           }
 
-          const existing = yield* attempts.get(attemptId)
           if (Option.isSome(existing)) {
             const row = existing.value
             if (row.state === "succeeded") {

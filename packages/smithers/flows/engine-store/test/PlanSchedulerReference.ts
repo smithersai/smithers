@@ -6,8 +6,9 @@
  *
  * The dispatch seam is shared with production, not frozen: this oracle
  * constructs `ActionPersistence` the way the live caller does, including
- * the run-scoped cache-age projection. Freezing the seam instead would
- * make the differential report seam read counts as scheduler divergence.
+ * shared attempt admission and the run-scoped cache-age projection. Freezing
+ * the seam instead would make the differential report seam read counts as
+ * scheduler divergence.
  */
 /**
  * Drives a persisted plan: the node scheduler.
@@ -97,6 +98,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as EngineStoreMetrics from "../src/EngineStoreMetrics.ts"
 import * as ActionPersistence from "../src/internal/ActionPersistence.ts"
+import * as AttemptAdmission from "../src/internal/AttemptAdmission.ts"
 import * as CacheAgeVerdicts from "../src/internal/CacheAgeVerdicts.ts"
 import * as FileEnumeration from "../src/internal/FileEnumeration.ts"
 import * as JournalRecords from "../src/internal/JournalRecords.ts"
@@ -505,6 +507,7 @@ const nonNegativeSafeInteger = (name: string, value: number): number => {
  * @category constructors
  */
 export const make = (options: Options): Service => {
+  const admission = AttemptAdmission.makeUnsafe()
   const cacheAgeVerdict = CacheAgeVerdicts.make(options.runId)
   const rebaseLimit = nonNegativeSafeInteger("rebaseLimit", options.rebaseLimit ?? 3)
   const scheduling = Scheduling.make(options.concurrency)
@@ -1167,6 +1170,7 @@ export const make = (options: Options): Service => {
             yield* Queue.offer(events, { _tag: "AttemptKeyed", nodeId: node.id, digest: dispatchDigest })
             const ran = yield* Ref.make(false)
             const exit = yield* ActionPersistence.make({
+              admission,
               runId: options.runId,
               owner: options.owner,
               cacheAgeVerdict,

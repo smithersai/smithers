@@ -85,6 +85,7 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as EngineStoreMetrics from "./EngineStoreMetrics.ts"
 import * as ActionPersistence from "./internal/ActionPersistence.ts"
+import * as AttemptAdmission from "./internal/AttemptAdmission.ts"
 import * as CacheAgeVerdicts from "./internal/CacheAgeVerdicts.ts"
 import * as FileEnumeration from "./internal/FileEnumeration.ts"
 import * as JournalRecords from "./internal/JournalRecords.ts"
@@ -478,6 +479,7 @@ const nonNegativeSafeInteger = (name: string, value: number): number => {
  * @category constructors
  */
 export const make = (options: Options): Service => {
+  const admission = AttemptAdmission.makeUnsafe()
   const cacheAgeVerdict = CacheAgeVerdicts.make(options.runId)
   const rebaseLimit = nonNegativeSafeInteger("rebaseLimit", options.rebaseLimit ?? 3)
   const scheduling = Scheduling.make(options.concurrency)
@@ -1109,6 +1111,7 @@ export const make = (options: Options): Service => {
             const exit = yield* ActionPersistence.make({
               runId: options.runId,
               owner: options.owner,
+              admission,
               cacheAgeVerdict,
               sourceId: `${options.sourceId}/node/${node.id}`,
               execute: () =>

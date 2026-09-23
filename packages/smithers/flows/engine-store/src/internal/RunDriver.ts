@@ -762,6 +762,14 @@ export const make = (
           }
           if (waiting === null) yield* engineState.wake(runId)
           if (afterTransitioned !== undefined) yield* afterTransitioned
+          // Every terminal round closes its own deadlines, including a
+          // handoff whose successor and linked children continue separately.
+          if (toStatus === "completed" || toStatus === "failed") {
+            yield* engineState.completeRunClocks(
+              runId,
+              yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
+            )
+          }
           // The decision carries the state it committed, so run state at a
           // frame is DERIVED by replaying decisions rather than read off the
           // run row's current `state_json`
@@ -2033,14 +2041,8 @@ export const make = (
                 // A suspension is not an exit: the run is parked and will settle
                 // later, so its children keep going and its timers stay armed. A
                 // `completed` or `failed` run is done, so its attached children
-                // end with it and its clock rows are closed with it.
-                status === "suspended" ? undefined : Effect.gen(function*() {
-                  yield* applyChildExitPolicy(executionId)
-                  yield* engineState.completeRunClocks(
-                    executionId,
-                    yield* Clock.currentTimeMillis.pipe(Effect.map(Math.floor))
-                  )
-                }),
+                // end with it. The transition closes its own clock rows.
+                status === "suspended" ? undefined : applyChildExitPolicy(executionId),
                 waiting
               ).pipe(
                 // The park becomes durable the instant this transition commits, so
