@@ -104,6 +104,8 @@ interface TextSearch {
   readonly startedAt: number
   readonly status: "running" | "done"
   readonly hits: ReadonlyArray<Search.Hit>
+  /** rg stopped at `Search.limit`. */
+  readonly truncated: boolean
 }
 
 /** A flow run's inline form: its missing input, or the approval of an all-capabilities envelope. */
@@ -366,6 +368,8 @@ export function App(props: AppProps) {
   const scroll = useRef<ScrollBoxRenderable>(null)
   const lastCtrlC = useRef(0)
   const files = useRef(Files.lister(props.host.cwd))
+  /** The draft a palette command with an argument displaced; restored by the next submit. */
+  const parkedDraft = useRef<string | undefined>(undefined)
   const dimensions = useTerminalDimensions()
   const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
 
@@ -380,6 +384,15 @@ export function App(props: AppProps) {
     : undefined
   const menuIdentity = menu === undefined ? "" : `${menu.kind}:${menu.query}`
   useEffect(() => setMenuIndex(0), [menuIdentity])
+
+  // A dialog's rows follow the dialog and its sources, never the 100 ms clock: the palette ranks every file.
+  const tabsKey = snapshot.tabs.map((tab) => `${tab.id}\0${tab.title}\0${tab.status}`).join("\n")
+  const rows = useMemo(
+    () => picker === undefined
+      ? []
+      : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed()),
+    [picker, props.models, seat, filter, tabsKey, search?.hits, runs, revision]
+  )
 
   // Key handlers read the latest values through these, never a stale render.
   const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals })
@@ -445,11 +458,11 @@ export function App(props: AppProps) {
         query: textQuery.query,
         ...(textQuery.regex === undefined ? {} : { regex: textQuery.regex })
       })
-      setSearch({ query: textQuery.query, startedAt: Date.now(), status: "running", hits: [] })
+      setSearch({ query: textQuery.query, startedAt: Date.now(), status: "running", hits: [], truncated: false })
       void running.done.then((outcome) => {
         if (generation !== searchGeneration.current || outcome._tag === "cancelled") return
         if (outcome._tag === "done") {
-          setSearch({ query: textQuery.query, startedAt: 0, status: "done", hits: outcome.hits })
+          setSearch({ query: textQuery.query, startedAt: 0, status: "done", hits: outcome.hits, truncated: outcome.truncated })
           return
         }
         setSearch(undefined)
@@ -864,8 +877,10 @@ export function App(props: AppProps) {
     const text = (typed ?? input.plainText).trim()
     if (text === "") return
     const shellLine = Shell.parse(text)
+    const parked = parkedDraft.current
+    parkedDraft.current = undefined
     history.current.add(text)
-    setText("")
+    setText(parked ?? "")
     if (shellLine !== undefined) {
       if (shellLine.command !== "") runShell(shellLine.command, shellLine.excluded)
       return
@@ -987,10 +1002,15 @@ export function App(props: AppProps) {
         case "command": {
           const found = Editor.commands.find((each) => each.name === chosen.name)
           if (found !== undefined && Editor.takesArgument(found)) {
+            // The command takes the composer; the draft comes back on the next submit.
+            const draft = composer.current?.plainText ?? ""
+            if (draft.trim() !== "") parkedDraft.current = draft
             setPanelFocus(false)
             return setText(`/${chosen.name} `)
           }
-          return submit(false, `/${chosen.name}`)
+          // Run it beside the draft, never through the composer or its history.
+          command(`/${chosen.name}`)
+          return
         }
         case "session":
           return resumeGuarded(chosen.file)
@@ -1004,7 +1024,7 @@ export function App(props: AppProps) {
       }
     }
     resumeGuarded(value)
-  }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, runs, setText, submit, command])
+  }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, runs, setText, command])
 
   /** Keys while a flow form is open; its focused input takes the typing. */
   const formKey = (key: KeyEvent, open: FlowForm) => {
@@ -1050,7 +1070,6 @@ export function App(props: AppProps) {
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
-    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed())
     const move = (step: number) => {
       key.preventDefault()
       if (rows.length > 0) setPicker((current) => current === undefined ? current : { ...current, selected: (current.selected + step + rows.length) % rows.length })
@@ -1296,9 +1315,6 @@ export function App(props: AppProps) {
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
   const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
-  const rows = picker === undefined
-    ? []
-    : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed())
   const tabCount = Math.max(2, Math.floor(width / 24))
   const firstTab = Math.max(
     0,
@@ -1576,7 +1592,7 @@ export function App(props: AppProps) {
             : picker.kind === "filter"
             ? "Filter chat"
             : picker.kind === "palette"
-            ? "Search"
+            ? parsedPalette?.mode === "text" && search?.truncated === true ? `Search · first ${Search.limit}` : "Search"
             : picker.kind === "fork"
             ? "Fork from Message"
             : picker.kind === "undo"

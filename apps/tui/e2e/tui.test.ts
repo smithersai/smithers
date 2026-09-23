@@ -326,6 +326,35 @@ describe("search palette", () => {
     await tui.until((screen) => /\/hotkeys\s+Show the keys/.test(screen), 5_000, "typed after the prefix")
   }, 60_000)
 
+  it("a picked command keeps the draft out of the way and out of history", async () => {
+    const { tui } = await start()
+    await tui.type("my precious draft")
+    await tui.press(key.ctrlK)
+    await tui.type("/sess")
+    await tui.until((screen) => /\/session\s+Show the session file/.test(screen), 5_000, "command row")
+    await tui.press(key.enter)
+    await tui.until((screen) => /exchanges · ↑0/.test(screen) && /┃\s+my precious draft/.test(screen), 5_000, "draft kept")
+    await tui.press(key.ctrlK)
+    await tui.type("/name")
+    await tui.until((screen) => /\/name\s+<name>/.test(screen), 5_000, "name row")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+\/name\s*$/m.test(screen), 5_000, "command in composer")
+    await tui.type("kept")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+my precious draft/.test(screen), 5_000, "draft restored")
+  }, 60_000)
+
+  it("text: says when rg stopped at the cap", async () => {
+    const cwd = repository()
+    for (let file = 0; file < 12; file++) {
+      writeFileSync(join(cwd, `many${file}.txt`), Array.from({ length: 20 }, () => "repeated").join("\n") + "\n")
+    }
+    const { tui } = await start({ cwd })
+    await tui.press(key.ctrlK)
+    await tui.type("text:repeated")
+    await tui.until((screen) => screen.includes("Search · first 200"), 10_000, "cap shown")
+  }, 60_000)
+
   it("session: resumes a past session", async () => {
     const first = await start()
     await first.tui.type("!echo remembered-output")

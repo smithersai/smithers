@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Search from "../src/search.ts"
@@ -71,6 +71,34 @@ describe("rg search", () => {
     running.cancel()
     expect(await running.done).toEqual({ _tag: "cancelled" })
     expect(Date.now() - started).toBeLessThan(5_000)
+  })
+
+  it("kills rg and its children on cancel", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tui-slow-rg-"))
+    const shim = join(dir, "rg")
+    const pidFile = join(dir, "pid")
+    // A grandchild, so only a process-group kill reaches it.
+    writeFileSync(shim, `#!/bin/sh\nsleep 30 &\necho $! > ${pidFile}\nwait\n`)
+    chmodSync(shim, 0o755)
+    const running = Search.run({ cwd, query: "x", command: shim })
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0)
+        return true
+      } catch {
+        return false
+      }
+    }
+    let pid = 0
+    for (let tries = 0; tries < 100 && pid === 0; tries++) {
+      await Bun.sleep(20)
+      pid = existsSync(pidFile) ? Number(readFileSync(pidFile, "utf8").trim()) : 0
+    }
+    expect(pid).toBeGreaterThan(0)
+    expect(alive(pid)).toBe(true)
+    running.cancel()
+    for (let tries = 0; tries < 100 && alive(pid); tries++) await Bun.sleep(20)
+    expect(alive(pid)).toBe(false)
   })
 
   it("returns no hits, not a failure, when nothing matches", async () => {
