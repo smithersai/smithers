@@ -366,6 +366,9 @@ const cgoFixture = async (): Promise<string> => {
   const compiler = process.platform === "darwin"
     ? NodeChildProcess.execFileSync("xcrun", ["--find", "clang"], { encoding: "utf8" }).trim()
     : undefined
+  const sdkRoot = process.platform === "darwin"
+    ? NodeChildProcess.execFileSync("xcrun", ["--show-sdk-path"], { encoding: "utf8" }).trim()
+    : undefined
   const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-go-cgo-")))
   temporaryDirectories.push(root)
   await write(root, "go.mod", "module example.test/cgo\n\ngo 1.26.0\n")
@@ -390,7 +393,7 @@ export const Workspace = S.Workspace("cgo", { repository: "git+https://example.t
     root,
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"
-const binary = S.Go.Binary({ pkg: "./native", out: "//build/native${process.platform === "win32" ? ".exe" : ""}"${compiler ? `, env: { CC: ${JSON.stringify(compiler)} }` : ""} })
+const binary = S.Go.Binary({ pkg: "./native", out: "//build/native${process.platform === "win32" ? ".exe" : ""}"${compiler ? `, env: { CC: ${JSON.stringify(compiler)}, SDKROOT: ${JSON.stringify(sdkRoot)} }` : ""} })
 const test = S.Shell.Test({ bin: binary })
 export const Package = S.Package({ targets: { binary, test } })
 `
