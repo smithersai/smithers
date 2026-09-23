@@ -48,7 +48,7 @@ import * as Workspace from "@smthrs/kernel/Workspace"
 import type * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
-import * as Recall from "@smthrs/memory/Recall"
+import type * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import type { NotificationQueue } from "@smthrs/notifications"
@@ -75,7 +75,6 @@ import { hostname } from "node:os"
 import { join, resolve } from "node:path"
 import type * as Application from "../Application.ts"
 import * as CliError from "../CliError.ts"
-import * as Environment from "../Environment.ts"
 import * as Serve from "../Serve.ts"
 import * as AuthoredRebuild from "./AuthoredRebuild.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
@@ -88,6 +87,7 @@ import * as ModuleAuthority from "./ModuleAuthority.ts"
 import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
 import * as NodeWorkspaceObservation from "./NodeWorkspaceObservation.ts"
 import * as SourceRevision from "./SourceRevision.ts"
+import * as SupervisorMemory from "./SupervisorMemory.ts"
 import * as WorkspaceRouting from "./WorkspaceRouting.ts"
 
 /** Captured durable control services shared by native consumers.
@@ -864,13 +864,15 @@ export const make = (
     )
     // `SMITHERS_MEMORY_DB` moves the memory store to its own SQLite file, so
     // runs of one repository in separate workspaces read and write one memory
-    // while every other store stays in this workspace's `engine.db`.
-    const memoryDatabase = Environment.read(environment, "SMITHERS_MEMORY_DB")
-    const memory = MemoryStore.layer.pipe(
-      Layer.provide(memoryDatabase === undefined ? engine.stores : native.database(memoryDatabase)),
-      Layer.provide(native.crypto),
-      Layer.orDie
-    )
+    // while every other store stays in this workspace's `engine.db`. Recall
+    // reads the same store, so what one run remembers the next is shown; see
+    // `SupervisorMemory` for the busy timeout, the bank and the opt-in.
+    const memory = SupervisorMemory.layer({
+      environment,
+      database: native.database,
+      crypto: native.crypto,
+      stores: engine.stores
+    })
     // AgentSession installs the effective budget from the approved card around
     // each `agent.run`. No card exists while this executor layer is built, so
     // unbounded is the only honest construction-time budget. The provider is
@@ -1112,8 +1114,9 @@ export const make = (
           budget: Budget.layerFromEnvelope,
           orderTerminalStatus: supervisor.awaitSettled,
           // Verdicts are journaled whenever a judge is bound; only the nudge
-          // and memory insertion wait for `SMITHERS_SUPERVISOR_STEER=1`.
-          supervisor: { steer: Environment.read(environment, "SMITHERS_SUPERVISOR_STEER") === "1" }
+          // and memory insertion wait for `SMITHERS_SUPERVISOR_STEER=1`, and
+          // memory writes for a memory database of the operator's own.
+          supervisor: SupervisorMemory.options(environment, workspaceRoot)
         })
         const executor = yield* (catalog === undefined ? session : session.pipe(
           Effect.provideService(Executable.Catalog, catalog)
@@ -1125,7 +1128,6 @@ export const make = (
       Layer.provide([
         guarded,
         memory,
-        Recall.layerNoop,
         quotaPolicy,
         sessionAgent,
         // The run's mutation accounting is measured rather than declared, and

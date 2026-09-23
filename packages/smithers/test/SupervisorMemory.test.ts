@@ -1,0 +1,252 @@
+/**
+ * The supervisor's memory as the native host composes it: the store and the
+ * recall binding `NativeControl` hands every agent session, over a real
+ * SQLite file, with the options the host derives from its environment.
+ *
+ * Nothing here is a hand-bound memory double. The two runs go through
+ * `Agent.run` against the layer `SupervisorMemory.layer` builds, which is the
+ * layer the executor registration provides, so a recall that is a no-op in
+ * production is a no-op here too.
+ */
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import * as Agent from "@smthrs/agent/Agent"
+import * as Budget from "@smthrs/agent/Budget"
+import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
+import * as Seat from "@smthrs/agent/Seat"
+import { FlowEngine } from "@smthrs/engine"
+import { Flow, FlowRuntime } from "@smthrs/flow"
+import * as Supervisor from "@smthrs/harness/Supervisor"
+import * as MemoryStore from "@smthrs/memory/MemoryStore"
+import * as Evaluator from "@smthrs/model/Evaluator"
+import * as Model from "@smthrs/model/Model"
+import * as ModelEvent from "@smthrs/model/ModelEvent"
+import type * as Route from "@smthrs/model/Route"
+import { Node } from "@smthrs/plan"
+import * as Registry from "@smthrs/registry/Registry"
+import { Deferred, Effect, Layer, Metric, Option, Schema, Scope, Stream } from "effect"
+import { spawn } from "node:child_process"
+import { mkdtempSync, realpathSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
+import { afterEach, describe, expect, it } from "vitest"
+import { platform } from "../src/internal/NodeControlHost.ts"
+import * as SupervisorMemory from "../src/internal/SupervisorMemory.ts"
+
+const roots: Array<string> = []
+const scratch = (): string => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "smithers-supervisor-memory-")))
+  roots.push(root)
+  return root
+}
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })
+})
+
+const prepared: Route.PreparedRequest = {
+  routeId: "route-a",
+  protocolId: "test-protocol",
+  method: "POST",
+  url: "https://example.invalid/v1/messages",
+  publicHeaders: { "content-type": "application/json" },
+  body: new TextEncoder().encode("{}"),
+  bodyText: "{}"
+}
+const route: FlowEngineLike.RouteResolver = { prepare: () => Effect.succeed(prepared) }
+
+/** A model that answers each frame with the next cell, the first one prefixed by `prose`. */
+const cells = (prose: string, sources: ReadonlyArray<string>, held: Deferred.Deferred<void>): Model.Model => {
+  let index = 0
+  return Model.make({
+    stream: () =>
+      Stream.suspend(() => {
+        const first = index === 0
+        const source = sources[index++] ?? sources.at(-1)!
+        const response = Stream.fromIterable([
+          ModelEvent.ModelEvent.TextStart({ type: "text-start", id: `cell-${index}` }),
+          ModelEvent.ModelEvent.TextDelta({
+            type: "text-delta",
+            id: `cell-${index}`,
+            text: `${first ? `${prose}\n\n` : ""}\`\`\`cell\n${source}\n\`\`\``
+          }),
+          ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: `cell-${index}` }),
+          ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" })
+        ])
+        // Every frame after the first waits for frame 0's reading, so the
+        // reading, and the write it decides, happen inside the run.
+        return first ? response : Stream.unwrap(Deferred.await(held).pipe(Effect.as(response)))
+      })
+  })
+}
+
+/** A judge that finishes every completion and accepts every memory candidate. */
+const judge = (snapshots: Array<Supervisor.Snapshot>) =>
+  Evaluator.layerScripted((request) => {
+    if (!Object.hasOwn(request.questions, "thrashing")) {
+      return { complete: { probability: 0.99 }, overclaims: { probability: 0.01 }, invented: { probability: 0.01 } }
+    }
+    snapshots.push(Schema.decodeUnknownSync(Supervisor.Snapshot)(request.state))
+    return Object.fromEntries(
+      Object.keys(request.questions).map((key) => [
+        key,
+        key === "needs_help"
+          ? { choice: "none" }
+          : ["frustrated", "anxious", "scared", "confused", "confident"].includes(key)
+          ? { score: 0 }
+          : { probability: key === "on_target" || key.startsWith("remember_") ? 0.99 : 0.01 }
+      ])
+    )
+  })
+
+const runFlow = Flow.make("smithers/test/supervisor-memory", {
+  payload: {},
+  success: Schema.Unknown,
+  error: Schema.Unknown,
+  body: () => Node.succeed(undefined)
+})
+
+/** One agent run, driven as one durable flow execution, over the host's memory. */
+const agentRun = (input: {
+  readonly session: string
+  readonly prose: string
+  readonly memory: Layer.Layer<MemoryStore.MemoryStore | import("@smthrs/memory/Recall").Recall>
+  readonly supervisor: Agent.Options["supervisor"]
+  readonly snapshots: Array<Supervisor.Snapshot>
+}) =>
+  Effect.gen(function*() {
+    const engine = yield* FlowRuntime.FlowRuntime
+    const scope = yield* Effect.scope
+    const done = yield* Deferred.make<void>()
+    const held = yield* Deferred.make<void>()
+    const body = Effect.gen(function*() {
+      const agent = yield* Agent.Agent
+      yield* agent.run({
+        session: input.session,
+        seat: Seat.make({
+          id: "anthropic:test-model",
+          modelId: "test-model",
+          model: cells(input.prose, ["console.log('observed')", "ctx.done('done')"], held),
+          route,
+          contextWindowTokens: 0
+        }),
+        prompt: "make the tox suite pass",
+        registry: Registry.makeNoop({
+          list: () => Effect.succeed([]),
+          visible: () => Effect.succeed([]),
+          getOption: () => Effect.succeed(Option.none())
+        }),
+        supervisor: input.supervisor,
+        maxFrames: 3
+      }).pipe(
+        Stream.runForEach((event) =>
+          event._tag === "supervisor-settled" && event.frame === 0
+            ? Deferred.succeed(held, undefined)
+            : Effect.void
+        ),
+        Effect.provide(Layer.merge(Agent.layerDefaults, judge(input.snapshots)))
+      )
+    }).pipe(
+      Effect.provide(Agent.layer),
+      Effect.provide(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
+      Effect.provide(input.memory)
+    )
+    yield* engine.register(runFlow, () => Effect.ensuring(body, Deferred.succeed(done, undefined))).pipe(
+      Scope.provide(scope)
+    )
+    yield* engine.execute(runFlow, { executionId: `exec-${input.session}`, payload: {}, discard: true })
+    yield* Deferred.await(done)
+  }).pipe(
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)),
+    Effect.provideService(Metric.MetricRegistry, new Map()),
+    Effect.scoped,
+    Effect.runPromise
+  )
+
+describe("SupervisorMemory", () => {
+  it("recalls a note run 1 remembered into run 2's snapshot, through the host's memory composition", async () => {
+    const root = scratch()
+    const environment = { SMITHERS_MEMORY_DB: join(root, "memory", "django.db") }
+    // Two workspaces of one repository, the way a wave runs two instances.
+    const first = SupervisorMemory.options(environment, join(root, "work-1"))
+    const second = SupervisorMemory.options(environment, join(root, "work-2"))
+    expect(first).toEqual(second)
+    const memory = () =>
+      SupervisorMemory.layer({
+        environment,
+        database: platform.database,
+        crypto: platform.crypto
+      })
+    const sentence = "The repository runs its suite through tox, never pytest directly."
+    const written: Array<Supervisor.Snapshot> = []
+    await agentRun({ session: "run-1", prose: sentence, memory: memory(), supervisor: first, snapshots: written })
+    expect(written[0]?.candidates).toEqual([sentence])
+
+    const read: Array<Supervisor.Snapshot> = []
+    await agentRun({
+      session: "run-2",
+      prose: "Looking around first.",
+      memory: memory(),
+      supervisor: second,
+      snapshots: read
+    })
+    expect(read[0]?.recalled.map((row) => row.text)).toContain(sentence)
+  })
+
+  it("names memory per repository, never one global bank, and writes only when the host opted in", () => {
+    const root = scratch()
+    const one = SupervisorMemory.options({}, join(root, "a"))
+    const other = SupervisorMemory.options({}, join(root, "b"))
+    expect(one.namespace).not.toEqual(other.namespace)
+    expect(one.namespace).not.toBe("supervisor")
+    expect(one.namespace).toMatch(/^project-[0-9a-f]{16}$/)
+    expect(one.remember).toBe(false)
+    expect(one.steer).toBe(false)
+    const opted = SupervisorMemory.options(
+      { SMITHERS_MEMORY_DB: join(root, "m.db"), SMITHERS_SUPERVISOR_STEER: "1" },
+      join(root, "a")
+    )
+    expect(opted.remember).toBe(true)
+    expect(opted.steer).toBe(true)
+  })
+
+  it("persists every write when two processes write one memory database at once", async () => {
+    const root = scratch()
+    const file = join(root, "memory", "shared.db")
+    const writer = fileURLToPath(new URL("./fixtures/supervisor-memory-writer.ts", import.meta.url))
+    const count = 100
+    const spawnWriter = (label: string) =>
+      new Promise<{ readonly code: number | null; readonly stderr: string }>((resolve) => {
+        const child = spawn(process.execPath, ["--no-warnings", writer, file, label, String(count)], {
+          stdio: ["ignore", "ignore", "pipe"]
+        })
+        let stderr = ""
+        child.stderr.on("data", (chunk) => stderr += String(chunk))
+        child.on("exit", (code) => resolve({ code, stderr }))
+      })
+    const results = await Promise.all([spawnWriter("left"), spawnWriter("right")])
+    expect(results.map((result) => result.stderr)).toEqual(["", ""])
+    expect(results.map((result) => result.code)).toEqual([0, 0])
+    const rows = await Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      return yield* store.searchRows({
+        namespace: { kind: "agent", id: "shared" },
+        status: "accepted",
+        limit: 1_000
+      })
+    }).pipe(
+      Effect.provide(
+        SupervisorMemory.layer({
+          environment: { SMITHERS_MEMORY_DB: file },
+          database: platform.database,
+          crypto: platform.crypto
+        })
+      ),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect(rows.map((row) => row.key).sort()).toEqual(
+      ["left", "right"].flatMap((label) => Array.from({ length: count }, (_, index) => `${label}-${index}`)).sort()
+    )
+  }, 60_000)
+})
