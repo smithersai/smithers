@@ -32114,7 +32114,7 @@ other, so the shape they have to agree on belongs beneath both.
 
 | Export            | Shape                                                                                                                                                                                         |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Thinking`        | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. Mirrors `ModelRequest.ReasoningEffort` in [`@smthrs/model`](/docs/reference/api/model/), which this package deliberately does not depend on. |
+| `Thinking`        | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. A subset of `ModelRequest.ReasoningEffort` in [`@smthrs/model`](/docs/reference/api/model/), which also admits `"max"`; this package deliberately does not depend on it. |
 | `MessagePayload`  | `{ kind: "Message"; body: string }`. The body may be empty.                                                                                                                                   |
 | `SeatPayload`     | `{ kind: "Seat"; seat: string }`. `seat` is non-empty.                                                                                                                                        |
 | `ThinkingPayload` | `{ kind: "Thinking"; thinking: Thinking }`.                                                                                                                                                   |

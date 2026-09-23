@@ -148,8 +148,10 @@ Finds files through the Smithers Ripgrep Subset v1 contract, corresponding to
 | `notice`    | string, optional | Truncation, or why a pattern was unsatisfiable. |
 
 Fails with `invalid_input` for `noIgnore: false`, `invalid_pattern` for an
-unsupported glob, `not_found` for a missing root, or a peer failure
-(`command_failed`, `provider_unavailable`, `request_failed`).
+unsupported glob, `not_found` for a missing root, `command_failed` when the
+root exists but the host cannot inspect it (the message carries the host's
+own reason), or a peer failure (`command_failed`, `provider_unavailable`,
+`request_failed`).
 
 ## grep
 
@@ -193,7 +195,8 @@ Three schemas are exported alongside `Output`:
 | `Grep.Match`       | `file`, `line`, `text`, `before`, `after`, `symbol` |
 
 Fails with `invalid_input` for a refused option combination, `invalid_pattern`
-for an unsupported expression, `not_found` for a missing root, or a peer failure.
+for an unsupported expression, `not_found` for a missing root, `command_failed`
+when the root exists but the host cannot inspect it, or a peer failure.
 
 ## bash
 

@@ -17,12 +17,13 @@ describe("SearchContract", () => {
     ])
   })
 
-  it("keeps only the failure constructors and the literal escape internal", () => {
+  it("keeps only the failure constructors, the root-failure mapping, and the literal escape internal", () => {
     expect(Object.keys(Internal).sort()).toEqual([
       "escapeRegex",
       "invalidInput",
       "invalidPattern",
-      "notFound"
+      "notFound",
+      "rootFailure"
     ])
   })
 

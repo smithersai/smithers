@@ -17,7 +17,7 @@ import { Effect } from "effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as StdError from "../StdError.ts"
 import * as Ignore from "./Ignore.ts"
-import { notFound } from "./SearchContract.ts"
+import { rootFailure } from "./SearchContract.ts"
 
 /**
  * Directory basenames excluded from recursive descent.
@@ -109,7 +109,7 @@ export const files = (
   included: (relative: string, basename: string) => boolean = () => true
 ): Effect.Effect<Walked, StdError.StdError> =>
   Effect.gen(function*() {
-    const info = yield* fileSystem.stat(root).pipe(Effect.mapError(() => notFound(root)))
+    const info = yield* fileSystem.stat(root).pipe(Effect.mapError((error) => rootFailure(root, error)))
     if (info.type === "File") return { explicitFile: true, files: [path.normalize(root)], ignored: false }
     const files: Array<string> = []
     let excluded = false
@@ -123,9 +123,9 @@ export const files = (
       const { directory } = next
       let scopes = next.scopes
       const children: ReadonlyArray<string> = yield* fileSystem.readDirectory(directory).pipe(
-        Effect.catch(() =>
+        Effect.catch((error) =>
           directory === root
-            ? Effect.fail(notFound(directory))
+            ? Effect.fail(rootFailure(directory, error))
             : Effect.succeed<ReadonlyArray<string>>([])
         )
       )

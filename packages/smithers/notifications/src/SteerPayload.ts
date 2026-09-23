@@ -22,10 +22,12 @@ import { Schema } from "effect"
 /**
  * How hard the model should think.
  *
- * Mirrors `ModelRequest.ReasoningEffort` in `@smthrs/model`, which this
+ * A subset of `ModelRequest.ReasoningEffort` in `@smthrs/model`, which this
  * package deliberately does not depend on: a durable payload schema that
- * pulled in a provider client would make every queue reader carry one. The
- * literals are identical, so the harness assigns one to the other directly.
+ * pulled in a provider client would make every queue reader carry one. Every
+ * literal here is one of that schema's, so the harness assigns a `Thinking`
+ * to a `ReasoningEffort` directly; `ReasoningEffort` also admits `"max"`,
+ * which steering does not offer.
  *
  * @category models
  * @since 0.1.0
