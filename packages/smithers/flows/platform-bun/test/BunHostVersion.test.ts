@@ -71,7 +71,7 @@ describe("test lane", () => {
     expect(result.stdout).toContain("1 passed")
   }, 90_000)
 
-  it("allocates private coverage output and removes it when the runner exits", () => {
+  it("isolates coverage output and removes it when the runner exits", () => {
     const output = execFileSync("node", [
       "--input-type=module",
       "-e",
@@ -80,12 +80,20 @@ describe("test lane", () => {
       import { statSync, writeFileSync } from "node:fs";
       import { join } from "node:path";
       const directory = config.test.coverage.reportsDirectory;
-      console.log(JSON.stringify({ directory, mode: statSync(directory).mode & 0o777 }));
+      const info = statSync(directory);
+      console.log(JSON.stringify({ directory, mode: info.mode & 0o777, isDirectory: info.isDirectory() }));
       writeFileSync(join(directory, "probe.json"), "{}");
     `
     ], { cwd: join(import.meta.dirname, ".."), encoding: "utf8" })
-    const { directory, mode } = JSON.parse(output) as { directory: string; mode: number }
-    expect(mode).toBe(0o700)
+    const { directory, isDirectory, mode } = JSON.parse(output) as {
+      directory: string
+      mode: number
+      isDirectory: boolean
+    }
+    expect(isDirectory).toBe(true)
+    // Every host proves creation, a successful write, and exit cleanup.
+    // Owner-only POSIX mode bits are an additional POSIX-host assertion.
+    if (process.platform !== "win32") expect(mode).toBe(0o700)
     expect(existsSync(directory)).toBe(false)
   })
 })
