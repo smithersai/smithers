@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3149 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3155 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -327,6 +327,12 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **build:** run cache postgres test through native runtime ([1d1cf4f7dd](https://github.com/smithersai/smithers/commit/1d1cf4f7dda849a21612a8a68dc08b7dc7b85a5f))
+- **evals:** re-run a trial whose verifier never wrote a grade ([ebe1773fa4](https://github.com/smithersai/smithers/commit/ebe1773fa407bed29827cd39865270e958489670))
+- return false for missing atomic exists ancestors ([e20c99c833](https://github.com/smithersai/smithers/commit/e20c99c833b5c03cd91d50340e9ac0636b5c89ef))
+- **app:** finish paginated terminal run journals ([ba1210c1c0](https://github.com/smithersai/smithers/commit/ba1210c1c0d3505896762ee797f9ee7f942c0d87))
+- **app:** preserve queued repository setup item edits ([4e42aba081](https://github.com/smithersai/smithers/commit/4e42aba081e307b8108e00453f0e3c8466308da5))
+- **app:** retain signup edits while command persistence is pending ([2284ad1ef6](https://github.com/smithersai/smithers/commit/2284ad1ef690d13fd3304237eccb50f8277c94c3))
 - **repository-jobs:** ignore stale signal projections with SQL attempt and operation guards ([c8205c352b](https://github.com/smithersai/smithers/commit/c8205c352b707d39c9bd6aea89c2941d308983ff))
 - **app:** scope HTTP turn recovery flags to each leg ([debebe6cb4](https://github.com/smithersai/smithers/commit/debebe6cb45201269713723e5b42ab37760447aa))
 - **tui:** make PTY approval checks deterministic ([f0559bdbfc](https://github.com/smithersai/smithers/commit/f0559bdbfcc62ec828b1af84c3653eef31d8c96d))
