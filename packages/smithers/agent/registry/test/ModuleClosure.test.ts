@@ -179,18 +179,20 @@ describe("the walk", () => {
       expect(new Set(found.map((entry) => entry.path)).size).toBe(found.length)
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
-  it.effect("ends on a cycle and names each module once", () =>
-    Effect.gen(function*() {
-      const root = yield* tree({
-        "flow.ts": `import "./a.ts"`,
-        "a.ts": `import "./b.ts"`,
-        "b.ts": `import "./a.ts"\nimport "./flow.ts"`
-      })
+  for (const entryPath of ["flow.ts", "./flow.ts"]) {
+    it.effect(`ends on a cycle and names each module once with entry ${entryPath}`, () =>
+      Effect.gen(function*() {
+        const root = yield* tree({
+          "flow.ts": `import "./a.ts"`,
+          "a.ts": `import "./b.ts"`,
+          "b.ts": `import "./a.ts"\nimport "./flow.ts"`
+        })
 
-      // `flow.ts` imports itself back through `b.ts`, which is legal and must
-      // not be walked a second time.
-      expect((yield* walk(root, "flow.ts")).map((entry) => entry.path)).toEqual(["a.ts", "b.ts"])
-    }).pipe(Effect.scoped, Effect.provide(platform)))
+        // `flow.ts` imports itself back through `b.ts`, which is legal and must
+        // not be walked a second time.
+        expect((yield* walk(root, entryPath)).map((entry) => entry.path)).toEqual(["a.ts", "b.ts"])
+      }).pipe(Effect.scoped, Effect.provide(platform)))
+  }
 
   it.effect("reads each module once across the flows that share it", () =>
     Effect.gen(function*() {

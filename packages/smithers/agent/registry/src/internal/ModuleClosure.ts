@@ -203,9 +203,10 @@ export const collect = (
   }
 ): Effect.Effect<ReadonlyArray<ModuleImport>> =>
   Effect.gen(function*() {
-    const entryDirectory = path.dirname(entryPath)
+    const normalizedEntryPath = path.resolve(entryPath)
+    const entryDirectory = path.dirname(normalizedEntryPath)
     const found = new Map<string, ModuleImport>()
-    const visited = new Set<string>([entryPath])
+    const visited = new Set<string>([normalizedEntryPath])
     // `pending` carries the importer so an unresolvable specifier can name the
     // file that asked for it rather than only the specifier nothing answered.
     const pending: Array<{ readonly from: string; readonly directory: string; readonly specifier: string }> = []
@@ -215,14 +216,14 @@ export const collect = (
     }
     const { opaque, relative } = specifiersOf(entrySource)
     if (opaque > 0) {
-      found.set(entryPath, unpinnable(`the entry computes the target of ${opaque} import() call(s)`))
+      found.set(normalizedEntryPath, unpinnable(`the entry computes the target of ${opaque} import() call(s)`))
     }
-    enqueue(entryPath, entryDirectory, relative)
+    enqueue(normalizedEntryPath, entryDirectory, relative)
 
     while (pending.length > 0) {
       const { directory, from, specifier } = pending.shift()!
       const resolved = yield* resolve(fs, path, directory, specifier)
-      const importer = from === entryPath ? "the entry" : `"${relativePath(path, entryDirectory, from)}"`
+      const importer = from === normalizedEntryPath ? "the entry" : `"${relativePath(path, entryDirectory, from)}"`
       if (resolved === undefined) {
         const description = `${importer} imports "${specifier}", which resolves to no file`
         found.set(description, unpinnable(description))
