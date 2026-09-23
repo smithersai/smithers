@@ -174,7 +174,7 @@ const paramsSchema = Schema.Struct({
   topK: Schema.optional(Schema.Number),
   stopSequences: Schema.optional(Schema.Array(Schema.String)),
   thinkingBudget: Schema.optional(Schema.Number),
-  reasoningEffort: Schema.optional(Schema.Literals(["none", "minimal", "low", "medium", "high", "xhigh"]))
+  reasoningEffort: Schema.optional(Schema.Literals(["none", "minimal", "low", "medium", "high", "xhigh", "max"]))
 })
 
 const requestSchema = Schema.Struct({

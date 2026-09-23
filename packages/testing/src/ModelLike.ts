@@ -69,7 +69,7 @@ export interface ModelRequestLike {
     readonly topK?: number | undefined
     readonly stopSequences?: ReadonlyArray<string> | undefined
     readonly thinkingBudget?: number | undefined
-    readonly reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | undefined
+    readonly reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | undefined
   }
   /**
    * How the provider may use the declared tools. Only `none` is modelled,
