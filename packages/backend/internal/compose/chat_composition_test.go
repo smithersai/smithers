@@ -70,3 +70,20 @@ func TestChatStreamingRoutesRequireAuthentication(t *testing.T) {
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, chat.CommitPath, nil))
 	require.Equal(t, http.StatusNotFound, response.Code)
 }
+
+func TestChatErasureRouteSurvivesSignoutAndRejectsForeignOrigin(t *testing.T) {
+	router := chi.NewRouter()
+	mountChatPublic(router, &chat.Runtime{Handler: &chat.Handler{}}, nil, &config.Config{})
+	// No AuthLoader identity or CSRF cookie is available after sign-out. A 503
+	// from the handler proves the proof-only request passed the route stack.
+	request := httptest.NewRequest(http.MethodPost, chat.ErasePath, strings.NewReader(`{"runId":"run","legId":"leg","retirementProof":"`+strings.Repeat("a", 64)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	require.Equal(t, http.StatusServiceUnavailable, response.Code)
+	foreign := request.Clone(request.Context())
+	foreign.Header.Set("Origin", "https://foreign.invalid")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, foreign)
+	require.Equal(t, http.StatusForbidden, response.Code)
+}

@@ -471,6 +471,13 @@ type ChatTurnBatch struct {
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
+type ChatTurnErasure struct {
+	RunID      string    `json:"run_id"`
+	LegID      string    `json:"leg_id"`
+	AccessHash string    `json:"access_hash"`
+	RetiredAt  time.Time `json:"retired_at"`
+}
+
 type CodeSearchDocument struct {
 	ID           int64       `json:"id"`
 	RepositoryID int64       `json:"repository_id"`

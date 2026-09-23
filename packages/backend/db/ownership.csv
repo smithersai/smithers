@@ -224,6 +224,7 @@ product_job_dispatches,product,product migration 0005
 product_job_events,product,product migration 0005
 chat_turns,product,product migration 0007
 chat_turn_batches,product,product migration 0007
+chat_turn_erasures,product,product migration 0013
 flow_runtime_host_bindings,product,product migration 0008
 storage_sets,private,Plue placement migration 0001
 storage_nodes,private,Plue placement migration 0001

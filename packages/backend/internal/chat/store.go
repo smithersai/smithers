@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"embed"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -130,6 +131,14 @@ func equalSecret(left, right string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(left), []byte(right)) == 1
+}
+
+// Lock the public turn identity across admission and proof-only erasure. The
+// lock exists even before a turn row does, which closes the preacceptance race.
+func lockTurnIdentity(ctx context.Context, tx pgx.Tx, runID, legID string) error {
+	sum := sha256.Sum256([]byte(runID + "\x00" + legID))
+	_, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, int64(binary.BigEndian.Uint64(sum[:8])))
+	return err
 }
 
 type acceptanceUnsigned struct {
@@ -393,6 +402,20 @@ func (s *Store) Admit(ctx context.Context, input AdmitInput) (AdmitResult, error
 		return AdmitResult{}, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err = lockTurnIdentity(ctx, tx, input.RunID, input.Journal.LegID); err != nil {
+		return AdmitResult{}, err
+	}
+	var erasedProof string
+	err = tx.QueryRow(ctx, `SELECT access_hash FROM chat_turn_erasures WHERE run_id=$1 AND leg_id=$2`, input.RunID, input.Journal.LegID).Scan(&erasedProof)
+	if err == nil {
+		if equalSecret(erasedProof, accessHash) {
+			return AdmitResult{}, ErrRetired
+		}
+		return AdmitResult{}, ErrForbidden
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return AdmitResult{}, err
+	}
 	turnID := uuid.NewString()
 	result, err := tx.Exec(ctx, `INSERT INTO chat_turns(
 		id,repository_id,user_id,run_id,leg_id,request_payload,request_hash,owner_hash,access_hash,writer_hash,acceptance,acceptance_hash,accepted_at_ms,
@@ -1061,6 +1084,74 @@ func (s *Store) Retire(ctx context.Context, input ReplayInput) error {
 	if turn.State == StateRetired {
 		return tx.Commit(ctx)
 	}
+	if err = s.retireTurnTx(ctx, tx, turn); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// Erase is authorized only by the hash of a replay token. The proof cannot be
+// exchanged for a token or used by Replay, and no account context is needed.
+func (s *Store) Erase(ctx context.Context, runID, legID, proof string) error {
+	if !validIdentity(runID) || !validIdentity(legID) || !hexHashPattern.MatchString(proof) {
+		return ErrInvalidRequest
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err = lockTurnIdentity(ctx, tx, runID, legID); err != nil {
+		return err
+	}
+	var savedProof string
+	err = tx.QueryRow(ctx, `SELECT access_hash FROM chat_turn_erasures WHERE run_id=$1 AND leg_id=$2`, runID, legID).Scan(&savedProof)
+	if err == nil && !equalSecret(savedProof, proof) {
+		return ErrForbidden
+	}
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE run_id=$1 AND leg_id=$2 FOR UPDATE`, runID, legID)
+	if err != nil {
+		return err
+	}
+	var turns []turnRecord
+	for rows.Next() {
+		turn, scanErr := scanTurn(rows)
+		if scanErr != nil {
+			rows.Close()
+			return scanErr
+		}
+		turns = append(turns, turn)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, turn := range turns {
+		if !equalSecret(turn.AccessHash, proof) {
+			return ErrForbidden
+		}
+	}
+	for _, turn := range turns {
+		if turn.State == StateRetired {
+			continue
+		}
+		if err = s.retireTurnTx(ctx, tx, turn); err != nil {
+			return err
+		}
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO chat_turn_erasures(run_id,leg_id,access_hash,retired_at) VALUES($1,$2,$3,$4)
+		ON CONFLICT(run_id,leg_id) DO NOTHING`, runID, legID, proof, s.now().UTC())
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (s *Store) retireTurnTx(ctx context.Context, tx pgx.Tx, turn turnRecord) error {
 	if turn.AcceptanceHash == nil {
 		return ErrCorrupt
 	}
@@ -1078,11 +1169,9 @@ func (s *Store) Retire(ctx context.Context, input ReplayInput) error {
 	if _, err = tx.Exec(ctx, `DELETE FROM chat_turn_batches WHERE turn_id=$1`, turn.ID); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE chat_turns SET request_payload=NULL,writer_hash=NULL,acceptance=NULL,accepted_at_ms=NULL,cursor_hash=NULL,head_hash=NULL,
-		producer_token_hash=NULL,producer_lease_expires_at=NULL,producer_started_at=NULL,terminal=true,state='retired',retirement=$2,updated_at=$3 WHERE id=$1`, turn.ID, tombstone, now); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	_, err = tx.Exec(ctx, `UPDATE chat_turns SET request_payload=NULL,writer_hash=NULL,acceptance=NULL,accepted_at_ms=NULL,cursor_hash=NULL,head_hash=NULL,
+		producer_token_hash=NULL,producer_lease_expires_at=NULL,producer_started_at=NULL,terminal=true,state='retired',retirement=$2,updated_at=$3 WHERE id=$1`, turn.ID, tombstone, now)
+	return err
 }
 
 func (s *Store) RecoveryCandidates(ctx context.Context, limit int) ([]Candidate, error) {

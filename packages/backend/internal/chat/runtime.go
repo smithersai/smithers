@@ -65,7 +65,9 @@ func (r *Runtime) Run(ctx context.Context) error {
 	return r.dispatcher.Run(ctx, r.concurrency)
 }
 
-func (r *Runtime) MountPublic(router chi.Router) { r.Handler.MountPublic(router) }
+func (r *Runtime) MountPublic(router chi.Router)        { r.Handler.MountPublic(router) }
+func (r *Runtime) MountAuthenticated(router chi.Router) { r.Handler.MountAuthenticated(router) }
+func (r *Runtime) MountErasure(router chi.Router)       { r.Handler.MountErasure(router) }
 func (r *Runtime) MountProducerCallbacks(router chi.Router) {
 	r.Handler.MountProducerCallbacks(router)
 }

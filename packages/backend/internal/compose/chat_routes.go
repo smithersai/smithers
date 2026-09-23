@@ -2,6 +2,7 @@ package compose
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
@@ -29,7 +30,32 @@ func mountChatPublic(router chi.Router, runtime *chat.Runtime, queries *db.Queri
 		r.Use(apiCSRFMiddleware)
 		r.Use(middleware.GlobalAPIRateLimit(queries))
 		r.Use(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser))
-		runtime.MountPublic(r)
+		runtime.MountAuthenticated(r)
+	})
+	// The deletion proof is a capability: this route must survive sign-out.
+	router.Group(func(r chi.Router) {
+		r.Use(cors.Handler(apiCORSOptions(cfg)))
+		r.Use(middleware.JSONAllowContentType("application/json"))
+		r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
+		r.Use(apiCSRFMiddleware)
+		r.Use(middleware.GlobalAPIRateLimit(queries))
+		allowed := apiAllowedOrigins(cfg)
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				if origin := req.Header.Get("Origin"); origin != "" {
+					trusted := false
+					for _, candidate := range allowed {
+						trusted = trusted || strings.EqualFold(origin, candidate)
+					}
+					if !trusted {
+						http.Error(w, "forbidden", http.StatusForbidden)
+						return
+					}
+				}
+				next.ServeHTTP(w, req)
+			})
+		})
+		runtime.MountErasure(r)
 	})
 }
 

@@ -18,6 +18,7 @@ const (
 	CancelPath          = "/api/agent/turn/cancel"
 	ReplayPath          = "/api/agent/turn/replay"
 	RetirePath          = "/api/agent/turn/retire"
+	ErasePath           = "/api/agent/turn/erase"
 	CommitPath          = "/internal/chat/commit"
 	ProviderStartedPath = "/internal/chat/provider-started"
 	journalHeader       = "x-smithers-turn-journal"
@@ -36,6 +37,12 @@ type replayRequest struct {
 
 type cancelRequest struct {
 	RunID string `json:"runId"`
+}
+
+type eraseRequest struct {
+	RunID           string `json:"runId"`
+	LegID           string `json:"legId"`
+	RetirementProof string `json:"retirementProof"`
 }
 
 type producerRequest struct {
@@ -295,6 +302,24 @@ func (h *Handler) Retire(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "retired"})
 }
 
+// Erase accepts only the deletion proof. It has no session dependency because
+// the privacy outbox must remain usable after the account has signed out.
+func (h *Handler) Erase(w http.ResponseWriter, r *http.Request) {
+	if h.Store == nil {
+		writeProblem(w, http.StatusServiceUnavailable, "storage_failed")
+		return
+	}
+	var request eraseRequest
+	if !decodeBounded(w, r, &request) {
+		return
+	}
+	if err := h.Store.Erase(r.Context(), request.RunID, request.LegID, request.RetirementProof); err != nil {
+		publicError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "retired"})
+}
+
 func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	scope, ok := h.publicScope(w, r)
 	if !ok {
@@ -369,13 +394,21 @@ func (h *Handler) ProviderStarted(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// MountPublic declares the exact renderer contract. The root composition owns
-// shared AuthLoader/RequireAuth/RequireScope middleware and only mounts this set.
-func (h *Handler) MountPublic(router chi.Router) {
+// MountAuthenticated contains the routes that need an active account scope.
+func (h *Handler) MountAuthenticated(router chi.Router) {
 	router.Post(TurnPath, h.Turn)
 	router.Post(CancelPath, h.Cancel)
 	router.Post(ReplayPath, h.Replay)
 	router.Post(RetirePath, h.Retire)
+}
+
+func (h *Handler) MountErasure(router chi.Router) { router.Post(ErasePath, h.Erase) }
+
+// MountPublic declares the full renderer contract for direct hosts. The shared
+// composition mounts its authenticated and proof-only groups separately.
+func (h *Handler) MountPublic(router chi.Router) {
+	h.MountAuthenticated(router)
+	h.MountErasure(router)
 }
 
 // MountProducerCallbacks is for the private loopback or isolated host network.

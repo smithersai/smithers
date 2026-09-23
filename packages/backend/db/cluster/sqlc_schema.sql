@@ -15002,6 +15002,16 @@ ALTER TABLE ONLY public.workflow_run_coding_hosts
     ADD CONSTRAINT workflow_run_coding_hosts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 -- END product/migrations/0012_workflow_run_coding_hosts.sql
 
+-- BEGIN product/migrations/0013_chat_turn_erasures.sql
+CREATE TABLE chat_turn_erasures (
+  run_id text NOT NULL,
+  leg_id text NOT NULL,
+  access_hash text NOT NULL,
+  retired_at timestamptz NOT NULL,
+  PRIMARY KEY (run_id, leg_id)
+);
+-- END product/migrations/0013_chat_turn_erasures.sql
+
 -- BEGIN cluster/private_baseline.sql
 -- Plue hosted infrastructure baseline. Extracted from the previous full schema.
 -- Product tables and durable repository storage operations are authored only by

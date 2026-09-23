@@ -146,6 +146,8 @@ type ChatTurn = db.ChatTurn
 
 type ChatTurnBatch = db.ChatTurnBatch
 
+type ChatTurnErasure = db.ChatTurnErasure
+
 type CodeSearchDocument = db.CodeSearchDocument
 
 type CodeSearchIndexState = db.CodeSearchIndexState

@@ -66,17 +66,21 @@ func TestJournalBatchDigestMatchesTypeScriptForLineSeparators(t *testing.T) {
 	}
 }
 
-func TestEmbeddedSchemaIsProductMigration0007(t *testing.T) {
+func TestEmbeddedSchemaIsProductMigrations(t *testing.T) {
 	embedded, err := Schema()
 	if err != nil {
 		t.Fatal(err)
 	}
-	migration, err := os.ReadFile("../../db/product/migrations/0007_chat_turns.sql")
+	first, err := os.ReadFile("../../db/product/migrations/0007_chat_turns.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(embedded) != string(migration) {
-		t.Fatal("chat integration schema drifted from product migration 0007")
+	second, err := os.ReadFile("../../db/product/migrations/0013_chat_turn_erasures.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(embedded) != string(first)+"\n"+string(second) {
+		t.Fatal("chat integration schema drifted from product migrations")
 	}
 }
 
