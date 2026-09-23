@@ -66,7 +66,7 @@ export const Attrs = Schema.Struct({
    *
    * @default 1_200_000
    */
-  timeoutMs: Schema.Int.pipe(Schema.withConstructorDefault(Effect.succeed(1_200_000)))
+  timeoutMs: Exec.TimeoutMs.pipe(Schema.withConstructorDefault(Effect.succeed(1_200_000)))
 })
 
 /**

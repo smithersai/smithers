@@ -587,10 +587,11 @@ const reserve = (state: CaptureState, path: string, file: boolean): string => {
   if (state.treeBytes > state.limits.treeBytes) {
     throw fail(state, `declared output path names total more than ${state.limits.treeBytes} bytes`)
   }
-  // Two names that differ only by Unicode normal form address the same file on
-  // a normalizing filesystem and different files elsewhere. Either way the
-  // manifest cannot say which, so the ambiguity is refused instead of digested.
-  const key = relative.normalize("NFC")
+  // Two names that differ only by Unicode normal form or letter case address
+  // the same file on a normalizing, case-insensitive filesystem (the macOS and
+  // Windows defaults) and different files elsewhere. Either way the manifest
+  // cannot say which, so the ambiguity is refused instead of digested.
+  const key = relative.normalize("NFC").toLowerCase()
   if (state.keys.has(key)) {
     throw fail(state, `declared output contains two paths that normalize alike: ${relative}`)
   }

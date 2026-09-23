@@ -32,18 +32,21 @@ declared content.
 
 ## Attributes
 
-| Name             | Type               | Default                             | Description                                     |
-| ---------------- | ------------------ | ----------------------------------- | ----------------------------------------------- |
-| `packageManager` | `PackageManager`   | required                            | The declared manager                            |
-| `workspace`      | `Target \| null`   | `null`                              | The workspace-definition target, when generated |
-| `manifest`       | `Target \| null`   | `null`                              | The root-manifest target, when generated        |
-| `manifests`      | `Input.Declared[]` | `[glob("packages/*/package.json")]` | Every manifest whose dependencies it pins       |
+| Name             | Type               | Default                             | Description                                         |
+| ---------------- | ------------------ | ----------------------------------- | --------------------------------------------------- |
+| `packageManager` | `PackageManager`   | the workspace declaration           | The declared manager                                |
+| `lockfilePath`   | `string`           | the manager's lockfile name         | The file the manager writes, relative to `cwd`      |
+| `manifests`      | `Input.Declared[]` | `[glob("packages/*/package.json")]` | The manifests whose change marks the lockfile stale |
+| `workspace`      | `Target \| null`   | `null`                              | The workspace-definition target, when generated     |
+| `cwd`            | `string`           | `"."`                               | The directory the manager runs in                   |
 
-The manifests are declared inputs: their content is what resolution reads, so
-their digests are this target's key material. A `pnpmWorkspace` input parses
-the workspace file's `packages` list and expands to that file, the adjacent
-root manifest, and every selected member manifest. Other workspace settings
-remain pnpm-owned and do not need to be represented by the target schema.
+The manifests are declared inputs: a change to any of them marks this target
+affected. They do not select what the manager resolves. The manager reads the
+workspace it finds in `cwd`, so declare every manifest that workspace
+includes. A `pnpmWorkspace` input parses the workspace file's `packages` list
+and expands to that file, the adjacent root manifest, and every selected
+member manifest. Other workspace settings remain pnpm-owned and do not need to
+be represented by the target schema.
 
 ## What it runs
 

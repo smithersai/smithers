@@ -21,6 +21,34 @@ import * as Runtime from "./Runtime.ts"
 import type * as Secret from "./Secret.ts"
 import * as Target from "./Target.ts"
 
+const durationPattern = /^(\d+)(ms|s|m|h)$/
+
+const parsedDurationMs = (text: string): number | undefined => {
+  const match = durationPattern.exec(text)
+  if (match === null) return undefined
+  const unit = match[2]
+  return Number(match[1]) * (unit === "ms" ? 1 : unit === "s" ? 1_000 : unit === "m" ? 60_000 : 3_600_000)
+}
+
+/**
+ * A declared tool duration such as `"90s"` or `"6h"`: digits followed by
+ * `ms`, `s`, `m`, or `h`, whose value lies in the shared exec range of 1 ms
+ * to {@link Exec.maximumTimeoutMs}. A duration outside that range fails at
+ * declaration, not when the target runs.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const Duration = Schema.NonEmptyString.check(
+  Schema.isPattern(durationPattern),
+  Schema.makeFilter((text) => {
+    const ms = parsedDurationMs(text)
+    return ms !== undefined && Number.isSafeInteger(ms) && ms >= 1 && ms <= Exec.maximumTimeoutMs
+      ? undefined
+      : `timeout ${JSON.stringify(text)} must be between 1ms and ${Exec.maximumTimeoutMs}ms`
+  })
+)
+
 /** The attr fields every Shell flavor shares. */
 const sharedFields = {
   bin: Schema.optional(Attr.Executable),
@@ -35,7 +63,7 @@ const sharedFields = {
   secrets: Schema.optional(Attr.Secrets),
   sandbox: Schema.optional(Attr.Sandbox),
   runtime: Schema.optional(Schema.Union([Runtime.Runtime, Runtime.NodeDeclaration, Runtime.BunDeclaration])),
-  timeout: Schema.optional(Schema.NonEmptyString.check(Schema.isPattern(/^\d+(?:ms|s|m|h)$/)))
+  timeout: Schema.optional(Duration)
 } as const
 
 const executableSelectors = ["bin", "bun", "shell", "script"] as const
@@ -220,18 +248,13 @@ export const scriptInterpreterToken = (path: string): string =>
 export const packageExecTimeoutMs = 30 * 60 * 1000
 
 /**
- * Parses the strict Shell duration syntax admitted by the declaration schema.
- * Unrecognized durations use the package execution default.
+ * Parses a {@link Duration} to milliseconds. Unrecognized text uses the
+ * package execution default.
  *
  * @category utilities
  * @since 0.1.0
  */
-export const durationMs = (text: string): number => {
-  const match = /^(\d+)(ms|s|m|h)$/.exec(text)
-  if (match === null) return packageExecTimeoutMs
-  const unit = match[2]
-  return Number(match[1]) * (unit === "ms" ? 1 : unit === "s" ? 1_000 : unit === "m" ? 60_000 : 3_600_000)
-}
+export const durationMs = (text: string): number => parsedDurationMs(text) ?? packageExecTimeoutMs
 
 /**
  * The attr fields {@link execPayload} reads. Every Shell flavor and the

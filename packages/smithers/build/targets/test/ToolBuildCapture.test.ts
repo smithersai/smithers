@@ -540,6 +540,31 @@ describe("output tree limits", () => {
       .rejects.toMatchObject({ message: expect.stringContaining("normalize alike") })
   })
 
+  it("refuses two manifest names that differ only in case", async () => {
+    await write("out/source.txt", "content")
+    const source = at("out", "source.txt")
+    const virtual = new Set([at("out", "Index.js"), at("out", "index.js")])
+    const io = seam({
+      readdir: async (path, remaining) => {
+        if (path !== at("out")) return defaultCaptureIo.readdir(path, remaining)
+        const [entry] = await defaultCaptureIo.readdir(path, remaining)
+        const named = (name: string): NodeFs.Dirent =>
+          Object.create(
+            Object.getPrototypeOf(entry),
+            {
+              ...Object.getOwnPropertyDescriptors(entry),
+              name: { configurable: true, enumerable: true, value: name, writable: true }
+            }
+          ) as NodeFs.Dirent
+        return [named("Index.js"), named("index.js")]
+      },
+      lstat: (path) => virtual.has(path) ? defaultCaptureIo.lstat(source) : defaultCaptureIo.lstat(path)
+    })
+
+    await expect(measureOutput(root, ".", "out", { io }))
+      .rejects.toMatchObject({ message: expect.stringContaining("normalize alike") })
+  })
+
   it("refuses a tree with more files than the limit allows", async () => {
     for (const name of ["a", "b", "c", "d"]) await write(`out/${name}.txt`, name)
 
@@ -726,6 +751,11 @@ describe("declared output paths", () => {
       .toMatch(/name the same output/)
     expect(Target.declaredOutputsFailure({ cwd: ".", paths: ["dist", "dist/"] }))
       .toMatch(/name the same output/)
+    // One file on the default macOS and Windows filesystems.
+    expect(Target.declaredOutputsFailure({ cwd: ".", paths: ["dist/A.js", "dist/a.js"] }))
+      .toMatch(/name the same output/)
+    expect(Target.declaredOutputsFailure({ cwd: ".", paths: ["Dist", "dist/index.js"] }))
+      .toMatch(/already covered by/)
   })
 
   /**

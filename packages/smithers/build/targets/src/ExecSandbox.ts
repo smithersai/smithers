@@ -1003,6 +1003,20 @@ export const seatbelt = (confinement: Plan, hostFacts: Host = host()): string =>
 }
 
 /**
+ * One `key=value` field of a `docker run --mount` value. Docker parses the
+ * value as one CSV record, so a field containing a comma, a quote, or a line
+ * break is wrapped in quotes with inner quotes doubled; any other field keeps
+ * its plain spelling.
+ */
+const mountField = (key: string, value: string): string => {
+  const field = `${key}=${value}`
+  return /[",\r\n]/.test(field) ? `"${field.replaceAll("\"", "\"\"")}"` : field
+}
+
+const bindMount = (path: string, readonly: boolean): string =>
+  ["type=bind", mountField("src", path), mountField("dst", toPosix(path)), ...(readonly ? ["readonly"] : [])].join(",")
+
+/**
  * The `docker run` argv for a plan. Paths keep their host spelling inside the
  * container so an argv that names workspace paths works unchanged; the image
  * supplies everything outside the workspace.
@@ -1037,14 +1051,12 @@ export const docker = (
   if (confinement.uid !== undefined && confinement.gid !== undefined) {
     out.push("--user", `${confinement.uid}:${confinement.gid}`)
   }
-  for (const real of confinement.externalReads) {
-    out.push("--mount", `type=bind,src=${real},dst=${toPosix(real)},readonly`)
-  }
-  for (const read of confinement.reads) out.push("--mount", `type=bind,src=${read},dst=${toPosix(read)},readonly`)
-  for (const write of confinement.writes) out.push("--mount", `type=bind,src=${write},dst=${toPosix(write)}`)
+  for (const real of confinement.externalReads) out.push("--mount", bindMount(real, true))
+  for (const read of confinement.reads) out.push("--mount", bindMount(read, true))
+  for (const write of confinement.writes) out.push("--mount", bindMount(write, false))
   for (const closed of confinement.readOnly) {
     if (confinement.writes.some((write) => closed === write || closed.startsWith(write + NodePath.sep))) {
-      out.push("--mount", `type=bind,src=${closed},dst=${toPosix(closed)},readonly`)
+      out.push("--mount", bindMount(closed, true))
     }
   }
   for (const [name, value] of Object.entries(env).sort(([left], [right]) => (left < right ? -1 : 1))) {

@@ -182,7 +182,7 @@ export const Attrs = Schema.Struct({
   runtime: Schema.optional(Runtime.Runtime),
   runner: Runner,
   /** Explicit deadline for a measured long-running gate; omitted targets retain Exec's ten-minute default. */
-  timeout: Schema.optional(Schema.NonEmptyString.check(Schema.isPattern(/^[1-9]\d*(?:ms|s|m|h)$/))),
+  timeout: Schema.optional(Shell.Duration),
   srcs: Schema.Array(Input.Declared),
   deps: Schema.Array(Target.Dependency),
   env: Schema.Record(Schema.String, Schema.String).pipe(

@@ -98,7 +98,7 @@ describe("NodeTest", () => {
   })
 
   it("refuses invalid or unbounded entrypoint deadlines", () => {
-    for (const timeout of ["unbounded", "0ms", "-1s", "1.5m", "never"]) {
+    for (const timeout of ["unbounded", "0ms", "-1s", "1.5m", "never", "25h", `${"9".repeat(400)}s`]) {
       expect(() =>
         NodeTest.NodeTest({
           runtime,

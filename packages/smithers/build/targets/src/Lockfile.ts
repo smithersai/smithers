@@ -27,9 +27,13 @@ import { BuildError, captureOutputs, Outputs } from "./ToolBuild.ts"
 /**
  * Attributes for {@link Lockfile}.
  *
- * `manifests` declares every manifest the manager resolves from. The default
- * is the conventional workspace package glob; the root manifest is read by
- * every manager regardless, and a workspace with more layout declares them.
+ * `manifests` are the target's declared inputs: a change to any of them
+ * marks the lockfile affected. They do not select what the manager resolves.
+ * The manager reads the workspace it finds in `cwd` (its root manifest and
+ * workspace file), so the declaration must cover every manifest that
+ * workspace includes. The default is the conventional workspace package glob;
+ * a workspace with more layout declares its own, for example
+ * `S.pnpmWorkspace("//pnpm-workspace.yaml")`.
  *
  * @category schemas
  * @since 0.1.0
@@ -46,7 +50,13 @@ export const Attrs = Schema.Struct({
    * manager writes.
    */
   lockfilePath: Schema.optional(Schema.NonEmptyString),
-  /** The manifests the manager resolves from. @default the workspace package glob */
+  /**
+   * The manifests whose change marks the lockfile affected. They must cover
+   * every manifest the manager reads from the workspace in `cwd`; they do not
+   * narrow resolution.
+   *
+   * @default the workspace package glob
+   */
   manifests: Schema.Array(Input.Declared).pipe(
     Schema.withConstructorDefault(
       Effect.succeed<ReadonlyArray<Input.Declared>>([Input.glob("packages/*/package.json")])

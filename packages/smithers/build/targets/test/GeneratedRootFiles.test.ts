@@ -178,7 +178,7 @@ describe("Lockfile", () => {
     expect(Target.metadata(Lockfile.Lockfile({ packageManager })).cacheable).toBe(false)
   })
 
-  it("declares every package manifest it resolves from", () => {
+  it("declares the package manifests whose change marks it affected", () => {
     const metadata = Target.metadata(Lockfile.Lockfile({ packageManager }))
     expect(metadata.inputs).toEqual([
       { _tag: "Glob", pattern: "packages/*/package.json", exclude: [] }

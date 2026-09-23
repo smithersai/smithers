@@ -42,7 +42,7 @@ export const Attrs = Schema.Struct({
     Schema.withConstructorDefault(Effect.succeed("."))
   ),
   /** Maximum run time in milliseconds. Defaults to twenty minutes. */
-  timeoutMs: Schema.Int.pipe(Schema.withConstructorDefault(Effect.succeed(1_200_000)))
+  timeoutMs: Exec.TimeoutMs.pipe(Schema.withConstructorDefault(Effect.succeed(1_200_000)))
 })
 
 /**

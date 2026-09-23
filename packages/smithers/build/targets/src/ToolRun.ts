@@ -36,10 +36,10 @@ export const Attrs = Schema.Struct({
   secrets: Schema.Array(Secret.HttpCredential).pipe(
     Schema.withConstructorDefault(Effect.succeed([]))
   ),
-  expectedExitCodes: Schema.Array(Schema.Int).pipe(
+  expectedExitCodes: Exec.ExpectedExitCodes.pipe(
     Schema.withConstructorDefault(Effect.succeed([0]))
   ),
-  timeoutMs: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  timeoutMs: Schema.optional(Exec.TimeoutMs),
   cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
 

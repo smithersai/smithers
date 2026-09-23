@@ -123,6 +123,37 @@ const maximumExpectedExitCodes = 256
 const maximumSecrets = 64
 
 /**
+ * A bounded exec wall-clock duration in milliseconds: an integer from 1 to
+ * {@link maximumTimeoutMs}. Declarations that forward a timeout to the shared
+ * runner reuse it so an out-of-range value fails at construction, not at
+ * execution.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const TimeoutMs = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(1),
+  Schema.isLessThanOrEqualTo(maximumTimeoutMs)
+)
+
+/**
+ * The exit codes one exec treats as success: at most 256 distinct integers,
+ * each in the unsigned 32-bit range. Declarations that forward expected exit codes to
+ * the shared runner reuse it.
+ *
+ * @category schemas
+ * @since 0.1.0
+ */
+export const ExpectedExitCodes = Schema.Array(
+  Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(0xffff_ffff))
+).check(
+  Schema.isMaxLength(maximumExpectedExitCodes),
+  Schema.makeFilter((codes) =>
+    new Set(codes).size === codes.length ? undefined : "expected exit codes contain a duplicate"
+  )
+)
+
+/**
  * Payload for one declared tool run.
  *
  * `cwd` is resolved against the workspace root at execution time. `argv[0]`
@@ -151,18 +182,12 @@ export const Payload = Schema.Struct({
   secrets: Schema.Array(Secret.HttpCredential).check(Schema.isMaxLength(maximumSecrets)).pipe(
     Schema.withConstructorDefault(Effect.succeed([]))
   ),
-  expectedExitCodes: Schema.Array(
-    Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(0xffff_ffff))
-  ).check(Schema.isMaxLength(maximumExpectedExitCodes)).pipe(
+  expectedExitCodes: ExpectedExitCodes.pipe(
     Schema.withConstructorDefault(Effect.succeed([0]))
   ),
-  timeoutMs: Schema.Union([
-    Schema.Int.check(
-      Schema.isGreaterThanOrEqualTo(1),
-      Schema.isLessThanOrEqualTo(maximumTimeoutMs)
-    ),
-    Schema.Literal("unbounded")
-  ]).pipe(Schema.withConstructorDefault(Effect.succeed(defaultTimeoutMs))),
+  timeoutMs: Schema.Union([TimeoutMs, Schema.Literal("unbounded")]).pipe(
+    Schema.withConstructorDefault(Effect.succeed(defaultTimeoutMs))
+  ),
   after: Schema.optional(Schema.Unknown)
 })
 

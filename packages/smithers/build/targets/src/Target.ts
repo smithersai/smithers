@@ -146,7 +146,8 @@ export const declaredOutputFailure = (cwd: string, path: string): string | undef
  * A duplicate is refused because the manifest contract is an exact, positional
  * match: a target that names one output twice could never be satisfied by a
  * manifest that also refuses duplicates. Duplication is judged after the
- * declarations resolve, so `dist` and `./dist` collide. An overlap is refused
+ * declarations resolve, so `dist` and `./dist` collide, and so do names that
+ * differ only in Unicode normal form or letter case. An overlap is refused
  * for the same reason one step out: `dist` and `dist/index.js` would put one
  * file in the manifest twice, under two different digests that no longer have
  * to agree.
@@ -162,7 +163,10 @@ export const declaredOutputsFailure = (value: DeclaredOutputs): string | undefin
     const failure = declaredOutputFailure(value.cwd, path)
     if (failure !== undefined) return failure
     const own = segmentsOf(path) as ReadonlyArray<string>
-    resolved.push({ path, segments: [...base, ...own].map((segment) => segment.normalize("NFC")) })
+    // Compare the way the strictest supported filesystem would: a normalizing,
+    // case-insensitive one (the macOS and Windows defaults) stores `A.js` and
+    // `a.js`, or two Unicode forms of one name, as one file.
+    resolved.push({ path, segments: [...base, ...own].map((segment) => segment.normalize("NFC").toLowerCase()) })
   }
   for (const [index, entry] of resolved.entries()) {
     for (const other of resolved.slice(index + 1)) {

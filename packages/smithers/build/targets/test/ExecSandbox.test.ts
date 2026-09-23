@@ -1019,6 +1019,25 @@ describe("docker argv", () => {
     expect(text).toContain("--env HOME=/tmp/home node:22 node build.js")
   })
 
+  it("quotes mount fields whose path would break Docker's comma-separated mount syntax", () => {
+    const plan = planned(
+      host("win32", { docker: "docker" }, ["/work/ws/src/a.ts", "/srv/git/one,blue=x", "/srv/say \"hi\""]),
+      {
+        mechanism: Sandbox.Docker({ image: "node:22" }),
+        reads: ["src/a.ts"],
+        writes: [],
+        writeFiles: [],
+        readOnly: [],
+        externalReads: ["/srv/git/one,blue=x", "/srv/say \"hi\""]
+      }
+    )
+    const argv = ExecSandbox.docker(plan, ["node"], {}, linux)
+    expect(argv).toContain("type=bind,\"src=/srv/git/one,blue=x\",\"dst=/srv/git/one,blue=x\",readonly")
+    expect(argv).toContain("type=bind,\"src=/srv/say \"\"hi\"\"\",\"dst=/srv/say \"\"hi\"\"\",readonly")
+    // A plain path keeps the unquoted spelling, and an `=` inside a value needs no quoting.
+    expect(argv).toContain("type=bind,src=/work/ws/src/a.ts,dst=/work/ws/src/a.ts,readonly")
+  })
+
   it("opens the bridge network only for an open policy", () => {
     const plan = planned(host("win32", { docker: "docker" }), {
       mechanism: Sandbox.Docker({ image: "node:22" }),
