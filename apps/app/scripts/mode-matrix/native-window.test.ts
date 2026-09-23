@@ -6,7 +6,7 @@ describe("packaged native-window matrix driver", () => {
   test("finds the exact live CEF page ID and rejects an ambiguous target list", async () => {
     let targets: unknown = [
       { id: "other", type: "page", url: "http://127.0.0.1:4500/" },
-      { id: "packaged", type: "page", url: "http://127.0.0.1:4600/" }
+      { id: "packaged", type: "page", url: "http://127.0.0.1:4600/w/workspace-main/b/branch-main" }
     ]
     const cdp = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json(targets) })
     try {

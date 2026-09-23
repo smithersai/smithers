@@ -89,9 +89,14 @@ export const existingNativeWindowTargetId = async (cdpEndpoint: string, windowUr
   if (!response.ok) throw new Error(`CEF CDP target list returned HTTP ${response.status}`)
   const targets = await response.json() as unknown
   if (!Array.isArray(targets)) throw new Error("CEF CDP target list is malformed")
-  const matches = targets.filter((target): target is { readonly id: string; readonly url: string; readonly type: string } =>
-    object(target) && target.type === "page" && target.url === windowUrl && typeof target.id === "string" && target.id !== "")
-  if (matches.length !== 1) throw new Error(`CEF CDP did not identify exactly one packaged window at ${windowUrl}`)
+  const expectedOrigin = new URL(windowUrl).origin
+  const matches = targets.filter((target): target is { readonly id: string; readonly url: string; readonly type: string } => {
+    if (!object(target) || target.type !== "page" || typeof target.url !== "string" ||
+      typeof target.id !== "string" || target.id === "") return false
+    try { return new URL(target.url).origin === expectedOrigin }
+    catch { return false }
+  })
+  if (matches.length !== 1) throw new Error(`CEF CDP did not identify exactly one packaged window at ${expectedOrigin}`)
   return matches[0]!.id
 }
 
