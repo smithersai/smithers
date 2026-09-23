@@ -1354,12 +1354,14 @@ describe("Node atomic filesystem", () => {
       expect(millis(mine.mtime)).toEqual(Option.some(modified.getTime()))
       expect(millis(mine.atime)).toEqual(millis(theirs.atime))
       expect(millis(mine.mtime)).toEqual(millis(theirs.mtime))
-      // Birth time is host-optional; where the native adapter has one the
-      // helper must have the same instant, give or take float rounding of
-      // the nanosecond field on either side of the boundary.
-      expect(mine.birthtime._tag).toBe(theirs.birthtime._tag)
-      if (Option.isSome(mine.birthtime) && Option.isSome(theirs.birthtime)) {
-        expect(Math.abs(mine.birthtime.value.getTime() - theirs.birthtime.value.getTime())).toBeLessThanOrEqual(1)
+      // The helper reads birth time from Darwin's stat structure. Its Linux
+      // stat path has no birth time, even when Node reports one.
+      if (process.platform === "linux") expect(mine.birthtime._tag).toBe("None")
+      else {
+        expect(mine.birthtime._tag).toBe(theirs.birthtime._tag)
+        if (Option.isSome(mine.birthtime) && Option.isSome(theirs.birthtime)) {
+          expect(Math.abs(mine.birthtime.value.getTime() - theirs.birthtime.value.getTime())).toBeLessThanOrEqual(1)
+        }
       }
     }))
 

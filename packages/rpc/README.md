@@ -4,8 +4,6 @@
 
 Shared product contracts for the local host, browser, and server. Import individual modules such as `@smthrs/rpc/LocalApp`, `@smthrs/rpc/AppLinks`, and `@smthrs/rpc/TargetGraph`.
 
-`LiveTutorial` defines the onboarding tutorial's agent runs: the operations, the run record the app polls, and the route that starts them. `TutorialProviderProxy` defines the closed set of model destinations the tutorial coordinator reaches through the product Worker.
-
 `BrowserFetch` is the one implementation module: the browser tool's guarded fetch-and-extract handler, shared by the product Worker and the local host. It is the only module that performs network I/O, with the DNS resolver injected by each host.
 
 `LocalApp` re-exports the names that moved to `LocalLsp` and `CloudTunnel` for one release. Import them from their home; a new name is exported from its home alone.
@@ -18,20 +16,18 @@ the Worker returns `local_host_required` after its session gate.
 
 Each route family has one home module, and a route constant is declared only there. A route belongs to the longest family it falls under. Add a route to the module its family names; a new family gets a row here first. `test/RouteOwnership.test.ts` holds every `/api/` constant to this table.
 
-| Family                                                                                                                                                                                         | Module                     |
-| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
-| `/api/auth/github/start`, `/api/auth/github/callback`                                                                                                                                          | `AgentApiRoutes.ts`        |
-| `/api/auth/local`, `/api/auth/sse-ticket`, `/api/auth/github`, `/api/user`                                                                                                                     | `ApplicationAuth.ts`       |
-| `/api/harnesses`, `/api/repos`, `/api/repo`, `/api/pty`, `/api/targets/query`, `/api/targets/run`                                                                                              | `LocalApp.ts`              |
-| `/api/lsp`                                                                                                                                                                                     | `LocalLsp.ts`              |
-| `/api/cloud`, `/api/cloud-ws`, `/api/cloud-auth`                                                                                                                                               | `CloudTunnel.ts`           |
-| `/api/targets`                                                                                                                                                                                 | `TargetGraph.ts`           |
-| `/api/bootstrap`                                                                                                                                                                               | `AppBootstrap.ts`          |
-| `/api/tutorial/live`                                                                                                                                                                           | `LiveTutorial.ts`          |
-| `/api/repository-setup`                                                                                                                                                                        | `RepositorySetup.ts`       |
-| `/api/tutorial/provider`                                                                                                                                                                       | `TutorialProviderProxy.ts` |
-| `/api/model/credential`, `/api/model/credential/receipt`                                                                                                                                       | `AgentApiRoutes.ts`        |
-| `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/jev`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`        |
+| Family                                                                                                                                                                                         | Module               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `/api/auth/github/start`, `/api/auth/github/callback`                                                                                                                                          | `AgentApiRoutes.ts`  |
+| `/api/auth/local`, `/api/auth/sse-ticket`, `/api/auth/github`, `/api/user`                                                                                                                     | `ApplicationAuth.ts` |
+| `/api/harnesses`, `/api/repos`, `/api/repo`, `/api/pty`, `/api/targets/query`, `/api/targets/run`                                                                                              | `LocalApp.ts`        |
+| `/api/lsp`                                                                                                                                                                                     | `LocalLsp.ts`        |
+| `/api/cloud`, `/api/cloud-ws`, `/api/cloud-auth`                                                                                                                                               | `CloudTunnel.ts`     |
+| `/api/targets`                                                                                                                                                                                 | `TargetGraph.ts`     |
+| `/api/bootstrap`                                                                                                                                                                               | `AppBootstrap.ts`    |
+| `/api/repository-setup`                                                                                                                                                                        | `RepositorySetup.ts` |
+| `/api/model/credential`, `/api/model/credential/receipt`                                                                                                                                       | `AgentApiRoutes.ts`  |
+| `/api/agent`, `/api/auth`, `/api/identity`, `/api/billing`, `/api/tools`, `/api/workflow`, `/api/model`, `/api/public`, `/api/admin`, `/api/recommend`, `/api/jev`, `/api/chat`, `/api/health` | `AgentApiRoutes.ts`  |
 
 These are public product contracts even while the package is private. Preserve wire fields and route strings when changing implementation details. All exported declarations carry descriptions, `@since`, and `@category`.
 
