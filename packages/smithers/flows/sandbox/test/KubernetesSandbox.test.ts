@@ -227,8 +227,12 @@ const cluster = (fault: (args: ReadonlyArray<string>) => Response | undefined = 
       }
       const separator = args.indexOf("--")
       const guest = args.slice(separator + 1)
+      // The fake already consumed the transport input above. Drain the local
+      // replay if the guest refuses a write before reading it, preserving that
+      // guest status without introducing a second, broken host input pipe.
+      const supervise = interactive ? `"$0" "$@"; status=$?; cat > /dev/null; exit "$status"` : `"$0" "$@"; exit "$?"`
       const child = yield* local.spawn(
-        ChildProcess.make("/bin/sh", ["-c", `"$0" "$@"; exit "$?"`, guest[0]!, ...guest.slice(1).map(remap)], {
+        ChildProcess.make("/bin/sh", ["-c", supervise, guest[0]!, ...guest.slice(1).map(remap)], {
           cwd: root,
           env: pod.env,
           extendEnv: true,
