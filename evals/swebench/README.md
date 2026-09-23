@@ -216,7 +216,12 @@ builds and tests, and a later run of the same repository may be shown it. That
 is a different experiment from the independent-instance score the scoreboard
 reports: the second django instance in a memory-on wave is not independent of
 the first, so a report must not pool the two conditions. The default, `off`,
-stamps `"memory": "off"`.
+stamps `"memory": "off"`, and a run under it writes no memory at all: the
+supervisor writes only when the host names a memory database of its own.
+Every instance pointed at one `memory/<repo>.db` reads and writes one bank,
+named after that file. A write or recall the store refused is journaled as
+`control.agent.supervisor-memory-failed` and counted in the scorecard's
+`supervisorMemoryFailures`.
 
 `SWB_SUPERVISOR_STEER=1` exports `SMITHERS_SUPERVISOR_STEER=1`. The harness
 journals a supervisor verdict on every frame whenever a judge is bound; this
@@ -844,12 +849,16 @@ node lib/jev-replay.mjs <journals-dir> --manifest <manifest.jsonl> --dry-run    
 
 The harness asks Jev about a run's shape once per frame, off the cell loop's
 hot path: whether it is thrashing, still on the task, standing on suspect
-evidence, five scored operational states (`frustrated`, `anxious`, `scared`,
-`confused`, `confident`, each `none`, `mild` or `strong`) and `needs_help`.
-Before any of that is allowed to nudge a model, this replay rebuilds the same
-snapshot from each archived journal (through `lib/journal-facts.mjs`, so the
-counts are the counts the run had), asks the same classifier, and scores every
-signal against the manifest's verdicts. Positive predicts `unresolved`. Each
+evidence, carrying outdated or irrelevant context, five scored operational
+states (`frustrated`, `anxious`, `scared`, `confused`, `confident`, each
+`none`, `mild` or `strong`) and `needs_help`. Before any of that is allowed to
+nudge a model, this replay rebuilds the same snapshot from each archived
+journal (through `lib/journal-facts.mjs`, so the counts are the counts the run
+had), for exactly the frames the live supervisor is offered, asks the same
+classifier, and scores against the manifest's verdicts. Positive predicts
+`unresolved`. `crossed` is the live nudge rule, `Supervisor.crosses`, imported
+rather than copied, and each of its five triggers (`thrashing`, `off_target`,
+`suspect`, `outdated_context`, `irrelevant_context`) is scored on its own. Each
 signal is scored twice, on the last frame's reading and on any frame's, with
 precision, recall and F1; a per-instance table follows with the last reading
 and the extremes across frames. Readings Jev could not give are counted by

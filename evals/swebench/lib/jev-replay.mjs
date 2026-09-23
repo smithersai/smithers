@@ -10,9 +10,11 @@
  * front of a model, the question is whether the reading predicts anything: a
  * run it calls thrashing or off target should be one the evaluator later marks
  * unresolved, and a run it calls confident should be one it marks resolved.
- * This script builds, for every frame of every archived journal, the same
- * `Snapshot` the harness builds, asks the same classifier, and reports
- * precision, recall and F1 of each signal against the manifest's verdicts.
+ * This script builds, for every frame the live supervisor would have been
+ * offered, the same `Snapshot` the harness builds, asks the same classifier,
+ * and reports precision, recall and F1 against the manifest's verdicts: of
+ * `Supervisor.crosses`, the rule `judge` nudges on, and of each of the five
+ * `Supervisor.triggers` it is made of, beside the levels and `needs_help`.
  *
  * The snapshot is rebuilt from the journal and not from the harness's memory:
  * `lib/journal-facts.mjs` folds the `control.agent.*` events back into the
@@ -20,9 +22,10 @@
  * a count read here is the count the run had. Three things the archive cannot
  * give are stated rather than guessed at:
  *
- * - `candidates` and `recalled` are empty. Offline there is no memory to
- *   recall from and nothing is written, so the per-item questions are never
- *   asked; the fixed nine are.
+ * - `recalled` is empty. Offline there is no memory to recall from, so no
+ *   `insert_*` question is asked. `candidates` are read from the frame's
+ *   prose exactly as the live supervisor reads them, so the eleven fixed
+ *   questions and the same `remember_*` questions are.
  * - `remoteMutations` is zero. The journal records container writes only on
  *   the call that made them, and the r9x waves ran no container-side edits.
  * - `task` is the last system text of the first frame's `model-requested`
@@ -47,7 +50,9 @@ import { existsSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as Evaluator from "../../../packages/smithers/agent/model/src/Evaluator.ts"
+import * as Supervision from "../../../packages/smithers/agent/harness/src/internal/supervision.ts"
 import * as Supervisor from "../../../packages/smithers/agent/harness/src/Supervisor.ts"
+import * as UnmovedTree from "../../../packages/smithers/agent/harness/src/UnmovedTree.ts"
 import { read as readManifest } from "./fullbench-manifest.mjs"
 import { read as readFacts } from "./journal-facts.mjs"
 
@@ -88,36 +93,82 @@ const demandsBefore = (facts, seq) => {
     narrowingDemands: count(facts.demands.narrowed) + count(facts.demands.narrowOnly),
     unmovedDemands: count(facts.demands.unmoved),
     unresolvedDemands: count(facts.demands.unresolved),
-    // The claim brake writes `claim-demanded` on every reading; journal-facts
-    // does not fold it, and the supervisor snapshot counts only the bounces
-    // the run was handed. Without the event on the fold this is the count the
-    // run's `State.claimDemands` held before any claim brake fired: zero.
-    claimDemands: 0
+    // `claim-demanded` is written on every reading of the claim brake; only
+    // the readings that handed the completion back are what `State.claimDemands`
+    // counts.
+    claimDemands: count(facts.demands.claim.filter((row) => row.demanded === true))
   }
 }
 
+/** Whether a completion demand was handed back for this frame: its transition, then the next frame. */
+const bounced = (facts, frame, next) => {
+  const after = frame.transitionSeq ?? Number.MAX_SAFE_INTEGER
+  const before = next?.seq ?? Number.MAX_SAFE_INTEGER
+  const within = (row) => row.seq > after && row.seq < before
+  return [
+    ...facts.demands.unmoved,
+    ...facts.demands.unresolved,
+    ...facts.demands.narrowed,
+    ...facts.demands.narrowOnly,
+    ...facts.demands.claim.filter((row) => row.demanded === true)
+  ].some(within)
+}
+
 /**
- * Builds the snapshot the harness would have built when this frame closed.
+ * Whether the live supervisor would have been offered this frame.
+ *
+ * `CellTurn` offers a frame from its live boundary only when the run carries
+ * on through it (`drain` in `CellTurn.ts`): a cell the parser rejected offers
+ * nothing, a completion offers nothing unless a demand handed it back, an
+ * honored park offers nothing, and the last frame of the budget offers
+ * nothing. A raise and a refused park continue the run and are offered.
+ *
+ * @category conversions
+ * @since 0.1.0
+ */
+export const offered = (facts, index, maxFrames, approvalChannel) => {
+  const frame = facts.frames[index]
+  if (frame.outcome === "rejected") return false
+  if (maxFrames > 0 && frame.index + 1 >= maxFrames) return false
+  if (frame.transition === "complete") return bounced(facts, frame, facts.frames[index + 1])
+  if (frame.transition === "park") return !approvalChannel
+  return true
+}
+
+/**
+ * Builds the snapshots the harness would have offered, one per offered frame.
  *
  * `facts.frames` is in frame order and each entry already carries the ledgers
  * the frame closed on, so the signals are read off the entry and the streaks
  * are folded here exactly as `Frame.account` folds them: a frame that changed
  * nothing advances the read-only streak, a frame whose every call was already
  * issued and that changed nothing advances the repeat streak, and a frame
- * that issued no call carries the repeat streak across.
+ * that issued no call carries the repeat streak across. Every frame is folded;
+ * only the frames `offered` admits become snapshots, and a snapshot's recent
+ * frames are the offered frames before it, as the live handle keeps them.
+ *
+ * The prose is the model's text with its fenced cell stripped, by the same
+ * `prose` the live supervisor calls, and the candidates are read from it by
+ * the same `candidates`. `treeMoved` is `UnmovedTree.find` on the same inputs.
  *
  * @category conversions
  * @since 0.1.0
  */
-export const snapshots = (facts, maxFrames = 0) => {
+export const snapshots = (facts) => {
+  const maxFrames = facts.armed?.maxFrames ?? 0
+  const approvalChannel = facts.armed?.approvalChannel === true
   const out = []
+  const recent = []
   let readOnlyFrames = 0
   let repeatFrames = 0
   const asked = new Set()
   let callsSettled = 0
   let callsFailed = 0
   for (const [index, frame] of facts.frames.entries()) {
-    const seq = frame.transitionSeq ?? Number.MAX_SAFE_INTEGER
+    // The frame's own opening: every demand and sufficiency notice the run
+    // held when this frame closed was issued by a frame before it. A frame's
+    // own demands follow its transition and belong to the frame after.
+    const seq = frame.seq
     readOnlyFrames = frame.mutated ? 0 : readOnlyFrames + 1
     const signatures = frame.calls.map((call) => call.signature)
     const novel = signatures.some((signature) => !asked.has(signature))
@@ -125,17 +176,21 @@ export const snapshots = (facts, maxFrames = 0) => {
     for (const signature of signatures) asked.add(signature)
     callsSettled += frame.calls.length
     callsFailed += frame.calls.filter((call) => !call.ok).length
-    const recent = facts.frames.slice(Math.max(0, index + 1 - Supervisor.recentFrames), index + 1)
-    const snapshot = {
+    if (!offered(facts, index, maxFrames, approvalChannel)) continue
+    const written = Supervision.prose(frame.prose ?? "")
+    const current = {
+      frame: frame.index,
+      cell: Supervisor.head(frame.cell ?? ""),
+      prose: Supervisor.head(written),
+      printed: Supervisor.tail(frame.printed ?? ""),
+      transition: transitionOf(frame),
+      mutated: frame.mutated
+    }
+    const frames = [...recent.slice(-(Supervisor.recentFrames - 1)), current]
+    recent.push(current)
+    out.push({
       task: Supervisor.task(facts.task ?? ""),
-      frames: recent.map((entry) => ({
-        frame: entry.index,
-        cell: Supervisor.head(entry.cell ?? ""),
-        prose: Supervisor.head(entry.prose ?? ""),
-        printed: Supervisor.tail(entry.printed ?? ""),
-        transition: transitionOf(entry),
-        mutated: entry.mutated
-      })),
+      frames,
       signals: {
         frame: frame.index,
         maxFrames,
@@ -143,8 +198,9 @@ export const snapshots = (facts, maxFrames = 0) => {
         repeatFrames,
         mutations: frame.closingEpoch ?? 0,
         remoteMutations: 0,
-        treeMoved: facts.openedDigest !== "" && frame.workspaceDigest !== "" && frame.workspaceDigest !== facts.openedDigest,
-        paths: frame.basis === "observed" ? 1 : 0,
+        treeMoved: UnmovedTree.find({ opened: facts.openedDigest, digest: frame.workspaceDigest ?? "", elsewhere: 0 })
+          === undefined,
+        paths: frame.paths ?? 0,
         checksRun: (frame.ledger ?? []).length,
         checksFailing: (frame.ledger ?? []).filter((check) => check.failing).length,
         failuresUnanswered: (frame.failures ?? []).length,
@@ -153,10 +209,9 @@ export const snapshots = (facts, maxFrames = 0) => {
         ...demandsBefore(facts, seq),
         sufficiencyStated: facts.sufficiencyEvents.some((event) => event.seq <= seq)
       },
-      candidates: [],
+      candidates: Supervisor.candidates(written),
       recalled: []
-    }
-    out.push(snapshot)
+    })
   }
   return out
 }
@@ -225,20 +280,14 @@ export const scoreboard = (runs) => {
   const labelled = runs.filter((run) => run.label !== undefined && run.readings.length > 0)
   const last = (run) => run.readings[run.readings.length - 1]
   const rows = []
-  const flag = (reading) =>
-    reading.onTarget < Supervisor.offTargetAt || reading.thrashing > Supervisor.thrashingAt
-  rows.push({ signal: "on_target<0.5 || thrashing>0.5", frame: "last", ...score(labelled, (run) => flag(last(run))) })
-  rows.push({
-    signal: "on_target<0.5 || thrashing>0.5",
-    frame: "any",
-    ...score(labelled, (run) => run.readings.some(flag))
-  })
-  rows.push({ signal: "suspect>=0.5", frame: "last", ...score(labelled, (run) => last(run).suspect >= Supervisor.suspectAt) })
-  rows.push({
-    signal: "suspect>=0.5",
-    frame: "any",
-    ...score(labelled, (run) => run.readings.some((reading) => reading.suspect >= Supervisor.suspectAt))
-  })
+  // The live rule itself, not a copy: `Supervisor.crosses` is what `judge`
+  // nudges on, and each of `Supervisor.triggers` is one of its inequalities.
+  rows.push({ signal: "crossed", frame: "last", ...score(labelled, (run) => Supervisor.crosses(last(run))) })
+  rows.push({ signal: "crossed", frame: "any", ...score(labelled, (run) => run.readings.some(Supervisor.crosses)) })
+  for (const [name, fires] of Object.entries(Supervisor.triggers)) {
+    rows.push({ signal: name, frame: "last", ...score(labelled, (run) => fires(last(run))) })
+    rows.push({ signal: name, frame: "any", ...score(labelled, (run) => run.readings.some(fires)) })
+  }
   for (const emotion of Supervisor.emotions) {
     for (const [name, test] of [["strong", strong], ["mild|strong", mildOrStrong]]) {
       rows.push({

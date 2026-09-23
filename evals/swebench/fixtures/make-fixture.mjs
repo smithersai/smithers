@@ -124,6 +124,19 @@ const build = (row) => {
     { scope: runId, frame: 0, classifier: "supervisor/turn", digest: "fixture", latencyMs: 280, acted: false, decidedBy: "jev" },
     at()
   ])
+  // The supervisor's own faults: a reading the run's end interrupted, which
+  // was asked and carries no usage, and a memory write the store refused.
+  // Neither is a Jev call with usage; `fixtures/check.mjs` counts them apart.
+  events.push([
+    "control.agent.supervisor-unjudged",
+    { scope: runId, frame: 1, reason: "interrupted", detail: "The run ended with this reading in flight" },
+    at()
+  ])
+  events.push([
+    "control.agent.supervisor-memory-failed",
+    { scope: runId, frame: 0, operation: "remember", detail: "database is locked" },
+    at()
+  ])
   for (const call of calls) {
     events.push(["control.agent.cell-call-started", { flowName: call.flowName, input: { seq: events.length } }, at()])
     events.push([

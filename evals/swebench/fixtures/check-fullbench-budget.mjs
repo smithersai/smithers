@@ -133,8 +133,13 @@ try {
   insert.run(5, 5, "control.agent.cell-call-settled", JSON.stringify({ flowName: "jev", outcome: "failure", message: "refused" }))
   insert.run(6, 6, "control.agent.cell-call-settled", JSON.stringify({ flowName: "bash", outcome: "success", value: { exitCode: 0 } }))
   insert.run(7, 7, "control.agent.decision-settled", JSON.stringify({ classifier: "supervisor/turn", answers: {} }))
+  // A supervisor reading the run's end interrupted: asked, never metered.
+  // Counted on its own, never priced and never an unknown.
+  insert.run(9, 9, "control.agent.supervisor-unjudged", JSON.stringify({ reason: "interrupted", frame: 2 }))
+  insert.run(10, 10, "control.agent.supervisor-unjudged", JSON.stringify({ reason: "timeout", frame: 1 }))
   {
     const metered = readCost(path)
+    assert.equal(metered.jevInterrupted, 1, "only the interrupted reading, not a transport timeout")
     assert.equal(metered.usd, 0.008, "the seat's usd is the model turns alone")
     assert.equal(metered.jevCalls, 3, "the brake, the supervisor and one settled jev call")
     assert.equal(metered.jevInputTokens, 10_000)

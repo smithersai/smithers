@@ -64,6 +64,11 @@ for (const expected of mirror) {
   const expectedJevUsd = Math.round(1500 * 0.042 / 100) / 10_000
   check(`${expected.id} jev usd`, row.cost.jevUsd, expectedJevUsd)
   check(`${expected.id} total usd`, row.cost.totalUsd, Math.round((expectedUsd + expectedJevUsd) * 10_000) / 10_000)
+  // The supervisor's faults are counted, and apart from the metered calls:
+  // one reading interrupted by the run's end, one memory write refused.
+  check(`${expected.id} jev interrupted`, row.cost.jevInterrupted, 1)
+  check(`${expected.id} supervisor unjudged`, JSON.stringify(row.cost.supervisorUnjudged), JSON.stringify({ interrupted: 1 }))
+  check(`${expected.id} supervisor memory failures`, row.cost.supervisorMemoryFailures, 1)
 
   if (mode === "expect-latency") {
     if (row.speed.meanCallLatencyMs === undefined) failures.push(`${expected.id}: expected a per-call latency`)

@@ -185,6 +185,10 @@ interface RunNumbers {
   readonly jevCalls: number
   readonly jevInputTokens: number
   readonly jevOutputTokens: number
+  /** Supervisor readings journaled unjudged, by reason; `interrupted` ones were asked and went unmetered. */
+  readonly supervisorUnjudged: Readonly<Record<string, number>>
+  /** Memory reads and writes the supervisor's store refused. */
+  readonly supervisorMemoryFailures: number
   readonly journalSeconds: number | undefined
   readonly callLatencyMs: ReadonlyArray<number>
 }
@@ -240,7 +244,23 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
   let jevCalls = 0
   let jevInputTokens = 0
   let jevOutputTokens = 0
+  // The supervisor's own faults, counted rather than left to a log: a reading
+  // cut off by the run's end cost a call no usage row records, and a memory
+  // write lost to a locked store reads exactly like a run that remembered
+  // nothing.
+  const supervisorUnjudged: Record<string, number> = {}
+  let supervisorMemoryFailures = 0
   for (const row of rows) {
+    if (row.event_type === "control.agent.supervisor-unjudged") {
+      const reason = asRecord(JSON.parse(row.payload_json)).reason
+      const key = typeof reason === "string" ? reason : "unknown"
+      supervisorUnjudged[key] = (supervisorUnjudged[key] ?? 0) + 1
+      continue
+    }
+    if (row.event_type === "control.agent.supervisor-memory-failed") {
+      supervisorMemoryFailures += 1
+      continue
+    }
     if (row.event_type !== "control.agent.model-settled") {
       const metered = jevUsageOf(row.event_type, asRecord(JSON.parse(row.payload_json)))
       if (metered !== undefined) {
@@ -275,6 +295,8 @@ const runNumbers = (workspace: string): RunNumbers | undefined => {
     jevCalls,
     jevInputTokens,
     jevOutputTokens,
+    supervisorUnjudged,
+    supervisorMemoryFailures,
     journalSeconds: startedAt === undefined || endedAt === undefined
       ? undefined
       : Math.round((endedAt - startedAt) / 1000),
@@ -402,6 +424,11 @@ const rows = instances.map((id) => {
       jevOutputTokens: jevTokens.outputTokens,
       jevUsd: jevPriced.usd,
       jevPriceSource: jevPriced.source,
+      // Readings the run's end interrupted: asked, never metered, so `jevUsd`
+      // is a floor whenever this is non-zero.
+      jevInterrupted: numbers?.supervisorUnjudged["interrupted"] ?? 0,
+      supervisorUnjudged: numbers?.supervisorUnjudged ?? {},
+      supervisorMemoryFailures: numbers?.supervisorMemoryFailures ?? 0,
       totalUsd: priced.usd === undefined || jevPriced.usd === undefined
         ? undefined
         : Math.round((priced.usd + jevPriced.usd) * 10_000) / 10_000
@@ -439,6 +466,9 @@ const aggregate = {
   flowsJevCalls: sum(rows.map((row) => row.cost.jevCalls)),
   flowsJevTokens: sum(rows.map((row) => row.cost.jevInputTokens + row.cost.jevOutputTokens)),
   flowsJevUsd: Math.round(sum(rows.map((row) => row.cost.jevUsd)) * 10_000) / 10_000,
+  flowsJevInterrupted: sum(rows.map((row) => row.cost.jevInterrupted)),
+  flowsSupervisorUnjudged: sum(rows.map((row) => sum(Object.values(row.cost.supervisorUnjudged)))),
+  flowsSupervisorMemoryFailures: sum(rows.map((row) => row.cost.supervisorMemoryFailures)),
   flowsTotalUsd: Math.round(sum(rows.map((row) => row.cost.totalUsd)) * 10_000) / 10_000,
   codexUsdFloor: Math.round(sum(rows.map((row) => row.baseline?.usd)) * 10_000) / 10_000,
   perCallLatency: rows.some((row) => row.speed.perCallLatency === "journaled")

@@ -35,7 +35,8 @@ const readJournalCost = (databasePath) => {
   const rows = journalRows(
     databasePath,
     "event_type in ('control.agent.model-settled', 'control.agent.turn-opened',"
-      + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled')"
+      + " 'control.agent.claim-demanded', 'control.agent.supervisor-settled', 'control.agent.cell-call-settled',"
+      + " 'control.agent.supervisor-unjudged')"
   )
 
   const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }
@@ -48,7 +49,7 @@ const readJournalCost = (databasePath) => {
   let dollars = 0
   let priceSource = "no model-settled events"
   const usageBySeat = new Map()
-  const jev = { calls: 0, inputTokens: 0, outputTokens: 0 }
+  const jev = { calls: 0, inputTokens: 0, outputTokens: 0, interrupted: 0 }
   for (const row of rows) {
     const payload = JSON.parse(row.payload_json)
     if (firstAt === undefined) firstAt = row.emitted_at_ms
@@ -56,6 +57,12 @@ const readJournalCost = (databasePath) => {
     if (row.event_type === "control.agent.turn-opened") {
       frames += 1
       seat = payload.seat
+      continue
+    }
+    if (row.event_type === "control.agent.supervisor-unjudged") {
+      // A reading cut off by the run's end was asked and carries no usage:
+      // counted, so `jevUsd` reads as the floor it then is.
+      if (payload.reason === "interrupted") jev.interrupted += 1
       continue
     }
     if (row.event_type !== "control.agent.model-settled") {
@@ -116,6 +123,8 @@ const readJournalCost = (databasePath) => {
     jevInputTokens: jev.inputTokens,
     jevOutputTokens: jev.outputTokens,
     jevUsd: unknown ? null : jevUsd,
+    /** Supervisor readings the run's end interrupted: asked, unmetered, so `jevUsd` is a floor when non-zero. */
+    jevInterrupted: jev.interrupted,
     totalUsd: unknown ? null : Math.round((dollars + jevUsd) * 10_000) / 10_000,
     unknown,
     priceSource

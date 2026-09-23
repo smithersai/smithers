@@ -82,7 +82,11 @@ export const read = (databasePath) => {
 
   const frames = []
   const started = []
-  const demands = { unmoved: [], unresolved: [], narrowed: [], narrowOnly: [], readOnly: [], repeat: [] }
+  const demands = { unmoved: [], unresolved: [], narrowed: [], narrowOnly: [], readOnly: [], repeat: [], claim: [] }
+  // The run's arming as its first frame journaled it: the frame budget and
+  // whether a park had anyone to answer it. Absent from a journal that
+  // predates `discipline-armed`.
+  let armed
   const sufficiencyEvents = []
   const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 }
   let seat
@@ -132,6 +136,8 @@ export const read = (databasePath) => {
           calls: [],
           basis: "declared",
           digest: "",
+          /** Paths the closing workspace measurement covered; zero unmeasured. */
+          paths: 0,
           mutated: false,
           declaredWrites: 0,
           transition: "none",
@@ -191,6 +197,7 @@ export const read = (databasePath) => {
         if (frame === undefined) break
         frame.basis = payload.basis
         frame.digest = payload.digest
+        frame.paths = typeof payload.paths === "number" ? payload.paths : 0
         frame.mutated = payload.mutated
         frame.declaredWrites = payload.declaredWrites ?? 0
         break
@@ -216,6 +223,15 @@ export const read = (databasePath) => {
         break
       case "control.agent.repeat-demanded":
         demands.repeat.push({ seq: row.seq, ...payload })
+        break
+      case "control.agent.claim-demanded":
+        // Written on every reading of the claim brake; `demanded` marks the
+        // ones that handed the completion back, which are the ones
+        // `State.claimDemands` counts.
+        demands.claim.push({ seq: row.seq, ...payload })
+        break
+      case "control.agent.discipline-armed":
+        if (armed === undefined) armed = payload
         break
       case "control.agent.sufficiency-observed":
         sufficiencyEvents.push({ seq: row.seq, ...payload })
@@ -277,6 +293,8 @@ export const read = (databasePath) => {
     sufficiencyEvents,
     /** The task text the first frame's request carried; empty when the journal predates `model-requested`. */
     task,
+    /** The first `discipline-armed` payload, or nothing when the journal has none. */
+    armed,
     seat,
     modelCalls,
     usage,
