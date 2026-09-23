@@ -10,6 +10,19 @@
     "cacheable": false,
     "inputs": [
       {
+        "kind": "glob",
+        "pattern": "apps/model-host/src/**/*.ts",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/build.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/model-host/package.json"
+      },
+      {
         "kind": "file",
         "path": "go.mod"
       },
@@ -35,7 +48,9 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//:backendGoModules"
+      "//:backendGoModules",
+      "//:nativeFfi",
+      "//packages/smithers/agent/model-host:lib"
     ],
     "source": {
       "file": "PACKAGE.ts"
@@ -1051,6 +1066,10 @@
       {
         "kind": "file",
         "path": "pnpm-lock.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "packages/backend/internal/compose/bootstrap.go"
       },
       {
         "kind": "file",
