@@ -40,7 +40,6 @@ it("rejects an unknown flow with a typed error", async () => {
 
 it("plans, starts and settles a run from the watch", async () => {
   const card = await port.plan("echo", { text: "hi" })
-  expect(card.all).toBe(false)
   const runId = await port.start(card)
   expect(runId).toBeString()
   const events: Array<string> = []
@@ -54,7 +53,6 @@ it("plans, starts and settles a run from the watch", async () => {
 
 it("routes a * envelope through the shared approval rows", async () => {
   const card = await port.plan("wide", {})
-  expect(card.all).toBe(false)
   const started = port.start(card).catch((error: unknown) => error)
   for (let n = 0; n < 200 && (await host.approvals!.pending()).length === 0; n++) await Bun.sleep(5)
   const [request] = await host.approvals!.pending()

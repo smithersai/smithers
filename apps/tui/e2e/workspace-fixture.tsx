@@ -64,7 +64,7 @@ let settle = (_: Flows.Settled) => {}
 const flows: Flows.Port = {
   discover: async () => [{ name: "review", description: "Review a change", modelInvocable: true }],
   input: async () => Schema.Struct({ title: Schema.String }),
-  plan: async () => ({ all: false, raw: {} }),
+  plan: async () => ({ raw: {} }),
   start: async () => "run-1",
   resume: async (runId) => ({ runId }),
   watch: () => ({ done: new Promise((resolve) => { settle = resolve }), close: () => {} }),

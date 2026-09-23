@@ -21,7 +21,7 @@ const listed: ReadonlyArray<Listed> = [
 it("shows runs newest first with their real status, then the discovered flows", () => {
   const panel = Smithers.panel(listed, [
     run("a", "done", { startedAt: 1, answer: "Approved." }),
-    run("b", "approval", { startedAt: 3 }),
+    run("b", "input", { startedAt: 3 }),
     run("c", "failed", { startedAt: 2, message: "Unknown flow" })
   ])
   expect(Panels.decode(panel)).toEqual(panel)

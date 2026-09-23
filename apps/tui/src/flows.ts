@@ -22,7 +22,6 @@ export interface Listed {
 }
 /** A plan card; `raw` is the control plane's, kept in memory only. */
 export interface Card {
-  readonly all: boolean
   readonly raw: unknown
 }
 export type Settled =
@@ -63,7 +62,7 @@ export interface Run {
   readonly input: Record<string, unknown>
   /** The original input as JSON, for deduplication. */
   readonly requested: string
-  readonly status: "queued" | "requested" | "input" | "approval" | "running" | "waiting" | "done" | "failed" | "cancelled"
+  readonly status: "queued" | "requested" | "input" | "running" | "waiting" | "done" | "failed" | "cancelled"
   readonly runId?: string
   readonly startedAt: number
   readonly endedAt?: number
@@ -85,13 +84,12 @@ export const seats = 3
 /** Events the watch settles on; they never move a parked run back to running. */
 export const terminal: ReadonlySet<string> = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled", "control.run.pending"])
 const active = (run: Run) =>
-  run.status === "requested" || run.status === "input" || run.status === "approval" || run.status === "running" ||
+  run.status === "requested" || run.status === "input" || run.status === "running" ||
   run.status === "waiting"
 
 export class FlowRuns {
   private runs = new Map<string, Run>()
   private events = new Map<string, Array<ControlEvent>>()
-  private cards = new Map<string, Card>()
   private schemas = new Map<string, Schema.Top>()
   private watches = new Map<string, Watch>()
   private launching = new Map<string, AbortController>()
@@ -112,7 +110,8 @@ export class FlowRuns {
     }
   ) {
     for (const run of options.restored ?? []) {
-      if (active(run) || run.status === "queued") this.save({ ...run, status: "failed", message: interrupted, endedAt: Date.now() })
+      // Anything unsettled, including statuses older builds wrote, resumes as interrupted.
+      if (run.status !== "done" && run.status !== "failed" && run.status !== "cancelled") this.save({ ...run, status: "failed", message: interrupted, endedAt: Date.now() })
       else this.runs.set(run.id, run)
     }
   }
@@ -264,11 +263,6 @@ export class FlowRuns {
     const run = this.runs.get(id)!
     const card = await this.options.port!.plan(run.flow, run.input)
     if (this.attempts.get(id) !== attempt || this.closed) return
-    if (card.all) {
-      this.cards.set(id, card)
-      this.update(id, attempt, { status: "approval", message: "Approve: all capabilities" })
-      return
-    }
     await this.launch(id, attempt, card)
   }
   private launch(id: string, attempt: number, card: Card): Promise<void> {
@@ -340,16 +334,6 @@ export class FlowRuns {
     this.save({ ...run, input, status: "requested", message: undefined })
     void this.plan(id, attempt).catch((error) => this.fail(id, attempt, error))
   }
-  /** The human approves a run whose envelope grants every capability. */
-  approve = (id: string): void => {
-    const run = this.runs.get(id)
-    const card = this.cards.get(id)
-    if (run?.status !== "approval" || card === undefined || this.closed) return
-    this.cards.delete(id)
-    const attempt = this.attempt(id)
-    this.save({ ...run, status: "requested", message: undefined })
-    void this.launch(id, attempt, card).catch((error) => this.fail(id, attempt, error))
-  }
   cancel = (id: string): void => {
     const run = this.runs.get(id)
     if (run === undefined || (!active(run) && run.status !== "queued")) return
@@ -365,7 +349,6 @@ export class FlowRuns {
       return
     }
     this.attempt(id)
-    this.cards.delete(id)
     this.save({ ...run, status: "cancelled", endedAt: Date.now() })
   }
   /** Runs a failed or stopped run again; the receipt says whether it waits for a seat. */
@@ -442,8 +425,6 @@ export class FlowRuns {
     }))
     const act = run.status === "input"
       ? [{ id: "act", label: "Fill in", details: [], action: { label: "Fill in", prompt: "" } }]
-      : run.status === "approval"
-      ? [{ id: "act", label: "Approve", details: [], action: { label: "Approve", prompt: "" } }]
       : []
     const result = run.answer !== undefined && !nodes.some((node) => node.id === NodeOutput.resultNodeId)
       ? [{ id: NodeOutput.resultNodeId, label: "Result", status: "done" as const, details: [{ kind: "code" as const, code: run.answer.slice(0, 200_000) }] }]

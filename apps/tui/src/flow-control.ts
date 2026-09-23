@@ -116,8 +116,7 @@ export const make = (options: {
     },
     plan: (flow, input) =>
       control((service) => service.plan({ flowId: flow, input: input as Control.PlanInput["input"] })).then((card) => ({
-        // Wildcards use the same y/n/a rows as every consequential envelope.
-        all: false,
+        // Wildcards take the same y/n/a rows as every consequential envelope, in `start`.
         raw: card
       })),
     start: async (card, source = "chat", signal) => {

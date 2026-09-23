@@ -1,7 +1,7 @@
 /** Flow runs over a controllable fake Port: persistence, receipts, and settlement only from the watch. */
 import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { type Card, FlowRuns, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
+import { type Card, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
 import * as Session from "../src/session.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
@@ -47,7 +47,7 @@ const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top; re
       calls.push(`plan:${flow}:${JSON.stringify(input)}`)
       const next = pending<Card>()
       plans.push(next)
-      if (auto.plan) next.resolve({ all: false, raw: {} })
+      if (auto.plan) next.resolve({ raw: {} })
       return next.promise
     },
     start: () => {
@@ -161,20 +161,10 @@ describe("flow runs", () => {
     expect(f.runs.busy).toBe(true)
   })
 
-  it("a * envelope waits for approval and never auto-approves a model request", async () => {
-    const f = setup()
-    f.auto.plan = false
-    f.runs.request({ id: "r1", flow: "review", input: {}, by: "agent" })
-    await tick()
-    f.plans[0]!.resolve({ all: true, raw: {} })
-    await tick()
-    expect(f.runs.get("r1")?.status).toBe("approval")
-    expect(f.calls).not.toContain("start")
-    expect(f.runs.panel("r1").rows[0]).toMatchObject({ id: "act", label: "Approve" })
-    f.runs.approve("r1")
-    await tick()
-    expect(f.calls).toContain("start")
-    expect(f.runs.get("r1")?.status).toBe("running")
+  it("restores a run an older build parked for wildcard approval as interrupted", () => {
+    const legacy = { id: "r1", flow: "review", by: "agent", input: {}, requested: "{}", status: "approval", startedAt: 1 } as unknown as Run
+    const f = setup({ restored: [legacy] })
+    expect(f.runs.get("r1")).toMatchObject({ status: "failed", message: interrupted })
   })
 
   it("settles only from the watch", async () => {

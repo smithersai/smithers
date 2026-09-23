@@ -113,14 +113,13 @@ interface TextSearch {
   readonly truncated: boolean
 }
 
-/** A flow run's inline form: its missing input, or the approval of an all-capabilities envelope. */
+/** A flow run's inline form for its missing input. */
 interface FlowForm {
   readonly id: string
   readonly flow: string
   readonly fields: ReadonlyArray<Form.Field>
   readonly draft: Record<string, Form.Value>
   readonly focus: number
-  readonly approve: boolean
   readonly error?: string
 }
 
@@ -341,32 +340,28 @@ export function App(props: AppProps) {
     return () => { void runs.dispose() }
   }, [runs])
   const flowRuns = runs.snapshot()
-  /** Opens a run's form: its missing input, or the approval its envelope needs. */
+  /** Opens a run's form for its missing input. */
   const openForm = useCallback((id: string) => {
     const run = runs.get(id)
-    if (run?.status === "approval") {
-      setPanelFocus(false)
-      return changeForm({ id, flow: run.flow, fields: [], draft: {}, focus: 0, approve: true })
-    }
     if (run?.status !== "input") return
     const schema = runs.schema(id)
     const fields = schema === undefined ? [] : Form.fields(schema)
     setPanelFocus(false)
-    changeForm({ id, flow: run.flow, fields, draft: Form.draft(fields, run.input), focus: 0, approve: false })
+    changeForm({ id, flow: run.flow, fields, draft: Form.draft(fields, run.input), focus: 0 })
   }, [runs, changeForm])
   useEffect(() => {
     const open = liveForm.current
     if (open !== undefined) {
       const status = runs.get(open.id)?.status
       // A pending tool approval takes the keys; the run stays parked and `a` in its tab reopens the form.
-      if (status !== (open.approve ? "approval" : "input") || approvals.length > 0) changeForm(undefined)
+      if (status !== "input" || approvals.length > 0) changeForm(undefined)
       return
     }
     // Never pull the keyboard away from a draft, a dialog or an approval; a later render opens it.
     if (draft !== "" || picker !== undefined || approvals.length > 0) return
     for (const run of flowRuns) {
       const key = `${run.id}:${run.status}`
-      if (!userRuns.current.has(run.id) || (run.status !== "input" && run.status !== "approval")) continue
+      if (!userRuns.current.has(run.id) || run.status !== "input") continue
       if (formOpened.current.has(key)) continue
       formOpened.current.add(key)
       return openForm(run.id)
@@ -1230,10 +1225,6 @@ export function App(props: AppProps) {
     }
     if (key.name === "return" || key.name === "kpenter") {
       key.preventDefault()
-      if (open.approve) {
-        changeForm(undefined)
-        return runs.approve(open.id)
-      }
       const schema = runs.schema(open.id)
       const run = runs.get(open.id)
       if (schema === undefined || run === undefined) return changeForm(undefined)
@@ -1632,7 +1623,7 @@ export function App(props: AppProps) {
         {form === undefined ? null : (
           <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.brand} customBorderChars={View.bar}>
             <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.element}>
-              <text fg={color.text} wrapMode="none">{form.approve ? `${form.flow} · all capabilities` : form.flow}</text>
+              <text fg={color.text} wrapMode="none">{form.flow}</text>
               {form.fields.map((field, index) => {
                 const value = form.draft[field.name]
                 const focused = index === form.focus
