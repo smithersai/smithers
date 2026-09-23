@@ -193,7 +193,11 @@ def check_plue_shim() -> None:
     assert args[4:10] == ["--repo", "acme/bench", "--user", "root", "--timeout", "0"]
     assert ["--cwd", "/app"] == args[args.index("--cwd"):args.index("--cwd") + 2]
     assert args[args.index("--env") + 1] == "TOKEN=t0" and args.count("--env") == 1, "unset names are not forwarded"
-    assert args[-2] == "--command" and args[-1] == "exec bash -lc 'exec \"$@\"' bash python3 -", args[-1]
+    assert args[-2] == "--command", args
+    assert args[-1] == plue_docker.EGRESS_PREFIX + "exec bash -lc 'exec \"$@\"' bash python3 -", args[-1]
+    assert args[-1].startswith("if [ -r /etc/smithers/egress.env ]"), "the sandbox egress proxy reaches the command"
+    import plue_env
+    assert plue_env.with_egress("ls") == plue_env.EGRESS_PREFIX + "ls" and plue_env.EGRESS_PREFIX == plue_docker.EGRESS_PREFIX
     plain, stdin = plue_docker.translate(["exec", "--", "ws-1", "bash", "-lc", "ls"], environ)
     assert stdin is False and "--cwd" not in plain and "--env" not in plain
     for bad in (["ps"], ["exec", "--", "ws-1"], ["exec", "-t", "--", "ws-1", "true"]):

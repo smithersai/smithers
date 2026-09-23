@@ -44,6 +44,16 @@ _DEFAULT_USER = "root"
 _DEFAULT_CAPACITY_WAIT_SEC = 4 * 3600
 _CAPACITY_POLL_SEC = 60
 _DIRS = ("/logs/agent", "/logs/verifier", "/logs/artifacts", "/tests", "/solution")
+# The worker writes the sandbox's egress proxy and CA trust to this file and
+# hands it to the services it starts; an SSH exec session does not read it,
+# so every command sources it first. Absent (network none), nothing happens.
+EGRESS_ENV = "/etc/smithers/egress.env"
+EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
+
+
+def with_egress(command: str) -> str:
+    """The command, run with the workspace's egress proxy in its environment."""
+    return EGRESS_PREFIX + command
 
 
 class PlueError(RuntimeError):
@@ -276,7 +286,7 @@ class _PlueOps:
             args += ["--cwd", workdir]
         for key, value in (env or {}).items():
             args += ["--env", f"{key}={value}"]
-        args += ["--command", command]
+        args += ["--command", with_egress(command)]
         result = await self._run(*args, timeout=timeout + 60, check=False)
         data = _envelope(result.stdout.decode(errors="replace"))
         if "error" in data and "exit_code" not in data:

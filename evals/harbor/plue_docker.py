@@ -26,6 +26,11 @@ import shlex
 import subprocess
 import sys
 
+# Same as plue_env.EGRESS_PREFIX: the SSH session does not carry the
+# sandbox's egress proxy, so the command sources it first when it is there.
+EGRESS_ENV = "/etc/smithers/egress.env"
+EGRESS_PREFIX = f"if [ -r {EGRESS_ENV} ]; then set -a; . {EGRESS_ENV}; set +a; fi; "
+
 
 def translate(argv: list[str], environ: dict[str, str]) -> tuple[list[str], bool]:
     """`docker exec …` argv to the plue CLI argv, and whether stdin is forwarded."""
@@ -74,7 +79,7 @@ def translate(argv: list[str], environ: dict[str, str]) -> tuple[list[str], bool
         args += ["--cwd", cwd]
     for pair in env:
         args += ["--env", pair]
-    args += ["--command", "exec " + shlex.join(program)]
+    args += ["--command", EGRESS_PREFIX + "exec " + shlex.join(program)]
     return args, stdin
 
 

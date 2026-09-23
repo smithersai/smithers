@@ -68,6 +68,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -604,9 +605,15 @@ class SmithersAgent(BaseAgent):
     async def run(self, instruction: str, environment: BaseEnvironment, context: AgentContext) -> None:
         container = self.container_of(environment)
         cwd = self.container_cwd(environment)
-        workspace = self.logs_dir / "workspace"
-        if workspace.exists():
-            shutil.rmtree(workspace)
+        # The CLI runs in a scratch directory outside any checkout: it walks
+        # up from its working directory for project state, and a jobs
+        # directory inside this repository would put the run under the
+        # repository's own `.smithers`. The directory is moved under the
+        # trial's logs when the run is over.
+        kept = self.logs_dir / "workspace"
+        if kept.exists():
+            shutil.rmtree(kept)
+        workspace = Path(tempfile.mkdtemp(prefix="smithers-bench-"))
         flow_dir = workspace / "flows" / FLOW_NAME
         flow_dir.mkdir(parents=True)
         (flow_dir / "flow.mdx").write_text(
@@ -648,6 +655,8 @@ class SmithersAgent(BaseAgent):
         started = time.monotonic()
         exit_status, phase = await asyncio.to_thread(self._drive, workspace, env, budget)
         wall = time.monotonic() - started
+        shutil.move(str(workspace), str(kept))
+        workspace = kept
 
         journal = journal_path(workspace / ".flows")
         events = read_journal(journal) if journal is not None else []
