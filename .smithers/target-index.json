@@ -31568,6 +31568,10 @@
       },
       {
         "kind": "file",
+        "path": "scripts/ci/coding-check.test.mjs"
+      },
+      {
+        "kind": "file",
         "path": "scripts/check-mutations.test.mjs"
       },
       {
@@ -31596,6 +31600,10 @@
         "kind": "glob",
         "pattern": "scripts/fixtures/**/*.json",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "scripts/ci/coding-check.sh"
       }
     ],
     "outputs": [],

@@ -524,12 +524,13 @@ const benchmarkGate = Smithers.NodeTest({
 const tierContracts = Smithers.NodeTest({
   runner: Smithers.testRunner([
     Smithers.file("//scripts/runner-contract.test.mjs"),
+    Smithers.file("//scripts/ci/coding-check.test.mjs"),
     Smithers.file("//scripts/check-mutations.test.mjs"),
     Smithers.file("//scripts/check-soak-campaign.test.mjs"),
     Smithers.file("//scripts/benchmark-gate.test.mjs"),
     Smithers.file("//scripts/run-jj-abi-campaign.test.mjs")
   ]),
-  srcs: sources,
+  srcs: [...sources, Smithers.file("//scripts/ci/coding-check.sh")],
   deps: []
 })
 
