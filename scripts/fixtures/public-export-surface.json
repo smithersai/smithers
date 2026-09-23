@@ -423,6 +423,50 @@
         "require": "./dist/cjs/ScriptedJudge.js"
       },
       "reason": "Explicit offline completion-judge fixture shared by whole-host tests. It rejects unknown questions and malformed evidence; production hosts must supply their configured evaluator."
+    },
+    {
+      "name": "@smthrs/harness",
+      "subpath": "./CompletionClaim",
+      "development": "./src/CompletionClaim.ts",
+      "published": {
+        "types": "./dist/esm/CompletionClaim.d.ts",
+        "import": "./dist/esm/CompletionClaim.js",
+        "require": "./dist/cjs/CompletionClaim.js"
+      },
+      "reason": "Shared completion evidence schema and classifier used by the offline scripted judge and native host completion gates."
+    },
+    {
+      "name": "@smthrs/std",
+      "subpath": "./TreeFingerprint",
+      "development": "./src/TreeFingerprint.ts",
+      "published": {
+        "types": "./dist/esm/TreeFingerprint.d.ts",
+        "import": "./dist/esm/TreeFingerprint.js",
+        "require": "./dist/cjs/TreeFingerprint.js"
+      },
+      "reason": "Container-side directory measurement shared by bash mutation accounting and host workspace observations."
+    },
+    {
+      "name": "@smthrs/crypto",
+      "subpath": "./Identity",
+      "development": "./src/Identity.ts",
+      "published": {
+        "types": "./dist/esm/Identity.d.ts",
+        "import": "./dist/esm/Identity.js",
+        "require": "./dist/cjs/Identity.js"
+      },
+      "reason": "Canonical function identity and explicit capture metadata shared by plan and core node construction."
+    },
+    {
+      "name": "@smthrs/gateway",
+      "subpath": "./RuntimeBridge",
+      "development": "./src/RuntimeBridge.ts",
+      "published": {
+        "types": "./dist/esm/RuntimeBridge.d.ts",
+        "import": "./dist/esm/RuntimeBridge.js",
+        "require": "./dist/cjs/RuntimeBridge.js"
+      },
+      "reason": "Versioned JSON adapter from the Go product backend to the canonical Flow and Control runtime."
     }
   ],
   "removed": [
