@@ -2,6 +2,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as Digest from "@smthrs/core/Digest"
 import { Deferred, Duration, Effect, Fiber, FileSystem, Layer, Option } from "effect"
+import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import {
@@ -22,8 +23,8 @@ import type { DiscoveryError, RegistryError } from "../src/RegistryError.ts"
 import { discoveryError } from "../src/RegistryError.ts"
 
 const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url))
-const projectRoot = `${fixtures}/project/flows`
-const foreignRoot = `${fixtures}/foreign`
+const projectRoot = join(fixtures, "project", "flows")
+const foreignRoot = join(fixtures, "foreign")
 
 const project: Source = {
   source: "project",
@@ -53,7 +54,7 @@ const descriptor = (
   name: string,
   options: { readonly path?: string; readonly modelInvocable?: boolean } = {}
 ): FlowDescriptor => {
-  const path = options.path ?? `${fixtures}/${name}.md`
+  const path = options.path ?? join(fixtures, `${name}.md`)
   return new FlowDescriptor({
     name,
     description: `Flow ${name}.`,
@@ -215,7 +216,7 @@ describe("Registry", () => {
       flows: ["test/delegate"],
       effects: { reads: ["notes/**"], writes: ["out/**"] },
       budget: { tokens: 100 },
-      body: { path: `${fixtures}/owned.md` },
+      body: { path: join(fixtures, "owned.md") },
       provenance: { source: "test" },
       frontmatter: { nested: { value: "original" } }
     })
@@ -339,7 +340,7 @@ describe("Registry", () => {
             warnings: [
               new DiscoveryWarning({
                 code: "unreadable",
-                path: `${fixtures}/${source.source}`,
+                path: join(fixtures, source.source),
                 message: source.source
               })
             ]
@@ -355,7 +356,7 @@ describe("Registry", () => {
         Effect.provide(Registry.layer({
           sources: ["a", "b", "c"].map((source) => ({
             source,
-            root: `${fixtures}/${source}`,
+            root: join(fixtures, source),
             naming: "path" as const
           }))
         })),
@@ -466,7 +467,7 @@ describe("Registry", () => {
   })
 
   it("attaches a pack source path to an invalid_pack wrapper", async () => {
-    const sourceRoot = `${fixtures}/project/flows`
+    const sourceRoot = join(fixtures, "project", "flows")
     const discovery = Discovery.makeNoop({
       scan: (source) =>
         Effect.fail(discoveryError({
@@ -539,13 +540,13 @@ describe("Registry", () => {
     expect(result.descriptor.output._tag).toBe("MarkdownOutput")
     expect(result.body._tag).toBe("Prompt")
     expect(result.rendered).toContain("Do not overwrite the source document")
-    expect(result.rendered).toContain(`- Base directory: ${foreignRoot}/pdf`)
+    expect(result.rendered).toContain(`- Base directory: ${join(foreignRoot, "pdf")}`)
     expect(result.rendered.endsWith("\n\nExtract report.pdf")).toBe(true)
     if (result.body._tag === "Prompt") {
       expect(result.body.text).toContain("# PDF Processing")
       expect(result.body.text).not.toContain("name: pdf-processing")
       expect(result.body.text.startsWith("---")).toBe(false)
-      expect(result.body.baseDirectory).toBe(`${foreignRoot}/pdf`)
+      expect(result.body.baseDirectory).toBe(join(foreignRoot, "pdf"))
     }
   })
 
@@ -675,7 +676,7 @@ describe("Registry", () => {
       name: "lazy",
       description: "Loads only when requested.",
       body: new BodyRefMarkdown({
-        path: `${fixtures}/does-not-exist.md`,
+        path: join(fixtures, "does-not-exist.md"),
         baseDirectory: fixtures,
         contentDigest: "0".repeat(64)
       }),
@@ -693,7 +694,7 @@ describe("Registry", () => {
       },
       placement: Option.none(),
       modelInvocable: true,
-      path: `${fixtures}/does-not-exist.md`,
+      path: join(fixtures, "does-not-exist.md"),
       frontmatter: {},
       provenance: new Provenance({ source: "test", root: fixtures })
     })
@@ -714,7 +715,7 @@ describe("Registry", () => {
 
     expect(entries.map((entry) => entry.name)).toEqual(["lazy"])
     expect(error.code).toBe("body_unavailable")
-    expect(error.path).toBe(`${fixtures}/does-not-exist.md`)
+    expect(error.path).toBe(join(fixtures, "does-not-exist.md"))
     expect(error.cause).toMatchObject({ _tag: "PlatformError" })
   })
 
@@ -757,9 +758,9 @@ describe("Registry", () => {
   })
 
   it("keeps the first of two same-named descriptors and warns about the rest", async () => {
-    const first = descriptor("review", { path: `${fixtures}/first-review.md` })
-    const second = descriptor("review", { path: `${fixtures}/second-review.md` })
-    const third = descriptor("review", { path: `${fixtures}/third-review.md` })
+    const first = descriptor("review", { path: join(fixtures, "first-review.md") })
+    const second = descriptor("review", { path: join(fixtures, "second-review.md") })
+    const third = descriptor("review", { path: join(fixtures, "third-review.md") })
     const hidden = descriptor("hidden", { modelInvocable: false })
 
     const result = await Effect.runPromise(
@@ -798,7 +799,7 @@ describe("Registry", () => {
         const beforeText = "---\ndescription: Before refresh.\n---\nOld body."
         const afterText = "---\ndescription: After refresh.\n---\nNew body."
         const bodyDescriptor = (version: string, text: string) => {
-          const path = `${fixtures}/${version}-body.md`
+          const path = join(fixtures, `${version}-body.md`)
           return new FlowDescriptor({
             ...descriptor("body", { path }),
             description: version,
@@ -818,7 +819,7 @@ describe("Registry", () => {
         const warning = (version: string, source: string) =>
           new DiscoveryWarning({
             code: "unreadable",
-            path: `${fixtures}/${source}/${version}`,
+            path: join(fixtures, source, version),
             message: `${source}: ${version}`
           })
         const oldWarnings = [warning("before", "a"), warning("before", "b")]
@@ -864,8 +865,8 @@ describe("Registry", () => {
         })
         const registry = yield* Registry.make({
           sources: [
-            { source: "a", root: `${fixtures}/a`, naming: "path" },
-            { source: "b", root: `${fixtures}/b`, naming: "path" }
+            { source: "a", root: join(fixtures, "a"), naming: "path" },
+            { source: "b", root: join(fixtures, "b"), naming: "path" }
           ]
         }).pipe(
           Effect.provideService(Discovery.Discovery, discovery),
@@ -943,7 +944,7 @@ describe("Registry", () => {
 
     expect(
       warnings.some(
-        (warning) => warning.code === "missing_description" && warning.path.endsWith("/broken/flow.mdx")
+        (warning) => warning.code === "missing_description" && warning.path === join(projectRoot, "broken", "flow.mdx")
       )
     ).toBe(true)
   })

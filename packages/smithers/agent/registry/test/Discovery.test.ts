@@ -64,10 +64,14 @@ describe("Discovery", () => {
       "review/read-pr"
     ])
     expect(
-      result.warnings.some((item) => item.code === "name_field_ignored" && item.path.endsWith("/review/flow.mdx"))
+      result.warnings.some((item) =>
+        item.code === "name_field_ignored" && item.path === join(projectRoot, "review", "flow.mdx")
+      )
     ).toBe(true)
     expect(
-      result.warnings.some((item) => item.code === "missing_description" && item.path.endsWith("/broken/flow.mdx"))
+      result.warnings.some((item) =>
+        item.code === "missing_description" && item.path === join(projectRoot, "broken", "flow.mdx")
+      )
     ).toBe(true)
     expect(result.entries.some((entry) => entry.name === "broken")).toBe(false)
 
@@ -77,16 +81,16 @@ describe("Discovery", () => {
     const moduleFlow = result.entries.find((entry) => entry.name === "review/read-pr")
     expect(moduleFlow?.body).toMatchObject({
       _tag: "Module",
-      path: expect.stringMatching(/review\/read-pr\/flow\.ts$/)
+      path: join(projectRoot, "review", "read-pr", "flow.ts")
     })
     expect(moduleFlow?.input).toMatchObject({
       _tag: "Module",
-      path: expect.stringMatching(/review\/read-pr\/flow\.ts$/),
+      path: join(projectRoot, "review", "read-pr", "flow.ts"),
       field: "input"
     })
     expect(moduleFlow?.output).toMatchObject({
       _tag: "Module",
-      path: expect.stringMatching(/review\/read-pr\/flow\.ts$/),
+      path: join(projectRoot, "review", "read-pr", "flow.ts"),
       field: "output"
     })
     expect(moduleFlow?.capabilities).toEqual(["fs:read:.", "net:get:api.github.com"])
@@ -114,7 +118,7 @@ describe("Discovery", () => {
     expect(result.entries.find((entry) => entry.name === "pdf-processing")?.effects.tier).toBe("irreversible")
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "unprojectable_authority",
-      path: expect.stringMatching(/pdf\/SKILL\.md$/)
+      path: join(foreignRoot, "pdf", "SKILL.md")
     }))
     expect(result.warnings).toContainEqual(expect.objectContaining({
       code: "directory_name_mismatch",
