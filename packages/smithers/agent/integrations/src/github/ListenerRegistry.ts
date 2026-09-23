@@ -1126,10 +1126,19 @@ export const reconcile = (options: ReconcileOptions = {}): Effect.Effect<Reconci
     yield* commit()
     return { ...summary, applied, skipped }
   })
-  if (options.apply !== true) return run
+  const traced = run.pipe(
+    Effect.tap((result) =>
+      Effect.annotateCurrentSpan({
+        "listeners.applied": result.applied.length,
+        "listeners.skipped": result.skipped.length
+      })
+    ),
+    Effect.withSpan("ListenerRegistry.reconcile", { attributes: { "listeners.apply": options.apply === true } })
+  )
+  if (options.apply !== true) return traced
   return Effect.acquireUseRelease(
     attempt(() => acquireWorkspaceLock(workspaceRoot)),
-    () => run,
+    () => traced,
     (lock) => attempt(() => releaseWorkspaceLock(lock))
   )
 }

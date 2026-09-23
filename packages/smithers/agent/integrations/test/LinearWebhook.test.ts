@@ -1,9 +1,10 @@
 import type { RawInbound } from "@smthrs/control/Channels"
 import { Effect, Schema } from "effect"
-import { describe, expect, it } from "vitest"
+import { describe, expect, expectTypeOf, it } from "vitest"
 import { computeHmacSha256Hex } from "../src/core/Signature.ts"
 import * as Payload from "../src/linear/Payload.ts"
 import {
+  type ChannelOptions,
   correlations,
   decode,
   DEFAULT_TIMESTAMP_SKEW_MS,
@@ -200,5 +201,14 @@ describe("the replay window cannot be turned off by configuration", () => {
     expect(idempotencyKey(withoutHeader, { ...payload, webhookId: "other" }))
       .not.toBe(idempotencyKey(withoutHeader, payload))
     expect(idempotencyKey(withoutHeader, {})).toBe("linear:-:unknown:unknown:-:-")
+  })
+})
+
+// A fixed `nowMs` on a long-lived channel froze the replay-window clock, so
+// every real delivery an hour later failed verification.
+describe("channel options", () => {
+  it("do not accept a frozen clock", () => {
+    expectTypeOf<ChannelOptions>().not.toHaveProperty("nowMs")
+    expectTypeOf<ChannelOptions>().toHaveProperty("maxTimestampSkewMs")
   })
 })

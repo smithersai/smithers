@@ -1,4 +1,4 @@
-import { Deferred, Effect, Exit, Fiber } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import { describe, expect, it } from "vitest"
@@ -67,6 +67,33 @@ describe("Maintenance", () => {
     expect(result.collected).toEqual({ deletedFacts: 1 })
     expect(result.facts.map((fact) => fact.key)).toEqual(["permanent"])
     expect(result.projectionCounts).toEqual([0, 0, 0])
+  })
+
+  // Reads hide expired facts, but nothing deleted them, so memory_facts and
+  // its projections grew without bound in every long-lived host.
+  it("layerTtlGc collects expired facts on its interval until the scope closes", async () => {
+    const result = await runWithDatabase(Effect.gen(function*() {
+      const store = yield* MemoryStore.MemoryStore
+      const sql = yield* Effect.service(SqlClient.SqlClient)
+      const count = sql<{ readonly count: number }>`SELECT count(*) AS count FROM memory_facts`.pipe(
+        Effect.map((rows) => rows[0]?.count)
+      )
+      const counts: Array<number | undefined> = []
+      yield* Effect.scoped(Effect.gen(function*() {
+        yield* Layer.build(Maintenance.layerTtlGc({ interval: "1 minute" }))
+        yield* store.putFact({ namespace, key: "short", value: "value", ttlMs: 5, provenance: {} })
+        yield* store.putFact({ namespace, key: "permanent", value: "value", provenance: {} })
+        yield* TestClock.adjust("10 millis")
+        counts.push(yield* count)
+        yield* TestClock.adjust("1 minute")
+        counts.push(yield* count)
+      }))
+      yield* store.putFact({ namespace, key: "after", value: "value", ttlMs: 5, provenance: {} })
+      yield* TestClock.adjust("2 minutes")
+      counts.push(yield* count)
+      return counts
+    }))
+    expect(result).toEqual([2, 1, 2])
   })
 
   it("collects FTS and vector projections across namespace kinds", async () => {

@@ -11,6 +11,7 @@
  * @private
  */
 import type * as DurableWriter from "@smthrs/database/DurableWriter"
+import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
@@ -68,7 +69,8 @@ export const options = (
  * busy timeout so concurrent writers wait for each other instead of failing;
  * without it the store shares the workspace's `stores`. Recall is keyword
  * recall over the same store, so a note written by one run is what the next
- * one reads.
+ * one reads. Expired facts are deleted on the `Maintenance.layerTtlGc`
+ * schedule while the layer is alive.
  *
  * @since 1.0.0
  * @private
@@ -90,5 +92,5 @@ export const layer = (input: {
     )
   )
   const store = MemoryStore.layer.pipe(Layer.provide(database), Layer.provide(input.crypto), Layer.orDie)
-  return Layer.provideMerge(RecallKeyword.layer, store)
+  return Layer.provideMerge(Maintenance.layerTtlGc(), Layer.provideMerge(RecallKeyword.layer, store))
 }

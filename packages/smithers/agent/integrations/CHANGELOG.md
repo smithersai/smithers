@@ -1,5 +1,30 @@
 # @smthrs/integrations
 
+## [Unreleased]
+
+### Changed
+
+- `Telegram.Approval.decision` returns an `Outcome`: `Decided` only for an
+  authorized press of an option the prompt offered, otherwise `Ignored` with
+  a `reason`. A non-approver's press or a press on another prompt used to read
+  as a rejection, so any chat member could deny an approval.
+- `LinearClient.query` defaults `retryServerErrors` to false for a document
+  containing a mutation, so a raw mutation that hits a 5xx reports
+  `outcomeUnknown` instead of running twice.
+- The GitHub, Linear, and Telegram client layers fail with a typed error for a
+  bad config instead of dying with a defect.
+- `Linear.Webhook.channel` no longer accepts `nowMs`, which froze the replay
+  window clock for the channel's lifetime.
+
+### Fixed
+
+- `Telegram.Source.run` retries a transient `getUpdates` failure with capped
+  exponential backoff instead of stopping on the first network error or 5xx.
+- Linear and Telegram serialize request bodies before sending, so a BigInt or
+  cyclic value fails `invalid-config` with a known outcome.
+- GitHub requests and pagination, Linear queries, and listener reconciliation
+  run in spans carrying method, path, attempts, and failure class.
+
 ## [1.0.0-rc.0] - 2026-09-01
 
 The first public release candidate. Everything below is the surface it ships.

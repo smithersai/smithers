@@ -342,14 +342,15 @@ const linearDelivery = (body: string, signature: string): Channels.RawInbound =>
 }
 
 describe("Linear channel", () => {
-  const now = 1_700_000_000_000
+  // The channel verifies against the live clock, so deliveries are stamped
+  // relative to it.
+  const now = Date.now()
 
   const channel = (options: { readonly maxTimestampSkewMs?: number } = {}) =>
     LinearWebhook.channel({
       credential: Redacted.make({ id: "linear-webhook", name: "linear-webhook" }),
       secret: Core.constantSecret(Redacted.make(SECRET)),
       route: Core.startFlow("triage"),
-      nowMs: now,
       ...options
     })
 

@@ -1,10 +1,10 @@
 /**
  * Provider-neutral embeddings used by semantic memory recall.
  *
- * `/model` currently exposes generation streams but no embedding route.
- * This module consequently uses an injectable provider function; adding an
- * embedding route to `/model` is a follow-up that can be adapted here
- * without changing the memory contract.
+ * No embedding provider ships with Smithers, so a host injects one through
+ * {@link layer}. The built-in {@link inProcessVector} hashes characters into
+ * 64 buckets: it is deterministic and lexical, not semantic, and exists for
+ * tests and offline runs.
  *
  * @see https://memory.smithers.sh/reference/api/
  * @since 0.1.0
@@ -19,7 +19,6 @@ import * as MemoryError from "./MemoryError.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface EmbedResponse {
   readonly vector: ReadonlyArray<number>
@@ -30,7 +29,6 @@ export interface EmbedResponse {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface EmbedManyResponse {
   readonly embeddings: ReadonlyArray<EmbedResponse>
@@ -41,7 +39,6 @@ export interface EmbedManyResponse {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type EmbedMany = (
   inputs: ReadonlyArray<string>
@@ -53,7 +50,6 @@ export type EmbedMany = (
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly embed: (input: string) => Effect.Effect<EmbedResponse, MemoryError.MemoryError>
@@ -65,7 +61,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class Embedding extends Context.Service<Embedding, Service>()("flows/memory/Embedding") {}
 
@@ -95,7 +90,6 @@ const validate = (
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (embedMany: EmbedMany): Service => {
   const service: Service = {
@@ -121,7 +115,6 @@ export const make = (embedMany: EmbedMany): Service => {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (embedMany: EmbedMany): Layer.Layer<Embedding> => Layer.succeed(Embedding)(make(embedMany))
 
@@ -130,7 +123,6 @@ export const layer = (embedMany: EmbedMany): Layer.Layer<Embedding> => Layer.suc
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (): Service => make(() => Effect.fail(unavailable("no embedding provider is configured")))
 
@@ -139,7 +131,6 @@ export const makeNoop = (): Service => make(() => Effect.fail(unavailable("no em
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop: Layer.Layer<Embedding> = Layer.succeed(Embedding)(makeNoop())
 
@@ -149,7 +140,6 @@ export const layerNoop: Layer.Layer<Embedding> = Layer.succeed(Embedding)(makeNo
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerFake = (
   vectors: ReadonlyArray<ReadonlyArray<number>> | ((input: string, index: number) => ReadonlyArray<number>)
@@ -165,16 +155,15 @@ export const layerFake = (
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const inProcessModel = "flows-embedding/in-process-v1"
 
 /**
- * Computes the deterministic local v1 embedding.
+ * Computes the deterministic local v1 vector: a character hash, so texts
+ * rank close when they share characters, not meaning.
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const inProcessVector = (input: string): ReadonlyArray<number> => {
   const vector = new Array<number>(64).fill(0)
@@ -193,7 +182,6 @@ export const inProcessVector = (input: string): ReadonlyArray<number> => {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeInProcess = (): Service => make((inputs) => Effect.succeed(inputs.map(inProcessVector)))
 
@@ -202,6 +190,5 @@ export const makeInProcess = (): Service => make((inputs) => Effect.succeed(inpu
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerInProcess: Layer.Layer<Embedding> = Layer.succeed(Embedding)(makeInProcess())

@@ -137,6 +137,7 @@ describe("decision", () => {
     allowedChatIds: [42],
     options: [{ key: "a", label: "A" }]
   }
+  const decided = (approved: boolean) => ({ _tag: "Decided", decision: expect.objectContaining({ approved }) })
 
   it.each(
     [
@@ -149,14 +150,22 @@ describe("decision", () => {
       [42, [], false],
       [42, [-100], false]
     ] as const
-  )("authorizes the presser %s using %s", (id, allowedChatIds, approved) => {
+  )("authorizes the presser %s using %s", (id, allowedChatIds, authorized) => {
     const query = { data: keyboard(spec)[0]?.[0]?.callback_data, from: { id, username: "will" } }
-    expect(decision(query, { ...spec, allowedChatIds }, NOW)).toMatchObject({ approved })
+    expect(decision(query, { ...spec, allowedChatIds }, NOW)).toEqual(
+      authorized ? decided(true) : { _tag: "Ignored", reason: "unauthorized" }
+    )
   })
 
-  it("refuses an unlisted sender's selection even with valid callback data", () => {
+  // An unauthorized press must leave the approval pending, never deny it.
+  it("ignores a non-approver's reject press instead of rejecting", () => {
+    const query = { data: callbackData({ kind: "reject" }, TOKEN), from: { id: 7 } }
+    expect(decision(query, spec, NOW)).toEqual({ _tag: "Ignored", reason: "unauthorized" })
+  })
+
+  it("ignores an unlisted sender's selection even with valid callback data", () => {
     const query = { data: keyboard(selectSpec)[0]?.[0]?.callback_data, from: { id: 7 } }
-    expect(decision(query, selectSpec, NOW)).toEqual({ selected: "", notes: null })
+    expect(decision(query, selectSpec, NOW)).toEqual({ _tag: "Ignored", reason: "unauthorized" })
   })
 
   it("approves this approval's own approve press", () => {
@@ -166,27 +175,31 @@ describe("decision", () => {
       NOW
     )
     expect(result).toEqual({
-      approved: true,
-      note: null,
-      decidedBy: "@will",
-      decidedAt: new Date(NOW).toISOString()
+      _tag: "Decided",
+      decision: { approved: true, note: null, decidedBy: "@will", decidedAt: new Date(NOW).toISOString() }
     })
   })
 
   it("rejects this approval's own reject press", () => {
     expect(decision({ data: callbackData({ kind: "reject" }, TOKEN), from: { id: 42 } }, spec, NOW))
-      .toMatchObject({ approved: false, note: null })
+      .toEqual({ _tag: "Decided", decision: expect.objectContaining({ approved: false, note: null }) })
   })
 
-  // A press on a different prompt in the same chat must never approve this one.
-  it("fails safe for a press carrying another approval's token", () => {
-    const foreign = decision({ data: callbackData({ kind: "approve" }, token("other")) }, spec, NOW)
-    expect(foreign).toMatchObject({ approved: false, note: "press did not match this approval's prompt" })
+  // A press on a different prompt in the same chat must never resolve this one.
+  it("ignores a press carrying another approval's token", () => {
+    const foreign = decision({ data: callbackData({ kind: "reject" }, token("other")), from: { id: 42 } }, spec, NOW)
+    expect(foreign).toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
   })
 
-  it("fails safe for unrecognized data", () => {
-    expect(decision({ data: "garbage" }, spec, NOW)).toMatchObject({ approved: false })
-    expect(decision({}, spec, NOW)).toMatchObject({ approved: false, decidedBy: null })
+  it("ignores unrecognized data", () => {
+    expect(decision({ data: "garbage", from: { id: 42 } }, spec, NOW))
+      .toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
+    expect(decision({}, spec, NOW)).toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
+  })
+
+  it("ignores a select press on an approve prompt", () => {
+    expect(decision({ data: callbackData({ kind: "select", key: "a" }, TOKEN), from: { id: 42 } }, spec, NOW))
+      .toEqual({ _tag: "Ignored", reason: "unknown-option" })
   })
 
   it("identifies the approver by username, then by id", () => {
@@ -199,29 +212,35 @@ describe("decision", () => {
 
   it("selects an offered key with this approval's token and an allowed sender", () => {
     expect(decision({ data: callbackData({ kind: "select", key: "a" }, TOKEN), from: { id: "42" } }, selectSpec, NOW))
-      .toEqual({ selected: "a", notes: null })
+      .toEqual({ _tag: "Decided", decision: { selected: "a", notes: null } })
   })
 
-  // Each rejection keeps the other selection guards satisfied so one guard
-  // cannot mask a missing check in another.
-  it("refuses a selection with an unoffered key", () => {
+  // Each case keeps the other selection guards satisfied so one guard cannot
+  // mask a missing check in another.
+  it("ignores a selection with an unoffered key", () => {
     expect(decision({ data: callbackData({ kind: "select", key: "b" }, TOKEN), from: { id: "42" } }, selectSpec, NOW))
-      .toEqual({ selected: "", notes: null })
+      .toEqual({ _tag: "Ignored", reason: "unknown-option" })
   })
 
-  it("refuses a selection carrying another approval's token", () => {
+  it("ignores a select press on a select prompt that offers no options", () => {
+    const bare = { mode: "select" as const, token: TOKEN, allowedChatIds: [42] }
+    expect(decision({ data: callbackData({ kind: "select", key: "a" }, TOKEN), from: { id: 42 } }, bare, NOW))
+      .toEqual({ _tag: "Ignored", reason: "unknown-option" })
+  })
+
+  it("ignores an approve press on a select prompt", () => {
+    expect(decision({ data: callbackData({ kind: "approve" }, TOKEN), from: { id: "42" } }, selectSpec, NOW))
+      .toEqual({ _tag: "Ignored", reason: "unknown-option" })
+  })
+
+  it("ignores a selection carrying another approval's token", () => {
     expect(
       decision(
         { data: callbackData({ kind: "select", key: "a" }, token("other")), from: { id: "42" } },
         selectSpec,
         NOW
       )
-    ).toEqual({ selected: "", notes: null })
-  })
-
-  it("returns no selection for unrecognized data", () => {
-    expect(decision({ data: "garbage" }, { mode: "select", token: TOKEN }, NOW))
-      .toEqual({ selected: "", notes: null })
+    ).toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
   })
 
   it("recognizes its own press", () => {
@@ -234,25 +253,23 @@ describe("decision", () => {
   // Falling back to the empty string gave every tokenless prompt the same
   // namespace, so any tokenless press resolved any tokenless approval.
   it("never matches a spec with no token", () => {
-    const press = { data: callbackData({ kind: "approve" }, "") }
-    expect(decision(press, { mode: "approve" }, NOW))
-      .toMatchObject({ approved: false, note: "press did not match this approval's prompt" })
+    const press = { data: callbackData({ kind: "approve" }, ""), from: { id: 42 } }
+    expect(decision(press, { mode: "approve", allowedChatIds: [42] }, NOW))
+      .toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
     expect(isOwnPress(press, { mode: "approve" })).toBe(false)
     expect(isOwnPress(press, { mode: "approve", token: "" })).toBe(false)
   })
 
   it("keeps two tokenless prompts from resolving each other", () => {
     const first = { mode: "approve" } as const
-    const second = { mode: "approve" } as const
-    const pressOnFirst = { data: keyboard(first)[0]?.[0]?.callback_data }
-    expect(decision(pressOnFirst, second, NOW)).toMatchObject({ approved: false })
+    const second = { mode: "approve", allowedChatIds: [42] } as const
+    const pressOnFirst = { data: keyboard(first)[0]?.[0]?.callback_data, from: { id: 42 } }
+    expect(decision(pressOnFirst, second, NOW)).toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
   })
 
-  it("returns no selection for a tokenless select prompt", () => {
-    const spec = { mode: "select", options: [{ key: "a", label: "A" }] } as const
-    expect(decision({ data: keyboard(spec)[0]?.[0]?.callback_data }, spec, NOW)).toEqual({
-      selected: "",
-      notes: null
-    })
+  it("ignores every press on a tokenless select prompt", () => {
+    const spec = { mode: "select", allowedChatIds: [42], options: [{ key: "a", label: "A" }] } as const
+    expect(decision({ data: keyboard(spec)[0]?.[0]?.callback_data, from: { id: 42 } }, spec, NOW))
+      .toEqual({ _tag: "Ignored", reason: "foreign-prompt" })
   })
 })

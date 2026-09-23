@@ -104,7 +104,7 @@ const program = Effect.gen(function*() {
 )
 ```
 
-`Embedding.layerInProcess` computes a deterministic 64-dimensional embedding with no provider, which makes the whole setup self-contained. To plug in a provider, implement `Embedding.EmbedMany` and pass it to `Embedding.layer`; an invalid batch from the provider fails with `embedding_unavailable`.
+`Embedding.layerInProcess` hashes characters into 64 buckets with no provider, which makes the whole setup self-contained and deterministic. That vector is lexical, not semantic: two texts rank close when they share characters, not meaning, so use it for tests and offline runs only. No embedding provider ships with Smithers. For semantic similarity, implement `Embedding.EmbedMany` over your provider, pass it to `Embedding.layer`, and name its model in the declaration; an invalid batch from the provider fails with `embedding_unavailable`.
 
 Three details shape the answers:
 

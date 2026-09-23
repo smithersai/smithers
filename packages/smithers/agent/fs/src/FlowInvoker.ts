@@ -14,7 +14,6 @@ import { FsError } from "./FsError.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Invocation {
   readonly name: string
@@ -30,7 +29,6 @@ export interface Invocation {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly invoke: (invocation: Invocation) => Effect.Effect<unknown, FsError>
@@ -41,7 +39,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class FlowInvoker extends Context.Service<FlowInvoker, Service>()("/fs/FlowInvoker") {}
 
@@ -59,7 +56,6 @@ const ownInvoke = (input: unknown, description: string): Service["invoke"] => {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (implementation: Service): Service => {
   const invoke = ownInvoke(implementation, "FlowInvoker implementations require an own invoke function")
@@ -71,7 +67,6 @@ export const make = (implementation: Service): Service => {
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service => {
   const descriptor = Object.getOwnPropertyDescriptor(overrides, "invoke")
@@ -96,7 +91,6 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<FlowInvoker> =>
   Layer.succeed(FlowInvoker, makeNoop(overrides))

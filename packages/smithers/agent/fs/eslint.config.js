@@ -60,5 +60,13 @@ export default tseslint.config(
     }
   },
   ...jsdocConvention,
+  {
+    // The `@slop` review marker is bookkeeping, not documentation, so it
+    // must not ship in the published declarations.
+    files: ["src/**/*.ts"],
+    rules: {
+      "jsdoc/check-tag-names": ["error", { definedTags: ["category", "since"] }]
+    }
+  },
   ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)
 )

@@ -58,6 +58,25 @@ describe("RecallKeyword", () => {
     }
   )
 
+  it("recalls an old match behind 60 newer non-matching facts", async () => {
+    const recalled = await Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* MemoryStore.MemoryStore
+        yield* store.putFact({ namespace: "bank", key: "old", value: "the banana recipe", provenance: {} })
+        for (let index = 0; index < 60; index++) {
+          yield* store.putFact({
+            namespace: "bank",
+            key: `newer-${index}`,
+            value: `unrelated ${index}`,
+            provenance: {}
+          })
+        }
+        return yield* Keyword.recall({ banks: ["bank"], query: "banana", maxTokens: 2048 })
+      }).pipe(Effect.provide(TestMemory.layer))
+    )
+    expect(recalled.map((row) => row.key)).toEqual(["old"])
+  })
+
   it("scores terms, applies authoritative tags/status, and breaks ties by recency", async () => {
     const store = MemoryStore.MemoryStore.of({
       searchRows: () => Effect.succeed(rows)

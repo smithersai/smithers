@@ -913,3 +913,18 @@ describe("Telegram request deadline", () => {
     expect(fixture.requests.map((request) => method(request.url))).toEqual(["sendChatAction", "sendMessage"])
   }, 20_000)
 })
+
+describe("request serialization", () => {
+  // `JSON.stringify` ran while building the call, so a BigInt parameter threw
+  // out of `call` itself instead of failing the returned Effect.
+  it("fails invalid-config without sending when params cannot be serialized", async () => {
+    const request = vi.fn<typeof fetch>()
+    vi.stubGlobal("fetch", request)
+    const effect = make({ botToken: TOKEN, apiBaseUrl: "https://api.example" }).call("sendMessage", { chat_id: 1n })
+    const failure = await Effect.runPromise(Effect.flip(effect))
+    const classified = toIntegrationError(failure) as IntegrationError
+    expect(classified.reason).toBe("invalid-config")
+    expect(classified.details).toMatchObject({ outcomeUnknown: false, retryable: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+})

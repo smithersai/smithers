@@ -26,7 +26,6 @@ import * as WithMemory from "./WithMemory.ts"
  *
  * @category identifiers
  * @since 0.1.0
- * @slop
  */
 export const rememberName = "remember"
 
@@ -35,7 +34,6 @@ export const rememberName = "remember"
  *
  * @category identifiers
  * @since 0.1.0
- * @slop
  */
 export const recallName = "recall"
 
@@ -44,7 +42,6 @@ export const recallName = "recall"
  *
  * @category descriptions
  * @since 0.1.0
- * @slop
  */
 export const rememberDescription = "Persist a memory record in a named bank."
 
@@ -53,25 +50,47 @@ export const rememberDescription = "Persist a memory record in a named bank."
  *
  * @category descriptions
  * @since 0.1.0
- * @slop
  */
 export const recallDescription = "Recall advisory memory rows from named banks."
+
+/**
+ * Maximum UTF-8 byte length of a remembered key.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_REMEMBER_KEY_BYTES = 1_024
+
+/**
+ * Maximum UTF-8 byte length of a remembered text: the recall query cap, so a
+ * fact never outgrows what one recall budget can return.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_REMEMBER_TEXT_BYTES = Recall.MAX_RECALL_QUERY_BYTES
+
+const utf8 = new TextEncoder()
+const maxUtf8Bytes = (max: number, label: string) =>
+  Schema.makeFilter((value: string) =>
+    utf8.encode(value).byteLength <= max ? undefined : `${label} exceeds ${max} UTF-8 bytes`
+  )
 
 /**
  * Input schema for remember.
  *
  * Tags use `Namespace.Tags` directly so model decoding and durable writes
  * enforce the same vocabulary, uniqueness rule, and 16-tag cap before the
- * handler performs I/O. `ttlMs` is passed to the authoritative fact row.
+ * handler performs I/O. The bank uses `Recall.BankName`, so every remembered
+ * fact is in a bank recall can name, and key and text are byte-capped. `ttlMs` is passed to the authoritative fact row.
  *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const RememberInput = Schema.Struct({
-  bank: Schema.String,
-  key: Schema.String,
-  text: Schema.String,
+  bank: Recall.BankName,
+  key: Schema.NonEmptyString.pipe(Schema.check(maxUtf8Bytes(MAX_REMEMBER_KEY_BYTES, "remember key"))),
+  text: Schema.String.pipe(Schema.check(maxUtf8Bytes(MAX_REMEMBER_TEXT_BYTES, "remember text"))),
   tags: Schema.optional(Namespace.Tags),
   ttlMs: Schema.optional(
     Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
@@ -83,7 +102,6 @@ export const RememberInput = Schema.Struct({
  *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const RememberOutput = Schema.Struct({ key: Schema.String })
 
@@ -93,7 +111,6 @@ export const RememberOutput = Schema.Struct({ key: Schema.String })
  *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const RecallInput = Recall.Input
 
@@ -102,7 +119,6 @@ export const RecallInput = Recall.Input
  *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const RecallOutput = Recall.Output
 
@@ -111,7 +127,6 @@ export const RecallOutput = Recall.Output
  *
  * @category effects
  * @since 0.1.0
- * @slop
  */
 export const rememberEffects = Effects.make({
   reads: ["memory/**"],
@@ -129,7 +144,6 @@ export const rememberEffects = Effects.make({
  *
  * @category effects
  * @since 0.1.0
- * @slop
  */
 export const recallEffects = Effects.make({
   reads: ["memory/**"],
@@ -144,7 +158,6 @@ export const recallEffects = Effects.make({
  *
  * @category flows
  * @since 0.1.0
- * @slop
  */
 export const remember = Flow.make({
   name: rememberName,
@@ -159,7 +172,6 @@ export const remember = Flow.make({
  *
  * @category flows
  * @since 0.1.0
- * @slop
  */
 export const recall = Flow.make<typeof RecallInput, typeof RecallOutput, never>({
   name: recallName,
@@ -178,7 +190,6 @@ export const recall = Flow.make<typeof RecallInput, typeof RecallOutput, never>(
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const bindRecall = (supplied: Flow.Any): DurableFlow.Any => Pattern.bind(Recall.slot, supplied.flow)
 
@@ -222,7 +233,6 @@ export const runRememberWith = (provenance: MemoryStore.Provenance) =>
  *
  * @category handlers
  * @since 0.1.0
- * @slop
  */
 export const runRemember = (
   input: RememberInputType
@@ -233,7 +243,6 @@ export const runRemember = (
  *
  * @category handlers
  * @since 0.1.0
- * @slop
  */
 export const runRecall = (
   input: Recall.Input
@@ -363,6 +372,5 @@ export const handlersFor = (
  *
  * @category types
  * @since 0.1.0
- * @slop
  */
 export type RememberInputType = typeof RememberInput.Type

@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import type { DatabaseService } from "./Database.ts"
 import * as Facts from "./internal/Facts.ts"
+import { instrument } from "./internal/Instrument.ts"
 import * as Notes from "./internal/Notes.ts"
 import * as Search from "./internal/Search.ts"
 import { error, storeError } from "./internal/Store.ts"
@@ -27,7 +28,6 @@ import type * as Namespace from "./Namespace.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Provenance {
   readonly runId?: string | null | undefined
@@ -40,7 +40,6 @@ export interface Provenance {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Fact {
   readonly namespace: Namespace.Namespace
@@ -58,7 +57,6 @@ export interface Fact {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface PutFactInput {
   readonly namespace: NamespaceInput
@@ -85,7 +83,6 @@ export interface PutFactInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface GetFactInput {
   readonly namespace: NamespaceInput
@@ -97,7 +94,6 @@ export interface GetFactInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ListFactsInput {
   readonly namespace: NamespaceInput
@@ -110,7 +106,6 @@ export interface ListFactsInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Thread {
   readonly id: string
@@ -126,7 +121,6 @@ export interface Thread {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CreateThreadInput {
   readonly id?: string | undefined
@@ -140,7 +134,6 @@ export interface CreateThreadInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ListThreadsInput {
   readonly namespace?: NamespaceInput | undefined
@@ -171,7 +164,6 @@ export interface DeleteThreadInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Message {
   readonly threadId: string
@@ -188,7 +180,6 @@ export interface Message {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type AppendMessageInput = Message
 
@@ -197,7 +188,6 @@ export type AppendMessageInput = Message
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ListMessagesInput {
   readonly threadId: string
@@ -237,7 +227,6 @@ export interface MessageCursor {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface GetNoteInput {
   readonly id: string
@@ -248,7 +237,6 @@ export interface GetNoteInput {
  *
  * @category schemas
  * @since 0.1.0
- * @slop
  */
 export const NoteStatus = Schema.Literals(["pending", "accepted", "rejected"])
 
@@ -257,7 +245,6 @@ export const NoteStatus = Schema.Literals(["pending", "accepted", "rejected"])
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type NoteStatus = typeof NoteStatus.Type
 
@@ -266,7 +253,6 @@ export type NoteStatus = typeof NoteStatus.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Note {
   readonly namespace: Namespace.Namespace
@@ -286,7 +272,6 @@ export interface Note {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface PutNoteInput {
   readonly namespace: NamespaceInput
@@ -303,7 +288,6 @@ export interface PutNoteInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SetNoteStatusInput {
   readonly id: string
@@ -315,7 +299,6 @@ export interface SetNoteStatusInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SupersedeInput {
   readonly supersederId: string
@@ -330,7 +313,6 @@ export interface SupersedeInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type NamespaceInput = Namespace.Namespace | string
 
@@ -339,7 +321,6 @@ export type NamespaceInput = Namespace.Namespace | string
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type StatusFilter = NoteStatus | "any" | ReadonlyArray<NoteStatus>
 
@@ -348,7 +329,6 @@ export type StatusFilter = NoteStatus | "any" | ReadonlyArray<NoteStatus>
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface ListNotesInput {
   readonly namespace: NamespaceInput
@@ -368,7 +348,6 @@ export interface ListNotesInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SearchRow {
   readonly id: string
@@ -387,7 +366,6 @@ export interface SearchRow {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SearchRowsInput extends ListNotesInput {
   /** Exact projection identities to resolve, at most 64 per authoritative read. */
@@ -405,7 +383,6 @@ export interface SearchRowsInput extends ListNotesInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type EnableFtsInput = Namespace.Kind
 
@@ -414,7 +391,6 @@ export type EnableFtsInput = Namespace.Kind
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SearchFtsInput extends SearchRowsInput {
   readonly query: string
@@ -425,7 +401,6 @@ export interface SearchFtsInput extends SearchRowsInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface FtsRow extends SearchRow {
   readonly rank: number
@@ -437,7 +412,6 @@ export interface FtsRow extends SearchRow {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CompactMessagesInput {
   readonly threadId: string
@@ -451,7 +425,6 @@ export interface CompactMessagesInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly putFact: (input: PutFactInput) => Effect.Effect<void, MemoryError>
@@ -488,7 +461,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class MemoryStore extends Context.Service<MemoryStore, Service>()("flows/memory/MemoryStore") {}
 
@@ -497,7 +469,6 @@ export class MemoryStore extends Context.Service<MemoryStore, Service>()("flows/
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWriter | SqlClient.SqlClient> = Effect
   .gen(function*() {
@@ -508,12 +479,12 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
     yield* Migrations.run.pipe(Effect.mapError(storeError("memory migration failed")))
     const facts = Facts.make(database)
     const notes = Notes.make(database)
-    return MemoryStore.of({
+    return MemoryStore.of(instrument({
       ...facts.service,
       ...Threads.make(database, crypto),
       ...notes.service,
       ...Search.make(database, { readFacts: facts.readFacts, readNotes: notes.readNotes })
-    })
+    }))
   })
 
 /**
@@ -521,7 +492,6 @@ export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWr
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (overrides: Partial<Service> = {}): Service => {
   const unavailable = (method: string): Effect.Effect<never, MemoryError> =>
@@ -561,7 +531,6 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service => {
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<MemoryStore> =>
   Layer.succeed(MemoryStore)(makeNoop(overrides))
@@ -572,7 +541,6 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<MemoryS
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<MemoryStore, MemoryError, Crypto.Crypto | DurableWriter | SqlClient.SqlClient> = Layer
   .effect(

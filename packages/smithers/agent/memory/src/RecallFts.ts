@@ -26,7 +26,6 @@ import * as Recall from "./Recall.ts"
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const literalFtsQuery: (query: string) => string = FtsQuery.literalFtsQuery
 
@@ -74,7 +73,6 @@ const run = (input: Recall.Input): Effect.Effect<Recall.Output, MemoryError.Memo
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const recall = run
 
@@ -86,6 +84,5 @@ export const recall = run
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<Recall.Recall, never, MemoryStore.MemoryStore> = Recall.layerFrom(run)

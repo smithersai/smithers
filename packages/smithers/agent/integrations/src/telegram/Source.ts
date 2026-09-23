@@ -15,14 +15,14 @@
  *
  * @since 1.0.0
  */
-import { Effect, Schedule } from "effect"
+import { Duration, Effect, Schedule } from "effect"
 import { CursorStore } from "../core/CursorStore.ts"
 import type { ExternalEvent } from "../core/ExternalEvent.ts"
-import { IntegrationError } from "../core/IntegrationError.ts"
+import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import * as SignalName from "../core/SignalName.ts"
 import * as Environment from "../Environment.ts"
 import type { TelegramConfig } from "./Config.ts"
-import { make as makeClient, type TelegramClient } from "./TelegramClient.ts"
+import { isTelegramApiError, make as makeClient, type TelegramClient } from "./TelegramClient.ts"
 
 /**
  * The service segment of every Telegram signal name.
@@ -66,6 +66,19 @@ export const WEB_APP_DATA_EVENT = SignalName.eventName(SERVICE, "web_app_data")
 
 const DEFAULT_ALLOWED_UPDATES = ["message", "edited_message", "callback_query"]
 const DEFAULT_POLL_TIMEOUT_SECONDS = 25
+const pollRetryBase = Duration.millis(250)
+const pollRetryCap = Duration.seconds(30)
+
+// A network failure, a timeout, an exhausted 429, or a Bot API 5xx is worth
+// another poll. A 4xx such as 401 (revoked token) never heals on its own.
+const isTransientPollCause = (cause: unknown): boolean => {
+  if (!isTelegramApiError(cause)) return true
+  const code = cause.errorCode
+  return code === null || code === 429 || code >= 500
+}
+
+const isRetryablePollFailure = (error: unknown): boolean =>
+  isIntegrationError(error) && error.reason === "poll-failed" && error.details?.["retryable"] === true
 
 /**
  * The correlation for a chat.
@@ -234,6 +247,8 @@ export interface Source {
    * Reads the cursor, polls, hands the batch to `onBatch`, and
    * commits the offset only after `onBatch` succeeds.
    * The default schedule polls forever with 250 milliseconds between turns.
+   * A transient `getUpdates` failure is logged and retried with capped
+   * exponential backoff; a permanent one fails `run`.
    * A caller-supplied finite schedule ends polling normally with `undefined`.
    */
   readonly run: <E, R>(
@@ -285,6 +300,11 @@ export const make = (
     maxRetryAfterSeconds: options.maxRetryAfterSeconds
   }, env)
 
+  const pollRetrySchedule = Schedule.exponential(pollRetryBase).pipe(
+    Schedule.modifyDelay(({ duration }) => Effect.succeed(Duration.min(duration, pollRetryCap))),
+    Schedule.while(({ input }) => isRetryablePollFailure(input))
+  )
+
   const poll: Source["poll"] = (cursor) =>
     Effect.gen(function*() {
       const params: Record<string, unknown> = { timeout: pollTimeoutSeconds, allowed_updates: allowedUpdates }
@@ -313,7 +333,7 @@ export const make = (
           new IntegrationError(
             "poll-failed",
             `Telegram getUpdates failed for source "${sourceId}".`,
-            { sourceId },
+            { sourceId, retryable: isTransientPollCause(cause) },
             { cause }
           )
         )
@@ -376,7 +396,14 @@ export const make = (
       const cursors = yield* CursorStore
       const turn = Effect.gen(function*() {
         const cursor = yield* cursors.get(sourceId)
-        const batch = yield* poll(cursor)
+        const batch = yield* poll(cursor).pipe(
+          Effect.tapError((error) =>
+            isRetryablePollFailure(error)
+              ? Effect.logWarning(`Telegram source "${sourceId}" poll failed; retrying`, error)
+              : Effect.void
+          ),
+          Effect.retry(pollRetrySchedule)
+        )
         yield* onBatch(batch.events)
         if (batch.cursor !== undefined) yield* cursors.set(sourceId, batch.cursor)
       })

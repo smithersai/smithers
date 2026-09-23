@@ -40,7 +40,6 @@ import * as Recall from "./Recall.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Vector {
   readonly bank: string
@@ -58,7 +57,6 @@ export interface Vector {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface VectorStore {
   /**
@@ -82,7 +80,6 @@ export interface VectorStore {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Options {
   readonly vectorStore: VectorStore
@@ -113,7 +110,6 @@ interface SqlVectorRow {
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const budgetLimits = {
   low: 3,
@@ -122,11 +118,12 @@ export const budgetLimits = {
 } as const
 
 /**
- * The embedding model semantic recall uses when a declaration names none.
+ * The embedding model semantic recall uses when a declaration names none: the
+ * lexical in-process hash. Name a provider-backed model for semantic
+ * similarity.
  *
  * @category constants
  * @since 0.1.0
- * @slop
  */
 export const defaultModel = Embedding.inProcessModel
 
@@ -213,7 +210,6 @@ const validateVector = (vector: Vector): MemoryError.MemoryError | undefined => 
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeSqlVectorStore = (database: DatabaseService): VectorStore => {
   const scan: VectorStore["scan"] = (banks, model) =>
@@ -323,7 +319,6 @@ const vectorMismatch = (message: string): MemoryError.MemoryError =>
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const recall = (
   input: Recall.Input,
@@ -479,7 +474,6 @@ export const makeProjector = (options: Options): Effect.Effect<Projector, never,
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const decorateStore = (
   store: MemoryStore.Service,
@@ -534,7 +528,6 @@ export const decorateStore = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (
   options: Options

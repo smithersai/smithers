@@ -47,6 +47,7 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import type * as McpClient from "@smthrs/mcp/McpClient"
 import * as McpFlows from "@smthrs/mcp/McpFlows"
+import * as Maintenance from "@smthrs/memory/Maintenance"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -1335,7 +1336,10 @@ export const make = (
       })
     ).pipe(Layer.provide([control, engine.journal]))
   const layerMemory = (root: string, engine: EngineDurable = engineDurable(root)) =>
-    MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
+    Layer.provideMerge(
+      Maintenance.layerTtlGc(),
+      MemoryStore.layer.pipe(Layer.provide([engine.stores, native.crypto]), Layer.orDie)
+    )
   const layerHost = (
     config: Application.Config & Pick<ExecutorOptions, "expectedSourceRevision" | "approvalChannel">,
     modules?: ModuleRegistration,

@@ -4,7 +4,10 @@
  * @since 0.1.0
  */
 import * as Digest from "@smthrs/core/Digest"
+import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schedule from "effect/Schedule"
 import { MemoryError } from "./MemoryError.ts"
 import { MemoryStore, type Message, type Service } from "./MemoryStore.ts"
 
@@ -13,7 +16,6 @@ import { MemoryStore, type Message, type Service } from "./MemoryStore.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface TtlGcResult {
   readonly deletedFacts: number
@@ -24,7 +26,6 @@ export interface TtlGcResult {
  *
  * @category effects
  * @since 0.1.0
- * @slop
  */
 export const ttlGc: Effect.Effect<TtlGcResult, MemoryError, MemoryStore> = Effect.service(MemoryStore).pipe(
   Effect.flatMap((store) => store.deleteExpiredFacts),
@@ -32,11 +33,45 @@ export const ttlGc: Effect.Effect<TtlGcResult, MemoryError, MemoryStore> = Effec
 )
 
 /**
+ * Options for {@link layerTtlGc}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface TtlGcScheduleOptions {
+  /** Time between passes. Defaults to ten minutes. */
+  readonly interval?: Duration.Input | undefined
+}
+
+/**
+ * Runs {@link ttlGc} once at build and then on every interval for as long as
+ * the layer's scope is open. A failed pass is logged and the next one still
+ * runs; a pass that deletes rows logs how many.
+ *
+ * Compose it in the host that owns the memory database, so expired facts and
+ * their FTS and vector projections are deleted, not only hidden from reads.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerTtlGc = (options: TtlGcScheduleOptions = {}): Layer.Layer<never, never, MemoryStore> =>
+  Layer.effectDiscard(
+    ttlGc.pipe(
+      Effect.tap(({ deletedFacts }) =>
+        deletedFacts > 0 ? Effect.logInfo("memory TTL GC deleted expired facts", { deletedFacts }) : Effect.void
+      ),
+      Effect.withSpan("Maintenance.ttlGc"),
+      Effect.catch((error) => Effect.logWarning("memory TTL GC pass failed", error)),
+      Effect.repeat(Schedule.spaced(options.interval ?? "10 minutes")),
+      Effect.forkScoped
+    )
+  )
+
+/**
  * Configuration for one history token-limiter pass.
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface TokenLimiterOptions {
   readonly maxTokens: number
@@ -48,7 +83,6 @@ export interface TokenLimiterOptions {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface TokenLimiterResult {
   readonly deletedMessages: number
@@ -83,7 +117,6 @@ const forEachPage = <E, R>(
  *
  * @category effects
  * @since 0.1.0
- * @slop
  */
 export const limitHistory = (
   options: TokenLimiterOptions
@@ -153,7 +186,6 @@ export const limitHistory = (
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface SummarizerInput {
   readonly threadId: string
@@ -167,7 +199,6 @@ export interface SummarizerInput {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Summarizer<E = never, R = never> {
   readonly summarize: (input: SummarizerInput) => Effect.Effect<string, E, R>
@@ -178,7 +209,6 @@ export interface Summarizer<E = never, R = never> {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CompactionOptions<E = never, R = never> {
   readonly summarizer: Summarizer<E, R>
@@ -198,7 +228,6 @@ export interface CompactionOptions<E = never, R = never> {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface CompactionResult {
   readonly compactedThreads: number
@@ -221,7 +250,6 @@ const DEFAULT_MAX_MESSAGES_PER_SUMMARY = 1024
  *
  * @category effects
  * @since 0.1.0
- * @slop
  */
 export const compact = <E, R>(
   options: CompactionOptions<E, R>

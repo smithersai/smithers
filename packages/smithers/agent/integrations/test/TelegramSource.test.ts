@@ -14,7 +14,7 @@ import {
   updateToEvents,
   WEB_APP_DATA_EVENT
 } from "../src/telegram/Source.ts"
-import { make as makeClient } from "../src/telegram/TelegramClient.ts"
+import { make as makeClient, type TelegramClient } from "../src/telegram/TelegramClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 
 const TOKEN = "123456:AA-bot-token"
@@ -336,6 +336,62 @@ describe("run", () => {
       ).pipe(Effect.catchCause(() => Effect.void))
     }))
     expect(JSON.parse(fixture.requests[0]?.body ?? "{}").offset).toBe(500)
+  })
+
+  // One network blip or Bot API 5xx used to end `run` for good, so the bot
+  // stopped receiving messages until the host restarted it.
+  it("keeps polling after a transient getUpdates failure", async () => {
+    let calls = 0
+    fixture = await startFixture((_request, response) => {
+      calls++
+      if (calls === 1) {
+        response.socket?.destroy()
+        return
+      }
+      json(response, 200, { ok: true, result: [{ update_id: calls, message: message() }] })
+    })
+    const handled: Array<ReadonlyArray<ExternalEvent>> = []
+    await runWithCursors(
+      source().run((events) => Effect.sync(() => handled.push(events)), { schedule: Schedule.recurs(1) })
+    )
+    expect(fixture.requests.length).toBeGreaterThanOrEqual(2)
+    expect(handled.length).toBe(2)
+  })
+
+  it("keeps polling after a Bot API 502", async () => {
+    let calls = 0
+    fixture = await startFixture((_request, response) => {
+      calls++
+      if (calls === 1) return json(response, 502, { ok: false, error_code: 502, description: "Bad Gateway" })
+      json(response, 200, { ok: true, result: [] })
+    })
+    await runWithCursors(source().run(() => Effect.void, { schedule: Schedule.recurs(0) }))
+    expect(fixture.requests).toHaveLength(2)
+  })
+
+  it("retries a failure from an injected client that is not a Bot API error", async () => {
+    let calls = 0
+    const client = {
+      call: () => {
+        calls++
+        return calls === 1 ? Effect.fail(new Error("socket hang up")) : Effect.succeed([])
+      }
+    } as unknown as TelegramClient
+    await runWithCursors(
+      make({ allowedChatIds: [-100], client }).run(() => Effect.void, { schedule: Schedule.recurs(0) })
+    )
+    expect(calls).toBe(2)
+  })
+
+  it("stops on a permanent getUpdates failure", async () => {
+    fixture = await startFixture((_request, response) =>
+      json(response, 401, { ok: false, error_code: 401, description: "Unauthorized" })
+    )
+    const exit = await Effect.runPromise(
+      Effect.exit(source().run(() => Effect.void).pipe(Effect.provide(layerMemory as Layer.Layer<CursorStore>)))
+    )
+    expect(exit._tag).toBe("Failure")
+    expect(fixture.requests).toHaveLength(1)
   })
 
   it("stops when the fiber is interrupted", async () => {

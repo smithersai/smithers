@@ -195,7 +195,9 @@ export const decode = (
  * @category models
  * @since 1.0.0
  */
-export interface ChannelOptions extends VerifyOptions {
+export interface ChannelOptions {
+  /** See {@link VerifyOptions}. The channel always verifies against the live clock. */
+  readonly maxTimestampSkewMs?: VerifyOptions["maxTimestampSkewMs"]
   /** The channel name, which is every decoded event's source. Defaults to `linear`. */
   readonly name?: string | undefined
   readonly credential: Redacted.Redacted<CredentialRef>
@@ -217,11 +219,7 @@ export const channel = (options: ChannelOptions): Channel => {
     credential: options.credential,
     secret: options.secret,
     fingerprintHeaders: ["linear-delivery"],
-    verify: (raw, secret) =>
-      verify(raw, secret, {
-        maxTimestampSkewMs: options.maxTimestampSkewMs,
-        nowMs: options.nowMs
-      }),
+    verify: (raw, secret) => verify(raw, secret, { maxTimestampSkewMs: options.maxTimestampSkewMs }),
     decode: (raw, payload) => decode(raw, payload, name),
     route: options.route,
     project: options.project

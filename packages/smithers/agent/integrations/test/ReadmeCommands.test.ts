@@ -133,15 +133,17 @@ describe("documented HTTP receiver", () => {
         expect(ingest).not.toHaveBeenCalled()
       } else {
         expect(response.status).toBe(200)
-        expect(ingest).toHaveBeenCalledExactlyOnceWith({
-          channel: "github",
-          raw: expect.objectContaining({
-            body,
-            idempotencyKey: GitHub.Webhook.idempotencyKey({
-              headers: { "x-github-delivery": "doc-delivery" }
-            })
-          })
-        })
+        expect(ingest).toHaveBeenCalledOnce()
+        // Compare the bytes directly. A matcher deep-diff over 1 MiB took
+        // over 17 seconds and timed out under parallel load.
+        const [call] = ingest.mock.calls[0] as unknown as [
+          { readonly channel: string; readonly raw: { readonly body: Uint8Array; readonly idempotencyKey: string } }
+        ]
+        expect(call.channel).toBe("github")
+        expect(call.raw.idempotencyKey).toBe(
+          GitHub.Webhook.idempotencyKey({ headers: { "x-github-delivery": "doc-delivery" } })
+        )
+        expect(Buffer.compare(Buffer.from(call.raw.body), body)).toBe(0)
       }
     } finally {
       clearTimeout(timer)

@@ -7,8 +7,8 @@
  * decision checks the presser's user id against `allowedChatIds`.
  *
  * The per-approval {@link token} is what keeps one prompt's buttons from
- * resolving another's. A press whose token does not match this approval fails
- * safe: a non-approval in `approve` mode, an empty selection in `select` mode.
+ * resolving another's. A press whose token does not match this approval is
+ * ignored, never a rejection, so the approval stays pending.
  * A prompt built with no token, or an empty one, matches nothing at all, so
  * two tokenless prompts cannot resolve each other.
  *
@@ -286,40 +286,94 @@ export const approverLabel = (
 }
 
 /**
- * Maps a delivered callback query to a decision.
+ * Why a press did not resolve an approval.
  *
- * A press that is not this approval's own, or that is otherwise unrecognized,
- * fails safe. `decidedAt` is the resolution wall clock: Telegram does not
- * report when a button was pressed, and `message.date` is when the prompt was
- * sent, which can be zero for an inaccessible message.
+ * - `foreign-prompt`: the data is not this approval's (another token, no
+ *   token, or data this encoder cannot produce).
+ * - `unauthorized`: the presser's `from.id` is not in `allowedChatIds`.
+ * - `unknown-option`: this prompt's token, but a choice it never offered.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type IgnoredReason = "foreign-prompt" | "unauthorized" | "unknown-option"
+
+/**
+ * A press that is not an authorized answer to this prompt. The approval stays
+ * pending.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Ignored {
+  readonly _tag: "Ignored"
+  readonly reason: IgnoredReason
+}
+
+/**
+ * An authorized answer to this prompt.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Decided<A extends Decision | Selection> {
+  readonly _tag: "Decided"
+  readonly decision: A
+}
+
+/**
+ * What `decision` reports for a press on a prompt of mode `M`.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Outcome<M extends KeyboardSpec["mode"] = KeyboardSpec["mode"]> =
+  | Ignored
+  | Decided<M extends "select" ? Selection : Decision>
+
+const ignored = (reason: IgnoredReason): Ignored => ({ _tag: "Ignored", reason })
+
+/**
+ * Maps a delivered callback query to an outcome.
+ *
+ * Only an authorized press of an option this prompt offered is `Decided`.
+ * Every other press is `Ignored` and must leave the approval pending: a
+ * non-approver's press or a press on another prompt never resolves it, not
+ * even as a rejection. `decidedAt` is the resolution wall clock: Telegram does
+ * not report when a button was pressed, and `message.date` is when the prompt
+ * was sent, which can be zero for an inaccessible message.
  *
  * @category constructors
  * @since 1.0.0
  */
-export const decision = (
+export const decision = <M extends KeyboardSpec["mode"]>(
   callbackQuery: {
     readonly data?: string | undefined
     readonly from?: { readonly id?: number | string | undefined; readonly username?: string | undefined } | undefined
   },
-  spec: KeyboardSpec,
+  spec: KeyboardSpec & { readonly mode: M },
   nowMs: number = Date.now()
-): Decision | Selection => {
+): Outcome<M> => {
   const choice = parseCallbackData(callbackQuery?.data)
-  const own = matchesSpec(choice, spec)
+  if (!matchesSpec(choice, spec)) return ignored("foreign-prompt")
   const senderId = callbackQuery?.from?.id
   const authorized = senderId !== undefined &&
     (spec.allowedChatIds?.some((id) => String(id) === String(senderId)) ?? false)
+  if (!authorized) return ignored("unauthorized")
   if (spec.mode === "select") {
-    // Accept only a key this approval offered. A stale `sap:s:<key>` press
-    // resolves to no selection rather than to somebody else's option.
+    // Accept only a key this approval offered. A stale `sap:<tok>:s:<key>`
+    // press never resolves to somebody else's option.
     const offered = new Set((spec.options ?? []).map((option) => option.key))
-    const selected = own && authorized && choice.kind === "select" && offered.has(choice.key) ? choice.key : ""
-    return { selected, notes: null }
+    if (choice.kind !== "select" || !offered.has(choice.key)) return ignored("unknown-option")
+    const selection: Selection = { selected: choice.key, notes: null }
+    return { _tag: "Decided", decision: selection } as Outcome<M>
   }
-  return {
-    approved: own && authorized && choice.kind === "approve",
-    note: !own ? "press did not match this approval's prompt" : authorized ? null : "sender is not in allowedChatIds",
+  if (choice.kind === "select") return ignored("unknown-option")
+  const decided: Decision = {
+    approved: choice.kind === "approve",
+    note: null,
     decidedBy: approverLabel(callbackQuery),
     decidedAt: new Date(nowMs).toISOString()
   }
+  return { _tag: "Decided", decision: decided } as Outcome<M>
 }

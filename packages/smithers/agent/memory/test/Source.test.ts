@@ -181,6 +181,43 @@ describe("Source", () => {
     expect(recordings).toBe(1)
   })
 
+  // With no recorder composed, a degraded read used to stay memoized as "",
+  // so a retry of the same iteration got no memory even after the store
+  // recovered.
+  it("retries a degraded read without a recorder and freezes the recovered text", async () => {
+    let failing = true
+    let fetches = 0
+    const notes = () =>
+      Effect.sync(() => fetches++).pipe(
+        Effect.andThen(
+          failing
+            ? Effect.fail(new MemoryError({ code: "store", message: "temporarily unavailable" }))
+            : Effect.succeed([{ kind: "note", text: "recovered" }])
+        )
+      )
+    const store = MemoryStore.MemoryStore.of({ listNotes: notes, searchRows: notes } as unknown as MemoryStore.Service)
+    const source = Source.make()
+    const input = { lineageId: "unrecorded", iteration: 0, banks: ["bank"], query: "q" }
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const degraded = yield* source.read(input)
+        failing = false
+        const recovered = yield* source.read(input)
+        const fetchesAfterRecovery = fetches
+        const frozen = yield* source.read(input)
+        return { degraded, recovered, frozen, fetchesAfterRecovery }
+      }).pipe(
+        Effect.provideService(MemoryStore.MemoryStore, store),
+        Effect.provideService(Recall.Recall, Recall.makeNoop()),
+        Effect.provide(TestClock.layer())
+      )
+    )
+    expect(result.degraded).toBe("")
+    expect(result.recovered).toContain("recovered")
+    expect(result.frozen).toBe(result.recovered)
+    expect(fetches).toBe(result.fetchesAfterRecovery)
+  })
+
   it("records a successful empty snapshot and replays it without fetching", async () => {
     let fetches = 0
     let recordings = 0

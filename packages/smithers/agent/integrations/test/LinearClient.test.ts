@@ -766,6 +766,45 @@ describe("Linear response lifecycle", () => {
     expect(request).toHaveBeenCalledTimes(2)
   })
 
+  // A caller running its own mutation through `query` used to get 5xx
+  // retries by default, so a write Linear had committed ran twice.
+  it.each([
+    "mutation Archive { issueArchive(id: \"x\") { success } }",
+    "# archive\nmutation { issueArchive(id: \"x\") { success } }",
+    "fragment F on Issue { id }\nmutation M { issueArchive(id: \"x\") { success } }"
+  ])("does not repeat a caller-supplied mutation on a 502 by default: %s", async (gql) => {
+    const request = vi.fn<typeof fetch>().mockImplementation(async () => new Response("bad gateway", { status: 502 }))
+    vi.stubGlobal("fetch", request)
+    const failure = await Effect.runPromise(Effect.flip(make({ apiKey: API_KEY }).query(gql)))
+    expect(failure.details).toMatchObject({ outcomeUnknown: true })
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  it("still retries a caller-supplied mutation that opts in", async () => {
+    const request = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+      .mockResolvedValueOnce(Response.json({ data: { x: true } }))
+    vi.stubGlobal("fetch", request)
+    const data = await Effect.runPromise(
+      make({ apiKey: API_KEY }).query("mutation X { x }", {}, { retryServerErrors: true })
+    )
+    expect(data).toEqual({ x: true })
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  // Serialization runs before anything is sent, so its failure is a caller
+  // error with a known outcome, never a network failure.
+  it("fails invalid-config without sending when variables cannot be serialized", async () => {
+    const request = vi.fn<typeof fetch>()
+    vi.stubGlobal("fetch", request)
+    const failure = await Effect.runPromise(Effect.flip(
+      make({ apiKey: API_KEY }).query("mutation X { x }", { big: 1n }, { retryServerErrors: false })
+    ))
+    expect(failure.reason).toBe("invalid-config")
+    expect(failure.details).toMatchObject({ outcomeUnknown: false })
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it("cancels an unread write 503 without repeating the write", async () => {
     const cancelled = vi.fn()
     const request = vi.fn<typeof fetch>().mockResolvedValue(

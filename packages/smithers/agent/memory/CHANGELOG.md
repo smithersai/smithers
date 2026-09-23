@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Maintenance.layerTtlGc` runs `ttlGc` at build and every ten minutes while
+  its scope is open. The Smithers host composes it wherever it builds the
+  memory store, so expired facts and their projections are deleted instead of
+  only hidden from reads.
+- Every `MemoryStore` operation runs in a `MemoryStore.<method>` span with
+  shape-only attributes and counts its outcome on
+  `smithers_memory_operations`.
+- `Recall.BankName`, and `Flows.MAX_REMEMBER_KEY_BYTES` and
+  `MAX_REMEMBER_TEXT_BYTES`.
+
+### Fixed
+
+- Keyword recall scores every row of each selected bank. It read only the
+  newest `requestedRows * 5` rows, so a bank with more than about 40 records
+  lost recall of its older memories.
+- `RememberInput` uses the recall bank schema and caps key and text bytes, so
+  a model cannot store a fact in a bank recall cannot name or persist an
+  unbounded text.
+- `Source` never freezes a degraded read, with or without a
+  `SnapshotRecorder`; a later read for the identity retries.
+- The in-process embedding is documented as a lexical character hash for
+  tests and offline runs, not semantic similarity.
+- Removed the internal `@slop` review markers from `src` and the published
+  `.d.ts`; lint now forbids the tag.
+
 ### Changed
 
 - `RecallSemantic.Vector` and `ProjectionInput` now require `recordKind` and

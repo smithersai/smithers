@@ -555,11 +555,24 @@ export const make = (
       )
     })
 
+  // Serialized inside the Effect: a BigInt or cyclic parameter is a caller
+  // error with a known outcome, since nothing was sent.
   const call: TelegramClient["call"] = (method, params) =>
-    rawCall(method, {
-      body: JSON.stringify(params ?? {}),
-      headers: { "content-type": "application/json" }
-    }, deadlineFor(method, params)).pipe(Effect.retry(rateLimitSchedule))
+    Effect.try({
+      try: () => JSON.stringify(params ?? {}),
+      catch: (cause) =>
+        new TelegramApiError(`Telegram request parameters for method "${method}" could not be serialized as JSON.`, {
+          method,
+          reason: "invalid-config",
+          outcomeUnknown: false,
+          cause
+        })
+    }).pipe(
+      Effect.flatMap((body) =>
+        rawCall(method, { body, headers: { "content-type": "application/json" } }, deadlineFor(method, params))
+      ),
+      Effect.retry(rateLimitSchedule)
+    )
 
   const sendChunk = (
     base: Record<string, unknown>,
@@ -747,4 +760,14 @@ export const make = (
 export const layer = (
   config: Partial<TelegramConfig> = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
-): Layer.Layer<TelegramClient> => Layer.sync(TelegramClient, () => make(config, env))
+): Layer.Layer<TelegramClient, SmithersError> =>
+  Layer.effect(TelegramClient)(Effect.suspend(() => {
+    // A config error is a typed layer failure. Anything else make throws is a
+    // defect and stays one.
+    try {
+      return Effect.succeed(make(config, env))
+    } catch (error) {
+      if (hasSmithersErrorShape(error)) return Effect.fail(error)
+      throw error
+    }
+  }))

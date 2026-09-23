@@ -16,8 +16,8 @@
  *
  * Every source has an in-process memo. With no
  * {@link SnapshotRecorder.SnapshotRecorder} in the Effect context, that is the
- * whole guarantee: two reads through one source return the same text, while a
- * second source refetches live memory. This is the documented default for
+ * whole guarantee: two reads through one source return the same successful
+ * text, a degraded read is retried, and a second source refetches live memory. This is the documented default for
  * compositions that use `@smthrs/memory` alone.
  *
  * When a recorder is present, the first fetch for an identity goes through its
@@ -65,7 +65,6 @@ import * as SnapshotRecorder from "./SnapshotRecorder.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Input extends Recall.Input {
   readonly lineageId: string
@@ -80,7 +79,6 @@ export interface Input extends Recall.Input {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface Source {
   readonly read: (input: Input) => Effect.Effect<string, never, MemoryStore.MemoryStore | Recall.Recall>
@@ -93,7 +91,6 @@ export interface Source {
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export interface DeclaredText {
   readonly text: string
@@ -186,7 +183,6 @@ const fetch = (
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const make = (options: { readonly capacity?: number | undefined } = {}): Source => {
   const capacity = options.capacity ?? 1_024
@@ -254,7 +250,9 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
               Effect.catch((cause) =>
                 Effect.gen(function*() {
                   const elapsedMs = (yield* Clock.currentTimeMillis) - started
-                  if (Option.isSome(recorder) && snapshots.get(key)?.effect === current) snapshots.delete(key)
+                  // Only successful snapshots are frozen, with or without a
+                  // recorder, so a retry of this identity refetches.
+                  if (snapshots.get(key)?.effect === current) snapshots.delete(key)
                   yield* Effect.logWarning(
                     `memory source degraded: ${String(cause)}; elapsedMs=${elapsedMs}; `
                       + `primerBanks=${(input.primerBanks ?? input.banks).length}; recallBanks=${input.banks.length}; `
@@ -279,7 +277,6 @@ export const make = (options: { readonly capacity?: number | undefined } = {}): 
  *
  * @category instances
  * @since 0.1.0
- * @slop
  */
 export const source = make()
 
@@ -289,7 +286,6 @@ export const source = make()
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const declaredText = (
   memorySource: Source,

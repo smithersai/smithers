@@ -87,7 +87,7 @@ const program = source.run((events) =>
 ```
 
 `run` returns `Effect<void, IntegrationError | E, R | CursorStore>`.
-The default schedule polls forever with 250 milliseconds between turns.
+The default schedule polls forever with 250 milliseconds between turns. A transient `getUpdates` failure (a network error, a timeout, an exhausted 429, or a Bot API 5xx) is logged and retried with exponential backoff from 250 milliseconds up to 30 seconds, so it never ends `run`. A permanent failure such as a 401, an unusable cursor, or an undecodable batch still fails `run`.
 Pass `{ schedule }` as the second argument to change the schedule. A
 caller-supplied finite schedule ends polling normally and succeeds with
 `undefined`, discarding the schedule's result.
@@ -119,7 +119,7 @@ for an already-built client.
 `Telegram.Approval` is the codec behind approve/reject and selection prompts.
 Telegram caps `callback_data` at 64 bytes, so a press carries a compact code
 and nothing else. It also carries no trust: any member of the chat can press
-a button. `decision` accepts a press only when its `from.id` is in the
+a button. `decision` resolves a press only when its `from.id` is in the
 spec's `allowedChatIds`, compared as strings. Missing or empty lists authorize
 nobody, even when the callback token matches. Pass the same allowlist to the
 source and the approval spec. Include individual user ids for approvers; a
@@ -138,19 +138,24 @@ const sent = yield* client.sendMessageSmart(chatId, "Deploy?", { inlineKeyboard:
 
 // later, when a callback_query event arrives
 const outcome = Telegram.Approval.decision(callbackQuery, spec)
+if (outcome._tag === "Decided") {
+  // resolve the approval from outcome.decision.approved
+}
+// an Ignored outcome leaves the approval pending
 ```
 
 Replace `approvalId` with a stable id for the prompt, and `callbackQuery`
 with the delivered callback query payload.
 
-The token namespaces the prompt's buttons. A press whose token does not match
-this approval fails safe: a rejection in `approve` mode, an empty selection
-in `select` mode, which also accepts only a key this approval offered. A
-prompt built with no token matches nothing at all, so two tokenless prompts
-cannot resolve each other. The token is a 32-bit namespace, not a secret; two
-approval ids can collide. `isOwnPress` checks only the prompt token;
-`decision` also checks the sender. An unlisted sender produces `approved: false`
-or an empty selection.
+The token namespaces the prompt's buttons. Only an authorized press of an
+option this prompt offered returns `Decided`. Every other press returns
+`Ignored` with a `reason` and must leave the approval pending:
+`foreign-prompt` for another prompt's token or unrecognized data,
+`unauthorized` for an unlisted sender, and `unknown-option` for a choice this
+prompt never offered. A prompt built with no token matches nothing at all, so
+two tokenless prompts cannot resolve each other. The token is a 32-bit
+namespace, not a secret; two approval ids can collide. `isOwnPress` checks
+only the prompt token; `decision` also checks the sender.
 
 In `select` mode, pass `options: [{ key, label }, ...]`. `keyboard` throws
 `INVALID_INPUT` for an empty option list, and `callbackData` throws for an

@@ -1,9 +1,10 @@
 /**
  * Keyword recall with no host dependencies.
  *
- * Scores each authoritative row by the number of normalized query terms
- * occurring in its key and text, breaks ties by newest update, then applies
- * the shared Smithers-compatible byte cap.
+ * Scores every authoritative row in each selected bank by the number of
+ * normalized query terms occurring in its key and text, breaks ties by newest
+ * update, then applies the shared Smithers-compatible byte cap. There is no
+ * recency window: an old match ranks the same as a new one.
  *
  * @since 0.1.0
  */
@@ -20,7 +21,6 @@ import * as Recall from "./Recall.ts"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Row = Pick<MemoryStore.SearchRow, "key" | "text" | "tags" | "status" | "updatedAtMs">
 
@@ -29,7 +29,6 @@ export type Row = Pick<MemoryStore.SearchRow, "key" | "text" | "tags" | "status"
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const normalizeQueryTerms = (value: string): ReadonlyArray<string> =>
   value.normalize("NFKC").toLowerCase().split(/[^\p{L}\p{N}_-]+/u).filter(Boolean)
@@ -40,7 +39,6 @@ export const normalizeQueryTerms = (value: string): ReadonlyArray<string> =>
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const scoreRow = (query: ReadonlyArray<string>, row: Row): number => {
   const haystack = `${row.key} ${row.text}`.normalize("NFKC").toLowerCase()
@@ -58,7 +56,6 @@ const authoritative = (row: Row, groups: ReadonlyArray<Recall.TagGroup> | undefi
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const recall = (
   input: Recall.Input
@@ -68,15 +65,12 @@ export const recall = (
     const banks = yield* resolveBanks(input.banks)
     const terms = normalizeQueryTerms(input.query)
     if (banks.length === 0 || terms.length === 0) return []
-    const requested = Recall.requestedRows(input.maxTokens)
-    const scanLimit = Math.min(512, requested * 5)
     const rows = yield* Effect.all(
       banks.map(({ namespace }) =>
         store.searchRows({
           namespace,
           status: "accepted",
-          tagGroups: input.tagGroups,
-          limit: scanLimit
+          tagGroups: input.tagGroups
         })
       ),
       { concurrency: 4 }
@@ -103,6 +97,5 @@ export const recall = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer: Layer.Layer<Recall.Recall, never, MemoryStore.MemoryStore> = Recall.layerFrom(recall)

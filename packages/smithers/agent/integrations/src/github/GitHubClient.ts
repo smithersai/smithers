@@ -32,7 +32,7 @@
  * @since 1.0.0
  */
 import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
-import { IntegrationError, isRetryable } from "../core/IntegrationError.ts"
+import { IntegrationError, isIntegrationError, isRetryable } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"
 import { type GitHubConfig, resolve } from "./Config.ts"
@@ -274,6 +274,16 @@ const bounded = (
   return Effect.succeed(value)
 }
 
+// Span attributes for a failed attempt: the classification, never the body.
+const failureAttributes = (error: IntegrationError) =>
+  Effect.annotateCurrentSpan({
+    "integration.reason": error.reason,
+    "http.response.status_code": error.details?.["status"] ?? null,
+    "integration.retryable": error.details?.["retryable"] === true,
+    "integration.rate_limited": error.details?.["rateLimited"] === true,
+    "integration.outcome_unknown": error.details?.["outcomeUnknown"] === true
+  })
+
 /**
  * Builds a REST client bound to `config`.
  *
@@ -500,7 +510,18 @@ export const make = (
         return Effect.succeed(typeof wait === "number" && wait > 0 ? Duration.millis(wait) : Duration.zero)
       })
     )
-    return attemptOnce(method, url, body, retryUnsafeWrites).pipe(Effect.retry(schedule))
+    let attempts = 0
+    return Effect.suspend(() => {
+      attempts += 1
+      return attemptOnce(method, url, body, retryUnsafeWrites)
+    }).pipe(
+      Effect.tapError((error) => failureAttributes(error)),
+      Effect.retry(schedule),
+      Effect.ensuring(Effect.suspend(() => Effect.annotateCurrentSpan("http.attempts", attempts))),
+      Effect.withSpan("GitHubClient.request", {
+        attributes: { "http.request.method": method, "url.path": new URL(url).pathname }
+      })
+    )
   }
 
   function request<A>(
@@ -554,8 +575,9 @@ export const make = (
         url = nextPageUrl(page.headers.get("link"))
         pages += 1
       }
+      yield* Effect.annotateCurrentSpan({ "github.pages": pages, "github.truncated": url !== null })
       return { items, truncated: url !== null }
-    })
+    }).pipe(Effect.withSpan("GitHubClient.paginate", { attributes: { "github.path": path } }))
 
   return GitHubClient.of({ request, paginate })
 }
@@ -569,4 +591,14 @@ export const make = (
 export const layer = (
   config: GitHubConfig = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
-): Layer.Layer<GitHubClient> => Layer.sync(GitHubClient, () => make(config, env))
+): Layer.Layer<GitHubClient, IntegrationError> =>
+  Layer.effect(GitHubClient)(Effect.suspend(() => {
+    // A config error is a typed layer failure. Anything else make throws is a
+    // defect and stays one.
+    try {
+      return Effect.succeed(make(config, env))
+    } catch (error) {
+      if (isIntegrationError(error)) return Effect.fail(error)
+      throw error
+    }
+  }))

@@ -30,7 +30,7 @@
  */
 import { isRecord } from "@smthrs/canonical/Record"
 import { Context, Duration, Effect, Layer, Option } from "effect"
-import { IntegrationError } from "../core/IntegrationError.ts"
+import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"
 import { type LinearConfig, resolve } from "./Config.ts"
@@ -142,8 +142,8 @@ export interface LinearClient {
    * A raw GraphQL request, resolving with the `data` payload.
    *
    * `retryServerErrors` says whether a 5xx may be repeated. It defaults to
-   * true, which is right for a query, and the three mutations pass `false`,
-   * because a repeated `issueCreate` files a second issue.
+   * false for a document containing a mutation, because a repeated
+   * `issueCreate` files a second issue, and to true otherwise.
    */
   readonly query: (
     gql: string,
@@ -359,6 +359,15 @@ const requireIssue = (value: unknown, field: string): Effect.Effect<IssueResult,
   return Effect.succeed(value as unknown as IssueResult)
 }
 
+// Whether a GraphQL document contains a mutation operation. Comments and
+// string literals are stripped first so neither can hide or fake the keyword.
+// A field literally named `mutation` reads as a mutation, which errs toward
+// not repeating a request.
+const isMutationDocument = (gql: string): boolean =>
+  /\bmutation\b/.test(
+    gql.replace(/"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"/g, "\"\"").replace(/#[^\n\r]*/g, "")
+  )
+
 /**
  * Builds a Linear client bound to `config`.
  *
@@ -395,7 +404,7 @@ export const make = (
 
   const query: LinearClient["query"] = (gql, variables, queryOptions) =>
     Effect.gen(function*() {
-      const retryServerErrors = queryOptions?.retryServerErrors ?? true
+      const retryServerErrors = queryOptions?.retryServerErrors ?? !isMutationDocument(gql)
       if (apiKey === undefined) {
         return yield* Effect.fail(
           integrationError(
@@ -405,7 +414,20 @@ export const make = (
           )
         )
       }
+      // Serialized before the first attempt: a cyclic or BigInt variable is a
+      // caller error with a known outcome, since nothing was sent.
+      const requestBody = yield* Effect.try({
+        try: () => JSON.stringify({ query: gql, variables: variables ?? {} }),
+        catch: (cause) =>
+          integrationError(
+            "invalid-config",
+            "Linear request body could not be serialized as JSON.",
+            { retryable: false, outcomeUnknown: false },
+            { cause }
+          )
+      })
       for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+        yield* Effect.annotateCurrentSpan("http.attempts", attempt)
         // Finalize the exchange before backing off, failing, or returning.
         const controller = new AbortController()
         const abortWith = (signal: AbortSignal) => {
@@ -425,7 +447,7 @@ export const make = (
                   // Personal API keys go raw; OAuth tokens arrive pre-prefixed.
                   Authorization: apiKey
                 },
-                body: JSON.stringify({ query: gql, variables: variables ?? {} }),
+                body: requestBody,
                 signal: controller.signal
               })
             },
@@ -545,7 +567,16 @@ export const make = (
       return yield* Effect.fail(
         integrationError("delivery-failed", "Linear API retry loop exhausted.", { apiBaseUrl })
       )
-    })
+    }).pipe(
+      Effect.tapError((error) =>
+        Effect.annotateCurrentSpan({
+          "integration.reason": error.reason,
+          "http.response.status_code": error.details?.["status"] ?? null,
+          "integration.outcome_unknown": error.details?.["outcomeUnknown"] === true
+        })
+      ),
+      Effect.withSpan("LinearClient.query", { attributes: { "graphql.mutation": isMutationDocument(gql) } })
+    )
 
   const resolveTeam: LinearClient["resolveTeam"] = (ref) =>
     Effect.gen(function*() {
@@ -827,4 +858,14 @@ export const make = (
 export const layer = (
   config: LinearConfig = {},
   env: Readonly<Record<string, string | undefined>> = Environment.ambientEnvironment()
-): Layer.Layer<LinearClient> => Layer.sync(LinearClient, () => make(config, env))
+): Layer.Layer<LinearClient, IntegrationError> =>
+  Layer.effect(LinearClient)(Effect.suspend(() => {
+    // A config error is a typed layer failure. Anything else make throws is a
+    // defect and stays one.
+    try {
+      return Effect.succeed(make(config, env))
+    } catch (error) {
+      if (isIntegrationError(error)) return Effect.fail(error)
+      throw error
+    }
+  }))

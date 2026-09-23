@@ -82,7 +82,14 @@ export const DEFAULT_MAX_TOKENS = 2048
 export const requestedRows = (maxTokens: number = DEFAULT_MAX_TOKENS): number => Math.max(1, Math.ceil(maxTokens / 256))
 
 const encoder = new TextEncoder()
-const BankName = Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANK_NAME_LENGTH)))
+/**
+ * A bank name recall accepts: non-empty and at most
+ * {@link MAX_RECALL_BANK_NAME_LENGTH} code units.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const BankName = Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANK_NAME_LENGTH)))
 const Query = Schema.String.pipe(
   Schema.check(
     Schema.makeFilter((query) =>
@@ -110,7 +117,6 @@ export const MaxTokens = Schema.Int.pipe(
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type TagGroup = Namespace.TagGroup
 
@@ -119,7 +125,6 @@ export type TagGroup = Namespace.TagGroup
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Input = Schema.Struct({
   banks: Schema.Array(BankName).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANKS))),
@@ -136,7 +141,6 @@ export const Input = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Input = typeof Input.Type
 
@@ -145,7 +149,6 @@ export type Input = typeof Input.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Result = Schema.Struct({
   bank: Schema.String,
@@ -160,7 +163,6 @@ export const Result = Schema.Struct({
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Result = typeof Result.Type
 
@@ -169,7 +171,6 @@ export type Result = typeof Result.Type
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export const Output = Schema.Array(Result)
 
@@ -178,7 +179,6 @@ export const Output = Schema.Array(Result)
  *
  * @category models
  * @since 0.1.0
- * @slop
  */
 export type Output = typeof Output.Type
 
@@ -187,7 +187,6 @@ export type Output = typeof Output.Type
  *
  * @category slots
  * @since 0.1.0
- * @slop
  */
 export const slot = Pattern.slot({ input: Input, output: Output })
 
@@ -196,7 +195,6 @@ export const slot = Pattern.slot({ input: Input, output: Output })
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export interface Service {
   readonly recall: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError>
@@ -207,7 +205,6 @@ export interface Service {
  *
  * @category services
  * @since 0.1.0
- * @slop
  */
 export class Recall extends Context.Service<Recall, Service>()("flows/memory/Recall") {}
 
@@ -229,7 +226,6 @@ const SEPARATOR_BYTES = 1
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const capRecallResults = (results: ReadonlyArray<Result>, maxTokens = DEFAULT_MAX_TOKENS): Array<Result> => {
   const normalized = results.filter((result) => result.text.length > 0)
@@ -299,7 +295,6 @@ export const layerFrom = (
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layer = (implementation: Service): Layer.Layer<Recall> => Layer.succeed(Recall)(Recall.of(implementation))
 
@@ -308,7 +303,6 @@ export const layer = (implementation: Service): Layer.Layer<Recall> => Layer.suc
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const makeNoop = (): Service => Recall.of({ recall: () => Effect.succeed([]) })
 
@@ -317,7 +311,6 @@ export const makeNoop = (): Service => Recall.of({ recall: () => Effect.succeed(
  *
  * @category layers
  * @since 0.1.0
- * @slop
  */
 export const layerNoop: Layer.Layer<Recall> = Layer.succeed(Recall)(makeNoop())
 
@@ -338,7 +331,6 @@ export const bankForNamespace: (namespace: Namespace.Namespace) => string = Bank
  *
  * @category constructors
  * @since 0.1.0
- * @slop
  */
 export const namespaceForBank: (bank: string) => { readonly kind: Namespace.Kind; readonly id: string } =
   Bank.namespaceForBank

@@ -184,3 +184,32 @@ describe("Flows", () => {
     ])
   })
 })
+
+describe("RememberInput bounds", () => {
+  const decode = Schema.decodeUnknownExit(Flows.RememberInput)
+  const valid = { bank: "bank", key: "key", text: "text" }
+
+  it("accepts a fact at every bound", () => {
+    expect(
+      decode({
+        bank: "b".repeat(Recall.MAX_RECALL_BANK_NAME_LENGTH),
+        key: "k".repeat(Flows.MAX_REMEMBER_KEY_BYTES),
+        text: "t".repeat(Flows.MAX_REMEMBER_TEXT_BYTES)
+      })._tag
+    ).toBe("Success")
+  })
+
+  // A fact remembered into a bank recall cannot name is unreachable forever.
+  it.each([
+    ["an empty bank", { ...valid, bank: "" }],
+    ["a bank recall rejects", { ...valid, bank: "b".repeat(Recall.MAX_RECALL_BANK_NAME_LENGTH + 1) }],
+    ["an oversized key", { ...valid, key: "k".repeat(Flows.MAX_REMEMBER_KEY_BYTES + 1) }],
+    ["an oversized text", { ...valid, text: "t".repeat(Flows.MAX_REMEMBER_TEXT_BYTES + 1) }],
+    ["a text over the byte cap in multibyte characters", {
+      ...valid,
+      text: "é".repeat(Flows.MAX_REMEMBER_TEXT_BYTES / 2 + 1)
+    }]
+  ])("rejects %s", (_name, input) => {
+    expect(decode(input)._tag).toBe("Failure")
+  })
+})
