@@ -1688,7 +1688,8 @@
 	font-variant-numeric: tabular-nums;
 }
 .run-outcome-dot,
-.run-trace-dot {
+.run-trace-dot,
+.run-needs-help-dot {
 	display: inline-block;
 	width: 0.5rem;
 	height: 0.5rem;
@@ -1697,6 +1698,7 @@
 	background: var(--success);
 	align-self: center;
 }
+.run-needs-help-dot { background: var(--warning); }
 .run-outcome-dot[data-status="running"],
 .run-outcome-dot[data-status="launching"],
 .run-outcome-dot[data-status="reconnecting"],

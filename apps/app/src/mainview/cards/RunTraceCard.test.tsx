@@ -501,6 +501,45 @@ describe("the run card reads as outcome, then turns", () => {
   })
 })
 
+describe("the run card's needs-help indicator", () => {
+  const supervisor = (sequence: number, needsHelp: string) =>
+    stamp(sequence, "control.agent.supervisor-settled", { scope: "run-1", frame: sequence, needsHelp }, 1000 + sequence)
+  const unjudged = (sequence: number) =>
+    stamp(sequence, "control.agent.supervisor-unjudged", { scope: "run-1", frame: sequence, reason: "interrupted", detail: "deadline" }, 1000 + sequence)
+  const dot = (host: HTMLElement) => host.querySelector("[data-needs-help]")
+
+  test("a run Jev judged needs help wears one focusable dot on the status header, labelled with the word", () => {
+    const { host } = renderRun({ phase: "running", events: [supervisor(1, "stuck")] })
+    const outcome = host.querySelector("[data-testid='run-outcome-run-1']")!
+    const indicator = outcome.querySelector("[data-needs-help]")!
+    expect(indicator.getAttribute("data-needs-help")).toBe("stuck")
+    expect(indicator.getAttribute("aria-label")).toBe("Stuck")
+    expect(indicator.getAttribute("title")).toBe("Stuck")
+    expect(indicator.getAttribute("tabindex")).toBe("0")
+    expect(host.querySelectorAll("[data-needs-help]")).toHaveLength(1)
+  })
+  test.each([
+    ["clarification", "Needs clarification"],
+    ["permission", "Needs permission"],
+    ["risky_action", "Risky action"]
+  ])("the %s reading says %s", (needsHelp, label) => {
+    const { host } = renderRun({ phase: "running", events: [supervisor(1, needsHelp)] })
+    expect(dot(host)?.getAttribute("aria-label")).toBe(label)
+  })
+  test("the newest settled reading wins, and an unjudged reading clears nothing", () => {
+    const { host } = renderRun({
+      phase: "running",
+      events: [supervisor(1, "stuck"), unjudged(2), supervisor(3, "permission"), unjudged(4)]
+    })
+    expect(dot(host)?.getAttribute("aria-label")).toBe("Needs permission")
+  })
+  test("no reading, only unjudged readings, or a latest reading of none renders nothing", () => {
+    expect(dot(renderRun({ phase: "running", events: JOURNAL }).host)).toBeNull()
+    expect(dot(renderRun({ phase: "running", events: [unjudged(1)] }).host)).toBeNull()
+    expect(dot(renderRun({ phase: "running", events: [supervisor(1, "stuck"), supervisor(2, "none")] }).host)).toBeNull()
+  })
+})
+
 describe("predicted coding Changes in the same run card", () => {
   test("review feedback explains an intentional failed child and opens its existing debugger span", () => {
     const shown = renderTrace({ workflow: "coding", events: earlyCodingJournal(), traceView: "turns" })
