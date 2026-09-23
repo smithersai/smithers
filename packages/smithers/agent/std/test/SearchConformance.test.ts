@@ -5,7 +5,7 @@ import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, sep } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Glob from "../src/Glob.ts"
 import * as Grep from "../src/Grep.ts"
@@ -415,7 +415,8 @@ for (const [peer, implementation] of peers) {
 
     it("separates a pattern that found nothing from one that could never match", async () => {
       const searched = await glob({ pattern: "globs/**/*.rs", root })
-      const absolute = await glob({ pattern: `${join(root, "globs")}/**/*.ts`, root: join(root, "globs") })
+      const absolutePattern = `${join(root, "globs").split(sep).join("/")}/**/*.ts`
+      const absolute = await glob({ pattern: absolutePattern, root: join(root, "globs") })
       const missing = await glob({ pattern: "missing/**/*.ts", root: join(root, "globs") })
       const skipped = await glob({ pattern: "node_modules/**/*.ts", root: join(root, "src") })
       const hidden = await glob({ pattern: ".hidden/*.ts", root: join(root, "globs") })
@@ -424,9 +425,8 @@ for (const [peer, implementation] of peers) {
       expect(searched).toEqual({ paths: [], total: 0, truncated: false })
       expect(partial).toEqual({ paths: [], total: 0, truncated: false })
       expect(absolute.notice).toBe(
-        `No file under ${join(root, "globs")} can match "${
-          join(root, "globs")
-        }/**/*.ts": glob patterns are relative to the search root, so use "**/*.ts" instead.`
+        `No file under ${join(root, "globs")} can match "${absolutePattern}": ` +
+          "glob patterns are relative to the search root, so use \"**/*.ts\" instead."
       )
       expect(missing.notice).toBe(
         `No file under ${join(root, "globs")} can match "missing/**/*.ts": there is no missing directory there.`
@@ -451,7 +451,8 @@ for (const [peer, implementation] of peers) {
         filesWithMatches: true
       })
       const searched = await grep({ pattern: "definitely absent", root: join(root, "src"), globs: ["*.ts"] })
-      const absolute = await grep({ pattern: "needle", root: join(root, "src"), globs: [`${join(root, "src")}/*.ts`] })
+      const absolutePattern = `${join(root, "src").split(sep).join("/")}/*.ts`
+      const absolute = await grep({ pattern: "needle", root: join(root, "src"), globs: [absolutePattern] })
       const exclusionOnly = await grep({ pattern: "definitely absent", root: join(root, "src"), globs: ["!missing/*"] })
       const several = await grep({ pattern: "needle", root: join(root, "src"), globs: ["missing/*.ts", "gone/*.ts"] })
       expect(nested.files).toEqual([join(root, "src/nested/b.ts")])
@@ -462,9 +463,8 @@ for (const [peer, implementation] of peers) {
       expect(searched.notice).toContain("noIgnore: true")
       expect(absolute).toMatchObject({ matches: [], files: [] })
       expect(absolute.notice).toBe(
-        `No file under ${join(root, "src")} can match "${
-          join(root, "src")
-        }/*.ts": glob patterns are relative to the search root, so use "*.ts" instead.`
+        `No file under ${join(root, "src")} can match "${absolutePattern}": ` +
+          "glob patterns are relative to the search root, so use \"*.ts\" instead."
       )
       expect(exclusionOnly.notice).toContain("noIgnore: true")
     })

@@ -297,9 +297,10 @@ const literalDirectory = (pattern: string): ReadonlyArray<string> => {
   return wildcardAt < 0 ? segments.slice(0, -1) : segments.slice(0, wildcardAt)
 }
 
-const rootRelativeSuffix = (pattern: string, root: string): string | undefined => {
-  const anchored = pattern.replace(/^\//, "")
-  const stem = root.replace(/^\/+/, "").replace(/\/+$/, "")
+const rootRelativeSuffix = (pattern: string, root: string, path: Path.Path): string | undefined => {
+  const anchored = pattern.replace(/^\/+/, "")
+  const patternRoot = path.sep === "\\" ? root.replaceAll("\\", "/") : root
+  const stem = patternRoot.replace(/^\/+/, "").replace(/\/+$/, "")
   return stem.length > 0 && anchored.startsWith(`${stem}/`) ? anchored.slice(stem.length + 1) : undefined
 }
 
@@ -377,7 +378,7 @@ export const unsatisfiableNotice = (options: {
       const canonical = canonicalGlob(glob)
       const reason = yield* unsatisfiedReason(options, canonical)
       if (reason === undefined) continue
-      const suffix = rootRelativeSuffix(canonical, options.root)
+      const suffix = rootRelativeSuffix(canonical, options.root, options.path)
       sentences.push(
         `No file under ${options.root} can match "${glob}": ${
           suffix === undefined
