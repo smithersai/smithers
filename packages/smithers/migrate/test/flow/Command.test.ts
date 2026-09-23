@@ -43,7 +43,7 @@ describe("Command.optionsOf", () => {
     const options = Command.optionsOf(flags(), "/work/project")
 
     expect(options.mode).toBe("plan")
-    expect(options.root).toBe("/work/project")
+    expect(options.root).toBe(resolve("/work/project"))
     expect(options.seat).toBeUndefined()
     expect(Options.reportDir(options)).toBe(".smithers-migrate")
     expect(Options.flowsDir(options)).toBe("flows")
@@ -85,7 +85,7 @@ describe("Command.optionsOf", () => {
     )
 
     expect(options).toEqual({
-      root: "/elsewhere",
+      root: resolve("/elsewhere"),
       mode: "apply",
       seat: "anthropic:some-model",
       acknowledgeRunState: true,

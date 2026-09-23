@@ -18,7 +18,7 @@ import * as Report from "@smthrs/migrate/Report"
 import ts from "@typescript/typescript6"
 import { readdirSync, readFileSync, statSync } from "node:fs"
 import { createRequire } from "node:module"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url))
@@ -91,12 +91,13 @@ describe("the package's entry point", () => {
     // The exports map is what makes the flow surface reachable anyway, so the
     // promise costs nobody a feature: `@smthrs/migrate/flow/Command` resolves
     // to `src/flow/Command.ts`.
-    expect(modules.some((file) => file.endsWith("/src/Scan.ts"))).toBe(true)
+    expect(modules).toContain(join(sourceRoot, "Scan.ts"))
     // Three flow modules are exported from the root because they cost nothing
     // to load: the contract is text, the gate is a decision, and the options
     // are a schema. Everything that runs the engine is subpath only.
     expect(
-      modules.filter((file) => file.includes("/src/flow/")).map((file) => file.slice(sourceRoot.length + 1))
+      modules.filter((file) => file.startsWith(`${join(sourceRoot, "flow")}${sep}`))
+        .map((file) => relative(sourceRoot, file).split(sep).join("/"))
     ).toEqual(["flow/Contract.ts", "flow/Gate.ts", "flow/Options.ts"])
   })
 
