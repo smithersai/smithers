@@ -12,7 +12,7 @@ const deferred = <T>() => {
   return { promise, resolve }
 }
 
-async function fixture() {
+async function fixture(options: { workflowPreparationTimeoutMs?: number } = {}) {
   const disk = memoryStorage()
   let failNextWrite = false
   const storage = { ...disk, setItem: (key: string, value: string) => {
@@ -32,7 +32,7 @@ async function fixture() {
     turns: 1, calls: 1, callsFailed: 0, editsAttempted: 0, editsSucceeded: 0, inputTokens: 1, outputTokens: 1,
     verdict: status === "failed" ? failedVerdict : status, diagnosis: status })
   const chat = scriptedToolAgent([() => [{ type: "delta", kind: "text", text: "Still here." }, { type: "done", reason: "stop" }]])
-  const services = { workflowPollMs: 5, toastAutoDismissMs: 60_000, fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
+  const services = { workflowPollMs: 5, workflowPreparationTimeoutMs: options.workflowPreparationTimeoutMs, toastAutoDismissMs: 60_000, fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
     if (path.endsWith("/api/workflow/provision")) return provision()
     if (!path.endsWith("/api/workflow/rpc")) return json(404, {})
@@ -158,6 +158,23 @@ test("workspace_starting retries the persisted request until the gateway serves 
   expect(attempts).toBe(3)
   expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(1)
   expect(t.cards()).toHaveLength(1)
+})
+
+test("a gateway that never becomes ready fails the durable request and can be retried", async () => {
+  const t = await fixture({ workflowPreparationTimeoutMs: 500 })
+  t.provision(async () => new Response(JSON.stringify({ code: "workspace_starting", message: "Waking up" }),
+    { status: 503, headers: { "Retry-After": "0" } }))
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.cards()[0]?.payload.phase === "failed" && t.toasts()[0]?.status === "failed")
+    const card = t.cards()[0]!
+    expect(card.payload.error).toContain("did not become ready")
+    expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(0)
+    t.provision(async () => json(200, { status: "ready" }))
+    await t.controller.commands.run("flow.run.retry", card.id)
+    await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
+    expect(t.cards()[0]!.id).toBe(card.id)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
 })
 
 test("a refused launch stays visible and the existing retry flow retries the same request", async () => {

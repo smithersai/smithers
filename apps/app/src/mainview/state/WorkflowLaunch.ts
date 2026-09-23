@@ -11,6 +11,7 @@ export const WorkflowLaunchSchema = z.object({
   workflow: z.string(),
   input: z.record(z.string(), z.unknown()),
   runId: z.string().optional(),
+  preparationStartedAt: z.number().optional(),
   retryAt: z.number().optional(),
   error: z.object({ stage: z.enum(["preparation", "launch", "persistence"]), code: z.string(), message: z.string() }).optional()
 })

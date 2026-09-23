@@ -2,8 +2,6 @@
 import { Effect, Layer } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 import { mkdirSync } from "node:fs"
-import { readFile } from "node:fs/promises"
-import { createHash } from "node:crypto"
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
 import * as Serve from "../../packages/smithers/src/Serve.ts"
@@ -13,6 +11,7 @@ import * as Landing from "./landing.ts"
 import { load as loadLanding } from "./landing-config.ts"
 import { loadProject } from "./project-config.ts"
 import * as CodingState from "./state.ts"
+import { resolveRuntimeBridgeIdentity } from "./runtime-bridge.ts"
 import { layer as checkReceiptLayer } from "../repository/check-receipt.ts"
 import { remoteLayer } from "../repository/remote.ts"
 import type * as NativeControl from "../../packages/smithers/src/internal/NativeControl.ts"
@@ -51,16 +50,10 @@ if (parsed.values.version) {
   // the working copy and create it before any layer opens a database.
   const stateRoot = CodingState.resolveStateRoot({ root, explicit: parsed.values["state-dir"], environment: process.env })
   mkdirSync(stateRoot, { recursive: true, mode: 0o700 })
-  const runtimeArtifactDigest = createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex")
-  const expectedArtifactDigest = process.env.SMITHERS_FLOW_ARTIFACT_SHA256 ?? ""
-  if (expectedArtifactDigest !== runtimeArtifactDigest) throw new Error("SMITHERS_FLOW_ARTIFACT_SHA256 does not match the packaged host")
-  const ownerGeneration = Number(process.env.SMITHERS_OWNER_GENERATION ?? "")
-  if (!Number.isSafeInteger(ownerGeneration) || ownerGeneration <= 0) throw new Error("SMITHERS_OWNER_GENERATION must be a positive safe integer")
-  const runtimeSourceRevision = process.env.SMITHERS_SOURCE_REVISION ?? ""
-  if (!/^[0-9a-f]{40}$/.test(runtimeSourceRevision)) throw new Error("SMITHERS_SOURCE_REVISION must be an immutable 40-character revision")
+  const runtimeBridge = await resolveRuntimeBridgeIdentity(process.argv[1]!, process.env)
   const options = { repositoryPath: root, stateRoot, credential: bind.credential, gatewayId: process.env.SMITHERS_GATEWAY_ID ?? "",
     sourcePublication: process.env.SMITHERS_CODING_LOCAL_OWNER === "1" ? "local-only" as const : "cloud" as const,
-    runtimeArtifactDigest, runtimeSourceRevision, ownerGeneration,
+    ...runtimeBridge,
     implementationModel: process.env.SMITHERS_CODING_IMPLEMENT_MODEL ?? "",
     ...(process.env.SMITHERS_CODING_PLAN_MODEL === undefined ? {} : { planningModel: process.env.SMITHERS_CODING_PLAN_MODEL }),
     ...(process.env.SMITHERS_CODING_POC_MODEL === undefined ? {} : { pocModel: process.env.SMITHERS_CODING_POC_MODEL }),

@@ -712,6 +712,8 @@ export interface AppServices {
    * run journey without waiting out real seconds.
    */
   readonly workflowPollMs?: number
+  /** Maximum time a requested run may wait for its workspace gateway. */
+  readonly workflowPreparationTimeoutMs?: number
   /**
    * Wave 12 §3 — how long a run may make no progress before the card states
    * that it has gone quiet and the pump stops (10 minutes in production).

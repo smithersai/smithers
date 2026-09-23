@@ -77,6 +77,7 @@ export interface ControllerContext {
   readonly toastDebounceMs: number
   readonly toastAutoDismissMs: number
   readonly workflowPollMs: number
+  readonly workflowPreparationTimeoutMs: number
   readonly netRing: NetEntry[]
   readonly toastRuns: Map<string, number>
   readonly pumpPokes: Map<string, () => void>
@@ -176,6 +177,7 @@ export const createControllerContext = (
     toastDebounceMs: services.toastDebounceMs ?? 300,
     toastAutoDismissMs: services.toastAutoDismissMs ?? 4000,
     workflowPollMs: services.workflowPollMs ?? 2500,
+    workflowPreparationTimeoutMs: services.workflowPreparationTimeoutMs ?? 21 * 60_000,
     netRing,
     toastRuns: new Map<string, number>(),
     pumpPokes: new Map<string, () => void>(),

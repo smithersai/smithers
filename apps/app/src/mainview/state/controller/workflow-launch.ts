@@ -51,6 +51,7 @@ export const createWorkflowLaunchController = (
     const controller = new AbortController()
     controllers.add(controller)
     const current = () => !ctx.disposed && !controller.signal.aborted && ctx.accountEpoch === epoch && owner() === request.owner && workflowLaunchOf(read(id))?.id === request.id
+    const preparationExpired = () => Date.now() - (request.preparationStartedAt ?? read(id)!.createdAt) >= ctx.workflowPreparationTimeoutMs
     const publish = async (next: WorkflowLaunch, patch: Partial<RunCard["payload"]> = {}) => {
       if (!current()) return
       const card = read(id)!
@@ -74,6 +75,7 @@ export const createWorkflowLaunchController = (
           const binding = { workspaceId: request.workspaceId }
           for (;;) {
             if (!current()) return TOAST_SUPERSEDED
+            if (preparationExpired()) return await fail({ code: "workspace_preparation_timeout", message: "Workspace gateway did not become ready. Retry the request." })
             const retryAt = workflowLaunchOf(read(id))?.retryAt
             if (retryAt !== undefined) await pause(retryAt - Date.now(), controller.signal)
             if (!current()) return TOAST_SUPERSEDED
@@ -92,6 +94,8 @@ export const createWorkflowLaunchController = (
               break
             }
             if (result.code === "workspace_starting") {
+              stage = "preparation"
+              if (preparationExpired()) return await fail({ code: "workspace_preparation_timeout", message: "Workspace gateway did not become ready. Retry the request." })
               await publish({ ...request, retryAt: Date.now() + (result.retryAfterSeconds ?? ctx.workflowPollMs / 1000) * 1000 })
               continue
             }
@@ -154,7 +158,7 @@ export const createWorkflowLaunchController = (
       if (request.error) void active.work.then(() => retry(id))
       return true
     }
-    const next = { ...request, error: undefined, retryAt: undefined }
+    const next = { ...request, error: undefined, retryAt: undefined, preparationStartedAt: Date.now() }
     const saving = save({ ...card, status: "active", payload: { ...card.payload, phase: "launching", error: undefined, input: { ...next.input, _workflowLaunch: next } } })
     persisting.set(id, saving)
     void saving.then(() => send(id, next), () => {}).finally(() => persisting.delete(id))
@@ -179,7 +183,7 @@ export const createWorkflowLaunchController = (
       return { value: `run-requested workflow=${args.workflow} request=${held.id} repo=${args.repo}` }
     }
     const request: WorkflowLaunch = { version: 1, id: crypto.randomUUID(), owner: login, repo: args.repo, ...args.binding, workflow: args.workflow,
-      input }
+      input, preparationStartedAt: Date.now() }
     const id = `flow-request-${request.id}`
     const saving = store.dispatch({ type: "card.upsert", actor: args.actor, card: { id, kind: "run-trace", title: `${args.workflow} · ${args.repo}`,
       status: "active", createdAt: Date.now(), ordinal: nextOrdinal(), payload: { repo: args.repo, ...args.binding, gatewayBindingVersion: 1,
