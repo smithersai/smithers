@@ -9,10 +9,12 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3125 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3130 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **app:** interleave subagent transcripts in chat with a durable filter ([5154fbcf8a](https://github.com/smithersai/smithers/commit/5154fbcf8af8c12408c2aede7e32d9df705101a4))
+- **tui:** run on Node >= 26.4 and Bun ([0964530dfd](https://github.com/smithersai/smithers/commit/0964530dfda4142f6974bd4d3bbe3c5b08bbf5e2))
 - **app:** show the supervisor's needs-help reading as a dot on the run header ([f716a9de9f](https://github.com/smithersai/smithers/commit/f716a9de9f6ad9b9e52f62e23bc56e9ddf8eff49))
 - **std:** seal bash to one container for benchmark hosts ([3f9c10fedc](https://github.com/smithersai/smithers/commit/3f9c10fedcb50ac1316b8deda33916e9ed39527e))
 - **tui:** run project flows in durable background tabs ([a4c489e3d5](https://github.com/smithersai/smithers/commit/a4c489e3d5a07678426219f0bee91b8464da06d5))
@@ -325,6 +327,9 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **flows:** use native path layer for host filesystem tests and runtime ([0183b80152](https://github.com/smithersai/smithers/commit/0183b80152be510ede76d843de155c6c5f6a5c30))
+- **evals:** a task with compose sidecars is unplaceable on plue, never a 0 ([d535b64b14](https://github.com/smithersai/smithers/commit/d535b64b149bf1958a3403e3ec1ab27917853363))
+- **evals:** show the image's own /tmp in plue workspaces ([f12c8ed1c8](https://github.com/smithersai/smithers/commit/f12c8ed1c8d15b27b9a4b785025ece122ac78d38))
 - **build:** discover selected Xcode tree for seatbelt ([88e4298ec3](https://github.com/smithersai/smithers/commit/88e4298ec34287ebe9de1493b711f9d0f1bc3798))
 - **evals:** contain plue failures to the trial and score only graded outcomes ([28f3675b1a](https://github.com/smithersai/smithers/commit/28f3675b1a83507f7cc091736e977230dbaca24f))
 - **build:** make advisory macOS package gates portable ([065f510411](https://github.com/smithersai/smithers/commit/065f5104115921ad58a58710ef5aadc76bb7e12e))
