@@ -1677,6 +1677,9 @@ importers:
       '@smthrs/cli':
         specifier: workspace:*
         version: link:../../packages/smithers
+      '@smthrs/control':
+        specifier: workspace:*
+        version: link:../../packages/smithers/control
       '@smthrs/engine':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/engine
