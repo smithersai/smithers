@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2989 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3004 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **backend:** isolate authenticated socket ticket rate limits ([d37a2a5d26](https://github.com/smithersai/smithers/commit/d37a2a5d26efe99621d6f83befe115b674b60ff8))
+- **tui:** undo worker edits with durable recovery ([62828d9873](https://github.com/smithersai/smithers/commit/62828d9873ec387bb64ec8b0157e1c9586bea573))
 - **release:** allow build CLI suite to complete on hosted runner ([617ea86979](https://github.com/smithersai/smithers/commit/617ea86979bdbab1c2bdfc9d27129fddeb777392))
 - **tui:** preserve settled workers when forking sessions ([95aea53a82](https://github.com/smithersai/smithers/commit/95aea53a8210e86e367cf988587c9b70b592489f))
 - **app:** settle stale workflow toasts ([e2aed9512d](https://github.com/smithersai/smithers/commit/e2aed9512d48064d15b413e7bd801f34c8e98fdd))
@@ -2486,6 +2488,19 @@ the release notes at
 
 ### 📦 Other changes
 
+- **ci(app):** retain native matrix traces and final diagnostics ([30e88d17cf](https://github.com/smithersai/smithers/commit/30e88d17cf0d147387ce3fb8e9620552293da522))
+- **test(platform-node):** restore process spies on interruption ([0e1dca4a5c](https://github.com/smithersai/smithers/commit/0e1dca4a5cc12e0606c35b220f0e55a798bd63cb))
+- **test(app):** allow physical storage refusal to reach the error panel ([6b71f65af2](https://github.com/smithersai/smithers/commit/6b71f65af29efe2530c9617e4760455f1b78f5fb))
+- **test(agent):** declare absent input schemas in executable fixtures ([446aa54d63](https://github.com/smithersai/smithers/commit/446aa54d63e0546b092bbd7bf1fd734ee41bea75))
+- **test(engine-store):** isolate paging replay from lease elapsed time ([22059eea61](https://github.com/smithersai/smithers/commit/22059eea61242cc0b828d345a86c18bf1d50d8a9))
+- **test(cli):** pass a config object to the Bun control layer ([e8003224a8](https://github.com/smithersai/smithers/commit/e8003224a8a5c3f9688d55e03e91ef4d45e4ec4d))
+- **test(cli):** verify lazy Bun adapter loading and layer construction ([a6e221e2f5](https://github.com/smithersai/smithers/commit/a6e221e2f54092415dff5ffaa07b1bb1ba5e10d3))
+- **test(targets):** bypass runner shell wrappers in native tool fixture ([6b347bbbbe](https://github.com/smithersai/smithers/commit/6b347bbbbe1c64ce3a81a2cccc5782f8fa10b1ae))
+- **test(agent):** cover supervisor memory failures and trace payloads ([9c113515d8](https://github.com/smithersai/smithers/commit/9c113515d8bf643f62e4117f0d2e605c718548c6))
+- **test(model):** cover public evaluator failure messages ([a42c07f478](https://github.com/smithersai/smithers/commit/a42c07f4785468fb47ea9e0a6ac92afc61f752a5))
+- **style(agent):** format sealed container assertions ([fc49d75e83](https://github.com/smithersai/smithers/commit/fc49d75e832c8c37418263b9ae55e8b61d7b11c1))
+- **test(smthrs):** match the CLI supported Node versions ([d18cee31af](https://github.com/smithersai/smithers/commit/d18cee31afb9888a3f43dab569c8921a2c35bad3))
+- **test(app):** declare mode matrix keys as fixture protocol values ([3b3c6a9d97](https://github.com/smithersai/smithers/commit/3b3c6a9d97c754229dd2214b5898d4f253f2ad73))
 - **test(std):** cover sealed container commands and document exports ([6b7b5cd6e8](https://github.com/smithersai/smithers/commit/6b7b5cd6e8abf95366f8227bdfbf49d743637e4f))
 - **test(cli):** prove the shipped executor recalls supervisor memory across runs ([0de91ed8f6](https://github.com/smithersai/smithers/commit/0de91ed8f6089bb207321fc2646d5c05c40083f4))
 - **test(app):** account for startup backend recovery actions ([607e6977ae](https://github.com/smithersai/smithers/commit/607e6977ae5284528d9d575ab8d9d2c5d8f86229))
