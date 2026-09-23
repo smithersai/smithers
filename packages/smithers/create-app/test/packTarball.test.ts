@@ -30,7 +30,7 @@ it("ships every default template file in the npm tarball", () => {
     expect(packed.error).toBeUndefined()
     expect(packed.status, packed.stderr).toBe(0)
     const packedFiles = execFileSync("tar", ["-tzf", tarball], { encoding: "utf8", timeout: 10_000 })
-      .trim().split("\n")
+      .trim().split(/\r?\n/)
       .filter((path) => path.startsWith("package/template/default/") && !path.endsWith("/"))
       .map((path) => path.slice("package/".length))
       .sort()
