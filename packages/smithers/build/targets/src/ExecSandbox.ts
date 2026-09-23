@@ -32,6 +32,7 @@
  * @since 0.1.0
  */
 import { randomUUID } from "node:crypto"
+import { execFileSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
@@ -258,11 +259,19 @@ const pathSeparator = (platform: NodeJS.Platform): string => platform === "win32
  */
 export const host = (env: Readonly<Record<string, string | undefined>> = process.env): Host => {
   const platform = process.platform
+  let developerDirectory = env["DEVELOPER_DIR"]
+  if (platform === "darwin" && developerDirectory === undefined) {
+    try {
+      developerDirectory = execFileSync("/usr/bin/xcode-select", ["-p"], { encoding: "utf8", timeout: 2_000 }).trim()
+    } catch {
+      // A host without Xcode needs no developer-tree grant.
+    }
+  }
   const entries = (env["PATH"] ?? "").split(pathSeparator(platform)).filter((entry) => entry !== "")
   const extensions = platform === "win32" ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT").split(";") : [""]
   return {
     platform,
-    developerDirectory: env["DEVELOPER_DIR"],
+    developerDirectory,
     home: NodeOs.homedir(),
     executable: (name) => {
       if (NodePath.isAbsolute(name)) return isExecutable(name) ? name : undefined
