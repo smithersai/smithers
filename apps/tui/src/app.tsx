@@ -25,10 +25,11 @@ import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
 import * as Summary from "./summary.ts"
-import { activeTheme, color, isTheme, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
+import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
+import * as Timeline from "./timeline.ts"
 import * as Transcript from "./transcript.ts"
 import * as View from "./view.tsx"
-import { Workspace } from "./workspace.ts"
+import { type Tab, Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -64,6 +65,7 @@ interface TurnState {
 type Picker =
   | { readonly kind: "model"; readonly query: string; readonly selected: number }
   | { readonly kind: "theme"; readonly query: string; readonly selected: number }
+  | { readonly kind: "filter"; readonly query: string; readonly selected: number }
   | {
     readonly kind: "resume"
     readonly query: string
@@ -80,8 +82,33 @@ interface Toast {
 const pickerRows = (
   picker: Picker,
   models: ReadonlyArray<Model>,
-  seat: string
+  seat: string,
+  filter: Timeline.Filter,
+  tabs: ReadonlyArray<Tab>
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "filter") {
+    const rows = [
+      { key: "source:chat", label: "Chat", current: !filter.sources.includes(Timeline.chat), value: `source:${Timeline.chat}` },
+      ...tabs.map((tab) => ({
+        key: `source:${tab.id}`,
+        label: `↳ ${tab.title}`,
+        hint: tab.status,
+        current: !filter.sources.includes(tab.id),
+        value: `source:${tab.id}`
+      })),
+      ...Timeline.kinds.map(([kind, label]) => ({
+        key: `kind:${kind}`,
+        label,
+        current: !filter.kinds.includes(kind),
+        value: `kind:${kind}`
+      }))
+    ]
+    return [
+      // Always first, so toggling never moves the selected row.
+      { key: "all", label: "Show all", value: "all" },
+      ...Fuzzy.filter(rows, picker.query, (row) => row.label)
+    ]
+  }
   if (picker.kind === "theme") return Fuzzy.filter(Object.keys(themes), picker.query, (name) => name).map((name) => ({
     key: name, label: name, current: name === activeTheme(), value: name
   }))
@@ -155,6 +182,7 @@ export function App(props: AppProps) {
   const [surface, setSurface] = useState("chat")
   const [panelFocus, setPanelFocus] = useState(false)
   const [navigation, setNavigation] = useState(Panels.initial)
+  const [filter, setFilter] = useState(Timeline.all)
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
   const snapshot = workspace.snapshot()
@@ -180,6 +208,14 @@ export function App(props: AppProps) {
     : surface.startsWith("tab:")
     ? workspace.panel(surface.slice(4))
     : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
+  const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tab.title, tone: lane(index) }]))
+  const timeline = Timeline.merge(
+    [
+      { id: Timeline.chat, transcript },
+      ...snapshot.tabs.map((tab) => ({ id: tab.id, transcript: workspace.transcript(tab.id) }))
+    ],
+    filter
+  )
   const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
@@ -248,7 +284,7 @@ export function App(props: AppProps) {
     const steered: Array<string> = []
     const startedAt = Date.now()
     writer.current.append({ type: "user", at: startedAt, text: prompt })
-    setTranscript((current) => Transcript.user(current, prompt))
+    setTranscript((current) => Transcript.user(current, prompt, false, startedAt))
     const handle = props.host.run({
       prompt,
       seat: live.current.seat,
@@ -314,7 +350,7 @@ export function App(props: AppProps) {
     let id = ""
     setTranscript((current) => {
       id = Transcript.nextId(current)
-      return Transcript.shellStart(current, command, excluded)
+      return Transcript.shellStart(current, command, excluded, Date.now())
     })
     const running = Shell.run({
       command,
@@ -393,6 +429,16 @@ export function App(props: AppProps) {
         setSurface("chat")
         setPanelFocus(false)
         return true
+      case "filter":
+        setSurface("chat")
+        setPanelFocus(false)
+        setPicker({ kind: "filter", query: "", selected: 0 })
+        return true
+      case "grep":
+        setSurface("chat")
+        setPanelFocus(false)
+        setFilter((current) => ({ ...current, query: argument }))
+        return true
       case "retry":
         try {
           workspace.retry(argument)
@@ -445,7 +491,8 @@ export function App(props: AppProps) {
             current,
             `${writer.current.file}\n${entries.current.length} exchanges · ↑${Editor.tokens(usage.input)} ↓${
               Editor.tokens(usage.output)
-            } R${Editor.tokens(usage.cached)}`
+            } R${Editor.tokens(usage.cached)}`,
+            Date.now()
           )
         )
         return true
@@ -469,7 +516,7 @@ export function App(props: AppProps) {
       }
       case "hotkeys":
         setTranscript((current) =>
-          Transcript.note(current, Editor.keys.map(([key, action]) => `${key.padEnd(22)} ${action}`).join("\n"))
+          Transcript.note(current, Editor.keys.map(([key, action]) => `${key.padEnd(22)} ${action}`).join("\n"), Date.now())
         )
         return true
       case "quit":
@@ -503,7 +550,7 @@ export function App(props: AppProps) {
     }
     running.steering.steer(text)
     writer.current.append({ type: "user", at: Date.now(), text, steered: true })
-    setTranscript((current) => Transcript.user(current, text, true))
+    setTranscript((current) => Transcript.user(current, text, true, Date.now()))
   }, [setText, runShell, command, startTurn])
 
   /** Tab inserts the selected completion; Enter also runs it when it is a whole command. */
@@ -549,6 +596,15 @@ export function App(props: AppProps) {
   }, [props.models, switchSeat, setStatus])
 
   const pick = useCallback((open: Picker, value: string) => {
+    if (open.kind === "filter") {
+      // Toggles keep the dialog open, like a log view's filter menu.
+      if (value === "all") return setFilter(Timeline.all)
+      const split = value.indexOf(":")
+      const id = value.slice(split + 1)
+      return setFilter((current) =>
+        value.startsWith("source:") ? Timeline.toggleSource(current, id) : Timeline.toggleKind(current, id as Timeline.Kind)
+      )
+    }
     setPicker(undefined)
     if (open.kind === "model") return switchSeat(value)
     if (open.kind === "theme") {
@@ -564,7 +620,7 @@ export function App(props: AppProps) {
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
-    const rows = pickerRows(open, props.models, live.current.seat)
+    const rows = pickerRows(open, props.models, live.current.seat, filter, snapshot.tabs)
     const move = (step: number) => {
       key.preventDefault()
       if (rows.length > 0) setPicker({ ...open, selected: (open.selected + step + rows.length) % rows.length })
@@ -745,7 +801,7 @@ export function App(props: AppProps) {
   const usage = transcript.usage
   const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
-  const rows = picker === undefined ? [] : pickerRows(picker, props.models, seat)
+  const rows = picker === undefined ? [] : pickerRows(picker, props.models, seat, filter, snapshot.tabs)
   const tabCount = Math.max(2, Math.floor(width / 24))
   const firstTab = Math.max(
     0,
@@ -762,6 +818,9 @@ export function App(props: AppProps) {
               <span key={tab.id} fg={surface === tab.id ? color.brand : color.faint}>{" "}{tab.title.length > 22 ? `${tab.title.slice(0, 21)}…` : tab.title}{" "}</span>
             ))}
           </text>
+          {Timeline.active(filter) && surface === "chat"
+            ? <text fg={color.warning} wrapMode="none" style={{ flexShrink: 0 }}>{filter.query === "" ? " filtered" : ` grep ${filter.query}`}</text>
+            : null}
         </box>
         {panel !== undefined ?
           (
@@ -775,7 +834,7 @@ export function App(props: AppProps) {
               scrollRef={panelScroll}
             />
           ) :
-          transcript.items.length === 0
+          timeline.length === 0 && !Timeline.active(filter)
           ? <View.Home expanded={expanded} />
           : (
             <scrollbox
@@ -784,9 +843,17 @@ export function App(props: AppProps) {
               stickyStart="bottom"
               style={{ flexGrow: 1, flexShrink: 1, minHeight: 0, scrollbarOptions: { visible: false } }}
             >
-              {transcript.items.map((item) => (
-                <View.Entry key={item.id} item={item} now={now} tick={tick} expanded={expanded} />
-              ))}
+              {timeline.map((row, index) => {
+                const worker = lanes.get(row.source)
+                const entry = <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} {...(worker === undefined ? {} : { tone: worker.tone })} />
+                return worker === undefined
+                  ? <box key={row.key}>{entry}</box>
+                  : (
+                    <View.Lane key={row.key} title={worker.title} tone={worker.tone} first={timeline[index - 1]?.source !== row.source}>
+                      {entry}
+                    </View.Lane>
+                  )
+              })}
               {working && transcript.thinking
                 ? <text fg={color.muted} style={{ paddingLeft: 2 }}>{tick} thinking</text>
                 : null}
@@ -921,7 +988,13 @@ export function App(props: AppProps) {
       />
       {picker === undefined ? null : (
         <View.Dialog
-          title={picker.kind === "model" ? "Select model" : picker.kind === "theme" ? "Select theme" : "Resume session"}
+          title={picker.kind === "model"
+            ? "Select model"
+            : picker.kind === "theme"
+            ? "Select theme"
+            : picker.kind === "filter"
+            ? "Filter chat"
+            : "Resume session"}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
         >

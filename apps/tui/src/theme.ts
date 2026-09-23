@@ -64,6 +64,13 @@ export const color = {
   removedBg: mix("#ef5350", 16, page)
 }
 
+/** Worker lanes in the chat timeline, never the brand color the chat's own rows use. */
+const lanes = ["#7fdbca", "#82aaff", "#ffcb8b", "#addb67", "#f78c6c", "#c792ea"]
+export const lane = (index: number): string => {
+  const free = lanes.filter((hex) => hex !== color.brand)
+  return free[index % free.length]!
+}
+
 export const activeTheme = (): Theme => current
 export const setTheme = (theme: Theme): void => {
   current = theme

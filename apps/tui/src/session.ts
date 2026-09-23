@@ -146,14 +146,14 @@ export const restore = (records: ReadonlyArray<Record>): {
         name = record.name
         break
       case "user":
-        transcript = Transcript.user(transcript, record.text, record.steered === true ? true : false)
+        transcript = Transcript.user(transcript, record.text, record.steered === true, record.at)
         prompts.push(record.text)
         break
       case "event":
         transcript = Transcript.apply(transcript, record.event, record.at)
         break
       case "shell":
-        transcript = Transcript.shell(transcript, record.result, record.excluded)
+        transcript = Transcript.shell(transcript, record.result, record.excluded, record.at)
         prompts.push(`${record.excluded ? "!!" : "!"}${record.result.command}`)
         if (!record.excluded) entries.push({ kind: "shell", text: Shell.contextText(record.result) })
         break

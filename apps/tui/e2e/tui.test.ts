@@ -373,6 +373,35 @@ it(
       5_000,
       "second chat turn during background work"
     )
+    await tui.until(
+      (screen) => /┃ ↳ Investigation/.test(screen) && screen.includes("Investigate the failing check."),
+      5_000,
+      "worker rows in the chat timeline"
+    )
+    await tui.type("/filter")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Filter chat") && screen.includes("Show all"), 5_000, "filter dialog")
+    await tui.press(key.down)
+    await tui.press(key.down)
+    await tui.press(key.enter)
+    await tui.press(key.escape)
+    await tui.until(
+      (screen) =>
+        screen.includes("filtered") && screen.includes("Still here.") &&
+        !screen.includes("Investigate the failing check."),
+      5_000,
+      "worker hidden by the filter"
+    )
+    await tui.type("/filter")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Filter chat"), 5_000, "filter dialog again")
+    await tui.press(key.enter)
+    await tui.press(key.escape)
+    await tui.until(
+      (screen) => !screen.includes("filtered") && screen.includes("Investigate the failing check."),
+      5_000,
+      "show all restores the worker"
+    )
     const folder = join(sessions, readdirSync(sessions)[0]!)
     const records = readFileSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line))

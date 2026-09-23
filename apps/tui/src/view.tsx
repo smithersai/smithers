@@ -69,11 +69,13 @@ export function Entry(props: {
   readonly now: number
   readonly tick: string
   readonly expanded: boolean
+  /** A worker lane's color for the message bar; the chat's own messages use the brand. */
+  readonly tone?: string
 }) {
   const { item } = props
   switch (item.kind) {
     case "user":
-      return <UserMessage text={item.text} queued={item.queued === true} />
+      return <UserMessage text={item.text} queued={item.queued === true} tone={props.tone ?? color.brand} />
     case "cell":
       return <CellView cell={item} now={props.now} tick={props.tick} expanded={props.expanded} />
     case "shell":
@@ -95,12 +97,27 @@ export function Entry(props: {
   }
 }
 
+/** A worker's rows in the chat: a rail in its lane color, titled where the lane starts. */
+export function Lane(props: {
+  readonly title: string
+  readonly tone: string
+  readonly first: boolean
+  readonly children: ReactNode
+}) {
+  return (
+    <box style={{ border: ["left"], paddingLeft: 1 }} borderColor={props.tone} customBorderChars={bar}>
+      {props.first ? <text fg={props.tone} style={{ marginBottom: 1 }}>↳ {props.title}</text> : null}
+      {props.children}
+    </box>
+  )
+}
+
 /** The user's message keeps the composer's shape: a left bar on a filled panel. */
-function UserMessage(props: { readonly text: string; readonly queued: boolean }) {
+function UserMessage(props: { readonly text: string; readonly queued: boolean; readonly tone: string }) {
   return (
     <box
       style={{ border: ["left"], marginTop: 1, marginBottom: 1 }}
-      borderColor={props.queued ? color.faint : color.brand}
+      borderColor={props.queued ? color.faint : props.tone}
       customBorderChars={bar}
     >
       <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.surface}>

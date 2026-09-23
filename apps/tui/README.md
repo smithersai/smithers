@@ -58,8 +58,8 @@ providers this machine can reach. Print mode runs a task directly.
 ## Commands
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/session`,
-`/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/ui [id]`,
-`/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model ` and
+`/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
+`/grep [text]`, `/ui [id]`, `/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model ` and
 `/thinking ` the menu completes the argument.
 
 ## Look
@@ -124,7 +124,10 @@ Delegation takes `{id, title, prompt}`, persists before launch, and returns a
 `requested` receipt immediately. Reusing the id deduplicates the request.
 Up to three workers can run at once; they share the working directory, so
 independent tasks should name disjoint files. Worker transcripts persist in
-separate session files. Chat receives current worker status/results as context
+separate session files, and the chat interleaves their rows by time inside a
+colored rail titled `↳ <worker>`. `/filter` shows or hides the chat, each
+worker, and each kind of row; `/grep <text>` keeps rows containing the text and
+`/grep` alone clears it. Chat receives current worker status/results as context
 and remains usable while workers run. Progress uses the shared toast stack,
 with a 300 ms delay and real completion/failure as its end.
 

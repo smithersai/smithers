@@ -37,7 +37,7 @@ export interface Change {
   readonly line?: number
 }
 
-export type Item =
+export type Item = (
   | {
     readonly kind: "user"
     readonly id: string
@@ -72,6 +72,10 @@ export type Item =
   | { readonly kind: "answer"; readonly id: string; readonly text: string }
   | { readonly kind: "error"; readonly id: string; readonly text: string }
   | { readonly kind: "note"; readonly id: string; readonly text: string }
+) & {
+  /** When the item appeared; an item without one shares the previous item's time. */
+  readonly at?: number
+}
 
 export interface Transcript {
   readonly items: ReadonlyArray<Item>
@@ -109,20 +113,20 @@ type CellItem = Extract<Item, { kind: "cell" }>
 
 type Unsaved = Item extends infer Each ? Each extends Item ? Omit<Each, "id"> : never : never
 
-const withId = (transcript: Transcript, item: Unsaved): Transcript => ({
+const withId = (transcript: Transcript, item: Unsaved, at?: number): Transcript => ({
   ...transcript,
-  items: [...transcript.items, { ...item, id: String(transcript.nextId) } as Item],
+  items: [...transcript.items, { ...item, id: String(transcript.nextId), ...(at === undefined ? {} : { at }) } as Item],
   nextId: transcript.nextId + 1
 })
 
-export const user = (transcript: Transcript, text: string, queued = false): Transcript =>
-  withId(transcript, queued ? { kind: "user", text, queued } : { kind: "user", text })
+export const user = (transcript: Transcript, text: string, queued = false, at?: number): Transcript =>
+  withId(transcript, queued ? { kind: "user", text, queued } : { kind: "user", text }, at)
 
 /** The id the next added item will get. */
 export const nextId = (transcript: Transcript): string => String(transcript.nextId)
 
-export const shellStart = (transcript: Transcript, command: string, excluded: boolean): Transcript =>
-  withId(transcript, { kind: "shell", command, excluded, output: "" })
+export const shellStart = (transcript: Transcript, command: string, excluded: boolean, at?: number): Transcript =>
+  withId(transcript, { kind: "shell", command, excluded, output: "" }, at)
 
 const updateItem = <K extends Item["kind"]>(
   transcript: Transcript,
@@ -143,15 +147,16 @@ export const shellDone = (transcript: Transcript, id: string, result: Shell.Resu
   updateItem(transcript, id, "shell", (item) => ({ ...item, output: result.output, result }))
 
 /** A finished shell command, as a session file stores it. */
-export const shell = (transcript: Transcript, result: Shell.Result, excluded: boolean): Transcript => {
+export const shell = (transcript: Transcript, result: Shell.Result, excluded: boolean, at?: number): Transcript => {
   const id = nextId(transcript)
-  return shellDone(shellStart(transcript, result.command, excluded), id, result)
+  return shellDone(shellStart(transcript, result.command, excluded, at), id, result)
 }
 
-export const note = (transcript: Transcript, text: string): Transcript => withId(transcript, { kind: "note", text })
+export const note = (transcript: Transcript, text: string, at?: number): Transcript =>
+  withId(transcript, { kind: "note", text }, at)
 
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
-  withId(settleOpen(transcript, at, "failed"), { kind: "error", text })
+  withId(settleOpen(transcript, at, "failed"), { kind: "error", text }, at)
 
 /**
  * Splits a reply into the prose around its fences and the program inside
@@ -228,7 +233,7 @@ const streamInto = (transcript: Transcript, text: string, at: number): Transcrip
       calls: [],
       printed: "",
       startedAt: transcript.requestedAt ?? at
-    }),
+    }, transcript.requestedAt ?? at),
     cells: index
   }
 }
@@ -358,7 +363,7 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
         )
       }
     case "model-retried":
-      return note(transcript, `retrying · ${event.code}`)
+      return note(transcript, `retrying · ${event.code}`, at)
     case "cell-produced": {
       const open = lastCell(transcript)
       const produced = (cell: CellItem): CellItem => ({ ...cell, source: event.cell.text, status: "running" })
@@ -412,7 +417,7 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
     }
     case "resolved": {
       const text = event.message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")
-      return withId({ ...settleOpen(transcript, at, "done"), streaming: "", thinking: false }, { kind: "answer", text })
+      return withId({ ...settleOpen(transcript, at, "done"), streaming: "", thinking: false }, { kind: "answer", text }, at)
     }
     case "aborted":
       return failure(transcript, event.reason, at)

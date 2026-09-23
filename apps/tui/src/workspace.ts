@@ -113,10 +113,11 @@ export class Workspace {
   }
   private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>) {
     if (this.closed || this.tabs.get(tab.id)?.status !== "requested") return
-    let transcript = Transcript.user(Transcript.empty, tab.prompt)
+    const at = Date.now()
+    let transcript = Transcript.user(Transcript.empty, tab.prompt, false, at)
     this.transcripts.set(tab.id, transcript)
     try {
-      writer.append({ type: "user", at: Date.now(), text: tab.prompt })
+      writer.append({ type: "user", at, text: tab.prompt })
       const handle = this.options.host.run({
         prompt: tab.prompt,
         seat: tab.seat,
@@ -168,6 +169,8 @@ export class Workspace {
       this.save({ ...tab, status: "failed", endedAt: Date.now(), message: String(error) })
     }
   }
+  /** A worker's own transcript, for the chat timeline to interleave. */
+  transcript = (id: string): Transcript.Transcript => this.transcripts.get(id) ?? Transcript.empty
   read = (id: string) => {
     const tab = this.tabs.get(id)
     if (tab === undefined) throw new Error("Unknown tab")
