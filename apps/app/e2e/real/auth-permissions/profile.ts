@@ -328,7 +328,15 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
       return
     }
     if (realAuthKind() === "application-token") {
-      throw new Error("Application-token auth is only valid for the packaged native-window driver.")
+      const environment = process.env.SMITHERS_REAL_AUTH_ENVIRONMENT?.trim()
+      const token = environment ? process.env[environment]?.trim() : undefined
+      if (!token) throw new Error(`${environment ?? "application token"} is required.`)
+      const context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } })
+      await context.route(new URL("/api/**", baseURL).toString(), async (route) => {
+        await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${token}` } })
+      })
+      try { await use(context) } finally { await context.close() }
+      return
     }
     if (realAuthKind() === "owner-session") {
       const ownerProfile = process.env.SMITHERS_REAL_OWNER_PROFILE_DIR?.trim()
@@ -441,8 +449,8 @@ export const authenticatedTest = realTest.extend<AuthenticatedProfileOptions & A
     }
     if (realAuthKind() === "application-token") {
       const session = await readAuthenticatedSession(page)
-      if (session === undefined) throw new Error("The packaged application token did not authenticate GET /api/user.")
-      testInfo.annotations.push({ type: "real-authenticated-token", description: "native-token-verified-after-lifecycle" })
+      if (session === undefined) throw new Error("The application token did not authenticate GET /api/user.")
+      testInfo.annotations.push({ type: "real-authenticated-token", description: "token-verified-after-lifecycle" })
       await use()
       return
     }
