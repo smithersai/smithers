@@ -33,7 +33,7 @@ export default Flow.make("echo", {
 `
 
 const phase = async (root: string, stateRoot: string, restart: boolean, source = declaration) => {
-  if (process.versions.bun) registerPinnedLibraries(root, stateRoot)
+  registerPinnedLibraries(root, stateRoot)
   const { platform } = process.versions.bun
     ? await import("../../packages/smithers/src/internal/BunControl.ts")
     : await import("../../packages/smithers/src/internal/NodeControlHost.ts")
