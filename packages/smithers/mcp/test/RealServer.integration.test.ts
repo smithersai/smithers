@@ -599,12 +599,19 @@ describe("McpClient against a real MCP server", () => {
   })
 
   it("fails a pending call when the server closes stdin", async () => {
-    const error = await execute(Effect.scoped(Effect.gen(function*() {
-      const client = yield* connectNode("close-stdin")
-      yield* Effect.sleep("100 millis")
-      return yield* Effect.flip(client.callTool("add", { a: 1, b: 2 }).pipe(Effect.timeout("2 seconds")))
-    })))
-    expect(error).toMatchObject({ code: "connection_closed", server: "close-stdin" })
+    const directory = mkdtempSync(join(tmpdir(), "smithers-mcp-stdin-"))
+    const marker = join(directory, "closed")
+    try {
+      const error = await execute(Effect.scoped(Effect.gen(function*() {
+        const client = yield* connectNode("close-stdin", [marker])
+        yield* Effect.promise(() => vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 2_000 }))
+        return yield* Effect.flip(client.callTool("add", { a: 1, b: 2 }).pipe(Effect.timeout("2 seconds")))
+      })))
+      expect(error).toMatchObject({ code: "connection_closed", server: "close-stdin" })
+      expect(readFileSync(marker, "utf8")).toBe("stdin closed")
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 
   it("applies the configured request deadline", async () => {
@@ -684,10 +691,20 @@ describe("McpClient against a real MCP server", () => {
 
   it("tears the child process down when its scope closes", async () => {
     const directory = mkdtempSync(join(tmpdir(), "flows-mcp-scope-"))
-    const marker = join(directory, "closed")
+    const marker = join(directory, "pid")
     try {
-      await execute(Effect.scoped(Effect.asVoid(connectNode("normal", [marker]))))
-      await vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 2_000 })
+      const pid = await execute(Effect.scoped(Effect.gen(function*() {
+        yield* connectNode("normal", [marker])
+        const pid = Number(readFileSync(marker, "utf8"))
+        expect(Number.isSafeInteger(pid) && pid > 1).toBe(true)
+        expect(process.kill(pid, 0)).toBe(true)
+        return pid
+      })))
+      // Windows termination does not deliver SIGTERM to a JavaScript handler.
+      // Ask the OS whether the actual child is gone on every platform.
+      await vi.waitFor(() => {
+        expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }))
+      }, { timeout: 2_000 })
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }

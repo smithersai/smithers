@@ -7,8 +7,8 @@
  * handle cannot. Every suite spawns this one source, so a fix to the shared
  * shapes (the initialize reply, the tool catalog) is made once.
  *
- * `process.argv[2]` is an optional path the fixture writes to when it is asked
- * to record its own shutdown, `process.argv[3]` the container depth the JSON
+ * `process.argv[2]` is an optional path for lifecycle or cancellation receipts,
+ * `process.argv[3]` the container depth the JSON
  * limit modes nest to, and `MCP_DIAGNOSTIC_TEST_SECRET` the private value the
  * privacy modes plant in the protocol positions an error may leak from.
  *
@@ -22,12 +22,7 @@ const closeMarker = process.argv[2]
 const depth = Number(process.argv[3] || 0)
 const secret = process.env.MCP_DIAGNOSTIC_TEST_SECRET
 
-if (closeMarker && mode !== "capture-cancellation") {
-  process.on("SIGTERM", () => {
-    fs.writeFileSync(closeMarker, "closed")
-    process.exit(0)
-  })
-}
+if (closeMarker && mode === "normal") fs.writeFileSync(closeMarker, String(process.pid))
 
 const startupDiagnostic = mode === "stderr-exit"
   ? { text: "distinctive startup diagnostic\ntoken=sk-ant-test-0123456789abcdef\n", code: 17 }
@@ -287,7 +282,16 @@ reader?.on("line", (line) => {
     })
     if (mode === "exit-after-list") setImmediate(() => process.exit(0))
     if (mode === "close-stdin") {
-      setImmediate(() => fs.closeSync(0))
+      process.stdin.once("close", () => {
+        // The stream and fd 0 can own separate handles. Close the original
+        // descriptor after the stream releases its handle.
+        try { fs.closeSync(0) } catch (error) { if (error.code !== "EBADF") throw error }
+        if (closeMarker) fs.writeFileSync(closeMarker, "stdin closed")
+      })
+      setImmediate(() => {
+        reader.close()
+        process.stdin.destroy()
+      })
       setInterval(() => {}, 1000)
     }
     return
