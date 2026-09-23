@@ -11,7 +11,12 @@ it(
   async () => {
     const root = await mkdtemp(join(tmpdir(), "smithers-plan-input-process-"))
     const fixture = fileURLToPath(new URL("./fixtures/plan-input-process.mjs", import.meta.url))
-    const env = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
+    const env = {
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR,
+      LANG: "C.UTF-8",
+      SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+    }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "config.txt"), "initial")
     const child = spawn(process.execPath, [fixture, root, "crash"], { env, stdio: ["pipe", "pipe", "pipe"] })

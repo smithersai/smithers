@@ -1345,6 +1345,14 @@ describe("cell call identity across runs", () => {
       })
   })
 
+  it("includes the live tree epoch in a sealed call's cache material", () => {
+    const initial = sharedCellCall("sealed")
+    const afterWrite = new Cell.Call({ ...initial, epoch: { frames: 1, calls: 0 } })
+
+    expect(FlowEngineLike.callMaterial(initial).body).not.toHaveProperty("epoch")
+    expect(FlowEngineLike.callMaterial(afterWrite).body).toMatchObject({ epoch: { frames: 1, calls: 0 } })
+  })
+
   it("annotates only authorized calls and their exact delivered record, without changing the action key", async () => {
     const annotations: Array<CallFact.Annotation["Service"]> = []
     let authorized = false

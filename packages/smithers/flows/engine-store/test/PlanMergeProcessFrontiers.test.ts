@@ -10,7 +10,12 @@ for (const frontier of ["intent", "completion"] as const) {
   it(`recovers after SIGKILL at the committed merge ${frontier} frontier`, async () => {
     const root = await mkdtemp(join(tmpdir(), "smithers-merge-process-frontier-"))
     const fixture = fileURLToPath(new URL("./fixtures/plan-merge-frontier-process.mjs", import.meta.url))
-    const env = { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
+    const env = {
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR,
+      LANG: "C.UTF-8",
+      SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+    }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "shared.txt"), "initial")
     const child = spawn(process.execPath, [fixture, root, "crash", frontier], { env, stdio: ["pipe", "pipe", "pipe"] })
