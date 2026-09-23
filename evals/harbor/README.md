@@ -79,9 +79,28 @@ Both arms draw one Codex login per trial from `accounts.py`: `~/.codex`
 (label `default`) and `~/.smithers/accounts/codex-*` in round robin, state in
 `SMITHERS_CODEX_POOL_STATE` shared across runner processes. The label is
 recorded per trial (`smithers-run.json` `account`, `codex-account.json` for
-the stock arm). An account that reports a usage limit leaves the rotation and
-the trial that hit it stays a recorded failure. The stock arm is
+the stock arm). The stock arm is
 `-a evals.harbor.codex_pool:PooledCodex --ak version=0.155.1 --ak reasoning_effort=max`.
+
+**An infrastructure failure is never a score.** Both agents apply one policy:
+
+- A usage limit (`rate_limited: The usage limit has been reached`,
+  `quota_exceeded`, the Codex CLI's "You've hit your usage limit") takes the
+  account out of rotation with the reset time the message names, and the
+  trial is re-run whole on the next healthy account. Every re-run is in the
+  trial's `agent/requeue.log` and in `requeues` of `smithers-run.json` /
+  `codex-account.json`; the earlier attempt's log and workspace are kept as
+  `*-attempt-N`.
+- A route fault (`authentication`, `no_route`, `provider_internal`,
+  `transport`, `call_timeout`, `completion_unjudged`, a `rate_limited` the
+  harness gave up on) raises `ModelRouteError`, so Harbor records an
+  exception and no reward. Run with `-r 2 --retry-include ModelRouteError
+  --retry-include PlueError` to re-run those trials.
+- When no healthy account is left the pool PAUSES: a lease waits
+  (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
+  `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
+- The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
+  answer) are scored as the verifier says.
 
 The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 `-o`: Harbor resolves a relative jobs directory against the task's `tests/`

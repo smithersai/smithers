@@ -10,9 +10,12 @@ Configuration (environment variables of the harness host):
     PLUE_REPO        owner/name of the repository workspaces are created in
     SMITHERS_CLI     path to the smithers binary (default: "smithers" on PATH)
     PLUE_WAIT_SEC    workspace boot wait (default 900)
-    PLUE_CAPACITY_WAIT_SEC  how long a create waits for cluster capacity
-                     before failing (default 14400); a trial waiting for a
-                     slot has not started its agent clock
+    PLUE_CAPACITY_WAIT_SEC  how long a create waits for a slot (cluster
+                     capacity or the plan's concurrent-workspace cap) before
+                     failing (default 1500, under Harbor's 1800 s environment
+                     start timeout); a trial waiting for a slot has not
+                     started its agent clock, and the PlueError it fails with
+                     is retried by `harbor run -r N --retry-include PlueError`
 
 Usage:
 
@@ -41,7 +44,10 @@ from typing import Any
 _DEFAULT_WAIT_SEC = 900
 _DEFAULT_EXEC_TIMEOUT_SEC = 8 * 3600
 _DEFAULT_USER = "root"
-_DEFAULT_CAPACITY_WAIT_SEC = 4 * 3600
+# Under Harbor's environment-start timeout (the task's build_timeout_sec,
+# 1800 s on TB4), so a wait that runs out is a PlueError the runner can
+# retry, not a killed trial.
+_DEFAULT_CAPACITY_WAIT_SEC = 1500
 _CAPACITY_POLL_SEC = 60
 _DIRS = ("/logs/agent", "/logs/verifier", "/logs/artifacts", "/tests", "/solution")
 # The worker writes the sandbox's egress proxy and CA trust to this file and

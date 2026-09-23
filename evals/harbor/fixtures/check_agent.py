@@ -236,6 +236,8 @@ def check_plue_shim() -> None:
         env = agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt", shim=shim, codex_home=Path("/h/codex-2"))
         assert env["PATH"].startswith(str(shim) + os.pathsep) and env["CODEX_HOME"] == "/h/codex-2"
         assert "CODEX_HOME" not in agent.cli_environment({"PATH": "/bin"}, auth_mode="chatgpt")
+    for name in ("SeatExhausted", "ModelRouteError", "NoSeatLeft"):
+        assert issubclass(getattr(accounts, name), Exception), name
 
 
 def check_accounts() -> None:
@@ -253,27 +255,88 @@ def check_accounts() -> None:
         assert [a.label for a in found] == ["default", "codex-2", "codex-3"], found
         assert found[1].auth == store / "codex-2" / "auth.json"
 
-        pool = accounts.Pool(found, home / "pool.json")
+        now = [1_000_000.0]
+        slept: list[float] = []
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            now[0] += seconds
+
+        pool = accounts.Pool(found, home / "pool.json", wait_sec=300, clock=lambda: now[0], sleep=sleep)
         assert [pool.lease("t1").label, pool.lease("t2").label, pool.lease("t3").label, pool.lease("t4").label] == \
             ["default", "codex-2", "codex-3", "default"], "round robin"
-        pool.disable("codex-2", "You've hit your usage limit")
-        assert [pool.lease().label, pool.lease().label] == ["default", "codex-3"], "a disabled account is skipped, the wheel keeps turning"
-        assert accounts.Pool(found, home / "pool.json").disabled()["codex-2"]["reason"].startswith("You've hit")
+        pool.disable("codex-2", "You've hit your usage limit", reset_at="2026-09-27T16:27+00:00")
+        assert [pool.lease().label, pool.lease().label] == ["default", "codex-3"], "a disabled account is skipped"
+        assert accounts.Pool(found, home / "pool.json").disabled()["codex-2"]["resetAt"] == "2026-09-27T16:27+00:00"
         pool.disable("default", "x")
         pool.disable("codex-3", "x")
         try:
-            pool.lease()
-        except RuntimeError:
+            pool.lease("t9")
+        except accounts.NoSeatLeft:
             pass
         else:
             raise AssertionError("an empty rotation is refused, never faked")
+        assert slept and sum(slept) >= 300, "the pool paused and waited before giving up"
+        assert pool.paused() is not None and "default" in pool.paused()["disabled"], "the pause is on record"
+        # A reset that passes re-admits the account and the wait ends.
+        slept.clear()
+        pool.disable("codex-2", "limit", reset_at="1970-01-12T13:46+00:00")
+        assert pool.lease("t10").label == "codex-2" and not slept, "a passed reset re-enables without waiting"
+        assert pool.paused() is None
+        pool.disable("codex-2", "limit", reset_at=None)
+        pool.enable("codex-2")
+        assert "codex-2" not in pool.disabled()
+
+        # A new login appearing during the pause is picked up.
+        pool.disable("codex-2", "x")
+        seen = {"n": 0}
+
+        def rediscover() -> list[accounts.Account]:
+            seen["n"] += 1
+            if seen["n"] >= 3:
+                (store / "codex-4").mkdir(exist_ok=True)
+                (store / "codex-4" / "auth.json").write_text("{}")
+            return accounts.discover(home)
+
+        pool = accounts.Pool(found, home / "pool.json", wait_sec=3600, clock=lambda: now[0], sleep=sleep, rediscover=rediscover)
+        assert pool.lease("t11").label == "codex-4", "a login added during the pause serves the next lease"
+
     assert accounts.mentions_usage_limit("ERROR: You've hit your usage limit. Try again at 4pm")
     assert accounts.mentions_usage_limit('{"type":"usage_limit_reached"}')
     assert not accounts.mentions_usage_limit("rate limit exceeded, retrying"), "a transient 429 is not a usage limit"
-    assert agent.usage_limit_hit("ok\nerror: usage_limit_reached\n", []) == "error: usage_limit_reached"
-    assert agent.usage_limit_hit("", [{"type": "control.agent.model-retried", "payload": {"code": "quota_exceeded", "attempt": 2}}]) \
-        == "journal: model-retried quota_exceeded (attempt 2)"
-    assert agent.usage_limit_hit("fine", [{"type": "control.agent.model-retried", "payload": {"code": "rate_limited"}}]) is None
+    reset = accounts.reset_time_of("ERROR: You’ve hit your usage limit. Visit https://x or try again at Sep 27th, 2026 9:27 AM.")
+    assert reset is not None and reset.startswith("2026-09-27T"), reset
+    assert accounts.reset_time_of('{"resets_at":"2026-09-27T16:27:00Z"}') == "2026-09-27T16:27+00:00"
+    assert accounts.reset_time_of("The usage limit has been reached") is None
+
+    assert accounts.classify_cause("rate_limited: The usage limit has been reached\n/harness/HarnessError: x") == "seat"
+    assert accounts.classify_cause("quota_exceeded: insufficient_quota") == "seat"
+    assert accounts.classify_cause("rate_limited: 429 after 6 attempts") == "infra"
+    for code in ("authentication", "no_route", "provider_internal", "transport", "call_timeout", "completion_unjudged"):
+        assert accounts.classify_cause(f"{code}: gateway 503") == "infra", code
+    assert accounts.classify_cause("claim_unproven: work this run never recorded") is None, "the model's own failure is scored"
+    assert accounts.classify_cause("read_only_cap: no writes") is None
+    assert accounts.classify_cause(None) is None and accounts.classify_cause("") is None
+
+    failed = {"cause": "rate_limited: The usage limit has been reached"}
+    assert agent.verdict("", failed, []) == ("seat", failed["cause"])
+    assert agent.verdict("", {"cause": "provider_internal: 503"}, []) == ("infra", "provider_internal: 503")
+    assert agent.verdict("", {"cause": "claim_unproven: x"}, []) == (None, "claim_unproven: x")
+    assert agent.verdict("", {"cause": None}, [{"type": "control.agent.model-retried", "payload": {"code": "quota_exceeded", "attempt": 2}}]) \
+        == ("seat", "quota_exceeded: model-retried (attempt 2)")
+    assert agent.verdict("ok\nerror: usage_limit_reached\n", {"cause": None}, []) == ("seat", "error: usage_limit_reached")
+    log = 'note\n{"_tag":"Accepted","cause":"transport: socket hang up\\nstack","status":"failed"}\n'
+    assert agent.failure_cause(log, {"cause": None}) == "transport: socket hang up"
+    assert agent.verdict("fine", {"cause": None}, [{"type": "control.agent.model-retried", "payload": {"code": "rate_limited"}}]) == (None, None)
+    assert agent.summarize([{"seq": 1, "at": 0, "type": "control.run.failed", "payload": {"cause": "transport: x\nstack"}}])["cause"] == "transport: x"
+
+    try:
+        import codex_pool  # needs harbor
+    except ImportError:
+        pass
+    else:
+        assert codex_pool.usage_limit_in("thinking\nERROR: You've hit your usage limit. Visit …\n") == "ERROR: You've hit your usage limit. Visit …"
+        assert codex_pool.usage_limit_in("all done, 3 files changed") is None
 
 
 def check_names() -> None:
