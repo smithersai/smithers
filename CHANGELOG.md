@@ -9,10 +9,11 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3122 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3125 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **app:** show the supervisor's needs-help reading as a dot on the run header ([f716a9de9f](https://github.com/smithersai/smithers/commit/f716a9de9f6ad9b9e52f62e23bc56e9ddf8eff49))
 - **std:** seal bash to one container for benchmark hosts ([3f9c10fedc](https://github.com/smithersai/smithers/commit/3f9c10fedcb50ac1316b8deda33916e9ed39527e))
 - **tui:** run project flows in durable background tabs ([a4c489e3d5](https://github.com/smithersai/smithers/commit/a4c489e3d5a07678426219f0bee91b8464da06d5))
 - **cli:** expose the native Bun control composition ([17469344fc](https://github.com/smithersai/smithers/commit/17469344fcaf0c778f3d51b01f698a86acb19e3d))
@@ -324,6 +325,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **build:** discover selected Xcode tree for seatbelt ([88e4298ec3](https://github.com/smithersai/smithers/commit/88e4298ec34287ebe9de1493b711f9d0f1bc3798))
+- **evals:** contain plue failures to the trial and score only graded outcomes ([28f3675b1a](https://github.com/smithersai/smithers/commit/28f3675b1a83507f7cc091736e977230dbaca24f))
 - **build:** make advisory macOS package gates portable ([065f510411](https://github.com/smithersai/smithers/commit/065f5104115921ad58a58710ef5aadc76bb7e12e))
 - **app:** connect packaged selfhost to host model fixture ([d248967866](https://github.com/smithersai/smithers/commit/d2489678668983c1aae2a8f773356a2623d1e8b8))
 - **backend:** accept a terminal socket from the API's own host ([3d3e88aef2](https://github.com/smithersai/smithers/commit/3d3e88aef2856a74801b905b64874eb88c72bcc6))
