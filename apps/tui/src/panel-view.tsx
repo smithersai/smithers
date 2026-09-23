@@ -96,7 +96,7 @@ export function PanelView(
           >
             <text fg={item.status === "failed" ? color.danger : first + index === selected ? color.brand : color.faint}>
               {first + index === selected ? "› " : "  "}
-              {String(first + index + 1).padStart(2)} {nav.expanded.has(item.id) ? "▾" : "▸"}
+              {String(first + index + 1).padStart(2)} {nav.expanded.has(item.id) ? "▾ " : "▸ "}
             </text>
             <text fg={item.status === "failed" ? color.danger : color.text} wrapMode="none" style={{ flexShrink: 1 }}>
               {item.label}
