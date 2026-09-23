@@ -6,9 +6,8 @@
  */
 import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
-import { spawnSync } from "node:child_process"
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { existsSync } from "node:fs"
+import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Approvals from "./approvals.ts"
@@ -17,6 +16,7 @@ import * as Complete from "./complete.ts"
 import * as DragScroll from "./drag-scroll.ts"
 import type * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
+import * as External from "./external.ts"
 import * as Files from "./files.ts"
 import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
 import * as Form from "./form.ts"
@@ -638,7 +638,8 @@ export function App(props: AppProps) {
     live.current.turn?.handle.cancel()
     live.current.shell?.cancel()
     renderer.destroy()
-    void stopped.then(() => Promise.allSettled([props.host.dispose(), props.flows?.dispose()])).finally(() => process.exit(0))
+    void External.bounded(stopped.then(() => Promise.allSettled([props.host.dispose(), props.flows?.dispose()])))
+      .then(() => process.exit(0))
   }, [renderer, props.host, props.flows, workspace, runs, monitors])
 
   const startTurn = useCallback((prompt: string) => {
@@ -1098,13 +1099,15 @@ export function App(props: AppProps) {
   }, [setText, setStatus])
 
   const externalEditor = useCallback(() => {
-    const file = join(mkdtempSync(join(tmpdir(), "smithers-editor-")), "prompt.md")
-    writeFileSync(file, composer.current?.plainText ?? "")
     const editor = process.env.VISUAL ?? process.env.EDITOR ?? "nano"
     renderer.suspend()
-    const result = spawnSync(editor, [file], { stdio: "inherit", shell: true })
-    renderer.resume()
-    if (result.status === 0) setText(readFileSync(file, "utf8").replace(/\n$/, ""))
+    let edited: string | undefined
+    try {
+      edited = External.edit(composer.current?.plainText ?? "", editor)
+    } finally {
+      renderer.resume()
+    }
+    if (edited !== undefined) setText(edited)
   }, [renderer, setText])
 
   const cycleModel = useCallback((step: number) => {
