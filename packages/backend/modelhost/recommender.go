@@ -17,7 +17,7 @@ import (
 
 const (
 	JevEvaluateURL          = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
-	JevDefaultModel         = "typesafe-ai/jev"
+	JevDefaultModel         = ports.RecommendationModelID
 	JevProtocolVersion      = "0.0.1"
 	JevSpecificationVersion = "4"
 )
@@ -50,13 +50,13 @@ func NewJevRecommender(apiKey, endpoint string, client *http.Client) (*JevRecomm
 }
 
 func (j *JevRecommender) Recommend(ctx context.Context, input ports.RecommendationRequest) (ports.RecommendationResult, error) {
-	model := JevDefaultModel
+	model := ports.RecommendationModelID
 	if len(input.Model) > 0 {
 		var binding struct {
 			ModelID string `json:"modelId"`
 		}
-		if json.Unmarshal(input.Model, &binding) == nil && strings.TrimSpace(binding.ModelID) != "" {
-			model = binding.ModelID
+		if json.Unmarshal(input.Model, &binding) != nil || strings.TrimSpace(binding.ModelID) != ports.RecommendationModelID {
+			return ports.RecommendationResult{}, errors.New("recommendation model is not Jev")
 		}
 	}
 	questions := make(map[string]any)

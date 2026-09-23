@@ -84,6 +84,15 @@ func TestRecommendationHandler_CallsProviderAndPersistsReceipt(t *testing.T) {
 	require.Equal(t, "review", log.outcome)
 }
 
+func TestRecommendationHandler_RejectsUnknownModelBinding(t *testing.T) {
+	provider := &recommendationFake{}
+	handler := NewRecommendationHandler(provider, &recommendationLogFake{})
+	rec := httptest.NewRecorder()
+	handler.Recommend(rec, httptest.NewRequest(http.MethodPost, "/api/recommend", bytes.NewBufferString(`{"model":{"modelId":"other"},"tail":[],"commands":[]}`)))
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), `"code":"request_invalid"`)
+}
+
 func TestModelStreamHandler_ForwardsProviderFrames(t *testing.T) {
 	user := &db.User{ID: 42}
 	request := httptest.NewRequest(http.MethodPost, "/api/model/stream", bytes.NewBufferString(`{"messages":[{"role":"user","content":"hi"}]}`))

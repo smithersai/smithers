@@ -176,6 +176,14 @@ func validRecommendationRequest(input ports.RecommendationRequest) bool {
 			return false
 		}
 	}
+	if len(input.Model) > 0 {
+		var binding struct {
+			ModelID string `json:"modelId"`
+		}
+		if json.Unmarshal(input.Model, &binding) != nil || strings.TrimSpace(binding.ModelID) != ports.RecommendationModelID {
+			return false
+		}
+	}
 	return true
 }
 

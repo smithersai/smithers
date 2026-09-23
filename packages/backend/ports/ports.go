@@ -19,6 +19,8 @@ import (
 
 var ErrModelCredentialMissing = errors.New("model credential is missing")
 
+const RecommendationModelID = "typesafe-ai/jev"
+
 // RecommendationCommand is one command the client offered to the decision
 // model. The model may only return names from this set.
 type RecommendationCommand struct {
