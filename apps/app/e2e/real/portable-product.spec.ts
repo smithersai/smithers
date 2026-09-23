@@ -1,6 +1,7 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { expect, productUrl, realApi } from "./support/test"
+import { awaitBoot, expect, productUrl, realApi } from "./support/test"
+import { finishFirstVisit } from "./support/first-visit"
 import { runSlash } from "./issues/local"
 import { withOwnedRepository, pushLocalFixture } from "./portable/owned-repository"
 
@@ -79,7 +80,10 @@ authenticatedTest("a pushed local change opens and lands through the product", s
     const change = changes.items?.find((candidate) => candidate.commit_id === commit)
     expect(change?.change_id).toEqual(expect.any(String))
     const title = `Land ${marker}`
+    const startedAt = performance.now()
     await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
+    await awaitBoot(page, "navigate", startedAt)
+    await finishFirstVisit(page)
     const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === `${repo.path}/landings`, { timeout: 15_000 })
     await runSlash(page, `/prs.create ${title} from:fixture ${repo.fullName}`)
     const creation = await created
