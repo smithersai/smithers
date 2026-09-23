@@ -66,7 +66,7 @@ const containment = async (recovery) => {
     OPENAI_API_KEY: "recorded-fixture-not-a-real-key",
     AI_GATEWAY_API_KEY: "recorded-fixture-not-a-real-key"
   }
-  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR"]) {
+  for (const key of ["PATH", "TMPDIR", "SystemRoot", "WINDIR", "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY"]) {
     if (process.env[key] !== undefined) environment[key] = process.env[key]
   }
   const records = (file) => existsSync(file)
