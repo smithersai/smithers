@@ -33,7 +33,8 @@ const callLabel = (call: Transcript.Call): string => {
   return `${verbs[call.flow] ?? call.verb?.success ?? `Called ${call.flow}`} ${sentence(call.subject)}`.trim()
 }
 const cellLabel = (cell: Extract<Transcript.Item, { kind: "cell" }>): string => {
-  if (cell.status === "failed" || cell.status === "rejected") return sentence(cell.error ?? "The cell failed.")
+  if (cell.status === "rejected") return `Rejected: ${cell.error ?? "cell"}`
+  if (cell.status === "failed") return sentence(cell.error ?? "The cell failed.")
   if (cell.calls.length > 0) {
     const changed = cell.calls.filter((call) =>
       (call.patches?.length ?? 0) > 0 || (call.status === "ok" && call.change !== undefined)

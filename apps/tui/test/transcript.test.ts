@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import * as Summary from "../src/summary.ts"
 import * as Transcript from "../src/transcript.ts"
 
 /** A recorded gpt-5.6-sol run that fixes `add` in a scratch repo. */
@@ -127,5 +128,54 @@ describe("a turn that only calls ctx.done", () => {
   it("keeps a cell that did work before finishing", () => {
     const transcript = turn(`const seat = 1\nctx.done("The seat is sol.")`, "The seat is sol.")
     expect(transcript.items.map((item) => item.kind)).toEqual(["user", "cell", "answer"])
+  })
+})
+
+describe("a reply the harness re-asks inside its frame", () => {
+  // Recorded 2026-09-23 (session bd2275ea, frame 1 of tui-52909-15): a
+  // prose-only reply, the in-frame `no_cell` rejection, the re-ask's cell.
+  const rejection = "No cell was found in the response. Emit a fenced ```cell block containing the JavaScript for this transition."
+  const events = [
+    { _tag: "model-requested", frame: 1, attempt: 1 },
+    { _tag: "model-delta", delta: { type: "text-delta", text: "\n\nRequested the default-accept permissions change." } },
+    { _tag: "model-settled", message: { role: "assistant", content: [] }, usage: {} },
+    { _tag: "cell-rejected-in-frame", attempt: 1, code: "no_cell", message: rejection },
+    { _tag: "model-requested", frame: 1, attempt: 2 },
+    { _tag: "model-delta", delta: { type: "text-delta", text: "\n\n```cell\nctx.done(\"Requested.\")\n```" } },
+    { _tag: "model-settled", message: { role: "assistant", content: [] }, usage: {} },
+    { _tag: "cell-produced", cell: { language: "javascript", text: "ctx.done(\"Requested.\")", digest: "b94e" }, blocks: 1 },
+    { _tag: "cell-printed", cell: "b94e", text: "" },
+    { _tag: "cell-settled", cell: "b94e", outcome: { _tag: "settled", transition: { _tag: "complete", output: "Requested." } } },
+    { _tag: "resolved", message: { role: "assistant", content: [{ type: "text", text: "Requested." }], stopReason: "stop" } }
+  ] as unknown as ReadonlyArray<Parameters<typeof Transcript.apply>[1]>
+  const fold = (upTo = events.length) =>
+    events.slice(0, upTo).reduce(
+      (transcript, event, at) => Transcript.apply(transcript, event, at),
+      Transcript.user(Transcript.empty, "Make permissions default-accept.")
+    )
+
+  it("never shows the harness's re-ask to the user", () => {
+    const shown = JSON.stringify(fold().items)
+    expect(shown).not.toContain("No cell was found")
+    expect(shown).not.toContain("default-accept permissions change")
+    expect(fold().items.map((item) => item.kind)).toEqual(["user", "answer"])
+  })
+
+  it("numbers the re-asked cell as the attempt it replaced", () => {
+    const rejected = fold(4)
+    expect(cells(rejected)).toEqual([])
+    expect(cells(fold(8))).toMatchObject([{ index: 1, source: "ctx.done(\"Requested.\")", status: "running" }])
+  })
+
+  it("shows a frame's final rejection by its code, never the model-facing instruction", () => {
+    const settled = [
+      events[0]!,
+      events[1]!,
+      { _tag: "cell-settled", cell: "", outcome: { _tag: "rejected", code: "no_cell", message: rejection } }
+    ] as unknown as ReadonlyArray<Parameters<typeof Transcript.apply>[1]>
+    const transcript = settled.reduce((current, event, at) => Transcript.apply(current, event, at), Transcript.empty)
+    expect(cells(transcript)).toMatchObject([{ status: "rejected", error: "no_cell" }])
+    expect(Summary.panel(transcript).rows[0]).toMatchObject({ label: "Rejected: no_cell", status: "failed" })
+    expect(JSON.stringify(Summary.panel(transcript))).not.toContain("No cell was found")
   })
 })

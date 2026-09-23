@@ -330,7 +330,8 @@ const outcomeError = (outcome: AgentEvent.CellSettled["outcome"]): string | unde
     case "raised":
       return `${outcome.name}: ${outcome.message}`
     case "rejected":
-      return outcome.message
+      // The message instructs the model; the user sees the stable code.
+      return outcome.code
   }
 }
 
@@ -407,11 +408,13 @@ const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: nu
       // A recorded reply replays without deltas: the cell starts here.
       return updateCell(streamInto(transcript, "", at), produced)
     }
-    case "cell-rejected-in-frame":
-      return updateCell(transcript, (cell) =>
-        cell.status === "writing" || cell.status === "running"
-          ? { ...cell, status: "rejected", error: event.message, endedAt: at }
-          : cell)
+    case "cell-rejected-in-frame": {
+      // The harness re-asks inside this frame; the refused attempt and the
+      // instruction it sends back are for the model, not the user.
+      const open = lastCell(transcript)
+      if (open === undefined || (open.status !== "writing" && open.status !== "running")) return transcript
+      return { ...transcript, items: transcript.items.filter((item) => item !== open), cells: open.index - 1 }
+    }
     case "cell-call-started":
       return updateCell(transcript, (cell) => ({
         ...cell,
@@ -447,7 +450,7 @@ const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: nu
       const error = outcomeError(event.outcome)
       return updateCell(transcript, (cell) => ({
         ...cell,
-        status: error === undefined ? "done" : "failed",
+        status: error === undefined ? "done" : event.outcome._tag === "rejected" ? "rejected" : "failed",
         ...(error === undefined ? {} : { error }),
         endedAt: at
       }))
