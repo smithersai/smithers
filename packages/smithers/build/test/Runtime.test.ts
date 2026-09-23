@@ -1,11 +1,13 @@
-import { NodeServices } from "@effect/platform-node"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
+import { spawnSync } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Runtime from "../src/Runtime.ts"
+import * as ExecutableFixture from "./ExecutableFixture.ts"
+import { writeExecutable } from "./ExecutableFixture.ts"
 
 const platform = { os: "linux", arch: "x64", libc: null }
 
@@ -20,11 +22,6 @@ const withFixture = async <A>(use: (root: string) => Promise<A>): Promise<A> => 
   } finally {
     await Fs.rm(root, { recursive: true, force: true })
   }
-}
-
-const writeExecutable = async (path: string, body: string): Promise<void> => {
-  await Fs.writeFile(path, `#!/usr/bin/env node\n${body}\n`, "utf8")
-  await Fs.chmod(path, 0o755)
 }
 
 describe("Runtime.satisfies", () => {
@@ -228,7 +225,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"v24.9.0\\n\")")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: ">=22.19.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(await Effect.runPromise(service.version)).toBe("24.9.0")
@@ -254,7 +251,7 @@ describe("Runtime measurement", () => {
         expect(yield* Effect.all([service.version, service.verify], { concurrency: "unbounded" }))
           .toEqual(["24.9.0", "24.9.0"])
         expect(yield* service.verify).toBe("24.9.0")
-      }).pipe(Effect.provide(layer), Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(layer), Effect.provide(ExecutableFixture.layer))
       await Effect.runPromise(use)
       expect(await Fs.readFile(calls, "utf8")).toBe("--version\n")
       await Effect.runPromise(use)
@@ -271,7 +268,7 @@ describe("Runtime measurement", () => {
       )
       const service = await Effect.runPromise(
         Runtime.make("bun", { requirement: "1.3.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(await Effect.runPromise(service.version)).toBe("1.3.0")
@@ -291,7 +288,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"1.3.0-canary.2\\n\")")
       const pinned = await Effect.runPromise(
         Runtime.make("bun", { requirement: "=1.3.0-canary.2", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(await Effect.runPromise(pinned.version)).toBe("1.3.0-canary.2")
@@ -299,7 +296,7 @@ describe("Runtime measurement", () => {
 
       const release = await Effect.runPromise(
         Runtime.make("bun", { requirement: "=1.3.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       const refused = await refusalOf(release.verify)
@@ -314,7 +311,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"v24.9.0+build.7\\n\")")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: ">=22.19.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(await Effect.runPromise(service.version)).toBe("24.9.0+build.7")
@@ -328,7 +325,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"v20.11.0\\n\")")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: ">=22.19.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       await expect(Effect.runPromise(service.verify)).rejects.toThrow(
@@ -343,7 +340,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"v24.9.0\\n\")")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: "^24.0.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       await expect(Effect.runPromise(service.verify)).rejects.toThrow(
@@ -359,7 +356,7 @@ describe("Runtime measurement", () => {
       const error = await refusalOf(
         Runtime.make("node", { requirement: "1.0.0", platform, executable, probeTimeoutMs: 100 }).pipe(
           Effect.flatMap((service) => service.version),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(error.code).toBe("probe_failed")
@@ -373,7 +370,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.stdout.write(\"no idea\\n\")")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: "24.9.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       await expect(Effect.runPromise(service.version)).rejects.toThrow(/printed no version/)
@@ -386,7 +383,7 @@ describe("Runtime measurement", () => {
       await writeExecutable(executable, "process.exit(3)")
       const service = await Effect.runPromise(
         Runtime.make("node", { requirement: "24.9.0", platform, executable }).pipe(
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       await expect(Effect.runPromise(service.version)).rejects.toThrow(/exited with status 3/)
@@ -400,7 +397,7 @@ describe("Runtime measurement", () => {
           requirement: "24.9.0",
           platform,
           executable: NodePath.join(root, "absent")
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(ExecutableFixture.layer))
       )
       await expect(Effect.runPromise(service.version)).rejects.toThrow(/failed/)
     })
@@ -424,7 +421,7 @@ describe("Runtime measurement", () => {
       const accepted = await Effect.runPromise(
         Runtime.make("node", { requirement: "1.0.0", platform, executable: atBound }).pipe(
           Effect.flatMap((service) => service.version),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(accepted).toBe("1.0.0")
@@ -437,7 +434,7 @@ describe("Runtime measurement", () => {
       const error = await refusalOf(
         Runtime.make("node", { requirement: "1.0.0", platform, executable: overBound }).pipe(
           Effect.flatMap((service) => service.version),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(error.code).toBe("probe_failed")
@@ -456,7 +453,7 @@ describe("Runtime measurement", () => {
       const error = await refusalOf(
         Runtime.make("node", { requirement: "1.0.0", platform, executable }).pipe(
           Effect.flatMap((service) => service.version),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(error.message).toMatch(/version output exceeds/)
@@ -491,7 +488,7 @@ describe("Runtime measurement", () => {
       const error = await refusalOf(
         Runtime.make("node", { requirement: "1.0.0", platform, executable }).pipe(
           Effect.flatMap((service) => service.version),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       expect(error.message).toMatch(/version output exceeds/)
@@ -539,13 +536,23 @@ describe("Runtime measurement", () => {
             HOME: "/hidden/home",
             UNRELATED_SECRET: "must-not-leak"
           }
-        }).pipe(Effect.flatMap((service) => service.version), Effect.provide(NodeServices.layer))
+        }).pipe(Effect.flatMap((service) => service.version), Effect.provide(ExecutableFixture.layer))
       )
       expect(measured).toBe("1.0.0")
-      // Darwin's own `posix_spawn` adds `__CF_USER_TEXT_ENCODING` below this
-      // seam, so the assertion is over the names the selection put there.
+      // Compare with a direct child given PATH alone: the OS may add bootstrap
+      // variables (for example SYSTEMROOT on Windows) below the service seam.
       const names = JSON.parse(await Fs.readFile(observed, "utf8")) as ReadonlyArray<string>
-      expect(names.filter((name) => !name.startsWith("__"))).toEqual(["PATH"])
+      const baseline = spawnSync(process.execPath, [
+        "-e",
+        "console.log(JSON.stringify(Object.keys(process.env).sort()))"
+      ], {
+        env: { PATH: process.env.PATH },
+        encoding: "utf8",
+        timeout: 10_000
+      })
+      expect(baseline.error).toBeUndefined()
+      expect(baseline.status).toBe(0)
+      expect(names).toEqual(JSON.parse(baseline.stdout))
       expect(names).not.toContain("HOME")
       expect(names).not.toContain("UNRELATED_SECRET")
     })
@@ -569,7 +576,7 @@ describe("Runtime measurement", () => {
         await Effect.runPromise(
           Runtime.make("node", { requirement: "1.0.0", platform, executable }).pipe(
             Effect.flatMap((service) => service.version),
-            Effect.provide(NodeServices.layer)
+            Effect.provide(ExecutableFixture.layer)
           )
         )
       } finally {
@@ -593,7 +600,7 @@ describe("Runtime measurement", () => {
           requirement: "1.0.0",
           platform,
           executable: NodePath.join(root, "absent")
-        }).pipe(Effect.flatMap((service) => service.version), Effect.provide(NodeServices.layer))
+        }).pipe(Effect.flatMap((service) => service.version), Effect.provide(ExecutableFixture.layer))
       )
       const encoded = await Effect.runPromise(
         Schema.encodeEffect(Schema.toCodecJson(Runtime.RuntimeError))(error)
@@ -620,7 +627,7 @@ describe("Runtime measurement", () => {
             const runtime = yield* Runtime.Runtime
             expect(runtime.name).toBe(name)
             return yield* runtime.verify
-          }).pipe(Effect.provide(layer), Effect.provide(NodeServices.layer))
+          }).pipe(Effect.provide(layer), Effect.provide(ExecutableFixture.layer))
         )
         expect(measured).toBe("1.3.0")
       }

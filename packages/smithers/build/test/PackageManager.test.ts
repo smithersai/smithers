@@ -1,4 +1,3 @@
-import { NodeServices } from "@effect/platform-node"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -10,6 +9,8 @@ import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
+import * as ExecutableFixture from "./ExecutableFixture.ts"
+import { writeExecutable } from "./ExecutableFixture.ts"
 
 const platform = { os: "linux", arch: "x64", libc: null }
 
@@ -47,11 +48,6 @@ const withFixture = async <A>(name: string, use: (root: string) => Promise<A>): 
   }
 }
 
-const writeExecutable = async (path: string, body: string): Promise<void> => {
-  await Fs.writeFile(path, `#!/usr/bin/env node\n${body}\n`, "utf8")
-  await Fs.chmod(path, 0o755)
-}
-
 const makePnpm = (projectRoot: string, executable: string, options: {
   readonly environment?: Readonly<Record<string, string | undefined>>
   readonly timeoutMs?: number
@@ -65,7 +61,7 @@ const makePnpm = (projectRoot: string, executable: string, options: {
       environment: options.environment ?? process.env,
       timeoutMs: options.timeoutMs,
       storeDirectory: options.storeDirectory
-    }).pipe(Effect.provide(NodeServices.layer), Effect.provide(runtimeLayer))
+    }).pipe(Effect.provide(ExecutableFixture.layer), Effect.provide(runtimeLayer))
   )
 
 describe("PackageManager.storeRoot", () => {
@@ -312,7 +308,7 @@ describe("PackageManager.storeRoot", () => {
         }
         const manager = await Effect.runPromise(
           PackageManager.makePnpm(options).pipe(
-            Effect.provide(NodeServices.layer),
+            Effect.provide(ExecutableFixture.layer),
             Effect.provide(runtimeLayer)
           )
         )
@@ -365,7 +361,7 @@ describe("PackageManager.storeRoot", () => {
         storeDigest: digest,
         packageJsonDigest: alternate,
         managerEvidence: undefined as never
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(ExecutableFixture.layer))
     )).rejects.toThrow(/lowercase SHA-256 digests/)
   })
 
@@ -380,7 +376,7 @@ describe("PackageManager.storeRoot", () => {
       npmrcDigest: null
     }
     const resultPromise = Effect.runPromise(
-      PackageManager.storeManifest(input).pipe(Effect.provide(NodeServices.layer))
+      PackageManager.storeManifest(input).pipe(Effect.provide(ExecutableFixture.layer))
     )
     input.managerVersion = "99.0.0"
     mutablePlatform.arch = "arm64"
@@ -395,7 +391,7 @@ describe("PackageManager.storeRoot", () => {
           ...input,
           managerVersion: "10.10.0",
           platform
-        }).pipe(Effect.provide(NodeServices.layer), Effect.map((manifest) => manifest.digest))
+        }).pipe(Effect.provide(ExecutableFixture.layer), Effect.map((manifest) => manifest.digest))
       )
     )
   })
@@ -430,7 +426,7 @@ describe("PackageManager.storeRoot", () => {
           expect(manager.projectRoot).toBe(projectRoot)
           expect(yield* manager.version).toBe("9.15.0")
           yield* manager.fetch
-        }).pipe(Effect.provide(NodeServices.layer), Effect.provide(runtimeLayer))
+        }).pipe(Effect.provide(ExecutableFixture.layer), Effect.provide(runtimeLayer))
       )
     try {
       await Promise.all([run(left), run(right)])
@@ -523,7 +519,7 @@ describe("PackageManager.storeRoot", () => {
           }).pipe(
             Effect.flatMap((manager) => manager.version),
             Effect.flip,
-            Effect.provide(NodeServices.layer),
+            Effect.provide(ExecutableFixture.layer),
             Effect.provide(windowsRuntimeLayer)
           )
         )
@@ -553,7 +549,7 @@ describe("PackageManager.storeRoot", () => {
           executable: "pnpm",
           environment: { Path: `${root}/absent;"${bin}"`, SystemRoot: process.env.SystemRoot }
         }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(ExecutableFixture.layer),
           Effect.provide(Runtime.layerNoop("node", {
             requirement: ">=22.19.0",
             version: "24.9.0",
@@ -618,7 +614,7 @@ describe("PackageManager.storeRoot", () => {
           environment: { Path: `"${bin}"` }
         }).pipe(
           Effect.flatMap((manager) => manager.verify),
-          Effect.provide(NodeServices.layer),
+          Effect.provide(ExecutableFixture.layer),
           Effect.provide(
             Runtime.layerNoop("node", {
               requirement: ">=22.19.0",
@@ -655,7 +651,7 @@ describe("PackageManager.storeRoot", () => {
           }).pipe(
             Effect.flatMap((manager) => manager.version),
             Effect.flip,
-            Effect.provide(NodeServices.layer),
+            Effect.provide(ExecutableFixture.layer),
             Effect.provide(windowsRuntimeLayer)
           )
         )
@@ -694,7 +690,7 @@ describe("PackageManager.storeRoot", () => {
         if (process.argv[2] === "--version") process.stdout.write("11.21.0\\n")
       `
       )
-      const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+      const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(ExecutableFixture.layer)))
       let reads = 0
       const layer = PackageManager.layerPnpm({
         requirement: "11.21.0",
@@ -720,7 +716,7 @@ describe("PackageManager.storeRoot", () => {
               })
             ))
         }),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(ExecutableFixture.layer),
         Effect.provide(runtimeLayer)
       )
       await Effect.runPromise(use)
@@ -752,7 +748,7 @@ describe("PackageManager.storeRoot", () => {
             "ProgramFiles(x86)": "C:\\Program Files (x86)",
             "CommonProgramFiles(x86)": "C:\\Program Files (x86)\\Common Files"
           }
-        }).pipe(Effect.provide(NodeServices.layer), Effect.provide(windowsRuntimeLayer))
+        }).pipe(Effect.provide(ExecutableFixture.layer), Effect.provide(windowsRuntimeLayer))
       )
       const names = JSON.parse(await Effect.runPromise(manager.version)) as ReadonlyArray<string>
       expect(names.filter((name) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name))).toEqual([])
@@ -1023,7 +1019,7 @@ const hookedFileSystem = async (
   const real = await Effect.runPromise(
     Effect.gen(function*() {
       return yield* FileSystem.FileSystem
-    }).pipe(Effect.provide(NodeServices.layer))
+    }).pipe(Effect.provide(ExecutableFixture.layer))
   )
   const once = (hook: (() => Promise<void>) | undefined) => {
     let fired = false
@@ -1060,7 +1056,7 @@ const digestOver = (fileSystem: FileSystem.FileSystem, root: string) =>
     PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(
       Effect.flip,
       Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provide(NodeServices.layer)
+      Effect.provide(ExecutableFixture.layer)
     )
   )
 
@@ -1069,7 +1065,7 @@ describe("PackageManager file reads", () => {
     await withFixture("package-manager-npmrc-directory", async (root) => {
       await Fs.mkdir(NodePath.join(root, ".npmrc"))
       await expect(Effect.runPromise(
-        PackageManager.npmrcDigest(root).pipe(Effect.provide(NodeServices.layer))
+        PackageManager.npmrcDigest(root).pipe(Effect.provide(ExecutableFixture.layer))
       )).rejects.toThrow(/expected a regular file/)
     })
   })
@@ -1078,7 +1074,7 @@ describe("PackageManager file reads", () => {
     await withFixture("package-manager-lockfile-fifo", async (root) => {
       execFileSync("mkfifo", [NodePath.join(root, "pnpm-lock.yaml")], { timeout: 5_000 })
       await expect(Effect.runPromise(
-        PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(Effect.provide(NodeServices.layer))
+        PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(Effect.provide(ExecutableFixture.layer))
       )).rejects.toThrow(/expected a regular file/)
     })
   }, 5_000)
@@ -1164,7 +1160,7 @@ describe("PackageManager file reads", () => {
       const error = await Effect.runPromise(
         PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
       const encoded = await Effect.runPromise(
@@ -1182,11 +1178,11 @@ describe("PackageManager file reads", () => {
 describe("PackageManager project configuration", () => {
   const npmrcRefusal = (root: string) =>
     Effect.runPromise(
-      PackageManager.npmrcDigest(root).pipe(Effect.flip, Effect.provide(NodeServices.layer))
+      PackageManager.npmrcDigest(root).pipe(Effect.flip, Effect.provide(ExecutableFixture.layer))
     )
 
   const npmrcValue = (root: string) =>
-    Effect.runPromise(PackageManager.npmrcDigest(root).pipe(Effect.provide(NodeServices.layer)))
+    Effect.runPromise(PackageManager.npmrcDigest(root).pipe(Effect.provide(ExecutableFixture.layer)))
 
   it("reports no digest when a project has no .npmrc", async () => {
     await withFixture("package-manager-no-npmrc", async (root) => {
@@ -1337,7 +1333,7 @@ describe("PackageManager manifests", () => {
         + `"${"a".repeat(64)}","${"b".repeat(64)}"]`
     )
     const manifest = await Effect.runPromise(
-      PackageManager.storeManifest(validInput).pipe(Effect.provide(NodeServices.layer))
+      PackageManager.storeManifest(validInput).pipe(Effect.provide(ExecutableFixture.layer))
     )
     expect(manifest.digest).toBe("6f5246c3848639c37da7cc2c66e8d67979505f9fddf1c734da358748209f6eac")
     expect(manifest.manager).toBe("pnpm")
@@ -1372,7 +1368,7 @@ describe("PackageManager manifests", () => {
       Effect.runPromise(
         PackageManager.storeManifest(input).pipe(
           Effect.map((manifest) => manifest.digest),
-          Effect.provide(NodeServices.layer)
+          Effect.provide(ExecutableFixture.layer)
         )
       )
     const base = await digestOf(validInput)
@@ -1414,7 +1410,7 @@ describe("PackageManager manifests", () => {
         storeDigest: "c".repeat(64) as PackageManager.Digest,
         packageJsonDigest: "d".repeat(64) as PackageManager.Digest,
         managerEvidence: "e".repeat(64) as PackageManager.Digest
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(ExecutableFixture.layer))
     )
     expect(manifest).toBe("55a1c29f0e23410f4962a2199622841f8e7c02b2dabec967d1fe88eeacd3e484")
     await expect(Effect.runPromise(
@@ -1422,7 +1418,7 @@ describe("PackageManager manifests", () => {
         storeDigest: "not-a-digest" as PackageManager.Digest,
         packageJsonDigest: "d".repeat(64) as PackageManager.Digest,
         managerEvidence: "e".repeat(64) as PackageManager.Digest
-      }).pipe(Effect.provide(NodeServices.layer))
+      }).pipe(Effect.provide(ExecutableFixture.layer))
     )).rejects.toThrow(/lowercase SHA-256 digests/)
   })
 })
@@ -1453,7 +1449,7 @@ describe("PackageManager layers", () => {
           return { name: service.name, store: service.storeDirectory }
         }).pipe(
           Effect.provide(layer),
-          Effect.provide(NodeServices.layer),
+          Effect.provide(ExecutableFixture.layer),
           Effect.provide(runtimeLayer)
         )
       )
@@ -1507,13 +1503,13 @@ describe("PackageManager link", () => {
       await writeExecutable(executable, "process.stdout.write('11.21.0\\n')")
       const manager = await makePnpm(root, executable)
       const absent = await Effect.runPromise(
-        Effect.flip(manager.linkManifest).pipe(Effect.provide(NodeServices.layer))
+        Effect.flip(manager.linkManifest).pipe(Effect.provide(ExecutableFixture.layer))
       )
       expect(absent.code).toBe("manifest_unreadable")
 
       await Fs.mkdir(NodePath.join(root, "node_modules"))
       await Fs.writeFile(NodePath.join(root, "node_modules/.modules.yaml"), "hoistPattern: []\n", "utf8")
-      const digest = await Effect.runPromise(manager.linkManifest.pipe(Effect.provide(NodeServices.layer)))
+      const digest = await Effect.runPromise(manager.linkManifest.pipe(Effect.provide(ExecutableFixture.layer)))
       expect(digest).toMatch(/^[0-9a-f]{64}$/)
     })
   })
@@ -1531,7 +1527,7 @@ describe("PackageManager link", () => {
         PackageManager.makePnpm({ requirement: "^11.0.0", projectRoot: root, executable, environment: process.env })
           .pipe(
             Effect.flatMap((service) => Effect.flip(service.verify)),
-            Effect.provide(NodeServices.layer),
+            Effect.provide(ExecutableFixture.layer),
             Effect.provide(runtimeLayer)
           )
       )
