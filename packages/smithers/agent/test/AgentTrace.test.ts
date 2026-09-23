@@ -126,7 +126,8 @@ const assistant = ModelRequest.Message.assistant([
 ])
 
 describe("trace", () => {
-  it.each([false, true])("preserves supervisor readings and optional evidence (present=%s)", (present) => {
+  it.each([undefined, false, true])("preserves supervisor readings and optional evidence (steer=%s)", (steer) => {
+    const present = steer !== undefined
     const payload = {
       scope: "session-1",
       frame: 2,
@@ -145,7 +146,7 @@ describe("trace", () => {
       remembered: [0],
       latencyMs: 23,
       ...(present
-        ? { outdatedContext: 0, irrelevantContext: 0.8, steer: true, usage: { inputTokens: 7, outputTokens: 3 } }
+        ? { outdatedContext: 0, irrelevantContext: 0.8, steer, usage: { inputTokens: 7, outputTokens: 3 } }
         : {})
     }
     const event = new AgentEvent.SupervisorSettled({ eventType: "flows.harness.supervisor-settled.v1", ...payload })
