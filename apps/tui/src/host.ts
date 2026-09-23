@@ -11,6 +11,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Agent from "@smthrs/agent/Agent"
+import * as AgentSession from "@smthrs/agent/AgentSession"
 import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
@@ -22,6 +23,7 @@ import * as NodeControl from "@smthrs/cli/NodeControl"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
@@ -40,6 +42,7 @@ import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import type * as Agents from "./agents.ts"
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
 import * as Context from "./context.ts"
@@ -71,8 +74,10 @@ export interface TurnInput {
   readonly history: ReadonlyArray<Context.Entry>
   /** Where messages typed mid-turn wait for the next cell boundary. */
   readonly steering?: Steering.Source
-  /** Reasoning effort; the provider's default when absent. */
+  /** Reasoning effort; the agent's `effort`, then the provider's default, when absent. */
   readonly thinking?: ModelRequest.ReasoningEffort
+  /** A custom agent's prompt, flows, envelope and effort, applied to a worker turn. */
+  readonly agent?: Agents.Profile
   readonly onEvent: (event: AgentEvent.AgentEvent) => void
 }
 
@@ -262,43 +267,33 @@ export const make = (options: {
       // Only the coordinator: its completion demands are all disarmed, so a
       // budget ending never carries a bounced answer this would drop.
       const receipts = input.role === "coordinator" ? Runtime.ledger(maxFrames) : (event: AgentEvent.AgentEvent) => event
+      // `rg` searches this repository in seconds; the in-process walk took
+      // longer than grep's 120 s ceiling. It stays the fallback without rg.
+      const turn = turnOptions(
+        input,
+        options.cwd,
+        input.role === "coordinator" ? [] : [
+          Changes.capture(
+            StandardFlows.filesystem(services, Subprocess.which("rg") === null ? undefined : NativeSearch.make(services)),
+            options.cwd,
+            input.onPatch ?? (() => {})
+          ),
+          Changes.capture(StandardFlows.shell(services), options.cwd, input.onPatch ?? (() => {}))
+        ]
+      )
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
         ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true } } : {}),
         prompt: input.prompt,
-        system: [
-          ...Context.system(options.cwd, input.history),
-          ...(input.runtime === undefined ? [] : [Panels.teaching]),
-          ...(input.role === "coordinator"
-            ? [
-              Runtime.coordinatorTeaching + (input.workerSeat ?? input.seat),
-              `Background tabs: ${input.background ?? "[]"}`
-            ]
-            : [
-              "Start each cell with a short purpose sentence. Split independent work with agent.delegate, then use agent.wait({ids}) and aggregate the child answers. Children can delegate to depth 3; depth 4 is refused. End with one sentence and essential evidence. Never claim unobserved tests passed."
-            ])
-        ],
-        ...((input.thinking ??
-            (input.role === "coordinator" && input.seat.startsWith("cerebras:") ? "low" : undefined)) === undefined
+        system: turn.system,
+        ...(turn.reasoningEffort === undefined
           ? {}
-          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: input.thinking ?? "low" }) }),
+          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: turn.reasoningEffort }) }),
         registry,
         plugins: Runtime.plugins(input.runtime),
-        // `rg` searches this repository in seconds; the in-process walk took
-        // longer than grep's 120 s ceiling. It stays the fallback without rg.
-        flows: [
-          ...(input.role === "coordinator" ? [] : [
-            Changes.capture(
-              StandardFlows.filesystem(services, Subprocess.which("rg") === null ? undefined : NativeSearch.make(services)),
-              options.cwd,
-              input.onPatch ?? (() => {})
-            ),
-            Changes.capture(StandardFlows.shell(services), options.cwd, input.onPatch ?? (() => {}))
-          ]),
-          ...(input.runtime === undefined ? [] : [Runtime.source(input.runtime)])
-        ],
-        capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
+        flows: turn.flows,
+        capabilityEnvelope: turn.capabilityEnvelope,
         ...(approvalMode === "all"
           ? {}
           : { authorize: Approvals.authorize(grants, { cwd: options.cwd, source: input.source ?? "chat" }) }),
@@ -376,6 +371,58 @@ export const make = (options: {
     dispose: () => runtime.dispose()
   }
 }
+
+/**
+ * The parts of a turn its input decides: the system prompt, the flows, the
+ * capability envelope and the reasoning effort. `standard` is the worker's
+ * filesystem and shell catalog; an agent's declared `flows` narrow it, and
+ * its declared capabilities narrow the envelope.
+ */
+export const turnOptions = (
+  input: TurnInput,
+  cwd: string,
+  standard: ReadonlyArray<FlowBinding.Source>
+): {
+  readonly system: ReadonlyArray<string>
+  readonly flows: ReadonlyArray<FlowBinding.Source>
+  readonly capabilityEnvelope: ReadonlyArray<Capability.CapabilityPattern>
+  readonly reasoningEffort?: ModelRequest.ReasoningEffort
+} => {
+  const agent = input.role === "coordinator" ? undefined : input.agent
+  const allowed = agent === undefined || agent.flows.length === 0 ? undefined : new Set(agent.flows)
+  const reasoningEffort = input.thinking ?? agent?.thinking ??
+    (input.role === "coordinator" && input.seat.startsWith("cerebras:") ? "low" : undefined)
+  return {
+    system: [
+      ...Context.system(cwd, input.history),
+      ...(input.runtime === undefined ? [] : [Panels.teaching]),
+      ...(input.role === "coordinator"
+        ? [
+          Runtime.coordinatorTeaching + (input.workerSeat ?? input.seat),
+          `Background tabs: ${input.background ?? "[]"}`
+        ]
+        : [
+          "Start each cell with a short purpose sentence. Split independent work with agent.delegate, then use agent.wait({ids}) and aggregate the child answers. Children can delegate to depth 3; depth 4 is refused. End with one sentence and essential evidence. Never claim unobserved tests passed."
+        ]),
+      ...(agent === undefined ? [] : [agent.system])
+    ],
+    flows: [
+      ...(allowed === undefined ? standard : standard.map((source) => only(source, allowed))),
+      ...(input.runtime === undefined ? [] : [Runtime.source(input.runtime)])
+    ],
+    capabilityEnvelope: agent === undefined || agent.envelope.length === 0
+      ? [new Capability.CapabilityPattern({ action: "*", resource: "*" })]
+      : AgentSession.patterns(agent.envelope),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort })
+  }
+}
+
+/** `source` with only the flows `allowed` names. */
+const only = (source: FlowBinding.Source, allowed: ReadonlySet<string>): FlowBinding.Source => ({
+  name: source.name,
+  bindings: () =>
+    Effect.map(source.bindings(), (bindings) => bindings.filter((binding) => allowed.has(binding.descriptor.name)))
+})
 
 /**
  * Runs `effect` without the workspace observer.

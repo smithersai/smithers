@@ -76,6 +76,7 @@ export const commands: ReadonlyArray<Command> = [
   { name: "smithers", description: "Flows and runs" },
   { name: "flows", description: "Run a flow" },
   { name: "flow", args: "<name> [json|key=value]", description: "Run a flow" },
+  { name: "agent", args: "[name] [prompt]", description: "Run a custom agent" },
   { name: "retry", args: "<id>", description: "Retry a stopped worker or flow" },
   { name: "stop", args: "<id>", description: "Stop a worker or flow" },
   { name: "hotkeys", description: "Show the keys" },

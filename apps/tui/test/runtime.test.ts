@@ -5,6 +5,7 @@ import { Effect } from "effect"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Agents from "../src/agents.ts"
 import * as Changes from "../src/changes.ts"
 import { FlowRuns, interrupted, type Run } from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
@@ -231,6 +232,60 @@ it("lists tabs and flows when the cell omits the input", async () => {
   expect(await run("tab.list")).toMatchObject({ outcome: "success", value: [{ id: "w1", status: "running" }] })
   expect(await run("smithers.flows")).toMatchObject({ outcome: "success", value: [{ name: "review" }] })
   expect((await run("tab.read")).outcome).toBe("failure")
+})
+it("delegates to a custom agent and returns its typed refusals as one line", async () => {
+  const requests: Array<unknown> = []
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    delegate: (value) => {
+      requests.push(value)
+      if (value.agent === "echo") throw new Agents.AgentError("not_an_agent", "echo is a module flow; run it with smithers.run or /flow")
+      return { id: value.id, status: "requested" }
+    },
+    read: () => ({}),
+    list: () => []
+  }).bindings())
+  const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
+  const call = (value: unknown) => Effect.runPromise(delegate.run({ input: value } as Parameters<typeof delegate.run>[0]))
+  const input = { id: "rev", title: "Review", prompt: "Look at src" }
+  expect(await call({ ...input, agent: "review" })).toMatchObject({ outcome: "success", value: { id: "rev", status: "requested" } })
+  expect(requests[0]).toEqual({ ...input, agent: "review" })
+  const refused = await call({ ...input, agent: "echo" })
+  expect(refused.outcome).toBe("failure")
+  expect(JSON.stringify(refused)).toContain("not_an_agent: echo is a module flow")
+})
+
+it("refuses an unknown, module or person-only agent through a real workspace", async () => {
+  const f = setup()
+  const listed = [
+    { name: "review", description: "Review", modelInvocable: true, kind: "markdown" as const, flows: [], capabilities: [], path: "a" },
+    { name: "echo", description: "Echo", modelInvocable: true, kind: "module" as const, flows: [], capabilities: [], path: "b" },
+    { name: "manual", description: "Manual", modelInvocable: false, kind: "markdown" as const, flows: [], capabilities: [], path: "c" }
+  ]
+  const workspace = new Workspace({
+    host: f.host,
+    workerSeat: "worker:test",
+    history: () => [],
+    persist: () => {},
+    agents: { listed: () => listed, load: () => new Promise(() => {}) }
+  })
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    delegate: workspace.request,
+    read: workspace.read,
+    list: () => workspace.snapshot().tabs
+  }).bindings())
+  const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
+  const call = (agent: string) =>
+    Effect.runPromise(delegate.run({ input: { id: agent, title: agent, prompt: "Go", agent } } as unknown as Parameters<typeof delegate.run>[0]))
+  for (const [agent, code] of [["missing", "unknown_agent"], ["echo", "not_an_agent"], ["manual", "not_invocable"]]) {
+    const result = await call(agent!)
+    expect(result.outcome).toBe("failure")
+    expect(JSON.stringify(result)).toContain(`${code}:`)
+  }
+  expect((await call("review")).outcome).toBe("success")
+  expect(workspace.snapshot().tabs.map((tab) => tab.agent?.name)).toEqual(["review"])
+  workspace.dispose()
 })
 
 it("produces contextual hunks, preserves unchanged lines, and captures patch rename paths", () => {

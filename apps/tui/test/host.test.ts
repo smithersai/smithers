@@ -2,7 +2,10 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as Capability from "@smthrs/capability/Capability"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { Effect } from "effect"
+import type * as Agents from "../src/agents.ts"
 import * as Approvals from "../src/approvals.ts"
 import * as Host from "../src/host.ts"
 
@@ -425,4 +428,49 @@ describe("Host.run under a provider quota refusal", () => {
       provider.stop(true)
     }
   }, 90_000)
+})
+
+describe("turnOptions", () => {
+  const source = (name: string, flows: ReadonlyArray<string>) => ({
+    name,
+    bindings: () => Effect.succeed(flows.map((flow) => ({ descriptor: { name: flow } }))) as never
+  })
+  const standard = [source("filesystem", ["read", "write", "grep"]), source("shell", ["bash"])]
+  const names = async (sources: ReadonlyArray<{ readonly bindings: () => Effect.Effect<ReadonlyArray<{ descriptor: { name: string } }>, unknown> }>) =>
+    (await Promise.all(sources.map((each) => Effect.runPromise(each.bindings())))).flat().map((binding) => binding.descriptor.name)
+  const base = { prompt: "go", seat: "test:worker", role: "worker" as const, history: [], onEvent: () => {} }
+  const profile: Agents.Profile = {
+    name: "review",
+    digest: "d",
+    system: "You review changes.",
+    thinking: "high",
+    flows: ["read", "bash"],
+    envelope: ["fs:read:**"]
+  }
+
+  test("a plain worker keeps every standard flow, the wildcard envelope and the provider's effort", async () => {
+    const options = Host.turnOptions(base, "/repo", standard)
+    expect(await names(options.flows)).toEqual(["read", "write", "grep", "bash"])
+    expect(options.capabilityEnvelope.map(String)).toEqual([String(new Capability.CapabilityPattern({ action: "*", resource: "*" }))])
+    expect(options.reasoningEffort).toBeUndefined()
+    expect(options.system.some((part) => part.includes("You review changes."))).toBe(false)
+  })
+
+  test("an agent profile sets the system prompt, the envelope, the flows and the effort", async () => {
+    const options = Host.turnOptions({ ...base, agent: profile }, "/repo", standard)
+    expect(options.system.at(-1)).toBe("You review changes.")
+    // The worker teaching still applies.
+    expect(options.system.some((part) => part.startsWith("Start each cell"))).toBe(true)
+    expect(options.capabilityEnvelope.map((pattern) => `${pattern.action}:${pattern.resource}`)).toEqual(["fs:read:**"])
+    expect(await names(options.flows)).toEqual(["read", "bash"])
+    expect(options.reasoningEffort).toBe("high")
+    expect(Host.turnOptions({ ...base, agent: profile, thinking: "low" }, "/repo", standard).reasoningEffort).toBe("low")
+  })
+
+  test("an agent with no declared flows or capabilities keeps the host defaults", async () => {
+    const options = Host.turnOptions({ ...base, agent: { ...profile, flows: [], envelope: [] } }, "/repo", standard)
+    expect(await names(options.flows)).toEqual(["read", "write", "grep", "bash"])
+    expect(options.capabilityEnvelope).toHaveLength(1)
+    expect(options.capabilityEnvelope[0]!.action).toBe("*")
+  })
 })

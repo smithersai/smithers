@@ -89,7 +89,10 @@ const etaReplay = (): string => {
 /** One flow that needs `{title}`; its run settles only when stopped. */
 let settle = (_: Flows.Settled) => {}
 const flows: Flows.Port = {
-  discover: async () => [{ name: "review", description: "Review a change", modelInvocable: true }],
+  discover: async () => [
+    { name: "review", description: "Review a change", modelInvocable: true, kind: "module", flows: [], capabilities: [], path: "flows/review/flow.ts" }
+  ],
+  body: async (flow) => { throw new Error(`${flow} is a module flow`) },
   input: async () => Schema.Struct({ title: Schema.String }),
   plan: async () => ({ raw: {} }),
   start: async () => "run-1",

@@ -1,0 +1,21 @@
+---
+description: Reviews the uncommitted change and returns a verdict.
+model: sol
+effort: high
+capabilities: ["fs:read:**", "proc:spawn:*"]
+metadata:
+  tui:
+    keys: [{ key: "alt+r", label: "Review" }]
+    status: true
+---
+
+# Review the working-copy change
+
+Review the uncommitted change in this repository. The prompt may narrow the
+review to a path; with no path, review everything.
+
+Run `git diff --stat`, then `git diff` for the paths in scope, through the
+`bash` flow. Read enough of each changed file to judge the change in context.
+
+Finish with one line, `approve` or `request-changes`, then at most five
+findings. Each finding names the file, the line, and the fix in one sentence.

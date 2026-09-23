@@ -84,6 +84,7 @@ createRoot(renderer).render(
     seat={seat}
     workerSeat={replay === undefined ? available.workerSeat ?? seat : seat}
     models={available.models}
+    {...(replay === undefined ? {} : { seatOf: () => seat })}
     contextWindow={(id) => SeatResolver.contextWindowTokensFor(Seat.modelIdOf(id))}
     {...(resumeFile === undefined ? {} : { resume: resumeFile })}
     pickSession={values.resume === true}

@@ -1,4 +1,5 @@
 /** Background work outlives a chat turn. Each tab has its own durable transcript. */
+import * as Agents from "./agents.ts"
 import type * as Context from "./context.ts"
 import type * as Host from "./host.ts"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
@@ -31,12 +32,22 @@ export interface Tab {
   readonly endedAt?: number
   readonly message?: string
   readonly answer?: string
+  /** The delegate model asked for; retry keeps it. */
+  readonly model?: DelegateModel
+  /** The custom agent this tab runs; `digest` is recorded once its body is read. */
+  readonly agent?: { readonly name: string; readonly digest?: string }
+  /** A typed agent failure. */
+  readonly code?: Agents.Code
 }
 export interface Request {
   readonly id: string
   readonly title: string
   readonly prompt: string
-  readonly model?: DelegateModel
+  readonly model?: DelegateModel | undefined
+  /** A custom agent: a markdown flow's name. */
+  readonly agent?: string | undefined
+  /** Who asked; only a person may start a `disable-model-invocation` agent. Default `agent`. */
+  readonly by?: "user" | "agent"
 }
 export interface Snapshot {
   readonly tabs: ReadonlyArray<Tab>
@@ -67,7 +78,12 @@ const resetAt = (error: unknown): number | undefined => {
   return undefined
 }
 export class Workspace {
-  private queue: Array<{ readonly id: string; readonly writer: Session.Writer; readonly history: ReadonlyArray<Context.Entry> }> = []
+  private queue: Array<{
+    readonly id: string
+    readonly writer: Session.Writer
+    readonly history: ReadonlyArray<Context.Entry>
+    readonly by: "user" | "agent"
+  }> = []
   private tabs = new Map<string, Tab>()
   private panels = new Map<string, Panels.Panel>()
   private transcripts = new Map<string, Transcript.Transcript>()
@@ -82,6 +98,10 @@ export class Workspace {
       history: () => ReadonlyArray<Context.Entry>
       persist: (record: Session.Record) => void
       restored?: Snapshot
+      /** Custom agents; absent where flows cannot be listed. */
+      agents?: Agents.Port
+      /** Resolves an agent's declared `model:`; undefined when unknown. */
+      seatOf?: (declared: string) => string | undefined
     }
   ) {
     for (const saved of options.restored?.tabs ?? []) {
@@ -119,7 +139,7 @@ export class Workspace {
       if (transcript !== undefined) this.transcripts.set(tab.id, transcript)
       if (settled === tab) this.tabs.set(tab.id, tab)
       else this.save(settled)
-      if (settled.status === "queued") this.queue.push({ id: tab.id, writer: Session.reopen(tab.file), history: [] })
+      if (settled.status === "queued") this.queue.push({ id: tab.id, writer: Session.reopen(tab.file), history: [], by: "user" })
       if (settled === tab && (active(tab) || tab.status === "waiting" || tab.status === "parked")) this.scheduleResume(tab)
     }
     for (const panel of options.restored?.panels ?? []) Panels.keep(this.panels, panel)
@@ -152,7 +172,7 @@ export class Workspace {
       if (tab?.status !== "queued" || tab.file !== next.writer.file) continue
       const requested: Tab = { ...tab, status: "requested" }
       this.save(requested)
-      queueMicrotask(() => this.launch(requested, next.writer, next.history))
+      queueMicrotask(() => this.start(requested, next.writer, next.history, next.by))
     }
   }
   /** Custom views kept; publishing one more replaces the least recently published. */
@@ -163,11 +183,11 @@ export class Workspace {
     Panels.keep(this.panels, panel)
     this.changed()
   }
-  request = (request: Request): { id: string; status: Tab["status"] } => this.open(request, this.seat(request))
+  request = (request: Request): { id: string; status: Tab["status"] } => this.open(request)
   /** Namespaces a child under its parent and refuses delegation beyond depth three. */
   requestChild = (parent: Tab, request: Request): { id: string; status: Tab["status"] } => {
     if (parent.depth >= 3) throw new AgentDepthExceeded()
-    return this.open({ ...request, id: `${parent.id}/${request.id}` }, this.seat(request), parent.id, parent.depth + 1)
+    return this.open({ ...request, id: `${parent.id}/${request.id}` }, undefined, parent.id, parent.depth + 1)
   }
   /** A worker waits for its own children while its pool slot is available to queued work. */
   wait = (parentId: string, ids: ReadonlyArray<string>): Promise<ReadonlyArray<Pick<Tab, "id" | "status" | "answer" | "message">>> => {
@@ -198,34 +218,52 @@ export class Workspace {
       check()
     })
   }
-  private seat(request: Request): string {
-    return request.model === undefined ? this.options.workerSeat : delegateModels[request.model]
-  }
-  private open(request: Request, seat: string, parent?: string, depth = 0, prior?: Tab): { id: string; status: Tab["status"] } {
+  /**
+   * Persists a request and returns its receipt. `kept` is a resumed or retried
+   * tab's own seat; otherwise the seat is the request's model, then the agent's
+   * declared `model:`, then the worker seat.
+   */
+  private open(request: Request, kept?: string, parent?: string, depth = 0, prior?: Tab): { id: string; status: Tab["status"] } {
     if (this.closed) throw new Error("Session closed")
     const existing = this.tabs.get(request.id)
     if (existing !== undefined) {
-      if (existing.prompt !== request.prompt || existing.seat !== seat) throw new Error("Request id already belongs to another task")
+      const same = existing.prompt === request.prompt && existing.agent?.name === request.agent && (
+        existing.agent === undefined && existing.model === undefined
+          // A tab saved before `model` was recorded is compared by seat.
+          ? existing.seat === (request.model === undefined ? this.options.workerSeat : delegateModels[request.model])
+          : existing.model === request.model
+      )
+      if (!same) throw new Error("Request id already belongs to another task")
       return { id: existing.id, status: existing.status }
     }
+    // Refuses now when the listing is known; otherwise the launch re-lists and fails the tab.
+    const listed = request.agent === undefined ? undefined : this.agents().listed()
+    const agent = request.agent === undefined || listed === undefined
+      ? undefined
+      : Agents.find(listed, request.agent, request.by ?? "agent")
+    const declared = agent?.seat === undefined ? undefined : this.options.seatOf?.(agent.seat)
     const records = prior === undefined ? [] : this.priorRecords(prior)
     const writer = Session.create(this.options.host.cwd, "worker", prior === undefined ? {} : { parent: prior.file, seed: records })
-    const { model: _model, ...task } = request
     const tab: Tab = {
-      ...task,
+      id: request.id,
+      title: request.title,
+      prompt: request.prompt,
       ...(parent === undefined ? {} : { parent }),
       depth,
-      seat,
+      seat: kept ?? (request.model === undefined ? declared ?? this.options.workerSeat : delegateModels[request.model]),
       file: writer.file,
       status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
-      startedAt: prior?.startedAt ?? Date.now()
+      startedAt: prior?.startedAt ?? Date.now(),
+      ...(request.model === undefined ? {} : { model: request.model }),
+      ...(request.agent === undefined ? {} : { agent: { name: request.agent } })
     }
     // Persist FIRST; a receipt here acknowledges only the request, not the launch.
     this.save(tab)
     void this.describe(tab)
     const history = [...this.options.history(), ...(prior === undefined ? [] : this.continuation(prior, records))]
-    if (tab.status === "queued") this.queue.push({ id: tab.id, writer, history })
-    else queueMicrotask(() => this.launch(tab, writer, history))
+    const by = request.by ?? "agent"
+    if (tab.status === "queued") this.queue.push({ id: tab.id, writer, history, by })
+    else queueMicrotask(() => this.start(tab, writer, history, by))
     return { id: tab.id, status: tab.status }
   }
   private priorRecords(tab: Tab): ReadonlyArray<Session.Record> {
@@ -244,7 +282,7 @@ export class Workspace {
   private relaunch(tab: Tab): void {
     if (this.closed) return
     this.tabs.delete(tab.id)
-    this.open({ id: tab.id, title: tab.title, prompt: tab.prompt }, tab.seat, tab.parent, tab.depth, tab)
+    this.open({ id: tab.id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" }, tab.seat, tab.parent, tab.depth, tab)
   }
   private scheduleResume(tab: Tab): void {
     const resume = () => {
@@ -254,6 +292,43 @@ export class Workspace {
     }
     if (tab.status === "parked" && (tab.wakeAt ?? 0) > Date.now()) setTimeout(resume, tab.wakeAt! - Date.now())
     else queueMicrotask(resume)
+  }
+  /** Launches a requested tab; an agent's body is read first. */
+  private start(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>, by: "user" | "agent") {
+    if (tab.agent === undefined) this.launch(tab, writer, history)
+    else void this.prepare(tab, writer, history, by)
+  }
+  private agents(): Agents.Port {
+    if (this.options.agents === undefined) throw new Agents.AgentError("unknown_agent", "Agents unavailable here")
+    return this.options.agents
+  }
+  /** Reads an agent's body in the background; the request already returned. */
+  private async prepare(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>, by: "user" | "agent") {
+    const current = () => {
+      const now = this.tabs.get(tab.id)
+      return !this.closed && now?.status === "requested" && now.file === tab.file ? now : undefined
+    }
+    if (current() === undefined) return
+    let profile: Agents.Profile
+    try {
+      const { descriptor, body } = await this.agents().load(tab.agent!.name)
+      Agents.find([descriptor], descriptor.name, by)
+      profile = Agents.profile(descriptor, body, this.options.seatOf ?? (() => undefined))
+    } catch (error) {
+      const failure = Agents.unreadable(error)
+      const now = current()
+      if (now !== undefined) this.save({ ...now, status: "failed", endedAt: Date.now(), message: failure.message, code: failure.code })
+      return
+    }
+    const now = current()
+    if (now === undefined) return
+    const ready: Tab = {
+      ...now,
+      seat: now.model === undefined ? profile.seat ?? this.options.workerSeat : delegateModels[now.model],
+      agent: { name: profile.name, digest: profile.digest }
+    }
+    this.save(ready)
+    this.launch(ready, writer, history, profile)
   }
   private async describe(tab: Tab): Promise<void> {
     let description = tab.title.replace(/\s+/g, " ").trim().slice(0, 80)
@@ -268,7 +343,7 @@ export class Workspace {
     if (current === undefined || current.file !== tab.file || this.closed) return
     this.save({ ...current, description })
   }
-  private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>) {
+  private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>, agent?: Agents.Profile) {
     if (this.closed || this.tabs.get(tab.id)?.status !== "requested") return
     const at = Date.now()
     let transcript = Transcript.user(this.transcripts.get(tab.id) ?? Transcript.empty, tab.prompt, false, at)
@@ -281,6 +356,7 @@ export class Workspace {
         source: tab.id,
         history,
         role: "worker",
+        ...(agent === undefined ? {} : { agent }),
         runtime: {
           publish: (panel) => this.publish({ ...panel, id: `${tab.id}/${panel.id}` }),
           delegate: (request) => this.requestChild(tab, request),
@@ -430,6 +506,7 @@ export class Workspace {
         return {
           id: tab.id,
           title: tab.title,
+          ...(tab.agent === undefined ? {} : { agent: tab.agent.name }),
           status: tab.status,
           ...(full && tab.answer !== undefined ? { answer: tab.answer.slice(0, contextAnswerChars) } : {}),
           ...(full && tab.message !== undefined ? { message: tab.message.slice(0, 500) } : {})
@@ -453,7 +530,19 @@ export class Workspace {
     if (tab === undefined) throw new Error("Unknown tab")
     if (tab.status !== "failed" && tab.status !== "cancelled") throw new Error(`Only a failed or stopped tab can be retried; ${id} is ${tab.status}`)
     this.tabs.delete(id)
-    return this.open({ id, title: tab.title, prompt: tab.prompt }, seat ?? tab.seat, tab.parent, tab.depth, tab)
+    try {
+      // Keeps the agent, the model and the seat; the agent's file is read again, so edits apply.
+      return this.open(
+        { id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" },
+        seat ?? tab.seat,
+        tab.parent,
+        tab.depth,
+        tab
+      )
+    } catch (error) {
+      this.tabs.set(id, tab)
+      throw error
+    }
   }
   /** Parks a failed worker until its known reset, then continues the same task. */
   waitForReset = (id: string): void => {
@@ -478,8 +567,8 @@ const seatProvider = (seat: string): string => seat.startsWith("openai:") ? "Cha
   seat.startsWith("anthropic:") ? "Anthropic" : seat.split(":")[0] ?? "model"
 
 export const tabToast = (tab: Tab): string =>
-  `${tab.title} · ${
-    tab.status === "failed" ? tab.failure?.headline ?? "Worker stopped unexpectedly" :
+  `${tab.agent === undefined ? tab.title : `${tab.agent.name}: ${tab.title}`} · ${
+    tab.status === "failed" ? tab.failure?.headline ?? tab.message?.split("\n")[0]!.slice(0, 80) ?? "Worker stopped unexpectedly" :
     tab.status === "parked" ? `waits for ${seatProvider(tab.activeSeat ?? tab.seat)} reset · ${new Date(tab.wakeAt ?? Date.now()).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}` : tab.status
   }`
 

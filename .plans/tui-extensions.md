@@ -248,6 +248,12 @@ in a commit that touches no track file.
 
 ## Track AGENTS
 
+Status: steps 1 to 9 landed in one change. Step 9 (`Port.runs`) feeds the
+coordinator's `Flow runs:` context; its read-only rows in the Smithers surface
+wait for the plugin lane. Step 5 also fixes the retry model drop on `main`;
+the seat-queue lane's `queued` status merges on top. One code beyond the table:
+`unknown_effort`, a tab failure for an `effort:` that is not a reasoning effort.
+
 Owns: `agents.ts`, `models.ts`, `flows.ts`, `flow-control.ts`,
 `workspace.ts`, `host.ts`, `runtime.ts` (`agent.delegate` only), `editor.ts`
 (`/agent`), and the `/agent` + Agents picker parts of `app.tsx`.

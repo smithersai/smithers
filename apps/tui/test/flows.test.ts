@@ -1,9 +1,19 @@
 /** Flow runs over a controllable fake Port: persistence, receipts, and settlement only from the watch. */
 import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { type Card, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
+import { type Card, FlowError, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
 import * as Session from "../src/session.ts"
 
+/** A module flow as discovery lists it. */
+const flow = (name: string, description: string, modelInvocable = true): Listed => ({
+  name,
+  description,
+  modelInvocable,
+  kind: "module",
+  flows: [],
+  capabilities: [],
+  path: `/repo/flows/${name}/flow.ts`
+})
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 interface Pending<A> {
@@ -30,7 +40,7 @@ const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top; re
   const resumes: Array<Pending<{ runId: string } | Settled>> = []
   const watches: Array<{ done: Pending<Settled>; emit: (event: unknown) => void }> = []
   const auto = { input: true, plan: true, start: true }
-  const listed = options.listed ?? [{ name: "review", description: "Review a change", modelInvocable: true }]
+  const listed = options.listed ?? [flow("review", "Review a change")]
   const port: Port = {
     discover: async () => {
       calls.push("discover")
@@ -42,6 +52,10 @@ const fake = (options: { listed?: ReadonlyArray<Listed>; schema?: Schema.Top; re
       inputs.push(next)
       if (auto.input) next.resolve(options.schema)
       return next.promise
+    },
+    body: async (flow) => {
+      calls.push(`body:${flow}`)
+      throw new FlowError("refused", `${flow} is a module flow`)
     },
     plan: (flow, input) => {
       calls.push(`plan:${flow}:${JSON.stringify(input)}`)
@@ -106,10 +120,10 @@ describe("flow runs", () => {
     Object.assign(f.port, { discover: () => queue.shift()!.promise })
     f.runs.refresh()
     f.runs.refresh()
-    const newest = [{ name: "new", description: "", modelInvocable: true }]
+    const newest = [flow("new", "")]
     second.resolve(newest)
     await tick()
-    first.resolve([{ name: "old", description: "", modelInvocable: true }])
+    first.resolve([flow("old", "")])
     await tick()
     expect(f.runs.listed()).toEqual(newest)
     f.runs.dispose()
@@ -342,7 +356,7 @@ describe("flow runs", () => {
   })
 
   it("an agent request for a non-model-invocable flow is refused", async () => {
-    const f = setup({ listed: [{ name: "deploy", description: "Deploy", modelInvocable: false }] })
+    const f = setup({ listed: [flow("deploy", "Deploy", false)] })
     f.runs.request({ id: "r1", flow: "deploy", input: {}, by: "agent" })
     await tick()
     expect(f.runs.get("r1")).toMatchObject({ status: "failed" })
@@ -427,5 +441,69 @@ describe("flow runs", () => {
   it("refuses without a port", () => {
     const runs = new FlowRuns({ persist: () => {} })
     expect(() => runs.request({ flow: "review", input: {}, by: "user" })).toThrow("Flows unavailable")
+  })
+
+  it("describes a flow's input once its module is imported, and an agent's as its prompt", async () => {
+    const agent: Listed = { ...flow("review-agent", "Reviews"), kind: "markdown", path: "/repo/flows/review-agent/flow.mdx" }
+    const f = setup({
+      listed: [flow("review", "Review a change"), agent],
+      schema: Schema.Struct({ title: Schema.String, draft: Schema.optional(Schema.Boolean), count: Schema.Number })
+    })
+    f.runs.refresh()
+    await tick()
+    // Describing never imports: no input read before a run did.
+    expect(f.runs.describe()).toEqual([
+      { name: "review", description: "Review a change", agent: false },
+      { name: "review-agent", description: "Reviews", agent: true, input: [{ name: "args", type: "string", required: false }] }
+    ])
+    expect(f.calls.filter((call) => call.startsWith("input:"))).toEqual([])
+    f.runs.request({ flow: "review", input: {}, by: "user" })
+    await tick()
+    await tick()
+    expect(f.runs.describe()[0]).toEqual({
+      name: "review",
+      description: "Review a change",
+      agent: false,
+      input: [
+        { name: "title", type: "text", required: true },
+        { name: "draft", type: "boolean", required: false },
+        { name: "count", type: "number", required: true }
+      ]
+    })
+  })
+
+  it("lists only model-invocable flows to the coordinator, at most 12 fields each", async () => {
+    const wide = Schema.Struct(Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`f${index}`, Schema.String])))
+    const f = setup({ listed: [flow("wide", "Wide"), flow("deploy", "Deploy", false)], schema: wide })
+    f.runs.refresh()
+    await tick()
+    f.runs.request({ flow: "wide", input: {}, by: "user" })
+    await tick()
+    await tick()
+    const described = f.runs.describe((each) => each.modelInvocable)
+    expect(described.map((each) => each.name)).toEqual(["wide"])
+    expect(described[0]?.input).toHaveLength(12)
+  })
+
+  it("tells the coordinator about runs started outside the TUI, read-only", async () => {
+    const f = setup()
+    f.runs.request({ id: "mine", flow: "review", input: {}, by: "user" })
+    await tick()
+    await tick()
+    Object.assign(f.port, {
+      runs: async () => [
+        { runId: "run-1", flow: "review", status: "running" },
+        { runId: "cli-7", flow: "deploy", status: "completed" }
+      ]
+    })
+    f.runs.refresh()
+    await tick()
+    await tick()
+    const context = JSON.parse(f.runs.context()) as Array<{ id: string; flow: string; status: string; by?: string }>
+    // The TUI's own run appears once; the CLI's run is marked by: "cli".
+    expect(context.filter((run) => run.id === "mine")).toHaveLength(1)
+    expect(context.find((run) => run.id === "run-1")).toBeUndefined()
+    expect(context.find((run) => run.id === "cli-7")).toEqual({ id: "cli-7", flow: "deploy", status: "completed", by: "cli" })
+    expect(f.runs.snapshot().map((run) => run.id)).toEqual(["mine"])
   })
 })

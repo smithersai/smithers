@@ -94,3 +94,45 @@ export const workerFallbackSeats = (requested: string, available: Available, env
   const seats = override === undefined ? available.models.map((model) => model.seat) : override.split(",").map((seat) => seat.trim())
   return [...new Set(seats.filter((seat) => seat !== "" && seat !== requested && !seat.startsWith("cerebras:")))]
 }
+
+/** The short names an agent file's `model:` may use instead of `provider:modelId`. */
+export const aliases: Readonly<Record<string, string>> = {
+  sol: delegateModels.sol,
+  astra: delegateModels.astra,
+  luna: delegateModels.luna,
+  opus: "anthropic:claude-opus-5-5",
+  fable: "anthropic:claude-fable-5-1",
+  qwen: Providers.defaultSeat.cerebras
+}
+
+const providerOf = (seat: string): string => seat.slice(0, seat.indexOf(":"))
+/** Every provider a seat here names, plus the replay seat the tests drive. */
+const knownProviders = new Set([
+  "replay",
+  ...[
+    ...Object.values(delegateModels),
+    ...Object.values(aliases),
+    ...Object.values(byProvider).flat().map((model) => model.seat),
+    ...anthropic.map((model) => model.seat)
+  ].map(providerOf)
+])
+
+/**
+ * The seat an agent's declared `model:` names: an alias, or `provider:modelId`
+ * for a provider this module knows or `available` lists. Undefined when unknown.
+ */
+export const seatOf = (declared: string, available: ReadonlyArray<Model>): string | undefined => {
+  const value = declared.trim()
+  const alias = aliases[value.toLowerCase()]
+  if (alias !== undefined) return alias
+  const colon = value.indexOf(":")
+  if (colon <= 0 || colon === value.length - 1) return undefined
+  const provider = value.slice(0, colon)
+  return knownProviders.has(provider) || available.some((model) => providerOf(model.seat) === provider) ? value : undefined
+}
+
+/** A seat's display name: an available model's label, a known model's, or the seat itself. */
+export const labelOf = (seat: string, available: ReadonlyArray<Model>): string =>
+  available.find((model) => model.seat === seat)?.label ??
+    [...Object.values(byProvider).flat(), ...anthropic].find((model) => model.seat === seat)?.label ??
+    seat

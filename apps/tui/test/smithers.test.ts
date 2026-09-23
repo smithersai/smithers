@@ -14,8 +14,8 @@ const run = (id: string, status: Run["status"], extra: Partial<Run> = {}): Run =
   ...extra
 })
 const listed: ReadonlyArray<Listed> = [
-  { name: "review", description: "Review a change.", modelInvocable: true },
-  { name: "release", description: "Cut a release.", modelInvocable: false }
+  { name: "review", description: "Review a change.", modelInvocable: true, kind: "module", flows: [], capabilities: [], path: "flows/review/flow.ts" },
+  { name: "release", description: "Cut a release.", modelInvocable: false, kind: "module", flows: [], capabilities: [], path: "flows/release/flow.ts" }
 ]
 
 it("shows runs newest first with their real status, then the discovered flows", () => {

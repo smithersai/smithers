@@ -8,12 +8,16 @@ import * as BunControl from "@smthrs/cli/BunControl"
 import { Control, type ControlSchema } from "@smthrs/control"
 import * as Diagnosis from "@smthrs/gateway/Diagnosis"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import { executionDigest } from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Effect, Exit, Fiber, Layer, ManagedRuntime, Stream } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 import { FlowError, type Port, type Settled, terminal } from "./flows.ts"
 import * as Approvals from "./approvals.ts"
+import * as Extension from "./extension.ts"
 import type { Host } from "./host.ts"
 
 type ControlEvent = ControlSchema.ControlEvent
@@ -101,11 +105,38 @@ export const make = (options: {
       Effect.runPromise(
         Registry.Registry.pipe(Effect.flatMap((each) => each.list()), Effect.provide(registry()))
       ).then(
-        (listed) => listed.map(({ name, description, modelInvocable }) => ({ name, description, modelInvocable })),
+        (listed) => listed.map(Extension.project),
         (error) => {
           throw typed(error)
         }
       ),
+    // A fresh registry each read, so an edited agent file applies to the next launch.
+    body: (flow) =>
+      Effect.runPromise(
+        Effect.gen(function*() {
+          const each = yield* Registry.Registry
+          const descriptor = yield* each.getOption(flow)
+          if (descriptor._tag === "None") return yield* Effect.fail(new FlowError("unknown_flow", `Unknown flow ${flow}`))
+          if (descriptor.value.body._tag !== "Markdown") {
+            return yield* Effect.fail(new FlowError("refused", `${flow} is a module flow; run it with /flow`))
+          }
+          const body = yield* each.loadBody(flow)
+          if (body._tag !== "Prompt") return yield* Effect.fail(new FlowError("refused", `${flow} has no prompt body`))
+          const declared = descriptor.value.frontmatter["capabilities"]
+          return {
+            text: body.text,
+            baseDirectory: body.baseDirectory,
+            digest: executionDigest(descriptor.value) ?? "",
+            ...(Array.isArray(declared) && declared.every((each) => typeof each === "string")
+              ? { capabilities: declared }
+              : typeof declared === "string"
+              ? { capabilities: declared.split(/\s+/).filter((each) => each !== "") }
+              : {})
+          }
+        }).pipe(Effect.provide(registry()))
+      ).catch((error) => {
+        throw typed(error)
+      }),
     input: async (flow) => {
       const { catalog } = await open()
       const found = catalog.executables.find((entry) => entry.descriptor.name === flow)
@@ -211,6 +242,35 @@ export const make = (options: {
       }
     },
     events,
+    runs: async () => {
+      const list = (service: Control.Service) =>
+        service.list({ _tag: "runs", order: "newest", limit: 20 }).pipe(
+          Effect.map((page) =>
+            page._tag === "runs"
+              ? page.items.map((run) => ({ runId: run.runId, flow: run.flowId, status: run.status }))
+              : []
+          )
+        )
+      // The open host when a run already opened it; else an observing one that imports nothing, as `smthrs ps`.
+      if (opening !== undefined) return control(list)
+      // Never create a store just to find it empty.
+      if (!existsSync(join(options.stateRoot ?? options.cwd, ".flows", "control.db"))) return []
+      const exit = await Effect.runPromiseExit(
+        Control.Control.pipe(
+          Effect.flatMap(list),
+          Effect.provide(
+            BunControl.layerControl({
+              root: options.cwd,
+              startsRuns: false,
+              evaluator: judge,
+              ...(options.stateRoot === undefined ? {} : { stateRoot: options.stateRoot })
+            }) as Layer.Layer<Control.Control>
+          )
+        )
+      )
+      if (Exit.isSuccess(exit)) return exit.value
+      throw typed(Cause.squash(exit.cause))
+    },
     cancel: (runId) =>
       control((service) => service.cancel({ runId, idempotencyKey: `tui:cancel:${runId}`, reason: "Stopped" })).then(
         () => undefined

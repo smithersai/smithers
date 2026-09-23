@@ -6,13 +6,14 @@ import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
+import * as Agents from "./agents.ts"
 import * as Panels from "./panels.ts"
 import type { DelegateModel } from "./models.ts"
 import type * as Monitors from "./monitors.ts"
 
 export interface Ports {
   readonly publish: (panel: Panels.Panel) => void
-  readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel }) => unknown
+  readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel; agent?: string }) => unknown
   readonly wait?: (ids: ReadonlyArray<string>) => Promise<unknown>
   readonly read?: (id: string) => unknown
   readonly list?: () => unknown
@@ -59,7 +60,14 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
       effects: { reads: [], writes: [], tier: "irreversible", mode: "expected", onConflict: "serialize" }
     },
     handler: (input) => {
-      const caught = (cause: unknown) => cause instanceof Error ? cause : new Error("Runtime request failed")
+      // A typed refusal keeps its code: `unknown_agent: No agent named x`.
+      const caught = (cause: unknown) =>
+        cause instanceof Agents.AgentError
+          ? new Error(`${cause.code}: ${cause.message}`)
+          : cause instanceof Error
+          ? cause
+          : new Error("Runtime request failed")
+      // Optional fields arrive as `undefined`, which a cell result cannot carry.
       const clean = (value: unknown) => JSON.parse(JSON.stringify(value ?? null)) as unknown
       return Effect.flatMap(Effect.try({ try: () => handle(input), catch: caught }), (value) =>
         value instanceof Promise
@@ -127,12 +135,13 @@ export const source = (ports: Ports): FlowBinding.Source =>
     ...(ports.delegate === undefined ? [] : [
       bind(
         "agent.delegate",
-        "Request background work in a separate agent tab and return immediately. Six run at once by default; more queue FIFO. Reuse id to deduplicate. Workers may wait with agent.wait; the coordinator must not wait.",
+        "Request background work in a separate agent tab and return immediately. Six run at once by default; more queue FIFO. Reuse id to deduplicate. agent names one of the Agents in your context to run with its own prompt, model and flows. Workers may wait with agent.wait; the coordinator must not wait.",
         Schema.Struct({
           id: short,
           title: short,
           prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_000)),
-          model: Schema.optional(Schema.Literals(["cerebras", "luna", "sol", "astra"]))
+          model: Schema.optional(Schema.Literals(["cerebras", "luna", "sol", "astra"])),
+          agent: Schema.optional(short)
         }),
         (input) => ports.delegate!(input)
       ),
@@ -165,7 +174,7 @@ export const source = (ports: Ports): FlowBinding.Source =>
     ])
   ])
 export const coordinatorTeaching =
-  `You are the fast coordinator. For long-running or multi-agent work, delegate one root worker with agent.delegate, then publish one ui.publish panel with placement:"main" and bind:{tree:rootId}. Keep rows only for information you will update; the bound tree updates itself. End the same cell with ctx.done and a brief honest acknowledgement. Never wait for a worker; completions arrive in a later turn. Use distinct ids for distinct tasks and repeat an id only to deduplicate. Workers share the repository, so include constraints in the prompt. Use smithers.run for a user's matching flow. Available worker seat: `
+  `You are the fast coordinator. For long-running or multi-agent work, delegate one root worker with agent.delegate, then publish one ui.publish panel with placement:"main" and bind:{tree:rootId}. Keep rows only for information you will update; the bound tree updates itself. End the same cell with ctx.done and a brief honest acknowledgement. Never wait for a worker; completions arrive in a later turn. Use distinct ids for distinct tasks and repeat an id only to deduplicate. Workers share the repository, so include constraints in the prompt. Use smithers.run for a user's matching flow. When one of the Agents in your context fits the task, delegate with agent.delegate and its agent name. Available worker seat: `
 
 /** Requests the coordinator makes; a failed one is work the user asked for that nobody took. */
 export const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }

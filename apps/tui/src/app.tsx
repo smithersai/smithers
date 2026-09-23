@@ -10,6 +10,7 @@ import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import * as Agents from "./agents.ts"
 import * as Approvals from "./approvals.ts"
 import * as Clipboard from "./clipboard.ts"
 import * as Complete from "./complete.ts"
@@ -17,6 +18,7 @@ import * as DragScroll from "./drag-scroll.ts"
 import * as Context from "./context.ts"
 import * as Editor from "./editor.ts"
 import * as Estimate from "./estimate.ts"
+import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
 import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
@@ -26,7 +28,7 @@ import * as Monitors from "./monitors.ts"
 import * as Improve from "./improve.ts"
 import type * as Host from "./host.ts"
 import * as Keys from "./keys.ts"
-import { delegateModels, type Model } from "./models.ts"
+import * as Models from "./models.ts"
 import { FailureCard, PanelView } from "./panel-view.tsx"
 import * as Palette from "./palette.ts"
 import * as Panels from "./panels.ts"
@@ -44,7 +46,7 @@ import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
-import { seats, type Tab, tabToast, Workspace } from "./workspace.ts"
+import { seats, type Snapshot, type Tab, tabToast, Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -62,7 +64,9 @@ export interface AppProps {
   readonly host: Host.Host
   readonly seat: string
   readonly workerSeat?: string
-  readonly models: ReadonlyArray<Model>
+  readonly models: ReadonlyArray<Models.Model>
+  /** Resolves a custom agent's `model:`; default `Models.seatOf` over `models`. Replay pins every seat. */
+  readonly seatOf?: (declared: string) => string | undefined
   readonly contextWindow: (seat: string) => number
   /** A session file to continue, or undefined for a new one. */
   readonly resume?: string
@@ -86,6 +90,7 @@ type Picker =
   | { readonly kind: "worker-model"; readonly id: string; readonly query: string; readonly selected: number }
   | { readonly kind: "theme"; readonly query: string; readonly selected: number }
   | { readonly kind: "flows"; readonly query: string; readonly selected: number }
+  | { readonly kind: "agents"; readonly query: string; readonly selected: number }
   | { readonly kind: "filter"; readonly query: string; readonly selected: number }
   | {
     readonly kind: "resume"
@@ -128,6 +133,9 @@ interface FlowForm {
   readonly error?: string
 }
 
+/** A tab's name; an agent's tab leads with the agent. */
+const tabTitle = (tab: Tab): string => (tab.agent === undefined ? tab.title : `${tab.agent.name}: ${tab.title}`)
+
 const flowGlyph = (status: Run["status"]): string =>
   status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : "◌ "
 const flowActive = (status: Run["status"]): boolean =>
@@ -141,7 +149,7 @@ interface Toast {
 /** A dialog's rows and the value each one picks. */
 const pickerRows = (
   picker: Picker,
-  models: ReadonlyArray<Model>,
+  models: ReadonlyArray<Models.Model>,
   seat: string,
   filter: Timeline.Filter,
   tabs: ReadonlyArray<Tab>,
@@ -149,6 +157,18 @@ const pickerRows = (
   hits: ReadonlyArray<Search.Hit>,
   flows: ReadonlyArray<Listed>
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
+  if (picker.kind === "agents") {
+    return Fuzzy.filter(flows.filter(Extension.isAgent), picker.query, (agent) => agent.name).map((agent) => {
+      const declared = agent.seat === undefined ? undefined : Models.seatOf(agent.seat, models)
+      return {
+        key: agent.name,
+        label: agent.name,
+        hint: declared === undefined ? agent.seat ?? "" : Models.labelOf(declared, models),
+        detail: agent.description,
+        value: agent.name
+      }
+    })
+  }
   if (picker.kind === "flows") {
     return Fuzzy.filter(flows, picker.query, (flow) => flow.name).map((flow) => ({
       key: flow.name,
@@ -268,15 +288,24 @@ export function App(props: AppProps) {
   const writer = useRef<Session.Writer>(
     restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file)
   )
-  const [workspace, setWorkspace] = useState(() =>
+  // Agents read the current session's flow runs: their listing, and a fresh one at launch.
+  const runsRef = useRef<FlowRuns | undefined>(undefined)
+  const makeWorkspace = (restoredTabs?: Snapshot) =>
     new Workspace({
       host: props.host,
       workerSeat: props.workerSeat ?? props.seat,
       history: () => entries.current,
       persist: writer.current.append,
-      restored: restored.current?.workspace
+      ...(restoredTabs === undefined ? {} : { restored: restoredTabs }),
+      ...(props.flows === undefined ? {} : {
+        agents: Agents.port({
+          known: () => runsRef.current?.known(),
+          listing: () => runsRef.current?.listing() ?? Promise.reject(new Error("Flows unavailable"))
+        }, props.flows)
+      }),
+      seatOf: props.seatOf ?? ((declared) => Models.seatOf(declared, props.models))
     })
-  )
+  const [workspace, setWorkspace] = useState(() => makeWorkspace(restored.current?.workspace))
   const [revision, setRevision] = useState(0)
   const [runs, setRuns] = useState(() =>
     new FlowRuns({ port: props.flows, persist: writer.current.append, restored: restored.current?.flows })
@@ -326,10 +355,11 @@ export function App(props: AppProps) {
       }),
       model: props.host.complete === undefined
         ? undefined
-        : (request) => props.host.complete!({ ...request, seat: delegateModels.luna }),
+        : (request) => props.host.complete!({ ...request, seat: Models.delegateModels.luna }),
       onFailure: (failure) => estimateProblem.current(`Estimate model failed: ${failure.message.split("\n")[0]!.slice(0, 80)}`)
     })
   )
+  runsRef.current = runs
   /** Runs the user started here; their form opens without a key. */
   const userRuns = useRef(new Set<string>())
   const formOpened = useRef(new Set<string>())
@@ -421,7 +451,7 @@ export function App(props: AppProps) {
           : tab.status === "done"
           ? "✓ "
           : "■ "
-      }${tab.status === "failed" ? tab.failure?.headline ?? tab.title : tab.status === "parked" ? tabToast(tab) : tab.title}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
+      }${tab.status === "failed" ? tab.failure?.headline ?? tabTitle(tab) : tab.status === "parked" ? tabToast(tab) : tabTitle(tab)}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
     })),
     ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id))
       .map((tab) => ({ id: `tree:${tab.id}`, title: `Tree: ${tab.title}` })),
@@ -461,7 +491,7 @@ export function App(props: AppProps) {
       (surface.startsWith("flow:") || panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action !== undefined)
     ? ["a"]
     : []
-  const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tab.title, tone: lane(index) }]))
+  const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tabTitle(tab), tone: lane(index) }]))
   const timeline = Timeline.merge(
     [
       { id: Timeline.chat, transcript },
@@ -471,7 +501,7 @@ export function App(props: AppProps) {
   )
   const activitySources = [
     { id: "chat", title: "Chat", activity: transcript.activity },
-    ...snapshot.tabs.map(tab => ({ id: tab.id, title: tab.title, activity: workspace.transcript(tab.id).activity }))
+    ...snapshot.tabs.map(tab => ({ id: tab.id, title: tabTitle(tab), activity: workspace.transcript(tab.id).activity }))
   ].filter((source): source is { id: string; title: string; activity: Activity.Activity } =>
     source.activity !== undefined && source.activity.records.length > 0)
   const latestActivity = [...activitySources].sort((a, b) =>
@@ -536,7 +566,12 @@ export function App(props: AppProps) {
   const completion = useMemo(
     () => (menuDismissed
       ? undefined
-      : Complete.complete(draft, cursor, { models: props.models, files: () => files.current(), flows: runs.listed })),
+      : Complete.complete(draft, cursor, {
+        models: props.models,
+        files: () => files.current(),
+        flows: runs.listed,
+        agents: () => runs.listed().filter(Extension.isAgent)
+      })),
     [draft, cursor, menuDismissed, props.models, runs, revision]
   )
   const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file")
@@ -706,7 +741,7 @@ export function App(props: AppProps) {
       history: entries.current,
       ...(live.current.seat.startsWith("replay:") ? {} : { role: "coordinator" as const }),
       workerSeat: props.workerSeat ?? props.seat,
-      background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}`,
+      background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}\nAgents: ${Agents.context(runs.listed())}`,
       runtime: {
         publish: (panel) => {
           workspace.publish(panel)
@@ -723,7 +758,7 @@ export function App(props: AppProps) {
         eta: () => estimator.eta(Estimate.active(workspace.snapshot().tabs, runs.snapshot()), Date.now(), seats),
         ...(props.flows === undefined ? {} : {
           flows: {
-            list: () => runs.listed().filter((flow) => flow.modelInvocable),
+            list: () => runs.describe((flow) => flow.modelInvocable),
             run: (request: { id: string; flow: string; input?: Record<string, unknown> }) =>
               runs.request({ id: request.id, flow: request.flow, input: request.input ?? {}, by: "agent" }),
             inspect: runs.read
@@ -857,6 +892,8 @@ export function App(props: AppProps) {
     if (records.length > 0) history.current = new Editor.History(state.prompts)
     const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows })
     setRuns(nextRuns)
+    // Agents list the next session's flows, before the render that would set this.
+    runsRef.current = nextRuns
     // Everything below belongs to one session; none of it may leak into the next.
     changeForm(undefined)
     userRuns.current = new Set()
@@ -866,13 +903,7 @@ export function App(props: AppProps) {
     setInspection(undefined)
     setNavigation(Panels.initial())
     setCompact(undefined)
-    const nextWorkspace = new Workspace({
-      host: props.host,
-      workerSeat: props.workerSeat ?? props.seat,
-      history: () => entries.current,
-      persist: writer.current.append,
-      restored: state.workspace
-    })
+    const nextWorkspace = makeWorkspace(state.workspace)
     setWorkspace(nextWorkspace)
     setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append, state.monitors))
     setSurface("chat")
@@ -997,6 +1028,33 @@ export function App(props: AppProps) {
         }
         return true
       }
+      case "agent": {
+        const space = argument.search(/\s/)
+        const agent = space < 0 ? argument : argument.slice(0, space)
+        const prompt = space < 0 ? "" : argument.slice(space + 1).trim()
+        if (agent === "") {
+          runs.refresh()
+          setPicker({ kind: "agents", query: "", selected: 0 })
+          return true
+        }
+        // The prompt is the agent's one field: without it, the composer asks for it.
+        if (prompt === "") {
+          setText(`/agent ${agent} `)
+          return true
+        }
+        try {
+          workspace.request({
+            id: `${agent}-${Date.now().toString(36)}`,
+            title: prompt.replace(/\s+/g, " ").slice(0, 60),
+            prompt,
+            agent,
+            by: "user"
+          })
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), "warning")
+        }
+        return true
+      }
       case "ui": {
         const target = snapshot.panels.find((panel) => panel.id === argument) ?? snapshot.panels[0]
         if (target === undefined) setStatus("No custom views")
@@ -1111,7 +1169,7 @@ export function App(props: AppProps) {
         setStatus(`Unknown command /${verb}`, "warning")
         return true
     }
-  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd, workspace, runs, revision])
+  }, [transcript, name, newSession, quit, switchSeat, setStatus, setText, props.host.cwd, workspace, runs, revision])
 
   /** A prompt for the agent, taken literally: never a `!` shell line or a `/` command. */
   const send = useCallback((text: string, followUp = false) => {
@@ -1224,9 +1282,12 @@ export function App(props: AppProps) {
     if (open.kind === "model") return switchSeat(value)
     if (open.kind === "worker-model") return workspace.retry(open.id, value)
     if (open.kind === "flows") {
+      // An agent runs in a worker tab; its one field is the prompt.
+      if (runs.listed().some((flow) => flow.name === value && Extension.isAgent(flow))) return setText(`/agent ${value} `)
       command(`/flow ${value}`)
       return
     }
+    if (open.kind === "agents") return setText(`/agent ${value} `)
     if (open.kind === "theme") {
       if (!isTheme(value)) return
       setTheme(value)
@@ -1935,7 +1996,7 @@ export function App(props: AppProps) {
                 : tab.status === "done"
                 ? "✓"
                 : "✗"
-            } ${approvals.some((request) => request.source === tab.id) ? `${tab.title} · approval` : tabToast(tab)}`,
+            } ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
           ...flowRuns.filter((run) =>
@@ -1962,6 +2023,8 @@ export function App(props: AppProps) {
             ? "Select theme"
             : picker.kind === "flows"
             ? "Flows"
+            : picker.kind === "agents"
+            ? "Agents"
             : picker.kind === "filter"
             ? "Filter chat"
             : picker.kind === "palette"
@@ -2000,6 +2063,8 @@ export function App(props: AppProps) {
                 ? "No sessions in this directory"
                 : picker.kind === "flows"
                 ? runs.failure() ?? "No flows"
+                : picker.kind === "agents"
+                ? "No agents"
                 : picker.kind === "palette"
                 ? search?.status === "running" ? "Searching" : "No matches"
                 : picker.kind === "fork"

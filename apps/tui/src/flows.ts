@@ -8,6 +8,7 @@
 import type { ControlSchema } from "@smthrs/control"
 import * as NodeOutput from "@smthrs/cli/NodeOutput"
 import type { Schema } from "effect"
+import * as Extension from "./extension.ts"
 import * as Form from "./form.ts"
 import type * as Panels from "./panels.ts"
 import type * as Session from "./session.ts"
@@ -15,10 +16,29 @@ import * as Summary from "./summary.ts"
 
 type ControlEvent = ControlSchema.ControlEvent
 
-export interface Listed {
+/** A discovered flow: registry metadata only. A markdown flow is also an agent. */
+export type Listed = Extension.Descriptor
+/** An agent's prompt, read on demand; `digest` names the executable the tab ran. */
+export interface Body {
+  readonly text: string
+  readonly baseDirectory: string
+  readonly digest: string
+  /** The file's own `capabilities:`; the registry widens them to `*` when `flows:` is declared. */
+  readonly capabilities?: ReadonlyArray<string>
+}
+/** A run in the control store, as `smthrs ps` lists it. */
+export interface Recorded {
+  readonly runId: string
+  readonly flow: string
+  readonly status: string
+}
+/** A flow as `smithers.flows` describes it. */
+export interface Described {
   readonly name: string
   readonly description: string
-  readonly modelInvocable: boolean
+  readonly agent: boolean
+  /** Absent until a run imported the module. */
+  readonly input?: ReadonlyArray<{ readonly name: string; readonly type: string; readonly required: boolean }>
 }
 /** A plan card; `raw` is the control plane's, kept in memory only. */
 export interface Card {
@@ -37,12 +57,16 @@ export interface Port {
   /** Registry only; never imports a flow module. */
   readonly discover: () => Promise<ReadonlyArray<Listed>>
   readonly input: (flow: string) => Promise<Schema.Top | undefined>
+  /** A markdown flow's body; a module flow is refused. */
+  readonly body: (flow: string) => Promise<Body>
   readonly plan: (flow: string, input: unknown) => Promise<Card>
   /** Approves and launches. A signal interrupts approval only; an admitted launch still returns its receipt. */
   readonly start: (card: Card, source?: string, signal?: AbortSignal) => Promise<string>
   readonly resume: (runId: string) => Promise<{ readonly runId: string } | Settled>
   readonly watch: (runId: string, onEvent: (event: ControlEvent) => void) => Watch
   readonly events: (runId: string) => Promise<ReadonlyArray<ControlEvent>>
+  /** The newest runs in this directory's store, whoever started them; never imports a flow module. */
+  readonly runs?: () => Promise<ReadonlyArray<Recorded>>
   readonly cancel: (runId: string) => Promise<void>
   readonly dispose: () => Promise<void>
 }
@@ -104,6 +128,11 @@ export class FlowRuns {
   private loaded = new Set<string>()
   private cache: ReadonlyArray<Listed> = []
   private discoveryFailure: string | undefined
+  private discovered = false
+  /** Runs in the store this session did not start (`smthrs flow start`); read-only. */
+  private recorded: ReadonlyArray<Recorded> = []
+  /** Payload schemas read by a run's preparation, by flow; describing never imports a module. */
+  private inputs = new Map<string, Schema.Top | undefined>()
   private discovery = 0
   private listeners = new Set<() => void>()
   private closed = false
@@ -156,15 +185,44 @@ export class FlowRuns {
     if (version === this.discovery && !this.closed) {
       this.cache = listed
       this.discoveryFailure = undefined
+      this.discovered = true
       this.changed()
     }
     return listed
   }
+  /** The last discovery, or undefined before the first one settled. */
+  known = (): ReadonlyArray<Listed> | undefined => (this.discovered ? this.cache : undefined)
+  /** A fresh discovery. */
+  listing = (): Promise<ReadonlyArray<Listed>> => {
+    if (this.options.port === undefined || this.closed) return Promise.reject(new Error("Flows unavailable"))
+    return this.discover()
+  }
+  /**
+   * What the coordinator sees of each flow: whether it is an agent, and its
+   * input fields once a run imported its module (never imported for this).
+   */
+  describe = (keep: (flow: Listed) => boolean = () => true): ReadonlyArray<Described> =>
+    this.cache.filter(keep).map((flow) => {
+      const schema = this.inputs.get(flow.name)
+      const input = Extension.isAgent(flow)
+        ? [{ name: "args", type: "string", required: false }]
+        : !this.inputs.has(flow.name)
+        ? undefined
+        : schema === undefined
+        ? []
+        : Form.fields(schema).slice(0, 12).map((field) => ({ name: field.name, type: field.kind, required: field.required }))
+      return { name: flow.name, description: flow.description, agent: Extension.isAgent(flow), ...(input === undefined ? {} : { input }) }
+    })
   refresh = (): void => {
     const port = this.options.port
     if (port === undefined || this.closed) return
     // A failed listing keeps the last one and records `failure`; running a flow reports its own failure.
     this.discover().catch(() => {})
+    port.runs?.().then((recorded) => {
+      if (this.closed) return
+      this.recorded = recorded
+      this.changed()
+    }, () => { /* The store may not exist yet; nothing ran here. */ })
   }
   private save(run: Run) {
     this.options.persist({ type: "flow", run })
@@ -248,6 +306,7 @@ export class FlowRuns {
         throw new FlowError("refused", `${run.flow} is not for a model to start`)
       }
       const schema = await port.input(run.flow)
+      this.inputs.set(run.flow, schema)
       if (this.attempts.get(id) !== attempt || this.closed) return
       if (schema !== undefined && !Form.valid(schema, run.input)) {
         this.schemas.set(id, schema)
@@ -451,16 +510,24 @@ export class FlowRuns {
       steps: panel.rows.slice(-8).map((row) => ({ label: row.label, status: row.status }))
     }
   }
-  context = (): string =>
-    JSON.stringify(
-      [...this.runs.values()].map(({ id, flow, status, answer, message }) => ({
+  context = (): string => {
+    const own = new Set([...this.runs.values()].flatMap((run) => (run.runId === undefined ? [] : [run.runId])))
+    return JSON.stringify([
+      ...[...this.runs.values()].map(({ id, flow, status, answer, message }) => ({
         id,
         flow,
         status,
         answer: answer?.slice(0, 6000),
         message: message?.slice(0, 500)
+      })),
+      ...this.recorded.filter((run) => !own.has(run.runId)).map((run) => ({
+        id: run.runId,
+        flow: run.flow,
+        status: run.status,
+        by: "cli"
       }))
-    )
+    ])
+  }
   dispose = async (): Promise<void> => {
     this.closed = true
     for (const controller of this.launching.values()) controller.abort()

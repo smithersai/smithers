@@ -1,7 +1,7 @@
 /** The real Port over the native control host, under Bun, against a fixture project. */
 import { afterAll, expect, it } from "bun:test"
 import { Schema } from "effect"
-import { mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as FlowControl from "../src/flow-control.ts"
@@ -13,6 +13,7 @@ const root = join(import.meta.dir, "fixtures", "flows-project")
 const stateRoot = mkdtempSync(join(tmpdir(), "tui-flows-"))
 const host = Host.make({ cwd: root, environment: {}, approvals: "ask" })
 const port = FlowControl.make({ cwd: root, environment: {}, stateRoot, approvals: host.approvals! })
+// Each discover builds a fresh registry over the real fixture project, several seconds under load.
 afterAll(async () => {
   await port.dispose()
   await host.dispose()
@@ -22,8 +23,45 @@ afterAll(async () => {
 it("discovers flows without importing them", async () => {
   const listed = await port.discover()
   expect(listed.map(({ name, description }) => ({ name, description })).sort((a, b) => a.name.localeCompare(b.name)))
-    .toEqual([{ name: "consequential", description: "Consequential" }, { name: "echo", description: "Echo" }, { name: "wide", description: "Wide" }])
-})
+    .toEqual([
+      { name: "consequential", description: "Consequential" },
+      { name: "echo", description: "Echo" },
+      { name: "review", description: "Review" },
+      { name: "scout", description: "Scout" },
+      { name: "wide", description: "Wide" }
+    ])
+}, 30_000)
+
+it("lists a markdown flow as an agent with its seat and TUI manifest", async () => {
+  const review = (await port.discover()).find((flow) => flow.name === "review")
+  expect(review).toMatchObject({
+    kind: "markdown",
+    seat: "sol",
+    effort: "high",
+    capabilities: ["fs:read:**"],
+    tui: { keys: [{ key: "alt+r", label: "Review" }] }
+  })
+  expect((await port.discover()).find((flow) => flow.name === "echo")?.kind).toBe("module")
+}, 30_000)
+
+it("reads an agent's body and refuses a module's", async () => {
+  const body = await port.body("review")
+  expect(body.text.trim()).toBe("Review the change.")
+  expect(body.baseDirectory).toBe(join(root, "flows", "review"))
+  expect(body.digest).toMatch(/^[0-9a-f]{64}$/)
+  const refused = await port.body("echo").catch((error: unknown) => error)
+  expect(refused).toBeInstanceOf(FlowError)
+  expect((refused as FlowError).code).toBe("refused")
+  const missing = await port.body("missing").catch((error: unknown) => error)
+  expect((missing as FlowError).code).toBe("unknown_flow")
+}, 30_000)
+
+it("keeps an agent's declared capabilities when it also declares flows", async () => {
+  // The registry widens a delegating markdown flow to `*`; the agent's envelope must not widen with it.
+  expect((await port.discover()).find((flow) => flow.name === "scout")?.capabilities).toEqual(["*"])
+  expect((await port.body("scout")).capabilities).toEqual(["fs:read:**"])
+  expect((await port.body("review")).capabilities).toEqual(["fs:read:**"])
+}, 30_000)
 
 it("reads a module flow's payload schema", async () => {
   const input = await port.input("echo")
@@ -50,6 +88,32 @@ it("plans, starts and settles a run from the watch", async () => {
   // A retry that finds the run already completed reads its answer from the journal.
   expect(await port.resume(runId)).toEqual({ kind: "done", answer: "hi" })
 }, 120_000)
+
+it("lists runs started outside the TUI without opening the flow host", async () => {
+  const runId = await port.start(await port.plan("echo", { text: "listed" }))
+  await port.watch(runId, () => {}).done
+  // A second port over the same store, as `smthrs flow start` leaves it: never opened here.
+  const observer = FlowControl.make({ cwd: root, environment: {}, stateRoot, approvals: host.approvals! })
+  try {
+    const listed = await observer.runs!()
+    expect(listed.find((run) => run.runId === runId)).toMatchObject({ runId, flow: "echo", status: "completed" })
+    expect(listed.length).toBeLessThanOrEqual(20)
+  } finally {
+    await observer.dispose()
+  }
+}, 120_000)
+
+it("lists no runs and creates no store where nothing ran", async () => {
+  const empty = mkdtempSync(join(tmpdir(), "tui-no-store-"))
+  const observer = FlowControl.make({ cwd: root, environment: {}, stateRoot: empty, approvals: host.approvals! })
+  try {
+    expect(await observer.runs!()).toEqual([])
+    expect(readdirSync(empty)).toEqual([])
+  } finally {
+    await observer.dispose()
+    rmSync(empty, { recursive: true, force: true })
+  }
+})
 
 it("routes a * envelope through the shared approval rows", async () => {
   const card = await port.plan("wide", {})
@@ -87,7 +151,8 @@ for (const mode of ["ask", "deny", "all"] as const) {
       const runs = new FlowRuns({ port, persist: () => {} })
       const request = runs.request({ id: "consequential", flow: "consequential", input: {}, by })
       const wait = async (until: () => Promise<boolean>) => {
-        const deadline = Date.now() + 20_000
+        // Opening the host plans every fixture flow; under load that alone passes 20 s.
+        const deadline = Date.now() + 50_000
         while (!await until()) {
           if (Date.now() > deadline) throw new Error(`Timed out: ${JSON.stringify(runs.snapshot())}`)
           await Bun.sleep(5)

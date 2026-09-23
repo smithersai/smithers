@@ -90,9 +90,9 @@ Ctrl+O read it.
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`, `/compact`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
-`/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/retry <id>`, `/stop <id>`,
-`/hotkeys`, `/quit`. After `/model `, `/thinking ` and `/flow ` the menu completes the argument, and the
-`/` menu lists the directory's flows.
+`/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/agent [name] [prompt]`,
+`/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model `, `/thinking `, `/flow ` and `/agent `
+the menu completes the argument, and the `/` menu lists the directory's flows.
 
 ## Look
 
@@ -211,16 +211,23 @@ only from the control plane's watch; **x** asks the control plane to cancel.
 
 Listing reads `flows/` without importing anything; the first run imports the
 flow modules and opens `<cwd>/.flows` (the store `smthrs runs` reads), so an
-edited `flow.ts` needs a restart. Markdown flows need an agent delegate and are
-refused. Do not run `smthrs` executors in the same directory at the same time.
-Restarting marks unfinished runs interrupted; retry resumes the durable run.
+edited `flow.ts` needs a restart. A markdown flow is a custom agent (below);
+choosing one in `/flows` starts `/agent <name> `. Do not run `smthrs` executors
+in the same directory at the same time. Restarting marks unfinished runs
+interrupted; retry resumes the durable run.
 `/smithers` opens one tab with every run, newest first, and the discovered flows.
 
 Every turn runs with `SmithersPlugin` from `@smthrs/agent`: the system prompt
 names the key packages and `smthrs` verbs, and `smithers.guide` returns the
 details. The coordinator also gets `smithers.flows`, `smithers.run` and
 `smithers.inspect` over the same runs (model-invocable flows only);
-`smithers.run` returns a `requested` receipt at once.
+`smithers.run` returns a `requested` receipt at once. `smithers.flows` returns
+`{name, description, agent, input}`: `input` lists up to 12
+`{name, type, required}` fields once a run has imported the module (listing
+never imports it), and `[{name: "args"}]` for an agent. The coordinator's
+`Flow runs:` context also lists the store's 20 newest runs this session did not
+start, such as `smthrs flow start` runs, marked `by: "cli"`. Reading them opens
+no flow module and creates no store.
 
 ## Monitors
 
@@ -249,6 +256,55 @@ Scores calibrate the next estimate. A running tab and a working turn show
 answers ETA questions, queued tabs included. The eval log is
 `<session dir>/<cwd slug>/evals/estimates.jsonl`. See
 `.plans/estimation-system.md`.
+
+## Custom agents
+
+A custom agent is a markdown flow, `flows/<name>/flow.mdx` (or `SKILL.md`).
+There is no other agent format: `smthrs flow start`, approvals and the app read
+the same file. The body is the agent's system prompt; the frontmatter sets the
+rest.
+
+```yaml
+---
+description: Reviews the uncommitted change and returns a verdict.  # picker row
+model: sol          # sol, astra, luna, opus, fable, qwen, or provider:modelId
+effort: high        # none, minimal, low, medium, high, xhigh, max
+capabilities: ["fs:read:**", "proc:spawn:*"]  # envelope; absent = every capability
+flows: [read, grep, bash]  # standard flows it may call; absent = all of them
+disable-model-invocation: false  # true = only a person may start it
+---
+```
+
+`/agent` opens the Agents picker (name, model, description); choosing a row
+puts `/agent <name> ` in the composer, because the prompt is the agent's one
+field. `/agent <name> <prompt>` opens a worker tab titled `<name>: <prompt>`.
+The coordinator sees `Agents: [{name, description}]` (model-invocable agents,
+at most 20) and starts one with `agent.delegate {id, title, prompt, agent}`.
+
+Both doors persist the tab and return `requested` before the file is read; the
+body is read when the tab launches, so chat stays usable while it loads. The
+seat is the request's `model`, then the file's `model:`, then the worker seat.
+The tab runs as a worker with the body appended to the worker instructions,
+`effort` as its reasoning effort, `capabilities` as its envelope and `flows`
+narrowing the filesystem and shell flows. The registry lists a body that
+declares `flows:` with capabilities `*`; the tab still runs under the file's
+own `capabilities:`. Retry reads the file again, so edits apply,
+and keeps the agent and the model. The tab records `agent: {name, digest}`.
+
+Every refusal is a code and one line:
+
+| Code | When | Where |
+| --- | --- | --- |
+| `unknown_agent` | No flow has that name | Refused at once (tab `failed` if the first listing had not arrived) |
+| `not_an_agent` | The name is a `flow.ts` module | Refused at once; use `/flow` or `smithers.run` |
+| `not_invocable` | `disable-model-invocation: true` and the coordinator asked | Refused at once |
+| `unreadable` | The body could not be read | Tab `failed`, retryable |
+| `unknown_seat` | `model:` names no alias or known provider | Tab `failed` |
+| `unknown_effort` | `effort:` is not a reasoning effort | Tab `failed` |
+
+`examples/custom-agent` is a directory with one agent; run
+`bun run tui apps/tui/examples/custom-agent` and type `/agent review`.
+
 
 ## Tests
 

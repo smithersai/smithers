@@ -7,7 +7,7 @@
  */
 import { afterEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
@@ -1092,6 +1092,52 @@ describe("flows", () => {
     await tui.type("/rev")
     await tui.until((screen) => screen.includes("/flow review") && screen.includes("Review a change"), 5_000, "flow in menu")
   }, 30_000)
+})
+
+describe("custom agents", () => {
+  /** A scratch repository holding the example agent, `examples/custom-agent/flows/review/flow.mdx`. */
+  const withAgent = () => {
+    const cwd = repository()
+    cpSync(join(app, "examples", "custom-agent", "flows"), join(cwd, "flows"), { recursive: true })
+    return cwd
+  }
+
+  it("/agent review x opens a review tab and the composer still takes input", async () => {
+    const { tui } = await start({ cwd: withAgent(), holdMs: 2_000 })
+    await tui.type("/agent review look at math.js")
+    await tui.press(key.escape)
+    await tui.press(key.enter)
+    await tui.until((screen) => /◌ review: look at/.test(screen), 20_000, "agent tab")
+    await tui.type("still here")
+    await tui.until((screen) => /┃\s+still here/.test(screen), 5_000, "composer usable while the agent runs")
+    // The toast follows the run until it really stops; x in the tab asks it to.
+    await tui.until((screen) => /review: look at math.js · running/.test(screen), 5_000, "running toast")
+    await tui.press(key.ctrlBracket)
+    await tui.press(key.ctrlBracket)
+    await tui.until((screen) => screen.includes("r Resume"), 5_000, "agent tab")
+    await tui.type("x")
+    await tui.until((screen) => /■ review: look at/.test(screen), 20_000, "stopped from the real outcome")
+  }, 120_000)
+
+  it("/agent lists agents with their seat; choosing one puts its prompt field in the composer", async () => {
+    const { tui } = await start({ cwd: withAgent() })
+    await tui.type("/agent")
+    await tui.press(key.escape)
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Agents") && /review\s+GPT-6 Sol\s+Reviews the uncommitted/.test(screen), 20_000, "agents dialog")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+\/agent review\s*$/m.test(screen), 5_000, "prompt prefilled")
+  }, 60_000)
+
+  it("refuses an unknown agent with one line and keeps chat usable", async () => {
+    const { tui } = await start({ cwd: withAgent() })
+    // The first listing settles in the background; after it, the refusal is synchronous.
+    await Bun.sleep(1_500)
+    await tui.type("/agent nobody do it")
+    await tui.press(key.escape)
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("No agent named nobody"), 10_000, "typed refusal")
+  }, 60_000)
 })
 
 describe("approvals", () => {

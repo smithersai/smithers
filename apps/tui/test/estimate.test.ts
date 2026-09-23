@@ -304,8 +304,9 @@ describe("Estimate", () => {
     const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
     let settle = (_: Flows.Settled) => {}
     const port: Flows.Port = {
-      discover: async () => [{ name: "review", description: "Review", modelInvocable: true }],
+      discover: async () => [{ name: "review", description: "Review", modelInvocable: true, kind: "module", flows: [], capabilities: [], path: "flows/review/flow.ts" }],
       input: async () => undefined,
+      body: async () => Promise.reject(new Error("review is a module flow")),
       plan: async () => ({ all: false, raw: {} }),
       start: async () => "run-2",
       resume: async (runId) => ({ runId }),
