@@ -197,9 +197,10 @@ const cacheServicePostgresDatabase = Smithers.Docker.Service({
  * @category test
  */
 const cacheServicePostgres = Smithers.Shell.Test({
-  bin: Smithers.Runtime.bin,
+  // This target intentionally runs Bun's test runner. `Runtime.bin` names
+  // the workspace runtime (Node in CI), which treats `test` as a script path.
+  bin: Smithers.Host.bin("bun"),
   args: ["test", "packages/smithers/build/terraform/modules/cache/service/test/postgres_test.js"],
-  runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
   // The required Linux lane owns this Docker-backed integration. The hosted
   // macOS runner has no Docker daemon, and Windows cannot run this Linux image.
   env: process.platform === "linux" ? {

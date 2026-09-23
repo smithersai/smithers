@@ -31,7 +31,7 @@
   "engines": {
     "node": ">=26.4.0"
   },
-  "sideEffects": [],
+  "sideEffects": ["./src/CellPlugin.ts"],
   "exports": {
     "./package.json": "./package.json",
     ".": "./src/index.ts",

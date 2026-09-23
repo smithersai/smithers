@@ -9,10 +9,13 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3179 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3190 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **tui:** cut worker tool-call friction seen in worker transcripts ([a3a36a9e8e](https://github.com/smithersai/smithers/commit/a3a36a9e8e7202cbfaac96553f977c57a727ee77))
+- **tui:** accept every permission by default ([8c89de8e79](https://github.com/smithersai/smithers/commit/8c89de8e79f491cef57c4cae716f09faa763ac12))
+- **tui:** which-key hints and key popup ([9905e93ead](https://github.com/smithersai/smithers/commit/9905e93eadef3ea958ce6b6066c765e567ca9724))
 - **tui:** GUI-grade timeline scrubber with jump-to-step ([b6ea3a2679](https://github.com/smithersai/smithers/commit/b6ea3a26794ab3c8b84c0a5b5b0cbd5da478283b))
 - **tui:** Smithers plugin for the core agent ([0a296794c8](https://github.com/smithersai/smithers/commit/0a296794c880d754cccf73fd5598ab943ace21b8))
 - **evals:** durable plue exec and the image's WORKDIR, as docker exec has ([e8e72fad42](https://github.com/smithersai/smithers/commit/e8e72fad4208af8ac791f0a4d9fd8715212b73e6))
@@ -330,6 +333,13 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **evals:** keep the attempts Harbor's retry deletes, and count them ([0aec1104a9](https://github.com/smithersai/smithers/commit/0aec1104a91c4aee8618c51ee392e6c2a024be1a))
+- **tui:** open the Smithers tab only from /smithers ([05ed2dd549](https://github.com/smithersai/smithers/commit/05ed2dd5490a07d9dd995b70a108031c90e33f1c))
+- **app:** restore transcript before user card commands ([23226cdc4f](https://github.com/smithersai/smithers/commit/23226cdc4f7d756a0d36d832abf063ec3e09fb5b))
+- **routes:** restore shared backend client route parity ([56f253000d](https://github.com/smithersai/smithers/commit/56f253000d2d36bfcb63901f182ad822e20ac3f7))
+- **harness:** refuse success claims over failed calls ([0d0b24df47](https://github.com/smithersai/smithers/commit/0d0b24df47a25d94024982662551f7e6070fa56c))
+- **evals:** a disk larger than a sandbox host can give is unplaceable ([38befaa08b](https://github.com/smithersai/smithers/commit/38befaa08b2c434d3711d7dcd3eab9269c68110c))
+- **tui:** pass the jj-export helper to e2e TUIs and fail flow launches fast ([5e36e7765f](https://github.com/smithersai/smithers/commit/5e36e7765f628ec0ee5754eefbf092cc3ee8823f))
 - **tui:** name undelegated requests when the coordinator's frames run out ([856f878b0a](https://github.com/smithersai/smithers/commit/856f878b0ac192d2d2a362878c75f5b11e049ae0))
 - **tui:** hide in-frame cell re-asks and model-facing rejection text ([519cb19981](https://github.com/smithersai/smithers/commit/519cb19981a873a5f5ea0f6a2bdbde68cf68fa9f))
 - **harness:** accept an omitted ctx.call input for all-optional flows ([4a10fc7e77](https://github.com/smithersai/smithers/commit/4a10fc7e771af022049a34291824b4ea800b6506))
@@ -2543,6 +2553,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- refresh release changelog ([44d40de985](https://github.com/smithersai/smithers/commit/44d40de985dba8382ae06ca7fad0e70b87802b92))
 - **build:** refresh the declared target index ([6e418156f8](https://github.com/smithersai/smithers/commit/6e418156f8b680c481bb426b64d0f479720c7ffb))
 - **tui:** declare the local control dependency ([ff746f67c5](https://github.com/smithersai/smithers/commit/ff746f67c5499db0a389dfbfb75a4af0f66cb1b1))
 - **targets:** index model host coverage inputs ([7afbcd943e](https://github.com/smithersai/smithers/commit/7afbcd943e0f2ae8a464fdb6821900f2922a63ba))
