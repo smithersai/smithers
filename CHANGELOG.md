@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2886 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2887 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -303,6 +303,7 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** mirror CI helper toolchain and install its binary ([1ad9ce64e0](https://github.com/smithersai/smithers/commit/1ad9ce64e06b0b3e1c6fa996789d4ddc3556d094))
 - **release:** install filesystem helper at sandbox default path ([80ab794d9e](https://github.com/smithersai/smithers/commit/80ab794d9e129f8665f353a6671e6ebbd979b1b5))
 - **evals:** wait for the plan's concurrent-workspace slot like cluster capacity ([96eca7097b](https://github.com/smithersai/smithers/commit/96eca7097b51ac837623528f073350b989903956))
 - **app:** register coding connection flows and decode revocation ([faf5fafd83](https://github.com/smithersai/smithers/commit/faf5fafd837e00e99e95ab2742e6aef5f442c217))
