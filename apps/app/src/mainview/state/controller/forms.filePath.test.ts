@@ -4,6 +4,7 @@ import type { CommandActions } from "../../flows/Flows"
 import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import { createFormsController } from "./forms"
+import { settled } from "../TestFixtures"
 
 /*
  * files.read's Path (CT105). A repository path is not a closed enumeration:
@@ -20,7 +21,7 @@ type FlowFormCard = Extract<Card, { kind: "flow-form" }>
 
 const REPO = "smithersai/smithers"
 
-const fixture = (read: (path: string) => string | { readonly value: string } = () => ({ value: "# Smithers" })) => {
+const fixture = (read: (path: string) => string | { readonly value: string } = () => ({ value: "# Smithers" }), inventory?: () => Promise<Response>) => {
   const cards = new Map<string, Card>()
   const reads: Array<string> = []
   const store = {
@@ -43,8 +44,9 @@ const fixture = (read: (path: string) => string | { readonly value: string } = (
     snapshot: () => ({ surface: "chat", typing: false, hasConnectors: true, admin: false, signedOut: false })
   } satisfies Partial<CommandActions>
   const commands = createCommandRegistry(actions as unknown as CommandActions)
-  const context = { store, commands, commandActor: "user" } as unknown as ControllerContext
-  const forms = createFormsController(context, { nextOrdinal: () => 1 })
+  const context = { store, commands, commandActor: "user", baseUrl: "", boundedFetch: inventory ?? (() => new Promise<Response>(() => {})) } as unknown as ControllerContext
+  let ordinal = 0
+  const forms = createFormsController(context, { nextOrdinal: () => ++ordinal })
   const card = (id: string): FlowFormCard => cards.get(id) as FlowFormCard
   const field = (id: string, name: string) => card(id).payload.fields.find((candidate) => candidate.name === name)!
   /** What refreshFileList writes when the repository answers (forms.ts), with no network. */
@@ -60,6 +62,27 @@ const fixture = (read: (path: string) => string | { readonly value: string } = (
 }
 
 describe("the path a file flow asks for", () => {
+  test.each([false, true])("a held inventory survives typing but not a reopened form (reopen: %s)", async reopen => {
+    let begin!: () => void, release!: (response: Response) => void
+    const started = new Promise<void>(resolve => { begin = resolve })
+    const held = new Promise<Response>(resolve => { release = resolve })
+    let calls = 0
+    const app = fixture(undefined, () => {
+      if (++calls !== 1) return new Promise<Response>(() => {})
+      begin()
+      return held
+    })
+    const { cardId } = app.ask("files.read")
+    await started
+    await app.forms.setFormField(cardId, "path", "REA")
+    if (reopen) app.ask("files.read")
+    release(Response.json([{ name: "README.md", path: "README.md", type: "file" }]))
+    await settled()
+    expect(app.field(cardId, "path").options ?? []).toEqual(reopen ? [] : [{ value: "README.md", label: "README.md" }])
+    if (reopen) expect(app.card(cardId).payload.draft.path).toBeUndefined()
+    else expect(app.card(cardId).payload.draft.path).toBe("REA")
+  })
+
   test("files.read asks for it as a text field that carries the inventory as suggestions", () => {
     const app = fixture()
     const rendered = app.ask("files.read")

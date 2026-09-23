@@ -292,7 +292,12 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     const answer = await fileOptions({ store, baseUrl: ctx.baseUrl, http: ctx.boundedFetch }, repo)
     if (ctx.disposed) return
     const current = formCard(cardId)
-    if (current !== card || store.session().activeRepoKey !== selection) return
+    // Typing replaces the card object. The same rendered form still owns its
+    // inventory; a reopened form, different repository or submission does not.
+    if (current === undefined || current.ordinal !== card.ordinal || current.payload.flow !== card.payload.flow ||
+      current.status !== "active" || current.payload.submitting ||
+      (current.payload.draft["repo"] ?? current.payload.given["repo"]) !== repo ||
+      store.session().activeRepoKey !== selection) return
     const { error: _previous, ...payload } = current.payload
     await patch(current, {
       ...payload,
