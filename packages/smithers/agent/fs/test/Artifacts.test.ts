@@ -29,6 +29,8 @@ const copyPackage = (source: string): Scratch => {
     }
     cpSync(join(repoRoot, buildHelperPath), join(root, buildHelperPath))
     // Resolve dependencies from this worktree without copying the installed tree.
+    // pnpm can hoist shared build tools to the workspace root.
+    symlinkSync(join(repoRoot, "node_modules"), join(root, "node_modules"), "junction")
     symlinkSync(join(packageRoot, "node_modules"), join(packageDir, "node_modules"), "junction")
     return { root, packageDir }
   } catch (error) {
