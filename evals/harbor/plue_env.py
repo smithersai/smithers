@@ -70,10 +70,13 @@ class PlueImageError(PlueError):
 
 
 def is_capacity_error(error: PlueError) -> bool:
-    """A create that found no room on the cluster; it will find some when a
-    neighbouring trial finishes, so the caller waits rather than fails."""
+    """A create that found no room: none on the cluster (`no_capacity`), or
+    none under the account's plan (402, "Your … plan allows N running
+    workspaces"). Either frees up when a neighbouring trial finishes, so the
+    caller waits rather than fails."""
     text = f"{error.code} {error}".lower()
-    return "no_capacity" in text or "no capacity" in text
+    return ("no_capacity" in text or "no capacity" in text
+            or bool(re.search(r"plan allows \d+ running", text)))
 
 
 _COPY_RE = re.compile(r"^\s*COPY\s+(?:--chmod=\S+\s+)?(\S+)\s+(\S+)\s*$", re.I)
