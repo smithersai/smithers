@@ -73,9 +73,10 @@ Ctrl+O read it.
 | Enter | In a view: toggle the selected row's details |
 | d, v | In a view: toggle the selected turn's diff; toggle split/unified |
 | u | In the Summary view or a worker tab: undo the selected row's captured file changes (confirm first) |
-| Tab | In a view: next tab |
+| Tab | In a view: next tab. In the chat with the editor empty: focus the newest card; Up/Down move, Enter opens it, Esc returns |
 | Esc, i | In a view: focus the composer without stopping background work |
 | a | Activate the selected row's action, if present |
+| Contributed keys | Keys a repository or a cell adds (`alt+r`); listed in the hints and the `?` popup under their owner |
 | r, x | In a worker or flow tab: resume / stop. A worker resumes with its prior steps on its original model |
 | m, w | In a failed worker tab: choose a model for resume / wait for reset |
 | a | In a flow tab: approve or fill in |
@@ -167,8 +168,8 @@ ctx.done("The check passed.")
 ```
 
 Blocks support text, code, tables (`columns`, `rows`), and unified diffs
-(`path`, `patch`). Rows optionally carry `action: {label, prompt}`; only the
-user pressing **a** sends that prompt. Reusing a panel id updates it. Publishing
+(`path`, `patch`). Rows optionally carry `action: {label, prompt}` or
+`{label, action}` (see Extensions); only the user pressing **a** runs it. Reusing a panel id updates it. Publishing
 never takes keyboard focus. `placement:"main"` shows a view beside chat at
 120 columns or wider, or above chat on smaller terminals. `bind:{tree:rootId}`
 adds live worker rows to that view. Documents are schema-validated, capped at 1 MB,
@@ -200,6 +201,53 @@ auto-relaunches running and waiting workers; parked workers relaunch at reset.
 `/new`, `/resume`, and `/fork`
 require running work to finish or be stopped first.
 
+## Extensions
+
+A repository, a cell, or a built-in plugin adds UI with one serializable
+value, `Extension.Contribution` (`src/extension.ts`); the TUI owns rendering,
+focus and keys. Publishing never runs an action: only a person (a key, a
+click, `a` on a row, Ctrl+K) or an agent does.
+
+| Contribution | Shows | Limits |
+| --- | --- | --- |
+| A bare panel, or `{ kind: "panel", placement: "tab", panel }` | A `ui:<id>` tab | 24 panels, shared with cards |
+| `{ kind: "panel", placement: "card", panel }` | A live card in the chat: title, summary, first 5 rows. The same id updates it in place; click, or `tab` then `enter` from an empty composer, opens it as a view | 24 panels, shared with tabs |
+| `{ kind: "status", status: { id, text, tone?, action? } }` | A footer item beside the context meter; click runs `action` | 24 characters, one line; 3 shown |
+| `{ kind: "key", key: { id, key, label, action, context? } }` | A key in the hints and the `?` popup, grouped by owner. The footer shows every hint that fits whole, built-in first; `?` lists the rest | Global keys need ctrl or alt; 8 per owner |
+
+An action is `{ kind: "prompt", prompt }`, `{ kind: "flow", flow, input? }`,
+`{ kind: "agent", agent, prompt? }` or `{ kind: "open", surface }`. A panel
+row's action is `{ label, prompt }` or `{ label, action }`.
+
+Cells publish with `ui.publish`; a worker's ids are prefixed `<tab>/` and its
+cards stay in its lane. A repository declares UI in a markdown flow's
+frontmatter, which is metadata only, so nothing is imported to show it:
+
+```yaml
+metadata:
+  tui:
+    keys:
+      - key: alt+p
+        label: Plan release            # no action: runs its owner; an agent gets the label as its prompt
+    status: true                        # the owner's latest run or agent tab
+    card: true                          # each run of the owner as a live card
+```
+
+Where `metadata` must map strings to strings (`SKILL.md`), `tui` may be the
+same mapping as a JSON string. Any change under `flows/` re-lists the registry
+within 300 ms and replaces every repository contribution at once.
+
+Built-in keys always win. A contributed key that collides with one, or with a
+key another owner holds, is refused: a cell gets the one-line reason, and a
+repository's collision or malformed manifest shows as `✗ N extensions` in the
+footer, which opens an Extensions view with one row per problem. Built-in
+plugins contribute the same values: the Smithers tab (`plugin:smithers`, open
+while `/smithers` shows it) and one monitors status item while any monitor is
+active (`plugin:monitors`). A `{ kind: "flow" }` key on a markdown flow starts a
+durable run on the control plane, which runs the flow's prompt itself.
+`examples/custom-ui` is a repository that adds a key, a status item and a live
+card.
+
 ## Flows
 
 `/flows` lists the file flows in `<cwd>/flows/<name>/flow.ts` (a `Flow.make`
@@ -213,13 +261,14 @@ parked run never blocks `/new`, `/resume`, `/fork` or undo. A flow whose envelop
 waits for **a** (or Enter in its form) instead of starting. Its status settles
 only from the control plane's watch; **x** asks the control plane to cancel.
 
-Listing reads `flows/` without importing anything; the first run imports the
-flow modules and opens `<cwd>/.flows` (the store `smthrs runs` reads), so an
-edited `flow.ts` needs a restart. A markdown flow is a custom agent (below);
-choosing one in `/flows` starts `/agent <name> `. Do not run `smthrs` executors
-in the same directory at the same time. Restarting marks unfinished runs
-interrupted; retry resumes the durable run.
-`/smithers` opens one tab with every run, newest first, and the discovered flows.
+Listing reads `flows/` without importing anything and refreshes within 300 ms
+of any change there; the first run imports the flow modules and opens
+`<cwd>/.flows` (the store `smthrs runs` reads), so an edited `flow.ts` needs a
+restart to run. A markdown flow is a custom agent (below); choosing one in
+`/flows` starts `/agent <name> `. Do not run `smthrs` executors in the same
+directory at the same time. Restarting marks unfinished runs interrupted; retry
+resumes the durable run.
+`/smithers` opens the Smithers tab: every run, newest first, and the discovered flows.
 
 Every turn runs with `SmithersPlugin` from `@smthrs/agent`: the system prompt
 names the key packages and `smthrs` verbs, and `smithers.guide` returns the

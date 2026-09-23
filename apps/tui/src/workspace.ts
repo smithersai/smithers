@@ -1,6 +1,7 @@
 /** Background work outlives a chat turn. Each tab has its own durable transcript. */
 import * as Agents from "./agents.ts"
 import type * as Context from "./context.ts"
+import type * as Extension from "./extension.ts"
 import type * as Host from "./host.ts"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import { delegateModels, type DelegateModel } from "./models.ts"
@@ -54,6 +55,8 @@ export interface Request {
 export interface Snapshot {
   readonly tabs: ReadonlyArray<Tab>
   readonly panels: ReadonlyArray<Panels.Panel>
+  /** Ids of panels placed as transcript cards; the rest are `ui:<id>` tabs. */
+  readonly cards?: ReadonlyArray<string>
 }
 /** Settled tabs whose answer every coordinator turn carries, and how much of each. */
 const contextAnswers = 5
@@ -83,6 +86,7 @@ export class Workspace {
   private queue: Array<{ readonly id: string; readonly writer?: Session.Writer; readonly history?: ReadonlyArray<Context.Entry>; readonly by?: "user" | "agent"; readonly resume?: () => void }> = []
   private tabs = new Map<string, Tab>()
   private panels = new Map<string, Panels.Panel>()
+  private cards = new Set<string>()
   private transcripts = new Map<string, Transcript.Transcript>()
   private handles = new Map<string, Host.Turn>()
   private cancelRequested = new Set<string>()
@@ -99,6 +103,8 @@ export class Workspace {
       agents?: Agents.Port
       /** Resolves an agent's declared `model:`; undefined when unknown. */
       seatOf?: (declared: string) => string | undefined
+      /** A worker's status item or key, owned `runtime:<tab id>`; throws a one-line refusal. */
+      contribute?: (owner: string, contribution: Extension.Contribution) => void
     }
   ) {
     for (const saved of options.restored?.tabs ?? []) {
@@ -146,6 +152,7 @@ export class Workspace {
       if (settled === tab && (active(tab) || tab.status === "waiting" || tab.status === "parked")) this.scheduleResume(tab)
     }
     for (const panel of options.restored?.panels ?? []) Panels.keep(this.panels, panel)
+    for (const id of options.restored?.cards ?? []) if (this.panels.has(id)) this.cards.add(id)
     if (this.queue.length > 0) queueMicrotask(() => this.drain())
   }
   subscribe = (listener: () => void): () => void => {
@@ -157,7 +164,7 @@ export class Workspace {
   private changed() {
     for (const listener of this.listeners) listener()
   }
-  snapshot = (): Snapshot => ({ tabs: [...this.tabs.values()], panels: [...this.panels.values()] })
+  snapshot = (): Snapshot => ({ tabs: [...this.tabs.values()], panels: [...this.panels.values()], cards: [...this.cards] })
   get busy(): boolean {
     return [...this.tabs.values()].some((tab) => active(tab) || tab.status === "waiting" || tab.status === "queued" || tab.status === "parked")
   }
@@ -186,11 +193,43 @@ export class Workspace {
   }
   /** Custom views kept; publishing one more replaces the least recently published. */
   static readonly maxPanels = Panels.limit
-  publish = (value: Panels.Panel): void => {
+  /**
+   * A tab or a card; tabs and cards share the panel limit. A chat card is
+   * persisted as the `card` record its transcript item restores from; a
+   * worker's card (`lane`) is drawn from the worker's own file.
+   */
+  publish = (value: Panels.Panel, placement: "tab" | "card" = "tab", at = Date.now(), lane?: string): Panels.Panel => {
     const panel = Panels.decode(value)
-    this.options.persist({ type: "panel", panel })
+    this.options.persist(
+      placement === "card" && lane === undefined
+        ? { type: "card", at, panel }
+        : { type: "panel", panel, ...(placement === "card" ? { placement } : {}) }
+    )
     Panels.keep(this.panels, panel)
+    if (placement === "card") this.cards.add(panel.id)
+    else this.cards.delete(panel.id)
+    for (const id of this.cards) if (!this.panels.has(id)) this.cards.delete(id)
     this.changed()
+    return panel
+  }
+  /** A worker's `ui.publish`: its ids are prefixed `<tab>/` so two tabs never collide. */
+  private contribute(tab: Tab, contribution: Extension.Contribution, writer: Session.Writer, update: (transcript: Transcript.Transcript) => void) {
+    const prefix = (id: string) => `${tab.id}/${id}`
+    if (contribution.kind === "panel") {
+      const panel = { ...contribution.panel, id: prefix(contribution.panel.id) }
+      if (contribution.placement === "tab") return void this.publish(panel)
+      const at = Date.now()
+      const published = this.publish(panel, "card", at, tab.id)
+      writer.append({ type: "card", at, panel: published })
+      return update(Transcript.card(this.transcript(tab.id), published, at))
+    }
+    if (this.options.contribute === undefined) throw new Error("Status items and keys are unavailable here")
+    this.options.contribute(
+      `runtime:${tab.id}`,
+      contribution.kind === "status"
+        ? { ...contribution, status: { ...contribution.status, id: prefix(contribution.status.id) } }
+        : { ...contribution, key: { ...contribution.key, id: prefix(contribution.key.id) } }
+    )
   }
   request = (request: Request): { id: string; status: Tab["status"] } => this.open(request)
   /** Namespaces a child under its parent and refuses delegation beyond depth three. */
@@ -401,7 +440,12 @@ export class Workspace {
         role: "worker",
         ...(agent === undefined ? {} : { agent }),
         runtime: {
-          publish: (panel) => this.publish({ ...panel, id: `${tab.id}/${panel.id}` }),
+          publish: (contribution) =>
+            this.contribute(tab, contribution, writer, (next) => {
+              transcript = next
+              this.transcripts.set(tab.id, transcript)
+              this.changed()
+            }),
           delegate: (request) => this.requestChild(tab, request),
           read: (id) => this.read(id.startsWith(`${tab.id}/`) ? id : `${tab.id}/${id}`),
           list: () => this.snapshot().tabs.filter((child) => child.parent === tab.id),

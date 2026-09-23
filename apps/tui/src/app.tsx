@@ -16,9 +16,10 @@ import * as Clipboard from "./clipboard.ts"
 import * as Complete from "./complete.ts"
 import * as DragScroll from "./drag-scroll.ts"
 import * as Context from "./context.ts"
+import * as Contributions from "./contributions.ts"
+import * as Extension from "./extension.ts"
 import * as Editor from "./editor.ts"
 import * as Estimate from "./estimate.ts"
-import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
 import { FlowRuns, type Listed, type Port as FlowPort, type Run, running as flowRunning } from "./flows.ts"
@@ -46,6 +47,7 @@ import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
+import * as Watch from "./watch.ts"
 import { seats, type Snapshot, type Tab, tabToast, Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
@@ -153,7 +155,8 @@ const pickerRows = (
   tabs: ReadonlyArray<Tab>,
   files: () => ReadonlyArray<string>,
   hits: ReadonlyArray<Search.Hit>,
-  flows: ReadonlyArray<Listed>
+  flows: ReadonlyArray<Listed>,
+  actions: NonNullable<Palette.Sources["actions"]> = []
 ): ReadonlyArray<View.Row & { readonly value: string }> => {
   if (picker.kind === "agents") {
     return Fuzzy.filter(flows.filter(Extension.isAgent), picker.query, (agent) => agent.name).map((agent) => {
@@ -176,7 +179,7 @@ const pickerRows = (
     }))
   }
   if (picker.kind === "palette") {
-    const sources = { commands: Editor.commands, files, sessions: picker.sessions, tabs, hits, now: Date.now() }
+    const sources = { commands: Editor.commands, files, sessions: picker.sessions, tabs, hits, now: Date.now(), actions }
     // The value is the JSON of a `Palette.Value`, so every dialog picks a string.
     return Palette.rows(Palette.parse(picker.query), sources).map((row) => ({ ...row, value: JSON.stringify(row.value) }))
   }
@@ -292,6 +295,19 @@ export function App(props: AppProps) {
   const writer = useRef<Session.Writer>(
     Session.guarded(restored.file === undefined ? Session.create(props.host.cwd) : Session.reopen(restored.file), unsaved)
   )
+  /** Status items, keys and plugin panels from every owner; runtime panels stay in the workspace. */
+  const [contributions] = useState(() => {
+    const store = new Contributions.Store({ taken: Keys.taken })
+    for (const each of restored.current?.contributions ?? []) {
+      try { store.runtime(each.owner, each.contribution) } catch { /* A key a newer built-in took stays off. */ }
+    }
+    return store
+  })
+  /** A cell's status item or key: shown, then persisted; a refusal reaches the cell instead. */
+  const contribute = useCallback((owner: string, contribution: Extension.Contribution) => {
+    contributions.runtime(owner, contribution)
+    if (contribution.kind !== "panel") writer.current.append({ type: "contribution", owner, contribution })
+  }, [contributions])
   // Agents read the current session's flow runs: their listing, and a fresh one at launch.
   const runsRef = useRef<FlowRuns | undefined>(undefined)
   const makeWorkspace = (restoredTabs?: Snapshot) =>
@@ -307,7 +323,8 @@ export function App(props: AppProps) {
           listing: () => runsRef.current?.listing() ?? Promise.reject(new Error("Flows unavailable"))
         }, props.flows)
       }),
-      seatOf: props.seatOf ?? ((declared) => Models.seatOf(declared, props.models))
+      seatOf: props.seatOf ?? ((declared) => Models.seatOf(declared, props.models)),
+      contribute
     })
   const [workspace, setWorkspace] = useState(() => makeWorkspace(restored.current?.workspace))
   const [revision, setRevision] = useState(0)
@@ -384,14 +401,31 @@ export function App(props: AppProps) {
   }, [])
   const [navigation, setNavigation] = useState(Panels.initial)
   const [filter, setFilter] = useState(Timeline.all)
+  /** The chat card `tab` focused, by timeline row key; `enter` opens it. */
+  const [cardFocus, setCardFocus] = useState<string | undefined>()
   const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
   useEffect(() => runs.subscribe(() => setRevision((value) => value + 1)), [runs])
+  useEffect(() => contributions.subscribe(() => setRevision((value) => value + 1)), [contributions])
   useEffect(() => {
     runs.refresh()
     return () => { void runs.dispose() }
   }, [runs])
+  // Every listing replaces the `repo:` contributions; `metadata.tui` is metadata, so nothing is imported.
+  useEffect(() => {
+    const sync = () => contributions.repo(runs.listed().map(Extension.declared))
+    sync()
+    return runs.subscribe(sync)
+  }, [runs, contributions])
+  // Hot reload: a new or edited flow re-lists within one debounce.
+  const flowWatch = useRef<Watch.Watcher | undefined>(undefined)
+  useEffect(() => {
+    if (props.flows === undefined) return
+    const watcher = Watch.flows(props.host.cwd, () => runs.refresh())
+    flowWatch.current = watcher
+    return () => watcher.dispose()
+  }, [runs, props.flows, props.host.cwd])
   const flowRuns = runs.snapshot()
   useEffect(() => estimator.subscribe(() => setRevision((value) => value + 1)), [estimator])
   useEffect(() => {
@@ -436,11 +470,103 @@ export function App(props: AppProps) {
     const text = Estimate.label(estimator.get(id), status === "queued" ? now : startedAt, now)
     return text === "" ? "" : ` ${text}`
   }
+  const cardIds = new Set(snapshot.cards ?? [])
+  /**
+   * A repository flow's latest run or agent tab, as the status item
+   * `metadata.tui.status` asks for. An agent tab names its agent in `agent`.
+   */
+  const liveStatus = (flow: string): Extension.Status | undefined => {
+    const latest = [
+      ...flowRuns.filter((each) => each.flow === flow).map((run) => ({
+        at: run.startedAt,
+        surface: `flow:${run.id}`,
+        status: run.status === "done" || run.status === "failed" || run.status === "cancelled" ? run.status : "running"
+      })),
+      ...snapshot.tabs.filter((tab) => tab.agent?.name === flow).map((tab) => ({
+        at: tab.startedAt,
+        surface: `tab:${tab.id}`,
+        status: tab.status === "done" || tab.status === "failed" || tab.status === "cancelled" ? tab.status : "running"
+      }))
+    ].sort((a, b) => b.at - a.at)[0]
+    return latest === undefined ? undefined : {
+      id: flow,
+      text: `${latest.status === "done" ? "✓" : latest.status === "failed" ? "✗" : latest.status === "cancelled" ? "■" : "◌"} ${flow}`.slice(0, 24),
+      tone: latest.status === "failed" ? "danger" : latest.status === "done" ? "success" : "info",
+      action: { kind: "open", surface: latest.surface }
+    }
+  }
+  const extensions = contributions.snapshot(liveStatus)
+  const extensionPanel: Panels.Panel | undefined = extensions.problems.length === 0 ? undefined : {
+    id: "extensions",
+    title: "Extensions",
+    summary: `${extensions.problems.length} ${extensions.problems.length === 1 ? "problem" : "problems"}.`,
+    rows: extensions.problems.map((problem, index) => ({ id: String(index), label: problem, status: "failed", details: [] }))
+  }
+  /** `ui:<id>` views: runtime tabs, plugin panels, the problems view, and any card while it is open. */
+  const uiPanels: ReadonlyArray<Panels.Panel> = [
+    ...snapshot.panels.filter((each) => !cardIds.has(each.id) || surface === `ui:${each.id}`),
+    ...extensions.panels.filter((each) => each.placement === "tab" || surface === `ui:${each.panel.id}`).map((each) => each.panel),
+    ...(extensionPanel === undefined ? [] : [extensionPanel])
+  ]
+  /** A card's panel as it is now: a workspace panel, a plugin card, or a flow run's view. */
+  const livePanel = (card: Panels.Panel): Panels.Panel =>
+    card.id.startsWith("flow:") && runs.has(card.id.slice(5))
+      ? { ...runs.panel(card.id.slice(5)), id: card.id }
+      : snapshot.panels.find((each) => each.id === card.id) ??
+        extensions.panels.find((each) => each.panel.id === card.id)?.panel ?? card
+  const statusItems: ReadonlyArray<Extension.Status> = [
+    ...(extensionPanel === undefined ? [] : [{
+      id: "extensions",
+      text: `✗ ${extensions.problems.length} ${extensions.problems.length === 1 ? "extension" : "extensions"}`,
+      tone: "danger" as const,
+      action: { kind: "open" as const, surface: "ui:extensions" }
+    }]),
+    ...extensions.status.map((each) => each.status)
+  ].slice(0, Contributions.limits.shownStatus)
+  const merged = Keys.bindings(extensions.keys)
+  // A plugin's tab shows only while open: tab keys never stop on it (`/smithers` opens Smithers).
+  const pluginPanels = uiPanels.filter((panel) => extensions.panels.some((each) => each.placement === "tab" && each.panel === panel))
+  const pluginTabs = pluginPanels.filter((panel) => surface === `ui:${panel.id}`)
+  // Built-in plugin: the Smithers surface, a `plugin:smithers` tab over the flow runs.
+  const smithersPanel = props.flows === undefined && flowRuns.length === 0 ? undefined : Smithers.panel(runs.listed(), flowRuns)
+  const smithersKey = smithersPanel === undefined ? "" : JSON.stringify(smithersPanel)
+  useEffect(() => {
+    contributions.plugin("smithers", smithersPanel === undefined ? [] : [{ kind: "panel", placement: "tab", panel: smithersPanel }])
+  }, [contributions, smithersKey])
+  // Built-in plugin: monitors, one `plugin:monitors` status item while any is active.
+  useEffect(() => {
+    const sync = () => {
+      const active = monitors.list().filter((each) => each.status === "active")
+      contributions.plugin("monitors", active.length === 0 ? [] : [{
+        kind: "status",
+        status: {
+          id: "monitors",
+          text: (active.length === 1 ? `◉ ${active[0]!.title}` : `◉ ${active.length} monitors`).slice(0, 24),
+          tone: "info"
+        }
+      }])
+    }
+    sync()
+    return monitors.subscribe(sync)
+  }, [monitors, contributions])
+  // `metadata.tui.card`: each run of that flow started here shows as a live card in the chat.
+  const mountedAt = useRef(Date.now())
+  const carded = useRef(new Set<string>())
+  const cardFlows = extensions.cards.join("\n")
+  useEffect(() => {
+    if (cardFlows === "") return
+    for (const run of flowRuns) {
+      if (run.startedAt < mountedAt.current || carded.current.has(run.id) || !extensions.cards.includes(run.flow)) continue
+      carded.current.add(run.id)
+      const card = runs.panel(run.id)
+      setTranscript((current) => Transcript.card(current, card, run.startedAt))
+    }
+  }, [revision, runs, cardFlows])
   const surfaces = [
     { id: "chat", title: "Chat" },
     { id: "summary", title: "Summary" },
-    // Only /smithers opens it, and it closes once the user moves on: tab keys never stop on it.
-    ...(surface === "smithers" ? [{ id: "smithers", title: "Smithers" }] : []),
+    // Built-in plugins' tabs sit beside Summary while open; runtime and problem views follow the work tabs.
+    ...pluginTabs.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title })),
     ...snapshot.tabs.map((tab) => ({
       id: `tab:${tab.id}`,
       title: `${
@@ -464,7 +590,7 @@ export function App(props: AppProps) {
       id: `flow:${run.id}`,
       title: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
     })),
-    ...snapshot.panels.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
+    ...uiPanels.filter((panel) => !pluginPanels.includes(panel)).map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
   ]
   const showTab = (id: string) => {
     setSurface(id)
@@ -477,15 +603,13 @@ export function App(props: AppProps) {
   }
   const basePanel = surface === "summary"
     ? Summary.panel(transcript)
-    : surface === "smithers"
-    ? Smithers.panel(runs.listed(), flowRuns)
     : surface.startsWith("tab:")
     ? workspace.panel(surface.slice(4))
     : surface.startsWith("flow:")
     ? runs.panel(surface.slice(5))
     : surface.startsWith("tree:")
     ? workspace.tree(surface.slice(5))
-    : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
+    : uiPanels.find((panel) => `ui:${panel.id}` === surface)
   const panel = basePanel?.bind === undefined ? basePanel : (() => {
     const tree = workspace.tree(basePanel.bind.tree)
     return { ...basePanel, rows: [...tree.rows, ...basePanel.rows.map((row) => ({ ...row, id: `${basePanel.id}/${row.id}` }))] }
@@ -503,7 +627,12 @@ export function App(props: AppProps) {
       ...snapshot.tabs.map((tab) => ({ id: tab.id, transcript: workspace.transcript(tab.id) }))
     ],
     filter
-  )
+  )  /** Cards in the chat, oldest first; `tab` on an empty composer walks them. */
+  const cardKeys = surface === "chat" && panel === undefined
+    ? timeline.filter((row) => row.item.kind === "card").map((row) => row.key)
+    : []
+  const focusedCard = cardFocus !== undefined && cardKeys.includes(cardFocus) ? cardFocus : undefined
+
   const activitySources = [
     { id: "chat", title: "Chat", activity: transcript.activity },
     ...snapshot.tabs.map(tab => ({ id: tab.id, title: tabTitle(tab), activity: workspace.transcript(tab.id).activity }))
@@ -587,11 +716,17 @@ export function App(props: AppProps) {
 
   // A dialog's rows follow the dialog and its sources, never the 100 ms clock: the palette ranks every file.
   const tabsKey = snapshot.tabs.map((tab) => `${tab.id}\0${tab.title}\0${tab.status}`).join("\n")
+  /** Contributed keys and status items the palette can run. */
+  const paletteActions: NonNullable<Palette.Sources["actions"]> = [
+    ...extensions.keys.map(({ key }) => ({ key: `key:${key.id}`, label: key.label, hint: key.key, action: key.action })),
+    ...statusItems.flatMap((item) => item.action === undefined ? [] : [{ key: `status:${item.id}`, label: item.text, action: item.action }])
+  ]
+  const actionsKey = JSON.stringify(paletteActions)
   const rows = useMemo(
     () => picker === undefined
       ? []
-      : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed()),
-    [picker, props.models, seat, filter, tabsKey, search?.hits, runs, revision]
+      : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed(), paletteActions),
+    [picker, props.models, seat, filter, tabsKey, search?.hits, runs, revision, actionsKey]
   )
 
   // Key handlers read the latest values through these, never a stale render.
@@ -721,6 +856,7 @@ export function App(props: AppProps) {
   }, [])
 
   const quit = useCallback(() => {
+    flowWatch.current?.dispose()
     workspace.dispose()
     monitors.dispose()
     const stopped = runs.dispose()
@@ -748,13 +884,20 @@ export function App(props: AppProps) {
       workerSeat: props.workerSeat ?? props.seat,
       background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}\nAgents: ${Agents.context(runs.listed())}`,
       runtime: {
-        publish: (panel) => {
-          const first = !workspace.snapshot().panels.some((shown) => shown.id === panel.id)
-          workspace.publish(panel)
-          if (first && panel.placement === "main") {
-            setSurface((current) => current === "chat" ? `ui:${panel.id}` : current)
-            setPanelFocus(false)
+        publish: (contribution) => {
+          if (contribution.kind !== "panel") return contribute("runtime:chat", contribution)
+          if (contribution.placement === "tab") {
+            const first = !workspace.snapshot().panels.some((shown) => shown.id === contribution.panel.id)
+            const panel = workspace.publish(contribution.panel)
+            if (first && panel.placement === "main") {
+              setSurface((current) => current === "chat" ? `ui:${panel.id}` : current)
+              setPanelFocus(false)
+            }
+            return
           }
+          const at = Date.now()
+          const panel = workspace.publish(contribution.panel, "card", at)
+          setTranscript((current) => Transcript.card(current, panel, at))
         },
         delegate: workspace.request,
         read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
@@ -813,7 +956,7 @@ export function App(props: AppProps) {
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
-  }, [props.host, props.flows, workspace, runs, monitors, estimator])
+  }, [props.host, props.flows, workspace, runs, monitors, estimator, contribute])
   const startTurnRef = useRef(startTurn)
   startTurnRef.current = startTurn
 
@@ -912,12 +1055,16 @@ export function App(props: AppProps) {
     const nextWorkspace = makeWorkspace(state.workspace)
     setWorkspace(nextWorkspace)
     setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append, state.monitors))
+    contributions.clearRuntime()
+    for (const each of state.contributions) {
+      try { contributions.runtime(each.owner, each.contribution) } catch { /* A key a newer built-in took stays off. */ }
+    }
     setSurface("chat")
     setPanelFocus(false)
     setName(state.name)
     setTranscript(state.transcript)
     return state
-  }, [props.flows, changeForm, unsaved])
+  }, [props.flows, changeForm, unsaved, contribute, contributions])
 
   const newSession = useCallback(() => {
     adopt(Session.create(props.host.cwd), [])
@@ -965,7 +1112,7 @@ export function App(props: AppProps) {
         return true
       case "smithers":
         runs.refresh()
-        setSurface("smithers")
+        setSurface(`ui:${Smithers.id}`)
         setPanelFocus(true)
         setNavigation(Panels.initial())
         return true
@@ -1062,7 +1209,7 @@ export function App(props: AppProps) {
         return true
       }
       case "ui": {
-        const target = snapshot.panels.find((panel) => panel.id === argument) ?? snapshot.panels[0]
+        const target = uiPanels.find((panel) => panel.id === argument) ?? uiPanels[0]
         if (target === undefined) setStatus("No custom views")
         else {
           setSurface(`ui:${target.id}`)
@@ -1213,6 +1360,58 @@ export function App(props: AppProps) {
     send(text, followUp)
   }, [setText, runShell, command, send])
 
+  /**
+   * Runs a contributed action for the person who chose it: a key, a status
+   * item, a card row or a palette row. It never awaits: a prompt starts a turn
+   * or queues, a flow returns its `requested` receipt, and the toast settles
+   * with the run.
+   */
+  const perform = (action: Extension.Action) => {
+    switch (action.kind) {
+      case "prompt":
+        setPanelFocus(false)
+        if (live.current.turn === undefined && live.current.undoing === undefined) return startTurnRef.current(action.prompt)
+        return setFollowUps((queued) => [...queued, action.prompt])
+      case "flow":
+        try {
+          userRuns.current.add(runs.request({ flow: action.flow, input: action.input ?? {}, by: "user" }).id)
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : String(error), "warning")
+        }
+        return
+      case "agent":
+        // Agent input is a form whose one field is the prompt: without one, the composer asks.
+        if (action.prompt !== undefined && action.prompt.trim() !== "") {
+          command(`/agent ${action.agent} ${action.prompt}`)
+          return
+        }
+        setPanelFocus(false)
+        return setText(`/agent ${action.agent} `)
+      case "open": {
+        const target = action.surface === "smithers" ? `ui:${Smithers.id}` : action.surface
+        const card = target.startsWith("ui:") && cardIds.has(target.slice(3))
+        if (target !== "chat" && !card && !surfaces.some((each) => each.id === target)) {
+          return setStatus(`No view ${target}`, "warning")
+        }
+        if (liveForm.current !== undefined) changeForm(undefined)
+        return showTab(target)
+      }
+    }
+  }
+  /** Which owner a surface belongs to, so a `panel` key works only on its owner's own views. */
+  const ownerOf = (id: string): string | undefined => {
+    if (id.startsWith("flow:")) {
+      const run = runs.get(id.slice(5))
+      return run === undefined ? undefined : `repo:${run.flow}`
+    }
+    if (id.startsWith("tab:")) return `runtime:${id.slice(4)}`
+    if (!id.startsWith("ui:")) return undefined
+    const plugin = extensions.panels.find((each) => `ui:${each.panel.id}` === id)
+    if (plugin !== undefined) return plugin.owner
+    const slash = id.indexOf("/")
+    return slash < 0 ? "runtime:chat" : `runtime:${id.slice(3, slash)}`
+  }
+
   /** Tab inserts the selected completion; Enter also runs it when it is a whole command. */
   const acceptCompletion = useCallback((run: boolean) => {
     const { menu: open, menuIndex: index } = live.current
@@ -1338,6 +1537,8 @@ export function App(props: AppProps) {
           return
         case "prefix":
           return setPicker({ kind: "palette", query: chosen.prefix, selected: 0 })
+        case "action":
+          return perform(chosen.action)
       }
     }
     resumeGuarded(value)
@@ -1435,6 +1636,7 @@ export function App(props: AppProps) {
     if (live.current.approvals.length > 0 && composer.current?.plainText === "") return "approval"
     if (panelFocus && panel !== undefined) return "panel"
     if (live.current.menu !== undefined) return "completion"
+    if (focusedCard !== undefined) return "card"
     if (live.current.shell !== undefined || composer.current?.plainText.startsWith("!") === true) return "shell"
     if (live.current.turn !== undefined) return "working"
     return "composer"
@@ -1448,7 +1650,7 @@ export function App(props: AppProps) {
     // that character, so a message that starts with `?` is never lost.
     if (whichKeyRef.current) {
       setWhichKeyOpen(false)
-      const binding = Keys.bindingFor(key, keyContext())
+      const binding = Keys.bindingFor(key, keyContext(), merged)
       if (key.name === "escape" || binding?.id === "keys") return key.preventDefault()
       const typed = key.sequence
       if (binding === undefined && !key.ctrl && !key.meta && !key.option && typed.length === 1 && typed >= " " && typed !== "\x7f") {
@@ -1476,6 +1678,38 @@ export function App(props: AppProps) {
       if (next !== undefined) inspectActivity(next)
       return
     }
+    if (focusedCard !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
+      if (key.name === "return" || key.name === "kpenter") {
+        key.preventDefault()
+        setCardFocus(undefined)
+        const row = timeline.find((each) => each.key === focusedCard)
+        if (row?.item.kind !== "card") return
+        const id = row.item.panel.id
+        return perform({ kind: "open", surface: id.startsWith("flow:") ? id : `ui:${id}` })
+      }
+      if (key.name === "escape") {
+        key.preventDefault()
+        return setCardFocus(undefined)
+      }
+      if (key.name === "up" || key.name === "down" || key.name === "tab") {
+        key.preventDefault()
+        const back = key.name === "up" || (key.name === "tab" && key.shift)
+        const next = cardKeys[(cardKeys.indexOf(focusedCard) + (back ? -1 : 1) + cardKeys.length) % cardKeys.length]!
+        setCardFocus(next)
+        return reveal(next)
+      }
+      // Anything else goes back to the composer.
+      setCardFocus(undefined)
+    } else if (
+      key.name === "tab" && !key.shift && !key.ctrl && !key.meta && !key.option && text === "" &&
+      open === undefined && completing === undefined && liveForm.current === undefined && cardKeys.length > 0 &&
+      keyContext() === "composer"
+    ) {
+      key.preventDefault()
+      const last = cardKeys.at(-1)!
+      setCardFocus(last)
+      return reveal(last)
+    }
     if (key.ctrl && key.name === "c") {
       key.preventDefault()
       const at = Date.now()
@@ -1483,6 +1717,7 @@ export function App(props: AppProps) {
       lastCtrlC.current = at
       if (open !== undefined) setPicker(undefined)
       setPanelFocus(false)
+      setCardFocus(undefined)
       setText("")
       return
     }
@@ -1517,6 +1752,15 @@ export function App(props: AppProps) {
       const back = key.name === "left" || key.name === "\\"
       showTab(surfaces[(index + (back ? -1 : 1) + surfaces.length) % surfaces.length]!.id)
       return
+    }
+    // Contributed keys never shadow a built-in one (`Contributions` refused those), and a
+    // panel key works only on its owner's own view.
+    const contributed = open === undefined && liveForm.current === undefined
+      ? Keys.bindingFor(key, keyContext(), merged)
+      : undefined
+    if (contributed?.action !== undefined && (contributed.context !== "panel" || ownerOf(surface) === contributed.owner)) {
+      key.preventDefault()
+      return perform(contributed.action)
     }
     const choice = Approvals.key(key.name, {
       draft: text,
@@ -1602,12 +1846,14 @@ export function App(props: AppProps) {
       }
       if (key.name === "a") {
         const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
+        if (action === undefined) return
         // An agent wrote this prompt: it goes to the agent as text, never through `!` or `/` parsing.
-        if (action !== undefined && action.prompt.trim() !== "") {
+        if ("prompt" in action) {
+          if (action.prompt.trim() === "") return
           setPanelFocus(false)
-          send(action.prompt.trim())
+          return send(action.prompt.trim())
         }
-        return
+        return perform(action.action)
       }
       if (key.name === "pageup" || key.name === "pagedown") {
         panelScroll.current?.(key.name === "pageup" ? -1 : 1)
@@ -1713,12 +1959,34 @@ export function App(props: AppProps) {
   const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
   const footerContext = keyContext()
   const footerHints = footerContext === "panel" && panel !== undefined
-    ? Keys.panelHints({
-      worker: surface.startsWith("tab:") || surface.startsWith("flow:"),
-      undo: surface === "summary" || surface.startsWith("tab:"),
-      action: panel.rows[Math.max(0, Math.min(navigation.selected, panel.rows.length - 1))]?.action?.label
-    })
-    : Keys.hintsFor(footerContext)
+    ? [
+      ...Keys.panelHints({
+        worker: surface.startsWith("tab:") || surface.startsWith("flow:"),
+        undo: surface === "summary" || surface.startsWith("tab:"),
+        action: panel.rows[Math.max(0, Math.min(navigation.selected, panel.rows.length - 1))]?.action?.label
+      }),
+      // A contributed panel key works only on its owner's view; a global one works here too.
+      ...Keys.hintsFor("panel", merged).filter((binding) =>
+        binding.owner !== undefined && (binding.context !== "panel" || binding.owner === ownerOf(surface))
+      )
+    ]
+    : Keys.hintsFor(footerContext, merged)
+  const meter = {
+    context: transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
+      ? `context: ${[
+        transcript.contextAssessment.outdated ? "outdated" : "",
+        transcript.contextAssessment.irrelevant ? "irrelevant" : ""
+      ].filter(Boolean).join(" + ")} · compact?  `
+      : "",
+    usage: `↑${Editor.tokens(usage.input)} ↓${Editor.tokens(usage.output)}${usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`}`,
+    window: window > 0
+      ? `  ${percent.toFixed(1)}%/${Editor.tokens(window)}${compact === undefined ? "" : ` · compact ${Editor.tokens(compact)}`}`
+      : ""
+  }
+  // The hints get the row less its padding, the margins, the status items and the meter; the path gives way first.
+  const hintColumns = width - 5 -
+    statusItems.reduce((total, item) => total + Bun.stringWidth(item.text) + 2, 0) -
+    Bun.stringWidth(meter.context + meter.usage + meter.window)
   const toastRows = [
     ...snapshot.tabs.filter((tab) =>
       now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
@@ -1822,9 +2090,12 @@ export function App(props: AppProps) {
             >
               {timeline.map((row, index) => {
                 const worker = lanes.get(row.source)
+                const card = row.item.kind === "card" ? livePanel(row.item.panel) : undefined
                 const step = row.item.kind === "cell" ? Scrubber.step(transcriptOf(row.source), row.item) : undefined
-                const entry = <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} selected={row.key === jumpTarget}
-                  {...(step === undefined ? {} : { step })} {...(worker === undefined ? {} : { tone: worker.tone })} />
+                const entry = card !== undefined
+                  ? <View.Card panel={card} focused={row.key === focusedCard} onOpen={() => perform({ kind: "open", surface: card.id.startsWith("flow:") ? card.id : `ui:${card.id}` })} />
+                  : <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} selected={row.key === jumpTarget}
+                    {...(step === undefined ? {} : { step })} {...(worker === undefined ? {} : { tone: worker.tone })} />
                 return worker === undefined
                   ? <box key={row.key} id={row.key}>{entry}</box>
                   : (
@@ -1996,33 +2267,22 @@ export function App(props: AppProps) {
                   </span>
                 )}
             </text>
-            <View.KeyHints bindings={footerHints} />
+            <View.KeyHints bindings={Keys.fit(footerHints, hintColumns, Bun.stringWidth)} />
           </box>
+          <box style={{ flexDirection: "row", flexShrink: 0 }}>
+          <View.StatusItems items={statusItems} onSelect={(item) => item.action === undefined ? undefined : perform(item.action)} />
           <text wrapMode="none" style={{ flexShrink: 0 }}>
-            {transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
-              ? <span fg={color.warning}>{"context: "}{[
-                  transcript.contextAssessment.outdated ? "outdated" : "",
-                  transcript.contextAssessment.irrelevant ? "irrelevant" : ""
-                ].filter(Boolean).join(" + ")}{" · compact?  "}</span>
-              : null}
-            <span fg={color.faint}>
-              ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)}
-              {usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`}
-            </span>
-            {window > 0
-              ? (
-                <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>
-                  {"  "}
-                  {percent.toFixed(1)}%/{Editor.tokens(window)}
-                  {compact === undefined ? "" : ` · compact ${Editor.tokens(compact)}`}
-                </span>
-              )
-              : null}
+            {meter.context === "" ? null : <span fg={color.warning}>{meter.context}</span>}
+            <span fg={color.faint}>{meter.usage}</span>
+            {meter.window === "" ? null : (
+              <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>{meter.window}</span>
+            )}
           </text>
+          </box>
         </box>
       </box>
       </box>
-      {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext)} width={dimensions.width} height={dimensions.height} /> : null}
+      {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext, merged)} width={dimensions.width} height={dimensions.height} /> : null}
       {sideChat
         ? toastRows.length === 0 ? null : <box style={{ position: "absolute", left: mainWidth - toastWidth,
           top: dimensions.height - toastHeight - 2, width: toastWidth, height: toastHeight }}>

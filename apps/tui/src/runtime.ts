@@ -8,12 +8,14 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
 import * as Agents from "./agents.ts"
+import * as Extension from "./extension.ts"
 import * as Panels from "./panels.ts"
 import type { DelegateModel } from "./models.ts"
 import type * as Monitors from "./monitors.ts"
 
 export interface Ports {
-  readonly publish: (panel: Panels.Panel) => void
+  /** Throws a one-line refusal (`Contributions.Refusal`) when the contribution cannot be shown. */
+  readonly publish: (contribution: Extension.Contribution) => void
   readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel; agent?: string }) => unknown
   readonly wait?: (ids: ReadonlyArray<string>, signal?: AbortSignal) => Promise<unknown>
   readonly read?: (id: string) => unknown
@@ -54,7 +56,12 @@ export const publicError = (error: Error): string => {
   if (typeof tag !== "string") return error.message
   return `${tag}${typeof code === "string" ? ` (${code})` : ""}: ${error.message}`
 }
-const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown, never>>(
+/**
+ * One runtime flow. `Flow.make` only names it: its empty payload is never
+ * decoded. `input` is the call's schema (`FlowBinding.make` decodes `flow.input`),
+ * and it may be any schema, as `ui.publish` takes a union.
+ */
+const bind = <I extends Schema.Top & Schema.ConstraintDecoder<unknown, never>>(
   name: string,
   description: string,
   input: I,
@@ -65,7 +72,7 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
 ): FlowBinding.Binding => {
   const flow = Flow.make(name, {
     description,
-    payload: input,
+    payload: Schema.Struct({}),
     success: Schema.Unknown,
     body: () => Node.succeed(undefined)
   })
@@ -97,16 +104,33 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
     publicError
   })
 }
+/** What `ui.publish` accepts: `Extension.Contribution` or a bare panel; `Extension.decode` then applies every limit. */
+const publishInput = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("panel"),
+    placement: Schema.optional(Schema.Literals(["tab", "card"])),
+    panel: Panels.Panel
+  }),
+  Schema.Struct({ kind: Schema.Literal("status"), status: Extension.Status }),
+  Schema.Struct({ kind: Schema.Literal("key"), key: Extension.Key }),
+  Panels.Panel
+])
+
 export const source = (ports: Ports): FlowBinding.Source =>
   FlowBinding.source("tui/runtime", [
     bind(
       "ui.publish",
-      "Create or update a custom terminal panel; returns immediately. Same id replaces the view without stealing focus. Use one sentence and concise rows with expandable code, tables, text or diffs.",
-      Panels.Panel,
+      "Create or update custom terminal UI; returns immediately. A bare panel is a tab; {kind:\"panel\",placement:\"card\",panel} is a live chat card; {kind:\"status\",status} is a footer item; {kind:\"key\",key} is a key. Same id replaces it without stealing focus. Use one sentence and concise rows with expandable code, tables, text or diffs.",
+      publishInput,
       (input) => {
-        const panel = Panels.decode(input)
-        ports.publish(panel)
-        return { id: panel.id, status: "published" }
+        const contribution = Extension.decode(input)
+        ports.publish(contribution)
+        const id = contribution.kind === "panel"
+          ? contribution.panel.id
+          : contribution.kind === "status"
+          ? contribution.status.id
+          : contribution.key.id
+        return { id, status: "published" }
       }
     ),
     ...(ports.monitors === undefined ? [] : [

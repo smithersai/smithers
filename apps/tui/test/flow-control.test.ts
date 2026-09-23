@@ -70,6 +70,11 @@ it("reads a module flow's payload schema", async () => {
   expect(Schema.is(input!)({})).toBe(false)
 })
 
+it("takes a markdown flow's input as it is: the control plane runs its prompt, not a catalog delegate", async () => {
+  // The catalog refuses `review` (no `agent` delegate here); starting it must not repeat that refusal.
+  expect(await port.input("review")).toBeUndefined()
+}, 30_000)
+
 it("rejects an unknown flow with a typed error", async () => {
   const error = await port.input("missing").catch((error: unknown) => error)
   expect(error).toBeInstanceOf(FlowError)

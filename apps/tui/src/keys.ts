@@ -1,3 +1,5 @@
+import type * as Extension from "./extension.ts"
+
 /**
  * The TUI key contract. Keep labels short: this registry feeds the footer,
  * the which-key panel, the home screen, and the generated key list.
@@ -14,6 +16,7 @@ export type KeyContext =
   | "approval"
   | "selection"
   | "completion"
+  | "card"
 
 export interface Binding {
   readonly id: string
@@ -25,6 +28,10 @@ export interface Binding {
   readonly label: string
   readonly context: KeyContext
   readonly group: string
+  /** A contributed key runs this; a built-in key's handler lives in `app.tsx`. */
+  readonly action?: Extension.Action
+  /** `repo:<name>`, `runtime:<source>` or `plugin:<name>`; absent on built-in keys. */
+  readonly owner?: string
 }
 
 /** The keys the application handles. Text input is intentionally not listed. */
@@ -56,6 +63,7 @@ export const registry: ReadonlyArray<Binding> = [
   { id: "commands", keys: ["/"], label: "Commands", context: "composer", group: "Composer" },
   { id: "mention", keys: ["@"], label: "Mention file", context: "composer", group: "Composer" },
   { id: "shell-input", keys: ["!"], label: "Shell mode", context: "composer", group: "Composer" },
+  { id: "cards", keys: ["tab"], label: "Cards", context: "composer", group: "Composer" },
 
   { id: "steer", keys: ["enter"], label: "Steer", context: "working", group: "Working" },
   { id: "queue-working", keys: ["alt+enter"], label: "Queue", context: "working", group: "Working" },
@@ -102,7 +110,11 @@ export const registry: ReadonlyArray<Binding> = [
   { id: "complete-move", keys: ["up", "down", "ctrl+p", "ctrl+n"], display: "up/down", label: "Move", context: "completion", group: "Completion" },
   { id: "complete", keys: ["tab"], label: "Complete", context: "completion", group: "Completion" },
   { id: "complete-run", keys: ["enter"], label: "Choose", context: "completion", group: "Completion" },
-  { id: "complete-close", keys: ["esc"], label: "Close", context: "completion", group: "Completion" }
+  { id: "complete-close", keys: ["esc"], label: "Close", context: "completion", group: "Completion" },
+
+  { id: "open-card", keys: ["enter"], label: "Open", context: "card", group: "Cards" },
+  { id: "card-move", keys: ["up", "down", "tab", "shift+tab"], display: "up/down", label: "Next card", context: "card", group: "Cards" },
+  { id: "close-card", keys: ["esc"], label: "Composer", context: "card", group: "Cards" }
 ]
 
 export interface KeyEventLike {
@@ -139,17 +151,76 @@ export const matches = (event: KeyEventLike, key: string): boolean => {
     [...actual.modifiers].every((modifier) => expected.modifiers.has(modifier))
 }
 
-export const bindingFor = (event: KeyEventLike, context?: KeyContext): Binding | undefined =>
-  registry.find((binding) => (context === undefined || binding.context === context || binding.context === "global") &&
+export const bindingFor = (
+  event: KeyEventLike,
+  context?: KeyContext,
+  list: ReadonlyArray<Binding> = registry
+): Binding | undefined =>
+  list.find((binding) => (context === undefined || binding.context === context || binding.context === "global") &&
     binding.keys.some((key) => matches(event, key)))
 
 /** The context's own keys first, then the global ones. */
-export const bindingsFor = (context: KeyContext): ReadonlyArray<Binding> => [
-  ...registry.filter((binding) => binding.context === context),
-  ...(context === "global" ? [] : registry.filter((binding) => binding.context === "global"))
+export const bindingsFor = (context: KeyContext, list: ReadonlyArray<Binding> = registry): ReadonlyArray<Binding> => [
+  ...list.filter((binding) => binding.context === context),
+  ...(context === "global" ? [] : list.filter((binding) => binding.context === "global"))
 ]
 
-export const hintsFor = (context: KeyContext): ReadonlyArray<Binding> => {
+/** One spelling per key: `shift+ctrl+P` and `ctrl+shift+p` are the same key. */
+const canonical = (key: string): string => {
+  const { modifiers, name } = tokenParts(key.toLowerCase())
+  return [...["ctrl", "alt", "shift"].filter((modifier) => modifiers.has(modifier)), name].join("+")
+}
+
+/**
+ * The built-in binding a contributed key would shadow. A global key fires in
+ * every context, so any built-in spelling collides; a panel key collides only
+ * with the view's own and the global keys.
+ */
+export const taken = (key: string, context: "global" | "panel"): Binding | undefined => {
+  const wanted = canonical(key)
+  return [...registry, ...(context === "global" ? [editing] : [])].find((binding) =>
+    (context === "global" || binding.context === "global" || binding.context === "panel") &&
+    binding.keys.some((each) => canonical(each) === wanted)
+  )
+}
+
+/**
+ * The composer's own text-editing keys (OpenTUI's textarea defaults). They are
+ * not listed in `registry`, but `app.tsx` handles contributed keys before the
+ * composer sees an event, so a contributed global key must never take one.
+ */
+const editing: Binding = {
+  id: "edit-text",
+  keys: [
+    "ctrl+a", "ctrl+e", "ctrl+shift+a", "ctrl+shift+e", "alt+a", "alt+e", "alt+shift+a", "alt+shift+e",
+    "ctrl+f", "ctrl+b", "ctrl+w", "ctrl+u", "ctrl+backspace", "ctrl+delete", "ctrl+shift+d", "ctrl+-", "ctrl+.",
+    "alt+d", "alt+delete", "alt+f", "alt+b", "alt+left", "alt+right",
+    "alt+shift+f", "alt+shift+b", "alt+shift+left", "alt+shift+right"
+  ],
+  label: "Edit text",
+  context: "composer",
+  group: "Composer"
+}
+
+const ownerName = (owner: string): string => owner.slice(owner.indexOf(":") + 1)
+
+/** The registry plus contributed keys (`contributions.ts` already refused collisions), grouped by owner. */
+export const bindings = (
+  contributed: ReadonlyArray<{ readonly owner: string; readonly key: Extension.Key }>
+): ReadonlyArray<Binding> => [
+  ...registry,
+  ...contributed.map(({ owner, key }): Binding => ({
+    id: key.id,
+    keys: [key.key],
+    label: key.label,
+    context: key.context === "panel" ? "panel" : "global",
+    group: ownerName(owner),
+    action: key.action,
+    owner
+  }))
+]
+
+export const hintsFor = (context: KeyContext, list: ReadonlyArray<Binding> = registry): ReadonlyArray<Binding> => {
   const preferred: Record<KeyContext, ReadonlyArray<string>> = {
     global: ["palette", "summary", "next-tab", "keys"],
     composer: ["palette", "summary", "next-tab", "keys"],
@@ -160,12 +231,45 @@ export const hintsFor = (context: KeyContext): ReadonlyArray<Binding> => {
     form: ["next-field", "previous-field", "run-form", "close-form"],
     approval: ["allow", "deny", "allow-all"],
     selection: ["selection-move", "selection-milestone", "selection-close"],
-    completion: ["complete-move", "complete", "complete-run", "complete-close"]
+    completion: ["complete-move", "complete", "complete-run", "complete-close"],
+    card: ["open-card", "card-move", "close-card", "keys"]
   }
-  const available = bindingsFor(context)
-  return preferred[context].map((id) => available.find((binding) => binding.id === id)).filter(
+  const available = bindingsFor(context, list)
+  const builtIn = preferred[context].map((id) => available.find((binding) => binding.id === id)).filter(
     (binding): binding is Binding => binding !== undefined
   )
+  const typing = context === "picker" || context === "form" || context === "approval" || context === "completion"
+  // Every contributed key, after the built-in ones; `fit` drops what the footer has no room for.
+  const contributed = typing ? [] : available.filter((binding) => binding.owner !== undefined)
+  return [...builtIn, ...contributed]
+}
+
+/** A footer hint's columns: `key label`. */
+export const hintWidth = (binding: Binding, measure: (text: string) => number = (text) => text.length): number =>
+  measure(primaryKey(binding)) + 1 + measure(binding.label)
+
+/**
+ * The hints that fit `columns` whole, in priority order, two columns apart.
+ * None is ever clipped. When one is left out, `?` stays, last, because the
+ * popup it opens lists every key.
+ */
+export const fit = (
+  hints: ReadonlyArray<Binding>,
+  columns: number,
+  measure?: (text: string) => number
+): ReadonlyArray<Binding> => {
+  const cost = (list: ReadonlyArray<Binding>) =>
+    list.reduce((total, binding, index) => total + (index === 0 ? 0 : 2) + hintWidth(binding, measure), 0)
+  if (cost(hints) <= columns) return hints
+  const popup = hints.find((binding) => binding.id === "keys")
+  const rest = hints.filter((binding) => binding !== popup)
+  const reserved = popup === undefined ? 0 : hintWidth(popup, measure) + 2
+  const kept: Array<Binding> = []
+  for (const binding of rest) {
+    if (cost([...kept, binding]) + reserved > columns) break
+    kept.push(binding)
+  }
+  return popup === undefined || cost([...kept, popup]) > columns ? kept : [...kept, popup]
 }
 
 /**

@@ -12,7 +12,8 @@ export const kinds: ReadonlyArray<readonly [kind: Kind, label: string]> = [
   ["shell", "Shell"],
   ["answer", "Answers"],
   ["error", "Errors"],
-  ["note", "Notes"]
+  ["note", "Notes"],
+  ["card", "Cards"]
 ]
 
 /** The chat's own source id; a worker's is its tab id. */
@@ -62,6 +63,8 @@ export const text = (item: Transcript.Item): string => {
       return item.text
     case "shell":
       return `${item.command}\n${item.output}`
+    case "card":
+      return [item.panel.title, item.panel.summary, ...item.panel.rows.map((row) => row.label)].join("\n")
     case "cell":
       return [item.prose, item.source, item.printed, item.error ?? "", ...item.calls.map((call) => call.subject)].join(
         "\n"

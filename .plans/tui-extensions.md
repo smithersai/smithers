@@ -272,6 +272,15 @@ Owns: `agents.ts`, `models.ts`, `flows.ts`, `flow-control.ts`,
 
 ## Track UI-ELEMENTS
 
+Status: steps 1 to 8 landed. `enter` on a card focused with `tab` opens
+`ui:<id>`; monitors are `plugin:monitors` (one status item while any is
+active); the Smithers tab is `plugin:smithers` and shows only while open, as
+main's `/smithers` surface did. The footer fits every whole hint and leaves the
+rest to `?`. A key without an action on an agent starts it with its label as
+the prompt. A `{kind:"flow"}` key on a markdown flow starts a control-plane
+prompt run: `Port.input` no longer repeats the catalog's missing-delegate
+refusal, which only applies to module delegation.
+
 Owns: `contributions.ts` (new), `watch.ts` (new), `keys.ts`, `transcript.ts`
 (`card` item), `session.ts` (`card` and `contribution` records), `view.tsx`
 (`Card`, `StatusItems`), `panel-view.tsx`, `panels.ts` (`Row.action` widening,
@@ -288,6 +297,18 @@ teaching), `runtime.ts` (`ui.publish` only), and the footer, key dispatch and
 | 6 | `app.tsx` | `perform(action)`: prompt => `startTurn`/queue, flow => `runs.request({ by: "user" })`, agent => `workspace.request({ agent })` or composer prefill, open => `setSurface`; never awaits | e2e: `alt+r` in a fixture repo requests the flow; toast settles only with the run; chat stays usable |
 | 7 | `watch.ts` (new), `app.tsx` | Gap A3: recursive `flows/` watch, 300 ms debounce, dispose on exit | `test/watch.test.ts` on a temp dir: add `flow.mdx` then one refresh; burst of writes then one refresh |
 | 8 | `app.tsx`, `smithers.ts`, `monitors.ts` | Plugin door: Smithers surface and monitors register as `plugin:` contributions | after the plugin and monitors lanes land |
+
+UI-ELEMENTS status (change `utkyxozm`, on the which-key lane `lwnmtzuv`):
+
+| # | State |
+| --- | --- |
+| 1-7 | Done, test-first. |
+| 8 | Smithers surface done (`plugin:smithers`, `ui:smithers`). Monitors not done: the monitors lane has not landed. |
+
+Found while building:
+- The registry parses frontmatter with YAML's failsafe schema, so `status: true` arrives as `"true"`. `Extension.Manifest` accepts both.
+- `metadata` must map strings to strings: a nested `metadata.tui` gets an `invalid_metadata` discovery warning (a `smthrs doctor` warn), and `SKILL.md` rejects it outright (`skill_invalid_metadata`). `metadata.tui` may therefore be a JSON string. Clearing the flow.mdx warning needs a registry change; not made here.
+- The TUI's flow control refuses markdown flows (`delegates to "agent", which no registered flow provides`), so a `{ kind: "flow" }` action on a markdown flow fails today. A key without an action runs the owner as an agent instead (AGENTS track).
 
 ## Order and independence
 

@@ -98,3 +98,12 @@ describe("mentions", () => {
     expect(Palette.insertAt("a  b", 2, "@x ")).toEqual({ text: "a @x b", cursor: 5 })
   })
 })
+
+describe("contributed actions", () => {
+  it("lists contributed keys and status items in the plain search and picks their action", () => {
+    const actions = [{ key: "repo:review/alt+r", label: "Review", hint: "alt+r", action: { kind: "flow" as const, flow: "review" } }]
+    const found = rows("revi", { actions })
+    expect(found[0]).toMatchObject({ label: "Review", hint: "alt+r", value: { kind: "action", action: { kind: "flow", flow: "review" } } })
+    expect(rows("/revi", { actions }).some((row) => row.value.kind === "action")).toBe(false)
+  })
+})

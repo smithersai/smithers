@@ -171,8 +171,9 @@ export const declared = (descriptor: Descriptor): Declared => {
     const manifest = Schema.decodeUnknownSync(Manifest)(
       typeof descriptor.tui === "string" ? JSON.parse(descriptor.tui) : descriptor.tui
     )
-    const own: Action = isAgent(descriptor)
-      ? { kind: "agent", agent: descriptor.name }
+    // A key without an action runs its owner. An agent's key starts it at once, its label the prompt.
+    const own = (label: string): Action => isAgent(descriptor)
+      ? { kind: "agent", agent: descriptor.name, prompt: label }
       : { kind: "flow", flow: descriptor.name }
     const keys = (manifest.keys ?? []).map((key) =>
       Schema.decodeUnknownSync(Key)({
@@ -180,7 +181,7 @@ export const declared = (descriptor: Descriptor): Declared => {
         key: key.key,
         label: key.label,
         context: key.context ?? "global",
-        action: key.action ?? own
+        action: key.action ?? own(key.label)
       })
     )
     return { owner, keys, status: flag(manifest.status), card: flag(manifest.card), problems: [] }

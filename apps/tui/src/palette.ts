@@ -10,6 +10,7 @@
  */
 import { fileLimit, mention, rankFiles } from "./complete.ts"
 import type * as Editor from "./editor.ts"
+import type * as Extension from "./extension.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import type * as Search from "./search.ts"
 import type * as Session from "./session.ts"
@@ -51,6 +52,8 @@ export type Value =
   | { readonly kind: "session"; readonly file: string }
   | { readonly kind: "tab"; readonly id: string }
   | { readonly kind: "prefix"; readonly prefix: string }
+  /** A contributed key or status item: choosing it runs its action. */
+  | { readonly kind: "action"; readonly action: Extension.Action }
 
 export interface Row extends View.Row {
   readonly value: Value
@@ -64,6 +67,8 @@ export interface Sources {
   readonly tabs: ReadonlyArray<Tab>
   readonly hits: ReadonlyArray<Search.Hit>
   readonly now: number
+  /** Contributed keys and status items; `hint` is the key. */
+  readonly actions?: ReadonlyArray<{ readonly key: string; readonly label: string; readonly hint?: string; readonly action: Extension.Action }>
 }
 
 /** The session rows `/resume` and `session:` both show. */
@@ -94,6 +99,10 @@ export const rows = (parsed: Parsed, sources: Sources): ReadonlyArray<Row> => {
     case "all":
       return [
         ...commandRows(sources.commands, query),
+        ...Fuzzy.filter(sources.actions ?? [], query, (each) => each.label).map(({ action, ...row }): Row => ({
+          ...row,
+          value: { kind: "action", action }
+        })),
         ...rankFiles(sources.files(), query).slice(0, fileLimit).map((path): Row => ({
           key: `file:${path}`,
           label: path,

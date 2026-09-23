@@ -97,6 +97,11 @@ export const make = (options: {
     throw typed(Cause.squash(exit.cause))
   }
 
+  const markdown = (flow: string): Promise<boolean> =>
+    Effect.runPromise(
+      Registry.Registry.pipe(Effect.flatMap((each) => each.getOption(flow)), Effect.provide(registry()))
+    ).then((descriptor) => descriptor._tag === "Some" && descriptor.value.body._tag === "Markdown", () => false)
+
   const events = (runId: string): Promise<ReadonlyArray<ControlEvent>> =>
     control((service) => service.watch({ runId, follow: false }).pipe(Stream.runCollect)).then((events) => [...events])
 
@@ -141,6 +146,9 @@ export const make = (options: {
       const { catalog } = await open()
       const found = catalog.executables.find((entry) => entry.descriptor.name === flow)
       if (found !== undefined) return found.input
+      // A markdown flow is a prompt flow: the control plane runs its body itself and
+      // takes any JSON input, so the catalog's delegate refusal does not apply to it.
+      if (await markdown(flow)) return undefined
       const refused = catalog.refused.find((entry) => entry.flow === flow)
       if (refused !== undefined) throw new FlowError("refused", refused.message)
       throw new FlowError("unknown_flow", `Unknown flow ${flow}`)

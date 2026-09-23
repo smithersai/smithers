@@ -15,6 +15,7 @@ import { homedir } from "node:os"
 import { basename, join } from "node:path"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
+import type * as Extension from "./extension.ts"
 import type * as Flows from "./flows.ts"
 import type * as Monitors from "./monitors.ts"
 import * as Panels from "./panels.ts"
@@ -24,7 +25,16 @@ import type * as Workspace from "./workspace.ts"
 
 export type Record =
   | { readonly type: "caption"; readonly prose: string }
-  | { readonly type: "panel"; readonly panel: Panels.Panel }
+  /** A worker's card is placed here and drawn in its own file's `card` record. */
+  | { readonly type: "panel"; readonly panel: Panels.Panel; readonly placement?: "card" }
+  /** A panel published as a chat card; its transcript item and its `ui:<id>` view. */
+  | { readonly type: "card"; readonly at: number; readonly panel: Panels.Panel }
+  /** A cell's status item or key (`runtime:<source>`); repo and plugin items are never persisted. */
+  | {
+    readonly type: "contribution"
+    readonly owner: string
+    readonly contribution: Extract<Extension.Contribution, { kind: "status" | "key" }>
+  }
   | { readonly type: "tab"; readonly tab: Workspace.Tab }
   | { readonly type: "flow"; readonly run: Flows.Run }
   | { readonly type: "monitor"; readonly monitor: Monitors.Monitor }
@@ -391,11 +401,15 @@ export const restore = (records: ReadonlyArray<Record>): {
   readonly workspace: Workspace.Snapshot
   readonly flows: ReadonlyArray<Flows.Run>
   readonly monitors: ReadonlyArray<Monitors.Monitor>
+  /** Runtime status items and keys, latest per owner and id. */
+  readonly contributions: ReadonlyArray<{ readonly owner: string; readonly contribution: Extension.Contribution }>
   readonly entries: Array<Context.Entry>
   readonly prompts: Array<string>
   readonly name: string | undefined
 } => {
   const panels = new Map<string, Panels.Panel>()
+  const cards = new Set<string>()
+  const contributions = new Map<string, { readonly owner: string; readonly contribution: Extension.Contribution }>()
   const tabs = new Map<string, Workspace.Tab>()
   const flows = new Map<string, Flows.Run>()
   const monitors = new Map<string, Monitors.Monitor>()
@@ -410,7 +424,22 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
       case "panel":
         Panels.keep(panels, record.panel)
+        if (record.placement === "card") cards.add(record.panel.id)
+        else cards.delete(record.panel.id)
         break
+      case "card":
+        Panels.keep(panels, record.panel)
+        cards.add(record.panel.id)
+        transcript = Transcript.card(transcript, record.panel, record.at)
+        break
+      case "contribution": {
+        const id = record.contribution.kind === "status" ? record.contribution.status.id : record.contribution.key.id
+        contributions.set(`${record.owner}\0${record.contribution.kind}\0${id}`, {
+          owner: record.owner,
+          contribution: record.contribution
+        })
+        break
+      }
       case "tab":
         tabs.set(record.tab.id, record.tab)
         break
@@ -470,8 +499,9 @@ export const restore = (records: ReadonlyArray<Record>): {
     entries,
     prompts,
     name,
-    workspace: { tabs: [...tabs.values()], panels: [...panels.values()] },
+    workspace: { tabs: [...tabs.values()], panels: [...panels.values()], cards: [...cards].filter((id) => panels.has(id)) },
     flows: [...flows.values()],
-    monitors: [...monitors.values()]
+    monitors: [...monitors.values()],
+    contributions: [...contributions.values()]
   }
 }

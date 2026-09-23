@@ -109,6 +109,12 @@ export const panel = (transcript: Transcript.Transcript, id = "summary", title =
           ...diffs
         ]
       })
+    } else if (item.kind === "card") {
+      rows.push({
+        id: item.id,
+        label: item.panel.title,
+        details: [{ kind: "text", text: item.panel.summary }, ...item.panel.rows.flatMap((row) => row.details).slice(0, 8)]
+      })
     } else if (item.kind === "user") {
       rows.push({ id: item.id, label: `Asked: ${sentence(item.text)}`, details: [{ kind: "text", text: item.text }] })
     } else if (item.kind === "answer") {

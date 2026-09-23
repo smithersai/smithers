@@ -10,6 +10,7 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Activity from "./activity.ts"
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
+import type * as Panels from "./panels.ts"
 import * as Shell from "./shell.ts"
 
 export type CellStatus = "writing" | "running" | "done" | "failed" | "rejected"
@@ -88,6 +89,8 @@ export type Item = (
     readonly background?: true
   }
   | { readonly kind: "note"; readonly id: string; readonly text: string }
+  /** A panel published with `placement: "card"`: one item per panel id, updated in place. */
+  | { readonly kind: "card"; readonly id: string; readonly panel: Panels.Panel }
 ) & {
   /** When the item appeared; an item without one shares the previous item's time. */
   readonly at?: number
@@ -186,6 +189,15 @@ export const note = (transcript: Transcript, text: string, at?: number): Transcr
 /** An error row that settles nothing: a background failure the person must see. */
 export const alert = (transcript: Transcript, text: string, at?: number): Transcript =>
   withId(transcript, { kind: "error", text, background: true }, at)
+
+/** Adds a card, or updates the card already showing this panel id where it stands. */
+export const card = (transcript: Transcript, panel: Panels.Panel, at?: number): Transcript => {
+  const index = transcript.items.findIndex((item) => item.kind === "card" && item.panel.id === panel.id)
+  if (index < 0) return withId(transcript, { kind: "card", panel }, at)
+  const items = [...transcript.items]
+  items[index] = { ...items[index]!, panel } as Item
+  return { ...transcript, items }
+}
 
 export const failure = (transcript: Transcript, text: string, at: number): Transcript =>
   withId({ ...settleOpen(transcript, at, "failed"),

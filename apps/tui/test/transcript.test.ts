@@ -191,3 +191,18 @@ describe("a reply the harness re-asks inside its frame", () => {
     expect(JSON.stringify(Summary.panel(transcript))).not.toContain("No cell was found")
   })
 })
+
+describe("cards", () => {
+  const plan = { id: "release", title: "Release plan", summary: "Two steps left.", rows: [{ id: "changelog", label: "Changelog", status: "done" as const, details: [] }] }
+  it("adds one card per panel id and updates it in place on republish", () => {
+    let transcript = Transcript.user(Transcript.empty, "Plan the release", false, 1)
+    transcript = Transcript.card(transcript, plan, 2)
+    transcript = Transcript.note(transcript, "later", 3)
+    const updated = { ...plan, summary: "One step left." }
+    transcript = Transcript.card(transcript, updated, 4)
+    const cards = transcript.items.filter((item) => item.kind === "card")
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({ kind: "card", panel: updated, at: 2 })
+    expect(transcript.items.map((item) => item.kind)).toEqual(["user", "card", "note"])
+  })
+})

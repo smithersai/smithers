@@ -13,10 +13,16 @@ const run = (id: string, status: Run["status"], extra: Partial<Run> = {}): Run =
   startedAt: 1,
   ...extra
 })
-const listed: ReadonlyArray<Listed> = [
-  { name: "review", description: "Review a change.", modelInvocable: true, kind: "module", flows: [], capabilities: [], path: "flows/review/flow.ts" },
-  { name: "release", description: "Cut a release.", modelInvocable: false, kind: "module", flows: [], capabilities: [], path: "flows/release/flow.ts" }
-]
+const flow = (name: string, description: string, modelInvocable: boolean): Listed => ({
+  name,
+  description,
+  modelInvocable,
+  kind: "module",
+  flows: [],
+  capabilities: [],
+  path: `flows/${name}/flow.ts`
+})
+const listed: ReadonlyArray<Listed> = [flow("review", "Review a change.", true), flow("release", "Cut a release.", false)]
 
 it("shows runs newest first with their real status, then the discovered flows", () => {
   const panel = Smithers.panel(listed, [

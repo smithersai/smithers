@@ -209,3 +209,31 @@ describe("credentials in a saved session", () => {
     ])
   })
 })
+
+const plan = { id: "release", title: "Release plan", summary: "Two steps left.", rows: [] }
+
+it("restores cards in place, runtime status and keys, and a worker's card placement", () => {
+  const records: Session.Record[] = [
+    { type: "user", at: 1, text: "Plan the release" },
+    { type: "card", at: 2, panel: plan },
+    { type: "contribution", owner: "runtime:chat", contribution: { kind: "status", status: { id: "ci", text: "CI ◌" } } },
+    { type: "card", at: 3, panel: { ...plan, summary: "One step left." } },
+    { type: "contribution", owner: "runtime:chat", contribution: { kind: "status", status: { id: "ci", text: "CI ✓" } } },
+    {
+      type: "contribution",
+      owner: "runtime:fix",
+      contribution: { kind: "key", key: { id: "fix/rerun", key: "alt+c", label: "Rerun", action: { kind: "prompt", prompt: "Rerun" } } }
+    },
+    { type: "panel", panel: { ...plan, id: "fix/plan" }, placement: "card" }
+  ]
+  const restored = Session.restore(records)
+  const cards = restored.transcript.items.filter((item) => item.kind === "card")
+  expect(cards).toHaveLength(1)
+  expect(cards[0]).toMatchObject({ panel: { summary: "One step left." } })
+  expect(restored.workspace.panels.map((panel) => panel.id)).toEqual(["release", "fix/plan"])
+  expect(restored.workspace.cards).toEqual(["release", "fix/plan"])
+  expect(restored.contributions).toEqual([
+    { owner: "runtime:chat", contribution: { kind: "status", status: { id: "ci", text: "CI ✓" } } },
+    { owner: "runtime:fix", contribution: (records[5] as Extract<Session.Record, { type: "contribution" }>).contribution }
+  ])
+})

@@ -33,7 +33,10 @@ export const Row = Schema.Struct({
   status: Schema.optional(Schema.Literals(["running", "waiting", "queued", "parked", "done", "failed", "requested", "cancelled"])),
   details: Schema.Array(Block).check(Schema.isMaxLength(40)),
   // A user selects an action; publishing a panel never executes its actions.
-  action: Schema.optional(Schema.Struct({ label: short, prompt: content }))
+  action: Schema.optional(Schema.Union([
+    Schema.Struct({ label: short, prompt: content }),
+    Schema.Struct({ label: short, action: Action })
+  ]))
 })
 export type Row = typeof Row.Type
 export const Panel = Schema.Struct({
@@ -91,4 +94,4 @@ export const navigate = (state: Navigation, key: string, rows: ReadonlyArray<Row
   return { ...state, selected, expanded }
 }
 export const teaching =
-  `Use ui.publish to build custom terminal UI whenever a view makes the answer easier to inspect: comparisons, plans, progress, choices, or results. Write JavaScript cells that construct a panel and call the flow; do not print UI JSON. Panels have {id,title,summary,rows:[{id,label,status?,details:[blocks],action?:{label,prompt}}]}. Blocks are {kind:"text",text}, {kind:"code",code,language?}, {kind:"diff",path,patch} or {kind:"table",columns,rows}. Reuse the panel id to update it. Keep summary to one sentence (e.g. "Investigation requested.", never "running" for a requested receipt) and row labels to concise human English. Details hold actual evidence and code. Actions send their prompt ONLY when the user presses a. Publishing never changes keyboard focus. Prefer useful UI to long prose. Never invent actions the user did not request. placement:"main" opens a main view with chat beside it, and bind:{tree:rootId} adds live worker rows. Publish one bound main view for long work; never publish status rows you will not update.`
+  `Use ui.publish to build custom terminal UI whenever a view makes the answer easier to inspect: comparisons, plans, progress, choices, or results. Write JavaScript cells that construct a panel and call the flow; do not print UI JSON. Panels have {id,title,summary,rows:[{id,label,status?,details:[blocks],action?}]}. Blocks are {kind:"text",text}, {kind:"code",code,language?}, {kind:"diff",path,patch} or {kind:"table",columns,rows}. A row action is {label,prompt} or {label,action}; an action is {kind:"prompt",prompt}, {kind:"flow",flow,input?}, {kind:"agent",agent,prompt?} or {kind:"open",surface}. A bare panel opens a tab; publish {kind:"panel",placement:"card",panel} for a live card in the chat, {kind:"status",status:{id,text,tone?,action?}} for a footer item (24 characters), or {kind:"key",key:{id,key:"alt+x",label,action}} for a key (ctrl or alt required). Reuse the panel id to update it. Keep summary to one sentence (e.g. "Investigation requested.", never "running" for a requested receipt) and row labels to concise human English. Details hold actual evidence and code. Actions run ONLY when the user chooses them. Publishing never changes keyboard focus. Prefer useful UI to long prose. Never invent actions the user did not request, nor keys or status items. placement:"main" opens a main view with chat beside it, and bind:{tree:rootId} adds live worker rows. Publish one bound main view for long work; never publish status rows you will not update.`

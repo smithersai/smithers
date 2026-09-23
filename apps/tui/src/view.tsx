@@ -7,7 +7,9 @@
  */
 import { RGBA } from "@opentui/core"
 import { memo, useState, type ReactNode } from "react"
+import type * as Extension from "./extension.ts"
 import * as Keys from "./keys.ts"
+import type * as Panels from "./panels.ts"
 import * as Scrubber from "./scrubber.ts"
 import { color, mix, syntax } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
@@ -61,9 +63,10 @@ export function Home(props: { readonly expanded: boolean }) {
 }
 
 /** The context-sensitive footer hint strip. */
+/** Footer hints, already fitted whole by `Keys.fit`: the row never clips one. */
 export function KeyHints(props: { readonly bindings: ReadonlyArray<Keys.Binding> }) {
   return (
-    <text wrapMode="none" style={{ flexShrink: 1 }}>
+    <text wrapMode="none" style={{ flexShrink: 0 }}>
       {props.bindings.map((binding, index) => (
         <span key={binding.id}>
           {index === 0 ? "" : "  "}
@@ -181,7 +184,82 @@ function EntryView(props: EntryProps) {
       )
     case "note":
       return item.text === "" ? null : <text fg={color.faint} style={{ paddingLeft: 2, marginBottom: 1 }}>{item.text}</text>
+    case "card":
+      return <Card panel={item.panel} />
   }
+}
+
+type RowStatus = Panels.Row["status"]
+const rowGlyph = (status: RowStatus): { readonly glyph: string; readonly tone: string } =>
+  status === "done"
+    ? { glyph: "✓", tone: color.success }
+    : status === "running"
+    ? { glyph: "◌", tone: color.info }
+    : status === "requested"
+    ? { glyph: "◌", tone: color.faint }
+    : status === "failed"
+    ? { glyph: "✗", tone: color.danger }
+    : status === "cancelled"
+    ? { glyph: "■", tone: color.faint }
+    : { glyph: "·", tone: color.faint }
+/** Rows a card shows; the rest are in its `ui:<id>` view. */
+const cardRows = 5
+const clip = (text: string, width: number) => (text.length > width ? `${text.slice(0, width - 1)}…` : text)
+
+/** A panel placed in the transcript: title, summary and its first rows, updated in place. Click, or `enter` while focused, opens its view. */
+export function Card(props: { readonly panel: Panels.Panel; readonly focused?: boolean; readonly onOpen?: () => void }) {
+  const { panel } = props
+  const shown = panel.rows.slice(0, cardRows)
+  const failed = panel.rows.some((row) => row.status === "failed")
+  return (
+    <box
+      style={{ border: ["left"], paddingLeft: 1, marginBottom: 1 }}
+      borderColor={props.focused === true ? color.text : failed ? color.danger : color.brand}
+      {...(props.focused === true ? { backgroundColor: color.surface } : {})}
+      customBorderChars={bar}
+      {...(props.onOpen === undefined ? {} : { onMouseDown: props.onOpen })}
+    >
+      <text>
+        <span fg={color.text}><strong>{panel.title}</strong></span>
+        <span fg={color.muted}>{" · "}{panel.summary}</span>
+      </text>
+      {shown.length === 0 ? null : (
+        <text>
+          {shown.map((row, index) => {
+            const { glyph, tone } = rowGlyph(row.status)
+            return (
+              <span key={row.id}>
+                {index === 0 ? "" : "   "}
+                <span fg={tone}>{glyph} </span>
+                <span fg={row.status === "failed" ? color.danger : color.text}>{clip(row.label, 32)}</span>
+              </span>
+            )
+          })}
+          {panel.rows.length > cardRows ? <span fg={color.faint}>{`   +${panel.rows.length - cardRows}`}</span> : null}
+        </text>
+      )}
+    </box>
+  )
+}
+
+const statusTone = (tone: Extension.Status["tone"]): string =>
+  tone === undefined ? color.muted : tone === "info" ? color.info : color[tone]
+
+/** Contributed footer items; clicking one runs its action. */
+export function StatusItems(props: {
+  readonly items: ReadonlyArray<Extension.Status>
+  readonly onSelect: (item: Extension.Status) => void
+}) {
+  return (
+    <box style={{ flexDirection: "row", flexShrink: 0 }}>
+      {props.items.map((item) => (
+        <text key={item.id} wrapMode="none" fg={statusTone(item.tone)} style={{ marginRight: 2 }}
+          onMouseDown={() => props.onSelect(item)}>
+          {item.text}
+        </text>
+      ))}
+    </box>
+  )
 }
 
 /** A worker's rows in the chat: a rail in its lane color, titled where the lane starts. */

@@ -1,0 +1,41 @@
+---
+description: Plans the next release and keeps the plan on screen as it changes.
+model: openai:gpt-6-sol
+effort: medium
+capabilities: ["fs:read:**", "proc:spawn:*"]
+metadata:
+  tui:
+    keys:
+      - key: alt+p
+        label: Plan release
+    status: true
+---
+
+# Plan the next release
+
+Read `CHANGELOG.md` and `git log --oneline` since the last tag through the
+`bash` flow, then plan the release as at most five steps: changelog, version,
+tag, publish, announce, and anything this repository adds.
+
+Show the plan as a live card in the chat, not as prose. Publish it once, then
+republish the same id each time a step changes:
+
+```js
+await ctx.call("ui.publish", {
+  kind: "panel",
+  placement: "card",
+  panel: {
+    id: "release-plan",
+    title: "Release plan",
+    summary: "Three steps left.",
+    rows: [
+      { id: "changelog", label: "Changelog", status: "done", details: [] },
+      { id: "tag", label: "Tag v1.2.0", status: "running", details: [] },
+      { id: "publish", label: "Publish", details: [], action: { label: "Publish", action: { kind: "prompt", prompt: "Publish v1.2.0" } } }
+    ]
+  }
+})
+await ctx.call("ui.publish", { kind: "status", status: { id: "release", text: "v1.2.0 · 3 left", tone: "info" } })
+```
+
+Change nothing. Finish with one sentence naming the next step.

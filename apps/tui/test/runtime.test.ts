@@ -7,6 +7,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Agents from "../src/agents.ts"
 import * as Changes from "../src/changes.ts"
+import type * as Extension from "../src/extension.ts"
 import { FlowRuns, interrupted, type Run } from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
 import * as Models from "../src/models.ts"
@@ -114,15 +115,100 @@ it("validates runtime panels and rejects duplicate rows, oversized input and exe
 })
 
 it("registers real catalog flows and validates before publishing without invoking actions", async () => {
-  const published: Panels.Panel[] = []
+  const published: Extension.Contribution[] = []
   const bindings = await Effect.runPromise(Runtime.source({ publish: (value) => published.push(value) }).bindings())
   expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["ui.publish"])
   const call = { input: panel } as unknown as Parameters<(typeof bindings)[number]["run"]>[0]
   expect((await Effect.runPromise(bindings[0]!.run(call))).outcome).toBe("success")
-  expect(published).toEqual([panel])
+  expect(published).toEqual([{ kind: "panel", placement: "tab", panel }])
   const invalid = await Effect.runPromise(bindings[0]!.run({ ...call, input: { ...panel, summary: false } }))
   expect(invalid.outcome).toBe("failure")
   expect(published).toHaveLength(1)
+})
+
+it("publishes a card, a status item and a key through one flow, and refuses a bad key with its reason", async () => {
+  const published: Extension.Contribution[] = []
+  const [publish] = await Effect.runPromise(Runtime.source({
+    publish: (value) => {
+      if (value.kind === "key" && value.key.key === "ctrl+c") throw new Error("ctrl+c is the built-in Clear key")
+      published.push(value)
+    }
+  }).bindings())
+  const call = (input: unknown) => Effect.runPromise(publish!.run({ input } as Parameters<NonNullable<typeof publish>["run"]>[0]))
+  const status = { kind: "status", status: { id: "ci", text: "CI ✓", tone: "success", action: { kind: "open", surface: "ui:checks" } } }
+  const key = { kind: "key", key: { id: "rerun", key: "alt+c", label: "Rerun checks", action: { kind: "flow", flow: "checks" } } }
+  expect(await call({ kind: "panel", placement: "card", panel })).toMatchObject({ outcome: "success", value: { id: "checks", status: "published" } })
+  expect(await call(status)).toMatchObject({ outcome: "success", value: { id: "ci", status: "published" } })
+  expect(await call(key)).toMatchObject({ outcome: "success", value: { id: "rerun", status: "published" } })
+  // `kind: "panel"` without a placement is a tab, like a bare panel.
+  expect((await call({ kind: "panel", panel })).outcome).toBe("success")
+  expect(published).toEqual([
+    { kind: "panel", placement: "card", panel },
+    status,
+    key,
+    { kind: "panel", placement: "tab", panel }
+  ] as Array<Extension.Contribution>)
+  const bare = await call({ kind: "key", key: { ...key.key, key: "r" } })
+  expect(bare).toMatchObject({ outcome: "failure" })
+  // `ui.publish` decodes `Extension.Key` itself, so the key's own rule is the first reason given.
+  expect((bare as { message: string }).message).toStartWith("Flow ui.publish rejected its input: Global key r needs ctrl or alt")
+  const taken = await call({ kind: "key", key: { ...key.key, key: "ctrl+c" } })
+  expect(JSON.stringify(taken)).toContain("ctrl+c is the built-in Clear key")
+  expect((await call({ kind: "status", status: { id: "long", text: "x".repeat(25) } })).outcome).toBe("failure")
+  expect(published).toHaveLength(4)
+})
+
+it("decodes every runtime binding through its declared input, not the placeholder payload", async () => {
+  // `bind` gives `Flow.make` an empty payload and hands FlowBinding the real schema as `flow.input`;
+  // this walks every binding so a schema the placeholder would have hidden cannot pass.
+  const calls: Array<[string, unknown]> = []
+  const note = (name: string) => (value?: unknown) => {
+    calls.push([name, value])
+    return { ok: true }
+  }
+  const ports: Runtime.Ports = {
+    publish: note("publish"),
+    delegate: note("delegate"),
+    read: note("read"),
+    list: note("list"),
+    retry: note("retry"),
+    eta: note("eta"),
+    monitors: { create: note("monitor.create"), list: note("monitor.list"), stop: note("monitor.stop") } as unknown as NonNullable<Runtime.Ports["monitors"]>
+  }
+  const valid: Record<string, readonly [unknown, string, unknown]> = {
+    "ui.publish": [{ kind: "status", status: { id: "ci", text: "CI ✓" } }, "publish", { kind: "status", status: { id: "ci", text: "CI ✓" } }],
+    "monitor.create": [
+      { id: "ci", title: "CI", watch: "a failure", source: { kind: "tab", id: "fix" } },
+      "monitor.create",
+      { id: "ci", title: "CI", watch: "a failure", source: { kind: "tab", id: "fix" } }
+    ],
+    "monitor.list": [{}, "monitor.list", undefined],
+    "monitor.stop": [{ id: "ci" }, "monitor.stop", "ci"],
+    "tab.eta": [{}, "eta", undefined],
+    "agent.delegate": [
+      { id: "fix", title: "Fix", prompt: "Fix it.", agent: "review" },
+      "delegate",
+      { id: "fix", title: "Fix", prompt: "Fix it.", agent: "review" }
+    ],
+    "tab.read": [{ id: "fix" }, "read", "fix"],
+    "tab.retry": [{ id: "fix" }, "retry", "fix"],
+    "tab.list": [{}, "list", undefined]
+  }
+  const bindings = await Effect.runPromise(Runtime.source(ports).bindings())
+  expect(bindings.map((binding) => binding.descriptor.name).sort()).toEqual(Object.keys(valid).sort())
+  for (const binding of bindings) {
+    const name = binding.descriptor.name
+    const [input, port, received] = valid[name]!
+    const run = (value: unknown) => Effect.runPromise(binding.run({ input: value } as Parameters<typeof binding.run>[0]))
+    calls.length = 0
+    expect({ name, outcome: (await run(input)).outcome }).toEqual({ name, outcome: "success" })
+    expect(calls).toEqual([[port, received]])
+    // An empty struct takes anything; every binding with fields must refuse a non-object.
+    if (Object.keys(input as object).length === 0) continue
+    calls.length = 0
+    expect({ name, result: await run(42) }).toMatchObject({ name, result: { outcome: "failure", code: "invalid_input" } })
+    expect(calls).toEqual([])
+  }
 })
 
 it("registers the Smithers plugin on every turn; list, run and inspect only with a flows port", async () => {
@@ -355,7 +441,7 @@ it("captures actual overwrite contents at a flow boundary and preserves the resu
   expect(receipts[0]?.patches[0]?.patch).toContain("+after")
 })
 
-const setup = (run?: Host.Host["run"]) => {
+const setup = (run?: Host.Host["run"], contribute?: (owner: string, contribution: Extension.Contribution) => void) => {
   let resolve!: (outcome: Host.Outcome) => void
   let input!: Host.TurnInput
   let launched = 0
@@ -384,7 +470,8 @@ const setup = (run?: Host.Host["run"]) => {
     host,
     workerSeat: "worker:test",
     history: () => [],
-    persist: (record) => records.push(record)
+    persist: (record) => records.push(record),
+    ...(contribute === undefined ? {} : { contribute })
   })
   return {
     workspace,
@@ -402,6 +489,33 @@ const tick = async () => {
 const request = { id: "fix", title: "Fix addition", prompt: "Fix addition and run the checks." }
 
 describe("background work", () => {
+  it("places a worker's card in its own lane and owns its status items and keys by tab", async () => {
+    const contributed: Array<{ owner: string; contribution: Extension.Contribution }> = []
+    const f = setup(undefined, (owner, contribution) => {
+      if (contribution.kind === "key" && contribution.key.key === "ctrl+c") throw new Error("ctrl+c is the built-in Clear key")
+      contributed.push({ owner, contribution })
+    })
+    f.workspace.request(request)
+    await tick()
+    const publish = f.input().runtime!.publish
+    publish({ kind: "panel", placement: "card", panel })
+    publish({ kind: "panel", placement: "card", panel: { ...panel, summary: "One check left." } })
+    publish({ kind: "status", status: { id: "ci", text: "CI ◌" } })
+    expect(() =>
+      publish({ kind: "key", key: { id: "k", key: "ctrl+c", label: "Clear", action: { kind: "prompt", prompt: "x" } } })
+    ).toThrow("built-in")
+    const cards = f.workspace.transcript("fix").items.filter((item) => item.kind === "card")
+    expect(cards).toMatchObject([{ panel: { id: "fix/checks", summary: "One check left." } }])
+    expect(f.workspace.snapshot().cards).toEqual(["fix/checks"])
+    expect(contributed).toEqual([{ owner: "runtime:fix", contribution: { kind: "status", status: { id: "fix/ci", text: "CI ◌" } } }])
+    // The chat file places the card; the worker's own file draws it, so a reload keeps it in the worker's lane.
+    expect(Session.restore(f.records).workspace.cards).toEqual(["fix/checks"])
+    expect(Session.restore(f.records).transcript.items.some((item) => item.kind === "card")).toBe(false)
+    const tab = f.workspace.snapshot().tabs[0]!
+    expect(Session.restore(Session.load(tab.file)).transcript.items.filter((item) => item.kind === "card")).toHaveLength(1)
+    f.complete({ _tag: "done", answer: "Done" })
+    await tick()
+  })
   it("caches one description per tab from the worker's own seat and falls back to the title on failure", async () => {
     const f = setup()
     let finish!: (text: string) => void

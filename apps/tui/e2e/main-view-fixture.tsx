@@ -9,8 +9,12 @@ const host: Host.Host = {
     if (input.role === "coordinator") {
       input.runtime!.delegate!({ id: "review", title: "Recursive review", prompt: "Review" })
       input.runtime!.publish({
-        id: "review", title: "Recursive review", summary: "Review in progress.",
-        placement: "main", bind: { tree: "review" }, rows: []
+        kind: "panel",
+        placement: "tab",
+        panel: {
+          id: "review", title: "Recursive review", summary: "Review in progress.",
+          placement: "main", bind: { tree: "review" }, rows: []
+        }
       })
       return { done: Promise.resolve({ _tag: "done", answer: "Requested the review." }), cancel: () => {} }
     }

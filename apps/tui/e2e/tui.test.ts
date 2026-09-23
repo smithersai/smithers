@@ -1466,9 +1466,153 @@ describe("monitors", () => {
 
   it("delivers nothing when Jev calls the change routine", async () => {
     const { tui, judged, updates } = await watch(false)
+    // The monitors plugin shows the active monitor in the footer.
+    await tui.until((screen) => screen.includes("◉ CI"), 5_000, "monitor status item")
     await Bun.sleep(3_000)
     expect(judged().every((entry) => !entry.verdict)).toBe(true)
     expect(tui.screen()).not.toContain("Build failed on main.")
     expect(updates()).toEqual([])
+  }, 60_000)
+})
+
+describe("extensions", () => {
+  const altR = "\x1br"
+  /** A repository flow whose `metadata.tui` key requests a durable run of itself. */
+  const reviewFlow = [
+    "---",
+    "description: Reviews the uncommitted change and returns a verdict.",
+    "metadata:",
+    "  tui:",
+    "    keys:",
+    "      - key: alt+r",
+    "        label: Review",
+    "        action: { kind: flow, flow: review }",
+    "    status: true",
+    "    card: true",
+    "---",
+    "Review the uncommitted change.",
+    ""
+  ].join("\n")
+
+  /** A repository holding `reviewFlow`, read by the real registry. */
+  const open = async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tui-extensions-"))
+    mkdirSync(join(cwd, "flows", "review"), { recursive: true })
+    const mdx = join(cwd, "flows", "review", "flow.mdx")
+    writeFileSync(mdx, reviewFlow)
+    tui = await Tui.start({
+      cwd,
+      cols: 120,
+      command: `bun ${join(app, "e2e", "extensions-fixture.tsx")}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-extensions-sessions-")),
+        SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ??
+          join(process.env.HOME ?? "", "smithers", "target", "release", "smithers-jj-export")
+      }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    return { tui, mdx }
+  }
+
+  it("a metadata.tui key requests the flow; card, status and toast settle only with the run; chat stays usable", async () => {
+    const { tui } = await open()
+    await tui.until((screen) => screen.includes("alt+r Review"), 10_000, "contributed key hint")
+    await tui.press(altR)
+    await tui.until((screen) => screen.includes("◌ review") && screen.includes("review · Running."), 5_000, "tab and card")
+    await tui.until((screen) => screen.includes("review · running"), 5_000, "running toast")
+    await tui.until((screen) => /◌ review\s+↑/.test(screen), 5_000, "status item")
+    // Chat answers while the run is unresolved.
+    await tui.type("hello")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Still here."), 5_000, "chat answered while the run runs")
+    expect(tui.screen()).toContain("review · running")
+    await tui.type("finish")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("review · done") && screen.includes("review · Approved."), 5_000, "settled")
+    await tui.until((screen) => /✓ review\s+↑/.test(screen), 5_000, "settled status item")
+  }, 60_000)
+
+  it("a cell's card and status item show in place, and a row action runs from its view", async () => {
+    const { tui } = await open()
+    await tui.type("plan release")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Release plan · Two steps left.") && screen.includes("✓ Changelog"), 5_000, "card")
+    await tui.until((screen) => screen.includes("CI ✓"), 5_000, "status item")
+    await tui.click("Release plan")
+    await tui.until((screen) => screen.includes("3 ▸ Publish"), 5_000, "card view")
+    await tui.press(key.down)
+    await tui.press(key.down)
+    await tui.until((screen) => screen.includes("a Publish"), 5_000, "the row's action")
+    await tui.type("a")
+    await tui.until((screen) => screen.includes("review · running"), 5_000, "row action requested the flow")
+  }, 60_000)
+
+  it("tab focuses the newest card from an empty composer and enter opens its view", async () => {
+    const { tui } = await open()
+    await tui.type("plan release")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Release plan · Two steps left."), 5_000, "card")
+    await tui.press(key.tab)
+    await tui.until((screen) => screen.includes("enter Open") && screen.includes("esc Composer"), 5_000, "card focused")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("3 ▸ Publish") && screen.includes("esc Chat"), 5_000, "card view")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("ctrl+k Search"), 5_000, "back in chat")
+    await tui.press(key.tab)
+    await tui.until((screen) => screen.includes("enter Open"), 5_000, "focused again")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("ctrl+k Search") && !screen.includes("enter Open"), 5_000, "composer again")
+  }, 60_000)
+
+  it("a metadata.tui key on a markdown flow starts a real durable run that settles", async () => {
+    // The real Flows.Port: registry discovery, the control plane's plan, approval, launch and watch.
+    const cwd = mkdtempSync(join(tmpdir(), "tui-extensions-real-"))
+    mkdirSync(join(cwd, "flows", "ping"), { recursive: true })
+    writeFileSync(join(cwd, "flows", "ping", "flow.mdx"), [
+      "---",
+      "description: Answers Pong.",
+      "model: openai:gpt-6-sol",
+      "metadata:",
+      "  tui:",
+      "    keys:",
+      "      - key: alt+p",
+      "        label: Ping",
+      "        action: { kind: flow, flow: ping }",
+      "    status: true",
+      "---",
+      "Answer Pong.",
+      ""
+    ].join("\n"))
+    tui = await Tui.start({
+      cwd,
+      cols: 120,
+      command: `bun ${join(app, "e2e", "real-flows-fixture.tsx")}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-extensions-sessions-")),
+        SMITHERS_WORKSPACE_JJ_EXPORT_BINARY: process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ??
+          join(process.env.HOME ?? "", "smithers", "target", "release", "smithers-jj-export")
+      }
+    })
+    await tui.until(drawn, 20_000, "first draw")
+    await tui.until((screen) => screen.includes("alt+p Ping"), 20_000, "contributed key hint")
+    await tui.press("\x1bp")
+    await tui.until((screen) => screen.includes("ping · running"), 20_000, "running toast")
+    await tui.until((screen) => screen.includes("ping · done") && /✓ ping\s+↑/.test(screen), 90_000, "settled from the real run")
+  }, 150_000)
+
+  it("hot-reloads an edited flow.mdx and lists a colliding key as a problem", async () => {
+    const { tui, mdx } = await open()
+    await tui.until((screen) => screen.includes("alt+r Review"), 10_000, "contributed key hint")
+    writeFileSync(mdx, readFileSync(mdx, "utf8").replace("label: Review", "label: Recheck"))
+    await tui.until((screen) => screen.includes("alt+r Recheck"), 5_000, "reloaded label")
+    writeFileSync(mdx, readFileSync(mdx, "utf8").replace("key: alt+r", "key: ctrl+c"))
+    await tui.until((screen) => screen.includes("✗ 1 extension"), 5_000, "problem status item")
+    expect(tui.screen()).not.toContain("Recheck")
+    await tui.click("✗ 1 extension")
+    await tui.until((screen) => screen.includes("review: ctrl+c is the built-in Clear key"), 5_000, "problem view")
   }, 60_000)
 })

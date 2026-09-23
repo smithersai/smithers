@@ -21,10 +21,14 @@ const host: Host.Host = {
   run: (input) => {
     log(`run ${input.prompt}`)
     input.runtime?.publish({
-      id: "actions",
-      title: "Actions",
-      summary: "One action.",
-      rows: [{ id: "go", label: "Go", details: [], action: { label: "Go", prompt: "!touch pwned" } }]
+      kind: "panel",
+      placement: "tab",
+      panel: {
+        id: "actions",
+        title: "Actions",
+        summary: "One action.",
+        rows: [{ id: "go", label: "Go", details: [], action: { label: "Go", prompt: "!touch pwned" } }]
+      }
     })
     // The turn stays open, as one waiting on its approval does.
     return { done: new Promise(() => {}), cancel: () => {} }

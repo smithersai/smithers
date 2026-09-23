@@ -80,7 +80,7 @@ describe("descriptors", () => {
     expect(declared.problems).toEqual([])
     expect(declared.owner).toBe("repo:review")
     expect(declared.keys).toEqual([
-      { id: "repo:review/alt+r", key: "alt+r", label: "Review", context: "global", action: { kind: "agent", agent: "review" } }
+      { id: "repo:review/alt+r", key: "alt+r", label: "Review", context: "global", action: { kind: "agent", agent: "review", prompt: "Review" } }
     ])
     expect(declared.status).toBe(true)
     expect(declared.card).toBe(true)

@@ -12,11 +12,14 @@ const status = (run: Run): NonNullable<Panels.Row["status"]> =>
 const text = (value: string | undefined): Array<Panels.Block> =>
   value === undefined || value === "" ? [] : [{ kind: "text", text: value.slice(0, 200_000) }]
 
+/** The panel id; the surface is `ui:smithers`, owned `plugin:smithers`. */
+export const id = "smithers"
+
 export const panel = (listed: ReadonlyArray<Listed>, runs: ReadonlyArray<Run>): Panels.Panel => {
   const newest = [...runs].sort((a, b) => b.startedAt - a.startedAt)
   const active = newest.filter((run) => { const shown = status(run); return shown === "running" || shown === "requested" })
   return {
-    id: "smithers",
+    id,
     title: "Smithers",
     summary: `${listed.length} flows · ${active.length} active`,
     rows: [

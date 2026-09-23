@@ -163,3 +163,71 @@ describe("transcript scrolling", () => {
     expect(Keys.bindingFor({ name: "up" }, "composer")?.id).not.toBe("scroll-line")
   })
 })
+
+describe("contributed keys", () => {
+  const review = {
+    owner: "repo:review",
+    key: { id: "repo:review/alt+r", key: "alt+r", label: "Review", context: "global" as const, action: { kind: "flow" as const, flow: "review" } }
+  }
+  const merged = Keys.bindings([review])
+
+  it("merges a contributed global key into the hints and the popup, grouped by owner", () => {
+    expect(Keys.hintsFor("composer", merged).map((binding) => binding.id)).toContain("repo:review/alt+r")
+    expect(Keys.hintsFor("global", merged).map((binding) => binding.id)).toContain("repo:review/alt+r")
+    const popup = Keys.bindingsFor("composer", merged).find((binding) => binding.id === "repo:review/alt+r")
+    expect(popup).toMatchObject({ group: "review", label: "Review", owner: "repo:review", action: { kind: "flow", flow: "review" } })
+    expect(Keys.hintsFor("composer")).toEqual(Keys.hintsFor("composer", Keys.registry))
+  })
+
+  it("dispatches the contributed binding from the merged list only", () => {
+    expect(Keys.bindingFor({ name: "r", meta: true }, "composer", merged)?.id).toBe("repo:review/alt+r")
+    expect(Keys.bindingFor({ name: "r", option: true }, "panel", merged)?.action).toEqual({ kind: "flow", flow: "review" })
+    expect(Keys.bindingFor({ name: "r", meta: true }, "composer")).toBeUndefined()
+  })
+
+  it("names the built-in binding a contributed key would shadow", () => {
+    expect(Keys.taken("ctrl+c", "global")?.id).toBe("clear")
+    // Spelling and modifier order do not hide a collision.
+    expect(Keys.taken("shift+ctrl+p", "global")?.id).toBe("previous-model")
+    expect(Keys.taken("j", "panel")?.id).toBe("navigate")
+    expect(Keys.taken("alt+r", "global")).toBeUndefined()
+    expect(Keys.taken("g", "panel")).toBeUndefined()
+  })
+
+  it("counts the composer's text-editing keys as built-in, so a contributed key never steals them", () => {
+    // The app handles contributed keys before the composer sees the event, so these would otherwise be hijacked.
+    for (const key of ["ctrl+a", "ctrl+e", "ctrl+w", "ctrl+u", "ctrl+b", "ctrl+f", "alt+b", "alt+f", "alt+d", "ctrl+-", "alt+shift+f"]) {
+      expect(Keys.taken(key, "global")?.id).toBe("edit-text")
+    }
+    // They are not panel keys, and they stay out of the which-key popup.
+    expect(Keys.taken("ctrl+a", "panel")).toBeUndefined()
+    expect(Keys.bindingsFor("composer").map((binding) => binding.id)).not.toContain("edit-text")
+  })
+
+  it("lists every contributed key after the built-in hints and fits whole hints to the footer, ? last", () => {
+    const keys = ["alt+1", "alt+2", "alt+3", "alt+4"].map((key, index) => ({
+      owner: "repo:many",
+      key: { id: `repo:many/${key}`, key, label: `Step ${index + 1}`, context: "global" as const, action: { kind: "flow" as const, flow: "many" } }
+    }))
+    const hints = Keys.hintsFor("composer", Keys.bindings(keys))
+    // No cap: all four contributed keys follow the built-in four.
+    expect(hints.map((binding) => binding.id).slice(4)).toEqual(keys.map((each) => each.key.id))
+    const all = Keys.fit(hints, 1_000)
+    expect(all).toEqual(hints)
+    const width = (list: ReadonlyArray<Keys.Binding>) =>
+      list.reduce((total, binding, index) => total + (index === 0 ? 0 : 2) + Keys.hintWidth(binding), 0)
+    for (const columns of [0, 7, 20, 40, 60, 80, 100]) {
+      const kept = Keys.fit(hints, columns)
+      expect(width(kept)).toBeLessThanOrEqual(columns)
+      // Priority order, and nothing clipped: every kept hint is a whole binding from the list.
+      const withoutPopup = kept.filter((binding) => binding.id !== "keys")
+      expect(withoutPopup).toEqual(hints.filter((binding) => binding.id !== "keys").slice(0, withoutPopup.length))
+      if (kept.length < hints.length && width(kept) + 2 + Keys.hintWidth(hints.find((binding) => binding.id === "keys")!) <= columns) {
+        expect(kept.at(-1)?.id).toBe("keys")
+      }
+    }
+    // Room for the built-ins and one contributed key keeps `?` for the rest.
+    const room = width([...hints.slice(0, 3), hints[4]!, hints[3]!])
+    expect(Keys.fit(hints, room).map((binding) => binding.id)).toEqual(["palette", "summary", "next-tab", "repo:many/alt+1", "keys"])
+  })
+})
