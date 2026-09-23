@@ -295,7 +295,7 @@ const runConsumer = (file: string, source: string): { readonly status: number | 
   const path = join(consumerRoot, file)
   writeFileSync(path, source)
   const result = spawnSync(process.execPath, [path], { cwd: consumerRoot, encoding: "utf8" })
-  return { status: result.status, stderr: result.stderr }
+  return { status: result.status, stderr: result.stderr.replace(/\r\n/g, "\n") }
 }
 
 /** The line Node prints when a static import names an export this module never declares. */
