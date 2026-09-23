@@ -67,12 +67,16 @@ if (profile === "migrate-scan" || profile === "migrate-apply") {
   assert.deepEqual(hits.find((hit) => hit.construct === "Task").props, ["id"])
   if (profile === "migrate-apply") {
     const Command = await import("@smthrs/migrate/flow/Command")
+    const Evaluator = createRequire(import.meta.resolve("@smthrs/migrate/flow/Command"))("@smthrs/model/Evaluator")
     const project = resolve("migration-project")
     mkdirSync(project)
     writeFileSync(resolve(project, "package.json"), '{"name":"migration-fixture","private":true}')
     // Acquire the real apply host, including its optional agent/registry
     // dependencies. No transform is submitted and no provider is contacted.
-    await Effect.runPromise(Effect.scoped(Layer.build(Command.layerNode({ root: project, environment: {} }))))
+    const evaluator = Evaluator.layerScripted(() => {
+      throw new Error("Host acquisition must not request a model judgment")
+    })
+    await Effect.runPromise(Effect.scoped(Layer.build(Command.layerNode({ root: project, environment: {}, evaluator }))))
   }
 }
 console.log("adapter and native Effect identity ok: " + profile)
