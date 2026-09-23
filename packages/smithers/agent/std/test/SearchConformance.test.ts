@@ -1,7 +1,6 @@
-import { NodeFileSystem, NodeServices } from "@effect/platform-node"
+import { NodeFileSystem, NodePath, NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Layer, Sink, Stream } from "effect"
-import * as Path from "effect/Path"
 import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
@@ -18,6 +17,10 @@ import * as StdError from "../src/StdError.ts"
 
 const root = mkdtempSync(join(tmpdir(), "flows-search-conformance-"))
 const linkedRoot = join(root, "linked-root")
+const unusualNames = ["line\nbreak.txt", "carriage\rreturn.txt", "tab\tname.txt", "éclair.txt", "-leading.txt"]
+// Windows cannot create control-character filenames; the protocol case below
+// still checks every byte on every host.
+const hostNames = process.platform === "win32" ? unusualNames.slice(3) : unusualNames
 const file = (relative: string, content: string | Uint8Array): void => {
   const target = join(root, relative)
   mkdirSync(dirname(target), { recursive: true })
@@ -63,14 +66,10 @@ beforeAll(() => {
   symlinkSync(join(root, "edge/symlink-target.txt"), join(root, "edge/symlink.txt"))
   file("literal/metacharacters.txt", "foo?\nfoo\nfo\na+b\nab\nx*y\nxy\n[z]\nz\n?\n")
   file("linked-target/a.ts", "linked root\n")
-  symlinkSync(join(root, "linked-target"), linkedRoot)
+  symlinkSync(join(root, "linked-target"), linkedRoot, "dir")
   file("max-count/one.txt", "needle one\nneedle two\n")
   file("max-count/two.txt", "needle three\nneedle four\n")
-  file("weird-names/line\nbreak.txt", "")
-  file("weird-names/carriage\rreturn.txt", "")
-  file("weird-names/tab\tname.txt", "")
-  file("weird-names/éclair.txt", "")
-  file("weird-names/-leading.txt", "")
+  for (const name of hostNames) file(`weird-names/${name}`, "")
   file("brace-ceiling/a0wm.ts", "")
   file("globs/a.ts", "")
   file("globs/nested/a.ts", "")
@@ -104,7 +103,7 @@ const peers = [
   ["portable", PortableSearch.layer.pipe(Layer.provide(NodeServices.layer))],
   ["native", NativeSearch.layer.pipe(Layer.provide(NodeServices.layer))]
 ] as const
-const portableHost = Layer.merge(NodeFileSystem.layer, Path.layer)
+const portableHost = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
 const scriptedNative = (options: {
   readonly stdout?: string
@@ -135,7 +134,7 @@ const scriptedNative = (options: {
   })
   return NativeSearch.layer.pipe(Layer.provide(Layer.mergeAll(
     NodeFileSystem.layer,
-    Path.layer,
+    NodePath.layer,
     Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(spawner)
   )))
 }
@@ -357,17 +356,11 @@ for (const [peer, implementation] of peers) {
       expect(explicit.paths).toEqual([join(root, "src/node_modules/pkg/index.ts")])
     })
 
-    it("preserves legal path bytes that line-delimited output cannot represent", async () => {
+    it("preserves legal host filename bytes", async () => {
       const result = await glob({ pattern: "*.txt", root: join(root, "weird-names") })
       expect(result).toEqual({
-        paths: [
-          join(root, "weird-names/-leading.txt"),
-          join(root, "weird-names/carriage\rreturn.txt"),
-          join(root, "weird-names/line\nbreak.txt"),
-          join(root, "weird-names/tab\tname.txt"),
-          join(root, "weird-names/éclair.txt")
-        ].sort(),
-        total: 5,
+        paths: hostNames.map((name) => join(root, "weird-names", name)).sort(),
+        total: hostNames.length,
         truncated: false
       })
     })
@@ -639,7 +632,7 @@ it("both peers reject unsupported regex syntax identically", async () => {
 it("the native peer turns absence, non-zero exits, and malformed JSON into typed failures", async () => {
   const unavailable = NativeSearch.layer.pipe(Layer.provide(Layer.mergeAll(
     NodeFileSystem.layer,
-    Path.layer,
+    NodePath.layer,
     ChildProcessSpawner.layerNoop()
   )))
   const cases = [
@@ -681,6 +674,19 @@ it.each([false, true])("the native peer confines rg configuration with noIgnore=
       expect(command.args).toContain(flag)
     }
   }
+})
+
+it("the native peer preserves control characters in NUL-delimited filename records", async () => {
+  const searchRoot = join(root, "weird-names")
+  const listed = await Effect.runPromise(Effect.provide(
+    Glob.run({ pattern: "*.txt", root: searchRoot }),
+    scriptedNative({ stdout: `${unusualNames.join("\0")}\0` })
+  ))
+  expect(listed).toEqual({
+    paths: unusualNames.map((name) => join(searchRoot, name)).sort(),
+    total: unusualNames.length,
+    truncated: false
+  })
 })
 
 it("the native peer keeps what rg produced when it only skipped what it could not read", async () => {
