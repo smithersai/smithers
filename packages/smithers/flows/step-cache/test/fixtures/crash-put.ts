@@ -14,6 +14,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import { writeSync } from "node:fs"
 import * as CacheStoreLive from "../../src/CacheStore.ts"
 import * as Migrations from "../../src/Migrations.ts"
 
@@ -21,6 +22,7 @@ const [filename, mode] = process.argv.slice(2)
 if (filename === undefined || (mode !== "commit" && mode !== "crash")) {
   throw new Error("usage: crash-put.ts <database> <commit|crash>")
 }
+if (mode === "crash") process.on("exit", () => writeSync(1, "unexpected clean exit\n"))
 
 const entry: CacheStoreLive.CacheEntry = {
   keyDigest: "crash-digest",
@@ -39,6 +41,7 @@ const dying = (real: DurableWriter.Service): DurableWriter.Service => ({
     real.write(
       Effect.tap(effect, () =>
         Effect.sync(() => {
+          writeSync(1, "transaction written\n")
           process.kill(process.pid, "SIGKILL")
         }))
     )

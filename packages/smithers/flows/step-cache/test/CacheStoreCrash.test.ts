@@ -61,13 +61,13 @@ describe("a process killed inside a put", () => {
             const filename = join(directory, "cache.sqlite")
 
             const killed = run(filename, "crash")
-            // The kill is real: the fixture dies by signal rather than
-            // returning, which is what makes the next assertion about crash
-            // durability and not about a rolled-back error path.
-            // `spawnBounded` has already ruled out the other way to end with
-            // this signal and status: a fixture the budget had to kill.
-            expect(killed.signal).toBe("SIGKILL")
-            expect(killed.status).toBe(null)
+            // The barrier is inside the transaction, and a forced kill never
+            // reaches the fixture's exit handler. Windows self-kills report
+            // status 1 without a signal (libuv uses TerminateProcess).
+            // `spawnBounded` separately refuses a child killed by its timeout.
+            expect(killed.stdout).toBe("transaction written\n")
+            expect(killed.signal).toBe(process.platform === "win32" ? null : "SIGKILL")
+            expect(killed.status).toBe(process.platform === "win32" ? 1 : null)
 
             // The kill lands before the transaction commits, so a cold reopen
             // must find neither row. Either row alone, or both of them, would

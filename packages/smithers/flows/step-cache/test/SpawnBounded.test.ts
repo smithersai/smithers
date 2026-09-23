@@ -17,9 +17,15 @@ describe("spawnBounded", () => {
   })
 
   it("hands back a child that ended on its own, signal and all", () => {
-    const died = spawnBounded(["--eval", "process.kill(process.pid, 'SIGKILL')"], 10_000)
-    expect(died.signal).toBe("SIGKILL")
-    expect(died.status).toBe(null)
+    const died = spawnBounded([
+      "--eval",
+      "process.on('exit', () => process.stdout.write('unexpected clean exit')); process.kill(process.pid, 'SIGKILL')"
+    ], 10_000)
+    // libuv's Windows self-kill uses TerminateProcess(1); only a parent kill
+    // records exit_signal in the parent's process handle.
+    expect(died.signal).toBe(process.platform === "win32" ? null : "SIGKILL")
+    expect(died.status).toBe(process.platform === "win32" ? 1 : null)
+    expect(died.stdout).toBe("")
 
     const exited = spawnBounded(["--eval", "process.stdout.write('done'); process.exitCode = 3"], 10_000)
     expect(exited.status).toBe(3)
