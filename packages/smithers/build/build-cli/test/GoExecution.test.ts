@@ -370,17 +370,11 @@ const cgoFixture = async (): Promise<string> => {
   await write(
     root,
     "native/native.go",
-    "package native\n\n/*\n#include \"value.h\"\n*/\nimport \"C\"\n\n" +
-      "func Value() int { return int(C.native_value()) }\n"
+    "package main\n\n/*\n#include \"value.h\"\n*/\nimport \"C\"\n\n" +
+      "func main() { if C.native_value() != 7 { panic(\"unexpected native value\") } }\n"
   )
   await write(root, "native/value.h", "int native_value(void);\n")
   await write(root, "native/value.c", "#include \"value.h\"\n\nint native_value(void) { return 7; }\n")
-  await write(
-    root,
-    "native/native_test.go",
-    "package native\n\nimport \"testing\"\n\n" +
-      "func TestValue(t *testing.T) {\n\tif Value() != 7 { t.Fatalf(\"got %d\", Value()) }\n}\n"
-  )
   await write(
     root,
     "WORKSPACE.ts",
@@ -393,8 +387,9 @@ export const Workspace = S.Workspace("cgo", { repository: "git+https://example.t
     root,
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"
-const test = S.Go.Test({ pkgs: ["./native"] })
-export const Package = S.Package({ targets: { test } })
+const binary = S.Go.Binary({ pkg: "./native", out: "//build/native${process.platform === "win32" ? ".exe" : ""}" })
+const test = S.Shell.Test({ bin: binary })
+export const Package = S.Package({ targets: { binary, test } })
 `
   )
   return root
@@ -413,22 +408,29 @@ describe.runIf(hasGo)("Go native compiler inputs", () => {
    */
   it.skipIf(!hasCCompiler)("re-keys when a C source or header a cgo package compiles changes", async () => {
     const root = await cgoFixture()
-    expect((await serve(root, ["//:test"])).logs).toContain("//:test  ran")
-    expect((await serve(root, ["//:test"])).logs).toContain("//:test  hit")
+    // Each sandbox starts with a cold Go cache. A small executable checks the
+    // native result without rebuilding the testing package three times.
+    const check = async (): Promise<string> => {
+      const result = await serve(root, ["//:test"])
+      expect(result.exitCode, result.output + result.logs).toBe(0)
+      return result.logs
+    }
+    expect(await check()).toContain("//:binary  ran")
+    expect(await check()).toContain("//:binary  hit")
 
     await write(
       root,
       "native/value.c",
       "#include \"value.h\"\n\n/* edited */\nint native_value(void) { return 7; }\n"
     )
-    expect((await serve(root, ["//:test"])).logs).toContain("//:test  ran")
+    expect(await check()).toContain("//:binary  ran")
 
     await write(root, "native/value.h", "/* edited */\nint native_value(void);\n")
-    expect((await serve(root, ["//:test"])).logs).toContain("//:test  ran")
+    expect(await check()).toContain("//:binary  ran")
 
     // A file the compiler never reads still leaves the key alone.
     await write(root, "outside.txt", "outside\n")
-    expect((await serve(root, ["//:test"])).logs).toContain("//:test  hit")
+    expect(await check()).toContain("//:binary  hit")
   }, 180_000)
 })
 
