@@ -32,7 +32,10 @@ authenticatedTest("an owner opens an issue on a product repository through the U
 }), async ({ page, request }) => {
   await withOwnedRepository(page, request, async (repo) => {
     const title = `Matrix issue ${crypto.randomUUID()}`
+    const startedAt = performance.now()
     await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
+    await awaitBoot(page, "navigate", startedAt)
+    await finishFirstVisit(page)
     const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === `${repo.path}/issues`, { timeout: 15_000 })
     await runSlash(page, `/issues.create ${title} ${repo.fullName}`)
     const response = await created
@@ -56,7 +59,10 @@ authenticatedTest("an owned issue remains after a reload of the same product win
     expect(created.status()).toBe(201)
     const issue = await created.json() as { readonly number?: number }
     expect(issue.number).toEqual(expect.any(Number))
+    const startedAt = performance.now()
     await page.goto(productUrl(page, `/${repo.fullName}`), { waitUntil: "domcontentloaded" })
+    await awaitBoot(page, "navigate", startedAt)
+    await finishFirstVisit(page)
     await runSlash(page, `/issues.view ${issue.number} ${repo.fullName}`)
     await expect(page.getByRole("heading", { name: `${title} #${issue.number}` })).toBeVisible()
     await page.reload({ waitUntil: "domcontentloaded" })
