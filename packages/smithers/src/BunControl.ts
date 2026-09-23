@@ -5,10 +5,12 @@
  * Use this from a Bun process that runs a project's file flows in-process,
  * such as a terminal UI. It opens `<root>/.flows` (or the configured
  * `stateRoot`) exactly as `smthrs up` does, so `smthrs runs` sees the runs.
+ * Adapters load when a layer is built, keeping the CLI barrel loadable on Node.
  *
  * @since 1.0.0
  */
-import { native } from "./internal/BunControl.ts"
+import { Effect, Layer } from "effect"
+import type { native } from "./internal/BunControl.ts"
 
 /**
  * Provides the Control service over Bun adapters for one project root.
@@ -20,7 +22,12 @@ import { native } from "./internal/BunControl.ts"
  * @category layers
  * @since 1.0.0
  */
-export const layerControl = native.layerControl
+export const layerControl: typeof native.layerControl = (...args) =>
+  Layer.unwrap(
+    Effect.promise(() => import("./internal/BunControl.ts")).pipe(
+      Effect.map(({ native }) => native.layerControl(...args))
+    )
+  )
 
 /**
  * Provides the flow registry for `<root>/flows` without importing any flow
@@ -29,4 +36,9 @@ export const layerControl = native.layerControl
  * @category layers
  * @since 1.0.0
  */
-export const layerRegistry = native.layerRegistry
+export const layerRegistry: typeof native.layerRegistry = (...args) =>
+  Layer.unwrap(
+    Effect.promise(() => import("./internal/BunControl.ts")).pipe(
+      Effect.map(({ native }) => native.layerRegistry(...args))
+    )
+  )

@@ -24,6 +24,11 @@ export * as Agents from "./Agents.ts"
  */
 export * as Application from "./Application.ts"
 /**
+ * @category layers
+ * @since 1.0.0
+ */
+export * as BunControl from "./BunControl.ts"
+/**
  * @category reporting
  * @since 1.0.0
  */
