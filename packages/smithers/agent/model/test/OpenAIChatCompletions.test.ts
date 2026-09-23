@@ -273,6 +273,9 @@ describe("OpenAIChatCompletions.protocol.stream", () => {
     expect(inlineError("{\"error\":{\"code\":\"server_error\",\"message\":\"upstream died\"}}")).toMatchObject({
       code: "provider_internal"
     })
+    expect(inlineError("{\"error\":{\"code\":\"overloaded\",\"message\":\"try later\"}}")).toMatchObject({
+      code: "provider_internal"
+    })
     expect(inlineError("{\"error\":{\"message\":\"invalid_request: bad tool schema\"}}")).toMatchObject({
       code: "invalid_request"
     })

@@ -265,7 +265,10 @@ const executeFramed = (options: Options, resolved: Settings | { readonly invalid
       }
       let executable: string
       try {
-        executable = Transport.usableExecutable(options.executable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ?? defaultExecutable, request.boundaryRoot)
+        executable = Transport.usableExecutable(
+          options.executable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY ?? defaultExecutable,
+          request.boundaryRoot
+        )
       } catch (cause) {
         return Effect.fail(Protocol.failure(request, cause))
       }

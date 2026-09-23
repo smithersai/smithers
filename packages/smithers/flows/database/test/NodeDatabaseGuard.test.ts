@@ -143,7 +143,7 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_database_file")
       expect(defect.message).toBe(
-        `${filename} is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`
+        `${filename} is not a Smithers 1.0 database (1.0.0-rc.1 does not load a 0.x smithers.db)`
       )
     }))
 
@@ -159,7 +159,7 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_database_file")
       expect(defect.message).toBe(
-        `${uri} is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`
+        `${uri} is not a Smithers 1.0 database (1.0.0-rc.1 does not load a 0.x smithers.db)`
       )
     }))
 
@@ -177,7 +177,7 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_database_file")
       expect(defect.message).toBe(
-        `${uri} is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`
+        `${uri} is not a Smithers 1.0 database (1.0.0-rc.1 does not load a 0.x smithers.db)`
       )
     }))
 
@@ -205,7 +205,7 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       expect(defect.code).toBe("unsupported_database_file")
       // The refusal names the URI the caller gave, not the path it was probed by.
       expect(defect.message).toBe(
-        `${uri} is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`
+        `${uri} is not a Smithers 1.0 database (1.0.0-rc.1 does not load a 0.x smithers.db)`
       )
     }))
 
@@ -363,7 +363,7 @@ describe("NodeDatabase guard: 0.x database files (X-13)", () => {
       if (!NodeDatabase.isUnsupportedDatabase(defect)) return
       expect(defect.code).toBe("unsupported_database_file")
       expect(defect.message).toBe(
-        `${uri} is not a Smithers 1.0 database (1.0.0-rc.0 does not load a 0.x smithers.db)`
+        `${uri} is not a Smithers 1.0 database (1.0.0-rc.1 does not load a 0.x smithers.db)`
       )
     }))
 

@@ -370,6 +370,4 @@ describe("batch confinement and concurrent mutation", () => {
     )
     expect(result.entries[0]!.result).toMatchObject({ _tag: "Failure", failure: { reason: { _tag: "BadResource" } } })
   })
-
-
 })

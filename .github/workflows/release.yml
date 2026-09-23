@@ -235,6 +235,12 @@ jobs:
         uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b
         with:
           tool: ripgrep@14.1.1
+      - name: Build filesystem helper for package tests
+        run: |
+          rustup toolchain install 1.98.0
+          cargo +1.98.0 build --locked --release --package smithers-ffi --bin smithers-jj-export
+          echo "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY=$GITHUB_WORKSPACE/target/release/smithers-jj-export" >> "$GITHUB_ENV"
+        shell: bash
       - name: Install system packages
         run: |
           if command -v apt-get >/dev/null 2>&1; then

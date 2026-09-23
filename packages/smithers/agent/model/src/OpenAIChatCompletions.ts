@@ -507,9 +507,7 @@ const providerReason = (
   const numeric = code === undefined ? Number.NaN : Number(code)
   const httpLike = Number.isInteger(numeric) && numeric >= 400 && numeric <= 599 ? numeric : undefined
   const effective = status ?? httpLike
-  const reason = classifyHttpStatus(effective, code, message)
-  if (reason === "unknown" && /overloaded/i.test(`${code ?? ""} ${message}`)) return "provider_internal"
-  return reason
+  return classifyHttpStatus(effective, code, message)
 }
 
 const classifyError = (status: number, body: string): ModelError => {

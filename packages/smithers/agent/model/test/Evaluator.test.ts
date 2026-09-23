@@ -533,6 +533,17 @@ describe("Evaluator.layerFromEnvironment", () => {
     expect((sent as [Sent])[0].request.headers).toMatchObject({ authorization: "Bearer vck_env" })
   })
 
+  it("uses the gateway URL supplied by the environment", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerFromEnvironment({
+      [Evaluator.environmentKey]: "vck_env",
+      SMITHERS_EVALUATOR_BASE_URL: "https://gateway.example.test/custom-evaluate"
+    }, "test host").pipe(Layer.provide(httpLayer(sent, () => json(recorded))))
+
+    expect(success(await evaluate(layer)).answers).toEqual(recorded.answers)
+    expect((sent as [Sent])[0].request.url).toBe("https://gateway.example.test/custom-evaluate")
+  })
+
   it.each([
     ["no key at all", {}],
     ["an empty key", { [Evaluator.environmentKey]: "" }],

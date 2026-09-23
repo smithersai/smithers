@@ -21,7 +21,7 @@ describe("names rc.0 ignores (X-01, the release policy)", () => {
   ])("announces %s and does not act on it", (name) => {
     expect(UnsupportedBackend.ignoredNames({ [name]: "postgres://localhost/smithers" })).toEqual([name])
     expect(UnsupportedBackend.ignoredNotice(name)).toBe(
-      `ignored: ${name} has no effect in 1.0.0-rc.0 (SQLite only)`
+      `ignored: ${name} has no effect in 1.0.0-rc.1 (SQLite only)`
     )
   })
 

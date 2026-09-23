@@ -727,7 +727,9 @@ export const layerFromEnvironment = (
   }
   return layerVercelGateway({
     apiKey: Redacted.make(apiKey),
-    ...(environment.SMITHERS_EVALUATOR_BASE_URL === undefined ? {} : { baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL })
+    ...(environment.SMITHERS_EVALUATOR_BASE_URL === undefined
+      ? {}
+      : { baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL })
   })
 }
 

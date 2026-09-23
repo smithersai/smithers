@@ -218,7 +218,8 @@ export const modelCredentialEnvName = (name: string): string =>
   isBuiltinModelCredential(name) ? name : `${MODEL_CREDENTIAL_ENV_PREFIX}${name}`
 
 const isLoopbackHost = (hostname: string): boolean =>
-  hostname === "localhost" || hostname === "[::1]" || hostname === "host.docker.internal" || /^127(?:\.\d{1,3}){3}$/.test(hostname)
+  hostname === "localhost" || hostname === "[::1]" || hostname === "host.docker.internal" ||
+  /^127(?:\.\d{1,3}){3}$/.test(hostname)
 
 /**
  * An origin in canonical form, or undefined when a credential may never travel
