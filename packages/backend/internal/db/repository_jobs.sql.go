@@ -1320,6 +1320,43 @@ func (q *Queries) ProjectRepositoryJobDispatch(ctx context.Context, arg ProjectR
 	return result.RowsAffected(), nil
 }
 
+const projectRepositoryJobSignal = `-- name: ProjectRepositoryJobSignal :execrows
+UPDATE repository_job_dispatches SET status=$2,run_id=$3,plan=$4,receipt=$5,error=$6,
+  next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status='waiting' AND signal_attempt=$8
+  AND receipt->>'operationId'=$9::text
+`
+
+type ProjectRepositoryJobSignalParams struct {
+	ID                    string    `json:"id"`
+	Status                string    `json:"status"`
+	RunID                 string    `json:"run_id"`
+	Plan                  []byte    `json:"plan"`
+	Receipt               []byte    `json:"receipt"`
+	Error                 string    `json:"error"`
+	NextAttemptAt         time.Time `json:"next_attempt_at"`
+	ExpectedSignalAttempt int32     `json:"expected_signal_attempt"`
+	ExpectedOperationID   string    `json:"expected_operation_id"`
+}
+
+func (q *Queries) ProjectRepositoryJobSignal(ctx context.Context, arg ProjectRepositoryJobSignalParams) (int64, error) {
+	result, err := q.db.Exec(ctx, projectRepositoryJobSignal,
+		arg.ID,
+		arg.Status,
+		arg.RunID,
+		arg.Plan,
+		arg.Receipt,
+		arg.Error,
+		arg.NextAttemptAt,
+		arg.ExpectedSignalAttempt,
+		arg.ExpectedOperationID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const registerRepositoryJob = `-- name: RegisterRepositoryJob :one
 WITH registered AS (
   INSERT INTO repository_job_registrations
@@ -1439,17 +1476,26 @@ const retryProjectedRepositoryJobSignal = `-- name: RetryProjectedRepositoryJobS
 UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
   receipt=$2,error='Waiting for the issue flow to accept the reply',next_attempt_at=$3,
   claim_token=NULL,lease_until=NULL,updated_at=now()
-WHERE id=$1 AND status<>'dispatching'
+WHERE id=$1 AND status='waiting' AND signal_attempt=$4
+  AND receipt->>'operationId'=$5::text
 `
 
 type RetryProjectedRepositoryJobSignalParams struct {
-	ID            string    `json:"id"`
-	Receipt       []byte    `json:"receipt"`
-	NextAttemptAt time.Time `json:"next_attempt_at"`
+	ID                    string    `json:"id"`
+	Receipt               []byte    `json:"receipt"`
+	NextAttemptAt         time.Time `json:"next_attempt_at"`
+	ExpectedSignalAttempt int32     `json:"expected_signal_attempt"`
+	ExpectedOperationID   string    `json:"expected_operation_id"`
 }
 
 func (q *Queries) RetryProjectedRepositoryJobSignal(ctx context.Context, arg RetryProjectedRepositoryJobSignalParams) (int64, error) {
-	result, err := q.db.Exec(ctx, retryProjectedRepositoryJobSignal, arg.ID, arg.Receipt, arg.NextAttemptAt)
+	result, err := q.db.Exec(ctx, retryProjectedRepositoryJobSignal,
+		arg.ID,
+		arg.Receipt,
+		arg.NextAttemptAt,
+		arg.ExpectedSignalAttempt,
+		arg.ExpectedOperationID,
+	)
 	if err != nil {
 		return 0, err
 	}

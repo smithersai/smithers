@@ -39,6 +39,7 @@ type RepositoryJobStore interface {
 	SaveRepositoryJobPlan(context.Context, db.SaveRepositoryJobPlanParams) (int64, error)
 	SettleRepositoryJobDispatch(context.Context, db.SettleRepositoryJobDispatchParams) (int64, error)
 	ProjectRepositoryJobDispatch(context.Context, db.ProjectRepositoryJobDispatchParams) (int64, error)
+	ProjectRepositoryJobSignal(context.Context, db.ProjectRepositoryJobSignalParams) (int64, error)
 	RetryProjectedRepositoryJobSignal(context.Context, db.RetryProjectedRepositoryJobSignalParams) (int64, error)
 	RetryRepositoryJobSignal(context.Context, db.RetryRepositoryJobSignalParams) (int64, error)
 	LatestRepositoryJobIssueRun(context.Context, db.LatestRepositoryJobIssueRunParams) (db.RepositoryJobDispatch, error)

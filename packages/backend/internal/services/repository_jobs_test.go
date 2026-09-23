@@ -304,6 +304,85 @@ func repositoryJobAdmit(t *testing.T, s *RepositoryJobService, repo int64, deliv
 	require.NoError(t, s.AdmitGitHubEvent(context.Background(), repo, db.GithubWebhookJob{DeliveryID: delivery, Payload: body}, TriggerEvent{Type: kind, Action: action}))
 }
 
+func TestRepositoryJobSignalProjectionIgnoresReplayedAttempt(t *testing.T) {
+	pool, _, service, gateway, input := repositoryJobFixture(t)
+	ctx := context.Background()
+	registration, err := service.Register(ctx, "gateway", "token", "issues", input)
+	require.NoError(t, err)
+
+	repositoryJobAdmit(t, service, gateway.target.RepositoryID, "projection-run", 41, "issues", "opened")
+	repositoryJobPoll(t, service, gateway)
+	gateway.dropSignalOnce = true
+	repositoryJobAdmit(t, service, gateway.target.RepositoryID, "projection-reply", 41, "issue_comment", "created")
+	repositoryJobPoll(t, service, gateway)
+	require.Len(t, gateway.signalKeys, 1)
+	firstOperation := "operation-" + gateway.signalKeys[0]
+
+	var dispatchID string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM repository_job_dispatches WHERE registration_id=$1 AND delivery_key='github:projection-reply'`, registration.ID).Scan(&dispatchID))
+	_, err = pool.Exec(ctx, `UPDATE repository_job_dispatches SET next_attempt_at=now() WHERE id=$1`, dispatchID)
+	require.NoError(t, err)
+	require.NoError(t, service.PollOnce(ctx))
+	require.Len(t, gateway.signalKeys, 2)
+	waiting, err := service.q.GetRepositoryJobDispatch(ctx, dispatchID)
+	require.NoError(t, err)
+	require.Equal(t, "waiting", waiting.Status)
+	require.EqualValues(t, 1, waiting.SignalAttempt)
+	var oldProjection repositoryJobFlowProjection
+	oldProjection.Kind = repositoryJobFlowProjectionKind
+	oldProjection.Mode = repositoryJobFlowModeSignal
+	oldProjection.DispatchID = dispatchID
+	oldProjection.RegistrationID = registration.ID
+	oldProjection.Revision = registration.Revision
+	oldProjection.SignalAttempt = 0
+	oldProjection.PreviousRunID = waiting.RunID
+	checkpoint := flowdispatch.RuntimeCheckpoint{
+		Version: 1, FlowID: registration.FlowID,
+		Target: repositoryJobFlowTarget(db.RepositoryJobRegistration{WorkspaceID: input.WorkspaceID}, waiting),
+	}
+	checkpoint.Projection, err = json.Marshal(oldProjection)
+	require.NoError(t, err)
+	checkpoint.FailureCode = "no_matching_wait"
+	update := flowdispatch.ProjectionUpdate{
+		OperationID: firstOperation, Scope: repositoryJobFlowScope(gateway.target.RepositoryID, gateway.target.UserID),
+		State: jobs.StateFailed, Checkpoint: checkpoint,
+	}
+	require.NoError(t, service.ProjectFlowRuntime(ctx, update))
+	after, err := service.q.GetRepositoryJobDispatch(ctx, dispatchID)
+	require.NoError(t, err)
+	require.Equal(t, waiting.SignalAttempt, after.SignalAttempt)
+	require.Equal(t, waiting.Status, after.Status)
+	require.JSONEq(t, string(waiting.Receipt), string(after.Receipt))
+
+	// The SQL predicate must reject stale attempts even if a caller read the
+	// dispatch before another worker projected the newer operation.
+	rows, err := service.q.RetryProjectedRepositoryJobSignal(ctx, db.RetryProjectedRepositoryJobSignalParams{
+		ID: dispatchID, Receipt: repositoryJobRuntimeReceipt(update), NextAttemptAt: time.Now(),
+		ExpectedSignalAttempt: 0, ExpectedOperationID: firstOperation,
+	})
+	require.NoError(t, err)
+	require.Zero(t, rows)
+
+	// The operation guard also rejects a different operation on the current attempt.
+	rows, err = service.q.ProjectRepositoryJobSignal(ctx, db.ProjectRepositoryJobSignalParams{
+		ID: dispatchID, Status: "failed", RunID: waiting.RunID, Receipt: repositoryJobRuntimeReceipt(update),
+		ExpectedSignalAttempt: waiting.SignalAttempt, ExpectedOperationID: "different-operation",
+	})
+	require.NoError(t, err)
+	require.Zero(t, rows)
+
+	require.NoError(t, gateway.projectPending(ctx))
+	before, err := service.q.GetRepositoryJobDispatch(ctx, dispatchID)
+	require.NoError(t, err)
+	require.Equal(t, "submitted", before.Status)
+	require.NoError(t, service.ProjectFlowRuntime(ctx, update))
+	after, err = service.q.GetRepositoryJobDispatch(ctx, dispatchID)
+	require.NoError(t, err)
+	require.Equal(t, before.SignalAttempt, after.SignalAttempt)
+	require.Equal(t, before.Status, after.Status)
+	require.JSONEq(t, string(before.Receipt), string(after.Receipt))
+}
+
 func TestRepositoryJobFlowDispatchProductPostgres(t *testing.T) {
 	pool := newProductTestPool(t)
 	ctx := context.Background()

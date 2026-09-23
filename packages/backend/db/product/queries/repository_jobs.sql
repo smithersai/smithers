@@ -122,6 +122,12 @@ UPDATE repository_job_dispatches SET status=$2,run_id=$3,plan=$4,receipt=$5,erro
   next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
 WHERE id=$1 AND status<>'dispatching';
 
+-- name: ProjectRepositoryJobSignal :execrows
+UPDATE repository_job_dispatches SET status=$2,run_id=$3,plan=$4,receipt=$5,error=$6,
+  next_attempt_at=$7,claim_token=NULL,lease_until=NULL,updated_at=now()
+WHERE id=$1 AND status='waiting' AND signal_attempt=sqlc.arg(expected_signal_attempt)
+  AND receipt->>'operationId'=sqlc.arg(expected_operation_id)::text;
+
 -- name: RetryRepositoryJobSignal :execrows
 UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
   run_id=$3,receipt='{"_tag":"NoMatchingWait"}'::jsonb,error='Waiting for the issue flow to accept the reply',
@@ -132,7 +138,8 @@ WHERE id=$1 AND claim_token=$2 AND status='dispatching';
 UPDATE repository_job_dispatches SET status='waiting',signal_attempt=signal_attempt+1,
   receipt=$2,error='Waiting for the issue flow to accept the reply',next_attempt_at=$3,
   claim_token=NULL,lease_until=NULL,updated_at=now()
-WHERE id=$1 AND status<>'dispatching';
+WHERE id=$1 AND status='waiting' AND signal_attempt=sqlc.arg(expected_signal_attempt)
+  AND receipt->>'operationId'=sqlc.arg(expected_operation_id)::text;
 
 -- name: LatestRepositoryJobIssueRun :one
 SELECT * FROM repository_job_dispatches

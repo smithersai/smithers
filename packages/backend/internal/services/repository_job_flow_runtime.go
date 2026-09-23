@@ -338,23 +338,68 @@ func (s *RepositoryJobService) rejectRepositoryJobPlan(ctx context.Context, disp
 	return err
 }
 
+func repositoryJobSignalOperationID(receipt []byte) string {
+	var value struct {
+		OperationID string `json:"operationId"`
+	}
+	_ = json.Unmarshal(receipt, &value)
+	return value.OperationID
+}
+
+func repositoryJobSignalProjectionCurrent(dispatch db.RepositoryJobDispatch, projection repositoryJobFlowProjection, operationID string) bool {
+	return dispatch.SignalAttempt == projection.SignalAttempt && dispatch.Status == "waiting" &&
+		repositoryJobSignalOperationID(dispatch.Receipt) == operationID
+}
+
+func (s *RepositoryJobService) finishRepositoryJobSignalProjection(ctx context.Context, projection repositoryJobFlowProjection, dispatchID, operationID string, rows int64) error {
+	if rows == 1 {
+		return nil
+	}
+	current, err := s.q.GetRepositoryJobDispatch(ctx, dispatchID)
+	if err != nil {
+		return err
+	}
+	if repositoryJobSignalProjectionCurrent(current, projection, operationID) ||
+		(current.Status == "dispatching" && current.SignalAttempt == projection.SignalAttempt) {
+		return errors.New("repository job dispatch is busy; retry signal projection")
+	}
+	return nil
+}
+
+func (s *RepositoryJobService) projectRepositoryJobSignalDispatch(ctx context.Context, projection repositoryJobFlowProjection, dispatch db.RepositoryJobDispatch, status, runID, message, expectedOperationID string, update flowdispatch.ProjectionUpdate) error {
+	rows, err := s.q.ProjectRepositoryJobSignal(ctx, db.ProjectRepositoryJobSignalParams{
+		ID: dispatch.ID, Status: status, RunID: runID,
+		Plan: repositoryJobRuntimePlan(update.Checkpoint), Receipt: repositoryJobRuntimeReceipt(update),
+		Error: message, NextAttemptAt: s.now().Add(10 * time.Second),
+		ExpectedSignalAttempt: projection.SignalAttempt, ExpectedOperationID: expectedOperationID,
+	})
+	if err != nil {
+		return err
+	}
+	return s.finishRepositoryJobSignalProjection(ctx, projection, dispatch.ID, expectedOperationID, rows)
+}
+
 func (s *RepositoryJobService) projectRepositoryJobSignal(ctx context.Context, projection repositoryJobFlowProjection, dispatch db.RepositoryJobDispatch, registration db.RepositoryJobRegistration, update flowdispatch.ProjectionUpdate) error {
+	if !repositoryJobSignalProjectionCurrent(dispatch, projection, update.OperationID) {
+		if dispatch.Status == "dispatching" && dispatch.SignalAttempt == projection.SignalAttempt {
+			return errors.New("repository job dispatch is busy; retry signal projection")
+		}
+		return nil
+	}
 	switch update.State {
 	case jobs.StateCompleted:
-		return s.projectRepositoryJobDispatch(ctx, dispatch, "submitted", projection.PreviousRunID, "", update)
+		return s.projectRepositoryJobSignalDispatch(ctx, projection, dispatch, "submitted", projection.PreviousRunID, "", update.OperationID, update)
 	case jobs.StateFailed:
 		switch update.Checkpoint.FailureCode {
 		case "no_matching_wait":
 			rows, err := s.q.RetryProjectedRepositoryJobSignal(ctx, db.RetryProjectedRepositoryJobSignalParams{
 				ID: dispatch.ID, Receipt: repositoryJobRuntimeReceipt(update), NextAttemptAt: s.now().Add(10 * time.Second),
+				ExpectedSignalAttempt: projection.SignalAttempt, ExpectedOperationID: update.OperationID,
 			})
 			if err != nil {
 				return err
 			}
-			if rows != 1 {
-				return errors.New("repository job dispatch is busy; retry signal projection")
-			}
-			return nil
+			return s.finishRepositoryJobSignalProjection(ctx, projection, dispatch.ID, update.OperationID, rows)
 		case "runtime_run_terminal":
 			receipt, err := s.admitRepositoryJobLaunch(ctx, registration, dispatch)
 			if err != nil {
@@ -367,10 +412,10 @@ func (s *RepositoryJobService) projectRepositoryJobSignal(ctx context.Context, p
 				Version: 1, Target: repositoryJobFlowTarget(registration, dispatch), FlowID: registration.FlowID,
 				Projection: repositoryJobProjection(repositoryJobFlowModeLaunch, registration, dispatch, ""),
 			}
-			return s.projectRepositoryJobDispatch(ctx, dispatch, "waiting", "", "", launchUpdate)
+			return s.projectRepositoryJobSignalDispatch(ctx, projection, dispatch, "waiting", "", "", update.OperationID, launchUpdate)
 		}
 	}
-	return s.projectRepositoryJobDispatch(ctx, dispatch, "failed", projection.PreviousRunID, "The canonical Flow signal failed", update)
+	return s.projectRepositoryJobSignalDispatch(ctx, projection, dispatch, "failed", projection.PreviousRunID, "The canonical Flow signal failed", update.OperationID, update)
 }
 
 // ProjectFlowRuntime makes repository_job_dispatches a receipt projection of
