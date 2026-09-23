@@ -2223,7 +2223,9 @@ Every subcommand takes it — `--status` on the wrong lane reads the wrong ledge
 The default is `r91`, the first re-run, so an operator who names no lane resumes
 that one rather than starting a nameless sixth. A lane name is a path component
 and an evaluator run id at once, so it is refused unless it is letters, digits,
-`.`, `_` and `-`. `SWB_RERUN_LANE` sets it from the environment, and `FB_DIR`,
+`.`, `_` and `-`. The index must also be one `lib/run-paths.sh` accepts,
+`r<digits>[<lowercase tag>]`, so a lane named any other way (`jev1`) refuses to
+start until `SWB_RERUN_INDEX` names one (`r99jev`). `SWB_RERUN_LANE` sets it from the environment, and `FB_DIR`,
 `SWB_RERUN_INDEX` and `SWB_RERUN_RUN_ID` still override the three values it
 derives, one at a time.
 

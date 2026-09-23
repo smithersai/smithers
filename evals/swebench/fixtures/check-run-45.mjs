@@ -358,6 +358,23 @@ try {
     assert.match(refused.stdout + refused.stderr, /--lane must be a name/)
   }
 
+  // A lane's index is the run index every artifact carries, and
+  // `lib/run-paths.sh` accepts only `r<digits>[<lowercase tag>]`. A lane named
+  // any other way must name its index, or the driver would pull an image for
+  // each instance and fail every one of them at run-paths.
+  writeFileSync(trace, "")
+  const unindexed = drive(join(temporary, "fb-lane-index"), ["--lane", "jev1", "--limit", "1"], { SWB_RERUN_JOBS: "1" })
+  assert.equal(unindexed.status, 2, `a lane whose index run-paths refuses was started\n${unindexed.stdout}`)
+  assert.match(unindexed.stdout + unindexed.stderr, /run index must match r<digits>/)
+  assert.equal(readFileSync(trace, "utf8"), "", "an instance started under an index run-paths refuses")
+  const indexedFb = join(temporary, "fb-lane-indexed")
+  const indexed = drive(indexedFb, ["--lane", "jev1", "--limit", "1"], { SWB_RERUN_INDEX: "r99jev", SWB_RERUN_JOBS: "1" })
+  assert.equal(indexed.status, 0, `${indexed.stdout}\n${indexed.stderr}`)
+  const indexedHeader = read(join(indexedFb, "manifest.jsonl")).header
+  assert.equal(indexedHeader.lane, "jev1")
+  assert.equal(indexedHeader.index, "r99jev")
+  assert.equal(indexedHeader.runId, "rerun-jev1")
+
   // -----------------------------------------------------------------------
   // Refusals.
   // -----------------------------------------------------------------------

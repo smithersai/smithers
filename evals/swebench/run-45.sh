@@ -204,6 +204,16 @@ esac
 # ---------------------------------------------------------------------------
 # Refusals, before anything is spent.
 # ---------------------------------------------------------------------------
+# The index every artifact carries goes through `lib/run-paths.sh`, which
+# accepts only `r<digits>[<lowercase tag>]`. A lane is allowed any path-safe
+# name, so a lane like `jev1` derives an index run-paths refuses, and every
+# worker would pull its image and then fail. Name the index instead:
+# `SWB_RERUN_INDEX=r99jev ./run-45.sh --lane jev1`.
+if ! [[ "$INDEX" =~ ^r[0-9]+[a-z]*$ ]]; then
+  echo "run-45.sh: run index must match r<digits>[<lowercase tag>], got '$INDEX'." >&2
+  echo "  Lane '$LANE' derives it; set SWB_RERUN_INDEX to one run-paths.sh accepts." >&2
+  exit 2
+fi
 # The fullbench worker pulls an image before it calls run-instance.sh. Reject
 # a broken explicit helper path here; otherwise the CLI resolves its packaged
 # or checkout helper itself.
