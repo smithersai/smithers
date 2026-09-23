@@ -13,7 +13,7 @@ import * as EngineLike from "@smthrs/harness/EngineLike"
 import { Effect, FileSystem, Layer, Logger, Option, PlatformError } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, normalize } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
 
@@ -192,18 +192,25 @@ describe("WorkspaceObservation", () => {
         description: code
       })
       const calls: Array<string> = []
+      let refusedPath: string | undefined
       const fs = await Effect.runPromise(
         Effect.map(FileSystem.FileSystem, (found): FileSystem.FileSystem => ({
           ...found,
           readDirectory: (path) => {
-            calls.push(`readDirectory ${path}`)
-            return method === "readDirectory" && path === failedPath
-              ? Effect.fail(failure)
-              : found.readDirectory(path)
+            calls.push(`readDirectory ${normalize(path)}`)
+            if (method === "readDirectory" && normalize(path) === failedPath) {
+              refusedPath = path
+              return Effect.fail(failure)
+            }
+            return found.readDirectory(path)
           },
           stat: (path) => {
-            calls.push(`stat ${path}`)
-            return method === "stat" && path === failedPath ? Effect.fail(failure) : found.stat(path)
+            calls.push(`stat ${normalize(path)}`)
+            if (method === "stat" && normalize(path) === failedPath) {
+              refusedPath = path
+              return Effect.fail(failure)
+            }
+            return found.stat(path)
           }
         })).pipe(Effect.provide(NodeFileSystem.layer))
       )
@@ -221,7 +228,7 @@ describe("WorkspaceObservation", () => {
       expect(observation.paths).toBe(relative === "" ? 0 : 1)
       expect(observation.complete).toBe(false)
       expect(diagnostics).toEqual([
-        [`Workspace observation could not ${method} ${failedPath}`, failure]
+        [`Workspace observation could not ${method} ${refusedPath}`, failure]
       ])
     } finally {
       rmSync(root, { recursive: true, force: true })
@@ -237,7 +244,9 @@ describe("WorkspaceObservation", () => {
         Effect.map(FileSystem.FileSystem, (found): FileSystem.FileSystem => ({
           ...found,
           readDirectory: (path) =>
-            path === join(root, "nested") ? found.readDirectory(join(root, "gone")) : found.readDirectory(path)
+            normalize(path) === join(root, "nested")
+              ? found.readDirectory(join(root, "gone"))
+              : found.readDirectory(path)
         })).pipe(Effect.provide(NodeFileSystem.layer))
       )
       const observation = await Effect.runPromise(WorkspaceObservation.observe(fs, root))
