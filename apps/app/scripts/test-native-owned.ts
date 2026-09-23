@@ -16,6 +16,8 @@ const bundledRoot = resolve(executable, "..", "..", "Resources", "app")
 const root = mkdtempSync(join(tmpdir(), "smithers-native-owned-"))
 const children: Array<ReturnType<typeof Bun.spawn>> = []
 const appPIDs: Array<number> = []
+let missingBootstrapBackend: { readonly port?: number; stop(closeActiveConnections?: boolean): void } | undefined
+let recoveredBackend: { readonly port?: number; stop(closeActiveConnections?: boolean): void } | undefined
 const cleanEnvironment = Object.fromEntries(
   Object.entries(process.env).flatMap(([name, value]) =>
     name.startsWith("SMITHERS_") || value === undefined ? [] : [[name, value]])
@@ -43,6 +45,7 @@ interface RunningApp {
   readonly state: string
   readonly appPID: Promise<number>
   bridgeState(): Promise<{ readonly app?: { readonly origin?: string; readonly packaged?: boolean } }>
+  bridgeEval(script: string): Promise<unknown>
   stop(): Promise<void>
 }
 
@@ -60,12 +63,13 @@ const launch = async (home: string, mode: "own" | "plue", origin: string, token?
       HOME: home,
       CFFIXED_USER_HOME: home,
       TMPDIR: temporary,
-      SMITHERS_LOCAL_HEADLESS: "1",
+      SMITHERS_LOCAL_HEADLESS: "0",
       SMITHERS_CHAT_STUB: "0",
       SMITHERS_BACKEND_MODE: mode,
       SMITHERS_E2E_BRIDGE: "1",
       SMITHERS_E2E_BRIDGE_PORT: String(bridgePort),
       SMITHERS_E2E_BRIDGE_TOKEN: bridgeToken,
+      ...(process.env.SMITHERS_NATIVE_E2E_VISIBLE === "1" ? { SMITHERS_NATIVE_E2E_VISIBLE: "1" } : {}),
       ...(mode === "own"
         ? { SMITHERS_OWNED_BACKEND_ORIGIN: origin }
         : {
@@ -122,6 +126,15 @@ const launch = async (home: string, mode: "own" | "plue", origin: string, token?
     if (!response.ok) throw new Error(`Installed app bridge returned ${response.status}.`)
     return response.json() as Promise<{ readonly app?: { readonly origin?: string; readonly packaged?: boolean } }>
   }
+  const bridgeEval = async (script: string): Promise<unknown> => {
+    const response = await fetch(`http://127.0.0.1:${bridgePort}/window/eval`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${bridgeToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ script })
+    })
+    if (!response.ok) throw new Error(`Installed app renderer bridge returned ${response.status}: ${await response.text()}`)
+    return (await response.json() as { readonly result?: unknown }).result
+  }
   const stop = async (): Promise<void> => {
     // Electrobun's launcher can be a self-extractor. Its PID is not the Bun
     // main process and terminating it bypasses NativeApp's shutdown handler.
@@ -145,6 +158,7 @@ ${output}`)
     state: join(home, "Library", "Application Support", "Smithers"),
     appPID,
     bridgeState,
+    bridgeEval,
     stop
   }
 }
@@ -200,11 +214,31 @@ const waitStopped = async (pid: number): Promise<void> => {
   throw new Error(`Bundled PostgreSQL process ${pid} survived native shutdown.`)
 }
 
+const assertNoVisibleWindows = (pid: number): void => {
+  if (process.env.SMITHERS_NATIVE_E2E_VISIBLE === "1") return
+  const script = `import CoreGraphics
+import Foundation
+let pid = Int(CommandLine.arguments.last!)!
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as! [[String: Any]]
+print(windows.filter { ($0[kCGWindowOwnerPID as String] as? Int) == pid }.count)`
+  const result = Bun.spawnSync(["/usr/bin/swift", "-e", script, String(pid)], { stdout: "pipe", stderr: "pipe" })
+  const output = new TextDecoder().decode(result.stdout).trim()
+  if (result.exitCode !== 0 || output !== "0") {
+    throw new Error(`Installed native app has visible windows (pid=${pid}, count=${output}): ${new TextDecoder().decode(result.stderr)}`)
+  }
+  console.log(`NATIVE_VISIBLE_WINDOWS=0 pid=${pid}`)
+}
+
 try {
   const port = await availablePort()
   const origin = `http://127.0.0.1:${port}`
   const home = join(root, "owned-home")
   const first = await launch(home, "own", origin)
+  assertNoVisibleWindows(await first.appPID)
+  const ownState = await first.bridgeState()
+  if (!ownState.app?.origin || ownState.app.origin === origin || new URL(ownState.app.origin).hostname !== "127.0.0.1") {
+    throw new Error("Installed native app did not serve its packaged UI through a local API relay.")
+  }
   await waitReady(first)
   const [index, bootstrap] = await Promise.all([
     fetch(`${origin}/`).then((response) => response.text()),
@@ -267,6 +301,7 @@ try {
   if (existsSync(postmasterPID)) throw new Error("Bundled PostgreSQL left postmaster.pid after shutdown.")
 
   const second = await launch(home, "own", origin)
+  assertNoVisibleWindows(await second.appPID)
   await waitReady(second)
   if (checksum(secrets) !== initialSecrets) throw new Error("Native restart replaced the persisted owner secrets.")
   if (readFileSync(pgVersion, "utf8").trim() !== "18") throw new Error("Native restart lost the PostgreSQL cluster.")
@@ -280,7 +315,13 @@ try {
   if (existsSync(postmasterPID)) throw new Error("Bundled PostgreSQL left postmaster.pid after restart shutdown.")
 
   const plueHome = join(root, "plue-home")
-  const plueOrigin = process.env.SMITHERS_MODE_MATRIX_PLUE_URL || "https://plue.invalid"
+  missingBootstrapBackend = process.env.SMITHERS_MODE_MATRIX_PLUE_URL ? undefined : Bun.serve({
+    hostname: "127.0.0.1", port: 0,
+    fetch: () => new Response("404", { status: 404 })
+  })
+  if (missingBootstrapBackend && missingBootstrapBackend.port === undefined) throw new Error("Missing-bootstrap test backend has no port.")
+  const plueOrigin = process.env.SMITHERS_MODE_MATRIX_PLUE_URL ||
+    `http://127.0.0.1:${missingBootstrapBackend!.port}`
   const plueToken = process.env.SMITHERS_MODE_MATRIX_PLUE_TOKEN
   if (Boolean(process.env.SMITHERS_MODE_MATRIX_PLUE_URL) !== Boolean(plueToken)) {
     throw new Error("Configured Plue target requires both a URL and token.")
@@ -293,7 +334,7 @@ try {
     await jsonRequest(plueOrigin, "/api/user", { headers: { authorization: `token ${plueToken}` } })
   }
   const plue = await launch(plueHome, "plue", plueOrigin, plueToken)
-  await plue.appPID
+  assertNoVisibleWindows(await plue.appPID)
   const plueState = await plue.bridgeState()
   const rendererOrigin = plueState.app?.origin
   if (!rendererOrigin || new URL(rendererOrigin).hostname !== "127.0.0.1" ||
@@ -303,6 +344,37 @@ try {
   const plueIndex = await fetch(`${rendererOrigin}/`).then((response) => response.text())
   if (!plueIndex.includes('<div id="root"')) {
     throw new Error("The installed native app did not serve the packaged Plue application.")
+  }
+  if (!plueToken) {
+    const deadline = Date.now() + 30_000
+    let heading: unknown
+    while (Date.now() < deadline) {
+      heading = await plue.bridgeEval("return document.querySelector('main')?.textContent ?? null").catch(() => null)
+      if (typeof heading === "string" && heading.includes("Backend does not provide Smithers bootstrap.")) break
+      await Bun.sleep(200)
+    }
+    if (typeof heading !== "string" || !heading.includes("Backend does not provide Smithers bootstrap.") || heading.includes("404")) {
+      throw new Error(`Native missing bootstrap did not show its typed failure: ${String(heading)}`)
+    }
+    recoveredBackend = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: (request) =>
+      new URL(request.url).pathname === "/api/bootstrap"
+        ? Response.json({ apiVersion: 1, host: "local", version: "test", buildSha: "test",
+            capabilities: [], authFlow: "none", sandbox: null })
+        : new Response("not found", { status: 404 })
+    })
+    if (recoveredBackend.port === undefined) throw new Error("Recovery backend has no port.")
+    const recoveryOrigin = `http://127.0.0.1:${recoveredBackend.port}`
+    await plue.bridgeEval(`const button = [...document.querySelectorAll('button')].find(button => button.textContent === 'Switch backend'); button?.click(); return Boolean(button)`)
+    await plue.bridgeEval(`const form = document.querySelector('main form'); form.querySelector('[name="origin"]').value = ${JSON.stringify(recoveryOrigin)}; form.requestSubmit(); return true`).catch(() => undefined)
+    let switched = false
+    const switchDeadline = Date.now() + 15_000
+    while (Date.now() < switchDeadline) {
+      switched = await fetch(`${rendererOrigin}/api/bootstrap`).then(async (response) =>
+        response.ok && (await response.json() as { version?: string }).version === "test", () => false)
+      if (switched) break
+      await Bun.sleep(100)
+    }
+    if (!switched) throw new Error("Native Switch backend did not retarget the local API relay.")
   }
   if (plueToken) {
     const response = await fetch(`${rendererOrigin}/api/bootstrap`)
@@ -323,6 +395,8 @@ try {
 
   console.log(`NATIVE_ACCEPTANCE_OK executable=${executable} state=${first.state}`)
 } finally {
+  missingBootstrapBackend?.stop(true)
+  recoveredBackend?.stop(true)
   for (const pid of appPIDs) {
     if (processAlive(pid)) process.kill(pid, "SIGKILL")
   }

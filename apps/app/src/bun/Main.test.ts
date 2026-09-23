@@ -132,6 +132,13 @@ describe("the native main process starts the local origin", () => {
     expect(report.health).toMatchObject({ ok: true })
     expect(report.logs).toContain("SMITHERS_LOCAL_HEADLESS=1: serving without a window")
   }, PROBE_BUDGET_MS)
+
+  test("E2E bridge keeps its window hidden unless explicitly requested", async () => {
+    const hidden = await probe({ env: { SMITHERS_E2E_BRIDGE: "1", SMITHERS_E2E_BRIDGE_PORT: "12345", SMITHERS_E2E_BRIDGE_TOKEN: "01234567890123456789012345678901" } })
+    expect(hidden.windows[0]).toMatchObject({ hidden: true, activate: false })
+    const visible = await probe({ env: { SMITHERS_E2E_BRIDGE: "1", SMITHERS_E2E_BRIDGE_PORT: "12346", SMITHERS_E2E_BRIDGE_TOKEN: "01234567890123456789012345678901", SMITHERS_NATIVE_E2E_VISIBLE: "1" } })
+    expect(visible.windows[0]).toMatchObject({ hidden: false, activate: true })
+  }, PROBE_BUDGET_MS)
 })
 
 describe("the native RPC surface", () => {
@@ -141,7 +148,8 @@ describe("the native RPC surface", () => {
       "applicationBootstrapToken",
       "applicationTarget",
       "applicationToken",
-      "openExternal"
+      "openExternal",
+      "switchApplicationTarget"
     ])
     expect(report.messageNames).toEqual([])
   }, PROBE_BUDGET_MS)

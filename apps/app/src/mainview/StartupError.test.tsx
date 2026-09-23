@@ -6,6 +6,7 @@ import type { Root } from "react-dom/client"
 import { createStartupErrorElement, StartupErrorPanel } from "./StartupError"
 
 import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
+import { BootstrapFailure } from "./runtime/Runtime"
 
 GlobalRegistrator.register()
 const roots = new Set<Root>()
@@ -105,5 +106,25 @@ for (const [reason, heading, buttons] of [
     expect(host.querySelector("pre")).toBeNull()
     expect(host.textContent).not.toContain("recovery")
     expect(host.textContent).not.toContain("Reset")
+  })
+}
+
+for (const kind of ["unreachable", "missing", "server", "invalid"] as const) {
+  test(`bootstrap ${kind} shows a typed recovery on web and native`, () => {
+    for (const native of [false, true]) {
+      if (native) window.__electrobun = {} as NonNullable<typeof window.__electrobun>
+      const host = document.createElement("div")
+      document.body.append(host)
+      const root = createRoot(host)
+      roots.add(root)
+      flushSync(() => root.render(<StartupErrorPanel reason={new BootstrapFailure(kind, 404)} />))
+      expect(host.querySelector("h1")?.textContent).toBe("Backend unavailable")
+      expect(host.textContent).not.toContain("404")
+      expect([...host.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Retry", "Switch backend"])
+      flushSync(() => host.querySelector<HTMLButtonElement>("button:last-of-type")!.click())
+      expect(host.querySelector('input[name="origin"]')).not.toBeNull()
+      expect(host.querySelector('input[name="token"]')).not.toBeNull()
+      delete window.__electrobun
+    }
   })
 }

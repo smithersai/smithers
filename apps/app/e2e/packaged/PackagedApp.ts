@@ -208,6 +208,7 @@ export class PackagedApp {
       SMITHERS_E2E_BRIDGE_PORT: String(this.bridgePort),
       SMITHERS_E2E_BRIDGE_TOKEN: this.bridgeToken,
       SMITHERS_LOCAL_PORT: undefined,
+      SMITHERS_LOCAL_HEADLESS: "0",
       ...fixtureEnv,
       ELECTROBUN_CONSOLE: "1",
       NO_COLOR: "1"

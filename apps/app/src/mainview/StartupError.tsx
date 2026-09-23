@@ -1,8 +1,10 @@
 import { isWriterOwnershipError, type WriterOwnershipError } from "./state/StorageRecoveryContract"
 import { useSmithersHere } from "./state/WriterOwnership"
-import type { CSSProperties } from "react"
+import { useState, type CSSProperties } from "react"
 import { errorMessage } from "./state/ClientErrors"
 import { createStartupRecovery, mountStartupRecovery } from "./StartupRecovery"
+import { BootstrapFailure } from "./runtime/Runtime"
+import { switchBackendTarget } from "./runtime/BackendTargetSelection"
 
 /*
  * Both panels below render the same declarations. They are written once, as
@@ -52,14 +54,58 @@ export const startupErrorMessage = (reason: unknown, earlier?: unknown): string 
     ].join("\n")
 
 /** The panel React renders when a boot failure reaches the error boundary. */
-type StartupFailure = { readonly kind: "generic"; readonly message: string } | WriterOwnershipError
+type StartupFailure = { readonly kind: "generic"; readonly message: string } | WriterOwnershipError | BootstrapFailure
 
 const startupFailure = (reason: unknown): StartupFailure =>
-  isWriterOwnershipError(reason) ? reason : { kind: "generic", message: startupErrorMessage(reason) }
+  isWriterOwnershipError(reason) || reason instanceof BootstrapFailure
+    ? reason : { kind: "generic", message: startupErrorMessage(reason) }
+
+function BootstrapErrorPanel({ failure }: { readonly failure: BootstrapFailure }) {
+  const [choosing, setChoosing] = useState(false)
+  const [invalid, setInvalid] = useState(false)
+  return <main style={PANEL_STYLE}>
+    <h1>Backend unavailable</h1>
+    <p>{failure.message}</p>
+    <button type="button" onClick={() => window.location.reload()}>Retry</button>{" "}
+    <button type="button" onClick={() => setChoosing(true)}>Switch backend</button>
+    {choosing && <form onSubmit={async (event) => {
+      event.preventDefault()
+      const data = new FormData(event.currentTarget)
+      const origin = String(data.get("origin") ?? "").trim()
+      const token = String(data.get("token") ?? "").trim()
+      try {
+        const native = window.__electrobun !== undefined
+        if (native) {
+          const { nativeSwitchBackendTarget } = await import("./native/NativeBridge")
+          await nativeSwitchBackendTarget(origin, token)
+          window.location.reload()
+          return
+        }
+        if (token === "") {
+          const url = new URL(origin)
+          if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.pathname !== "/" || url.search || url.hash) throw new Error()
+          window.location.assign(url.origin)
+          return
+        }
+        switchBackendTarget(origin, token, window.location.origin)
+        window.location.reload()
+      } catch { setInvalid(true) }
+    }}>
+      <label>Backend URL <input name="origin" type="url" required placeholder="https://backend.example" /></label>
+      <label>Access token <input name="token" type="password" autoComplete="off" /></label>
+      <button type="submit">Connect</button>
+      {invalid && <p role="alert">Invalid backend URL.</p>}
+    </form>}
+  </main>
+}
 
 export function StartupErrorPanel({ message, reason = message }: { readonly message?: string; readonly reason?: unknown }) {
   const failure = startupFailure(reason)
   switch (failure.kind) {
+    case "unreachable":
+    case "missing":
+    case "server":
+    case "invalid": return <BootstrapErrorPanel failure={failure} />
     case "writer-held":
       return <main style={PANEL_STYLE}>
         <h1>Smithers is open in another tab</h1>

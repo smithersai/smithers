@@ -25,6 +25,8 @@ export interface RecordedWindow {
   readonly title: unknown
   readonly url: unknown
   readonly frame: unknown
+  readonly hidden: unknown
+  readonly activate: unknown
   /** True when the window was handed the very object BrowserView.defineRPC returned. */
   readonly rpcBound: boolean
 }

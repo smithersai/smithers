@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { APP_BOOTSTRAP_PATH } from "@smthrs/rpc/AppBootstrap"
-import { createRuntime, loadBootstrap, warmBootstrap } from "./Runtime"
+import { BootstrapFailure, createRuntime, loadBootstrap, warmBootstrap } from "./Runtime"
 
 const cloud: AppBootstrap = {
   apiVersion: 1,
@@ -64,6 +64,21 @@ describe("runtime composition", () => {
   })
 })
 
+for (const [label, response, kind] of [
+  ["missing endpoint", new Response("404", { status: 404 }), "missing"],
+  ["backend failure", new Response("oops", { status: 503 }), "server"],
+  ["invalid document", Response.json({ apiVersion: 1 }), "invalid"]
+] as const) {
+  test(`classifies ${label} at the real bootstrap read`, async () => {
+    await expect(loadBootstrap(async () => response)).rejects.toMatchObject({ kind })
+  })
+}
+
+test("classifies an unreachable backend at the real bootstrap read", async () => {
+  await expect(loadBootstrap(async () => { throw new TypeError("Failed to fetch") })).rejects.toBeInstanceOf(BootstrapFailure)
+  await expect(loadBootstrap(async () => { throw new TypeError("Failed to fetch") })).rejects.toMatchObject({ kind: "unreachable" })
+})
+
 test("bootstrap warming shares the in-flight promise and retries after rejection", async () => {
   const first = Promise.withResolvers<Response>()
   let reads = 0
@@ -72,7 +87,7 @@ test("bootstrap warming shares the in-flight promise and retries after rejection
   expect(warmBootstrap(http)).toBe(pending)
   expect(reads).toBe(1)
   first.reject(new Error("offline"))
-  await expect(pending).rejects.toThrow("offline")
+  await expect(pending).rejects.toMatchObject({ kind: "unreachable" })
 
   const next = Promise.withResolvers<Response>()
   const retry = warmBootstrap(() => { reads++; return next.promise })

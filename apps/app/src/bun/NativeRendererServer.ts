@@ -1,16 +1,26 @@
 import { existsSync, statSync } from "node:fs"
 import { join, normalize, resolve } from "node:path"
 
-/** The packaged Plue window serves its own UI and relays the same API paths. */
-export const startNativePlueServer = (distDirectory: string, apiOrigin: string): { readonly origin: string; readonly stop: () => void } => {
+/** The packaged native UI always serves locally and relays only API paths. */
+export const startNativeRendererServer = (distDirectory: string, apiOrigin: string): {
+  readonly origin: string
+  readonly stop: () => void
+  readonly setTarget: (apiOrigin: string) => void
+} => {
   const dist = resolve(distDirectory)
   const index = join(dist, "index.html")
   if (!existsSync(index)) throw new Error(`The packaged UI is missing ${index}.`)
-  const remote = new URL(apiOrigin)
-  if (!/^https?:$/.test(remote.protocol) || remote.username || remote.password ||
-    remote.pathname !== "/" || remote.search || remote.hash) {
-    throw new Error("Plue API origin must be a credential-free HTTP(S) origin.")
+  const parseTarget = (value: string): URL => {
+    let target: URL
+    try { target = new URL(value) }
+    catch { throw new Error("Native API origin must be a credential-free HTTP(S) origin.") }
+    if (!/^https?:$/.test(target.protocol) || target.username || target.password ||
+      target.pathname !== "/" || target.search || target.hash) {
+      throw new Error("Native API origin must be a credential-free HTTP(S) origin.")
+    }
+    return target
   }
+  let remote = parseTarget(apiOrigin)
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -40,5 +50,9 @@ export const startNativePlueServer = (distDirectory: string, apiOrigin: string):
       return new Response(Bun.file(index), { headers: { "cache-control": "no-store", "content-type": "text/html; charset=utf-8" } })
     }
   })
-  return { origin: `http://127.0.0.1:${server.port}`, stop: () => server.stop(true) }
+  return {
+    origin: `http://127.0.0.1:${server.port}`,
+    stop: () => server.stop(true),
+    setTarget: (apiOrigin) => { remote = parseTarget(apiOrigin) }
+  }
 }

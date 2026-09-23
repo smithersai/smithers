@@ -30,15 +30,19 @@ const origin = (name: string, value: string | undefined): string => {
  */
 export const nativeBackendConfig = (
   env: Readonly<Record<string, string | undefined>>,
-  backend: NativeBackend
+  backend: NativeBackend,
+  packagedRendererOrigin?: string
 ): NativeBackendConfig => {
+  const ownedOrigin = backend.mode === "own" ? origin("owned backend origin", backend.origin) : undefined
   const apiOrigin = backend.mode === "own"
-    ? origin("owned backend origin", backend.origin)
+    ? packagedRendererOrigin === undefined
+      ? ownedOrigin!
+      : origin("packaged renderer origin", packagedRendererOrigin)
     : origin("SMITHERS_API_ORIGIN", env.SMITHERS_API_ORIGIN)
-  const rendererOrigin =
+  const rendererOrigin = packagedRendererOrigin ?? (
     env.SMITHERS_RENDERER_ORIGIN?.trim() === undefined || env.SMITHERS_RENDERER_ORIGIN?.trim() === ""
       ? apiOrigin
-      : origin("SMITHERS_RENDERER_ORIGIN", env.SMITHERS_RENDERER_ORIGIN)
+      : origin("SMITHERS_RENDERER_ORIGIN", env.SMITHERS_RENDERER_ORIGIN))
   const external = apiOrigin !== rendererOrigin
   const token = env.SMITHERS_API_TOKEN?.trim() || null
   const auth = token === null ? "session" : backend.mode === "plue" ? "bearer" : "token"

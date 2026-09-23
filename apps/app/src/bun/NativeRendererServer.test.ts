@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { startNativePlueServer } from "./NativePlueServer"
+import { startNativeRendererServer } from "./NativeRendererServer"
 
 const close: Array<() => void> = []
 afterEach(() => { for (const stop of close.splice(0)) stop() })
@@ -19,7 +19,7 @@ test("packaged Plue window serves its UI and forwards authenticated product API 
     return Response.json({ buildSha: "remote" })
   } })
   close.push(() => remote.stop(true))
-  const native = startNativePlueServer(dist, `http://127.0.0.1:${remote.port}`)
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`)
   close.push(native.stop)
 
   expect(await (await fetch(`${native.origin}/owner/repo`)).text()).toContain("packaged UI")
@@ -35,5 +35,23 @@ test("packaged Plue window serves its UI and forwards authenticated product API 
     { path: "/api/bootstrap", auth: "Bearer owner-token", body: "" },
     { path: "/api/issues", auth: "Bearer owner-token", body: '{"title":"Native issue"}' }
   ])
-  expect(() => startNativePlueServer(dist, "file:///private/backend")).toThrow("Plue API origin")
+  expect(() => startNativeRendererServer(dist, "file:///private/backend")).toThrow("Native API origin")
+})
+
+test("native UI stays available when the selected backend has no bootstrap", async () => {
+  const dist = mkdtempSync(join(tmpdir(), "smithers-native-missing-bootstrap-"))
+  close.push(() => rmSync(dist, { recursive: true, force: true }))
+  writeFileSync(join(dist, "index.html"), "<div id='root'>packaged UI</div>")
+  const remote = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("404", { status: 404 }) })
+  close.push(() => remote.stop(true))
+  const native = startNativeRendererServer(dist, `http://127.0.0.1:${remote.port}`)
+  close.push(native.stop)
+  expect(await (await fetch(`${native.origin}/`)).text()).toContain("packaged UI")
+  expect((await fetch(`${native.origin}/api/bootstrap`)).status).toBe(404)
+  const ready = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => Response.json({ apiVersion: 1 }) })
+  close.push(() => ready.stop(true))
+  native.setTarget(`http://127.0.0.1:${ready.port}`)
+  expect(await (await fetch(`${native.origin}/api/bootstrap`)).json()).toEqual({ apiVersion: 1 })
+  expect(() => native.setTarget("file:///private/backend")).toThrow("Native API origin")
+  expect(await (await fetch(`${native.origin}/api/bootstrap`)).json()).toEqual({ apiVersion: 1 })
 })

@@ -25,6 +25,14 @@ describe("native backend handshake", () => {
       })
   })
 
+  test("owned backend uses the packaged renderer proxy for its API", () => {
+    const config = nativeBackendConfig({}, {
+      mode: "own", origin: "http://127.0.0.1:4400", bootstrapToken: "setup", failure: undefined, stop: async () => {}
+    }, "http://127.0.0.1:5100")
+    expect(config.rendererOrigin).toBe("http://127.0.0.1:5100")
+    expect(config.target).toMatchObject({ mode: "native-own", apiOrigin: "http://127.0.0.1:5100", cors: "same-origin" })
+  })
+
   test("Plue never requests an owned backend launch", () => {
     const config = nativeBackendConfig({
       SMITHERS_API_ORIGIN: "https://plue.example.test",

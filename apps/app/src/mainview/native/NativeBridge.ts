@@ -28,6 +28,11 @@ export const nativeOpenExternal: (url: string) => Promise<boolean> = rpc === und
 export const nativeApplicationTarget = async (): Promise<ApplicationTargetDocument | undefined> =>
   rpc === undefined ? undefined : (await rpc.proxy.request.applicationTarget({})).target
 
+export const nativeSwitchBackendTarget = async (origin: string, token: string): Promise<void> => {
+  if (rpc === undefined) throw new Error("Native backend selection is unavailable.")
+  await rpc.proxy.request.switchApplicationTarget({ origin, token })
+}
+
 /** Auth is separate so the target document is safe to persist and inspect. */
 export const nativeApplicationToken = async (): Promise<string | undefined> => {
   if (rpc === undefined) return undefined

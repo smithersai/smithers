@@ -43,11 +43,28 @@ export const unavailableRepositories: NativeRepositories = {
   })
 }
 
+export type BootstrapFailureKind = "unreachable" | "missing" | "server" | "invalid"
+
+export class BootstrapFailure extends Error {
+  readonly name = "BootstrapFailure"
+  constructor(readonly kind: BootstrapFailureKind, readonly status?: number) {
+    super(kind === "unreachable" ? "Backend is unreachable."
+      : kind === "missing" ? "Backend does not provide Smithers bootstrap."
+      : kind === "server" ? "Backend could not start Smithers."
+      : "Backend returned an invalid Smithers bootstrap.")
+  }
+}
+
 export const loadBootstrap = async (http: FetchLike): Promise<AppBootstrap> => {
-  const response = await http(APP_BOOTSTRAP_PATH, { headers: { accept: "application/json" } })
-  if (!response.ok) throw new Error(`Runtime bootstrap failed with HTTP ${response.status}.`)
+  let response: Response
+  try {
+    response = await http(APP_BOOTSTRAP_PATH, { headers: { accept: "application/json" } })
+  } catch {
+    throw new BootstrapFailure("unreachable")
+  }
+  if (!response.ok) throw new BootstrapFailure(response.status === 404 ? "missing" : "server", response.status)
   const parsed = AppBootstrapSchema.safeParse(await response.json().catch(() => undefined))
-  if (!parsed.success) throw new Error(`Runtime bootstrap broke its contract: ${parsed.error.message}`)
+  if (!parsed.success) throw new BootstrapFailure("invalid")
   return parsed.data
 }
 

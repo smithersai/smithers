@@ -13,13 +13,14 @@ import { startNativeBackend } from "./NativeBackendProcess"
 import { createNativeShutdown } from "./NativeShutdown"
 import { defaultDistDir, startLocalServer } from "./server"
 import { nativeStateDirectory } from "./NativeState"
-import { startNativePlueServer } from "./NativePlueServer"
+import { startNativeRendererServer } from "./NativeRendererServer"
 
 // This must stay dynamic: Bun hoists external static imports even from lazy
 // local modules. A daemon must never dlopen/initialize Electrobun's native SDK.
 const { default: Electrobun, BrowserView, BrowserWindow, BuildConfig, Screen, Utils } = await import("electrobun/main")
 
 const headless = Bun.env.SMITHERS_LOCAL_HEADLESS === "1"
+const hiddenE2EWindow = Bun.env.SMITHERS_E2E_BRIDGE === "1" && Bun.env.SMITHERS_NATIVE_E2E_VISIBLE !== "1"
 const port = Bun.env.SMITHERS_LOCAL_PORT === undefined ? undefined : Number(Bun.env.SMITHERS_LOCAL_PORT)
 
 /** http(s) only: the page must not launch arbitrary local schemes through the privileged side. */
@@ -54,8 +55,9 @@ if (stubAgent === undefined && (Bun.env.SMITHERS_WEB_ROOT?.trim() ?? "") === "")
 const backendProcess = stubAgent === undefined
   ? await startNativeBackend({ stateDir })
   : undefined
-const plueServer = backendProcess?.mode === "plue"
-  ? startNativePlueServer(defaultDistDir(import.meta.dir), Bun.env.SMITHERS_API_ORIGIN ?? "")
+const rendererServer = backendProcess !== undefined
+  ? startNativeRendererServer(defaultDistDir(import.meta.dir), backendProcess.mode === "own"
+      ? backendProcess.origin ?? "" : Bun.env.SMITHERS_API_ORIGIN ?? "")
   : undefined
 
 // The retired Bun product host survives only as the deterministic packaged
@@ -71,11 +73,11 @@ const testServer = stubAgent === undefined ? undefined : await startLocalServer(
 const backend = await (async () => {
   try {
     return testServer === undefined
-      ? nativeBackendConfig(plueServer === undefined ? Bun.env : {
-          SMITHERS_API_ORIGIN: plueServer.origin,
-          SMITHERS_RENDERER_ORIGIN: plueServer.origin,
+      ? nativeBackendConfig(rendererServer === undefined ? Bun.env : {
+          SMITHERS_API_ORIGIN: rendererServer.origin,
+          SMITHERS_RENDERER_ORIGIN: rendererServer.origin,
           SMITHERS_API_TOKEN: Bun.env.SMITHERS_API_TOKEN
-        }, backendProcess!)
+        }, backendProcess!, rendererServer?.origin)
       : {
         rendererOrigin: testServer.origin,
         target: {
@@ -90,11 +92,12 @@ const backend = await (async () => {
         bootstrapToken: null
       }
   } catch (error) {
-    plueServer?.stop()
+    rendererServer?.stop()
     await backendProcess?.stop()
     throw error
   }
 })()
+let selectedBackend = backend
 
 let mainWindow: NativeBrowserWindow | undefined
 let bridge: ReturnType<typeof startPackagedE2EBridge>
@@ -102,7 +105,7 @@ let backendFailure: Error | undefined
 const shutdown = createNativeShutdown({
   stop: async () => {
     bridge?.stop()
-    plueServer?.stop()
+    rendererServer?.stop()
     const results = await Promise.allSettled([
       testServer?.stop() ?? Promise.resolve(),
       backendProcess?.stop() ?? Promise.resolve()
@@ -129,9 +132,28 @@ if (headless) {
     handlers: {
       requests: {
         openExternal: async ({ url }) => ({ opened: await openExternal(url) }),
-        applicationTarget: async () => ({ target: backend.target }),
-        applicationToken: async () => ({ token: backend.token }),
-        applicationBootstrapToken: async () => ({ token: backend.bootstrapToken })
+        applicationTarget: async () => ({ target: selectedBackend.target }),
+        applicationToken: async () => ({ token: selectedBackend.token }),
+        applicationBootstrapToken: async () => ({ token: selectedBackend.bootstrapToken }),
+        switchApplicationTarget: async ({ origin, token }) => {
+          if (rendererServer === undefined) throw new Error("Native backend selection is unavailable.")
+          const credential = token.trim()
+          rendererServer.setTarget(origin)
+          selectedBackend = {
+            rendererOrigin: rendererServer.origin,
+            target: {
+              apiVersion: 1,
+              mode: credential ? "native-plue" : "native-own",
+              apiOrigin: rendererServer.origin,
+              auth: { kind: credential ? "bearer" : "session" },
+              cors: "same-origin",
+              developerExternal: false
+            },
+            token: credential || null,
+            bootstrapToken: null
+          }
+          return { target: selectedBackend.target }
+        }
       },
       messages: {}
     }
@@ -142,6 +164,8 @@ if (headless) {
     title: "Smithers",
     url: `${backend.rendererOrigin}/`,
     rpc,
+    hidden: hiddenE2EWindow,
+    activate: !hiddenE2EWindow,
     frame: {
       width: 1180,
       height: 800,
@@ -172,8 +196,10 @@ const evaluateInMainWindow = async (script: string): Promise<unknown> => {
   // WKWebView may defer animation-driven rendering while another application
   // is frontmost. Packaged E2E assertions and captures must observe this app,
   // not whichever window happened to have focus when the runner launched it.
-  await window.activate()
-  await Bun.sleep(50)
+  if (!hiddenE2EWindow) {
+    await window.activate()
+    await Bun.sleep(50)
+  }
   const rpc = window.webview.rpc as RendererEvalRPC | undefined
   const evaluator = rpc?.requestProxy?.evaluateJavascriptWithResponse
   if (evaluator === undefined) throw new Error("The main WebView is not available.")
@@ -229,7 +255,7 @@ bridge = startPackagedE2EBridge({
   evaluate: evaluateInMainWindow,
   screenshot: async () => {
     const window = mainWindow
-    if (window === undefined) return null
+    if (window === undefined || hiddenE2EWindow) return null
     await window.activate()
     await Bun.sleep(100)
     const frame = window.getFrame()

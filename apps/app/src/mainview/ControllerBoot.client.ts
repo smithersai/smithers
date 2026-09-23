@@ -11,7 +11,7 @@ import {
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
-import { createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
+import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
 import { wikiFlagEnabled } from "./state/KnowledgeFeatures"
 import type { AppController } from "./state/AppController"
@@ -22,7 +22,8 @@ import { createTurnEraser } from "./runtime/TurnErasure"
 const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
   Effect.tryPromise({
     try: run,
-    catch: (cause) => isWriterOwnershipError(cause) ? cause : new Error(`${label}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    catch: (cause) => isWriterOwnershipError(cause) || cause instanceof BootstrapFailure
+      ? cause : new Error(`${label}: ${cause instanceof Error ? cause.message : String(cause)}`)
   })
 
 /*

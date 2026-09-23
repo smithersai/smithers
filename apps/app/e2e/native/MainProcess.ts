@@ -67,11 +67,13 @@ const fakeSdk = {
     }
   },
   BrowserWindow: class FakeBrowserWindow {
-    constructor(options: { title: unknown; url: unknown; frame: unknown; rpc: unknown }) {
+    constructor(options: { title: unknown; url: unknown; frame: unknown; rpc: unknown; hidden: unknown; activate: unknown }) {
       windows.push({
         title: options.title,
         url: options.url,
         frame: options.frame,
+        hidden: options.hidden,
+        activate: options.activate,
         rpcBound: options.rpc === fakeRpc
       })
     }

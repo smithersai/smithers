@@ -42,6 +42,11 @@ export interface SmithersNativeRPC {
         readonly params: Record<never, never>
         readonly response: { readonly target: ApplicationTargetDocument }
       }
+      /** Switch the local API relay and credential together. */
+      readonly switchApplicationTarget: {
+        readonly params: { readonly origin: string; readonly token: string }
+        readonly response: { readonly target: ApplicationTargetDocument }
+      }
       /** Token material stays outside the runtime target document. */
       readonly applicationToken: {
         readonly params: Record<never, never>
