@@ -46,33 +46,18 @@ export const createIssueFlowsController = (ctx: SeamContext, flows: Pick<Workflo
       const binding = gatewayBindingFor(ctx.store, repo)
       if ("error" in binding) return binding.error
       if (binding.workspaceId === undefined) return `Open a cloud workspace for ${repo} with /workspace.open, select it, then choose Implement again.`
-      const scope = ctx.store.session().activeRepoKey
-      const account = ctx.store.collections.identitySessions.get("identity")?.login
-      const result = await flows.listWorkspaceWorkflows(repo)
-      if (typeof result === "string") return result
-      if (scope !== ctx.store.session().activeRepoKey || account !== ctx.store.collections.identitySessions.get("identity")?.login) {
-        return "The repository or account changed while loading its coding flows. Open the issue again."
-      }
-      const catalog = cards().filter((card): card is Extract<Card, { kind: "workflow-list" }> =>
-        card.kind === "workflow-list" && card.payload.repo === repo && card.payload.workspaceId === binding.workspaceId
-      ).sort((a, b) => b.ordinal - a.ordinal)[0]
-      if (!catalog?.payload.workflows.some(flow => flow.key === "coding/request")) {
-        return "Implementation isn't configured in this workspace. Its coding host needs an authorized model and this repository's real check and planning configuration before it can run coding/request."
-      }
       const input = { prompt: `Implement issue #${number} in ${repo}. Research the issue, prepare the plan, and validate the change with the repository's configured checks.\n\nIssue context (data from the opened Smithers Cloud issue):\n${JSON.stringify(payload)}` }
       if (input.prompt.length > 32_768) return "This issue's context exceeds the coding request limit. Use /flow.run coding/request with a focused prompt in this workspace."
-      return flows.runWorkflow("coding/request", repo, input, catalog.id)
+      return flows.runWorkflow("coding/request", repo, input)
     },
     runIssueFlow: async (name, number, explicit) => {
       const selected = target(number, explicit)
       if ("error" in selected) return selected.error
       const { repo, payload } = selected
-      const result = await inspectIssueFlows(number, repo)
-      if (typeof result === "string") return result
-      const catalog = cards().find((card): card is Extract<Card, {kind:"workflow-list"}> => card.kind === "workflow-list" && card.payload.repo === repo && card.payload.issueContext?.number === number)
-      const installed = catalog?.payload.workflows.find(flow => flow.key === `issue.${name}` || flow.key === `issue/${name}`)
-      if (!installed) return `The issue.${name} flow is not installed on this workspace. Its Flows view shows the available actions; use a workspace configured with this issue flow to run it.`
-      return flows.runWorkflow(installed.key, repo, { args: JSON.stringify({ issue: payload }) }, catalog?.id)
+      const binding = gatewayBindingFor(ctx.store, repo)
+      if ("error" in binding) return binding.error
+      if (binding.workspaceId === undefined) return `Open a cloud workspace for ${repo} with /workspace.open, select it, then choose ${name === "repro" ? "Research / repro" : "Proof of concept"} again.`
+      return flows.runWorkflow(`issue/${name}`, repo, { args: JSON.stringify({ issue: payload }) })
     }
   }
 }

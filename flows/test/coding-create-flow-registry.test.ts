@@ -89,6 +89,28 @@ test("a freshly imported repository can run the flow the app's create door launc
   assert.equal(resolved.listed.some((entry) => entry.name === "create-workflow"), false)
 })
 
+test("a freshly imported repository carries the issue flows offered by the Cloud issue card", async (t) => {
+  const { repositoryPath, stateRoot } = await workspace(t)
+  const installed = await run(
+    composedRegistry(repositoryPath, stateRoot).pipe(
+      Effect.flatMap((registry) => Effect.forEach(["issue/repro", "issue/poc"], (name) =>
+        Effect.all({ descriptor: registry.get(name), body: registry.loadBody(name) })
+      )),
+      Effect.provide(platform)
+    )
+  )
+  for (const [index, name] of ["issue/repro", "issue/poc"].entries()) {
+    const flow = installed[index]!
+    assert.equal(flow.descriptor.name, name)
+    assert.equal(flow.body._tag, "Prompt")
+    assert.ok(flow.body.text.trim().length > 0)
+    assert.equal(flow.descriptor.model._tag, "Some")
+    if (flow.descriptor.model._tag === "Some") {
+      assert.equal(flow.descriptor.model.value, name === "issue/repro" ? "repository/research" : "coding/poc")
+    }
+  }
+})
+
 test("every pack body declares a seat the host can resolve, or the run fails at launch", async (t) => {
   const { repositoryPath, stateRoot } = await workspace(t)
   const descriptors = await run(
@@ -122,9 +144,10 @@ test("a repository that writes its own create-flow keeps it", async (t) => {
 
 test("the bodies the host installs are the bodies in this repository", async () => {
   const bodies = await run(authoringBodies.pipe(Effect.provide(platform)))
-  assert.deepEqual([...bodies.keys()].sort(), [...FLOW_AUTHORING_PACK].sort())
+  assert.deepEqual([...bodies.keys()].sort(), [...FLOW_AUTHORING_PACK, "issue/repro", "issue/poc"].sort())
   for (const [name, text] of bodies) {
     assert.ok(text.startsWith("---\n"), `${name} must carry frontmatter`)
-    assert.ok(text.includes("model: flow/author"), `${name} must declare the authoring seat`)
+    const seat = name === "issue/repro" ? "repository/research" : name === "issue/poc" ? "coding/poc" : "flow/author"
+    assert.ok(text.includes(`model: ${seat}`), `${name} must declare the configured seat`)
   }
 })

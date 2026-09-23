@@ -20,7 +20,7 @@ import { TriggerOutcome } from "./triggers.ts"
 
 declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
 /**
- * The authoring pack's bodies, compiled into the deployed host.
+ * The built-in prompt bodies, compiled into the deployed host.
  *
  * They are `.mdx` files in this repository, and the deployment is one esbuild
  * bundle that carries no repository tree, so `flows/coding/build.mjs` inlines
@@ -31,11 +31,12 @@ declare const __SMITHERS_CODING_ARTIFACT_DIGEST__: string | undefined
 declare const __SMITHERS_CREATE_FLOW_PACK__: Readonly<Record<string, string>> | undefined
 /** Where each pack body lives, relative to this module, in source and in the bundler. */
 const authoringSource = (name: string) => `../${name}/flow.mdx`
+const issueFlows = ["issue/repro", "issue/poc"] as const
 const policySources = ["schema.ts", "remote.ts", "inspection.ts", "jobs.ts", "execution.ts", "events.ts", "intake.ts", "retention.ts", "evaluation.ts", "setup.ts", "registry.ts", "receipts.ts", "activation.ts", "source.ts", "checks.ts", "check-context.ts", "changes.ts", "replies.ts", "delivery.ts", "ci-policy.ts", "check-receipt.ts", "triggers.ts",
   "../coding/host.ts", "../coding/native.ts", "../coding/native-schema.ts", "../coding/schema.ts", "../coding/dispatch.ts", "../coding/flow.ts", "../coding/dispatch/flow.ts", "../coding/implementation/flow.ts", "../coding/planning-authority.ts", "../coding/immutable-source.ts", "../../packages/rpc/src/RepositorySetup.ts", "../../pnpm-lock.yaml",
   // A prompt a workspace runs is policy: editing one changes what every
-  // built-in authoring body tells a model to do.
-  ...FLOW_AUTHORING_PACK.map(authoringSource)]
+  // built-in body tells a model to do.
+  ...FLOW_AUTHORING_PACK.map(authoringSource), ...issueFlows.map(authoringSource)]
 export const runningRepositoryPolicy = Effect.gen(function*() {
   if (typeof __SMITHERS_CODING_ARTIFACT_DIGEST__ !== "undefined") {
     if (!/^[0-9a-f]{64}$/.test(__SMITHERS_CODING_ARTIFACT_DIGEST__)) return yield* Effect.fail(new Error("Invalid repository host fingerprint"))
@@ -50,7 +51,7 @@ export const runningRepositoryPolicy = Effect.gen(function*() {
   return Digest.digest(Digest.canonical(sources))
 })
 /**
- * The flow-authoring prompt bodies this host installs on every workspace.
+ * The flow-authoring and issue prompt bodies this host installs on every workspace.
  *
  * From the bundle they are the constant compiled into it; from source they are
  * the repository's own files. A missing body is a startup failure rather than
@@ -62,7 +63,7 @@ export const authoringBodies: Effect.Effect<ReadonlyMap<string, string>, Error, 
     const compiled = typeof __SMITHERS_CREATE_FLOW_PACK__ === "undefined" ? undefined : __SMITHERS_CREATE_FLOW_PACK__
     const fs = yield* FileSystem.FileSystem
     const bodies = new Map<string, string>()
-    for (const name of FLOW_AUTHORING_PACK) {
+    for (const name of [...FLOW_AUTHORING_PACK, ...issueFlows]) {
       const text = compiled === undefined
         ? yield* fs.readFileString(fileURLToPath(new URL(authoringSource(name), import.meta.url))).pipe(
           Effect.mapError(cause => new Error(`The built-in flow ${name} could not be read: ${cause.message}`))

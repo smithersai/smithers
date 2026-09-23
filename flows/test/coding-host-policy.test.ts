@@ -70,6 +70,9 @@ test("deployment embeds its exact compiled identity and needs no policy source f
     return match[1]
   }
   await bundle(entry, output)
+  const deployed = await readFile(output, "utf8")
+  assert.ok(deployed.includes("issue/repro") && deployed.includes("Research and reproduce an issue"))
+  assert.ok(deployed.includes("issue/poc") && deployed.includes("Build a small proof of concept"))
   const first = await verify()
   assert.equal(execFileSync(process.execPath, [output], { encoding: "utf8", timeout: 60_000 }).trim(), `artifact:${first}`)
   const changed = join(temporary, "changed.ts")

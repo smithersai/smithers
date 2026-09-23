@@ -51,7 +51,7 @@ export const bundle = async (entryPoint, outfile) => {
     }]
   })
   if (result.outputFiles.length !== 1) throw new Error("Coding host must be one immutable executable")
-  // The authoring pack's prompt bodies travel with the executable.
+  // The built-in prompt bodies travel with the executable.
   //
   // They are `.mdx` files in this repository and the deployment carries no
   // repository tree, so the host would have nothing to install on a workspace.
@@ -63,6 +63,9 @@ export const bundle = async (entryPoint, outfile) => {
   for (const name of ["", "clarify", "provision", "design", "scaffold", "fix", "document"]) {
     const file = resolve(packRoot, name, "flow.mdx")
     pack[name === "" ? "create-flow" : `create-flow/${name}`] = await readFile(file, "utf8")
+  }
+  for (const name of ["issue/repro", "issue/poc"]) {
+    pack[name] = await readFile(resolve(root, "flows", name, "flow.mdx"), "utf8")
   }
   const compiled = result.outputFiles[0].text.replace(/^(#![^\n]*\n)/,
     `$1const __SMITHERS_CREATE_FLOW_PACK__ = ${JSON.stringify(pack)};\n`)

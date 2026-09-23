@@ -1,7 +1,7 @@
 ---
 description: Research and reproduce an issue before implementation.
 capabilities: ["fs:read:**", "proc:spawn:rg *", "proc:spawn:pnpm test *", "proc:spawn:npm test *"]
-model: openai:gpt-5.6-sol
+model: repository/research
 budget:
   tokens: 32000
   milliseconds: 300000

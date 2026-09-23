@@ -32,23 +32,24 @@ test("remote comments and state survive reopening and reload", async () => {
   expect(list?.kind === "issue-list" && list.payload.issues.map(i=>i.number)).toEqual([2])
   await restored.dispose?.()
 })
-test("a live issue flow only launches an installed flow and carries the full issue context", async () => {
+test("a Cloud issue launches its workspace flow without waiting for a background catalog read", async () => {
   const {store,ctx} = await setup()
   const issue = { number: 9, repo: "owner/repo", title: "The real issue", state: "open" as const, author: "ada", issueBody: "Details", labels: ["bug"], comments: [] }
   await store.dispatch({type:"card.upsert",actor:"user",card:{ id:"issue-live",kind:"issue",title:issue.title,status:"active",createdAt:1,ordinal:1,payload:issue }}).isPersisted.promise
   const calls: unknown[] = []
-  let installed = false
   const flows = createIssueFlowsController(ctx, {
-    listWorkspaceWorkflows: async () => { await store.dispatch({type:"card.upsert",actor:"user",card:{id:"catalog",kind:"workflow-list",title:"Flows",status:"active",createdAt:1,ordinal:2,payload:{repo:issue.repo,gatewayBindingVersion:1, workflows:installed ? [{key:"issue/repro",description:"Repro"}] : [{key:"review",description:"Review"}]}}}).isPersisted.promise },
+    listWorkspaceWorkflows: async () => { throw Error("Catalog read must not block the launch") },
     runWorkflow: async (...args) => { calls.push(args); return {value:"launched"} }
   })
-  expect(await flows.runIssueFlow("repro",9,issue.repo)).toContain("not installed")
+  expect(await flows.runIssueFlow("repro",9,issue.repo)).toContain("/workspace.open")
   expect(calls).toHaveLength(0)
-  installed = true
+  const workspaceId = "11111111-1111-4111-8111-111111111111"
+  await store.dispatch({ type: "workspaces.loaded", actor: "system", workspaces: [{ id: workspaceId, repoId: issue.repo, name: "Coding", targetBookmark: "main", status: "running", provisioningStage: null, suspendedAt: null, createdAt: null }] }).isPersisted.promise
+  await store.dispatch({ type: "repo.selected", actor: "user", id: issue.repo + "#workspace:" + workspaceId }).isPersisted.promise
   expect(await flows.runIssueFlow("repro",9,issue.repo)).toEqual({value:"launched"})
   expect(calls).toHaveLength(1)
-  const [name, repo, input, source] = calls[0] as [string, string, {args:string}, string]
-  expect([name,repo,source]).toEqual(["issue/repro",issue.repo,"catalog"])
+  const [name, repo, input, source] = calls[0] as [string, string, {args:string}, string | undefined]
+  expect([name,repo,source]).toEqual(["issue/repro",issue.repo,undefined])
   expect(JSON.parse(input.args)).toEqual({issue})
   await store.dispose?.()
 })
