@@ -1,5 +1,5 @@
 import type { ApplicationTargetDocument } from "@smthrs/rpc/ApplicationTarget"
-import { resolveApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
+import { ApplicationTargetDocumentSchema, resolveApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
 
 const TARGET_KEY = "smithers.backend-target"
 const TOKEN_KEY = "smithers.backend-token"
@@ -8,9 +8,9 @@ export const selectedBackendTarget = (pageOrigin: string): ApplicationTargetDocu
   try {
     const raw = sessionStorage.getItem(TARGET_KEY)
     if (raw === null) return undefined
-    const target = JSON.parse(raw) as unknown
+    const target = ApplicationTargetDocumentSchema.parse(JSON.parse(raw) as unknown)
     const parsed = resolveApplicationTarget(target, pageOrigin)
-    return parsed.shell === "web" ? parsed : undefined
+    return parsed.shell === "web" ? target : undefined
   } catch {
     try {
       sessionStorage.removeItem(TARGET_KEY)
