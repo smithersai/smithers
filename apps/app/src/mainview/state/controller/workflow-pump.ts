@@ -256,6 +256,9 @@ export const createWorkflowPumpController = (
     let transcriptRevision: string | undefined
     let wasFollowing = false
     let retainedJournal: Extract<Card, { kind: "run-trace" }>["payload"]["events"]
+    // A capped page can leave a verified prefix before a later page refuses.
+    // Keep retrying that cursor; a first-page refusal has no prefix to protect.
+    let incompleteJournalRetry = false
     try {
       for (;;) {
         if (pump.stopped) return
@@ -390,6 +393,7 @@ export const createWorkflowPumpController = (
           // Reconcile its cursor next cycle instead of appending twice.
           if (journal.status === "ok" && current?.events === retainedJournal) {
             journalObservation = { mode: journalCursor === undefined ? "full" : "suffix", after: journalCursor, events: [...journal.value] }
+            if (journal.value.length > 0 && !journal.complete) incompleteJournalRetry = true
             // Empty journals and a first sequence-zero event share cursor
             // 0:0. Keep reading until at least one row establishes a prefix.
             // A cycle that stopped on its page budget has not read the whole
@@ -472,7 +476,8 @@ export const createWorkflowPumpController = (
           // old `journalPending || ...` condition kept polling forever when a
           // native projection marker was present but its journal endpoint was
           // unavailable.
-          if (eventReadError === undefined && (
+          if ((eventReadError === undefined || incompleteJournalRetry) && (
+            journalComplete === false ||
             store.committedRuntimeRun(runtimeRunKey(card.payload))?.journalPending === true ||
             engineProjectionPending(store.committedRuntimeRun(runtimeRunKey(card.payload))?.events)
           )) {
