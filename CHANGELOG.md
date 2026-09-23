@@ -9,10 +9,12 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2827 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2831 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
+- **db:** reconcile product migration adoption and Plue schema boundary ([63a3b9cdd6](https://github.com/smithersai/smithers/commit/63a3b9cdd6c055f121cc609df951d21b6d276c51))
+- **agent:** let a host disarm the claim brake through Agent.Options ([cb8439fc31](https://github.com/smithersai/smithers/commit/cb8439fc314ddc5c78be0e49c8df77e334fb9b6a))
 - **matrix:** exercise portable repository and owner workflows across modes ([b2475c2216](https://github.com/smithersai/smithers/commit/b2475c2216b864872451fa29a609a704f6e173b0))
 - **matrix:** verify owned deployment modes and distribution image ([d3da1f55ca](https://github.com/smithersai/smithers/commit/d3da1f55caf81a9f7f13396aeef865a0e1ec8f38))
 - **schema:** audit product baseline adoption before Plue cutover ([ddf659f227](https://github.com/smithersai/smithers/commit/ddf659f2277a3f9ecc1990dcc3875bffaee26356))
@@ -292,6 +294,8 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **app:** verify local Plue renderer in native gate ([9d0a5979c3](https://github.com/smithersai/smithers/commit/9d0a5979c348fab78629931c1bb0fd95e2e5d58d))
+- **model:** retry in-stream overload failures ([50025aceda](https://github.com/smithersai/smithers/commit/50025aceda1cf1cd4ae53dac2634fdf251852f6c))
 - **app:** bind native matrix fixtures to CDP target ([edeed0c28e](https://github.com/smithersai/smithers/commit/edeed0c28edbd6ac11519d272631bdba2ea34b46))
 - **matrix:** share landed jj revision across all runners ([844951929d](https://github.com/smithersai/smithers/commit/844951929d2558c01461eb8f791c67e6d62db2e4))
 - **matrix:** resolve landed revision and serve native Plue UI locally ([c4e08b5c93](https://github.com/smithersai/smithers/commit/c4e08b5c93afd79f10a281b410b51e0e8efbbbc7))
