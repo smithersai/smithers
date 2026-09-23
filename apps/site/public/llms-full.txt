@@ -13801,6 +13801,34 @@ host's own `FileSystem`, not the kernel-guarded one: the walk is stat-only,
 never follows a symlink, and every path it builds starts from the root it was
 constructed with, while a guarded filesystem bills one helper process per file.
 
+### WorkspaceObservation.Host, WorkspaceObservation.observeHost, WorkspaceObservation.layerHost
+
+```ts
+type Measured =
+  | { readonly _tag: "File"; readonly size: number; readonly modified: number }
+  | { readonly _tag: "Directory" }
+  | { readonly _tag: "Skipped" }
+  | { readonly _tag: "Failed"; readonly method: string; readonly cause: PlatformError.PlatformError }
+
+interface Host {
+  readonly entries: (
+    directory: string,
+    keep: (name: string) => boolean
+  ) => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly measured: Measured }>, PlatformError.PlatformError>
+}
+
+const fileSystemHost: (fs: FileSystem.FileSystem) => Host
+const observeHost: (host: Host, root: string, options?: Options) => Effect.Effect<EngineLike.Observation>
+const layerHost: (host: Host, root: string, options?: Options) => Layer.Layer<Observer>
+```
+
+The host operation the walk is built on: one directory, listed and measured in
+one call, in any order. `observe` is `observeHost(fileSystemHost(fs), ...)`,
+two `FileSystem` calls per entry. `NodeControl.layerObserver` composes a Node
+host that reads entry types off the listing and measures a directory's files
+with concurrent `lstat`s: 0.8 s instead of 5.4 s on a 50,000-file tree. Both
+hosts produce the same digest for the same tree.
+
 ### WorkspaceObservation.Options
 
 | Field            | Type                    | What it decides                                                                                                                                                                                          |
@@ -17090,7 +17118,7 @@ https://smithers.sh/docs/reference/api/cli/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/docs/api.md) · [package docs](https://cli.smithers.sh)
 
-> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
+> **Related APIs:** [`@smthrs/agent`](/docs/reference/api/agent/) · [`@smthrs/build-cli`](/docs/reference/api/build-cli/) · [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/evals`](/docs/reference/api/evals/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/flows`](/docs/reference/api/flows/) · [`@smthrs/gateway`](/docs/reference/api/gateway/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/integrations`](/docs/reference/api/integrations/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/mcp`](/docs/reference/api/mcp/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/migrate`](/docs/reference/api/migrate/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/) · [`@smthrs/step-cache`](/docs/reference/api/step-cache/) · [`@smthrs/sync`](/docs/reference/api/sync/) · [`@smthrs/targets`](/docs/reference/api/targets/) · [`@smthrs/time-travel`](/docs/reference/api/time-travel/) · [`@smthrs/triggers`](/docs/reference/api/triggers/)
 
 The root entry point exports each public module as a namespace. Import a module directly with `@smthrs/cli/<Module>`.
 
@@ -23758,7 +23786,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/gateway/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/gateway/docs/api.md) · [package docs](https://gateway.smithers.sh)
 
-> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/sync`](/docs/reference/api/sync/)
+> **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
 The gateway declares `effect`, `@effect/platform-node`,
 `@effect/platform-node-shared`, and `@effect/platform-bun` as exact
@@ -24206,6 +24234,38 @@ A controllable in-memory supervision runtime for tests.
 | `layer`                       | `(options?: TestSuperviseRuntimeOptions, onReady?: (t: TestSuperviseRuntime) => void) => Layer<SuperviseRuntime>` | Provides one and hands the controls to `onReady`.      |
 
 See [Test against a real gateway](https://gateway.smithers.sh/guides/testing/).
+
+## `RunTrace`
+
+The pure journal projection shared by the app and terminal monitors. Import
+`@smthrs/gateway/RunTrace`; it requires no server or filesystem. Records without
+evidence do not acquire invented phases, successful checks, or file changes.
+
+- `traceFromJournal(run, records, options?)` builds a `TraceModel`: nested
+  spans, frame summaries, phase bands, milestone pins, and discipline notes.
+- `turnNarratives(model)` derives concise recorded turn text. `spanPath(model,
+  id)` finds recorded ancestry. `durationWords(ms)` formats elapsed time.
+- `waterfallGeometry`, `phaseExtent`, and `phaseBandGeometry` calculate layout
+  from recorded time. Historical inspection folds a journal prefix while the
+  full trace supplies stable geometry.
+- `callSubject` and `callSemantics` interpret captured flow descriptors, with
+  compatibility for older records. `CallMetadata` names their descriptor fields.
+- `spanMatches`, `traceFiltersFor`, `isTraceFilter`, and `TRACE_FILTER_IDS` own
+  the shared filter vocabulary. `TraceFilter` and `TraceView` type that state.
+- `JournalRecord`, `TraceRun`, `TraceOptions`, `TraceSpan`, `SpanKind`,
+  `SpanStatus`, `SpanDetail`, `TraceExtent`, `PhaseId`, `PhaseBand`, `Milestone`,
+  `TraceOwner`, `FrameLine`, `TraceNote`, and `TurnNarrative` describe the
+  projection. `TraceBuilder` is the mutable draft used while folding, never a
+  persisted graph or a second execution model.
+
+## `EngineTrace`
+
+`@smthrs/gateway/EngineTrace` decodes native journal envelopes through the
+contracts that wrote them. `engineTraceFromJournal(records)` produces spans;
+`engineExecutionEvidence(records)` returns typed `EngineExecutionEvidence` for
+result projections. `engineRunEvidence(records, rootId, cursorSeq?)` limits
+facts to recorded ancestry and the inspection cursor. `engineProjectionPending`
+reports unfinished observation independently of the run's terminal verdict.
 
 ---
 
@@ -24674,7 +24734,7 @@ projects a failed result into the fixed envelope the cell observes:
 
 A failed call resolves with this value rather than throwing, so the recovery
 branch the model already wrote still runs; a successful call resolves with the
-flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 13 codes
+flow's own value, unwrapped. `Cell.callFailureHint` maps each of the 14 codes
 to the one action that recovers it. The codes and hints are tabulated in
 [troubleshooting](https://harness.smithers.sh/troubleshooting/#a-flow-call-fails).
 
@@ -24727,6 +24787,7 @@ export interface EngineLike {
   ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
   readonly splice: (batch: Plan.Batch) => Stream.Stream<Plan.SpliceEvent, HarnessError>
   readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
+  readonly admit?: (call: Cell.Call) => Effect.Effect<Cell.CallResult | undefined, HarnessError>
   readonly record: <A>(boundary: RecordBoundary<A>) => Effect.Effect<A, HarnessError>
   readonly observe: Effect.Effect<Option.Option<Observation>, HarnessError>
   readonly capture: (request: CaptureRequest) => Effect.Effect<Option.Option<Snapshot>, HarnessError>
@@ -24749,6 +24810,11 @@ export interface EngineLike {
   `failure` `Cell.CallResult`; a permission requirement, an abort, or an
   engine failure travels in the error channel so the cell can never swallow a
   park.
+- `admit`, when present, decides a call's authority before the controller
+  starts the call's `callMs` clock, so time a person spends answering an
+  approval is not charged to the flow. `undefined` admits the call; a result
+  is the refusal the cell reads instead, and `call` is never issued. An
+  implementation does not ask again when an admitted call is issued.
 - `record` journals one nondeterministic controller read, keyed on `(name,
   identity)` together. `RecordBoundary` is `{ name, identity, success,
   execute }`, where `success` is a `DurableSchema`, a schema that decodes
@@ -25429,10 +25495,13 @@ remembering, and up to `recalledLimit` (6) rows recalled from memory. Nothing
 is re-derived: the supervisor reads the harness's evidence and never measures
 a second time.
 
-One Jev call per snapshot answers every question at once. Three are about the
-run and decide a nudge: `thrashing` (at or above `thrashingAt`, 0.5),
-`on_target` (at or below `offTargetAt`, 0.5) and `suspect` (at or above
-`suspectAt`, 0.5), plus `outdated_context` and `irrelevant_context`. Five are
+One Jev call per snapshot answers every question at once; eleven are fixed.
+Five are about the run and decide a nudge, the `triggers`: `thrashing` (at or
+above `thrashingAt`, 0.5), `off_target` (`on_target` at or below
+`offTargetAt`, 0.5), `suspect` (at or above `suspectAt`, 0.5),
+`outdated_context` and `irrelevant_context` (each at or above `acceptAt`,
+0.5). `crosses(reading)` is any trigger firing and `triggered(reading)` names
+the ones that did; `judge` and the offline replay both call them. Five are
 operational states scored on `Level` (`none`, `mild`, `strong`), each naming
 the evidence it reads: `frustrated`, `anxious`, `scared`, `confused`,
 `confident`. `needs_help` is a choice over `Help` (`none`, `clarification`,
@@ -25449,19 +25518,27 @@ the loop's scope takes the newest snapshot, recalls, asks through
 and journals `AgentEvent.SupervisorSettled` beside a `DecisionSettled` that
 carries the snapshot and every answer. `judge` turns a `Reading` into a
 `Verdict` under `Options`: `steer` (default off) arms the `nudge`, a concise
-message naming the counts behind the reading, and the insertion of accepted
-recalled rows, both delivered as ordinary steering inserts by the next
-boundary that executes and dropped as stale after that; `remember` (default
-on) writes accepted candidates to the bound `Memory`, a port with
-`memoryNone` behind it unless the host adapts a store. `defaultOptions`
-journals verdicts and nudges nothing.
+message naming the counts behind the reading and the frame they were read at,
+and the insertion of accepted recalled rows. Both are delivered by the next
+boundary that executes, in the drain's own `supervisor` field rather than
+among the person's steering inserts, and dropped as stale after that. The
+model reads them above the frame's ask; the task the completion brake and
+later snapshots read never includes them. Each `SupervisorSettled` states the
+`steer` it ran under. `remember` (default off) writes accepted candidates to
+the bound `Memory`, a port with `memoryNone` behind it unless the host adapts
+a store. A `Memory` read or write that fails is journaled as
+`AgentEvent.SupervisorMemoryFailed` and the reading goes on.
+`defaultOptions` journals verdicts, nudges nothing and writes nothing.
 
 It never falls back. A snapshot nobody could judge is journaled as
-`AgentEvent.SupervisorUnjudged` with `UnjudgedReason` (`unconfigured`, or the
-transport's own code) and inserts nothing, remembers nothing and reports no
-level. A replayed frame is never offered, so a resumed run re-asks nothing
-and re-delivers exactly the inserts its recorded drains hold; a reading in
-flight when the run ends is lost with the scope. The offline replay over
+`AgentEvent.SupervisorUnjudged` with `UnjudgedReason` (`unconfigured`,
+`interrupted`, or the transport's own code; an `unreachable` detail is
+`Evaluator.unreachableMessage`, never the transport's text) and inserts
+nothing, remembers nothing and reports no level. A replayed frame is never
+offered, so a resumed run re-asks nothing and re-delivers exactly the inserts
+its recorded drains hold. A reading in flight when the run ends gets
+`closeGraceMs` (1,500) to settle; one still unanswered is interrupted and
+journaled `interrupted`, and the run never waits longer. The offline replay over
 archived journals that measures the nudge's precision is
 `evals/swebench/lib/jev-replay.mjs`.
 
@@ -31456,13 +31533,13 @@ The credential-free HTTP target of a model route. An endpoint is public data:
 it is part of a sealed step's key material, so nothing secret may appear in
 it.
 
-| Export             | Kind        | Behavior                                                                                                                                                  |
-| ------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Endpoint`         | interface   | `{ method: "POST", url, query }`.                                                                                                                         |
-| `MakeOptions`                   | interface                 | `{ maxRetries?, responseStartMs? }`: retries after the first attempt (default `2`; `0` is a single attempt; negative is `0`), and how long an attempt may wait for its response to start (default `defaultResponseStartMs`; `0` disarms). |
-| `defaultResponseStartMs`        | constant                  | `60_000`: an attempt whose status and headers have not arrived by then fails as a retryable `transport` error. Reasoning streams are silent between chunks, so only the start is bounded. |
-| `make(input)`      | constructor | `Result<Endpoint, ModelError>`. Validates and normalizes: query pairs are sorted by name then value, and the path is joined onto the URL's existing path. |
-| `render(endpoint)` | formatting  | Renders the exact deterministic URL.                                                                                                                      |
+| Export                   | Kind        | Behavior                                                                                                                                                                                                                                  |
+| ------------------------ | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Endpoint`               | interface   | `{ method: "POST", url, query }`.                                                                                                                                                                                                         |
+| `MakeOptions`            | interface   | `{ maxRetries?, responseStartMs? }`: retries after the first attempt (default `2`; `0` is a single attempt; negative is `0`), and how long an attempt may wait for its response to start (default `defaultResponseStartMs`; `0` disarms). |
+| `defaultResponseStartMs` | constant    | `60_000`: an attempt whose status and headers have not arrived by then fails as a retryable `transport` error. Reasoning streams are silent between chunks, so only the start is bounded.                                                 |
+| `make(input)`            | constructor | `Result<Endpoint, ModelError>`. Validates and normalizes: query pairs are sorted by name then value, and the path is joined onto the URL's existing path.                                                                                 |
+| `render(endpoint)`       | formatting  | Renders the exact deterministic URL.                                                                                                                                                                                                      |
 
 `Endpoint.make` rejects, all as `invalid_request`: an unparseable URL, a
 non-`http(s)` scheme, embedded URL credentials, a fragment, a
@@ -32197,14 +32274,14 @@ The vocabulary lives here rather than in either package that uses it: a control
 plane admits a steer and a harness drains it, and neither may depend on the
 other, so the shape they have to agree on belongs beneath both.
 
-| Export            | Shape                                                                                                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export            | Shape                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Thinking`        | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. A subset of `ModelRequest.ReasoningEffort` in [`@smthrs/model`](/docs/reference/api/model/), which also admits `"max"`; this package deliberately does not depend on it. |
-| `MessagePayload`  | `{ kind: "Message"; body: string }`. The body may be empty.                                                                                                                                   |
-| `SeatPayload`     | `{ kind: "Seat"; seat: string }`. `seat` is non-empty.                                                                                                                                        |
-| `ThinkingPayload` | `{ kind: "Thinking"; thinking: Thinking }`.                                                                                                                                                   |
-| `ToolsPayload`    | `{ kind: "Tools"; toolNames: ReadonlyArray<string> }`. Non-empty, of non-empty strings. Additive only: steering can widen the active tool set and cannot narrow it.                           |
-| `SteerPayload`    | The union of the four.                                                                                                                                                                        |
+| `MessagePayload`  | `{ kind: "Message"; body: string }`. The body may be empty.                                                                                                                                                               |
+| `SeatPayload`     | `{ kind: "Seat"; seat: string }`. `seat` is non-empty.                                                                                                                                                                    |
+| `ThinkingPayload` | `{ kind: "Thinking"; thinking: Thinking }`.                                                                                                                                                                               |
+| `ToolsPayload`    | `{ kind: "Tools"; toolNames: ReadonlyArray<string> }`. Non-empty, of non-empty strings. Additive only: steering can widen the active tool set and cannot narrow it.                                                       |
+| `SteerPayload`    | The union of the four.                                                                                                                                                                                                    |
 
 | Export   | Signature                                         | Returns                                                                                                                                                                                       |
 | -------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

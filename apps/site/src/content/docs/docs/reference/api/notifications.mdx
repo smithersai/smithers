@@ -298,14 +298,14 @@ The vocabulary lives here rather than in either package that uses it: a control
 plane admits a steer and a harness drains it, and neither may depend on the
 other, so the shape they have to agree on belongs beneath both.
 
-| Export            | Shape                                                                                                                                                                                         |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export            | Shape                                                                                                                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Thinking`        | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. A subset of `ModelRequest.ReasoningEffort` in [`@smthrs/model`](/docs/reference/api/model/), which also admits `"max"`; this package deliberately does not depend on it. |
-| `MessagePayload`  | `{ kind: "Message"; body: string }`. The body may be empty.                                                                                                                                   |
-| `SeatPayload`     | `{ kind: "Seat"; seat: string }`. `seat` is non-empty.                                                                                                                                        |
-| `ThinkingPayload` | `{ kind: "Thinking"; thinking: Thinking }`.                                                                                                                                                   |
-| `ToolsPayload`    | `{ kind: "Tools"; toolNames: ReadonlyArray<string> }`. Non-empty, of non-empty strings. Additive only: steering can widen the active tool set and cannot narrow it.                           |
-| `SteerPayload`    | The union of the four.                                                                                                                                                                        |
+| `MessagePayload`  | `{ kind: "Message"; body: string }`. The body may be empty.                                                                                                                                                               |
+| `SeatPayload`     | `{ kind: "Seat"; seat: string }`. `seat` is non-empty.                                                                                                                                                                    |
+| `ThinkingPayload` | `{ kind: "Thinking"; thinking: Thinking }`.                                                                                                                                                                               |
+| `ToolsPayload`    | `{ kind: "Tools"; toolNames: ReadonlyArray<string> }`. Non-empty, of non-empty strings. Additive only: steering can widen the active tool set and cannot narrow it.                                                       |
+| `SteerPayload`    | The union of the four.                                                                                                                                                                                                    |
 
 | Export   | Signature                                         | Returns                                                                                                                                                                                       |
 | -------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

@@ -1959,6 +1959,34 @@ host's own `FileSystem`, not the kernel-guarded one: the walk is stat-only,
 never follows a symlink, and every path it builds starts from the root it was
 constructed with, while a guarded filesystem bills one helper process per file.
 
+### WorkspaceObservation.Host, WorkspaceObservation.observeHost, WorkspaceObservation.layerHost
+
+```ts
+type Measured =
+  | { readonly _tag: "File"; readonly size: number; readonly modified: number }
+  | { readonly _tag: "Directory" }
+  | { readonly _tag: "Skipped" }
+  | { readonly _tag: "Failed"; readonly method: string; readonly cause: PlatformError.PlatformError }
+
+interface Host {
+  readonly entries: (
+    directory: string,
+    keep: (name: string) => boolean
+  ) => Effect.Effect<ReadonlyArray<{ readonly name: string; readonly measured: Measured }>, PlatformError.PlatformError>
+}
+
+const fileSystemHost: (fs: FileSystem.FileSystem) => Host
+const observeHost: (host: Host, root: string, options?: Options) => Effect.Effect<EngineLike.Observation>
+const layerHost: (host: Host, root: string, options?: Options) => Layer.Layer<Observer>
+```
+
+The host operation the walk is built on: one directory, listed and measured in
+one call, in any order. `observe` is `observeHost(fileSystemHost(fs), ...)`,
+two `FileSystem` calls per entry. `NodeControl.layerObserver` composes a Node
+host that reads entry types off the listing and measures a directory's files
+with concurrent `lstat`s: 0.8 s instead of 5.4 s on a 50,000-file tree. Both
+hosts produce the same digest for the same tree.
+
 ### WorkspaceObservation.Options
 
 | Field            | Type                    | What it decides                                                                                                                                                                                          |
