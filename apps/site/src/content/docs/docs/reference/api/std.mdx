@@ -245,6 +245,31 @@ makes that command hang. A container name that is empty or starts with `-` is
 only `-e KEY`. Custom transports return any host process environment overrides
 in `Plan.env`.
 
+## TreeFingerprint
+
+The identity of one directory tree, measured where the tree is. The host's
+workspace walk cannot see a container's filesystem, so `bash` runs this
+script through the container transport before and after a containerised
+command and reports whether the two answers differ under the reserved
+`mutated` key. The harness reads `true` as a measured write, the way it reads
+`invalidProbe` as a measured refusal.
+
+| Export                  | Type                                                | Meaning                                                                        |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                 |
+| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into; the one list the host walk shares.       |
+| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                             |
+| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.      |
+| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                 |
+| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.     |
+| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.      |
+| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less. |
+
+Identity, not content: size and mtime per file, so a rewrite that restores
+both is invisible, exactly as it is to the host walk. Every tool the script
+needs is POSIX or busybox; a container without one exits non-zero and `bash`
+reports no `mutated` at all.
+
 ## TestRunner
 
 How the project under test runs its suite, declared once by the host.

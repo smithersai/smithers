@@ -116,7 +116,7 @@ interface Flow<
   readonly annotations: Context.Context<never>
   readonly flow: DurableFlow.Flow<string, Payload<I>, O, Err, Requires>
   readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
-  readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+  readonly call: (input: I["~type.make.in"]) => Node.Node<O["Type"], Err["Type"], Requires>
 }
 ```
 
@@ -127,9 +127,9 @@ to an `Interpreter`, or to a registry that checks that package's type id.
 bag both carry, with the declared `capabilities` and `effects` already lowered
 into it.
 
-A signature that declared no effect envelope dispatches as `irreversible`: a
-declaration that never stated its tier must not content-share another run's
-result. `Flow.sealed` states the opposite.
+A signature that declared no effect envelope dispatches as `irreversible`.
+`Flow.sealed` changes the tier; its generated action remains keyless and uses
+invocation identity, so this alone does not enable content sharing across runs.
 
 The requirement channel is `Action.Requirement<string>` for every body-less
 signature, because a signature's tag is typed `string`. The compiler therefore
@@ -151,10 +151,11 @@ the declared shape and wraps it, so an author never writes the wrapper.
 ### Flow.call
 
 ```ts
-readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+readonly call: (input: I["~type.make.in"]) => Node.Node<O["Type"], Err["Type"], Requires>
 ```
 
-Records a call in the shape the signature declares. It never runs the body:
+Records a call in the schema's constructor shape. A class schema accepts inert
+field data; it need not put a class instance in the plan. It never runs the body:
 `Graph.build` evaluates pure bodies at plan time.
 
 ### Flow.Any
@@ -246,7 +247,11 @@ const annotateMerge: {
 A custom key is advisory, so a signature annotated with one plans the same
 graph. `Annotations.Placement` and `Annotations.Effects` are not advisory:
 `Graph.build` projects both into node key material. Merged values override
-existing values for matching keys.
+existing values for matching keys, including declared effects and capabilities.
+The exposed metadata and the action's tier follow those overrides. Later
+`withCapabilities` and `sealed` operations update the effective values.
+Combinators retain the original diagnostic source locations of both native
+declarations.
 
 ### Flow.withFlows
 
@@ -301,10 +306,10 @@ combinators, and one function-identity rule wherever a plan is built.
 ```ts
 import { Node } from "@smthrs/core"
 
-const plan = Node.andThen(Node.succeed(1), (value) => Node.succeed(value + 1))
+const plan = Node.map(Node.succeed(1), (value) => value + 1)
 ```
 
-`succeed`, `fail`, `all`, `map`, `andThen`, `branch`, `catch`, `capture`,
+`succeed`, `fail`, `all`, `map`, `andThen`, `bindPlanned`, `branch`, `catch`, `capture`,
 `priority`, and the call constructors are documented in the
 [`@smthrs/plan` reference](/docs/reference/api/plan/#node). A continuation that decides on a
 real value is `Node.branch`: a continuation runs once at build time, on a
@@ -429,7 +434,8 @@ const getOption: <I, S>(context: Context.Context<never>, key: Context.Key<I, S>)
 
 `add` sets or replaces one annotation without changing the original. `merge`
 combines a parent and a child bag, with the child's values winning.
-`getOption` returns `Option.none()` when the key is absent.
+`getOption` returns `Option.none()` for an absent service key. A
+`Context.Reference` supplies its default when absent.
 
 ### The three keys
 
@@ -439,12 +445,13 @@ const Effects: Context.Key<Effects.Declaration, Effects.Declaration>
 const Priority: Context.Service<number>
 ```
 
-These are the three keys `Graph.build` projects onto each node. `Placement` and
-`Effects` are not declared here: they are [`@smthrs/plan`](/docs/reference/api/plan/)'s
+`Graph.build` projects `Placement` and `Effects` onto nodes. These keys are
+not declared here: they are [`@smthrs/plan`](/docs/reference/api/plan/)'s
 `Placement.Annotation` and `Effects.Envelope`, the same objects
 [`@smthrs/flow`](/docs/reference/api/flow/) publishes as `Flow.Placement` and
 `Flow.EffectEnvelope`, so a flow annotated for one graph builder is visible to
-the other. `Priority` is a signed integer ordering ready work; it is never part
+the other. `Priority` is a signed integer read by registry and host lowering;
+use `Node.priority` to set priority directly in a graph. Priority is never part
 of step identity, so raising it never invalidates a cached step.
 
 A fourth key, `Lane`, and its `LaneOptions` are gone. They were a second

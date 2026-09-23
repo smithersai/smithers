@@ -11909,34 +11909,35 @@ descriptor to another implementation.
 Everything one assembled cell run declares. The required half is the run
 itself; every default on the optional half is the conservative one.
 
-| Field                | Type                                              | What it decides                                                                                                                              |
-| -------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session`            | `string`                                          | The durable session or lineage every call identity is scoped to. Required.                                                                   |
-| `seat`               | `Seat.Seat`                                       | The resolved seat this run streams from: model, route, and context window together. Required.                                                |
-| `prompt`             | `string`                                          | The task the run was admitted with. Required.                                                                                                |
-| `registry`           | `Registry.Registry`                               | The catalog shown to the model and the registry its calls resolve against. Required.                                                         |
-| `system`             | `ReadonlyArray<string>`                           | Stable system teaching placed ahead of the cell contract.                                                                                    |
-| `flows`              | `ReadonlyArray<FlowBinding.Source>`               | Ordered executable-flow sources composed into the run's catalog.                                                                             |
-| `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`   | Host implementations for module-backed flows, keyed by flow name.                                                                            |
-| `promptRunner`       | `CellCalls.PromptRunner`                          | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                      |
-| `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>` | Decides whether a call may proceed, before its durable boundary opens.                                                                       |
-| `plugins`            | `PluginInput<FlowsHooks>`                         | Shared-kernel plugins resolved for the harness target.                                                                                       |
-| `config`             | `FlowsConfig`                                     | Raw config threaded through the plugin kernel's config waterfall.                                                                            |
-| `memory`             | `MemorySource.DeclaredText`                       | One explicitly selected memory snapshot. Omitting it injects no memory.                                                                      |
-| `modelParams`        | `ModelRequest.GenerationParams`                   | Generation parameters for the run's model calls.                                                                                             |
-| `modelRetryPolicy`   | `Schedule<unknown, Model.ModelFailure>`           | Overrides the bounded transport retry schedule at the model boundary.                                                                        |
-| `layers`             | `ReadonlyArray<string>`                           | The resolved composition identity folded into every durable key.                                                                             |
-| `capabilityEnvelope` | `ReadonlyArray<Capability.CapabilityPattern>`     | The run's complete authority. The default is nothing granted.                                                                                |
-| `placement`          | `Option<Descriptor.Placement>`                    | The run's placement identity.                                                                                                                |
-| `maxFrames`          | `number`                                          | Bounds one loop's frames.                                                                                                                    |
-| `readOnlyCap`        | `number`                                          | Caps consecutive read-only frames. Armed for task runs only; see `CellTurn.make` in [`@smthrs/harness`](/docs/reference/api/harness/).                       |
-| `modelCallMs`        | `number`                                          | Caps the wall clock one model call may spend. Armed by default at `CellTurn.defaultModelCallMs` (300,000 ms); zero disarms it.               |
-| `repeatCap`          | `number`                                          | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it.                             |
-| `narrowingCap`       | `number`                                          | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                      |
-| `unmovedCap`         | `number`                                          | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                          |
-| `unresolvedCap`      | `number`                                          | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`. |
-| `approvalChannel`    | `boolean`                                         | Whether a human can answer this run. Defaults to false; a run that claims it wrongly buys a run that waits forever.                          |
-| `limits`             | `Sandbox.Limits`                                  | The sandbox budget every cell runs under.                                                                                                    |
+| Field                | Type                                              | What it decides                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session`            | `string`                                          | The durable session or lineage every call identity is scoped to. Required.                                                                                                            |
+| `seat`               | `Seat.Seat`                                       | The resolved seat this run streams from: model, route, and context window together. Required.                                                                                         |
+| `prompt`             | `string`                                          | The task the run was admitted with. Required.                                                                                                                                         |
+| `registry`           | `Registry.Registry`                               | The catalog shown to the model and the registry its calls resolve against. Required.                                                                                                  |
+| `system`             | `ReadonlyArray<string>`                           | Stable system teaching placed ahead of the cell contract.                                                                                                                             |
+| `flows`              | `ReadonlyArray<FlowBinding.Source>`               | Ordered executable-flow sources composed into the run's catalog.                                                                                                                      |
+| `implementations`    | `ReadonlyMap<string, CellCalls.Implementation>`   | Host implementations for module-backed flows, keyed by flow name.                                                                                                                     |
+| `promptRunner`       | `CellCalls.PromptRunner`                          | Runs a rendered markdown flow. A host with none refuses them catchably.                                                                                                               |
+| `authorize`          | `(call: Cell.Call) => Effect<void, HarnessError>` | Decides whether a call may proceed, before its durable boundary opens.                                                                                                                |
+| `plugins`            | `PluginInput<FlowsHooks>`                         | Shared-kernel plugins resolved for the harness target.                                                                                                                                |
+| `config`             | `FlowsConfig`                                     | Raw config threaded through the plugin kernel's config waterfall.                                                                                                                     |
+| `memory`             | `MemorySource.DeclaredText`                       | One explicitly selected memory snapshot. Omitting it injects no memory.                                                                                                               |
+| `modelParams`        | `ModelRequest.GenerationParams`                   | Generation parameters for the run's model calls.                                                                                                                                      |
+| `modelRetryPolicy`   | `Schedule<unknown, Model.ModelFailure>`           | Overrides the bounded transport retry schedule at the model boundary.                                                                                                                 |
+| `layers`             | `ReadonlyArray<string>`                           | The resolved composition identity folded into every durable key.                                                                                                                      |
+| `capabilityEnvelope` | `ReadonlyArray<Capability.CapabilityPattern>`     | The run's complete authority. The default is nothing granted.                                                                                                                         |
+| `placement`          | `Option<Descriptor.Placement>`                    | The run's placement identity.                                                                                                                                                         |
+| `maxFrames`          | `number`                                          | Bounds one loop's frames.                                                                                                                                                             |
+| `readOnlyCap`        | `number`                                          | Caps consecutive read-only frames. Armed for task runs only; see `CellTurn.make` in [`@smthrs/harness`](/docs/reference/api/harness/).                                                                |
+| `modelCallMs`        | `number`                                          | Caps the wall clock one model call may spend. Armed by default at `CellTurn.defaultModelCallMs` (300,000 ms); zero disarms it.                                                        |
+| `repeatCap`          | `number`                                          | Caps consecutive repeat-observation frames. Armed by default at `CellTurn.defaultRepeatFrames`; zero disarms it.                                                                      |
+| `narrowingCap`       | `number`                                          | Caps completions bounced for narrowed evidence. Armed by default at `CellTurn.defaultNarrowingDemands`.                                                                               |
+| `unmovedCap`         | `number`                                          | Caps completions bounced for an unmoved tree. Armed by default at `CellTurn.defaultUnmovedDemands`.                                                                                   |
+| `unresolvedCap`      | `number`                                          | Caps completions bounced for a failing check the run replaced rather than answered. Armed by default at `CellTurn.defaultUnresolvedDemands`.                                          |
+| `claimCap`           | `number`                                          | Caps completions bounced for a claim the run's record does not support; the one brake that asks the `Evaluator`. Armed by default at `CellTurn.defaultClaimDemands`; zero disarms it. |
+| `approvalChannel`    | `boolean`                                         | Whether a human can answer this run. Defaults to false; a run that claims it wrongly buys a run that waits forever.                                                                   |
+| `limits`             | `Sandbox.Limits`                                  | The sandbox budget every cell runs under.                                                                                                                                             |
 
 ### Agent.Agent
 
@@ -17667,14 +17668,14 @@ schema constant and a type of the same name unless noted.
 
 ### Plans
 
-| Export           | Shape                                                                                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PlanNodeStatus` | `"cached" \| "run"`. The two outcomes a step key already decides: reuse the cached result, or run the step. A card reports nothing else.                                             |
-| `PlanNode`       | The persisted plan node's fields plus `status`. `key` is the step key [`@smthrs/plan`](/docs/reference/api/plan/) compiled, so a node named here and a node in the persisted plan are the same node. |
-| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, graph?, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.      |
-| `PlanEdgeReason` | `"value" \| "continuation" \| "failure" \| "conflict" \| "lane-merge"`. Why one node waits for another, in the vocabulary of whichever graph builder the host planned with. |
-| `PlanEdge`       | `{ from, to, reason: PlanEdgeReason }`. One labelled edge of the graph the plan was built from. |
-| `PlanGraphNode`  | `{ id, declaredAt?: { path, line } }`. Where one node was declared, repo-relative under `@smthrs/journal`'s own rule, which refuses an absolute path. A host that cannot make a path relative to its root omits it. |
+| Export           | Shape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PlanNodeStatus` | `"cached" \| "run"`. The two outcomes a step key already decides: reuse the cached result, or run the step. A card reports nothing else.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `PlanNode`       | The persisted plan node's fields plus `status`. `key` is the step key [`@smthrs/plan`](/docs/reference/api/plan/) compiled, so a node named here and a node in the persisted plan are the same node.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `PlanCard`       | `{ planId, flowId, digest, inputSummary, envelope, deployClass, executionDigest?, plan?, nodes, graph?, approval }`. `approval` is the complete payload a reviewer resubmits unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `PlanEdgeReason` | `"value" \| "continuation" \| "failure" \| "conflict" \| "lane-merge"`. Why one node waits for another, in the vocabulary of whichever graph builder the host planned with.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `PlanEdge`       | `{ from, to, reason: PlanEdgeReason }`. One labelled edge of the graph the plan was built from.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `PlanGraphNode`  | `{ id, declaredAt?: { path, line } }`. Where one node was declared, repo-relative under `@smthrs/journal`'s own rule, which refuses an absolute path. A host that cannot make a path relative to its root omits it.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `PlanGraph`      | `{ edges: PlanEdge[], nodes?: PlanGraphNode[], sourceRevision?: string }`. A `PlanNode` carries `dependsOn`, one unlabelled edge set that cannot tell a value dependency from a recovery arm or from an ordering edge a write conflict added; a host that graphs a flow reports the reasons here instead, and the declaration sites the key material deliberately does not carry. `sourceRevision` is the immutable name of the tree those sites were read out of: a jj working-copy commit id, or a git commit for a tree that still matches one, so a reader can ask for the file AT that revision instead of whatever is on disk now. A host that cannot name one omits it. |
 
 `graph` sits deliberately OUTSIDE the digest an approval binds to. The edges
@@ -17963,17 +17964,17 @@ requested while one is being taken up is not lost with it.
 
 ### Models
 
-| Type             | Shape                                                                                                                                                                                                                            |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `StoredPlan`     | `{ card: PlanCard; decodedInput: unknown; decision: "pending" \| "approved" \| "denied" }`                                                                                                                                       |
-| `ApprovalToken`  | `{ tokenId: string; target: ApprovalTarget } & ApprovalDecision`; `_tag: "Pending"`, or `_tag: "Approved"` with principal/time/scope, or `_tag: "Denied"` with principal/time                                                    |
-| `BulkGrant`      | `{ tokenId: string; envelope: Envelope; scope: GrantScope; installedAt: number }`                                                                                                                                                |
-| `LaunchResult`   | `{ _tag: "Started"; receipt; run }` or `{ _tag: "Parked"; receipt }`                                                                                                                                                             |
-| `PlanOutcome`    | `{ card: PlanCard; created: boolean }`. `created` is what lets `plan` journal one creation per plan rather than one per retry.                                                                                                   |
-| `MutationRecord` | `{ fingerprint: string; receipt: Receipt }`                                                                                                                                                                                      |
-| `PendingResume`  | `{ runId: RunId; sequence: number; requestedAtMs: number }`                                                                                                                                                                      |
+| Type             | Shape                                                                                                                                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StoredPlan`     | `{ card: PlanCard; decodedInput: unknown; decision: "pending" \| "approved" \| "denied" }`                                                                                                                                                                                |
+| `ApprovalToken`  | `{ tokenId: string; target: ApprovalTarget } & ApprovalDecision`; `_tag: "Pending"`, or `_tag: "Approved"` with principal/time/scope, or `_tag: "Denied"` with principal/time                                                                                             |
+| `BulkGrant`      | `{ tokenId: string; envelope: Envelope; scope: GrantScope; installedAt: number }`                                                                                                                                                                                         |
+| `LaunchResult`   | `{ _tag: "Started"; receipt; run }` or `{ _tag: "Parked"; receipt }`                                                                                                                                                                                                      |
+| `PlanOutcome`    | `{ card: PlanCard; created: boolean }`. `created` is what lets `plan` journal one creation per plan rather than one per retry.                                                                                                                                            |
+| `MutationRecord` | `{ fingerprint: string; receipt: Receipt }`                                                                                                                                                                                                                               |
+| `PendingResume`  | `{ runId: RunId; sequence: number; requestedAtMs: number }`                                                                                                                                                                                                               |
 | `MemoryFlow`     | `{ flowId; description; deployClass; envelope; executionDigest?; decode?; plan? }`. The optional execution identity is included in the approved card; `decode` validates input and `plan` projects it into the keyed node graph, answering `{ plan, statuses?, graph? }`. |
-| `MemoryOptions`  | `{ flows?: MemoryFlow[]; now?: () => number; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }`                                                                                          |
+| `MemoryOptions`  | `{ flows?: MemoryFlow[]; now?: () => number; principal?: Omit<Principal, "stampedAt">; approvalAuthority?: ApprovalAuthority.Service }`                                                                                                                                   |
 
 `layerMemory` models the production fence and approval ordering seams but keeps
 everything in a `Map`. Nothing it decides survives the process.
@@ -18558,7 +18559,7 @@ interface Flow<
   readonly annotations: Context.Context<never>
   readonly flow: DurableFlow.Flow<string, Payload<I>, O, Err, Requires>
   readonly action: Action.Declared<string, Payload<I>, O, Err, Requires> | undefined
-  readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+  readonly call: (input: I["~type.make.in"]) => Node.Node<O["Type"], Err["Type"], Requires>
 }
 ```
 
@@ -18569,9 +18570,9 @@ to an `Interpreter`, or to a registry that checks that package's type id.
 bag both carry, with the declared `capabilities` and `effects` already lowered
 into it.
 
-A signature that declared no effect envelope dispatches as `irreversible`: a
-declaration that never stated its tier must not content-share another run's
-result. `Flow.sealed` states the opposite.
+A signature that declared no effect envelope dispatches as `irreversible`.
+`Flow.sealed` changes the tier; its generated action remains keyless and uses
+invocation identity, so this alone does not enable content sharing across runs.
 
 The requirement channel is `Action.Requirement<string>` for every body-less
 signature, because a signature's tag is typed `string`. The compiler therefore
@@ -18593,10 +18594,11 @@ the declared shape and wraps it, so an author never writes the wrapper.
 ### Flow.call
 
 ```ts
-readonly call: (input: I["Type"]) => Node.Node<O["Type"], Err["Type"], Requires>
+readonly call: (input: I["~type.make.in"]) => Node.Node<O["Type"], Err["Type"], Requires>
 ```
 
-Records a call in the shape the signature declares. It never runs the body:
+Records a call in the schema's constructor shape. A class schema accepts inert
+field data; it need not put a class instance in the plan. It never runs the body:
 `Graph.build` evaluates pure bodies at plan time.
 
 ### Flow.Any
@@ -18688,7 +18690,11 @@ const annotateMerge: {
 A custom key is advisory, so a signature annotated with one plans the same
 graph. `Annotations.Placement` and `Annotations.Effects` are not advisory:
 `Graph.build` projects both into node key material. Merged values override
-existing values for matching keys.
+existing values for matching keys, including declared effects and capabilities.
+The exposed metadata and the action's tier follow those overrides. Later
+`withCapabilities` and `sealed` operations update the effective values.
+Combinators retain the original diagnostic source locations of both native
+declarations.
 
 ### Flow.withFlows
 
@@ -18743,10 +18749,10 @@ combinators, and one function-identity rule wherever a plan is built.
 ```ts
 import { Node } from "@smthrs/core"
 
-const plan = Node.andThen(Node.succeed(1), (value) => Node.succeed(value + 1))
+const plan = Node.map(Node.succeed(1), (value) => value + 1)
 ```
 
-`succeed`, `fail`, `all`, `map`, `andThen`, `branch`, `catch`, `capture`,
+`succeed`, `fail`, `all`, `map`, `andThen`, `bindPlanned`, `branch`, `catch`, `capture`,
 `priority`, and the call constructors are documented in the
 [`@smthrs/plan` reference](/docs/reference/api/plan/#node). A continuation that decides on a
 real value is `Node.branch`: a continuation runs once at build time, on a
@@ -18871,7 +18877,8 @@ const getOption: <I, S>(context: Context.Context<never>, key: Context.Key<I, S>)
 
 `add` sets or replaces one annotation without changing the original. `merge`
 combines a parent and a child bag, with the child's values winning.
-`getOption` returns `Option.none()` when the key is absent.
+`getOption` returns `Option.none()` for an absent service key. A
+`Context.Reference` supplies its default when absent.
 
 ### The three keys
 
@@ -18881,12 +18888,13 @@ const Effects: Context.Key<Effects.Declaration, Effects.Declaration>
 const Priority: Context.Service<number>
 ```
 
-These are the three keys `Graph.build` projects onto each node. `Placement` and
-`Effects` are not declared here: they are [`@smthrs/plan`](/docs/reference/api/plan/)'s
+`Graph.build` projects `Placement` and `Effects` onto nodes. These keys are
+not declared here: they are [`@smthrs/plan`](/docs/reference/api/plan/)'s
 `Placement.Annotation` and `Effects.Envelope`, the same objects
 [`@smthrs/flow`](/docs/reference/api/flow/) publishes as `Flow.Placement` and
 `Flow.EffectEnvelope`, so a flow annotated for one graph builder is visible to
-the other. `Priority` is a signed integer ordering ready work; it is never part
+the other. `Priority` is a signed integer read by registry and host lowering;
+use `Node.priority` to set priority directly in a graph. Priority is never part
 of step identity, so raising it never invalidates a cached step.
 
 A fourth key, `Lane`, and its `LaneOptions` are gone. They were a second
@@ -22707,16 +22715,16 @@ that path. Keeping the database outside a served checkout prevents engine
 writes from changing the working-copy tree. `workspaceRoot` still confines
 flow file actions; the database path is trusted host configuration.
 
-| Field              | Type                                    | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `filename`         | `string`                                | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                                                                                                                                                                                                                      |
-| `workspaceRoot`    | `string`                                | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                                                                                                                                                                                                              |
-| `owner`            | `{ hostId: string }`                    | Stable identity of this engine host.                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `isAlive`          | `Ownership.LivenessCheck`               | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.                                                                                                                                                                                            |
-| `canExecute`    | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                               |
-| `requestResume` | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep. |
-| `cacheEnvironment` | `Action.CacheEnvironment`               | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
-| `sourceRevision`   | `string \| (() => string \| undefined)` | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
+| Field              | Type                                               | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `filename`         | `string`                                           | SQLite database filename. Resolved to an absolute path at the call; its parent directory is created recursively.                                                                                                                                                                                                                                                                                                                      |
+| `workspaceRoot`    | `string`                                           | The workspace file actions may read or mutate. Resolved to an absolute path at the call.                                                                                                                                                                                                                                                                                                                                              |
+| `owner`            | `{ hostId: string }`                               | Stable identity of this engine host.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `isAlive`          | `Ownership.LivenessCheck`                          | Whether a previously recorded owner is still alive. Required, and a stub is not an answer: a check that returns `false` without asking makes the engine steal runs out of live processes. Receives the claim context as well as the owner.                                                                                                                                                                                            |
+| `canExecute`       | `(row) => Effect<boolean>` (optional)              | Routes shared-store runs to the host configured for their workspace. Checked before claiming a run, including automatic wakes.                                                                                                                                                                                                                                                                                                        |
+| `requestResume`    | `(executionId, reason) => Effect<void>` (optional) | Records that the engine has asked a PARKED execution to resume: `"deferred"`, `"clock"`, or `"parent"`. A control plane that refuses to re-enter a parked run nobody asked for reads it to tell an engine wake from its own heartbeat sweep.                                                                                                                                                                                          |
+| `cacheEnvironment` | `Action.CacheEnvironment`                          | Optional. The complete runtime environment a sealed step's recorded result may be reused under. Absent by default, which keeps every sealed key scoped to its own run.                                                                                                                                                                                                                                                                |
+| `sourceRevision`   | `string \| (() => string \| undefined)`            | Optional. The revision of the tree this host read its flows out of, which every recorded graph page carries beside the declaration sites, so a reader opens the declared file at that revision and not at whatever is on disk. A host that only learns the answer after this call declares a reader instead of a string; it is asked once per recorded page, and an answer that is not a revision records nothing. Absent by default. |
 
 `Ownership.sameHostPidProbe` from [`@smthrs/run-store`](/docs/reference/api/run-store/) probes
 the process table only for the claim context's host (`context.claimant.hostId`).
@@ -23794,6 +23802,19 @@ JSON routes.
 | `POST /runtime/v1/command` | JSON               | Versioned launch and Control mutations (optional)    |
 | `POST /runtime/v1/observe` | JSON               | Bounded journal replay and run projection (optional) |
 
+### Runtime observation cursors
+
+`POST /runtime/v1/observe` returns `nextCursor`; pass it back unchanged as
+`afterCursor` with the same `runId`. An empty cursor consumes no events. A
+decimal cursor, such as `"42"`, consumes the whole journal entry. A versioned
+cursor, such as `"v1:42:0"`, consumes only members through that zero-based
+expansion offset. Both numeric components are canonical nonnegative integers
+below `Number.MAX_SAFE_INTEGER`. Existing decimal cursors remain accepted.
+
+`hasMore` indicates another event page; `terminal` independently reports the
+run's current lifecycle. Backend failures retain their stable Control code and
+retryability without exposing backend message text.
+
 ### Types and constants
 
 | Export                       | Signature                                                                                            | Meaning                                                                                                         |
@@ -23905,7 +23926,7 @@ The read path, served as bounded snapshots and followed deltas.
 | `maxEventsPerRun`         | `10_000`                                                                                                       | The most journal events retained per run; older events enter the carried digest.                                   |
 | `maxEventsPerPage`        | `1_000`                                                                                                        | The most events one `run-events` page returns.                                                                     |
 | `maxEventBytes`           | `16 * 1024`                                                                                                    | Retained event size before clipping. Native engine events on `run-events` pages are exempt.                        |
-| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for a retained event window, event page, or projected row set.                             |
+| `maxProjectionBytes`      | `4 * 1024 * 1024`                                                                                              | The encoded byte budget for retained events plus digest identity state, an event page, or a projected row set.     |
 
 `ControlService` is `@smthrs/control` `Control`'s service interface, the shape
 the tag carries.
@@ -24089,6 +24110,14 @@ or clipping.
 `RunSummaryRow.verdict` and `RunSummaryRow.diagnosis` are `verdict` and `render`
 already applied, so a client rendering a run card calls neither. See
 [Diagnose what happened to a run](https://gateway.smithers.sh/guides/diagnose-a-run/).
+
+`emptyDigest()` is the identity for `combine(earlier, later)`. Digests retain
+private in-memory scalar identity contributions so adjacent ranges deduplicate
+replayed calls and checkpoints and prefer native facts over telemetry. Keep the
+returned digest objects when combining ranges; serialized or spread copies
+retain only aggregate facts, not this reconciliation state. Gateway projection
+retention charges this state to the existing byte budget and returns
+`resource_limit` if exact state cannot fit.
 
 `Digest.nativeResolution` optionally retains `binding: { runId, executionId }`,
 `result: { runId, executionId, text }`, and `conflict: true` across bounded
@@ -31227,7 +31256,7 @@ serialization order a sealed model step keys on.
 | `StopReason`           | literals | `"stop" \| "length" \| "tool-calls" \| "content-filter" \| "error" \| "aborted" \| "unknown"`. `"aborted"` is this layer's own value for an interrupted stream; no provider reports it.                                                                                                                                                      |
 | `ToolDefinition`       | class    | `{ name, description, parameters, deferred?, loader? }`. `parameters` is a JSON Schema object. A lazy (`deferred`) tool is wire metadata only: it may never add prompt text, because that would change the sealed-step key of every request that declares it.                                                                                |
 | `GenerationParams`     | class    | Optional `maxTokens`, `temperature`, `topP`, `topK`, `stopSequences`, `thinkingBudget`, `reasoningEffort`. An omitted field leaves the provider default in place, except that the Anthropic Messages lowering sends `max_tokens: 4096` for an omitted `maxTokens`. A knob a protocol has no wire field for is dropped from the body instead. |
-| `ReasoningEffort`      | literals | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh"`. The provider-neutral vocabulary the adapters map onto their own.                                                                                                                                                                                                            |
+| `ReasoningEffort`      | literals | `"none" \| "minimal" \| "low" \| "medium" \| "high" \| "xhigh" \| "max"`. The provider-neutral vocabulary the adapters map onto their own.                                                                                                                                                                                                   |
 | `ToolChoice`           | literal  | Only `"none"`. The built-in encoders express it by omitting `tools` altogether, which is what both provider APIs require.                                                                                                                                                                                                                    |
 | `JsonObject`           | schema   | A plain JSON object. Decoding starts from `Schema.Json`, so class instances such as `Date` and `Map` cannot decode as empty records.                                                                                                                                                                                                         |
 
@@ -31375,7 +31404,8 @@ it.
 | Export             | Kind        | Behavior                                                                                                                                                  |
 | ------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Endpoint`         | interface   | `{ method: "POST", url, query }`.                                                                                                                         |
-| `MakeOptions`      | interface   | `{ url, path?, query? }`. `query` accepts pairs or a record.                                                                                              |
+| `MakeOptions`                   | interface                 | `{ maxRetries?, responseStartMs? }`: retries after the first attempt (default `2`; `0` is a single attempt; negative is `0`), and how long an attempt may wait for its response to start (default `defaultResponseStartMs`; `0` disarms). |
+| `defaultResponseStartMs`        | constant                  | `60_000`: an attempt whose status and headers have not arrived by then fails as a retryable `transport` error. Reasoning streams are silent between chunks, so only the start is bounded. |
 | `make(input)`      | constructor | `Result<Endpoint, ModelError>`. Validates and normalizes: query pairs are sorted by name then value, and the path is joined onto the URL's existing path. |
 | `render(endpoint)` | formatting  | Renders the exact deterministic URL.                                                                                                                      |
 
@@ -39830,6 +39860,31 @@ makes that command hang. A container name that is empty or starts with `-` is
 `invalid_input`. Environment values travel through `Plan.env`; argv carries
 only `-e KEY`. Custom transports return any host process environment overrides
 in `Plan.env`.
+
+## TreeFingerprint
+
+The identity of one directory tree, measured where the tree is. The host's
+workspace walk cannot see a container's filesystem, so `bash` runs this
+script through the container transport before and after a containerised
+command and reports whether the two answers differ under the reserved
+`mutated` key. The harness reads `true` as a measured write, the way it reads
+`invalidProbe` as a measured refusal.
+
+| Export                  | Type                                                | Meaning                                                                        |
+| ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                 |
+| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into; the one list the host walk shares.       |
+| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                             |
+| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.      |
+| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                 |
+| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.     |
+| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.      |
+| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less. |
+
+Identity, not content: size and mtime per file, so a rewrite that restores
+both is invisible, exactly as it is to the host walk. Every tool the script
+needs is POSIX or busybox; a container without one exits non-zero and `bash`
+reports no `mutated` at all.
 
 ## TestRunner
 
