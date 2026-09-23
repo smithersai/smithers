@@ -128,6 +128,7 @@
 }
 
 .app-chat-controls { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-4); min-height: 52px; padding: var(--sp-2) var(--sp-5); }
+.app-chat-controls .chat-filter-control { order: -1; }
 /*
  * The bottom bar is GuideButton chrome OUTSIDE the guide shell, where the
  * --g-* tokens do not exist: keep the polish session's quiet text-button

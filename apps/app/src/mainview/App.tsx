@@ -649,12 +649,12 @@ function AppContent() {
         {composerWrap}
       </div>
       <footer data-keyboard-pane="Chat controls" className="app-chat-controls" aria-label="Chat controls">
-        <ChatFilterMenu open={session.chatFilterMenuOpen === true} filter={session.chatFilter ?? allChat} lanes={lanes} onRunCommand={controller.runCommand} />
         <FirstSightHint id="chat" content={<ChatHint />}><GuideButton ref={chatTriggerRef} shortcut={GUIDE_KEYS.chat} {...flowProps("chat.open")} onClick={() => {
           controller.runCommand("chat.open")
           requestAnimationFrame(() => composerWrapRef.current?.querySelector("textarea")?.focus())
         }}>Chat</GuideButton></FirstSightHint>
         <InputModeMenu mode={session.inputMode ?? "normal"} onChange={mode => controller.runCommand("input.mode", mode)} />
+        <ChatFilterMenu open={session.chatFilterMenuOpen === true} filter={session.chatFilter ?? allChat} lanes={lanes} onRunCommand={controller.runCommand} />
       </footer>
       </div>
 
