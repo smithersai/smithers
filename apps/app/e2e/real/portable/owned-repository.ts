@@ -1,3 +1,4 @@
+import { fixtureProtocolId } from "../support/values"
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
 import { mkdtemp, rm, writeFile } from "node:fs/promises"
@@ -13,7 +14,7 @@ export type OwnedRepository = { readonly name: string; readonly fullName: string
 export const withOwnedRepository = async <T>(page: Page, request: APIRequestContext, use: (repo: OwnedRepository) => Promise<T>): Promise<T> => {
   const owner = await readAuthenticatedSession(page)
   expect(owner, "the matrix requires an authenticated product owner").toBeDefined()
-  const name = `smithers-matrix-${randomUUID().slice(0, 12)}`
+  const name = fixtureProtocolId(`smithers-matrix-${randomUUID().slice(0, 12)}`)
   const fullName = `${owner!.login}/${name}`
   const path = repositoryApiPath(fullName)
   const created = await realApi(page, request, "POST", "/api/user/repos", {
@@ -52,8 +53,9 @@ const gitToken = async (page: Page, request: APIRequestContext): Promise<string>
   const raw = name ? process.env[name] : undefined
   if (!raw) throw new Error("owner credential envelope is unavailable for the local git fixture")
   const credentials = JSON.parse(raw) as { readonly username: string; readonly password: string }
+  const tokenName = fixtureProtocolId(`matrix-git-${randomUUID().slice(0, 8)}`)
   const response = await realApi(page, request, "POST", "/api/auth/local/token", {
-    username: credentials.username, password: credentials.password, name: `matrix-git-${randomUUID().slice(0, 8)}`
+    username: credentials.username, password: credentials.password, name: tokenName
   })
   expect(response.status()).toBe(200)
   const body = await response.json() as { readonly token?: unknown }

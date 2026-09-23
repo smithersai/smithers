@@ -306,7 +306,7 @@ workflowTest(
     const repo = workflowRepo.repo
     const workspaceId = workflowRepo.workspaceId
     await bootPrivateWorkflowRepository(page, repo, workspaceId)
-    const marker = `s16-approval-${Date.now().toString(36)}`
+    const marker = fixtureInputText(`s16-approval-${Date.now().toString(36)}`)
     const [runId] = await Promise.all([
       acceptedRunId(page, repo, workflowRepo),
       command(page, `/flow.create create a workflow with the exact id ${marker}; it must accept one required string named value and return that exact string; include a deterministic unit test ${repo}`)

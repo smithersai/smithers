@@ -1,3 +1,4 @@
+import { fixtureProtocolId } from "../../e2e/real/support/values"
 import { createHash, randomUUID } from "node:crypto"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
@@ -91,7 +92,7 @@ const slug = (value: string): string => value.toLowerCase().replace(/[^a-z0-9]+/
 export const webSelfhostResources = (id: string = randomUUID()): WebSelfhostResources => {
   const runId = slug(id)
   if (runId === "") throw new Error("web-selfhost launch id must contain a letter or number")
-  const prefix = `smithers-matrix-${runId}`
+  const prefix = fixtureProtocolId(`smithers-matrix-${runId}`)
   const hostPort = 20_000 + (createHash("sha256").update(runId).digest().readUInt16BE(0) % 40_000)
   return {
     runId,

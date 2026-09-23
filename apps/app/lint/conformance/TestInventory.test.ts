@@ -133,6 +133,7 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/real/coverage/gate.test.ts")).toEqual(["unit"])
   // So is the real tier's model provider: a Bun test of the process Playwright launches.
   expect(owners("e2e/real/support/model-provider.test.ts")).toEqual(["unit"])
+  expect(owners("e2e/real/auth-permissions/profile.test.ts")).toEqual(["unit"])
   expect(owners("e2e/real/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/site/Unassigned.test.ts")).toEqual([])
   expect(owners("e2e/Unassigned.spec.ts")).toEqual([])

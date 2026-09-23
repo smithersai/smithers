@@ -1,3 +1,4 @@
+import { fixtureProtocolId } from "../../e2e/real/support/values"
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
@@ -154,7 +155,7 @@ export const startLocalOwn = async (rootDir: string, revision: string, outputDir
       body: JSON.stringify({ username, password, name: "local-matrix" })
     })).token
     if (typeof token !== "string" || !token) throw new Error("local-own did not issue an owner token")
-    const repository = `matrix-${randomUUID().slice(0, 8)}`
+    const repository = fixtureProtocolId(`matrix-${randomUUID().slice(0, 8)}`)
     await request(backendOrigin, "/api/user/repos", {
       method: "POST", headers: { "content-type": "application/json", authorization: `token ${token}` },
       body: JSON.stringify({ name: repository, private: true, auto_init: true })

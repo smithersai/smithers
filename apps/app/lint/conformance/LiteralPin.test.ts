@@ -80,6 +80,31 @@ interface Excuse {
  */
 const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   {
+    literal: "user.name",
+    file: "scripts/build-native.ts",
+    reason: "Git configuration key for the packaged repository fixture; declared by Git, not the app flow registry."
+  },
+  {
+    literal: "user.email",
+    file: "scripts/build-native.ts",
+    reason: "Git configuration key for the packaged repository fixture; declared by Git, not the app flow registry."
+  },
+  {
+    literal: "owner-session",
+    file: "scripts/run-mode-matrix.ts",
+    reason: "Mode-matrix credential kind, declared by the matrix fixture contract, not a card kind."
+  },
+  {
+    literal: "browser-profile",
+    file: "scripts/run-mode-matrix.ts",
+    reason: "Mode-matrix credential kind, declared by the matrix fixture contract, not a card kind."
+  },
+  {
+    literal: "postmaster.pid",
+    file: "scripts/test-native-owned.ts",
+    reason: "PostgreSQL PID filename used to await test database shutdown, not a flow name."
+  },
+  {
     literal: "flows.harness.step-fact.v1",
     file: "e2e/real/run-inspection/module-evidence.ts",
     reason: "The module checkpoint envelope is declared by packages/smithers/flows/journal/src/StepFact.ts, outside the app vocabulary."
@@ -140,11 +165,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "tag and class composed by the geometry probe from the real card element, not a flow id"
   },
   {
-    literal: "fixture-live-",
-    file: "e2e/playwright/tutorial-stubs.ts",
-    reason: "test-owned live tutorial run id echoed by the fixture, not a card id prefix"
-  },
-  {
     literal: "fixture-job-",
     file: "e2e/playwright/repository-setup.spec.ts",
     reason: "test-owned job execution ID returned by the explicit setup backend fixture, not a card ID prefix"
@@ -173,16 +193,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     literal: "promotional",
     file: "scripts/launch-checklist/Rows.ts",
     reason: "the billing grant kind the checklist reads back from its own /api/billing audit row; it is an upstream grant kind, never a card kind"
-  },
-  {
-    literal: "plan-",
-    file: "e2e/playwright/tutorial-stubs.ts",
-    reason: "the workflow gateway double's plan id, echoed back to the launch path; a gateway value, never a card id"
-  },
-  {
-    literal: "librarian-run-",
-    file: "e2e/playwright/tutorial-stubs.ts",
-    reason: "the workflow gateway double's run id for the beat 12 launches; the app wraps it as flow-run-<runId>, so the bare prefix is never a card id"
   },
   {
     literal: "navigation-storage-",
@@ -219,10 +229,14 @@ const vocabularies: Vocabularies = {
   cardObjectFields: cardObjectFields(),
   idVocabularySegments: idVocabularySegments()
 }
-// These two files implement/test the test-source parser. Their strings name
-// framework calls and synthetic coverage evidence, not application actions.
-// Actual real-E2E scenarios, helpers and coverage declarations remain scanned.
-const sourceParserFiles = new Set(["e2e/real/coverage/gate.ts", "e2e/real/coverage/gate.test.ts"])
+// These files parse test topology, select scenarios, or test those parsers.
+// Their identifiers and credential/driver kinds belong to the harness schema.
+// Scenario bodies and browser helpers remain scanned for app vocabulary.
+const sourceParserFiles = new Set([
+  "e2e/real/coverage/gate.ts", "e2e/real/coverage/gate.test.ts",
+  "e2e/real/coverage/matrix.ts", "e2e/real/coverage/matrix.test.ts",
+  "e2e/real/coverage/selection.test.ts"
+])
 /*
  * The fixture graph's own node addresses are not app vocabulary.
  *

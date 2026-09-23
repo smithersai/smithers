@@ -13,7 +13,7 @@
     "build": "pnpm run build:native",
     "typecheck": "node scripts/ensure-devkit.mjs && tsc --noEmit",
     "check": "node scripts/ensure-devkit.mjs && tsc --noEmit",
-    "test": "bun test src e2e/contracts e2e/real/coverage e2e/real/support scripts",
+    "test": "bun test src e2e/contracts e2e/real/coverage e2e/real/support e2e/real/auth-permissions/profile.test.ts scripts",
     "lint:conformance": "bun test lint/conformance",
     "checklist": "bun scripts/launch-checklist.ts",
     "test:e2e": "playwright test",

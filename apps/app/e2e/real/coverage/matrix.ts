@@ -99,7 +99,7 @@ export const applicableScenarioIds = (capabilities: readonly string[]): readonly
 
 export const MANDATORY_DETERMINISTIC_BUN_TESTS = [
   "src/mainview/state/controller/workflows.test.ts",
-  "src/mainview/state/controller/liveTutorial.test.ts",
+  "src/mainview/state/controller/repositorySetup.test.ts",
   "src/mainview/state/controller/failures.test.ts"
 ] as const
 

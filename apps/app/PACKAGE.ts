@@ -110,7 +110,7 @@ const check = Smithers.Typecheck({
 // scripts/repo-contract/README.md for the denominator exception.
 const unitTests = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.testSuite(["src", "e2e/contracts", "e2e/real/coverage", "e2e/real/support", "scripts"]),
+  runner: Smithers.testSuite(["src", "e2e/contracts", "e2e/real/coverage", "e2e/real/support", "e2e/real/auth-permissions/profile.test.ts", "scripts"]),
   srcs: [
     sources,
     componentSources,
@@ -124,6 +124,7 @@ const unitTests = Smithers.NodeTest({
     Smithers.file("package.json"),
     Smithers.file("//package.json"),
     Smithers.file("//pnpm-lock.yaml"),
+    Smithers.file("//packages/backend/internal/compose/bootstrap.go"),
     Smithers.file("//packages/rpc/fixtures/force/graph.json"),
     Smithers.file("//packages/rpc/fixtures/force/plan-typeCheck.json")
   ],

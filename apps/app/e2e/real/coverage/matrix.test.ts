@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import {
+  MANDATORY_DETERMINISTIC_BUN_TESTS,
+  MANDATORY_DETERMINISTIC_BROWSER_SPECS,
   MATRIX_OBLIGATIONS,
   MATRIX_SCENARIO_IDS,
   applicableScenarioIds,
@@ -297,4 +299,11 @@ describe("deployment mode matrix", () => {
     expect(matrixPasses(readiness, rows, true, false)).toBe(false)
     expect(matrixPasses(readiness, rows, true, false, ["web-selfhost", "web-selfhost"])).toBe(false)
   })
+})
+
+
+test("every mandatory deterministic suite names an executable file", () => {
+  for (const file of [...MANDATORY_DETERMINISTIC_BUN_TESTS, ...MANDATORY_DETERMINISTIC_BROWSER_SPECS]) {
+    expect(existsSync(resolve(import.meta.dirname, "../../..", file)), file).toBe(true)
+  }
 })
