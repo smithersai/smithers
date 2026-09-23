@@ -79,10 +79,13 @@ def main(argv: list[str]) -> int:
             lines += [f"## {name}", "", "- not started", ""]
             continue
         rows = trial_rows(job)
+        # Attempts Harbor retried in-process or requeue.py moved aside.
+        aside = jobs_dir / f"{name}.infra"
+        retried = trial_rows(aside) if aside.is_dir() else []
         kinds = Counter(r["kind"] for r in rows)
         scored = [r for r in rows if outcome.is_healthy(r["kind"])]
         solved = [r for r in scored if r["reward"] == 1.0]
-        recent = [r for r in rows if r["finished_at"] and r["finished_at"].timestamp() >= horizon]
+        recent = [r for r in rows + retried if r["finished_at"] and r["finished_at"].timestamp() >= horizon]
         recent_infra = [r for r in recent if r["kind"] == "infra"]
         rate = len(recent_infra) / len(recent) if recent else 0.0
         if len(recent_infra) >= 2 and rate > INFRA_RATE:
@@ -95,7 +98,7 @@ def main(argv: list[str]) -> int:
                   f"- trials {len(rows)}: {dict(kinds)}",
                   f"- scored {len(scored)} ({len({r['task'] for r in scored})} tasks), solved {len(solved)}"
                   + (f", {len(solved) / len(scored):.1%}" if scored else ""),
-                  f"- infra last hour: {len(recent_infra)} of {len(recent)} finished ({rate:.0%})",
+                  f"- infra last hour: {len(recent_infra)} of {len(recent)} finished ({rate:.0%}); attempts kept aside: {len(retried)}",
                   f"- unplaceable: {sorted({r['task'] for r in rows if r['kind'] == 'unplaceable'})}"]
         for r in rows:
             if r["kind"] == "infra":

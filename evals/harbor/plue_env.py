@@ -377,6 +377,44 @@ def install_trial_containment(trial_cls) -> None:
     trial_cls._prepare = _prepare
 
 
+def keep_retried_attempts(queue_module) -> None:
+    """Keep the attempts Harbor's in-process retry would delete.
+
+    `TrialQueue._execute_trial_with_retries` removes a failed attempt's
+    directory with `shutil.rmtree` before re-running it, so the infra rate
+    never counted it and its evidence was lost. That one call now moves a
+    finished attempt (it has result.json) to `<job>.infra/<trial>[.n]`, where
+    `requeue.py` also puts attempts and `health.py` counts them."""
+    real = queue_module.shutil
+    if getattr(real, "_plue_keeps_attempts", False):
+        return
+
+    class _KeepingShutil:
+        _plue_keeps_attempts = True
+
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        @staticmethod
+        def rmtree(path, ignore_errors=False, **kwargs):
+            trial = Path(path)
+            if (trial / "result.json").is_file():
+                aside = trial.parent.parent / f"{trial.parent.name}.infra"
+                aside.mkdir(exist_ok=True)
+                target, n = aside / trial.name, 1
+                while target.exists():
+                    n += 1
+                    target = aside / f"{trial.name}.{n}"
+                try:
+                    shutil.move(str(trial), str(target))
+                    return None
+                except OSError:
+                    pass
+            return real.rmtree(path, ignore_errors=ignore_errors, **kwargs)
+
+    queue_module.shutil = _KeepingShutil()
+
+
 def install_untimed_verifier_reserve(trial_cls) -> bool:
     """The same pre-step for the separate verifier environment.
 
@@ -930,6 +968,8 @@ def _harbor_classes():
     install_untimed_reserve(Trial)
     install_untimed_verifier_reserve(Trial)
     install_trial_containment(Trial)
+    import harbor.trial.queue as trial_queue
+    keep_retried_attempts(trial_queue)
 
     class PlueEnvironment(_Deferring, _PlueOps, BaseEnvironment):
         """Harbor environment on Smithers Cloud workspaces."""

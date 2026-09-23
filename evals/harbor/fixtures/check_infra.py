@@ -476,6 +476,43 @@ def check_storage_limit() -> None:
         os.environ.pop("PLUE_MAX_STORAGE_MB", None)
 
 
+def check_retried_attempts_are_kept() -> None:
+    """Harbor's in-process retry deletes the failed attempt's directory, so
+    the hourly infra rate never saw it and its evidence was lost (arm A's
+    r2 preflight: a ModelRouteError attempt vanished). The retry now moves a
+    finished attempt to <job>.infra/, and health.py counts it."""
+    import health
+    from datetime import datetime, timedelta, timezone
+    queue = types.SimpleNamespace(shutil=__import__("shutil"))
+    plue_env.keep_retried_attempts(queue)
+    plue_env.keep_retried_attempts(queue)  # idempotent
+    with tempfile.TemporaryDirectory() as directory:
+        job = Path(directory) / "tb4-X"
+        trial = job / "task__abc"
+        trial.mkdir(parents=True)
+        (trial / "config.json").write_text("{}")
+        recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        (trial / "result.json").write_text(json.dumps({**result("ModelRouteError", "call_timeout"), "finished_at": recent}))
+        queue.shutil.rmtree(trial, ignore_errors=True)
+        assert not trial.exists()
+        kept = list((Path(directory) / "tb4-X.infra").iterdir())
+        assert len(kept) == 1 and kept[0].name.startswith("task__abc"), kept
+        trial.mkdir()
+        (trial / "config.json").write_text("{}")
+        (trial / "result.json").write_text(json.dumps({**result("ModelRouteError", "again"), "finished_at": recent}))
+        queue.shutil.rmtree(trial, ignore_errors=True)
+        assert len(list((Path(directory) / "tb4-X.infra").iterdir())) == 2, "a second attempt does not overwrite the first"
+        scratch = Path(directory) / "scratch"
+        scratch.mkdir()
+        queue.shutil.rmtree(scratch)
+        assert not scratch.exists(), "anything else is still deleted"
+        (job / "ok__1").mkdir()
+        (job / "ok__1" / "config.json").write_text("{}")
+        (job / "ok__1" / "result.json").write_text(json.dumps({**result(reward=1.0), "finished_at": recent}))
+        out = Path(directory) / "h.md"
+        assert health.main([directory, str(out), "tb4-X"]) == 3, "2 retried infra attempts of 3 in the hour trip"
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -505,6 +542,9 @@ def check_requeue_and_health() -> None:
         assert sorted(moved) == ["killed__f", "ssh__c", "verify__d"], moved
         assert sorted(t.name for t in job.iterdir()) == ["agent__b", "gpu__e", "graded__a"]
         assert (Path(directory) / "tb4-X.infra" / "ssh__c" / "result.json").is_file(), "evidence is kept"
+        assert health.main([directory, str(out), "tb4-X"]) == 3, "infra moved aside still counts for its hour"
+        import shutil as _shutil
+        _shutil.rmtree(Path(directory) / "tb4-X.infra")
         assert health.main([directory, str(out), "tb4-X"]) == 0, "graded, agent and unplaceable never trip"
     assert requeue.workspace_name("ks-solver-cpp__VA7miqc__verifier__trial") == "ks-solver-cpp-va7miqc-verifier-trial"
     assert requeue.workspace_name("ks-solver-cpp__VA7miqc__env") == plue_env._sanitize_name("ks-solver-cpp__VA7miqc__env")
@@ -575,6 +615,8 @@ def check_with_harbor() -> str:
 
     # The separate verifier environment is reserved before the build timer.
     from harbor.trial.trial import Trial
+    import harbor.trial.queue as trial_queue
+    assert getattr(trial_queue.shutil, "_plue_keeps_attempts", False), "retried attempts are kept"
     assert getattr(Trial._separate_verifier_env, "_plue_untimed_reserve", False), \
         "importing PlueEnvironment patches the verifier environment start"
     import harbor.trial.trial as trial_module
@@ -637,6 +679,7 @@ if __name__ == "__main__":
     check_shim_durable_exec()
     check_guest_prelude()
     check_storage_limit()
+    check_retried_attempts_are_kept()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "
