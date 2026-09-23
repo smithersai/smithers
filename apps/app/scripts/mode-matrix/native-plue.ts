@@ -61,7 +61,7 @@ export const startNativePlue = async (
       throw new Error("native-plue unexpectedly created owned backend or PostgreSQL state")
     }
     const targetNonce = randomUUID()
-    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}`)
+    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}; sessionStorage.setItem("smithersNativeMatrixTarget", ${JSON.stringify(targetNonce)})`)
     const receiptPath = join(outputDir, "native-plue.execution.json")
     const receipt: ExecutionReceipt = {
       mode: "native-plue", revision, origin: origin.origin, ready: true,

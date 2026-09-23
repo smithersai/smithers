@@ -116,7 +116,7 @@ export const startNativeOwn = async (
       throw new Error("native-own requires a packaged CEF window")
     }
     const targetNonce = randomUUID()
-    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}`)
+    await app.eval(`globalThis.__smithersNativeMatrixTarget = ${JSON.stringify(targetNonce)}; sessionStorage.setItem("smithersNativeMatrixTarget", ${JSON.stringify(targetNonce)})`)
     const receiptPath = join(outputDir, "native-own.execution.json")
     const receipt: ExecutionReceipt = {
       mode: "native-own", revision, origin, ready: true,
