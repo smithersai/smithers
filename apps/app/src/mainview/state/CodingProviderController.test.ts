@@ -74,7 +74,7 @@ test("reload reconciles a token-free connect receipt and revocation through the 
   expect(calls).toContainEqual({ path: "/api/user/provider-connections", method: "GET" })
   expect(calls.some(call => call.method === "POST")).toBe(false)
   expect(JSON.stringify([...persisted])).not.toContain("sk-ant-")
-  expect(await controller.commands.run("secrets.revoke", "conn-1")).toMatchObject({ status: "form" })
+  expect(await controller.commands.run("secrets.revoke")).toMatchObject({ status: "form" })
   expect(await controller.commands.run("form.set", "form-secrets.revoke id conn-1")).toMatchObject({ status: "executed" })
   expect(await controller.commands.run("form.submit", "form-secrets.revoke")).toMatchObject({ status: "executed" })
   await waitFor(() => reopened.session().codingProviderRequests?.some(row => row.action === "revoke" && row.state === "completed") === true)

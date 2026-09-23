@@ -717,6 +717,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     if (rest === "") return no("env.set needs a NAME=value pair")
     return ok(repo === undefined ? { assignment: rest } : { assignment: rest, repo })
   },
+  "secrets.revoke": (args) => required("id", args, "Choose a coding connection"),
   "secrets.list": (args) => repoOnly("secrets.list", args),
   "model.credential.enroll": args => {
     const payload: Record<string, unknown> = {}

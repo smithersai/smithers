@@ -392,3 +392,9 @@ describe("the model grammars", () => {
     expect(payloadFor("model.save", "--name fast-kimi --key sk-1")).toEqual(refusal)
   })
 })
+
+
+test("coding connection revocation decodes its ID and requires a missing ID", () => {
+  expect(payloadFor("secrets.revoke", "conn-1")).toEqual({ payload: { id: "conn-1" } })
+  expect(payloadFor("secrets.revoke", undefined)).toEqual({ error: "Choose a coding connection" })
+})
