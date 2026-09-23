@@ -214,7 +214,7 @@ test("app stack overrides preserve the optional route, bindings, domain and zone
   )
   assert.deepEqual(review.workerProps.routes, [{
     pattern: "review.smithers.sh/*",
-    zoneId: "72854846f57d9e46794e7e6aae7e3328"
+    zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14"
   }])
   assert.equal(review.workerProps.env.PUBLIC_BASE_URL, "https://review-preview.example")
   assert.equal(bugs.workerProps.env.PUBLIC_BASE_URL, "https://bug-preview.example")
