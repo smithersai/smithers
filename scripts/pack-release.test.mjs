@@ -24,6 +24,7 @@ import {
   workspaces
 } from "./pack-release.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
+import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 
 // `workspaces` reads and validates a workspace tree, so this suite reads the
 // real one once and every case below asserts over that single order.
@@ -769,6 +770,22 @@ test("the platform package tarball carries all four native helpers", async () =>
       assert.ok(entries.includes(`package/bin/${platform}/smithers-jj-export`))
       assert.ok(statSync(join(directory, "package/bin", platform, "smithers-jj-export")).isFile())
     }
+    assert.equal(await verifyPackagedNativeHelpers(join(directory, "package"), true), true)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test("native smoke distinguishes an early rehearsal from a missing or incomplete release bundle", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "smithers-smoke-native-"))
+  try {
+    assert.equal(await verifyPackagedNativeHelpers(directory), false)
+    await assert.rejects(verifyPackagedNativeHelpers(directory, true), { code: "ENOENT" })
+    const first = join(directory, "bin/darwin-arm64/smithers-jj-export")
+    await mkdir(join(directory, "bin/darwin-arm64"), { recursive: true })
+    await writeFile(first, "helper")
+    await assert.rejects(verifyPackagedNativeHelpers(directory), { code: "ENOENT" })
+    await rm(first)
+    await mkdir(first)
+    await assert.rejects(verifyPackagedNativeHelpers(directory), /not a regular file/)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

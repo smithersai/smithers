@@ -37,7 +37,6 @@
  */
 import { spawn } from "node:child_process"
 import { build as bundle } from "esbuild"
-import { existsSync } from "node:fs"
 import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -47,6 +46,7 @@ import { releaseRegistry } from "./release-registry.mjs"
 import { recordSmokeSuccess, verifyLocalCandidate } from "./publish-release.mjs"
 import { assertNodeSupport } from "./release-node-support.mjs"
 import { assertSmokeNpmSupport } from "./release-npm-support.mjs"
+import { verifyPackagedNativeHelpers } from "./release-native-helpers.mjs"
 import { adapterProfiles, consumerCacheFlags, migrationProfiles, minimalProfiles, releasePackageManager, runConsumerMatrix, templateProfile } from "./release-consumers.mjs"
 import { repoRoot } from "./workspace-packages.mjs"
 
@@ -255,17 +255,13 @@ try {
   const nativePackage = join(smokeRoot, "node_modules/@smthrs/platform-node")
   // The script gate packs before native helpers are downloaded. Final release
   // packing supplies them, and a partial helper bundle must still fail here.
-  if (process.env.SMITHERS_NATIVE_HELPERS_DIR || existsSync(join(nativePackage, "bin"))) {
-    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
-      const binary = join(nativePackage, "bin", platform, "smithers-jj-export")
-      const info = await stat(binary)
-      if (!info.isFile()) throw new Error(`Installed native helper is not a regular file: ${binary}`)
-    }
-  }
-  const unconfiguredEnv = { ...process.env }
-  delete unconfiguredEnv.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+  const hasPackagedNativeHelpers = await verifyPackagedNativeHelpers(nativePackage, Boolean(process.env.SMITHERS_NATIVE_HELPERS_DIR))
+  const cliEnv = { ...process.env }
+  // Final packs must discover their own helper. The earlier script gate still
+  // runs every CLI operation using the explicitly configured source helper.
+  if (hasPackagedNativeHelpers) delete cliEnv.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
   for (const args of [["init", "release-smoke", "--json"], ["targets", "--json"], ["flow", "list", "--json"]]) {
-    const result = await runQuietly(cli, args, smokeRoot, { env: unconfiguredEnv })
+    const result = await runQuietly(cli, args, smokeRoot, { env: cliEnv })
     if (!result.ok) throw new Error(`Installed CLI ${args.join(" ")} failed: ${result.output}`)
   }
   console.log("CLI smoke ok: packaged binaries, workspace initialization, target loading, and flow discovery")
@@ -354,7 +350,11 @@ try {
   await phase("consumer matrix", () => runConsumerMatrix(absolutePackDirectory, packManifest, {
     profiles: [...minimalProfiles(packManifest), ...adapterProfiles(packManifest), ...migrationProfiles(packManifest), templateProfile(absolutePackDirectory, packManifest)], runtime: true
   }))
-  await phase("success receipt", () => recordSmokeSuccess(absolutePackDirectory, candidate))
+  if (hasPackagedNativeHelpers) {
+    await phase("success receipt", () => recordSmokeSuccess(absolutePackDirectory, candidate))
+  } else {
+    console.log("Pre-helper rehearsal passed; no publishable smoke receipt written.")
+  }
   console.log(
     `\nrelease smoke holds: ${packManifest.length} tarballs install, import, and typecheck` +
       ` on node ${process.versions.node}.`
