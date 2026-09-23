@@ -65,8 +65,8 @@ providers this machine can reach. Print mode runs a task directly.
 ## Look
 
 Night Owl dark surfaces from the Smithers app (`apps/app/.../tokens.css`),
-layered page, panel, element. Your messages are right-aligned brand-tinted
-bubbles, as in the app's chat. Each cell is a left bar colored by status with
+layered page, panel, element. Your messages keep the composer's shape, a
+brand bar on a filled panel. Each cell is a left bar colored by status with
 one row per flow call (`→ read`, `$ ran`, `← edited`); an edit draws its diff.
 The Summary view keeps cell code behind expandable rows. Panels, dialogs, and the
 completion menu follow opencode's shapes; fuzzy matching is pi's.
