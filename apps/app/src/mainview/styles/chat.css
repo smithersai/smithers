@@ -8,6 +8,7 @@
 	 */
 	min-width: 0;
 	min-height: 0;
+	overflow: clip;
 	flex: 1;
 	flex-direction: row;
 	/* Keep repository controls clear of the conversation, including bubble tails. */
