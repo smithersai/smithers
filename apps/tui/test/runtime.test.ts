@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test"
+import * as CellPlugin from "@smthrs/agent/CellPlugin"
+import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import { Effect } from "effect"
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -91,31 +93,53 @@ it("registers real catalog flows and validates before publishing without invokin
   expect(published).toHaveLength(1)
 })
 
-it("exposes flow.list and flow.run only with a flows port, and returns the run receipt at once", async () => {
+it("registers the Smithers plugin on every turn; list, run and inspect only with a flows port", async () => {
+  const names = async (ports?: Runtime.Ports) => {
+    const kernel = await Effect.runPromise(CellPlugin.make(Runtime.plugins(ports)))
+    const bindings = await Effect.runPromise(CellPlugin.flows(kernel.plugins, []))
+    return bindings.map((binding) => binding.descriptor.name)
+  }
+  expect(await names()).toEqual(["smithers.guide"])
+  expect(await names({ publish: () => {} })).toEqual(["smithers.guide"])
   const requests: Array<unknown> = []
-  const bindings = await Effect.runPromise(Runtime.source({
+  const ports: Runtime.Ports = {
     publish: () => {},
     flows: {
       list: () => [{ name: "review", description: "Review a change" }],
       run: (request) => {
         requests.push(request)
         return { id: request.id, status: "requested" }
-      }
+      },
+      inspect: (id) => ({ id, status: "running" })
     }
-  }).bindings())
-  expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["ui.publish", "flow.list", "flow.run"])
-  const run = bindings.find((binding) => binding.descriptor.name === "flow.run")!
+  }
+  expect(await names(ports)).toEqual(["smithers.guide", "smithers.flows", "smithers.run", "smithers.inspect"])
+  const kernel = await Effect.runPromise(CellPlugin.make(Runtime.plugins(ports)))
+  const bindings = await Effect.runPromise(CellPlugin.flows(kernel.plugins, []))
+  const run = bindings.find((binding) => binding.descriptor.name === "smithers.run")!
   const call = (input: unknown) => run.run({ input } as Parameters<typeof run.run>[0])
-  const result = await Effect.runPromise(call({ id: "r1", flow: "review", input: { title: "x" } }))
-  expect(result).toMatchObject({ outcome: "success", value: { id: "r1", status: "requested" } })
+  expect(await Effect.runPromise(call({ id: "r1", flow: "review", input: { title: "x" } }))).toMatchObject({
+    outcome: "success",
+    value: { id: "r1", status: "requested" }
+  })
   expect(requests).toEqual([{ id: "r1", flow: "review", input: { title: "x" } }])
   expect((await Effect.runPromise(call({ id: "r2" }))).outcome).toBe("failure")
-  const list = bindings.find((binding) => binding.descriptor.name === "flow.list")!
-  expect(await Effect.runPromise(list.run({ input: {} } as Parameters<typeof list.run>[0]))).toMatchObject({
-    outcome: "success",
-    value: [{ name: "review", description: "Review a change" }]
-  })
+  // The runtime source no longer carries its own copy of the flow bindings.
+  const own = await Effect.runPromise(Runtime.source(ports).bindings())
+  expect(own.map((binding) => binding.descriptor.name)).toEqual(["ui.publish"])
+  expect(Runtime.coordinatorTeaching).toContain("smithers.run")
+  expect(Runtime.coordinatorTeaching).not.toContain("flow.run")
 })
+
+it("teaches only smthrs verbs the real CLI lists", () => {
+  const cli = join(import.meta.dir, "..", "..", "..", "packages", "smithers", "bin", "smithers.mjs")
+  const manifest = Bun.spawnSync(["node", cli, "--llms"], { stdout: "pipe", stderr: "pipe" }).stdout.toString()
+  expect(manifest).toContain("smthrs flow start")
+  for (const fact of SmithersPlugin.knowledge.cli) {
+    const verb = fact.name.replace(/ <.*$/, "")
+    expect(manifest).toContain(`\`${verb}`)
+  }
+}, 60_000)
 
 it("accepts only named models in the delegate flow", async () => {
   const requests: Array<unknown> = []

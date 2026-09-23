@@ -80,7 +80,7 @@ Edits, shell commands, and network calls wait for **y**/**n**;
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
-`/grep [text]`, `/ui [id]`, `/flows`, `/flow <name> [json|key=value]`, `/retry <id>`, `/stop <id>`,
+`/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/retry <id>`, `/stop <id>`,
 `/hotkeys`, `/quit`. After `/model `, `/thinking ` and `/flow ` the menu completes the argument, and the
 `/` menu lists the directory's flows.
 
@@ -175,8 +175,8 @@ require running work to finish or be stopped first.
 
 `/flows` lists the file flows in `<cwd>/flows/<name>/flow.ts` (a `Flow.make`
 default export) with their descriptions; Enter runs one. `/flow <name>` takes a
-JSON object or `key=value` arguments, as `smthrs up` does. A run starts in its
-own tab and runs through the same native control host as `smthrs up`: plan,
+JSON object or `key=value` arguments. A run starts in its
+own tab and runs through the same native control host as `smthrs flow start`: plan,
 approve for this run, run, watch. Missing required input opens a form built
 from the payload schema once the composer is empty and no approval is pending;
 Esc, Ctrl+K, Ctrl+S and the tab keys close it and leave the run parked. A flow whose envelope grants every capability (`*`)
@@ -188,8 +188,13 @@ flow modules and opens `<cwd>/.flows` (the store `smthrs runs` reads), so an
 edited `flow.ts` needs a restart. Markdown flows need an agent delegate and are
 refused. Do not run `smthrs` executors in the same directory at the same time.
 Restarting marks unfinished runs interrupted; retry resumes the durable run.
-The coordinator has `flow.list` and `flow.run` (model-invocable flows only);
-`flow.run` returns a `requested` receipt at once.
+`/smithers` opens one tab with every run, newest first, and the discovered flows.
+
+Every turn runs with `SmithersPlugin` from `@smthrs/agent`: the system prompt
+names the key packages and `smthrs` verbs, and `smithers.guide` returns the
+details. The coordinator also gets `smithers.flows`, `smithers.run` and
+`smithers.inspect` over the same runs (model-invocable flows only);
+`smithers.run` returns a `requested` receipt at once.
 
 ## Tests
 

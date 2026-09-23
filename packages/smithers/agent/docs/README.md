@@ -107,24 +107,25 @@ composition: the cell contract, the controller, and the sandbox are
 The root entry point exports these namespaces, and each is also importable
 from `@smthrs/agent/<Module>`:
 
-| Namespace                                      | What it is                                                                                                         |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Agent`                                        | The agent: one service whose `run` executes one whole cell loop and returns its event stream.                      |
-| `AgentSession`                                 | The production `ControlExecutor`: the agent as one durable control-plane run.                                      |
-| `AgentAction`                                  | A model-backed step: an ordinary action with the agent loop as its shipped implementation.                         |
-| `Seat`, `SeatResolver`                         | The declared model string and the credentialed seam that resolves it into a live model.                            |
-| `QuotaPolicy`                                  | Classifies a provider refusal as a wait with a deadline, so a run parks instead of failing.                        |
-| `Budget`                                       | Accumulates what a run spends across its model calls and refuses past the approved ceiling.                        |
-| `EventSink`                                    | An optional tap that receives each agent event while a step runs.                                                  |
-| `StandardFlows`                                | The built-in capabilities as flows: filesystem, shell, tests, memory, durable wait, and approval.                  |
-| `ChildFlows`, `EngineChildren`                 | Detached child agents: the `agent/spawn`, `agent/send`, and `agent/await` flows plus the durable port behind them. |
-| `CellPlugin`                                   | The cell hooks of the shared plugin kernel: registry, flows, and model-request waterfalls.                         |
-| `PromoteFlows`, `FlowStore`                    | Saving the script a run wrote as a discoverable flow, and the store its files land in.                             |
-| `FlowEngineLike`                               | The harness engine port implemented on the durable engine from [`@smthrs/engine`](/api/engine).                    |
-| `Checkpointed`                                 | Runs one cell call against a pinned tree instead of the live one.                                                  |
-| `WorkspaceSandbox`, `InMemoryWorkspaceSandbox` | The workspace transaction contract and its in-memory implementation.                                               |
-| `WorkspaceObservation`                         | Measures the workspace around a frame, so mutation accounting is a fact about the tree.                            |
-| `MemorySnapshotRecorder`                       | Durable memory snapshots through the engine port.                                                                  |
+| Namespace                                      | What it is                                                                                                          |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Agent`                                        | The agent: one service whose `run` executes one whole cell loop and returns its event stream.                       |
+| `AgentSession`                                 | The production `ControlExecutor`: the agent as one durable control-plane run.                                       |
+| `AgentAction`                                  | A model-backed step: an ordinary action with the agent loop as its shipped implementation.                          |
+| `Seat`, `SeatResolver`                         | The declared model string and the credentialed seam that resolves it into a live model.                             |
+| `QuotaPolicy`                                  | Classifies a provider refusal as a wait with a deadline, so a run parks instead of failing.                         |
+| `Budget`                                       | Accumulates what a run spends across its model calls and refuses past the approved ceiling.                         |
+| `EventSink`                                    | An optional tap that receives each agent event while a step runs.                                                   |
+| `StandardFlows`                                | The built-in capabilities as flows: filesystem, shell, tests, memory, durable wait, and approval.                   |
+| `ChildFlows`, `EngineChildren`                 | Detached child agents: the `agent/spawn`, `agent/send`, and `agent/await` flows plus the durable port behind them.  |
+| `CellPlugin`                                   | The cell hooks of the shared plugin kernel: registry, flows, and model-request waterfalls.                          |
+| `SmithersPlugin`                               | Teaches an agent Smithers: package and CLI facts plus `smithers.*` flows for listing, running, and inspecting runs. |
+| `PromoteFlows`, `FlowStore`                    | Saving the script a run wrote as a discoverable flow, and the store its files land in.                              |
+| `FlowEngineLike`                               | The harness engine port implemented on the durable engine from [`@smthrs/engine`](/api/engine).                     |
+| `Checkpointed`                                 | Runs one cell call against a pinned tree instead of the live one.                                                   |
+| `WorkspaceSandbox`, `InMemoryWorkspaceSandbox` | The workspace transaction contract and its in-memory implementation.                                                |
+| `WorkspaceObservation`                         | Measures the workspace around a frame, so mutation accounting is a fact about the tree.                             |
+| `MemorySnapshotRecorder`                       | Durable memory snapshots through the engine port.                                                                   |
 
 Every export of every namespace, with signatures and errors, is on the
 [API reference](./api.md).

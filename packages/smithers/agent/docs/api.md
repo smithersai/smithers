@@ -3,7 +3,7 @@ title: "API reference"
 description: "Every public export of @smthrs/agent: the Agent service, the AgentSession and AgentAction adapters, seats, the quota and budget policies, the capability catalog, and the durable engine port."
 ---
 
-`@smthrs/agent` exports twenty modules from its root entry point, and each is
+`@smthrs/agent` exports twenty-two modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
 
 ```ts
@@ -1556,6 +1556,56 @@ Computes the order-sensitive identity of a resolved host composition, as
 `flows/cell-composition/v1:<digest>`. Plugin and layer order can change request
 and registry semantics, so the ordered declarations and resolved config are
 folded into one digest inside the otherwise set-like layer material.
+
+## SmithersPlugin
+
+A cell plugin that teaches an agent Smithers itself. It uses the two
+`CellPlugin` hooks above and adds no `ctx` global: a cell reaches its flows
+with `ctx.call`, like every other capability.
+
+```ts
+import { SmithersPlugin } from "@smthrs/agent"
+
+agent.run({ ...options, plugins: [SmithersPlugin.make(ports)] })
+```
+
+| Flow               | Needs `ports` | What it does                                                                       |
+| ------------------ | ------------- | ---------------------------------------------------------------------------------- |
+| `smithers.guide`   | no            | Returns `knowledge` for `{ topic?: "packages" \| "cli" \| "authoring" \| "all" }`. |
+| `smithers.flows`   | yes           | Lists the project flows a model may start.                                         |
+| `smithers.run`     | yes           | Requests a run `{ id, flow, input? }` and returns its receipt at once.             |
+| `smithers.inspect` | yes           | Reads one run's status, steps, and result without waiting.                         |
+
+### SmithersPlugin.make
+
+```ts
+const make: (ports?: Ports) => FlowsPlugin<FlowsHooks>
+```
+
+The plugin, named `smithers`, applied to the harness target. `cellFlows`
+appends the flows above; a name already in the catalog fails catalog assembly
+instead of being shadowed. `cellModelRequest` appends `brief` to the system
+prompt once.
+
+### SmithersPlugin.Ports
+
+```ts
+interface Ports {
+  readonly list: () => unknown
+  readonly run: (request: { id: string; flow: string; input?: { [key: string]: Schema.Json } }) => unknown
+  readonly inspect: (id: string) => unknown
+}
+```
+
+The host's own run path. Each port returns data or a promise of it; the flow
+returns it as plain JSON. A thrown error becomes the call's failure text.
+
+### SmithersPlugin.knowledge, SmithersPlugin.brief, SmithersPlugin.guide
+
+`knowledge` holds `packages`, `cli`, and `authoring` facts, each
+`{ name, about }`. `brief` is the short system teaching. `guide` is the
+`smithers.guide` binding; `flows(ports?)` returns every binding `make`
+contributes. `Topic` is the guide's topic schema and `name` is `"smithers"`.
 
 ## PromoteFlows
 

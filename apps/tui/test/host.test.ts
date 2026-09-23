@@ -10,8 +10,8 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-/** A recorded model that answers once with `ctx.done("ok")`. */
-const doneReplay = (directory: string): string => {
+/** A recorded model that answers once with `cell` (default `ctx.done("ok")`). */
+const doneReplay = (directory: string, cell = "ctx.done(\"ok\")"): string => {
   const file = join(directory, "done.jsonl")
   const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
   writeFileSync(
@@ -19,7 +19,7 @@ const doneReplay = (directory: string): string => {
     [
       JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
       delta({ type: "text-start", id: "cell" }),
-      delta({ type: "text-delta", id: "cell", text: "```cell\nctx.done(\"ok\")\n```" }),
+      delta({ type: "text-delta", id: "cell", text: `\`\`\`cell\n${cell}\n\`\`\`` }),
       delta({ type: "text-end", id: "cell" }),
       JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
     ].join("\n")
@@ -64,5 +64,52 @@ describe("Host.run workspace observation", () => {
     expect(outcome).toEqual({ _tag: "done", answer: "ok" })
     expect(basis(events).length).toBeGreaterThan(0)
     expect(new Set(basis(events))).toEqual(new Set(["observed"]))
+  })
+})
+
+describe("Host.run Smithers plugin", () => {
+  const run = async (role: "coordinator" | "worker", cell: string, runtime: NonNullable<Host.TurnInput["runtime"]>) => {
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-plugin-"))
+    roots.push(cwd)
+    const host = Host.make({ cwd, environment: {} })
+    try {
+      return await host.run({ prompt: "go", role, runtime, seat: `replay:${doneReplay(cwd, cell)}`, history: [], onEvent: () => {} })
+        .done
+    } finally {
+      await host.dispose()
+    }
+  }
+
+  test("a coordinator cell lists, runs and inspects flows through ctx.call on the host's ports", async () => {
+    const requests: Array<unknown> = []
+    const outcome = await run(
+      "coordinator",
+      `const g = await ctx.call("smithers.guide", { topic: "cli" }); const f = await ctx.call("smithers.flows", {}); const r = await ctx.call("smithers.run", { id: "r1", flow: "review" }); const i = await ctx.call("smithers.inspect", { id: "r1" }); ctx.done(JSON.stringify({ cli: g.cli.length, f, r, i }))`,
+      {
+        publish: () => {},
+        flows: {
+          list: () => [{ name: "review", description: "Review" }],
+          run: (request) => (requests.push(request), { id: request.id, status: "requested" }),
+          inspect: (id) => ({ id, status: "running" })
+        }
+      }
+    )
+    expect(outcome._tag).toBe("done")
+    expect(JSON.parse((outcome as { answer: string }).answer)).toEqual({
+      cli: 16,
+      f: [{ name: "review", description: "Review" }],
+      r: { id: "r1", status: "requested" },
+      i: { id: "r1", status: "running" }
+    })
+    expect(requests).toEqual([{ id: "r1", flow: "review" }])
+  })
+
+  test("a worker cell reaches smithers.guide", async () => {
+    const outcome = await run(
+      "worker",
+      `const g = await ctx.call("smithers.guide", {}); ctx.done(Object.keys(g).join(","))`,
+      { publish: () => {} }
+    )
+    expect(outcome).toEqual({ _tag: "done", answer: "packages,cli,authoring" })
   })
 })

@@ -244,6 +244,7 @@ export const make = (options: {
           ? {}
           : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: input.thinking ?? "low" }) }),
         registry,
+        plugins: Runtime.plugins(input.runtime),
         // `rg` searches this repository in seconds; the in-process walk took
         // longer than grep's 120 s ceiling. It stays the fallback without rg.
         flows: [

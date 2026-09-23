@@ -3,7 +3,7 @@
 This repository's own project flow directory and the inputs its migration and
 initialization flows read.
 
-`smthrs ls` discovers flows by walking `<project>/flows/**` for `flow.ts`,
+`smthrs flow list` discovers flows by walking `<project>/flows/**` for `flow.ts`,
 `flow.mdx`, or `SKILL.md`, parsing frontmatter and module metadata without
 importing a module or reading a prompt body. Every directory here is a flow
 named by its path, so `flows/create-flow/scaffold/flow.mdx` is the flow

@@ -54,6 +54,7 @@
     "./QuotaPolicy": "./src/QuotaPolicy.ts",
     "./Seat": "./src/Seat.ts",
     "./SeatResolver": "./src/SeatResolver.ts",
+    "./SmithersPlugin": "./src/SmithersPlugin.ts",
     "./StandardFlows": "./src/StandardFlows.ts",
     "./WorkspaceObservation": "./src/WorkspaceObservation.ts",
     "./WorkspaceSandbox": "./src/WorkspaceSandbox.ts",
@@ -257,6 +258,16 @@
         "require": {
           "types": "./dist/cjs/SeatResolver.d.ts",
           "default": "./dist/cjs/SeatResolver.js"
+        }
+      },
+      "./SmithersPlugin": {
+        "import": {
+          "types": "./dist/esm/SmithersPlugin.d.ts",
+          "default": "./dist/esm/SmithersPlugin.js"
+        },
+        "require": {
+          "types": "./dist/cjs/SmithersPlugin.d.ts",
+          "default": "./dist/cjs/SmithersPlugin.js"
         }
       },
       "./StandardFlows": {

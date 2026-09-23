@@ -48,6 +48,12 @@ export * as SeatResolver from "./SeatResolver.ts"
 export * as CellPlugin from "./CellPlugin.ts"
 
 /**
+ * @category plugins
+ * @since 1.0.0-rc.1
+ */
+export * as SmithersPlugin from "./SmithersPlugin.ts"
+
+/**
  * @category constructors
  * @since 0.1.0
  */

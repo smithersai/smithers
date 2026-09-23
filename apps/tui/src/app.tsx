@@ -29,6 +29,7 @@ import * as Search from "./search.ts"
 import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
+import * as Smithers from "./smithers.ts"
 import * as Summary from "./summary.ts"
 import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
@@ -321,6 +322,7 @@ export function App(props: AppProps) {
   const surfaces = [
     { id: "chat", title: "Chat" },
     { id: "summary", title: "Summary" },
+    ...(props.flows === undefined && flowRuns.length === 0 ? [] : [{ id: "smithers", title: "Smithers" }]),
     ...snapshot.tabs.map((tab) => ({
       id: `tab:${tab.id}`,
       title: `${
@@ -347,6 +349,8 @@ export function App(props: AppProps) {
   }
   const panel = surface === "summary"
     ? Summary.panel(transcript)
+    : surface === "smithers"
+    ? Smithers.panel(runs.listed(), flowRuns)
     : surface.startsWith("tab:")
     ? workspace.panel(surface.slice(4))
     : surface.startsWith("flow:")
@@ -553,7 +557,8 @@ export function App(props: AppProps) {
           flows: {
             list: () => runs.listed().filter((flow) => flow.modelInvocable),
             run: (request: { id: string; flow: string; input?: Record<string, unknown> }) =>
-              runs.request({ id: request.id, flow: request.flow, input: request.input ?? {}, by: "agent" })
+              runs.request({ id: request.id, flow: request.flow, input: request.input ?? {}, by: "agent" }),
+            inspect: runs.read
           }
         })
       },
@@ -744,6 +749,12 @@ export function App(props: AppProps) {
     switch (verb) {
       case "summary":
         setSurface("summary")
+        setPanelFocus(true)
+        setNavigation(Panels.initial())
+        return true
+      case "smithers":
+        runs.refresh()
+        setSurface("smithers")
         setPanelFocus(true)
         setNavigation(Panels.initial())
         return true

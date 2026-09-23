@@ -1,4 +1,5 @@
 /** Agent-facing runtime UI and delegation use the harness's existing flow catalog. */
+import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import { Flow } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Node } from "@smthrs/plan"
@@ -11,11 +12,11 @@ export interface Ports {
   readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel }) => unknown
   readonly read?: (id: string) => unknown
   readonly list?: () => unknown
-  readonly flows?: {
-    readonly list: () => unknown
-    readonly run: (request: { id: string; flow: string; input?: { readonly [key: string]: Schema.Json } }) => unknown
-  }
+  /** The user's flow runs, served to cells by the Smithers plugin. */
+  readonly flows?: SmithersPlugin.Ports
 }
+/** The plugins every turn runs with: Smithers, with the flow ports when the role has them. */
+export const plugins = (ports?: Ports) => [SmithersPlugin.make(ports?.flows)]
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))
 const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown, never>>(
   name: string,
@@ -58,24 +59,6 @@ export const source = (ports: Ports): FlowBinding.Source =>
         return { id: panel.id, status: "published" }
       }
     ),
-    ...(ports.flows === undefined ? [] : [
-      bind(
-        "flow.list",
-        "List the user's flows in this directory: name and description.",
-        Schema.Struct({}),
-        () => ports.flows!.list()
-      ),
-      bind(
-        "flow.run",
-        "Request a run of the user's flow in a background tab and return immediately. Reuse id to deduplicate. Requested is not completed. Read with tab.read.",
-        Schema.Struct({
-          id: short,
-          flow: short,
-          input: Schema.optional(Schema.Record(Schema.String, Schema.Json))
-        }),
-        (input) => ports.flows!.run(input)
-      )
-    ]),
     ...(ports.delegate === undefined ? [] : [
       bind(
         "agent.delegate",
@@ -103,4 +86,4 @@ export const source = (ports: Ports): FlowBinding.Source =>
     ])
   ])
 export const coordinatorTeaching =
-  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (flow.list) does the task, request it with flow.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Never wait or poll for a worker. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested receipt means only requested: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
+  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Never wait or poll for a worker. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested receipt means only requested: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `

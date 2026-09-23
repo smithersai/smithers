@@ -72,6 +72,7 @@ export const commands: ReadonlyArray<Command> = [
   { name: "filter", description: "Show or hide workers and kinds of rows" },
   { name: "grep", args: "[text]", description: "Show only rows containing text" },
   { name: "ui", args: "[id]", description: "Open a custom view" },
+  { name: "smithers", description: "Flows and runs" },
   { name: "flows", description: "Run a flow" },
   { name: "flow", args: "<name> [json|key=value]", description: "Run a flow" },
   { name: "retry", args: "<id>", description: "Retry a stopped worker or flow" },
