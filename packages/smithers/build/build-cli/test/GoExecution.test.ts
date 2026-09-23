@@ -393,7 +393,9 @@ export const Workspace = S.Workspace("cgo", { repository: "git+https://example.t
     root,
     "PACKAGE.ts",
     `import { Smithers as S } from "@smthrs/targets"
-const binary = S.Go.Binary({ pkg: "./native", out: "//build/native${process.platform === "win32" ? ".exe" : ""}"${compiler ? `, env: { CC: ${JSON.stringify(compiler)}, SDKROOT: ${JSON.stringify(sdkRoot)} }` : ""} })
+const binary = S.Go.Binary({ pkg: "./native", out: "//build/native${process.platform === "win32" ? ".exe" : ""}"${
+      compiler ? `, env: { CC: ${JSON.stringify(compiler)}, SDKROOT: ${JSON.stringify(sdkRoot)} }` : ""
+    } })
 const test = S.Shell.Test({ bin: binary })
 export const Package = S.Package({ targets: { binary, test } })
 `
