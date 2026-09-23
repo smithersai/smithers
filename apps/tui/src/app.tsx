@@ -710,6 +710,10 @@ export function App(props: AppProps) {
     setStatus("Forked to new session")
   }, [adopt, setText, setStatus, props.host.cwd])
 
+  /** `/new`, `/resume` and `/fork` wait for a turn, a `!cmd`, workers and flow runs, from any door. */
+  const occupied = () =>
+    live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy
+
   const command = useCallback((text: string): boolean => {
     const parsed = Editor.parseCommand(text)
     if (parsed === undefined) return false
@@ -803,7 +807,7 @@ export function App(props: AppProps) {
         return true
       }
       case "new":
-        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
+        if (occupied()) {
           setStatus("Stop running work first", "warning")
         } else newSession()
         return true
@@ -811,7 +815,7 @@ export function App(props: AppProps) {
         setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
         return true
       case "fork": {
-        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
+        if (occupied()) {
           setStatus("Stop running work first", "warning")
           return true
         }
@@ -943,9 +947,8 @@ export function App(props: AppProps) {
     switchSeat(next.seat)
   }, [props.models, switchSeat, setStatus])
 
-  /** `/new` and `/resume` wait for running work, from any door. */
   const resumeGuarded = (file: string) => {
-    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy && !runs.busy) openSession(file)
+    if (!occupied()) openSession(file)
     else setStatus("Stop running work first", "warning")
   }
 
@@ -967,7 +970,7 @@ export function App(props: AppProps) {
     if (open.kind === "fork") {
       const turn = open.turns.find((each) => String(each.index) === value)
       if (turn === undefined) return
-      if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy || runs.busy) {
+      if (occupied()) {
         return setStatus("Stop running work first", "warning")
       }
       return forkSession(turn)
@@ -1594,7 +1597,7 @@ export function App(props: AppProps) {
             : picker.kind === "palette"
             ? parsedPalette?.mode === "text" && search?.truncated === true ? `Search · first ${Search.limit}` : "Search"
             : picker.kind === "fork"
-            ? "Fork from Message"
+            ? "Fork from message"
             : picker.kind === "undo"
             ? `Undo ${picker.target.paths.length === 1 ? picker.target.paths[0] : `${picker.target.paths.length} files`}?`
             : "Resume session"}

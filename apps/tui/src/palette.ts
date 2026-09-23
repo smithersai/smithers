@@ -75,7 +75,7 @@ export const sessionRows = (
   Fuzzy.filter(sessions, query, (session) => `${session.name ?? ""} ${session.firstPrompt}`).map((session) => ({
     key: session.file,
     label: (session.name ?? session.firstPrompt).split("\n")[0]!.slice(0, 60),
-    detail: View.ago(session.modified, now),
+    detail: session.parent === undefined ? View.ago(session.modified, now) : `fork · ${View.ago(session.modified, now)}`,
     file: session.file
   }))
 

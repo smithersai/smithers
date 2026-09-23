@@ -57,6 +57,8 @@ export interface Summary {
   readonly name: string | undefined
   readonly firstPrompt: string
   readonly modified: number
+  /** Set on a fork: the session file it was forked from. */
+  readonly parent?: string
 }
 
 export const root = (): string =>
@@ -140,8 +142,10 @@ export const list = (cwd: string): ReadonlyArray<Summary> => {
       const records = load(file)
       const named = records.findLast((record) => record.type === "name")
       const first = records.find((record) => record.type === "user")
+      const header = records[0]
       return {
         file,
+        ...(header?.type === "session" && header.parent !== undefined ? { parent: header.parent } : {}),
         name: named?.type === "name" ? named.name : undefined,
         firstPrompt: first?.type === "user" ? first.text : basename(file),
         modified: statSync(file).mtimeMs
@@ -181,7 +185,15 @@ export const fork = (source: string, cwd: string, turn: Turn): Fork => {
   const records = load(source)
   const at = records[turn.index]
   if (at?.type !== "user" || at.steered === true || at.at !== turn.at || at.text !== turn.text) return { _tag: "Stale" }
-  const kept = records.slice(0, turn.index).filter((record) => record.type !== "session")
+  const before: ReadonlyArray<Record> = records.slice(0, turn.index).filter((record) => record.type !== "session")
+  // A worker started before the fork point may have settled after it: carry its last record, not a stale `requested`.
+  type TabRecord = Extract<Record, { readonly type: "tab" }>
+  const key = (tab: Workspace.Tab) => `${tab.id}\0${tab.file}`
+  const last = new Map<string, TabRecord>()
+  for (const record of records) if (record.type === "tab") last.set(key(record.tab), record)
+  const settled = new Set<TabRecord>()
+  for (const record of before) if (record.type === "tab") settled.add(last.get(key(record.tab))!)
+  const kept = [...before, ...[...settled].filter((record) => !before.includes(record))]
   const writer = create(cwd, "chat", { parent: source, seed: kept })
   return { _tag: "Forked", writer, records: kept, text: at.text }
 }

@@ -400,7 +400,7 @@ describe("fork", () => {
     await tui.until((screen) => screen.includes("A2"), 10_000, "restored session")
     await tui.type("/fork")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("Fork from Message"), 5_000, "fork dialog")
+    await tui.until((screen) => screen.includes("Fork from message"), 5_000, "fork dialog")
     await tui.type("second")
     await tui.press(key.enter)
     await tui.until(
@@ -425,7 +425,38 @@ describe("fork", () => {
     await tui.type("/fork")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
-    expect(tui.screen()).not.toContain("Fork from Message")
+    expect(tui.screen()).not.toContain("Fork from message")
+  }, 60_000)
+
+  it("refuses while a shell command runs", async () => {
+    const { tui } = await start()
+    await tui.type("!sleep 30")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Running… (esc to cancel)"), 5_000, "running shell")
+    await tui.type("/fork")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
+    expect(tui.screen()).not.toContain("Fork from message")
+  }, 60_000)
+
+  it("refuses while a worker runs", async () => {
+    tui = await Tui.start({
+      cwd: repository(),
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: process.env.HOME ?? "",
+        SMITHERS_TUI_SESSION_DIR: mkdtempSync(join(tmpdir(), "tui-background-"))
+      }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.type("investigate")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Investigation · running") && !screen.includes("esc interrupt"), 5_000, "worker")
+    await tui.type("/fork")
+    await tui.press(key.enter)
+    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
+    expect(tui.screen()).not.toContain("Fork from message")
   }, 60_000)
 
   it("has nothing to fork in a fresh session", async () => {
