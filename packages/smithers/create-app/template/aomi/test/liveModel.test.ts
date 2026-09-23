@@ -14,7 +14,6 @@ import * as Stream from "effect/Stream"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { inspect } from "node:util"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { liveModel } from "./support/liveModel.ts"
 
@@ -48,6 +47,6 @@ describe("liveModel", () => {
     const model = liveModel("openai:gpt-5")
     const failure = await Effect.runPromise(Effect.flip(Stream.runCollect(model.stream(request))))
 
-    expect(inspect(failure)).toContain(`No ChatGPT credentials at ${join(home, "auth.json")}`)
+    expect(failure.message).toContain(`No ChatGPT credentials at ${join(home, "auth.json")}`)
   })
 })
