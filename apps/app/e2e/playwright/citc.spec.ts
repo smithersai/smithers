@@ -1,10 +1,11 @@
+import { fillComposer } from "./composer"
 import { expect, test } from "@playwright/test"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 /*
  * Lane citc T1 (docs/workbench-lanes/citc.md "Exit", ADR 0002): against a
  * fake cloud upstream the app opens a workspace, the card streams
- * starting→running (the seam's settle watch), the Snapshots facet lists what
+ * starting→running (the seam's settle watch), the workspace facets show what
  * the upstream answered, and a degraded sign-in refuses a workspace act with
  * the exact "sign in again to enable" wording.
  *
@@ -43,24 +44,22 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-test("T1: /workspace.open renders the card, streams starting→running, and the Snapshots facet lists", async ({ page }) => {
+test("T1: /workspace.open renders the card, streams starting→running, and exposes its supported facets", async ({ page }) => {
   await installCloudFixture(page)
   let polls = 0
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/workspaces(\\?.*)?$`), (route) => {
+  await page.route(new RegExp(`/api/repos/${REPO}/workspaces(\\?.*)?$`), (route) => {
     if (route.request().method() === "POST") return route.fulfill(json(WS("pending", "allocating"), 201))
     return route.fulfill(json([WS("running")]))
   })
-  await page.route(`**/api/cloud/api/repos/${REPO}/workspaces/ws-1`, (route) => {
+  await page.route(`**/api/repos/${REPO}/workspaces/ws-1`, (route) => {
     polls += 1
     return route.fulfill(json(polls < 2 ? WS("starting", "boot") : WS("running")))
   })
-  await page.route(`**/api/cloud/api/repos/${REPO}/workspace-snapshots`, (route) =>
-    route.fulfill(json([{ id: "snap-1", name: "golden", workspace_id: "ws-1", created_at: "2026-08-01T00:00:00Z" }])))
-  await page.route(`**/api/cloud/api/repos/${REPO}/workspace/sessions`, (route) =>
+  await page.route(`**/api/repos/${REPO}/workspace/sessions`, (route) =>
     route.fulfill(json([])))
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/workspace.open main smithersai/smithers")
+  await fillComposer(page, "/workspace.open main smithersai/smithers")
   await page.getByTestId("composer-send").click()
 
   // The card: header names the repo, the bookmark, and the BOOKMARK's head — labeled, never a workspace head.
@@ -75,21 +74,18 @@ test("T1: /workspace.open renders the card, streams starting→running, and the 
   await expect(card).toContainText(/Pending|Starting/)
   await expect(card).toContainText("Running", { timeout: 20_000 })
 
-  // The Snapshots facet lists what the upstream answered, with its acts.
-  await card.getByRole("tab", { name: "Snapshots" }).click()
-  await expect(card).toContainText("golden")
-  await expect(card.getByRole("button", { name: "Fork a workspace from golden" })).toBeVisible()
-  await expect(card.getByRole("button", { name: "Delete snapshot golden" })).toBeVisible()
+  // This host offers the current workspace facets and lifecycle controls.
+  await expect(card.getByRole("tab")).toHaveText(["Terminal", "Files", "Services", "Egress"])
+  await expect(card.getByRole("button", { name: "Suspend", exact: true })).toBeVisible()
+  await expect(card.getByRole("button", { name: "Delete", exact: true })).toBeVisible()
 
-  // The tree row: the workspace copy nested under its repository, name · state.
-  await expect(page.getByTestId("copy-workspace:ws-1")).toContainText("review · running")
 })
 
 test("T1: a degraded sign-in refuses a workspace act with the exact enable wording", async ({ page }) => {
   await installCloudFixture(page, { degraded: true })
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/workspace.list")
+  await fillComposer(page, "/workspace.list")
   await page.getByTestId("composer-send").click()
 
   const toast = page.locator(".toast-stack .toast-detail")

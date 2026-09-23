@@ -21,12 +21,12 @@ test("cloud fixture uses the shared local contracts and current cloud list envel
   expect(CloudSessionSchema.parse((await read(page, "/api/cloud-auth/session")).body).state).toBe("signed-in")
   expect((await read(page, "/api/auth/session")).body).toMatchObject({ login: "codeplanesmithers", admin: false })
   for (const query of ["", "?limit=100&cursor=next"]) {
-    expect((await read(page, `/api/cloud/api/user/repos${query}`)).body).toEqual([
+    expect((await read(page, `/api/user/repos${query}`)).body).toEqual([
       expect.objectContaining({ full_name: "smithersai/smithers", owner_type: "Organization" })
     ])
-    expect((await read(page, `/api/cloud/api/user/orgs${query}`)).body).toEqual([{ name: "smithersai" }])
-    expect((await read(page, `/api/cloud/api/user/workspaces${query}`)).body).toEqual([])
-    expect((await read(page, `/api/cloud/api/repos/smithersai/smithers/bookmarks${query}`)).body).toEqual({
+    expect((await read(page, `/api/user/orgs${query}`)).body).toEqual([{ name: "smithersai" }])
+    expect((await read(page, `/api/user/workspaces${query}`)).body).toEqual([])
+    expect((await read(page, `/api/repos/smithersai/smithers/bookmarks${query}`)).body).toEqual({
       items: [{ name: "main", target_change_id: "kxyzqrpv", target_commit_id: "c0ffee123456", is_tracking_remote: false }],
       next_cursor: ""
     })
@@ -51,9 +51,9 @@ test("cloud fixture overrides stay isolated and match repository pathnames liter
   expect((await read(page, "/api/repos")).body).toEqual({ repos: [localRepo] })
   expect((await read(page, "/api/bootstrap")).body.capabilities).toEqual(["cloud"])
   expect((await read(page, "/api/cloud-auth/session")).body.scopes).toBe("degraded")
-  expect((await read(page, "/api/cloud/api/user/orgs")).body).toEqual([])
-  expect((await read(page, "/api/cloud/api/user/workspaces?limit=100")).body).toEqual([workspace])
-  const path = "/api/cloud/api/repos/visitor/demo.v2/bookmarks"
+  expect((await read(page, "/api/user/orgs")).body).toEqual([])
+  expect((await read(page, "/api/user/workspaces?limit=100")).body).toEqual([workspace])
+  const path = "/api/repos/visitor/demo.v2/bookmarks"
   expect((await read(page, `${path}?limit=1`)).body.items).toEqual([
     { name: "review", target_change_id: "change-9", target_commit_id: "commit-9", is_tracking_remote: true }
   ])
@@ -66,6 +66,6 @@ test("cloud fixture overrides stay isolated and match repository pathnames liter
   await other.route("**/fixture", (route) => route.fulfill({ contentType: "text/html", body: "<title>Other fixture</title>" }))
   await other.goto("/fixture")
   expect((await read(other, "/api/cloud-auth/session")).body.scopes).toBeUndefined()
-  expect((await read(other, "/api/cloud/api/user/workspaces")).body).toEqual([])
-  expect((await read(other, "/api/cloud/api/user/repos")).body[0].full_name).toBe("smithersai/smithers")
+  expect((await read(other, "/api/user/workspaces")).body).toEqual([])
+  expect((await read(other, "/api/user/repos")).body[0].full_name).toBe("smithersai/smithers")
 })

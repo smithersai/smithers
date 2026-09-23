@@ -1,3 +1,4 @@
+import { fillComposer } from "./composer"
 import { expect, test } from "@playwright/test"
 import type { Page } from "@playwright/test"
 import type { Repo } from "@smthrs/rpc/LocalApp"
@@ -62,8 +63,7 @@ test("T1: ~/smithers joins the one address space; /files.read's card header show
 
   // /files.read renders the file card; its header carries the global address
   // and the change id the read was taken at.
-  await page.getByRole("button", { name: "Chat", exact: true }).click()
-  await page.getByTestId("composer-input").fill("/files.read README.md")
+  await fillComposer(page, "/files.read README.md")
   await page.getByTestId("composer-send").click()
   // The card is keyed by the local checkout's name; its header carries the global address.
   const card = page.getByTestId("card-file-smithers-README.md")

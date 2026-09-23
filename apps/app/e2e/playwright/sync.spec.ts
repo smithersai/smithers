@@ -16,9 +16,9 @@ const serve = async (page: Page): Promise<void> => {
 
   /* The import seam: the job starts cloning, then answers ready with its workspace. */
   let importPolls = 0
-  await page.route("**/api/cloud/api/github/import", (route) =>
+  await page.route("**/api/github/import", (route) =>
     route.fulfill(json({ importJobId: "job-1", status: "cloning", stage: "resolving", target_bookmark: "main" }, 202)))
-  await page.route("**/api/cloud/api/github/import/job-1", (route) => {
+  await page.route("**/api/github/import/job-1", (route) => {
     importPolls += 1
     return route.fulfill(json(importPolls < 2
       ? { importJobId: "job-1", status: "cloning", stage: "pushing_mirror", target_bookmark: "main" }
@@ -57,7 +57,7 @@ const runSlash = async (page: Page, command: string): Promise<void> => {
   await page.getByTestId("composer-send").click()
 }
 
-test("T1: /repos.import tracks the job to done with the workspace link", async ({ page }) => {
+test("T1: /repos.import tracks the job to done with the repository issues action", async ({ page }) => {
   await serve(page)
   await page.goto("/")
 
@@ -68,17 +68,20 @@ test("T1: /repos.import tracks the job to done with the workspace link", async (
 
   await expect(card).toContainText("done", { timeout: 20_000 })
   await expect(card).toContainText("smithersai/smithers")
-  await expect(card.getByRole("button", { name: /Open the workspace/ })).toBeVisible()
+  const issues = card.getByRole("button", { name: "Show issues", exact: true })
+  await expect(issues).toBeVisible()
+  await expect(issues).toHaveAttribute("data-flow", "issues.list")
+  await expect(issues).toHaveAttribute("data-flow-args", `open ${REPO}`)
 })
 
 test("CAP-004: unresolved import launch stays starting, leaves chat usable, and shows shared progress", async ({ page }) => {
   await installCloudFixture(page, { capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   let release: (() => void) | undefined
-  await page.route("**/api/cloud/api/github/import", async route => {
+  await page.route("**/api/github/import", async route => {
     await new Promise<void>(resolve => { release = resolve })
     await route.fulfill(json({ importJobId: "job-cap004", status: "cloning", stage: "resolving" }, 202))
   })
-  await page.route("**/api/cloud/api/github/import/job-cap004", route =>
+  await page.route("**/api/github/import/job-cap004", route =>
     route.fulfill(json({ importJobId: "job-cap004", status: "ready", stage: "provisioning_workspace" })))
   await page.goto("/")
   await runSlash(page, `/repos.import ${REPO}`)

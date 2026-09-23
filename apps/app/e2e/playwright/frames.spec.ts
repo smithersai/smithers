@@ -1,4 +1,5 @@
 import { expect,test,type Page } from "@playwright/test"
+import { installCloudFixture } from "./cloudFixture"
 
 /*
  * Durable frame contract: the same card node expands in chat, frame identity
@@ -12,7 +13,7 @@ const openWorkspaceChat = async (page: Page): Promise<void> => {
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   const chat = page.getByRole("button", { name: "Chat", exact: true })
   await expect(chat).toBeVisible()
-  const dismiss = page.getByRole("button", { name: "Dismiss recommended actions", exact: true })
+  const dismiss = page.getByRole("button", { name: "Dismiss", exact: true })
   if (await dismiss.isVisible()) await dismiss.click()
 }
 
@@ -144,6 +145,7 @@ test("open-in-tab returns the address bar to the root frame and Escape minimizes
 })
 
 test("a maximized Files card reveals pointer and keyboard file navigation with Back and visible failures", async ({ page }) => {
+  await installCloudFixture(page)
   await page.route("**/api/repos/smithersai/smithers/contents", route => route.fulfill({ json: [
     { name: "README.md", path: "README.md", type: "file" },
     { name: "missing.txt", path: "missing.txt", type: "file" }

@@ -1,3 +1,4 @@
+import { fillComposer } from "./composer"
 import { expect, test } from "@playwright/test"
 import { installCloudFixture } from "./cloudFixture"
 
@@ -34,8 +35,7 @@ for (const theme of ["light", "dark"] as const) test(`retained PR history recove
   })
   await page.goto("/")
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
-  await page.getByRole("button", { name: "Chat", exact: true }).click()
-  await page.getByTestId("composer-input").fill(`/prs.view 9 ${repo}`)
+  await fillComposer(page, `/prs.view 9 ${repo}`)
   await page.getByTestId("composer-send").click()
   const card = page.locator('[data-kind="pr"]')
   await expect(card).toContainText("Keep review history")

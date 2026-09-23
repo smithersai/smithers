@@ -78,14 +78,19 @@ export const installCloudFixture = async (page: Page, options: CloudFixtureOptio
   }))
   await respond("/api/bootstrap", bootstrap)
   await respond("/api/repos", localRepos)
-  await respond("/api/user", { id: 1, username: SCOPED_TEST_USER.login, is_admin: false })
+  await respond("/api/user", { id: 1, username: SCOPED_TEST_USER.login, is_admin: false,
+    ...(options.degraded === true ? { token_scopes: ["read:repository"] } : {}) })
+  await respond("/api/billing/balance", {
+    state: "ok", allowedToStartWork: true,
+    balance: { totalUsd: "500", lifetimeChargedUsd: "0", chargeCount: 0 }
+  })
   await respond("/api/auth/session", SCOPED_TEST_USER)
   await respond("/api/cloud-auth/session", session)
-  await respond("/api/cloud/api/user/repos", repos)
-  await respond("/api/cloud/api/user/orgs", options.orgs ?? [{ name: "smithersai" }])
-  await respond("/api/cloud/api/user/workspaces", options.workspaces ?? [])
+  await respond("/api/user/repos", repos)
+  await respond("/api/user/orgs", options.orgs ?? [{ name: "smithersai" }])
+  await respond("/api/user/workspaces", options.workspaces ?? [])
   for (const repo of repos) {
-    await respond(`/api/cloud/api/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/bookmarks`, {
+    await respond(`/api/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/bookmarks`, {
       items: options.bookmarks?.[repo.full_name] ?? bookmarks,
       next_cursor: ""
     } satisfies { readonly items: ReadonlyArray<CloudBookmark>; readonly next_cursor: string })

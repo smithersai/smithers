@@ -284,8 +284,8 @@ test("the release affordance is reachable at every viewport, and reads as a cont
 })
 
 test('first-sight help does not take keyboard focus', async ({ page }) => {
-  await page.goto('/?tutorial')
-  const dismiss = page.getByRole('button', { name: 'Dismiss recommended actions', exact: true })
+  await page.goto('/')
+  const dismiss = page.getByRole('button', { name: 'Dismiss', exact: true })
   await dismiss.focus()
   await expect(dismiss).toBeFocused()
   await expect(page.locator('.help-bubble')).toHaveCount(1)

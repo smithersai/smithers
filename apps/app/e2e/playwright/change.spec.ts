@@ -1,3 +1,4 @@
+import { fillComposer } from "./composer"
 import type { Page } from "@playwright/test"
 import { expect,test } from "@playwright/test"
 import { installCloudFixture } from "./cloudFixture.ts"
@@ -57,21 +58,21 @@ const serve = async (
 ): Promise<void> => {
   await installCloudFixture(page, { ...options, capabilities: ["agent", "identity", "cloud", "cloud.pat"] })
   /* The change's own routes. */
-  await page.route(`**/api/cloud/api/repos/${REPO}/changes/qupxosqw`, (route) => route.fulfill(json(CHANGE)))
-  await page.route(`**/api/cloud/api/repos/${REPO}/changes/qupxosqw/conflicts`, (route) => route.fulfill(json([])))
+  await page.route(`**/api/repos/${REPO}/changes/qupxosqw`, (route) => route.fulfill(json(CHANGE)))
+  await page.route(`**/api/repos/${REPO}/changes/qupxosqw/conflicts`, (route) => route.fulfill(json([])))
   /* The bare diff and the pinned interdiff (`?from=parent&to=1`) answer the same one file; findings are empty, no walkthrough exists. */
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/changes/qupxosqw/diff(\\?.*)?$`), (route) =>
+  await page.route(new RegExp(`/api/repos/${REPO}/changes/qupxosqw/diff(\\?.*)?$`), (route) =>
     route.fulfill(json({
       change_id: "qupxosqw",
       file_diffs: [
         { path: "src/app.ts", change_type: "modified", patch: "@@ -1 +1 @@\n-old\n+new", is_binary: false, additions: 1, deletions: 1 }
       ]
     })))
-  await page.route(`**/api/cloud/api/repos/${REPO}/changes/qupxosqw/findings`, (route) =>
+  await page.route(`**/api/repos/${REPO}/changes/qupxosqw/findings`, (route) =>
     route.fulfill(json({ change_id: "qupxosqw", current_seq: 1, findings: [], analyzers: [] })))
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/changes/qupxosqw/walkthrough(\\?.*)?$`), (route) =>
+  await page.route(new RegExp(`/api/repos/${REPO}/changes/qupxosqw/walkthrough(\\?.*)?$`), (route) =>
     route.fulfill(json({ message: "walkthrough not found" }, 404)))
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/landings\\?`), (route) =>
+  await page.route(new RegExp(`/api/repos/${REPO}/landings\\?`), (route) =>
     route.fulfill(json({
       items: [{
         number: 42,
@@ -86,11 +87,11 @@ const serve = async (
         blocked_by: {}
       }]
     })))
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/landings/42/reviews`), (route) => route.fulfill(json({ reviews: [] })))
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/landings/42/comments`), (route) => route.fulfill(json({ comments: [] })))
-  await page.route(new RegExp(`/api/cloud/api/repos/${REPO}/commits/a03f5f1111111111/statuses`), (route) =>
+  await page.route(new RegExp(`/api/repos/${REPO}/landings/42/reviews`), (route) => route.fulfill(json({ reviews: [] })))
+  await page.route(new RegExp(`/api/repos/${REPO}/landings/42/comments`), (route) => route.fulfill(json({ comments: [] })))
+  await page.route(new RegExp(`/api/repos/${REPO}/commits/a03f5f1111111111/statuses`), (route) =>
     route.fulfill(json({ statuses: [{ context: "build", status: "success", created_at: "2026-09-01T09:59:00Z" }] })))
-  await page.route("**/api/cloud/api/orgs/smithersai/changesets", (route) => route.fulfill(json({ changesets: [] })))
+  await page.route("**/api/orgs/smithersai/changesets", (route) => route.fulfill(json({ changesets: [] })))
 }
 
 test.beforeEach(async ({ page }) => {
@@ -108,12 +109,12 @@ test("T1: /change.view renders a landing request's change end to end", async ({ 
   await serve(page)
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/change.view qupxosqw")
+  await fillComposer(page, "/change.view qupxosqw")
   await page.getByTestId("composer-send").click()
 
   const card = page.getByTestId("card-change-smithersai/smithers-qupxosqw")
   await expect(card).toBeVisible({ timeout: 15_000 })
-  await expect(card).toContainText("smithersai/smithers · qupxosqw · rev 1 of 1 · a03f5f11 · will")
+  await expect(card).toHaveAttribute("aria-label", "qupxosqw · Add the split flow")
   await expect(card).toContainText("Add the split flow")
   await expect(card).toContainText("smithersai/smithers +1 −1")
   await expect(card).toContainText("Landing #42 · position 2 of 2 · open → main · 2 of 2 landable")
@@ -122,6 +123,8 @@ test("T1: /change.view renders a landing request's change end to end", async ({ 
 
   // The diff facet (the default) lists the file; the checks facet renders the newest answer per context.
   await expect(card).toContainText("src/app.ts")
+  await page.getByTestId("composer-input").press("Escape")
+  await expect(page.getByTestId("composer-input")).toBeHidden()
   await card.getByRole("tab", { name: "Checks" }).click()
   await expect(card).toContainText("build")
   await expect(card).toContainText("success")
@@ -137,7 +140,7 @@ test("T1: /change.diff renders the parent → current pair pinned at the change'
   await serve(page)
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/change.diff qupxosqw")
+  await fillComposer(page, "/change.diff qupxosqw")
   await page.getByTestId("composer-send").click()
 
   const card = page.getByTestId("card-diff-smithersai/smithers-qupxosqw")
@@ -157,13 +160,13 @@ test("T1: a rev-pinned view pins the Diff facet parent → rev N; a rev the chan
   await serve(page)
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/change.view qupxosqw 1")
+  await fillComposer(page, "/change.view qupxosqw 1")
   await page.getByTestId("composer-send").click()
   const card = page.getByTestId("card-change-smithersai/smithers-qupxosqw")
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card.getByLabel("Diff to")).toHaveValue("1")
 
-  await page.getByTestId("composer-input").fill("/change.view qupxosqw 2")
+  await fillComposer(page, "/change.view qupxosqw 2")
   await page.getByTestId("composer-send").click()
   const toast = page.locator(".toast-stack .toast-detail")
   await expect(toast).toContainText("qupxosqw has no rev 2 — its revisions are 1 → 1.", { timeout: 15_000 })
@@ -173,13 +176,13 @@ test("T1: a degraded sign-in reads a change freely but can't dispatch an agent",
   await serve(page, { degraded: true })
   await page.goto("/")
 
-  await page.getByTestId("composer-input").fill("/change.view qupxosqw")
+  await fillComposer(page, "/change.view qupxosqw")
   await page.getByTestId("composer-send").click()
   const card = page.getByTestId("card-change-smithersai/smithers-qupxosqw")
   await expect(card).toBeVisible({ timeout: 15_000 })
   await expect(card).toContainText("qupxosqw")
 
-  await page.getByTestId("composer-input").fill("/change.resolve qupxosqw src/app.ts")
+  await fillComposer(page, "/change.resolve qupxosqw src/app.ts")
   await page.getByTestId("composer-send").click()
   const toast = page.locator(".toast-stack .toast-detail")
   await expect(toast).toContainText("sign in again to enable", { timeout: 15_000 })
