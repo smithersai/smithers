@@ -50,6 +50,10 @@ const markdownFiles = (directory) =>
     return entry.isDirectory() ? markdownFiles(path) : entry.isFile() && /\.mdx?$/.test(entry.name) ? [path] : []
   })
 
+const untaggedCliCommands = (source) => [...source.matchAll(/(?:npm (?:install|i)|npx|pnpm (?:add|dlx)|bun (?:add|x))\b[^`\n]*/g)]
+  .map(([command]) => command)
+  .filter((command) => !command.includes("--filter") && /@smthrs\/cli(?=[\s";]|$)/.test(command))
+
 describe("the CLI reference", () => {
   const verbSource = readFileSync(join(root, "packages/smithers/src/Verb.ts"), "utf8")
   const pagesDirectory = join(root, "apps/site/src/content/docs/docs/reference/cli")
@@ -121,11 +125,18 @@ describe("the CLI reference", () => {
       ...markdownFiles(join(root, "packages")),
       ...markdownFiles(join(root, "apps/site/src/content/docs"))
     ]
-    const stale = files.flatMap((file) => readFileSync(file, "utf8").split("\n")
-      .filter((line) => /(?:npm (?:install|i)|npx|pnpm (?:add|dlx)|bun (?:add|x))\b/.test(line) && !line.includes("--filter"))
-      .filter((line) => /@smthrs\/cli(?=[\s`";]|$)/.test(line))
+    const stale = files.flatMap((file) => untaggedCliCommands(readFileSync(file, "utf8"))
       .map(() => file.slice(root.length + 1)))
     assert.deepEqual(stale, [], `CLI install commands need an explicit tag: ${stale.join(", ")}`)
+  })
+
+  it("checks each install command without absorbing adjacent inline prose", () => {
+    assert.deepEqual(untaggedCliCommands("`npx smthrs <verb>` runs `@smthrs/cli`."), [])
+    assert.deepEqual(untaggedCliCommands("`@smthrs/cli`, which makes `npx smthrs <verb>` work."), [])
+    assert.deepEqual(untaggedCliCommands("`npm install @smthrs/cli@next`; `pnpm add @smthrs/cli`"), ["pnpm add @smthrs/cli"])
+    assert.deepEqual(untaggedCliCommands("```sh\nbun add @smthrs/cli\nnpx --package @smthrs/cli smthrs\n```"), [
+      "bun add @smthrs/cli", "npx --package @smthrs/cli smthrs"
+    ])
   })
 
   it("documents the public help, schema, and presentation flags", () => {
