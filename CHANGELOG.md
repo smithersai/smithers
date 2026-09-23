@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3121 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3122 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,7 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **build:** make advisory macOS package gates portable ([065f510411](https://github.com/smithersai/smithers/commit/065f5104115921ad58a58710ef5aadc76bb7e12e))
 - **app:** connect packaged selfhost to host model fixture ([d248967866](https://github.com/smithersai/smithers/commit/d2489678668983c1aae2a8f773356a2623d1e8b8))
 - **backend:** accept a terminal socket from the API's own host ([3d3e88aef2](https://github.com/smithersai/smithers/commit/3d3e88aef2856a74801b905b64874eb88c72bcc6))
 - **app:** drop decoded content encoding in the native API relay ([38846c64dd](https://github.com/smithersai/smithers/commit/38846c64dd322d61e67efafadac1fbd9d34df64f))
