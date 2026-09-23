@@ -243,6 +243,8 @@ export function App(props: AppProps) {
   const [approvals, setApprovals] = useState<ReadonlyArray<Approvals.Pending>>([])
   // Answered but maybe still listed: a poll can land before the store drops it.
   const answered = useRef(new Set<string>())
+  // When the front row starts taking y, n and a; see `Approvals.Arming`.
+  const arming = useRef(Approvals.idle)
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
   const history = useRef(new Editor.History(restored.current?.prompts ?? []))
   const writer = useRef<Session.Writer>(
@@ -428,6 +430,7 @@ export function App(props: AppProps) {
     ports.pending().then(
       (listed) => {
         if (!active) return
+        arming.current = Approvals.shown(arming.current, listed, Date.now(), answered.current)
         const next = listed.filter((request) => !answered.current.has(request.requestId))
         setApprovals((current) =>
           current.length === next.length && current.every((each, index) => each.requestId === next[index]!.requestId)
@@ -1247,15 +1250,27 @@ export function App(props: AppProps) {
       shift: key.shift,
       ctrl: key.ctrl,
       meta: key.meta || key.option,
+      armed: Approvals.armed(arming.current, live.current.approvals[0]?.requestId, Date.now()),
       pending: live.current.approvals
     })
     if (choice !== undefined && props.host.approvals !== undefined) {
       key.preventDefault()
       const [first, ...rest] = live.current.approvals
-      answered.current.add(first!.requestId)
+      const requestId = first!.requestId
+      answered.current.add(requestId)
+      arming.current = Approvals.answered(requestId)
       live.current.approvals = rest
       setApprovals(rest)
-      props.host.approvals.reply(first!, choice).catch(() => setStatus("Approval expired", "warning"))
+      // A refused answer leaves the call waiting: show its row again.
+      const retry = (code: string) => {
+        answered.current.delete(requestId)
+        arming.current = Approvals.failed(arming.current, requestId)
+        setStatus(`Approval failed: ${code}`, "warning")
+      }
+      props.host.approvals.reply(first!, choice).then(
+        (code) => code === undefined ? undefined : retry(code),
+        (error) => retry(String(error))
+      )
       return
     }
     if (key.name === "escape") {
@@ -1483,6 +1498,8 @@ export function App(props: AppProps) {
         {approvals[0] === undefined ? null : (
           <View.Approval
             request={approvals[0]}
+            scope={Approvals.scope(approvals[0])}
+            armed={Approvals.armed(arming.current, approvals[0].requestId, now)}
             more={approvals.length - 1}
             {...(approvals[0].source === "chat"
               ? {}

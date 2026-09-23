@@ -50,7 +50,7 @@ const inputs: Record<string, Record<string, unknown>> = {
   grep: { pattern: "x" },
   write: { path: "a.js", content: "x" },
   edit: { path: "a.js", oldString: "a", newString: "b" },
-  apply_patch: { input: "*** Begin Patch\n*** Update File: a.js\n*** End Patch" },
+  apply_patch: { input: "*** Begin Patch\n*** Update File: a.js\n@@\n-a\n+b\n*** End Patch" },
   bash: { command: "ls" },
   "ui.publish": { id: "p", title: "P", summary: "s", rows: [] },
   "agent.delegate": { id: "w", title: "W", prompt: "go" },
@@ -135,8 +135,29 @@ describe("resource narrowing", () => {
     expect(pending[0]).toMatchObject({ flow: "bash", subject: "rm -rf build", always: true, source: "chat" })
   })
 
+  it("reads apply_patch paths with the flow's own parser, so an indented header is still asked", () => {
+    const patch =
+      "*** Begin Patch\n*** Add File: notes.txt\n+hi\n  *** Delete File: /Users/x/important.txt\n*** End Patch"
+    const requests = Approvals.requests(callOf("apply_patch", { input: patch }), cwd, "chat")
+    expect(requests.map((request) => Capability.format(request.capability))).toEqual([
+      `fs:write:${cwd}/notes.txt`,
+      "fs:write:/Users/x/important.txt"
+    ])
+  })
+
+  it("asks for everything apply_patch declares when the patch does not parse", () => {
+    const requests = Approvals.requests(
+      callOf("apply_patch", { input: "*** Begin Patch\n*** Delete File: a.js\n" }),
+      cwd,
+      "chat"
+    )
+    expect(requests.map((request) => request.capability.action)).toEqual(["fs:write"])
+    expect(requests.map((request) => request.capability.resource)).not.toContain(`${cwd}/a.js`)
+    expect(requests.map((request) => request.capability.resource)).not.toContain("a.js")
+  })
+
   it("asks once per file an apply_patch touches", () => {
-    const patch = "*** Begin Patch\n*** Update File: a.js\n*** Delete File: b.js\n*** End Patch"
+    const patch = "*** Begin Patch\n*** Update File: a.js\n@@\n-a\n+b\n*** Delete File: b.js\n*** End Patch"
     const requests = Approvals.requests(callOf("apply_patch", { input: patch }), cwd, "chat")
     expect(requests.map((request) => Capability.format(request.capability))).toEqual([
       `fs:write:${cwd}/a.js`,
@@ -262,12 +283,12 @@ describe("mode", () => {
 })
 
 describe("key", () => {
-  const pending = (always: boolean): Approvals.Pending => ({
-    requestId: "permission-1",
-    flow: "edit",
+  const pending = (always: boolean, requestId = "permission-1", flow = "edit"): Approvals.Pending => ({
+    requestId,
+    flow,
     subject: "a.js",
     source: "chat",
-    action: "fs:write",
+    action: flow === "bash" ? "proc:spawn" : "fs:write",
     tier: "compensable",
     always
   })
@@ -276,19 +297,21 @@ describe("key", () => {
     shift: false,
     ctrl: false,
     meta: false,
+    armed: true,
     pending: [pending(true)],
     ...overrides
   })
 
-  it("answers y, n and a from an empty editor while a request waits", () => {
+  it("answers y, n and a from an empty editor while an armed request waits", () => {
     expect(Approvals.key("y", state())).toBe("once")
     expect(Approvals.key("n", state())).toBe("deny")
     expect(Approvals.key("a", state())).toBe("run")
     expect(Approvals.key("x", state())).toBeUndefined()
   })
 
-  it("never takes a key when nothing waits, the editor has text, or a modifier is held", () => {
+  it("never takes a key when nothing waits, the row is not armed, the editor has text, or a modifier is held", () => {
     expect(Approvals.key("y", state({ pending: [] }))).toBeUndefined()
+    expect(Approvals.key("y", state({ armed: false }))).toBeUndefined()
     expect(Approvals.key("y", state({ draft: "h" }))).toBeUndefined()
     expect(Approvals.key("y", state({ shift: true }))).toBeUndefined()
     expect(Approvals.key("y", state({ ctrl: true }))).toBeUndefined()
@@ -297,5 +320,141 @@ describe("key", () => {
 
   it("offers a only where the store can grant it", () => {
     expect(Approvals.key("a", state({ pending: [pending(false)] }))).toBeUndefined()
+  })
+
+  it("names what a grants", () => {
+    expect(Approvals.scope(pending(true, "permission-1", "bash"))).toBe("all bash")
+    expect(Approvals.scope(pending(true, "permission-1", "edit"))).toBe("all edits")
+    expect(Approvals.scope(pending(true, "permission-1", "apply_patch"))).toBe("all edits")
+  })
+})
+
+describe("arming", () => {
+  const row = (requestId: string, flow = "bash"): Approvals.Pending => ({
+    requestId,
+    flow,
+    subject: "ls",
+    source: "chat",
+    action: "proc:spawn",
+    tier: "irreversible",
+    always: true
+  })
+
+  /** Replays keystrokes against the rows a poll shows, as the app does. */
+  const press = (
+    arming: Approvals.Arming,
+    rows: ReadonlyArray<Approvals.Pending>,
+    name: string,
+    draft: string,
+    at: number
+  ) =>
+    Approvals.key(name, {
+      draft,
+      shift: false,
+      ctrl: false,
+      meta: false,
+      armed: Approvals.armed(arming, rows[0]?.requestId, at),
+      pending: rows
+    })
+
+  it("does not grant anything to text typed as a row appears", () => {
+    const rows = [row("permission-1")]
+    // The row lands on a poll while the person is typing "add tests".
+    const arming = Approvals.shown(Approvals.idle, rows, 1000)
+    let draft = ""
+    const answers: Array<Approvals.Choice> = []
+    for (const [index, name] of [..."add tests"].entries()) {
+      const answer = press(arming, rows, name === " " ? "space" : name, draft, 1000 + index * 30)
+      if (answer === undefined) draft += name
+      else answers.push(answer)
+    }
+    expect(answers).toEqual([])
+    expect(draft).toBe("add tests")
+  })
+
+  it("arms a row only after it has been shown for the delay", () => {
+    const rows = [row("permission-1")]
+    const arming = Approvals.shown(Approvals.idle, rows, 1000)
+    expect(press(arming, rows, "y", "", 1000 + Approvals.armMs - 1)).toBeUndefined()
+    expect(press(arming, rows, "y", "", 1000 + Approvals.armMs)).toBe("once")
+    // A later poll of the same row does not restart its delay.
+    expect(Approvals.shown(arming, rows, 5000)).toEqual(arming)
+  })
+
+  it("makes each of two back-to-back requests take its own keypress after arming", () => {
+    const both = [row("permission-1"), row("permission-2")]
+    let arming = Approvals.shown(Approvals.idle, both, 0)
+    expect(press(arming, both, "y", "", 500)).toBe("once")
+    arming = Approvals.answered("permission-1")
+    const rest = both.slice(1)
+    // The second y of a double tap lands before any poll: it is text.
+    expect(press(arming, rest, "y", "", 520)).toBeUndefined()
+    // A poll that still lists the answered request does not arm the next one.
+    arming = Approvals.shown(arming, both, 600)
+    expect(press(arming, rest, "y", "", 1200)).toBeUndefined()
+    // Once the store has dropped it, the next row starts its own delay.
+    arming = Approvals.shown(arming, rest, 700)
+    expect(press(arming, rest, "y", "", 700 + Approvals.armMs - 1)).toBeUndefined()
+    expect(press(arming, rest, "y", "", 700 + Approvals.armMs)).toBe("once")
+  })
+
+  it("rearms a request whose reply failed", () => {
+    const rows = [row("permission-1")]
+    let arming = Approvals.shown(Approvals.idle, rows, 0)
+    arming = Approvals.answered("permission-1")
+    arming = Approvals.failed(arming, "permission-1")
+    arming = Approvals.shown(arming, rows, 1000)
+    expect(press(arming, rows, "y", "", 1000 + Approvals.armMs)).toBe("once")
+  })
+})
+
+describe("replies", () => {
+  it("returns the store's typed code when a reply fails", async () => {
+    const code = await withStore("ask", (grants) =>
+      Approvals.answer(grants, {
+        requestId: "permission-404",
+        flow: "edit",
+        subject: "a.js",
+        source: "chat",
+        action: "fs:write",
+        tier: "compensable",
+        always: true
+      }, "once", cwd))
+    expect(code).toBe("request_not_found")
+  })
+
+  it("returns nothing when the store takes the reply", async () => {
+    const code = await withStore("ask", (grants) =>
+      Effect.gen(function*() {
+        const fiber = yield* Effect.forkChild(
+          Approvals.authorize(grants, { cwd, source: "chat" })(callOf("bash", { command: "ls" }))
+        )
+        const [pending] = yield* settledPending(grants, 1)
+        const code = yield* Approvals.answer(grants, pending!, "once", cwd)
+        yield* Fiber.join(fiber)
+        return code
+      }))
+    expect(code).toBeUndefined()
+  })
+})
+
+describe("denials", () => {
+  const settled = (code: Cell.CallFailureCode, message: string) =>
+    new Cell.CallResult({ outcome: "failure", value: null, code, message })
+
+  it("recognizes its own denial, carried as capability_refused", () => {
+    expect(Approvals.denied(settled("capability_refused", "Denied: edit a.js"))).toBe(true)
+    expect(Approvals.denied(settled("capability_refused", "Flow x is not model-invocable."))).toBe(false)
+    expect(Approvals.denied(settled("flow_failed", "Denied: edit a.js"))).toBe(false)
+    expect(Approvals.denied(new Cell.CallResult({ outcome: "success", value: 1 }))).toBe(false)
+  })
+
+  it("prints one line per denied flow, once", () => {
+    const notice = Approvals.notices()
+    const lines = ["bash", "bash", "edit", "bash", "edit"].map(notice).filter((line) => line !== undefined)
+    expect(lines).toEqual([
+      "denied bash; SMITHERS_TUI_APPROVE=all allows",
+      "denied edit; SMITHERS_TUI_APPROVE=all allows"
+    ])
   })
 })

@@ -355,7 +355,6 @@ export function Dialog(props: {
   )
 }
 
-/** Toasts ride the top right, like the app's toast stack. */
 /** The oldest waiting approval, pinned above the composer. */
 export function Approval(
   props: {
@@ -364,6 +363,10 @@ export function Approval(
       readonly subject: string
       readonly always: boolean
     }
+    /** What `a` grants, from `Approvals.scope`. */
+    readonly scope: string
+    /** Keys show only once they answer; see `Approvals.armMs`. */
+    readonly armed: boolean
     readonly more: number
     readonly worker?: string
   }
@@ -375,18 +378,23 @@ export function Approval(
         {props.request.subject.replace(/\s+/g, " ")}
         {props.more > 0 ? ` +${props.more}` : ""}
       </text>
-      <text wrapMode="none" style={{ flexShrink: 0, paddingLeft: 2 }}>
-        <span fg={color.text}>y</span>
-        <span fg={color.faint}>{" allow  "}</span>
-        <span fg={color.text}>n</span>
-        <span fg={color.faint}>{" deny"}</span>
-        {props.request.always ? <span fg={color.text}>{"  a"}</span> : null}
-        {props.request.always ? <span fg={color.faint}>{" always"}</span> : null}
-      </text>
+      {props.armed
+        ? (
+          <text wrapMode="none" style={{ flexShrink: 0, paddingLeft: 2 }}>
+            <span fg={color.text}>y</span>
+            <span fg={color.faint}>{" allow  "}</span>
+            <span fg={color.text}>n</span>
+            <span fg={color.faint}>{" deny"}</span>
+            {props.request.always ? <span fg={color.text}>{"  a"}</span> : null}
+            {props.request.always ? <span fg={color.faint}>{` ${props.scope}`}</span> : null}
+          </text>
+        )
+        : null}
     </box>
   )
 }
 
+/** Toasts ride the top right, like the app's toast stack. */
 export function ToastStack(
   props: {
     readonly rows: ReadonlyArray<

@@ -2055,7 +2055,7 @@ describe("CellTurn recorded observations", () => {
       admit: (call) =>
         (call.input as { path: string }).path === "refused"
           ? Effect.succeed(
-            new Cell.CallResult({ outcome: "failure", value: null, code: "permission_denied", message: "Denied" })
+            new Cell.CallResult({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
           )
           : Effect.as(Effect.sleep("150 millis"), undefined),
       call: (call) => {
@@ -2068,7 +2068,7 @@ describe("CellTurn recorded observations", () => {
       { engine: EngineLike.layer(stub) }
     )
 
-    expect(resolvedText(observed.events)).toBe("listed permission_denied")
+    expect(resolvedText(observed.events)).toBe("listed capability_refused")
     expect(engine.recorder.calls.map((call) => call.input)).toEqual([{ path: "slow" }])
   })
 

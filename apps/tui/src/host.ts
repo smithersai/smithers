@@ -17,6 +17,7 @@ import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import * as WorkspaceObservation from "@smthrs/agent/WorkspaceObservation"
 import * as Capability from "@smthrs/capability/Capability"
+import type * as Permission from "@smthrs/capability/Permission"
 import * as NodeControl from "@smthrs/cli/NodeControl"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
@@ -88,7 +89,11 @@ export interface Host {
   readonly approvals?: {
     readonly mode: Approvals.Mode
     readonly pending: () => Promise<ReadonlyArray<Approvals.Pending>>
-    readonly reply: (request: Approvals.Pending, choice: Approvals.Choice) => Promise<void>
+    /** Resolves with the store's error code when it refused the answer. */
+    readonly reply: (
+      request: Approvals.Pending,
+      choice: Approvals.Choice
+    ) => Promise<Permission.GrantStoreError["code"] | undefined>
   }
   readonly dispose: () => Promise<void>
 }
@@ -309,7 +314,7 @@ export const make = (options: {
       })),
     reply: (request, choice) =>
       runtime.runPromise(Effect.gen(function*() {
-        yield* Approvals.reply(yield* GrantStore.GrantStore, request, choice, options.cwd)
+        return yield* Approvals.answer(yield* GrantStore.GrantStore, request, choice, options.cwd)
       }))
   }
 

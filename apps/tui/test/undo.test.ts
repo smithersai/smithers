@@ -129,7 +129,7 @@ describe("undo", () => {
     const r = recorder(cwd)
     r.prompt("rename")
     r.cell()
-    await r.call("apply_patch", { input: "*** Begin Patch\n*** Update File: a.ts\n*** Move to: b.ts\n*** End Patch" }, () => {
+    await r.call("apply_patch", { input: "*** Begin Patch\n*** Update File: a.ts\n*** Move to: b.ts\n@@\n-moved\n+moved\n*** End Patch" }, () => {
       unlinkSync(join(cwd, "a.ts"))
       put(cwd, "b.ts", "moved\n")
     })
@@ -311,7 +311,7 @@ describe("undo", () => {
     const r = recorder(cwd)
     r.prompt("edit")
     r.cell()
-    await r.call("apply_patch", { input: "*** Delete File: sub/d.ts" }, () => rmSync(join(cwd, "sub"), { recursive: true }))
+    await r.call("apply_patch", { input: "*** Begin Patch\n*** Delete File: sub/d.ts\n*** End Patch" }, () => rmSync(join(cwd, "sub"), { recursive: true }))
     await r.call("write", { path: "a.ts" }, write(cwd, "a.ts", "after\n"))
     r.settle()
     const target = Undo.target(r.transcript(), cellRows(r.transcript())[0]!.id) as Undo.Target
@@ -372,7 +372,7 @@ describe("undo", () => {
     const r = recorder(cwd)
     r.prompt("delete")
     r.cell()
-    await r.call("apply_patch", { input: "*** Delete File: run.sh" }, () => unlinkSync(join(cwd, "run.sh")))
+    await r.call("apply_patch", { input: "*** Begin Patch\n*** Delete File: run.sh\n*** End Patch" }, () => unlinkSync(join(cwd, "run.sh")))
     r.settle()
     const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
     expect("_tag" in result).toBe(false)

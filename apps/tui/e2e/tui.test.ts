@@ -913,7 +913,7 @@ describe("approvals", () => {
     // `a` on the first bash covers the rest of them for the session.
     let always = false
     await answerAll(tui, (screen) => {
-      if (!always && /\? bash .*a always/.test(screen)) {
+      if (!always && /\? bash .*a all bash/.test(screen)) {
         always = true
         return "a"
       }

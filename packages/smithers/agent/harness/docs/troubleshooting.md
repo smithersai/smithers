@@ -71,7 +71,7 @@ from `Cell.CallFailureCode`:
 | Code                     | Raised when                                                                                                   | Recovery hint                                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `unknown_flow`           | The name is not in the registry.                                                                              | Read `ctx.flows` and call one of the names it lists.                                                    |
-| `capability_refused`     | The descriptor is not model-invocable.                                                                        | Do the work with a flow `ctx.flows` lists.                                                              |
+| `capability_refused`     | The descriptor is not model-invocable, or the host's `authorize` denied the call; `error.message` says which. | Do the work with a flow `ctx.flows` lists; after a denial, do not reach the same effect another way.    |
 | `truncated_write`        | A write carries bytes a call already reported as truncated.                                                   | Restore from source control instead of writing captured output.                                         |
 | `declaration_changed`    | The registry entry moved after the catalog was shown.                                                         | Read `ctx.flows` again and reissue the call with the shape it now declares.                             |
 | `invalid_input`          | The input failed the flow's declared schema, including a non-handle `at`.                                     | Fix the input against the schema in `ctx.flows` and call again in this cell.                            |
@@ -83,7 +83,6 @@ from `Cell.CallFailureCode`:
 | `checkpoint_readonly`    | A flow that writes ran against a checkpoint.                                                                  | Drop `at` and make the change on the live tree.                                                         |
 | `checkpoint_unsupported` | The flow names what it touches rather than where it runs, so it cannot be pointed at a checkpoint.            | Drop `at`, or run the work through a shell flow, which takes a working directory.                       |
 | `flow_failed`            | The flow itself failed; the default when nothing classified the failure.                                      | Read `error.message`: the flow says what went wrong, and it is usually fixable in the same cell.        |
-| `permission_denied`      | A person or policy refused the call before it ran, through the host's `authorize`.                            | Do not retry it or reach the same effect through another flow; finish or say what you need.             |
 
 **The same interrupted call runs twice.** A call the `callMs` ceiling
 interrupted settled nowhere, so a re-executed frame issues it to the host

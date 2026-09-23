@@ -229,10 +229,7 @@ describe("the sealed cell-call key", () => {
     expect(observed.host).not.toBe("key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9")
     expect(observed.host).not.toBe("key1_a889e8b3453778007938b385090ec68cf8af50a2b26626874f88db14f852faef")
     expect(observed.host).not.toBe("key1_dac0642a1dac92f2089981c1ae3c0625b5b63455c38e9695d15c713098aa2a00")
-    // It moved again when `Cell.CallFailureCode` gained `permission_denied`:
-    // the call result schema is in the declaration digest too.
-    expect(observed.host).not.toBe("key1_824e8c645a1b3c6bcae2e2d1041e8017a791bde3dda10ce72e90d4631db41849")
-    expect(observed.host).toBe("key1_d1a7c70e9460f5f75555006042f5f46ad53ec91d258b6fa10938526af9c9f647")
+    expect(observed.host).toBe("key1_824e8c645a1b3c6bcae2e2d1041e8017a791bde3dda10ce72e90d4631db41849")
     // The composition really is in the key: the same call resolved under a
     // different layer set is a different boundary, not a cache hit.
     expect(observed.other).not.toBe(observed.host)

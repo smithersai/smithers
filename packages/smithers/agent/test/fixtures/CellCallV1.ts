@@ -2,9 +2,6 @@ import { Schema } from "effect"
 
 // Archived wire declaration from 580c67600b^:packages/smithers/agent/harness/src/Cell.ts.
 // Keep this independent of the current Cell module: it writes the pre-A2 fixture.
-// What it archives is the pre-A2 *shape* of `CallResult`. The code list tracks
-// the live one, as `HarnessError` does: a new code is a new declaration and a
-// new key for every run, archived shape or not.
 const CallFailureCode = Schema.Literals([
   "unknown_flow",
   "capability_refused",
@@ -18,8 +15,7 @@ const CallFailureCode = Schema.Literals([
   "checkpoint_exhausted",
   "checkpoint_readonly",
   "checkpoint_unsupported",
-  "flow_failed",
-  "permission_denied"
+  "flow_failed"
 ])
 
 export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/CallResult")({
@@ -36,13 +32,12 @@ export class CallResult extends Schema.Class<CallResult>("flows/harness/Cell/Cal
 export const key = "key1_8ab2962732794ee8d8b3bf550657b41d475fd082ec9c8c7073b1d24a8d77d4b9"
 
 // Moved again when `HarnessErrorCode` gained `completion_unjudged`, and once
-// more when it gained `claim_unproven`, and when `CallFailureCode` gained
-// `permission_denied`: the wire declaration folded into the
+// more when it gained `claim_unproven`: the wire declaration folded into the
 // preimage carries the whole error union, so a new member is a new declaration
 // digest and a new sealed key. That is what the digest is for. In-flight runs
 // finish under the declaration they started on; a new run is keyed under this
 // one.
-export const effect115Key = "key1_d1a7c70e9460f5f75555006042f5f46ad53ec91d258b6fa10938526af9c9f647"
+export const effect115Key = "key1_824e8c645a1b3c6bcae2e2d1041e8017a791bde3dda10ce72e90d4631db41849"
 
 // Independent JSON oracle. This fixture contains only JSON values, no schema
 // classes, undefined, non-finite numbers or other normalization cases.

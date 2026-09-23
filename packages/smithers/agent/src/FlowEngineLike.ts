@@ -981,10 +981,12 @@ export const make = (
     /**
      * Authorizes a call before the controller starts its per-call clock.
      *
-     * A denial is the cell's to read, as `permission_denied`: a person or a
-     * policy said no, and the run goes on without that effect. A park and every
-     * other failure still escape, so the run parks or fails exactly as it would
-     * from `call`.
+     * A denial is the cell's to read, as `capability_refused` carrying the
+     * hook's own message: a person or a policy said no, and the run goes on
+     * without that effect. The code set is part of the sealed call key, so a
+     * denial reuses an existing code rather than adding one; the host tells its
+     * own denials apart by the message it wrote. A park and every other failure
+     * still escape, so the run parks or fails exactly as it would from `call`.
      */
     const authorize = options.calls?.authorize
     const admit = authorize === undefined ? undefined : (
@@ -1000,7 +1002,7 @@ export const make = (
               new Cell.CallResult({
                 outcome: "failure",
                 value: null,
-                code: "permission_denied",
+                code: "capability_refused",
                 message: error.message
               })
             )

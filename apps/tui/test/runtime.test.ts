@@ -144,9 +144,12 @@ it("produces contextual hunks, preserves unchanged lines, and captures patch ren
   expect(Changes.patch("same", "same", "same")).toBeUndefined()
   expect(
     Changes.paths("apply_patch", {
-      input: "*** Begin Patch\n*** Update File: a.ts\n*** Move to: b.ts\n*** Delete File: c.ts\n*** End Patch"
+      input: "*** Begin Patch\n*** Update File: a.ts\n*** Move to: b.ts\n@@\n-a\n+b\n*** Delete File: c.ts\n*** End Patch"
     })
   ).toEqual(["a.ts", "b.ts", "c.ts"])
+  // A patch apply_patch refuses writes nothing, so it names no file.
+  expect(Changes.touched("apply_patch", { input: "*** Begin Patch\n*** Update File: a.ts\n*** End Patch" }))
+    .toBeUndefined()
 })
 
 it("captures actual overwrite contents at a flow boundary and preserves the result", async () => {

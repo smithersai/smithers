@@ -4,7 +4,8 @@
  * The kernel's attended `GrantStore` is the whole model. `authorize` asks it
  * for each consequential capability a call declares, `Agent.Options.authorize`
  * runs that before the call's clock starts, and a denial reaches the cell as
- * `permission_denied`. The UI polls `list` and answers with `reply`.
+ * `capability_refused` carrying the `Denied: ` message this module writes. The
+ * UI polls `list` and answers with `reply`.
  *
  * Consequential means the declared capability can change something the
  * workspace's VCS will not show, or reach outside the process: every
@@ -77,7 +78,8 @@ export const requests = (call: Cell.Call, cwd: string, source: string): Readonly
     if (Option.isNone(parsed) || !consequential(parsed.value, cwd)) continue
     const capability = parsed.value
     if (capability.action === "fs:write") {
-      const paths = Changes.paths(call.flowName, call.input)
+      // `undefined` or nothing named: ask for everything the flow declares.
+      const paths = Changes.touched(call.flowName, call.input) ?? []
       if (paths.length === 0) add(capability, subject)
       for (const path of paths) add(Capability.make("fs:write", resolve(cwd, path)), path.slice(0, 160))
     } else if (capability.action === "proc:spawn") {
@@ -101,6 +103,24 @@ export const layer = (cwd: string, approvals: Mode): Layer.Layer<GrantStore.Gran
     Layer.orDie
   )
 
+/** Starts every denial message this host writes; the cell reads it as `capability_refused`. */
+export const deniedPrefix = "Denied: "
+
+/** Whether a settled call is a denial this host wrote, not some other refusal. */
+export const denied = (result: Cell.CallResult): boolean =>
+  result.outcome === "failure" && result.code === "capability_refused" &&
+  (result.message ?? "").startsWith(deniedPrefix)
+
+/** Print mode's notice for a denied flow: one line per flow, the first time only. */
+export const notices = () => {
+  const seen = new Set<string>()
+  return (flow: string): string | undefined => {
+    if (seen.has(flow)) return undefined
+    seen.add(flow)
+    return `denied ${flow}; ${environmentKey}=all allows`
+  }
+}
+
 /** `Agent.Options.authorize`: waits for every consequential request, in order. */
 export const authorize = (grants: GrantStore.Service, options: { readonly cwd: string; readonly source: string }) =>
 (call: Cell.Call): Effect.Effect<void, HarnessError> =>
@@ -112,7 +132,7 @@ export const authorize = (grants: GrantStore.Service, options: { readonly cwd: s
           cause instanceof Permission.PermissionDenied
             ? new HarnessError({
               code: "engine_failed",
-              message: `Denied: ${request.meta.flow} ${request.meta.subject}`,
+              message: `${deniedPrefix}${request.meta.flow} ${request.meta.subject}`,
               cause
             })
             : new HarnessError({ code: "engine_failed", message: "Approval store failed", cause })
@@ -151,6 +171,70 @@ export const reply = (
       : undefined
   )
 
+/** `reply`, settled: the store's error code when it refused the answer, else `undefined`. */
+export const answer = (
+  grants: GrantStore.Service,
+  request: Pending,
+  choice: Choice,
+  cwd: string
+): Effect.Effect<Permission.GrantStoreError["code"] | undefined> =>
+  reply(grants, request, choice, cwd).pipe(
+    Effect.match({ onFailure: (error) => error.code, onSuccess: () => undefined })
+  )
+
+/** What `a` grants for the rest of the session. */
+export const scope = (request: Pending): string => request.action === "fs:write" ? "all edits" : `all ${request.flow}`
+
+/**
+ * How long a row is on screen before y, n or a answers it. Rows arrive on a
+ * poll, so without this a person typing "add tests" as one appeared would
+ * grant the session with the `a`.
+ */
+export const armMs = 400
+
+/**
+ * Whether the front row takes keys yet.
+ *
+ * `requestId` is the row whose delay runs since `since`. `waiting` is the
+ * request last answered while the store still lists it: nothing arms until a
+ * poll shows it gone, so a double-tapped `y` never answers the next row.
+ */
+export interface Arming {
+  readonly requestId: string | undefined
+  readonly since: number
+  readonly waiting: string | undefined
+}
+
+export const idle: Arming = { requestId: undefined, since: 0, waiting: undefined }
+
+/**
+ * After each poll. `listed` is everything the store holds; `skip` is what the
+ * UI already answered and so does not show. The front row's delay starts the
+ * first poll it is shown on.
+ */
+export const shown = (
+  arming: Arming,
+  listed: ReadonlyArray<Pending>,
+  now: number,
+  skip: ReadonlySet<string> = new Set()
+): Arming => {
+  if (arming.waiting !== undefined && listed.some((request) => request.requestId === arming.waiting)) return arming
+  const front = listed.find((request) => !skip.has(request.requestId))?.requestId
+  if (front === undefined) return idle
+  if (front === arming.requestId && arming.waiting === undefined) return arming
+  return { requestId: front, since: now, waiting: undefined }
+}
+
+/** A key answered `requestId`; the next row waits for a poll without it. */
+export const answered = (requestId: string): Arming => ({ requestId: undefined, since: 0, waiting: requestId })
+
+/** The store refused the answer to `requestId`; its row shows and arms again. */
+export const failed = (arming: Arming, requestId: string): Arming =>
+  arming.waiting === requestId ? idle : arming
+
+export const armed = (arming: Arming, front: string | undefined, now: number): boolean =>
+  front !== undefined && arming.waiting === undefined && arming.requestId === front && now - arming.since >= armMs
+
 /** The answer a key gives, or `undefined` so the key reaches the editor. */
 export const key = (
   name: string,
@@ -159,11 +243,15 @@ export const key = (
     readonly shift: boolean
     readonly ctrl: boolean
     readonly meta: boolean
+    /** See `armed`. */
+    readonly armed: boolean
     readonly pending: ReadonlyArray<Pending>
   }
 ): Choice | undefined => {
   const first = state.pending[0]
-  if (first === undefined || state.draft !== "" || state.shift || state.ctrl || state.meta) return undefined
+  if (first === undefined || !state.armed || state.draft !== "" || state.shift || state.ctrl || state.meta) {
+    return undefined
+  }
   if (name === "y") return "once"
   if (name === "n") return "deny"
   if (name === "a" && first.always) return "run"

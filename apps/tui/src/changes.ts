@@ -1,6 +1,7 @@
 /** Capture actual before/after file contents at the executable flow boundary. */
 import type * as Cell from "@smthrs/harness/Cell"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as ApplyPatch from "@smthrs/std/ApplyPatch"
 import { createTwoFilesPatch } from "diff"
 import { Effect } from "effect"
 import { readFile, stat } from "node:fs/promises"
@@ -60,21 +61,21 @@ export const patch = (path: string, before: string | null, after: string | null,
       patch: `diff --git a/${path} b/${path}\ndeleted file mode ${(0o100000 | deletedMode).toString(8)}\n${body.replace(/^=+\n/, "")}`
     }
 }
-export const paths = (flow: string, input: unknown): string[] => {
+/**
+ * The files a write flow's input names; `undefined` when it names them in a
+ * form this reads no further, such as a patch `apply_patch` would refuse.
+ */
+export const touched = (flow: string, input: unknown): string[] | undefined => {
   if (input === null || typeof input !== "object") return []
   const value = input as Record<string, unknown>
   if ((flow === "edit" || flow === "write") && typeof value.path === "string") return [value.path]
   if (flow === "apply_patch" && typeof value.input === "string") {
-    return [
-      ...new Set(
-        [...value.input.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)].map((match) =>
-          match[1]!.trim()
-        )
-      )
-    ]
+    const named = ApplyPatch.paths(value.input)
+    return named === undefined ? undefined : [...named]
   }
   return []
 }
+export const paths = (flow: string, input: unknown): string[] => touched(flow, input) ?? []
 const command = async (program: string, cwd: string, args: string[]): Promise<string | undefined> => {
   try {
     const child = Bun.spawn([program, ...args], {

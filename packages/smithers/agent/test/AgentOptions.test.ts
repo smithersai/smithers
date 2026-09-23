@@ -470,10 +470,10 @@ ctx.done("done")`
     expect(JSON.stringify(result.outcome)).toContain("fs/write is not permitted here")
   })
 
-  it("resolves a call the host denies in the cell as permission_denied", async () => {
+  it("resolves a call the host denies in the cell as capability_refused with the host's message", async () => {
     const denied = `await ctx.call("fs/read", {})
 const result = await ctx.call("fs/write", {})
-ctx.done(result.ok === false && result.error.code === "permission_denied" ? result.error.hint : "not denied")`
+ctx.done(result.ok === false ? result.error.code + " " + result.error.message : "not denied")`
     const executed: Array<string> = []
     const outcome = await drive(
       collect({
@@ -498,7 +498,7 @@ ctx.done(result.ok === false && result.error.code === "permission_denied" ? resu
     // A person said no. The cell reads that as a value and finishes; the run
     // does not die, and the refused flow never ran.
     expect(executed).toEqual(["fs/read"])
-    expect(completedOutput(events(outcome))).toBe(Cell.callFailureHint.permission_denied)
+    expect(completedOutput(events(outcome))).toBe("capability_refused Denied")
   })
 
   it("does not charge the time authorization waits to the call ceiling", async () => {

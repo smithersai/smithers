@@ -50,14 +50,15 @@ if (typeof approvals === "object") {
 const host = Host.make({ cwd, environment: available.environment, approvals })
 
 if (values.print !== undefined) {
+  const notice = Approvals.notices()
   const turn = host.run({
     prompt: values.print,
     seat,
     history: [] as Array<Context.Entry>,
     onEvent: (event) => {
-      if (event._tag === "cell-call-settled" && event.result.code === "permission_denied") {
-        console.error(`denied ${event.flowName}; ${Approvals.environmentKey}=all allows`)
-      }
+      if (event._tag !== "cell-call-settled" || !Approvals.denied(event.result)) return
+      const line = notice(event.flowName)
+      if (line !== undefined) console.error(line)
     }
   })
   const outcome = await turn.done
