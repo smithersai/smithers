@@ -20,15 +20,15 @@ const sourceFiles = (directory: string): ReadonlyArray<string> =>
  * exception: it documents the module, and the block under it documents the
  * first export.
  */
-const orphanedDocblocks = (file: string): ReadonlyArray<string> => {
-  const lines = Fs.readFileSync(file, "utf8").split("\n")
+const orphanedDocblocks = (file: string, text: string): ReadonlyArray<string> => {
+  const lines = text.split("\n")
   const found: Array<string> = []
   let openedAt = -1
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!.trim()
     if (openedAt === -1) {
-      if (line.startsWith("/**")) openedAt = index
-      continue
+      if (!line.startsWith("/**")) continue
+      openedAt = index
     }
     if (!line.endsWith("*/")) continue
     let next = index + 1
@@ -42,6 +42,18 @@ const orphanedDocblocks = (file: string): ReadonlyArray<string> => {
 }
 
 describe("the package's own sources", () => {
+  it("closes one-line docblocks before scanning a later declaration", () => {
+    const source =
+      "/** One line. */\nconst first = 1\n/**\n * Second.\n */\nconst second = 2\n/** Third. */\nconst third = 3"
+    expect(orphanedDocblocks(Path.join(sourceRoot, "Fixture.ts"), source)).toEqual([])
+  })
+
+  it("finds adjacent one-line and multiline docblocks after the module header", () => {
+    const source =
+      "/** Module. */\nconst first = 1\n/** Orphan. */\n/**\n * Actual documentation.\n */\nconst second = 2"
+    expect(orphanedDocblocks(Path.join(sourceRoot, "Fixture.ts"), source)).toEqual(["Fixture.ts:3"])
+  })
+
   /**
    * A docblock that documents nothing is a copy nobody deleted. eslint and
    * dprint both accept it, and a reader hunting the contract of an export
@@ -50,7 +62,7 @@ describe("the package's own sources", () => {
    * verbatim from further down the file.
    */
   it("attach every JSDoc block to the declaration under it", () => {
-    const orphans = sourceFiles(sourceRoot).flatMap(orphanedDocblocks)
+    const orphans = sourceFiles(sourceRoot).flatMap((file) => orphanedDocblocks(file, Fs.readFileSync(file, "utf8")))
     expect(orphans).toEqual([])
   })
 })

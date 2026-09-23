@@ -54,7 +54,7 @@ const decodeCancellation = Schema.decodeUnknownOption(Schema.Struct({
 }))
 const decodeResult = Schema.decodeUnknownOption(ResultEncoded, { onExcessProperty: "error" })
 
-const json = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value) ?? "null"
+const json = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value)
 const identity = (...parts: ReadonlyArray<string | number>) =>
   parts.map((part) => encodeURIComponent(String(part))).join(":")
 const span = (id: string, kind: TraceBuilder["kind"], label: string, at: number, detail: SpanDetail): TraceBuilder => ({
@@ -197,7 +197,7 @@ const foldEngineJournal = (records: ReadonlyArray<JournalRecord>) => {
     if (previous !== undefined) {
       if (previous !== JSON.stringify(envelope)) {
         const conflict = executions.get(key)
-        if (conflict !== undefined) conflict.coherent = false
+        conflict!.coherent = false
       }
       continue
     }
@@ -503,11 +503,11 @@ export const engineRunEvidence = (records: ReadonlyArray<JournalRecord>, rootId:
   }
   const current = (execution: EngineExecutionEvidence) =>
     execution.coherent &&
-    execution.generation === Math.max(...(generations.get(execution.executionId) ?? []).map((row) => row.generation))
+    execution.generation === Math.max(...generations.get(execution.executionId)!.map((row) => row.generation))
   const belongs = (execution: EngineExecutionEvidence, ownerId = rootId): boolean => {
     const visited = new Set<string>()
-    let candidate: EngineExecutionEvidence | undefined = execution
-    while (candidate !== undefined) {
+    let candidate: EngineExecutionEvidence = execution
+    while (true) {
       if (!candidate.coherent || !candidate.parentKnown || visited.has(candidate.executionId)) return false
       visited.add(candidate.executionId)
       if (candidate.executionId === ownerId) return ownerId !== rootId || candidate.parentExecutionId === undefined
@@ -516,9 +516,8 @@ export const engineRunEvidence = (records: ReadonlyArray<JournalRecord>, rootId:
       // A child names a native parent ID, not its generation. Never infer a
       // parent generation from arrival time after a rewind.
       if (parents.length !== 1) return false
-      candidate = parents[0]
+      candidate = parents[0]!
     }
-    return false
   }
   const owned = executions.filter((row) => current(row) && belongs(row))
   const completed = owned.filter((row) => row.status === "completed" && row.result !== undefined)

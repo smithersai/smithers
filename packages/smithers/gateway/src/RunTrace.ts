@@ -444,7 +444,6 @@ const writtenPaths = (input: unknown): ReadonlyArray<string> => {
   return patch === undefined ? [] : patchedPaths(patch)
 }
 
-/** A call's subject: a path reads as its basename, a command as itself. */
 /**
  * What one recorded call was about, in the shape its declaration chose.
  *
@@ -494,13 +493,13 @@ export const callSubject = (input: unknown, format?: CallPresentation["subject"]
 const shellActivity = (command: string): FlowActivity => {
   if (/[;&|<>`$\n\r]/.test(command)) return "other"
   const words = command.trim().split(/\s+/)
-  const first = words[0]
-  if (["pytest", "vitest", "jest"].includes(first ?? "")) return "tests"
-  if (/^python[23]?$/.test(first ?? "") && words[1] === "-m" && ["pytest", "unittest"].includes(words[2] ?? "")) {
+  const first = words[0]!
+  if (["pytest", "vitest", "jest"].includes(first)) return "tests"
+  if (/^python[23]?$/.test(first) && words[1] === "-m" && ["pytest", "unittest"].includes(words[2] ?? "")) {
     return "tests"
   }
   if (first === "bun" && words[1] === "test") return "tests"
-  if (["pnpm", "npm", "bun"].includes(first ?? "")) {
+  if (["pnpm", "npm", "bun"].includes(first)) {
     if (words[1] === "test" || (words[1] === "run" && words[2] === "test")) return "tests"
     if (words[1] === "exec" && ["vitest", "jest"].includes(words[2] ?? "")) return "tests"
     if (words[1] === "run" && ["check", "typecheck", "lint"].includes(words[2] ?? "")) return "checks"
@@ -1528,7 +1527,7 @@ export const traceFromJournal = (
   // rows numbered 1 and a `same as 1` that names either. The merged list
   // numbers the rows a person reads, and a repeat names the renumbered row of
   // the step that recorded it.
-  const merged = lines.sort((left, right) => (positions.get(left.spanId) ?? 0) - (positions.get(right.spanId) ?? 0))
+  const merged = lines.sort((left, right) => positions.get(left.spanId)! - positions.get(right.spanId)!)
   const stepOf = (spanId: string): string => spanId.slice(0, spanId.lastIndexOf("/") + 1)
   const renumbered = new Map(merged.map((line, index) => [`${stepOf(line.spanId)}${line.frame}`, index + 1]))
   return {
@@ -1551,7 +1550,7 @@ export const traceFromJournal = (
       frame: index + 1,
       ...(line.repeatOf === undefined
         ? {}
-        : { repeatOf: renumbered.get(`${stepOf(line.spanId)}${line.repeatOf}`) ?? line.repeatOf })
+        : { repeatOf: renumbered.get(`${stepOf(line.spanId)}${line.repeatOf}`)! })
     })),
     notes: notes.sort((left, right) => left.seq - right.seq),
     owners: owners.sort((left, right) => left.seq - right.seq)
@@ -1757,7 +1756,6 @@ const proseLine = (text: string | undefined): string | undefined => {
     // A code-only response or the journal's truncated-field object is not explanatory prose.
     if (/^(?:[[{]|(?:const|let|var|await|import|export|function|return)\b)/.test(trimmed)) return undefined
     const words = trimmed.replace(/^#{1,6}\s+|^[-*+]\s+|^>\s+/, "").replace(/\s+/g, " ")
-    if (words === "") continue
     const sentence = words.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? `${words}.`
     return sentence.length <= 180 ? sentence : `${sentence.slice(0, 179).trimEnd()}…`
   }
