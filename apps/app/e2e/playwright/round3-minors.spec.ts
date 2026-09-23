@@ -1,8 +1,9 @@
 import { expect,test } from "@playwright/test"
-import { stubTutorialHost } from "./tutorial-stubs"
+import { signedOutVisitor } from "./identity"
 
-test("an unknown repository opens its recovery notice near the header", async ({ page, baseURL }) => {
-  await stubTutorialHost(page, baseURL!)
+test("an unknown repository opens its recovery notice near the header", async ({ page }) => {
+  await signedOutVisitor(page)
+  await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [] } }))
   await page.goto("/nope/nope/")
   const notice = page.locator('[data-repository-missing] .smithers-chat-message')
   await expect(notice).toBeVisible()
@@ -10,9 +11,9 @@ test("an unknown repository opens its recovery notice near the header", async ({
   await expect(notice.locator('[data-flow="auth.sign-in"]')).toBeInViewport()
 })
 
-test("an unknown repository opens its recovery notice after a known repository in the same page", async ({ page, baseURL }) => {
+test("an unknown repository opens its recovery notice after a known repository in the same page", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 })
-  await stubTutorialHost(page, baseURL!)
+  await signedOutVisitor(page)
   await page.route("**/api/public/repos", route => route.fulfill({ json: { repos: [{ name: "smithersai/smithers" }] } }))
   await page.route("**/api/repos/smithersai/smithers", route => route.fulfill({ json: { default_bookmark: "main" } }))
   await page.goto("/smithersai/smithers/")

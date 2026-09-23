@@ -381,7 +381,7 @@ function AppContent() {
 
   const latestEntry = entries.at(-1)
   const latestReadId = latestEntry?.kind === "card" ? latestEntry.card.id : latestEntry?.message.id
-  const initialReadId = signingUp ? "signup" : !session.firstRunDismissed ? "first-run-actions" : repositoryNotice ? authMessage?.id : undefined
+  const initialReadId = signingUp ? "signup" : repositoryNotice ? authMessage?.id : !session.firstRunDismissed ? "first-run-actions" : undefined
 
   // Chat stays mounted when closed.
   const composerWrap = (
@@ -569,8 +569,8 @@ function AppContent() {
             <MessageScrollerViewport fade>
             <MessageScrollerContent className="sui-chat-messages">
             {signingUp && <MessageScrollerItem messageId="signup"><SignupCards /></MessageScrollerItem>}
-            {!signingUp && <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>}
-            {!signingUp && !session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
+            {!signingUp && !repositoryNotice && <MessageScrollerItem messageId="setup-checklist"><SetupChecklist commands={flows} /></MessageScrollerItem>}
+            {!signingUp && !repositoryNotice && !session.firstRunDismissed && <MessageScrollerItem messageId="first-run-actions"><FirstRunActions commands={flows} /></MessageScrollerItem>}
             {session.firstRunDismissed && entries.length === 0 && <EmptyState className="transcript-empty" icon={<Sparkles size={20} />}
               title="Nothing here yet" description="Ask Smithers anything to get started." />}
             {entries.map((entry) => <MessageScrollerItem key={entry.kind === "card" ? entry.card.id : entry.message.id}
