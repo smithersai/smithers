@@ -28,6 +28,7 @@ import { Effect, Layer, Path, Sink, Stream } from "effect"
 import * as EffectHttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
+import { runInNewContext } from "node:vm"
 
 import {
   ChildProcessSpawner,
@@ -45,10 +46,10 @@ const decoder = new TextDecoder()
 /**
  * A spawner that *can* pipe stdin, which is the whole point of this bundle.
  *
- * It emulates the three default probes rather than matching their exact
- * rendered text: a command fed a `stdin` stream echoes it, a command carrying
- * `HOST_CONTRACT_ENV` echoes that, and `printf` echoes its arguments. Anything
- * else is silent. Everything about the handle is the smallest thing that
+ * A command fed a `stdin` stream echoes it, and a command carrying
+ * `HOST_CONTRACT_ENV` echoes that. Node probes run with controlled stdout and
+ * a clock that records pending work without scheduling it. Everything about
+ * the handle is the smallest thing that
  * satisfies `ChildProcessHandle`.
  */
 const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(ChildProcessSpawner)(
@@ -59,11 +60,30 @@ const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(Ch
         ? Array.from(yield* Stream.runCollect(stdin), (chunk) => decoder.decode(chunk)).join("").trimEnd()
         : undefined
       const environment = CommandLine.env(command)?.["HOST_CONTRACT_ENV"]
-      const printf = command._tag === "StandardCommand" && command.command === "printf"
-        ? command.args.join(" ")
-        : undefined
-      const rendered = CommandLine.render(command)
-      const pending = rendered.includes("sleep 10")
+      let probe = command
+      while (probe._tag === "PipedCommand") probe = probe.left
+      let output: string | undefined
+      let pending = false
+      if (
+        piped === undefined && environment === undefined &&
+        probe.command === process.execPath && probe.args[0] === "-e"
+      ) {
+        output = ""
+        const schedule = () => {
+          pending = true
+        }
+        runInNewContext(probe.args[1]!, {
+          process: {
+            stdout: {
+              write: (value: string) => {
+                output += value
+              }
+            }
+          },
+          setInterval: schedule,
+          setTimeout: schedule
+        }, { timeout: 1_000 })
+      }
       let running = pending
       if (pending) {
         yield* Effect.addFinalizer(() =>
@@ -72,7 +92,7 @@ const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(Ch
           })
         )
       }
-      const text = piped ?? environment ?? printf ??
+      const text = piped ?? environment ?? output ??
         (command._tag === "PipedCommand" ? "host-contract-pipeline" : "")
       const stdout = text === "" ? Stream.empty : Stream.fromArray([encoder.encode(text)])
       return makeHandle({
