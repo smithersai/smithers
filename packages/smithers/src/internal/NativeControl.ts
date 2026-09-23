@@ -84,7 +84,14 @@ import * as HealthHost from "./HealthHost.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
-import { cellLimits, checkpointStore, layerSeatResolver, testFlows, testRunner } from "./NativeEquipment.ts"
+import {
+  cellLimits,
+  checkpointStore,
+  layerSeatResolver,
+  sealedContainer,
+  testFlows,
+  testRunner
+} from "./NativeEquipment.ts"
 import * as NodeWorkspaceObservation from "./NodeWorkspaceObservation.ts"
 import * as SourceRevision from "./SourceRevision.ts"
 import * as SupervisorMemory from "./SupervisorMemory.ts"
@@ -923,14 +930,17 @@ export const make = (
         const judge = yield* Effect.context<Evaluator.Evaluator>()
         const runner = testRunner(environment, root, workspaceRoot)
         const container = Container.makeCommand()
+        // A sealed host reaches one container and nothing of itself: `bash`
+        // refuses every other target and the host filesystem flows are absent.
+        const sealedTo = sealedContainer(environment)
         // Each configured server is a startup-time connection the operator
         // opted into by naming it, the same way `memory` below is: a server
         // that fails to spawn dies the executor loudly (`Effect.orDie`) rather
         // than running silently short of the tools it was configured to have.
         const mcp = yield* Effect.forEach(mcpServers, (server) => Effect.orDie(McpFlows.connected(server)))
         const sources = [
-          StandardFlows.filesystem(filesystemServices, nativeSearch),
-          StandardFlows.shell(shellServices, container),
+          ...(sealedTo === undefined ? [StandardFlows.filesystem(filesystemServices, nativeSearch)] : []),
+          StandardFlows.shell(shellServices, container, { sealedTo }),
           StandardFlows.memory(memoryServices),
           // The same judge the completion brake and `test` use, offered to the
           // cell directly. A host that starts runs always holds a live judge

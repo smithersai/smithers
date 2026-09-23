@@ -206,18 +206,23 @@ export const filesystem = (
  * neither fails the spawn with the shell's own "not found" — which is honest —
  * while a host with docker gets the transport it plainly has.
  *
+ * `sealedTo` names the one container `bash` may reach; every other call,
+ * including one with no container that would run on this host, is refused
+ * with `outside_container` (`Bash.sealed`).
+ *
  * @category constructors
  * @since 0.1.0
  */
 export const shell = (
   services: Context.Context<ChildProcessSpawner.ChildProcessSpawner | Path.Path>,
-  container: Container.Container = Container.makeCommand()
+  container: Container.Container = Container.makeCommand(),
+  options?: { readonly sealedTo?: string | undefined }
 ): FlowBinding.Source =>
   FlowBinding.source("std/shell", [
     FlowBinding.provide(
       FlowBinding.make({
         flow: Bash.flow,
-        handler: Bash.run,
+        handler: options?.sealedTo === undefined ? Bash.run : Bash.sealed(options.sealedTo),
         publicError: publicExecutionError,
         presentation: Bash.presentation
       }),

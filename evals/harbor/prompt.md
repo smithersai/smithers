@@ -10,8 +10,8 @@ it was given. Nothing else about the task is known to you or to this harness.
 
 ## Your environment
 
-Your `bash` flow runs on a host outside the container. Every command that
-touches the task must run inside the container, by naming it:
+Your `bash` flow reaches only the container. Every command names it; a
+command that names no container, or another one, is refused:
 
     { mode: "unhermetic", container: "{{container}}", cwd: "{{cwd}}", command: "<command>" }
 
@@ -21,10 +21,8 @@ reaches the interpreter on standard input as data, so nothing quotes it,
 escapes it, or terminates it with a heredoc marker. `interpreter: "bash"` with a
 `script` is how to write a file: `cat > /path <<'EOF' ... EOF` inside the script.
 
-- The container's filesystem is not mounted on this host. `read`, `grep`,
-  `edit`, `write`, `glob` and `ls` act on the host's working directory, which
-  holds nothing of the task. Do not use them for the task; read with `cat`,
-  search with `grep`, and write with a script, all inside the container.
+- There are no file flows. Read with `cat`, search with `grep`, and write
+  with a script, all through `bash` inside the container.
 - The container has no network. Everything the task needs is already in it.
 - Always check the exit code and output of a command before believing it
   worked. A command that exits non-zero did not do what you asked.

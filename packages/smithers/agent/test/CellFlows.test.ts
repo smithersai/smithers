@@ -660,6 +660,69 @@ ctx.done(probe.stdout.trim())`
     )
   })
 
+  it("refuses host bash with outside_container when the shell is sealed to one container", async () => {
+    // A benchmark host holds other tasks' tests and reference solutions. The
+    // sealed binding lets a cell reach the task's container and nothing else:
+    // a call with no container, which would run on this host, and a call
+    // naming another container both fail before anything is spawned.
+    const spawned: Array<string> = []
+    const outcome = await drive(
+      collect({
+        flows: [
+          StandardFlows.shell(
+            Context.make(
+              ChildProcessSpawner.ChildProcessSpawner,
+              ChildProcessSpawner.makeNoop({
+                spawn: (command) =>
+                  Effect.sync(() => {
+                    spawned.push(CommandLine.render(command))
+                    return makeHandle({
+                      pid: ProcessId(1),
+                      exitCode: Effect.succeed(ExitCode(0)),
+                      isRunning: Effect.succeed(false),
+                      kill: () => Effect.void,
+                      stdin: Sink.drain,
+                      stdout: Stream.fromArray([new TextEncoder().encode("ok\n")]),
+                      stderr: Stream.empty,
+                      all: Stream.fromArray([new TextEncoder().encode("ok\n")]),
+                      getInputFd: () => Sink.drain,
+                      getOutputFd: () => Stream.empty,
+                      unref: Effect.succeed(Effect.void)
+                    })
+                  })
+              })
+            ).pipe((spawner) => Context.merge(spawner, pathServices)),
+            undefined,
+            { sealedTo: "testbed" }
+          )
+        ],
+        cells: [
+          `const seen = []
+for (const input of [
+  { mode: "unhermetic", command: "cat /host/tests/test_outputs.py" },
+  { mode: "unhermetic", container: "other", command: "cat /solution/solve.sh" },
+  { mode: "unhermetic", container: "testbed", command: "echo ok" }
+]) { try { seen.push((await ctx.call("bash", input)).stdout.trim()) } catch (error) { seen.push("refused") } }
+ctx.done(seen.join(","))`
+        ]
+      })
+    )
+
+    expect(outcome._tag).toBe("completed")
+    const settled = settledCalls(eventsOf(outcome))
+    expect(settled.map((event) => event.result.outcome)).toEqual(["failure", "failure", "success"])
+    expect(settled[0]?.result.code).toBe("flow_failed")
+    expect(settled[0]?.result.message).toContain('only inside container "testbed"')
+    expect(settled[1]?.result.message).toContain('not "other"')
+    // Only the sealed container was reached; no host command was spawned.
+    expect(spawned.some((argv) => argv.includes("/host/tests") || argv.includes("solve.sh"))).toBe(false)
+    expect(spawned.find((argv) => argv.includes("echo ok"))).toBe(`docker exec -- testbed bash -lc 'echo ok'`)
+    const resolved = eventsOf(outcome).find((event) => event._tag === "resolved")
+    expect(resolved?._tag === "resolved" ? resolved.message.content : []).toEqual([
+      { type: "text", text: "refused,refused,ok" }
+    ])
+  })
+
   it("runs the declared test runner as a flow and answers with a reading of its report", async () => {
     // The runner is a declaration, not a parameter: the cell selects which
     // tests, never how to run them, so a guessed label cannot happen here.

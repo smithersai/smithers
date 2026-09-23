@@ -507,3 +507,35 @@ export const run = Effect.fn("Bash.run")(function*(
     ...(mutated === undefined ? {} : { mutated })
   }
 })
+
+/**
+ * The refusal a sealed host answers a call outside its container with.
+ *
+ * @category errors
+ * @since 1.0.0-rc.1
+ */
+export const outsideContainer = (sealedTo: string, requested: string | undefined): StdError.StdError =>
+  new StdError.StdError({
+    code: "outside_container",
+    message: requested === undefined
+      ? `This host runs commands only inside container "${sealedTo}". Name it: { mode: "unhermetic", container: "${sealedTo}", command: "..." }.`
+      : `This host runs commands only inside container "${sealedTo}", not "${requested}".`
+  })
+
+/**
+ * {@link run}, sealed to one container.
+ *
+ * A host that must not be reachable from the cell (a benchmark host holding
+ * other tasks' tests and reference solutions, say) binds this instead of
+ * {@link run}: a call naming `sealedTo` runs as usual, and every other call,
+ * including one with no container that would run on the host, fails with
+ * `outside_container` before anything is spawned.
+ *
+ * @category handlers
+ * @since 1.0.0-rc.1
+ */
+export const sealed = (sealedTo: string) =>
+(
+  input: Input
+): Effect.Effect<Output, StdError.StdError, ChildProcessSpawner.ChildProcessSpawner | Path.Path> =>
+  input.container === sealedTo ? run(input) : Effect.fail(outsideContainer(sealedTo, input.container))

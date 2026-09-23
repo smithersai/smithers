@@ -31,7 +31,8 @@ export const Code = Schema.Literals([
   "provider_unavailable",
   "unsupported",
   "unsupported_content_type",
-  "response_too_large"
+  "response_too_large",
+  "outside_container"
 ])
 
 /**

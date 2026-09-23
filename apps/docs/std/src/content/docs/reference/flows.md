@@ -149,8 +149,10 @@ Finds files through the Smithers Ripgrep Subset v1 contract, corresponding to
 | `notice`    | string, optional | Truncation, or why a pattern was unsatisfiable. |
 
 Fails with `invalid_input` for `noIgnore: false`, `invalid_pattern` for an
-unsupported glob, `not_found` for a missing root, or a peer failure
-(`command_failed`, `provider_unavailable`, `request_failed`).
+unsupported glob, `not_found` for a missing root, `command_failed` when the
+root exists but the host cannot inspect it (the message carries the host's
+own reason), or a peer failure (`command_failed`, `provider_unavailable`,
+`request_failed`).
 
 ## grep
 
@@ -194,7 +196,8 @@ Three schemas are exported alongside `Output`:
 | `Grep.Match`       | `file`, `line`, `text`, `before`, `after`, `symbol` |
 
 Fails with `invalid_input` for a refused option combination, `invalid_pattern`
-for an unsupported expression, `not_found` for a missing root, or a peer failure.
+for an unsupported expression, `not_found` for a missing root, `command_failed`
+when the root exists but the host cannot inspect it, or a peer failure.
 
 ## bash
 
@@ -227,7 +230,12 @@ Runs a shell command line, or a script delivered to an interpreter as data.
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside
 the schemas. Fails with `invalid_input`, `outside_declared_reads`,
 `outside_declared_writes`, `provider_unavailable` (a container with no
-transport), `timeout`, or `command_failed`.
+transport), `outside_container`, `timeout`, or `command_failed`.
+
+`Bash.sealed(container)` is `Bash.run` sealed to one container: a call naming
+any other container, or none, fails with `outside_container` before anything
+is spawned. A host that must stay out of the cell's reach binds it
+(`StandardFlows.shell(services, transport, { sealedTo })`).
 
 ## test
 
@@ -475,6 +483,7 @@ all values.
 | `unsupported`              | The service does not implement this query.                    |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response exceeded the byte cap before decoding.           |
+| `outside_container`        | A sealed `bash` was asked to run outside its one container.   |
 
 The list is closed and stable, and it is the vocabulary a host binding its own
 handler or its own `Search` peer answers in, `not_a_file` and `not_modified`

@@ -114,6 +114,11 @@ def check_environment() -> None:
     api = agent.cli_environment(base, auth_mode="api-key")
     assert api["SMITHERS_OPENAI_AUTH"] == "api-key" and api["OPENAI_API_KEY"] == "sk-x"
     assert base["SMITHERS_OPENAI_AUTH"] == "api-key", "the caller's dict is not mutated"
+    sealed = agent.cli_environment(base, auth_mode="chatgpt", container="task-1")
+    assert sealed["SMITHERS_BASH_CONTAINER"] == "task-1", "bash is sealed to the task container"
+    assert "SMITHERS_BASH_CONTAINER" not in agent.cli_environment(
+        {"PATH": "/bin", "SMITHERS_BASH_CONTAINER": "stale"}, auth_mode="chatgpt"
+    ), "no stale seal reaches an unsealed run"
 
 
 def check_journal() -> str:

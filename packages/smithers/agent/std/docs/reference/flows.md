@@ -229,7 +229,12 @@ Runs a shell command line, or a script delivered to an interpreter as data.
 `Bash.Input` and `Bash.Output` are also exported as TypeScript types alongside
 the schemas. Fails with `invalid_input`, `outside_declared_reads`,
 `outside_declared_writes`, `provider_unavailable` (a container with no
-transport), `timeout`, or `command_failed`.
+transport), `outside_container`, `timeout`, or `command_failed`.
+
+`Bash.sealed(container)` is `Bash.run` sealed to one container: a call naming
+any other container, or none, fails with `outside_container` before anything
+is spawned. A host that must stay out of the cell's reach binds it
+(`StandardFlows.shell(services, transport, { sealedTo })`).
 
 ## test
 
@@ -477,6 +482,7 @@ all values.
 | `unsupported`              | The service does not implement this query.                    |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
 | `response_too_large`       | The response exceeded the byte cap before decoding.           |
+| `outside_container`        | A sealed `bash` was asked to run outside its one container.   |
 
 The list is closed and stable, and it is the vocabulary a host binding its own
 handler or its own `Search` peer answers in, `not_a_file` and `not_modified`

@@ -24,6 +24,7 @@ adapter's own logic and is the only thing here CI runs.
 | `accounts.py`             | Round-robin over every logged-in Codex subscription, one per trial     |
 | `codex_pool.py`           | Harbor's stock Codex CLI agent drawing its `auth.json` from that pool  |
 | `prompt.md`               | The one flow file every task runs; the instruction is pasted verbatim  |
+| `audit_host_calls.py`     | Per-trial audit of `bash` calls that ran on the host, not the task container: clean / host-calls-benign / TAINTED |
 | `verify.sh`               | Offline check: prompt, environment, journal fold, trajectory, names    |
 | `fixtures/check_agent.py` | What `verify.sh` runs                                                  |
 

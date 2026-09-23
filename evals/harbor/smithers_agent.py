@@ -245,7 +245,8 @@ def container_commands(events: list[dict[str, Any]], container: str) -> dict[str
 
 
 def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None = None,
-                    shim: Path | None = None, codex_home: Path | None = None) -> dict[str, str]:
+                    shim: Path | None = None, codex_home: Path | None = None,
+                    container: str | None = None) -> dict[str, str]:
     """The environment the CLI runs under.
 
     The chatgpt mode removes `OPENAI_API_KEY` so the seat can only be served by
@@ -255,6 +256,12 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
     declares a runner; a stale one from the caller's shell would bind a `test`
     flow against the wrong container. The helper is named explicitly so the
     run does not depend on what `/usr/local/bin` holds.
+
+    `container` seals the run to the task container (`SMITHERS_BASH_CONTAINER`):
+    a `bash` call naming no container, which would run on this host beside
+    every task's `tests/` and `solution/`, fails with `outside_container`, and
+    the host filesystem flows are not offered. The stock Codex arm is sealed
+    the same way by running inside the container.
     """
     env = dict(base)
     for name in ("SMITHERS_TEST_COMMAND", "SMITHERS_TEST_CONTAINER", "SMITHERS_TEST_CWD", "SMITHERS_TEST_TIMEOUT_MS"):
@@ -268,6 +275,10 @@ def cli_environment(base: dict[str, str], *, auth_mode: str, helper: Path | None
         env["PATH"] = f"{shim}{os.pathsep}{env.get('PATH', '')}"
     if codex_home is not None:
         env["CODEX_HOME"] = str(codex_home)
+    if container is not None:
+        env["SMITHERS_BASH_CONTAINER"] = container
+    else:
+        env.pop("SMITHERS_BASH_CONTAINER", None)
     return env
 
 
@@ -719,7 +730,8 @@ class SmithersAgent(BaseAgent):
             shim_home = Path(tempfile.mkdtemp(prefix="smithers-shim-")) if self._plue else None
             shim = shim_directory(shim_home, shim_config(dict(os.environ))) if shim_home else None
             env = cli_environment(dict(os.environ), auth_mode=self.auth_mode, helper=helper, shim=shim,
-                                  codex_home=self._account.home if self._account else None)
+                                  codex_home=self._account.home if self._account else None,
+                                  container=container)
             record: dict[str, Any] = {
                 "framework": FRAMEWORK,
                 "seat": self.seat,
