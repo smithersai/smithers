@@ -6,6 +6,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Changes from "../src/changes.ts"
+import { FlowRuns, interrupted, type Run } from "../src/flows.ts"
 import type * as Host from "../src/host.ts"
 import * as Models from "../src/models.ts"
 import * as Panels from "../src/panels.ts"
@@ -477,4 +478,60 @@ it("uses full call identities and replays persisted captions and actual diffs", 
     )
   ).toBe(true)
   expect(restored.items.findLast((item) => item.kind === "cell")?.prose).toBe("Verified addition.")
+})
+
+describe("tab flows through the real flow binding", () => {
+  const bindings = async (f: ReturnType<typeof setup>, runs?: { read: (id: string) => unknown; snapshot: () => ReadonlyArray<unknown> }) =>
+    Effect.runPromise(Runtime.source({
+      publish: () => {},
+      delegate: f.workspace.request,
+      read: (id) => (runs !== undefined && id.startsWith("run") ? runs.read(id) : f.workspace.read(id)),
+      list: () => [...f.workspace.snapshot().tabs, ...(runs?.snapshot() ?? [])]
+    }).bindings())
+  // Synchronous, so a requested tab is read before its launch microtask runs.
+  const call = (all: ReadonlyArray<Awaited<ReturnType<typeof bindings>>[number]>, name: string, input: unknown) => {
+    const binding = all.find((row) => row.descriptor.name === name)!
+    return Effect.runSync(binding.run({ input } as Parameters<typeof binding.run>[0]))
+  }
+
+  it("returns plain JSON for requested, running, done and failed tabs", async () => {
+    const f = setup()
+    const all = await bindings(f)
+    const observed: Array<unknown> = []
+    const read = (status: string) => {
+      const result = call(all, "tab.read", { id: "fix" })
+      expect(result).toMatchObject({ outcome: "success", value: { id: "fix", status } })
+      observed.push(result.value)
+      const listed = call(all, "tab.list", {})
+      expect(listed).toMatchObject({ outcome: "success", value: [{ id: "fix", status }] })
+    }
+    call(all, "agent.delegate", request)
+    read("requested")
+    await tick()
+    read("running")
+    f.complete({ _tag: "done", answer: "Fixed." })
+    await tick()
+    read("done")
+    const failing = setup()
+    const failed = await bindings(failing)
+    call(failed, "agent.delegate", request)
+    await tick()
+    failing.complete({ _tag: "failed", message: "Provider unavailable", detail: "" })
+    await tick()
+    const result = call(failed, "tab.read", { id: "fix" })
+    expect(result).toMatchObject({ outcome: "success", value: { status: "failed", message: "Provider unavailable" } })
+    observed.push(result.value)
+    for (const value of observed) expect(JSON.parse(JSON.stringify(value))).toEqual(value)
+  })
+
+  it("returns plain JSON for a failed flow run with no answer", async () => {
+    const f = setup()
+    const run: Run = { id: "run-1", flow: "deploy", by: "agent", input: {}, requested: "{}", status: "requested", startedAt: 1 }
+    const runs = new FlowRuns({ persist: () => {}, restored: [run] })
+    const all = await bindings(f, runs)
+    const read = call(all, "tab.read", { id: "run-1" })
+    expect(read).toMatchObject({ outcome: "success", value: { id: "run-1", status: "failed", message: interrupted } })
+    expect(JSON.parse(JSON.stringify(read.value))).toEqual(read.value)
+    expect(call(all, "tab.list", {})).toMatchObject({ outcome: "success", value: [{ id: "run-1", status: "failed" }] })
+  })
 })
