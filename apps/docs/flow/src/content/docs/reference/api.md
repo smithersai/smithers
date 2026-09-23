@@ -57,6 +57,12 @@ The returned definition exposes:
 - `annotate` and `annotateMerge`
 - `withRollback`
 
+`Flow.make`, declared `Action.make`, and `Action.makeSystem` accept
+`declaredFrom: original` when a wrapper reconstructs a native declaration.
+The new declaration retains the original's diagnostic source location, including
+an absent location. It still owns its new body, options, and call closures.
+The source reference is not stored in key material and changes no digest.
+
 There is no `toLayer` on a flow. A flow carries a body and never a handler, so the seam that registers one is internal and `Interpreter.layer(flow)` is the public way to make a flow executable.
 
 ### Execution identity
@@ -131,12 +137,12 @@ A deferred token encodes the flow name, the execution id, and the deferred name,
 
 `Graph.build(flowOrNode, payload, options)` turns a body, or a bare node, into the plan-time graph the interpreter drives and the planner compiles. Building is a pure function of the declarations and the payload, so the whole shape of a round is known before its first action runs.
 
-| Export                                                                     | Purpose                                                                                     |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `build`                                                                    | builds the graph, flattening inline flow calls and expanding combinators into keyed nodes   |
-| `nodes`, `edges`, `drafts`, `diagnostics`                                  | read what the build produced                                                                |
-| `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, `BuildOptions` | the models                                                                                  |
-| `maximumGraphDepth`                                                        | the nesting bound the build refuses past, so an unrolling composition reads the same number |
+| Export                                                                     | Purpose                                                                                                                                   |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`                                                                    | builds the graph, flattening inline flow calls and expanding combinators into keyed nodes                                                 |
+| `nodes`, `edges`, `drafts`, `diagnostics`                                  | read what the build produced                                                                                                              |
+| `Graph`, `GraphNode`, `Edge`, `EdgeReason`, `LayerRequest`, `BuildOptions` | the models                                                                                                                                |
+| `maximumGraphDepth`                                                        | the nesting bound the build refuses past, so an unrolling composition reads the same number                                               |
 | `evaluatedFrom`                                                            | states that a file about to be evaluated holds bytes read from another, so the declarations inside it report the entry an author can open |
 
 A graph carrying a FATAL diagnostic is inspectable but deliberately not compilable, so a body whose topology is incomplete is reported rather than half-driven. Building refuses a nesting depth past its bound and refuses a duplicate node id, because a node id is durable dispatch identity and two nodes answering to one address would let a later settlement overwrite an earlier one.

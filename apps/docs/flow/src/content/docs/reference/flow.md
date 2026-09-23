@@ -222,12 +222,16 @@ The implementation table, scoped to the composition that builds it. Filing an im
 
 ### `Action.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error>`
+- **Signature:** `make(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error>`
 - **Signature:** `make(options: { name, success?, error?, execute, tier?, idempotencyKey?, nondeterministic?, metadata?, interruptRetryPolicy?, retryPolicy?, annotations? }): Action<Success, Error, R>`
 - **Since:** `0.1.0`
 - **Related:** [`Action.makeSystem`](#actionmakesystem)
 
 Creates either a named action declaration or an inline executable action, selected by whether the first argument is a string. The declared form is pure data whose implementation attaches later through `Declared.toLayer`. The inline form carries its `execute` effect directly.
+
+The declared form accepts `declaredFrom: original` to retain a native declaration's
+diagnostic source location, including its absence. The new action owns its call
+closures; this option changes neither dispatch identity nor key material.
 
 | Option                  | Forms    | Meaning                                                                         |
 | ----------------------- | -------- | ------------------------------------------------------------------------------- |
@@ -248,7 +252,7 @@ Creates either a named action declaration or an inline executable action, select
 
 ### `Action.makeSystem`
 
-- **Signature:** `makeSystem(tag: Tag, options: { payload, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
+- **Signature:** `makeSystem(tag: Tag, options: { payload, declaredFrom?, implementationVersion?, success?, error?, tier?, idempotencyKey?, nondeterministic?, retryPolicy?, interruptRetryPolicy?, fileBoundary?, annotations? }): Declared<Tag, Payload, Success, Error, never>`
 - **Since:** `0.1.0`
 
 Declares a system action, one whose implementation ships with the engine rather than with the composition that calls it. It matches `Action.make`'s declared form in every respect except the requirement: a system declaration mints none, so a body using `Sleep` or `WaitFor` pushes no layer obligation onto its callers.
@@ -439,7 +443,7 @@ Creates a token from an explicit flow and execution id, for a resolver outside t
 
 ### `DurableDeferred.tokenFromPayload`
 
-- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, Crypto.Crypto>`
+- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>`
 - **Since:** `0.1.0`
 
 Creates a token by deriving the execution id from the flow payload. Declare an `idempotencyKey` or install the opt-in derived source for stable payload identity. The default fresh source mints a new id on each call; use `tokenFromExecutionId` with a saved id to address an existing execution.
@@ -632,12 +636,16 @@ Declares the host's execution-id source as a layer. Callers that name an `execut
 
 ### `Flow.make`
 
-- **Signature:** `make(tag: Tag, options: { payload, description?, capabilities?, effects?, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
+- **Signature:** `make(tag: Tag, options: { payload, declaredFrom?, description?, capabilities?, effects?, idempotencyKey?, success?, error?, suspendedRetryPolicy?, maxRounds?, annotations?, body }): Flow<Tag, PayloadSchemaOf<Payload>, Success, Error, Requires>`
 - **Default:** `success` is `Schema.Void`, `error` is `Schema.Never`, `annotations` is `Context.empty()`
 - **Required:** `payload` and `body`
 - **Since:** `0.1.0`
 
 Creates a durable flow definition. The `body` is the flow's one behavior, evaluated at plan time only, and it must be pure: it may not read mutable module state, clocks, random values, services, or values captured outside `payload`. A flow with nothing to plan is an action instead. `Flow.make` throws a `RangeError` when `maxRounds` is not a positive safe integer.
+
+`declaredFrom: original` retains a native declaration's diagnostic source location,
+including its absence, while constructing a fresh flow with the supplied body.
+It does not change key material or execution identity.
 
 `description`, `capabilities`, and `effects` are declared as literals and lowered into the annotation bag, so a catalog reading the source text projects the same values `Graph.build` enforces. `effects` takes `{ reads, writes, mode, onConflict, tier? }` and is normalized by `Effects.make`.
 

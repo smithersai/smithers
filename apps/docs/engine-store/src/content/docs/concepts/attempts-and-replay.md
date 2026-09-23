@@ -31,14 +31,14 @@ question, answered in [Cache admission](/concepts/cache-admission/).
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | `succeeded`   | Returns the recorded result, and calls `StepBoundary.replayOutputs` first so the workspace holds the outputs the step produced. |
 | `failed`      | Rethrows the persisted domain failure. It never re-admits the attempt.                                                          |
-| `running`     | Refuses with `AttemptAdmissionRejected`: another attempt is genuinely mid-flight.                                               |
+| `running`     | Recovers under the run fence and shared admission permit, honoring any recorded effect crossing.                                |
 | `suspended`   | Continues the same attempt rather than burning a new one against the retry budget.                                              |
 
-Because a `failed` row rethrows rather than re-executes,
-`AttemptAdmissionRejected` marks only genuinely mid-flight rows. The failure
-values were schema-encoded before persistence, so a `_tag` survives the JSON
-round trip and a `RetryPolicy`'s non-retryable matching still applies on
-replay.
+An admitted attempt remains authoritative when a matching shared cache row
+exists; another run's cached success cannot replace its result or failure.
+Failure values were schema-encoded before persistence, so a `_tag` survives
+the JSON round trip and a `RetryPolicy`'s non-retryable matching still applies
+on replay.
 
 ## Which columns are redacted
 
@@ -58,15 +58,16 @@ belongs in a `Redacted` field of the action's own success schema.
 
 ## Admission is exclusive per key
 
-Attempt admission holds one mutex per store incarnation, shared by every
-dispatch that engine drives. Two fibers that reach the same key at the
-same time do not both open an attempt row: one is admitted and the other is
-refused with `AttemptAdmissionRejected`, whose `outcome` field names which
-check refused it, a superseded fence, a live same-key attempt, or an
-already-settled row.
+Each engine or plan scheduler shares admission permits across its dispatches.
+A permit covers one run and step key through admission, execution, and
+settlement. Concurrent same-key dispatches wait, then replay the settled
+attempt instead of executing another body. Interruption releases the permit.
 
-Because the body did not execute, that failure is always safe to surface
-without compensation. It is a scheduling answer, not a domain failure.
+Holding the permit and the run fence permits recovery of a stranded `running`
+attempt. A recorded successful effect crossing supplies the result directly;
+an unresolved irreversible crossing requires an idempotency key before retry.
+The durable owner and admission checks still refuse a superseded fence or a
+conflicting attempt row.
 
 ## Attempt counters survive pruning
 

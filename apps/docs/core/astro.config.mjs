@@ -8,7 +8,7 @@ export default defineDocsSite({
   starlight,
   slug: "core",
   title: "@smthrs/core",
-  description: "Flow and Node builders: the pure plan-time data model of the Smithers harness",
+  description: "Schema-first flow signatures and metadata over @smthrs/flow: one options object that lowers to a declared action and the flow that calls it",
   sourceDir: "packages/smithers/flows/core",
   contentDir: fileURLToPath(new URL("./src/content/docs", import.meta.url))
 })

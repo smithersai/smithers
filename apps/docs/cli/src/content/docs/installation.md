@@ -66,11 +66,27 @@ not supported on Bun. That makes every installation path run on Node:
 | Path | Command |
 | --- | --- |
 | Global install | `smthrs <verb>` |
-| One-off through npm | `npx --package @smthrs/cli@next smthrs <verb>` |
+| One-off through npm | `npx smthrs@next <verb>` or `npx --package @smthrs/cli@next smthrs <verb>` |
 | One-off through Bun | `bun x --package @smthrs/cli@next smthrs <verb>` |
 
 Bun honours the shebang, so `bun x` starts Node. Running the CLI with
 `bun --bun` overrides the shebang and is not supported.
+
+The unscoped `smthrs` package ships a `smthrs` executable that runs
+`@smthrs/cli`, which is what makes `npx smthrs <verb>` work.
+
+## The terminal UI
+
+`smthrs tui` opens the terminal coding agent in the current directory. It
+renders with OpenTUI, which needs Bun 1.3 or later on `PATH`; the CLI stays on
+Node and starts Bun for the TUI. Set `SMITHERS_BUN` to use another Bun.
+
+```bash
+npx smthrs@next tui              # open the TUI here
+smthrs tui ../repo -c            # continue the latest session in ../repo
+smthrs tui -m openai:gpt-6-sol   # choose the chat seat
+smthrs tui -p "Summarize README" # print one answer and exit
+```
 
 ## Workspace target commands
 

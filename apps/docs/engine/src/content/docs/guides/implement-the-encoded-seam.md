@@ -88,8 +88,8 @@ drive a round, and provide the `FlowRuntime.FlowInstance` the run needs;
 
 ## Implement the optional members deliberately
 
-Each optional member is a guarantee a durable store can offer and an in-memory
-one cannot:
+Each optional member adds a guarantee; volatile implementations can also supply
+the wake and conditional-completion hooks:
 
 | Member                  | Implement it when                                                                                                                                                                                                                                                                          |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -97,6 +97,9 @@ one cannot:
 | `actionLatestAttempt`   | You persist attempt numbers. Returning the highest one keeps a resumed run from re-sleeping the backoff ladder from attempt 1.                                                                                                                                                             |
 | `resumeSignal`          | You can observe an in-process wake. The engine races it against the suspension backoff sleep, so a completed deferred continues a waiting caller at once.                                                                                                                                  |
 | `deferredDoneIfWaiting` | You track what a parked run is waiting for. Complete the deferred only when the run's waiting reason and token match, and answer `Existing`, `Completed`, or `NotWaiting`.                                                                                                                 |
+| `actionSnapshot`        | You persist the earliest snapshot handle for each compensable key. Evaluate and persist `ActionExecuteOptions.snapshot` only for actual execution, after journal lookup and before the action runs. See [compensable actions](/guides/compensable-actions/).                                   |
+| `recordNode`            | You retain interpreter topology and settlements. Address records by the supplied `sourceId` so replay does not duplicate them.                                                                                                                                                             |
+| `nodeRecordBytes`       | You measure the complete encoded journal envelope for deterministic topology pagination.                                                                                                                                                                                                   |
 
 Omitting any of them is a supported composition. The engine falls back and logs
 where the fallback is observable.

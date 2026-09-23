@@ -105,12 +105,14 @@ Its limits are the honest boundary of what an in-memory test can prove:
 - There is no eviction. Completed executions, action settlements, deferred
   results, and clocks are retained for the life of the layer, which is fine for
   a test and wrong for a long-lived process.
-- Two optional seam members are absent: `actionRetryOrigin` and
+- The retry hooks are absent: `actionRetryOrigin` and
   `actionLatestAttempt`. There is no durable retry origin and no persisted
   attempt counter, so the schedule-to-close budget and the attempt number are
   in-process. A test that must prove those survive a restart needs the
-  durable engine from [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/). The other
-  two optional members are implemented in memory: `deferredDoneIfWaiting`
+  durable engine from [`@smthrs/engine-store`](https://engine-store.smithers.sh/reference/api/). Memory also
+  omits `actionSnapshot`, `recordNode`, and `nodeRecordBytes`: snapshots are
+  process-local and no graph journal is retained. Two optional members are
+  implemented in memory: `deferredDoneIfWaiting`
   completes a deferred only while the round that annotated the wait is
   parked, so conditional completion on a reason and token can be tested
   here, and `resumeSignal` wakes a caller parked on the suspension backoff

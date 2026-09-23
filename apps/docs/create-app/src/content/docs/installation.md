@@ -50,8 +50,8 @@ release line:
 ```json
 {
   "dependencies": {
-    "@smthrs/core": "1.0.0-rc.0",
-    "@smthrs/create-app": "1.0.0-rc.0"
+    "@smthrs/core": "1.0.0-rc.1",
+    "@smthrs/create-app": "1.0.0-rc.1"
   }
 }
 ```
@@ -123,7 +123,7 @@ subpath skips its peer:
 | ------------------------------ | -------------- | -------------------------------------------------------- |
 | `@effect/platform-node`        | `4.0.0-rc.115` | `./testing`                                              |
 | `@effect/platform-node-shared` | `4.0.0-rc.115` | `./testing`                                              |
-| `@smthrs/testing`              | `1.0.0-rc.0`   | `./testing`                                              |
+| `@smthrs/testing`              | `1.0.0-rc.1`   | `./testing`                                              |
 | `react`                        | `^19.2.8`      | `./ui`, and any page or layout                           |
 | `vite`                         | `^8.2.2`       | `./vite`                                                 |
 | `vitest`                       | `^5.0.0`       | `./testing`                                              |
@@ -133,7 +133,7 @@ The default library install has no test runner or testing facade. To use
 `@smthrs/create-app/testing`, install its prerequisites explicitly:
 
 ```bash
-pnpm add -D @smthrs/testing@1.0.0-rc.0 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
+pnpm add -D @smthrs/testing@1.0.0-rc.1 @effect/platform-node@4.0.0-rc.115 @effect/platform-node-shared@4.0.0-rc.115 vitest@5.0.0
 ```
 
 `@effect/platform-node-shared` is the implementation `@effect/platform-node`

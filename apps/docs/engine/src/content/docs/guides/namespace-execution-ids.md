@@ -56,9 +56,9 @@ payload:
 
 Returning `undefined` means two different things:
 
-- For execute and discard, it lets the engine derive the id from the flow's
-  idempotency key, which is the right answer when a flow is already
-  content-addressed.
+- For execute and discard, it selects the flow's idempotency key or ambient
+  execution-id source. Without a key or a custom source, each call gets a fresh
+  UUID and does not reattach to earlier work.
 - For resume, it is a refusal. The server raises `Flow.ExecutionIdRequired`
   as a defect and never calls `Flow.resume`. Substituting the client's value there
   would hand the engine the very id the hook exists to replace, which is how a

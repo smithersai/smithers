@@ -53,14 +53,15 @@ The identity and boundary information an `Encoded` implementation receives for o
 
 The fields:
 
-| Field              | Type                | Description                                                                               |
-| ------------------ | ------------------- | ----------------------------------------------------------------------------------------- |
-| `action`           | `Action.Any`        | The action declaration being dispatched.                                                  |
-| `attempt`          | `number`            | The attempt number, starting at `1`. A value above `1` marks a retry.                     |
-| `key`              | `string`            | The persisted step identity the attempt is recorded under.                                |
-| `tier`             | `Action.Tier`       | The action's durability tier, copied from the declaration.                                |
-| `nondeterministic` | `true \| undefined` | Optional. Present when a cache put race may retain the first row without failing the run. |
-| `metadata`         | `unknown`           | The action declaration's metadata, passed through unread.                                 |
+| Field              | Type                                                      | Description                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `action`           | `Action.Any`                                              | The action declaration being dispatched.                                                                                                                              |
+| `attempt`          | `number`                                                  | The attempt number, starting at `1`. A value above `1` marks a retry.                                                                                                 |
+| `key`              | `string`                                                  | The persisted step identity the attempt is recorded under.                                                                                                            |
+| `tier`             | `Action.Tier`                                             | The action's durability tier, copied from the declaration.                                                                                                            |
+| `nondeterministic` | `true \| undefined`                                       | Optional. Present when a cache put race may retain the first row without failing the run.                                                                             |
+| `metadata`         | `unknown`                                                 | The action declaration's metadata, passed through unread.                                                                                                             |
+| `snapshot`         | optional `Effect<unknown, never, FlowInstance \| Crypto>` | Supplied only when the driver implements `actionSnapshot`. Evaluate and persist the handle before actual execution, after journal lookup and in-flight deduplication. |
 
 ### `FlowEngine.Encoded`
 
@@ -102,6 +103,8 @@ deterministically, so a resume keeps exactly the same page identities. The
 interpreter refuses a node that cannot fit alone before recording any page.
 
 `actionRetryOrigin` returns the persisted start time of the first surviving attempt for `key`, so a `RetryPolicy.expirationMs` bound survives park, resume, and process death. `Option.none()` means no attempt row survives, and the engine then falls back to the current clock and logs a warning. `actionLatestAttempt` returns the highest persisted attempt number for `key`, so the attempt counter resumes from the persisted sequence rather than from `1`.
+
+`actionSnapshot` returns the earliest persisted pre-attempt handle for a compensable key. A present handle may itself be null or undefined. Keep it across unfinished attempts and process restarts. The associated `ActionExecuteOptions.snapshot` effect must run only for actual execution, never for a journal hit or joined dispatch.
 
 ### `FlowEngine.SuspendedResumeGaveUp`
 
@@ -243,7 +246,7 @@ The context a compensable action snapshot boundary receives for one dispatch.
 - **Since:** `0.1.0`
 - **Related:** `FlowEngine.SnapshotBoundaryRequired`
 
-The minimal host snapshot boundary compensable actions execute against. On an attempt above `1` with a recorded snapshot, the engine calls `restore` before taking the next one. It calls `snapshot` before every dispatch and `diff` in an ensuring finalizer after it. A compensable action dispatched with this service absent dies with `SnapshotBoundaryRequired`.
+The minimal host snapshot boundary compensable actions execute against. The engine restores the earliest handle before a retry. With `actionSnapshot`, an unfinished first attempt also restores its persisted handle, and journal hits perform no boundary work. Without that hook, handles are process-local and replay still snapshots and diffs. `diff` runs in an ensuring finalizer for every captured attempt. A compensable action dispatched with this service absent dies with `SnapshotBoundaryRequired`.
 
 ## FlowProxy
 
@@ -301,7 +304,7 @@ Derives an `RpcGroup` from a list of flows, giving every flow execute, discard, 
 - **Type:** ``type ConvertRpcs<Flows extends Flow.Any, Prefix extends string> = Flows extends Flow.Flow<infer _Name, infer _Payload, infer _Success, infer _Error, infer _Requires> ? Rpc.Rpc<`${Prefix}${_Name}`, ExecutePayload<_Payload>, _Success, _Error> | Rpc.Rpc<`${Prefix}${_Name}Discard`, ExecutePayload<_Payload>> | Rpc.Rpc<`${Prefix}${_Name}Resume`, typeof ResumePayload> : never``
 - **Since:** `0.1.0`
 
-The RPC definitions generated for one flow's execute, discard, and resume operations. `ExecutePayload<Payload>` and `ResumePayload` are internal: the first is `Schema.Struct({ payload, executionId: Schema.String })`, and the second is `Schema.Struct({ executionId: Schema.String })`.
+The RPC definitions generated for one flow's execute, discard, and resume operations. The internal payload schemas require `executionId` to contain 1–4,096 well-formed UTF-16 code units; execute and discard also carry the flow payload.
 
 ### `FlowProxy.toHttpApiGroup`
 
@@ -320,12 +323,19 @@ The HTTP endpoints generated for one flow's execute, discard, and resume operati
 
 ## FlowProxyServer
 
+### `FlowProxyServer.FlowHandlerDefect`
+
+- **Type:** `class FlowHandlerDefect extends Schema.TaggedError<FlowHandlerDefect>()("@smthrs/engine/FlowHandlerDefect", { code, flowName, diagnostic, message })`
+- **Since:** `1.0.0`
+
+A defect leaving a proxy handler is replaced with this refusal. `code` is `"flow_handler_defect"`; `diagnostic` is bounded and redacted, including sensitive fields with object or array values. The guard also covers synchronous identity callback failures.
+
 ### `FlowProxyServer.ExecutionIdScope`
 
 - **Type:** `interface ExecutionIdScope { (input: { readonly flow: Flow.Any; readonly operation: "execute" \| "discard" \| "resume"; readonly clientValue: string \| undefined; readonly payload: unknown }): string \| undefined }`
 - **Since:** `1.0.0`
 
-The hook that rewrites a caller-supplied execution id before it reaches the engine, so a multi-tenant server namespaces client identity in one place. The server calls it once inside each execute, discard, or resume handler. Execute and discard inputs include the decoded flow payload; resume inputs use `undefined`, because a resume request carries only an execution id. Returning `undefined` for execute or discard lets the engine derive the id from the flow's idempotency key. Returning `undefined` for resume refuses the request with a `Flow.ExecutionIdRequired` defect, because passing the client value through would let a client resume across the namespace the scope confines it to. Without the option, every client value passes through unchanged. An implementation must be pure, must return for every input, and must return a string for every resume, and it receives no request-scoped service.
+The hook that rewrites a caller-supplied execution id before it reaches the engine, so a multi-tenant server namespaces client identity in one place. The server calls it once inside each execute, discard, or resume handler. Execute and discard inputs include the decoded flow payload; resume inputs use `undefined`, because a resume request carries only an execution id. Returning `undefined` for execute or discard selects the flow's idempotency key or ambient execution-id source. Returning `undefined` for resume refuses the request with a `Flow.ExecutionIdRequired` defect, because passing the client value through would let a client resume across the namespace the scope confines it to. Without the option, every client value passes through unchanged. An implementation must be pure, must return for every input, and must return a string for every resume, and it receives no request-scoped service.
 
 ### `FlowProxyServer.layerHttpApi`
 
@@ -353,7 +363,7 @@ The union of RPC handler services required to serve one flow's generated execute
 
 ## Errors
 
-The package defines seven coded refusals, five as `Schema.TaggedError` values raised as defects and two as `Error` subclasses thrown before proxy construction:
+The package defines eight coded refusals, six as `Schema.TaggedError` values raised as defects and two as `Error` subclasses thrown before proxy construction:
 
 | Tag                                        | Raised when                                                                                                                           | Fields                                                                         |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -362,10 +372,11 @@ The package defines seven coded refusals, five as `Schema.TaggedError` values ra
 | `@smthrs/engine/FlowNotRegistered`         | A flow executes, or a handoff names a target, that this engine holds no registration for.                                             | `code`, `flowName`, `message`                                                  |
 | `@smthrs/engine/ExecutionIdentityConflict` | A reused execution id names a different flow declaration, arrives with a different payload, or completes a deferred for another flow. | `code`, `executionId`, `field`, `expected`, `actual`, `message`                |
 | `@smthrs/engine/InvalidRound`              | A round carries a malformed lineage id or ordinal, or `Round.next` receives a `maxRounds` that is not a positive safe integer.        | `code`, `message`                                                              |
+| `@smthrs/engine/FlowHandlerDefect`         | A proxy handler dies; the raw defect is replaced by a bounded redacted diagnostic.                                                    | `code`, `flowName`, `diagnostic`, `message`                                    |
 | `FlowProxyCollision`                       | Two operations derived from a flow set share one wire name.                                                                           | `code`, `operation`, `message`                                                 |
 | `InvalidFlowTag`                           | `FlowProxy.toHttpApiGroup` encodes a route for a flow tag that is not well-formed UTF-16.                                             | `code`, `tag`, `message`                                                       |
 
-The five tagged errors declare `code` as a `Schema.Literal` with a constructor default, and the two `Error` subclasses declare it as a readonly field. The codes, in table order, are `suspended_resume_gave_up`, `snapshot_boundary_required`, `flow_not_registered`, `execution_identity_conflict`, `invalid_round`, `flow_proxy_collision`, and `invalid_flow_tag`. The engine also raises three refusals defined in `@smthrs/flow`: `Flow.MaxRoundsExceeded` from `Round.next`, `Action.IrreversibleRetryRequiresIdempotencyKey` when an irreversible action retries without an idempotency key, and `Flow.ExecutionIdRequired` when an `ExecutionIdScope` returns `undefined` for a resume request.
+The six tagged errors declare `code` as a `Schema.Literal` with a constructor default, and the two `Error` subclasses declare it as a readonly field. The codes, in table order, are `suspended_resume_gave_up`, `snapshot_boundary_required`, `flow_not_registered`, `execution_identity_conflict`, `invalid_round`, `flow_handler_defect`, `flow_proxy_collision`, and `invalid_flow_tag`. The engine also propagates refusals defined in `@smthrs/flow`, including round-budget, action-identity, irreversible-retry, missing-execution-id, cancellation, and execution-cycle errors.
 
 ## Example
 

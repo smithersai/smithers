@@ -77,8 +77,8 @@ import { Graph } from "@smthrs/core"
 
 const Escaping = Flow.make({
   name: "escaping",
-  effects: Effects.make({ reads: [], writes: ["out/**"], mode: "expected", onConflict: "serialize" }),
-  body: () => Write.call({ path: "secret.txt" })
+  effects: Effects.make({ reads: ["src/**"], writes: ["public/**"], mode: "expected", onConflict: "serialize" }),
+  body: () => Write.call({ path: "out/report.json" })
 })
 
 const graph = Graph.build(Escaping.flow, { input: undefined })
@@ -88,15 +88,16 @@ console.dir(Graph.diagnostics(graph).map(({ code, node, path }) => ({ code, node
 
 ```text
 [
-  { code: 'effect_outside_envelope', node: 'root.flow', path: [ 'secret.txt' ] },
-  { code: 'effect_outside_envelope', node: 'root.flow.flow', path: [ 'secret.txt' ] }
+  { code: 'effect_outside_envelope', node: 'root.flow', path: [ 'out/report.json' ] },
+  { code: 'effect_outside_envelope', node: 'root.flow.flow', path: [ 'out/report.json' ] }
 ]
 ```
 
-Here `Write` declares `secret.txt` and `Escaping` granted only `out/**`, so the
+Here `Write` declares `out/report.json` and `Escaping` granted only `public/**`, so the
 call and the action dispatch beneath it are both refused. `node` names the node
 whose declaration was refused, so you can find it in your source by its
-structural position.
+structural position. The declaration is static: changing the call's `path`
+payload alone does not change its declared effect paths.
 
 The payload is `{ input: undefined }` rather than `undefined`: `Escaping`
 declared no `input`, so its input schema is `Schema.Void`, and a non-struct

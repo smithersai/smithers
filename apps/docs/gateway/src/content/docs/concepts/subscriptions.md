@@ -61,8 +61,8 @@ history is never assigned a guessed call identity to force a match.
 Events accumulate in the stream, so recomputing each delta does not re-read
 the journal. Resuming a historical `run-summary` first rebuilds its compacted
 health prefix once through durable follow replay, as described below. During
-ordinary run following, only `run-summary` and `run-tree` re-read the run row,
-because their lifecycle status comes from that row.
+ordinary run following, `run-summary`, `run-tree`, and `approvals` re-read the
+run row for current lifecycle state and open human waits.
 
 ## What a delta costs
 
@@ -197,8 +197,8 @@ which is what every fold in this package already does with an unknown kind.
 
 Two properties make it safe to ignore and safe to read:
 
-- It repeats the sequence of the last event delivered, so a client resuming
-  from the last sequence it saw does not rewind on a heartbeat.
+- It repeats the sequence and run-scoped cursor of the last event delivered,
+  including any expansion offset. Before delivery it retains the resume cursor.
 - It carries the watched run id, so a client routing by run keeps routing.
 
 A snapshot read, `follow: false`, is left alone. It has to end.

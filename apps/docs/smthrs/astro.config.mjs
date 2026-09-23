@@ -8,7 +8,7 @@ export default defineDocsSite({
   starlight,
   slug: "smthrs",
   title: "smthrs",
-  description: "Migration notice for Smithers 1.0. The runtime ships as @smthrs/* packages; importing this package throws.",
+  description: "The `smthrs` command for npx, and a migration notice for Smithers 1.0: importing this package throws.",
   sourceDir: "packages/smthrs-deprecation",
   contentDir: fileURLToPath(new URL("./src/content/docs", import.meta.url))
 })

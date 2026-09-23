@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 `RetryPolicy` is declared in [`@smthrs/flow`](https://flow.smithers.sh/reference/api/). Deciding what to do
 with it is the engine's job, and it happens in exactly one place: after an
-action dispatch settles, before its recorded outcome is decoded. Nothing else
+action dispatch settles and its recorded outcome is decoded. Nothing else
 in the system classifies a failure as retryable.
 
 ## The attempt number
@@ -50,6 +50,11 @@ answers are possible:
 
 When a dispatch settles as a failure and the action declares a policy, the
 engine asks the policy for a decision:
+
+Classification uses the decoded error's tag. A corrupt recorded outcome fails
+schema validation before another attempt can run. A cause containing a defect
+or interruption propagates without retry, even when it also contains a declared
+failure.
 
 | Decision            | What the engine does                                                                              |
 | ------------------- | ------------------------------------------------------------------------------------------------- |

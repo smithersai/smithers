@@ -8,7 +8,7 @@ export default defineDocsSite({
   starlight,
   slug: "smithers-patterns",
   title: "@smthrs/patterns",
-  description: "Higher-order flow patterns and decorators for flows. It composes @smthrs/core and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.",
+  description: "Higher-order flow patterns and decorators for flows. It composes @smthrs/flow and the one effect model in @smthrs/plan/Effects, and imports no Node built-ins.",
   sourceDir: "packages/smithers/flows/patterns",
   contentDir: fileURLToPath(new URL("./src/content/docs", import.meta.url))
 })
