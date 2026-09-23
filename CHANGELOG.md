@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-2848 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+2849 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -298,7 +298,7 @@ the release notes at
 
 ### 🐛 Bug fixes
 
-- **release:** align CLI package tests with rc.1 ([30757fe063](https://github.com/smithersai/smithers/commit/30757fe0632c0c3b5f999155120236ead6f58838))
+- **release:** align CLI package tests with rc.1 ([43dea7edc8](https://github.com/smithersai/smithers/commit/43dea7edc8ebd2e476a841dfc95da3e315551f92))
 - **release:** preserve helper path in process tests ([0453fa16c4](https://github.com/smithersai/smithers/commit/0453fa16c497e9bb3c2f35e882db64affec1645a))
 - **release:** provision filesystem helper and clear package gates ([1af8c2fae1](https://github.com/smithersai/smithers/commit/1af8c2fae1031662ee2f517f4af050eb2af86d6f))
 - **evals:** plue env deletes a failed boot and never copies to an auto-detected workspace ([d1d0970ee6](https://github.com/smithersai/smithers/commit/d1d0970ee681bc1f7ff746cc4cbd1f23c075d646))
@@ -2355,6 +2355,7 @@ the release notes at
 
 ### 🧹 Chores
 
+- add a root tui script ([a60a0f4997](https://github.com/smithersai/smithers/commit/a60a0f499734cd7790f9f79e036e55462c0b010a))
 - remove unreferenced backend composition backup ([e773b7174f](https://github.com/smithersai/smithers/commit/e773b7174fa6eeecb81ee0fbb8afe08063cd0150))
 - remove tracked patch backup source copies ([5e8a79167b](https://github.com/smithersai/smithers/commit/5e8a79167bcd82e353a03e47d5d1e5215cdfe67d))
 - **backend:** remove obsolete coding host source ([635e189455](https://github.com/smithersai/smithers/commit/635e189455b7c16a0b4714395b60881a3c3b905a))
