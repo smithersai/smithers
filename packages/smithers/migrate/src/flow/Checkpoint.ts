@@ -183,6 +183,29 @@ export const detectVcs: typeof VcsInternal.detect = VcsInternal.detect
 
 const absolute = (path: Path.Path, root: string, file: string): string => path.join(root, ...file.split("/"))
 
+/**
+ * Fails when a project path, or any directory on the way to it, is a symbolic
+ * link. Reading through one copies bytes from wherever it points into the
+ * backup; writing or removing through one changes a file outside the project.
+ */
+const refuseLink = (
+  root: string,
+  file: string,
+  doing: string
+): Effect.Effect<void, MigrateError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const link = yield* Fs.linkOnPath(root, file)
+    if (link === undefined) return
+    return yield* Effect.fail(
+      make(
+        "checkpoint-failed",
+        link === file
+          ? `declared migration path "${file}" is a symbolic link; the tool will not ${doing} through it`
+          : `declared migration path "${file}" is reached through the symbolic link "${link}"; the tool will not ${doing} through it`
+      )
+    )
+  })
+
 const pendingFile = (path: Path.Path, backupDir: string): string =>
   path.join(path.dirname(backupDir), "pending-unit.json")
 
@@ -344,6 +367,7 @@ const backup = (
     yield* privateDirectory(root, directory)
     for (const file of [...new Set(files)].sort()) {
       const source = absolute(path, root, file)
+      yield* refuseLink(root, file, "copy it")
       const info = yield* optionalNotFound(fs.stat(source)).pipe(
         Effect.mapError(io(`could not inspect ${file} while taking its checkpoint`))
       )
@@ -403,6 +427,14 @@ export const digest = (
       path.isAbsolute(relative) ? relative : path.join(root, ...relative.split("/"))
     const walk = (relative: string, rootEntry: boolean): Effect.Effect<void, MigrateError, never> =>
       Effect.gen(function*() {
+        // A link is recorded by what it names and never followed, so a
+        // run-state entry that points outside the tree is neither read nor
+        // walked, and retargeting it still changes the digest.
+        const link = yield* Fs.linkTarget(target(relative)).pipe(Effect.provideService(FileSystem.FileSystem, fs))
+        if (link !== undefined) {
+          found.push({ path: relative, digest: sha256(Fs.linkRecord(link)) })
+          return
+        }
         const info = yield* optionalNotFound(fs.stat(target(relative))).pipe(
           Effect.mapError(io(`could not inspect the run-state path "${relative}"`))
         )
@@ -506,10 +538,7 @@ export const tree = (
     const fs = yield* FileSystem.FileSystem
     const path = yield* Path.Path
     const files: Record<string, string> = {}
-    const rootReal = yield* fs.realPath(root).pipe(
-      Effect.mapError(io(`could not resolve the project root "${root}"`))
-    )
-    const walk = (relative: string, parentReal: string): Effect.Effect<void, MigrateError, never> =>
+    const walk = (relative: string): Effect.Effect<void, MigrateError, never> =>
       Effect.gen(function*() {
         const target = relative === "" ? root : path.join(root, ...relative.split("/"))
         const entries = yield* fs.readDirectory(target).pipe(
@@ -520,28 +549,22 @@ export const tree = (
           const child = relative === "" ? entry : `${relative}/${entry}`
           if (excluded(child, exclude)) continue
           const childPath = path.join(root, ...child.split("/"))
+          // A link is recorded by where it points and never followed. A
+          // followed link to an ancestor (`docs/latest -> .`) recurses until
+          // the process dies, and a followed link to a file outside the
+          // project reads bytes that are not the project's. The link target
+          // is what a change to it changes, and whatever it points at inside
+          // the project is walked on its own path anyway.
+          const link = yield* Fs.linkTarget(childPath).pipe(Effect.provideService(FileSystem.FileSystem, fs))
+          if (link !== undefined) {
+            files[child] = sha256(Fs.linkRecord(link))
+            continue
+          }
           const info = yield* fs.stat(childPath).pipe(
             Effect.mapError(io(`could not inspect the project path "${child}"`))
           )
           if (info.type === "Directory") {
-            // `stat` follows symlinks, so a link that points at an ancestor —
-            // `docs/latest -> .`, `assets -> ../..` — would recurse until the
-            // process died, and this walk runs at least twice per unit. A
-            // symlinked directory is recorded by where it points instead of
-            // descended into: the link target is what a change to it changes,
-            // and whatever it points at inside the project is walked on its
-            // own path anyway.
-            const childReal = yield* fs.realPath(childPath).pipe(
-              Effect.mapError(io(`could not resolve the project path "${child}"`))
-            )
-            if (childReal !== path.join(parentReal, entry)) {
-              const link = yield* fs.readLink(childPath).pipe(
-                Effect.mapError(io(`could not read the project link "${child}"`))
-              )
-              files[child] = sha256(new TextEncoder().encode(`symlink:${link}`))
-              continue
-            }
-            yield* walk(child, childReal)
+            yield* walk(child)
             continue
           }
           if (info.type !== "File") continue
@@ -551,7 +574,7 @@ export const tree = (
           files[child] = sha256(bytes)
         }
       })
-    yield* walk("", rootReal)
+    yield* walk("")
     return { exclude: [...exclude].sort(), files }
   }).pipe(Effect.mapError(io(`could not read the project tree under "${root}"`)))
 
@@ -804,6 +827,7 @@ export const restore = (
           make("checkpoint-failed", `path "${file}" was not declared in the checkpoint manifest`)
         )
       }
+      yield* refuseLink(root, file, "restore it")
       if (entry.state === "absent") {
         yield* fs.remove(target, { recursive: true, force: true }).pipe(
           Effect.mapError(io(`could not remove post-checkpoint path ${file}`))
@@ -869,6 +893,9 @@ const preserveAdded = (
     const directory = `${ref.backup}.post-checkpoint`
     const preserved: Array<{ path: string; backup: string }> = []
     for (const file of added) {
+      // An added link is removed with the other adds, never read through:
+      // its target may be a file outside the project.
+      if ((yield* Fs.linkOnPath(root, file)) !== undefined) continue
       const bytes = yield* optionalNotFound(fs.readFile(absolute(path, root, file))).pipe(
         Effect.mapError(io(`could not read the post-checkpoint file ${file}`))
       )

@@ -91,7 +91,7 @@ export const maxFileBytes = 8 * 1024 * 1024
  */
 export interface Skipped {
   readonly path: string
-  readonly reason: "unreadable" | "depth"
+  readonly reason: "unreadable" | "depth" | "symlink"
   readonly message: string
 }
 
@@ -133,6 +133,13 @@ const relative = (root: string, path: Path.Path, absolute: string): string => {
  * one. A path that vanished between the listing and the stat is not a skip;
  * it was not there.
  *
+ * Symbolic links are never followed. A link whose target resolves inside the
+ * project is left out silently, because the target is walked on its own path
+ * (or is ignored on its own path). A link that leads out of the project is a
+ * `symlink` skip: its content is not the project's, and reading it would copy
+ * a file from outside the root into the scan, the report, and the archive. A
+ * dangling link holds nothing and is left out.
+ *
  * @since 1.0.0-rc.0
  * @private
  */
@@ -147,6 +154,7 @@ export const walkReport = (
     const limit = options.maxDepth ?? maxDepth
     const found: Array<string> = []
     const skipped: Array<Skipped> = []
+    const realRoot = yield* fs.realPath(root).pipe(Effect.orElseSucceed(() => root))
     // A root whose own name is `.smithers` is a pack directory, so the keys
     // above still apply once their prefix is put back.
     const packPrefix = path.basename(root) === ".smithers" ? ".smithers/" : undefined
@@ -178,6 +186,17 @@ export const walkReport = (
           const absolute = path.join(directory, name)
           const child = relative(root, path, absolute)
           if (isIgnored(child)) continue
+          if (Option.isSome(yield* fs.readLink(absolute).pipe(Effect.option))) {
+            const real = yield* fs.realPath(absolute).pipe(Effect.option)
+            if (real._tag === "Some" && !contains(path, realRoot, real.value)) {
+              skipped.push({
+                path: child,
+                reason: "symlink",
+                message: `"${child}" is a symbolic link that leads outside the project and was not scanned`
+              })
+            }
+            continue
+          }
           const info = yield* Effect.result(optionalNotFound(fs.stat(absolute)))
           if (info._tag === "Failure") {
             skipped.push({
@@ -223,6 +242,10 @@ export const walk = (
  * opposite job: proving that a directory the tool must never write to holds
  * exactly the files it held before, which needs every one of them.
  *
+ * A symbolic link is listed as an entry of its own and never followed: the
+ * link is what sits in the directory, and following it would list files that
+ * live somewhere else, or loop forever on a link to an ancestor.
+ *
  * @since 1.0.0-rc.0
  * @private
  */
@@ -239,6 +262,10 @@ export const walkAll = (
         const names = yield* fs.readDirectory(directory).pipe(Effect.orElseSucceed(() => [] as Array<string>))
         for (const name of names.slice().sort()) {
           const absolute = path.join(directory, name)
+          if (Option.isSome(yield* fs.readLink(absolute).pipe(Effect.option))) {
+            found.push(relative(root, path, absolute))
+            continue
+          }
           const info = yield* fs.stat(absolute).pipe(Effect.option)
           if (info._tag === "None") continue
           if (info.value.type === "Directory") yield* visit(absolute, depth + 1)
@@ -249,6 +276,65 @@ export const walkAll = (
     if (info._tag === "None" || info.value.type !== "Directory") return []
     yield* visit(root, 0)
     return found.sort()
+  })
+
+/** Whether `inner` is `outer` or lives under it, both absolute. */
+const contains = (path: Path.Path, outer: string, inner: string): boolean => {
+  const value = path.relative(outer, inner)
+  return value === "" || (value !== ".." && !value.startsWith(`..${path.sep}`) && !path.isAbsolute(value))
+}
+
+/**
+ * The target a symbolic link names, or `undefined` when `file` is not a link
+ * (or is not there). The link itself is read, never followed.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const linkTarget = (file: string): Effect.Effect<string | undefined, never, FileSystem.FileSystem> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    return yield* fs.readLink(file).pipe(Effect.orElseSucceed(() => undefined))
+  })
+
+/**
+ * The bytes a digest records for a symbolic link in place of its target's
+ * content: the link's own text, so retargeting the link changes the digest
+ * and nothing outside the project is ever read.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const linkRecord = (target: string): Uint8Array => new TextEncoder().encode(`symlink:${target}`)
+
+/**
+ * The first prefix of the project-relative `file` that is a symbolic link,
+ * `file` itself included, or `undefined` when no component of the path is one.
+ *
+ * Reading, writing, or removing a project path through a link reaches
+ * whatever the link names, which may be a file outside the project. A caller
+ * that must touch only the project's own bytes refuses a path this returns a
+ * prefix for.
+ *
+ * @since 1.0.0-rc.0
+ * @private
+ */
+export const linkOnPath = (
+  root: string,
+  file: string
+): Effect.Effect<string | undefined, never, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const segments = file.split("/")
+    for (let index = 1; index <= segments.length; index++) {
+      const prefix = segments.slice(0, index).join("/")
+      const absolute = path.join(root, ...segments.slice(0, index))
+      if ((yield* linkTarget(absolute)) !== undefined) return prefix
+      // Past the first missing component nothing deeper exists.
+      if (!(yield* fs.exists(absolute).pipe(Effect.orElseSucceed(() => false)))) return undefined
+    }
+    return undefined
   })
 
 /**

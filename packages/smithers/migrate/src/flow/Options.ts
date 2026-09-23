@@ -193,8 +193,8 @@ export const reportDirEntries: ReadonlyArray<string> = [
  * Acceptable means one thing: joined onto the root, the path names a place
  * inside the project and nowhere else. So it is nonempty, relative, made of
  * plain segments (no `.`, no `..`, no empty segment, no trailing slash), free
- * of NUL and backslash, and neither one of {@link reservedDirectories} nor
- * under one.
+ * of NUL and backslash, and no segment of it is one of
+ * {@link reservedDirectories}, at any depth.
  *
  * @category checks
  * @since 1.0.0-rc.0
@@ -210,9 +210,9 @@ export const relativePathIssue = (label: string, value: string): string | undefi
   if (segments.some((segment) => segment === "." || segment === "..")) {
     return `${label} must not contain a "." or ".." segment ("${value}")`
   }
-  const head = segments[0]!
-  if (reservedDirectories.includes(head)) {
-    return `${label} must not be "${head}" or live under it ("${value}")`
+  const reserved = segments.find((segment) => reservedDirectories.includes(segment))
+  if (reserved !== undefined) {
+    return `${label} must not be "${reserved}" or live under it ("${value}")`
   }
   return undefined
 }

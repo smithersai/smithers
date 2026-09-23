@@ -477,6 +477,13 @@ export const scan = (
 
     const databases: Array<DatabaseFinding> = []
     const external: Array<ExternalDatabase> = []
+    // Containment is judged on real paths: `/tmp` is itself a link on macOS,
+    // and a project-relative `link.db` may name a database somewhere else.
+    const realRoot = yield* fs.realPath(root).pipe(Effect.orElseSucceed(() => root))
+    const outside = (from: string, to: string): boolean => {
+      const inside = path.relative(from, to)
+      return inside === "" || inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)
+    }
     for (const candidate of [...candidates].sort()) {
       const normalized = candidate.replace(/^\.\//, "")
       const absolute = path.isAbsolute(normalized)
@@ -488,12 +495,17 @@ export const scan = (
       // both name real 0.x run state this tool cannot checkpoint, deny, digest,
       // or archive, so they are reported and they block instead of being
       // recorded as a project-relative path that matches nothing.
-      const inside = path.relative(root, absolute)
-      if (inside === "" || inside === ".." || inside.startsWith(`..${path.sep}`) || path.isAbsolute(inside)) {
-        external.push({ declared: candidate, resolved: absolute })
+      //
+      // Where it resolves means with every link followed: `link.db` inside
+      // the project may name a database outside it. A link that stays inside
+      // is recorded at its target's own path, the file the checkpoint, the
+      // archive, and the digest (none of which follow links) can protect.
+      const real = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute))
+      if (outside(realRoot, real)) {
+        external.push({ declared: candidate, resolved: real })
         continue
       }
-      const relative = inside.split(path.sep).join("/")
+      const relative = path.relative(realRoot, real).split(path.sep).join("/")
       const siblings = ["-wal", "-shm"]
         .map((suffix) => `${relative}${suffix}`)
         .filter((sibling) => fileSet.has(sibling))

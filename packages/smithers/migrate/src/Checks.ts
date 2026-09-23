@@ -531,11 +531,16 @@ export const runState = (
     for (const [file, expected] of checkpointFiles.digests) {
       if (owned.has(file)) continue
       const target = absolute(file)
-      if (!(yield* Fs.exists(target))) {
+      // A link was digested by what it names (see Checkpoint.digest), so it is
+      // compared the same way and never read through.
+      const link = yield* Fs.linkTarget(target)
+      if (link === undefined && !(yield* Fs.exists(target))) {
         findings.push({ file, line: 1, message: "run state was removed; the tool must never touch it" })
         continue
       }
-      const bytes = yield* fs.readFile(target).pipe(Effect.mapError(io(`could not read "${file}"`)))
+      const bytes = link !== undefined
+        ? Fs.linkRecord(link)
+        : yield* fs.readFile(target).pipe(Effect.mapError(io(`could not read "${file}"`)))
       if (digest(bytes) !== expected) {
         findings.push({ file, line: 1, message: "run state changed; the tool must never write to it" })
       }

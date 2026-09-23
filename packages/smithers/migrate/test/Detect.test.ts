@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { userInfo } from "node:os"
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir, userInfo } from "node:os"
 import { join } from "node:path"
 import * as Detect from "../src/Detect.ts"
 import * as Fs from "../src/internal/Fs.ts"
@@ -251,6 +251,27 @@ describe("Detect.scan over jsx-single", () => {
       expect(skipped[0]?.message).toContain("more than 12 directories deep")
       expect(skipped[1]?.message).toContain("above the 8388608 byte scan limit")
       expect(detection.files).not.toContain("d0/d1/d2/d3/d4/d5/d6/d7/d8/d9/d10/d11/d12/d13/lost.jsx")
+    }))
+
+  it.effect("never reads a source through a link that leads out of the project, and says so", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      const outside = mkdtempSync(join(tmpdir(), "migrate-detect-outside-"))
+      try {
+        writeFileSync(join(outside, "leak.jsx"), "/** @jsxImportSource smthrs */\nexport const secret = 1\n")
+        symlinkSync(outside, join(root, "external"))
+        symlinkSync(join(outside, "leak.jsx"), join(root, "leak.jsx"))
+
+        const detection = yield* detect(root)
+
+        expect(detection.files.filter((file) => file.includes("leak"))).toEqual([])
+        expect([...detection.sources.keys()].filter((file) => file.includes("leak"))).toEqual([])
+        const skipped = detection.warnings.filter((warning) => warning.code === "incomplete-scan")
+        expect(skipped.map((warning) => warning.file)).toEqual(["external", "leak.jsx"])
+        expect(skipped[0]?.message).toContain("symbolic link that leads outside the project")
+      } finally {
+        rmSync(outside, { recursive: true, force: true })
+      }
     }))
 
   it.effect.skipIf(userInfo().uid === 0)(

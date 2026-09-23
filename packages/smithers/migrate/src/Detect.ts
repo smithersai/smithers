@@ -741,6 +741,19 @@ export const scan = (
         unreadable.add(file)
         const fs = yield* FileSystem.FileSystem
         const absolute = path.join(root, ...file.split("/"))
+        // A path through a symbolic link may read a file from outside the
+        // project, so it is reported rather than read.
+        const link = yield* Fs.linkOnPath(root, file).pipe(Effect.provideService(Path.Path, path))
+        if (link !== undefined) {
+          warnings.push({
+            code: "incomplete-scan",
+            file,
+            message: link === file
+              ? `"${file}" is a symbolic link and was not read`
+              : `"${file}" is reached through the symbolic link "${link}" and was not read`
+          })
+          return undefined
+        }
         const info = yield* Effect.result(Fs.optionalNotFound(fs.stat(absolute)))
         if (info._tag === "Failure") {
           warnings.push({

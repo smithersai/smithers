@@ -7,7 +7,16 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Fs from "../src/internal/Fs.ts"
@@ -74,4 +83,52 @@ describe("Fs.isStaleTemporary", () => {
     expect(Fs.isStaleTemporary("apply.lock")).toBe(false)
     expect(Fs.isStaleTemporary("units")).toBe(false)
   })
+})
+
+describe("Fs.walkReport and Fs.walkAll never follow a symbolic link", () => {
+  const walked = (root: string) => Fs.walkReport(root).pipe(Effect.provide(nodeLayer))
+
+  it.effect("reports a link that leads outside the project and reads nothing behind it", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const outside = scratch()
+      writeFileSync(join(outside, "secret.ts"), "outside\n")
+      writeFileSync(join(root, "own.ts"), "inside\n")
+      symlinkSync(outside, join(root, "external"))
+      symlinkSync(join(outside, "secret.ts"), join(root, "secret.ts"))
+
+      const result = yield* walked(root)
+
+      expect(result.files).toEqual(["own.ts"])
+      expect(result.skipped.map((skip) => [skip.path, skip.reason])).toEqual([
+        ["external", "symlink"],
+        ["secret.ts", "symlink"]
+      ])
+    }))
+
+  it.effect("leaves out a link that stays inside the project, and terminates over a cycle", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      mkdirSync(join(root, "docs"))
+      writeFileSync(join(root, "docs", "page.md"), "page\n")
+      symlinkSync(".", join(root, "docs", "latest"))
+      symlinkSync("page.md", join(root, "docs", "alias.md"))
+      symlinkSync(join(root, "missing"), join(root, "dangling"))
+
+      const result = yield* walked(root)
+
+      expect(result.files).toEqual(["docs/page.md"])
+      expect(result.skipped).toEqual([])
+    }))
+
+  it.effect("walkAll lists a link as an entry of its own and never descends it", () =>
+    Effect.gen(function*() {
+      const root = scratch()
+      const outside = scratch()
+      writeFileSync(join(outside, "secret.db"), "outside\n")
+      writeFileSync(join(root, "own.db"), "inside\n")
+      symlinkSync(outside, join(root, "external"))
+
+      expect(yield* Fs.walkAll(root).pipe(Effect.provide(nodeLayer))).toEqual(["external", "own.db"])
+    }))
 })

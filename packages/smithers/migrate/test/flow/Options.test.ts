@@ -53,7 +53,11 @@ describe("Options.relativePathIssue", () => {
       [".flows/state", /must not be "\.flows"/],
       [".git", /must not be "\.git"/],
       [".jj/x", /must not be "\.jj"/],
-      ["node_modules/flows", /must not be "node_modules"/]
+      ["node_modules/flows", /must not be "node_modules"/],
+      ["audit/node_modules", /must not be "node_modules"/],
+      ["audit/.git", /must not be "\.git"/],
+      ["a/.jj/b", /must not be "\.jj"/],
+      ["src/.flows/state", /must not be "\.flows"/]
     ]
     for (const [value, pattern] of refused) {
       expect([value, Options.relativePathIssue("x", value)]).toEqual([value, expect.stringMatching(pattern)])
@@ -62,6 +66,13 @@ describe("Options.relativePathIssue", () => {
 })
 
 describe("Options.layoutIssue", () => {
+  it("refuses a layout path with a reserved directory below its first segment", () => {
+    expect(Options.layoutIssue({ root: exampleRoot, layout: { flowsDir: "audit/node_modules" } })).toMatch(
+      /node_modules/
+    )
+    expect(Options.layoutIssue({ root: exampleRoot, reportDir: "audit/.git" })).toMatch(/\.git/)
+  })
+
   it("requires a normalized absolute root", () => {
     const root = resolve("/work/project")
     expect(Options.layoutIssue({ root: "relative/project" })).toMatch(/absolute/)

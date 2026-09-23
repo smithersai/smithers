@@ -7,7 +7,19 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Archive from "@smthrs/migrate/flow/Archive"
 import * as Scan from "@smthrs/migrate/Scan"
 import * as Effect from "effect/Effect"
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { copyFixture, fixture } from "../fixtures/helpers.ts"
 
@@ -482,6 +494,43 @@ describe("Archive.run", () => {
       }
       expect(after.scripts["ui"]).toBe("smithers gui --port 7331")
     }).pipe(Effect.provide(platform)))
+
+  for (const through of ["file", "directory"] as const) {
+    it.effect(`refuses to archive a source reached through a symlinked ${through}`, () =>
+      Effect.gen(function*() {
+        // Archiving reads the source and then removes it. Through a link that
+        // copies a file from outside the project into the archive.
+        const root = copyFixture("jsx-single")
+        const outside = mkdtempSync(join(tmpdir(), "migrate-archive-outside-"))
+        try {
+          writeFileSync(join(outside, "shared.jsx"), "outside bytes\n")
+          const source = through === "file" ? "linked.jsx" : "linked/shared.jsx"
+          symlinkSync(
+            through === "file" ? join(outside, "shared.jsx") : outside,
+            join(root, through === "file" ? "linked.jsx" : "linked")
+          )
+          const archiveDir = join(root, ".smithers-migrate", "archive")
+
+          const failure = yield* Effect.flip(Archive.run({
+            root,
+            unit: "workflow:linked",
+            kind: "workflow",
+            targets: [],
+            sources: [source],
+            archiveDir,
+            keepOldSources: false
+          }))
+
+          expect(failure.code).toBe("invalid-layout")
+          expect(failure.message).toContain("symbolic link")
+          expect(existsSync(join(archiveDir, source))).toBe(false)
+          expect(readFileSync(join(outside, "shared.jsx"), "utf8")).toBe("outside bytes\n")
+          expect(lstatSync(join(root, through === "file" ? "linked.jsx" : "linked")).isSymbolicLink()).toBe(true)
+        } finally {
+          rmSync(outside, { recursive: true, force: true })
+        }
+      }).pipe(Effect.provide(platform)))
+  }
 
   it.effect("refuses to move a source that is 0.x run state", () =>
     Effect.gen(function*() {

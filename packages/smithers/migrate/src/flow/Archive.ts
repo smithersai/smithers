@@ -533,6 +533,20 @@ export const run = (payload: {
     const copied: Array<{ readonly file: string; readonly bytes: number }> = []
     for (const file of archivable) {
       const source = path.join(payload.root, ...file.split("/"))
+      // Archiving reads the source and then removes it. Through a link that
+      // copies a file from outside the project into the archive, so a linked
+      // source, or one under a linked directory, is refused.
+      const link = yield* Fs.linkOnPath(payload.root, file)
+      if (link !== undefined) {
+        return yield* Effect.fail(
+          make(
+            "invalid-layout",
+            link === file
+              ? `${file} is a symbolic link and will not be archived through it`
+              : `${file} is reached through the symbolic link "${link}" and will not be archived through it`
+          )
+        )
+      }
       const info = yield* Fs.optionalNotFound(fs.stat(source)).pipe(
         Effect.mapError(io(`could not inspect ${file} to archive it`))
       )

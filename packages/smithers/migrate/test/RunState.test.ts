@@ -1,6 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
@@ -298,6 +308,41 @@ describe("RunState.scan", () => {
       } finally {
         rmSync(externalDir, { recursive: true, force: true })
       }
+    }))
+})
+
+describe("RunState.scan over symbolic links", () => {
+  it.effect("records a project-relative dbPath that links outside the project as external, and blocks", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      const externalDir = mkdtempSync(join(tmpdir(), "smithers-migrate-linked-"))
+      try {
+        writeFileSync(join(externalDir, "old.db"), "")
+        symlinkSync(join(externalDir, "old.db"), join(root, "link.db"))
+        writeFileSync(join(root, "smithers.config.ts"), `export default { dbPath: "link.db" }\n`)
+
+        const result = yield* report(root)
+
+        expect(result.external).toEqual([{ declared: "link.db", resolved: realpathSync(join(externalDir, "old.db")) }])
+        expect(result.databases.map((database) => database.path)).toEqual([])
+        expect(result.verdict).toBe("blocked")
+      } finally {
+        rmSync(externalDir, { recursive: true, force: true })
+      }
+    }))
+
+  it.effect("records a link that stays inside the project at its target's own path", () =>
+    Effect.gen(function*() {
+      const root = copyFixture("jsx-single")
+      mkdirSync(join(root, "data"))
+      writeFileSync(join(root, "data", "real.db"), "")
+      symlinkSync(join(root, "data", "real.db"), join(root, "link.db"))
+      writeFileSync(join(root, "smithers.config.ts"), `export default { dbPath: "link.db" }\n`)
+
+      const result = yield* report(root)
+
+      expect(result.external).toEqual([])
+      expect(result.databases.map((database) => database.path)).toEqual(["data/real.db"])
     }))
 })
 

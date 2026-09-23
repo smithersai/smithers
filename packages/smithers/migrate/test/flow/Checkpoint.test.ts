@@ -217,6 +217,71 @@ describe("Checkpoint.take on git", () => {
       }).pipe(Effect.provide(platform)))
   }
 
+  for (const through of ["file", "directory"] as const) {
+    it.effect(`refuses a declared source reached through a symlinked ${through}`, () =>
+      Effect.gen(function*() {
+        // Copying through the link would put a file from outside the project
+        // into the backup; a later restore would write the backup through it.
+        const root = gitProject("source-symlink")
+        const outside = scratch("outside-source")
+        write(outside, "shared.ts", "outside bytes\n")
+        symlinkSync(
+          through === "file" ? join(outside, "shared.ts") : outside,
+          join(root, through === "file" ? "shared.ts" : "linked")
+        )
+        const declared = through === "file" ? "shared.ts" : "linked/shared.ts"
+
+        const failure = yield* Effect.flip(Checkpoint.take(payload(root, [declared])))
+
+        expect(failure.code).toBe("checkpoint-failed")
+        expect(failure.message).toContain("symbolic link")
+        expect(existsSync(join(root, ".smithers-migrate/backup/workflow/demo", declared))).toBe(false)
+        expect(listRecursive(outside)).toEqual(["shared.ts"])
+      }).pipe(Effect.provide(platform)))
+  }
+
+  it.effect("refuses to restore through a target that became a symlink after the checkpoint", () =>
+    Effect.gen(function*() {
+      const root = gitProject("restore-symlink")
+      const outside = scratch("outside-restore")
+      write(outside, "shared.ts", "outside bytes\n")
+      const ref = yield* Checkpoint.take(payload(root, ["workflow.jsx"]))
+      rmSync(join(root, "workflow.jsx"))
+      symlinkSync(join(outside, "shared.ts"), join(root, "workflow.jsx"))
+
+      const failure = yield* Effect.flip(Checkpoint.restore(root, ref, ["workflow.jsx"]))
+
+      expect(failure.code).toBe("checkpoint-failed")
+      expect(failure.message).toContain("symbolic link")
+      expect(readFileSync(join(outside, "shared.ts"), "utf8")).toBe("outside bytes\n")
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("records a symlinked file in the tree by what it names, never by the bytes behind it", () =>
+    Effect.gen(function*() {
+      const root = gitProject("tree-file-link")
+      const outside = scratch("outside-tree")
+      write(outside, "shared.ts", "outside bytes\n")
+      symlinkSync(join(outside, "shared.ts"), join(root, "shared.ts"))
+      const ref = yield* Checkpoint.take({ ...payload(root, ["workflow.jsx"]), treeExclude: [".smithers-migrate"] })
+
+      write(outside, "shared.ts", "outside bytes, edited elsewhere\n")
+
+      expect(yield* Checkpoint.treeDiff(root, ref)).toEqual([])
+    }).pipe(Effect.provide(platform)))
+
+  it.effect("digests a run-state link by what it names and never walks through it", () =>
+    Effect.gen(function*() {
+      const root = gitProject("digest-link")
+      const outside = scratch("outside-digest")
+      write(outside, "secret.db", "outside bytes\n")
+      mkdirSync(join(root, ".smithers"), { recursive: true })
+      symlinkSync(outside, join(root, ".smithers", "state"))
+
+      const digests = yield* Checkpoint.digest(root, [".smithers"])
+
+      expect(digests.map((entry) => entry.path)).toEqual([".smithers/state"])
+    }).pipe(Effect.provide(platform)))
+
   it.effect("refuses dangling links and privately replaces regular backup files", () =>
     Effect.gen(function*() {
       for (const link of [false, true]) {
