@@ -51,16 +51,22 @@ export interface Pending extends Meta {
 
 export const environmentKey = "SMITHERS_TUI_APPROVE"
 
+/**
+ * Every call runs unasked by default. `--approve` (winning) or
+ * `SMITHERS_TUI_APPROVE` set to `ask` or `deny` turns the gate on.
+ */
 export const mode = (
   env: Readonly<Record<string, string | undefined>>,
-  options: { readonly print: boolean }
+  options: { readonly print: boolean; readonly flag?: string | undefined }
 ): Mode | { readonly error: string } => {
-  const value = env[environmentKey]
-  if (value === undefined || value === "") return options.print ? "deny" : "ask"
+  const [value, name, joiner] = options.flag !== undefined
+    ? [options.flag, "--approve", " "]
+    : [env[environmentKey], environmentKey, "="]
+  if (value === undefined || value === "") return "all"
   if (value !== "ask" && value !== "all" && value !== "deny") {
-    return { error: `${environmentKey} must be ask, all or deny` }
+    return { error: `${name} must be ask, all or deny` }
   }
-  if (value === "ask" && options.print) return { error: `${environmentKey}=ask needs the interactive TUI` }
+  if (value === "ask" && options.print) return { error: `${name}${joiner}ask needs the interactive TUI` }
   return value
 }
 

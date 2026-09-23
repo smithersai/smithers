@@ -35,8 +35,9 @@ first available non-Cerebras seat (usually the ChatGPT subscription from
 `codex login`); `SMITHERS_TUI_WORKER_SEAT` overrides it. The picker lists only
 providers this machine can reach. Print mode runs a task directly.
 
-Edits, shell commands, and network calls wait for **y**/**n**;
-`SMITHERS_TUI_APPROVE=all|deny` overrides, and `-p` denies unless it is `all`.
+Edits, shell commands, and network calls run without asking. `--approve ask`
+(or `SMITHERS_TUI_APPROVE=ask`) makes each wait for **y**/**n**; `deny` refuses
+them. The flag wins over the variable, and `-p` cannot `ask`.
 
 ## Keys
 

@@ -56,7 +56,7 @@ const start = async (
     readonly cwd?: string
     readonly sessions?: string
     readonly cols?: number
-    /** `all` unless a case is about approvals, so replays test what they test. */
+    /** Unset runs the default (every call unasked); approval cases opt in. */
     readonly approve?: "ask" | "all" | "deny"
   } = {}
 ) => {
@@ -73,7 +73,7 @@ const start = async (
       SMITHERS_TUI_REPLAY_HOLD_MS: String(options.holdMs ?? 0),
       SMITHERS_TUI_REPLAY_SPEED: "20",
       SMITHERS_TUI_SESSION_DIR: sessions,
-      SMITHERS_TUI_APPROVE: options.approve ?? "all"
+      ...(options.approve === undefined ? {} : { SMITHERS_TUI_APPROVE: options.approve })
     }
   })
   await tui.until(drawn, 20_000, "first draw")
@@ -1177,8 +1177,8 @@ describe("approvals", () => {
     await tui.until((screen) => !asking.test(screen) && idle(screen), 5_000, "dropped approval")
   }, 120_000)
 
-  it("print mode never hangs: it denies unless told otherwise", () => {
-    const run = (approve: string | undefined) => {
+  it("print mode never hangs: it runs every call by default and denies when told", () => {
+    const run = (approve: string | undefined, args: ReadonlyArray<string> = []) => {
       const cwd = repository()
       const env: Record<string, string> = {
         PATH: process.env.PATH ?? "",
@@ -1189,7 +1189,7 @@ describe("approvals", () => {
       }
       if (approve !== undefined) env.SMITHERS_TUI_APPROVE = approve
       const started = Date.now()
-      const result = spawnSync("bun", [join(app, "src", "main.tsx"), cwd, "-p", prompt], {
+      const result = spawnSync("bun", [join(app, "src", "main.tsx"), cwd, "-p", prompt, ...args], {
         env,
         encoding: "utf8",
         // The replay seat keeps replaying after a denial until the 40-frame
@@ -1198,12 +1198,14 @@ describe("approvals", () => {
       })
       return { ...result, ms: Date.now() - started, math: readFileSync(join(cwd, "math.js"), "utf8") }
     }
-    const denied = run(undefined)
+    const allowed = run(undefined)
+    expect(allowed.signal).toBeNull()
+    expect(allowed.stderr).not.toMatch(/denied (bash|edit)/)
+    expect(allowed.math).toContain("a + b")
+    const denied = run(undefined, ["--approve", "deny"])
     expect(denied.signal).toBeNull()
     expect(denied.stderr).toMatch(/denied (bash|edit)/)
     expect(denied.math).toContain("a - b")
-    const allowed = run("all")
-    expect(allowed.math).toContain("a + b")
     const refused = run("ask")
     expect(refused.status).toBe(1)
     expect(refused.stderr).toContain("SMITHERS_TUI_APPROVE=ask needs the interactive TUI")

@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 /**
- * smithers-tui [directory] [--model provider:id] [-c | -r] [-p "prompt"]
+ * smithers-tui [directory] [--model provider:id] [-c | -r] [-p "prompt"] [--approve ask|all|deny]
  *
+ *   --approve        ask: y/n per consequential call; deny: refuse them; all (default): run them
  *   -c, --continue   continue the latest session in this directory
  *   -r, --resume     pick a session to continue
  *   -p, --print      run one prompt and print the answer
@@ -27,7 +28,8 @@ const { values, positionals } = parseArgs({
     model: { type: "string", short: "m" },
     continue: { type: "boolean", short: "c" },
     resume: { type: "boolean", short: "r" },
-    print: { type: "string", short: "p" }
+    print: { type: "string", short: "p" },
+    approve: { type: "string" }
   },
   allowPositionals: true
 })
@@ -42,7 +44,7 @@ if (seat === undefined) {
   console.error("No model is available. Run `codex login` for the ChatGPT subscription, or set a provider API key.")
   process.exit(1)
 }
-const approvals = Approvals.mode(process.env, { print: values.print !== undefined })
+const approvals = Approvals.mode(process.env, { print: values.print !== undefined, flag: values.approve })
 if (typeof approvals === "object") {
   console.error(approvals.error)
   process.exit(1)

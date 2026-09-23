@@ -370,9 +370,23 @@ describe("the attended store", () => {
 })
 
 describe("mode", () => {
-  it("asks interactively and denies in print mode by default", () => {
-    expect(Approvals.mode({}, { print: false })).toBe("ask")
-    expect(Approvals.mode({}, { print: true })).toBe("deny")
+  it("accepts every call by default, interactive or print", () => {
+    expect(Approvals.mode({}, { print: false })).toBe("all")
+    expect(Approvals.mode({}, { print: true })).toBe("all")
+    expect(Approvals.mode({ SMITHERS_TUI_APPROVE: "" }, { print: false })).toBe("all")
+  })
+
+  it("asks only when opted in by --approve or the environment, the flag winning", () => {
+    expect(Approvals.mode({}, { print: false, flag: "ask" })).toBe("ask")
+    expect(Approvals.mode({ SMITHERS_TUI_APPROVE: "ask" }, { print: false })).toBe("ask")
+    expect(Approvals.mode({ SMITHERS_TUI_APPROVE: "ask" }, { print: false, flag: "all" })).toBe("all")
+    expect(Approvals.mode({}, { print: true, flag: "deny" })).toBe("deny")
+    expect(Approvals.mode({}, { print: true, flag: "ask" })).toEqual({
+      error: "--approve ask needs the interactive TUI"
+    })
+    expect(Approvals.mode({}, { print: false, flag: "yes" })).toEqual({
+      error: "--approve must be ask, all or deny"
+    })
   })
 
   it("accepts ask, all and deny, and refuses ask in print mode", () => {
