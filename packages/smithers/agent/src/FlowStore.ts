@@ -433,7 +433,7 @@ export const makeFileSystem = (
               // one, and reporting it would name a path nothing can read.
               Effect.orElseSucceed(() => "Unknown" as const)
             )
-            if (info === "File") paths.push(`flows/${id}/${relative}`)
+            if (info === "File") paths.push(`flows/${id}/${relative.split(path.sep).join("/")}`)
           }
         }
         return listPaths(paths)

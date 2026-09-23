@@ -542,6 +542,40 @@ describe("FlowStore.layerFileSystem", () => {
     ]))
   })
 
+  it.each([
+    ["win32", String.raw`C:\workspace`],
+    ["posix", "/workspace"]
+  ])("lists nested files with portable separators on %s", async (platformName, directory) => {
+    const file = join(root(), "fixture.ts")
+    writeFileSync(file, "fixture")
+    const result = await Effect.gen(function*() {
+      const host = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const info = yield* host.stat(file)
+      const held = [`fixtures${path.sep}triage.json`, "flow.ts"]
+      const fs = FileSystem.makeNoop({
+        readDirectory: (target) => {
+          if (target === path.join(directory, "flows")) return Effect.succeed(["triage"])
+          expect(target).toBe(path.join(directory, "flows", "triage"))
+          return Effect.succeed(held)
+        },
+        stat: (target) => {
+          expect(held.map((relative) => path.join(directory, "flows", "triage", relative))).toContain(target)
+          return Effect.succeed(info)
+        }
+      })
+      return yield* FlowStore.makeFileSystem(fs, path, directory).list()
+    }).pipe(
+      Effect.provide(NodeFileSystem.layer),
+      Effect.provide(platformName === "win32" ? NodePath.layerWin32 : NodePath.layerPosix),
+      Effect.runPromise
+    )
+
+    expect(result).toEqual([
+      { id: "triage", files: ["flows/triage/fixtures/triage.json", "flows/triage/flow.ts"] }
+    ])
+  })
+
   it("reports nothing for a root that holds no flows yet", async () => {
     expect(await onDisk(root(), (store) => store.list())).toStrictEqual(Exit.succeed([]))
   })
