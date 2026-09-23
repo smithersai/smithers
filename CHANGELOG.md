@@ -9,7 +9,7 @@ the release notes at
 
 <!-- commits:1.0.0-rc.1 -->
 
-3040 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
+3069 commits since [v1.0.0-rc.0](https://github.com/smithersai/smithers/commit/f10b681620).
 
 ### ✨ Features
 
@@ -324,6 +324,17 @@ the release notes at
 
 ### 🐛 Bug fixes
 
+- **release:** account for pre-helper smoke rehearsal ([b04d286f29](https://github.com/smithersai/smithers/commit/b04d286f2968d32bcd277c30828de0c0f37c6508))
+- **engine-store:** normalize workspace roots with transaction paths ([2ee17a00d8](https://github.com/smithersai/smithers/commit/2ee17a00d8fb9f4fb942df7726376219268b1adc))
+- allow standalone coding gateway and bound preparation ([b6a35dbbbe](https://github.com/smithersai/smithers/commit/b6a35dbbbe2c850283f4e26f9510db573bccc02b))
+- **platform:** use native paths in Node and Bun hosts ([e1bc883bd7](https://github.com/smithersai/smithers/commit/e1bc883bd77001bc185bbc9d0ffbac881eb2951c))
+- **harness:** let one sign of circling mark a run thrashing ([4499be4618](https://github.com/smithersai/smithers/commit/4499be4618bfe1b108a8de2545075be46e24fa36))
+- **model:** ask Jev again after a shed 429 or 503 ([daae147e8a](https://github.com/smithersai/smithers/commit/daae147e8a790a355df2693ff43a592033a61eb2))
+- **platform-node:** prove an empty process group with the kernel before ps ([1d38e2aec3](https://github.com/smithersai/smithers/commit/1d38e2aec304cf915f6598a580fa5ffb8bc96b1c))
+- **agent:** normalize saved flow listing separators ([df7283b885](https://github.com/smithersai/smithers/commit/df7283b885c1415a5350292524dc213cb97b4d3a))
+- **harness-detect:** honor injected host path conventions ([08edc091b1](https://github.com/smithersai/smithers/commit/08edc091b121e5cb61c6a11f6e9be3545c8dd6bd))
+- **create-app:** recognize Windows paths in route watcher ([034e4bbcf0](https://github.com/smithersai/smithers/commit/034e4bbcf01fe8eb4150516973c17be10914511c))
+- **product:** adopt canonical coding-host table in existing databases ([64e95c6994](https://github.com/smithersai/smithers/commit/64e95c69948f8c908171cff3bc1e8c65dd1d8ecc))
 - **ci:** stabilize graph selection and browser suite budget ([4954581389](https://github.com/smithersai/smithers/commit/49545813899bc0814457c737213872d4b39b4bc9))
 - **app:** assert interactive composer in hidden native tests ([641ebe6b01](https://github.com/smithersai/smithers/commit/641ebe6b01b7fee7039d408697d4ce40e1f242ca))
 - **ci:** retry transient mirror proxy failures ([4ee72c937d](https://github.com/smithersai/smithers/commit/4ee72c937d6584effbd6730f1d2054f18999f196))
@@ -2174,6 +2185,7 @@ the release notes at
 
 ### 📝 Documentation
 
+- **platform-node:** sync kernel vacancy API reference ([b15e70c10a](https://github.com/smithersai/smithers/commit/b15e70c10a2cf8d6b03fdc0c17338634077c9862))
 - **site:** refresh CLI and runtime references ([bbba6ca15b](https://github.com/smithersai/smithers/commit/bbba6ca15b3ea70adeb77be086c2a4463785933f))
 - synchronize generated package sites ([05ba881787](https://github.com/smithersai/smithers/commit/05ba8817877fbb6c3aef6937c1b42f34fbcca8c4))
 - **std,harness:** document ApplyPatch.paths and denials as capability_refused ([d64e0df548](https://github.com/smithersai/smithers/commit/d64e0df54827960ccdc652576038acba996dfa22))
@@ -2504,6 +2516,23 @@ the release notes at
 
 ### 📦 Other changes
 
+- **test(platform):** exercise startup refusals with native executables ([80ac93a8c3](https://github.com/smithersai/smithers/commit/80ac93a8c31a5bf470f889910a58f415a34d9be3))
+- **test(matrix):** authenticate Plue browser modes with canary application token ([457d4729d7](https://github.com/smithersai/smithers/commit/457d4729d7c47f2667a1b66452ac4f634cff9ff1))
+- **test(kernel):** run host process contracts through the native runtime ([5eda77174a](https://github.com/smithersai/smithers/commit/5eda77174a6cea09dc1cd8f2d10c20c31246e2e3))
+- **test(engine-store):** verify projection crash receipts across platforms ([a9f22661b2](https://github.com/smithersai/smithers/commit/a9f22661b2e210fa0ec61239aded6daa2beaca8f))
+- **test(mcp):** observe native stdin closure and child exit ([0d8ac830d4](https://github.com/smithersai/smithers/commit/0d8ac830d4fe8886063ef9bc43f6668ac3c3b200))
+- **test(build):** run fixture executables through Node on every host ([d50204ed98](https://github.com/smithersai/smithers/commit/d50204ed982b7a913cecbee070e7eaae6b0ac89c))
+- **test(step-cache):** verify native process death across platforms ([d82a0b832f](https://github.com/smithersai/smithers/commit/d82a0b832f8629e514aa24eb3d05b0740e24965c))
+- **test(agent):** match native workspace paths in fault fixtures ([de79aaf8ee](https://github.com/smithersai/smithers/commit/de79aaf8eef1867b94a7efa4aa75281bc2b491f1))
+- **test(deprecation):** normalize consumer error line endings ([ed8352f9c7](https://github.com/smithersai/smithers/commit/ed8352f9c7ee3bb5f204d7ad6161f736d1503554))
+- **test(step-cache):** compare canonical module specifiers ([2748b9730b](https://github.com/smithersai/smithers/commit/2748b9730bb579c85f0b1550e73ab8170065cc72))
+- **test(platform-browser):** compare adapter results with native filesystem ([0c56ddbda6](https://github.com/smithersai/smithers/commit/0c56ddbda60fb33e99fd9d33e2c50d12cad2664b))
+- **test(registry):** construct native fixture paths consistently ([d18bab60da](https://github.com/smithersai/smithers/commit/d18bab60da6ec6ecec0aa4674d8e7a128f1d6e3b))
+- **test(registry):** bind virtual trees to POSIX paths ([21ddf67882](https://github.com/smithersai/smithers/commit/21ddf6788266acc41bac8ee80df268a6220c93c1))
+- **test(create-app):** make filesystem refusal fixtures portable ([da9fbcb133](https://github.com/smithersai/smithers/commit/da9fbcb1335851781583c978e2df4ccabd61fa79))
+- **test(create-app):** resolve pnpm shims when packing fixtures ([2c3c43e22b](https://github.com/smithersai/smithers/commit/2c3c43e22bf024b3c0939715882cddd401ca972d))
+- **test(fs):** retain workspace dependencies in artifact fixtures ([321f2a6c1e](https://github.com/smithersai/smithers/commit/321f2a6c1ec9091a30372a0285e2b1b3ac4a10a3))
+- **test(fs):** assert native router paths on every host ([1bafed534f](https://github.com/smithersai/smithers/commit/1bafed534ff56343e576a6899d7fc4c8d166db4b))
 - **test(release):** configure offline smoke and jj fixture identity ([e4c6ecc029](https://github.com/smithersai/smithers/commit/e4c6ecc0295fff69f0aaa3e0528c60aad07e7e78))
 - **test(runtime):** preserve file URL semantics in native fixtures ([6b6ce7494c](https://github.com/smithersai/smithers/commit/6b6ce7494ca0025a1808fb7d64bd99ee47812614))
 - **test(engine-store):** compare recovery paths across host separators ([b501910026](https://github.com/smithersai/smithers/commit/b501910026d4a8c91f5de7ba061c8a0d72e05b04))
