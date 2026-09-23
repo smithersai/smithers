@@ -371,6 +371,22 @@ describe("trace", () => {
         }
       ],
       [
+        "failed-call-demanded",
+        new AgentEvent.FailedCallDemanded({
+          eventType: "flows.harness.failed-call-demanded.v1",
+          failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
+          nextFrame: 1
+        }),
+        {
+          eventType: "control.agent.failed-call-demanded",
+          // The failed calls the completion was written before, verbatim.
+          payload: {
+            failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
+            nextFrame: 1
+          }
+        }
+      ],
+      [
         "sufficiency-observed",
         new AgentEvent.SufficiencyObserved({
           eventType: "flows.harness.sufficiency-observed.v1",

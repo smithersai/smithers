@@ -1,5 +1,6 @@
 /** Evidence-first summary, projected onto exactly the same panel contract agents publish. */
 import type * as Panels from "./panels.ts"
+import * as Runtime from "./runtime.ts"
 import * as Transcript from "./transcript.ts"
 
 export const sentence = (value: string): string => {
@@ -21,7 +22,28 @@ const verbs: Record<string, string> = {
   "agent.delegate": "Requested background work",
   "tab.read": "Checked background work"
 }
+/** A request the user asked for that nobody took, in the ledger's words. */
+const refusedRequest = (call: Transcript.Call): string | undefined => {
+  const verdict = Runtime.requestFlows[call.flow]
+  return verdict === undefined || call.status !== "failed"
+    ? undefined
+    : `${verdict}: ${sentence(call.subject)} (${Runtime.failureReason(call.message)})`
+}
+/**
+ * The requests in these cells whose last attempt failed. A request retried
+ * into success is taken; one that never succeeded is reported whatever any
+ * answer says about it.
+ */
+const refusedRequests = (cells: ReadonlyArray<Transcript.Call>): ReadonlyArray<Transcript.Call> =>
+  cells.filter((call, index) =>
+    refusedRequest(call) !== undefined &&
+    !cells.slice(index + 1).some((later) =>
+      later.flow === call.flow && later.subject === call.subject && later.status === "ok"
+    )
+  )
 const callLabel = (call: Transcript.Call): string => {
+  const refused = refusedRequest(call)
+  if (refused !== undefined) return refused
   if (call.status === "failed") {
     const failure = call.verb?.failure ?? `failed to call ${call.flow}`
     return `${failure.charAt(0).toUpperCase()}${failure.slice(1)}: ${sentence(call.subject)}`
@@ -71,7 +93,7 @@ export const panel = (transcript: Transcript.Transcript, id = "summary", title =
         label: undone ? `Undone: ${cellLabel(item)}`.slice(0, 240) : cellLabel(item),
         status: undone
           ? "cancelled"
-          : item.status === "rejected"
+          : item.status === "rejected" || refusedRequests(item.calls).length > 0
           ? "failed"
           : item.status === "writing"
           ? "running"
@@ -120,12 +142,18 @@ export const panel = (transcript: Transcript.Transcript, id = "summary", title =
   }
   const last = rows.at(-1)
   const answer = transcript.items.findLast((item) => item.kind === "answer")
+  // The latest turn's requests nobody took lead the summary, whatever its
+  // answer says: the answer can be a sentence written before the request failed.
+  const turn = transcript.items.slice(transcript.items.findLastIndex((item) => item.kind === "user") + 1)
+  const refused = refusedRequests(turn.flatMap((item) => item.kind === "cell" ? item.calls : []))
   const summary = transcript.items.at(-1)?.kind === "user"
     ? `Requested: ${sentence((transcript.items.at(-1) as Extract<Transcript.Item, { kind: "user" }>).text)}`
     : last?.status === "failed"
     ? `Stopped: ${last.label}`
     : last?.status === "running"
     ? last.label
+    : refused.length > 0
+    ? refused.map((call) => refusedRequest(call)!).join("; ")
     : answer?.kind === "answer"
     ? sentence(answer.text)
     : last?.label ?? "No turns yet."

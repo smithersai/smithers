@@ -92,7 +92,11 @@ export const coordinatorTeaching =
   `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Every turn ends with ctx.done(acknowledgement) in the cell that makes the request; console.log does not end it. Never wait, retry, or re-check tab.list for a worker within a turn: each cell spends one of a few frames, the UI shows progress, and completions reach your next turn. If a request fails, end the turn saying it was not made and why. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. Available worker seat: `
 
 /** Requests the coordinator makes; a failed one is work the user asked for that nobody took. */
-const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }
+export const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }
+
+/** A failed call's reason in the flow's own words, without the harness's prefix. */
+export const failureReason = (message: string | undefined): string =>
+  (message ?? "failed").replace(/^Flow \S+ failed: /, "")
 
 const record = (value: unknown): Readonly<Record<string, unknown>> =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -105,8 +109,14 @@ const record = (value: unknown): Readonly<Record<string, unknown>> =>
  * spends them re-trying a refused delegation left the user reading "a request
  * to continue" while the work was never handed to anyone. The ledger reads the
  * turn's own journaled calls, so the answer names each request whose last
- * attempt failed, and each one a worker took. A turn that completed, which the
- * cell says with a `complete` transition, keeps its own answer.
+ * attempt failed, and each one a worker took.
+ *
+ * A turn that completed, which the cell says with a `complete` transition,
+ * keeps its own answer only when no request's last attempt failed. A small
+ * seat writes `ctx.done("Delegated …")` in the cell that makes the request,
+ * before the result exists, and says it again after the harness hands the
+ * claim back with the failure. The receipts decide what was requested; the
+ * model's sentence does not.
  */
 export const ledger = (maxFrames: number): (event: AgentEvent.AgentEvent) => AgentEvent.AgentEvent => {
   const started = new Map<string, { readonly verdict: string; readonly id: string; readonly title: string }>()
@@ -134,8 +144,7 @@ export const ledger = (maxFrames: number): (event: AgentEvent.AgentEvent) => Age
           failed.delete(label)
           requested.set(request.id, request.title)
         } else {
-          const reason = (event.result.message ?? "failed").replace(/^Flow \S+ failed: /, "")
-          failed.set(label, `${request.verdict}: ${request.title} (${reason})`)
+          failed.set(label, `${request.verdict}: ${request.title} (${failureReason(event.result.message)})`)
         }
         return event
       }
@@ -143,9 +152,9 @@ export const ledger = (maxFrames: number): (event: AgentEvent.AgentEvent) => Age
         completed = event.transition._tag === "complete"
         return event
       case "resolved": {
-        if (completed) return event
+        if (completed && failed.size === 0) return event
         const lines = [
-          `Stopped after ${maxFrames} frames.`,
+          ...(completed ? [] : [`Stopped after ${maxFrames} frames.`]),
           ...failed.values(),
           ...[...requested.values()].map((title) => `Requested: ${title}`)
         ]

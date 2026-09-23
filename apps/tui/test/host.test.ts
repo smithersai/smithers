@@ -161,6 +161,74 @@ const pollingTurn = async (delegate: (attempt: number) => unknown) => {
   }
 }
 
+/** A recorded model whose every reply delegates and completes in the same cell, before the result exists. */
+const claimingReplay = (directory: string): string => {
+  const file = join(directory, "claiming.jsonl")
+  const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
+  const cell = [
+    "```cell",
+    "await ctx.call(\"agent.delegate\", { id: \"design\", title: \"Estimation design\", prompt: \"design it\" })",
+    "ctx.done(\"Delegated the estimation design to codex astra.\")",
+    "```"
+  ].join("\n")
+  writeFileSync(
+    file,
+    [
+      JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
+      delta({ type: "text-start", id: "cell" }),
+      delta({ type: "text-delta", id: "cell", text: cell }),
+      delta({ type: "text-end", id: "cell" }),
+      JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
+    ].join("\n")
+  )
+  return file
+}
+
+describe("Host.run completion over a failed request", () => {
+  const claimingTurn = async (delegate: () => unknown) => {
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-host-"))
+    roots.push(cwd)
+    const host = Host.make({ cwd, environment: {} })
+    const events: Array<AgentEvent.AgentEvent> = []
+    let delegations = 0
+    try {
+      const outcome = await host.run({
+        prompt: "design estimation",
+        role: "coordinator",
+        seat: `replay:${claimingReplay(cwd)}`,
+        history: [],
+        runtime: { publish: () => {}, delegate: () => (delegations++, delegate()), read: () => ({}), list: () => [] },
+        onEvent: (event) => events.push(event)
+      }).done
+      const answer = outcome._tag === "done" ? outcome.answer : `${outcome._tag}`
+      const resolved = events.flatMap((event) => (event._tag === "resolved" ? [event.message.content] : []))
+      return { answer, delegations, resolved, events }
+    } finally {
+      await host.dispose()
+    }
+  }
+
+  test("a claim written before its delegation failed is handed back once, then answered with the failure", async () => {
+    const { answer, delegations, resolved, events } = await claimingTurn(() => {
+      throw new Error("Three workers are active; wait for a completion")
+    })
+
+    // The harness hands the blind claim back once; the replayed seat claims again.
+    expect(events.filter((event) => event._tag === "failed-call-demanded")).toHaveLength(1)
+    expect(delegations).toBe(2)
+    expect(answer).toBe("Not delegated: Estimation design (Three workers are active; wait for a completion)")
+    expect(answer).not.toContain("Delegated the estimation design")
+    expect(resolved).toEqual([[{ type: "text", text: answer }]])
+  })
+
+  test("a delegation that was accepted keeps the coordinator's own answer", async () => {
+    const { answer, delegations } = await claimingTurn(() => ({ id: "design", status: "requested" }))
+
+    expect(delegations).toBe(1)
+    expect(answer).toBe("Delegated the estimation design to codex astra.")
+  })
+})
+
 describe("Host.run frame budget", () => {
   test("a coordinator that spends its frames polling a refused delegation says it was not delegated", async () => {
     const { answer, delegations, resolved } = await pollingTurn(() => {

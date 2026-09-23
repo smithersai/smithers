@@ -12,6 +12,7 @@ import * as Cell from "../src/Cell.ts"
 import * as Compaction from "../src/Compaction.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import * as FailedCall from "../src/FailedCall.ts"
 import * as DemandText from "../src/internal/demandText.ts"
 import { printsObservation } from "../src/internal/printsObservation.ts"
 import * as Transcript from "../src/Transcript.ts"
@@ -484,6 +485,11 @@ describe("Transcript", () => {
         currentDigest: "current",
         nextFrame: 16
       }),
+      new AgentEvent.FailedCallDemanded({
+        eventType: AgentEvent.eventType.failedCallDemanded,
+        failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
+        nextFrame: 16
+      }),
       new AgentEvent.NarrowedDemanded({
         eventType: AgentEvent.eventType.narrowedDemanded,
         flow: "bash",
@@ -530,6 +536,9 @@ describe("Transcript", () => {
       ModelRequest.Message.user(DemandText.repeat(4, 4)),
       ModelRequest.Message.user(DemandText.unmoved("opened", "opened")),
       ModelRequest.Message.user(DemandText.unresolved("bash", "pytest tests", "pytest tests -k one")),
+      ModelRequest.Message.user(
+        FailedCall.demand([{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }])
+      ),
       ModelRequest.Message.user(DemandText.narrowed("bash", "pytest tests", "pytest tests -k one")),
       ModelRequest.Message.user(
         DemandText.narrowOnly("bash", "pytest tests/a.py tests/b.py -k one", ["tests/a.py", "tests/b.py"])
@@ -826,6 +835,7 @@ describe("Transcript", () => {
     "flows.harness.narrow-only-demanded.v1",
     "flows.harness.unmoved-demanded.v1",
     "flows.harness.unresolved-demanded.v1",
+    "flows.harness.failed-call-demanded.v1",
     "flows.harness.claim-demanded.v1"
   ])("rejects malformed %s evidence", (eventType) => {
     const result = Transcript.projectStateResult([entry(1, eventType, { eventType })])

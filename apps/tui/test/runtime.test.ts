@@ -53,6 +53,36 @@ it("summarizes real cells, their code, failures and the answer without dumping s
   )
 })
 
+it("never summarizes a failed delegation as requested, whatever the answer claims", () => {
+  const identity = { session: "s", frame: 0, cell: "c", ordinal: 0, declaration: "d", layers: [] }
+  const events = [
+    { _tag: "cell-produced", cell: { language: "javascript", text: "await ctx.call(\"agent.delegate\", {})" } },
+    {
+      _tag: "cell-call-started",
+      call: { flowName: "agent.delegate", input: { id: "design", title: "Estimation design", prompt: "design it" }, identity }
+    },
+    {
+      _tag: "cell-call-settled",
+      flowName: "agent.delegate",
+      identity,
+      result: { outcome: "failure", value: null, message: "Flow agent.delegate failed: Three workers are active" }
+    },
+    { _tag: "cell-settled", cell: "c", outcome: { _tag: "settled", transition: { _tag: "complete", output: "x" } } },
+    { _tag: "resolved", message: { role: "assistant", content: [{ type: "text", text: "Delegated the design." }] } }
+  ] as unknown as ReadonlyArray<Parameters<typeof Transcript.apply>[1]>
+  const transcript = events.reduce(
+    (state, event, index) => Transcript.apply(state, event, index),
+    Transcript.user(Transcript.empty, "design estimation")
+  )
+  const summary = Summary.panel(transcript)
+
+  expect(summary.summary).toBe("Not delegated: Estimation design (Three workers are active)")
+  const cell = summary.rows.find((row) => row.details.some((block) => block.kind === "code"))!
+  expect(cell.status).toBe("failed")
+  expect(cell.label).toBe("Not delegated: Estimation design (Three workers are active)")
+  expect(JSON.stringify(summary)).not.toContain("Requested background work")
+})
+
 it("supports hjkl and arrows, per-row expansion and independent diff toggles", () => {
   const rows = [...panel.rows, { ...panel.rows[0]!, id: "second" }]
   let state = Panels.initial()

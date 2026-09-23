@@ -157,6 +157,12 @@ export * as UnresolvedFailure from "./UnresolvedFailure.ts"
 
 /**
  * @category models
+ * @since 1.0.0-rc.1
+ */
+export * as FailedCall from "./FailedCall.ts"
+
+/**
+ * @category models
  * @since 0.1.0
  */
 export * as Sufficiency from "./Sufficiency.ts"

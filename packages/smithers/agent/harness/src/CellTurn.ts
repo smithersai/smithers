@@ -31,6 +31,7 @@ import * as Compaction from "./Compaction.ts"
 import * as CompletionClaim from "./CompletionClaim.ts"
 import * as ContextWindow from "./ContextWindow.ts"
 import * as EngineLike from "./EngineLike.ts"
+import * as FailedCall from "./FailedCall.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as cellPrompt from "./internal/cellPrompt.ts"
 import * as elide from "./internal/elide.ts"
@@ -554,6 +555,14 @@ export class State extends Schema.Class<State>("flows/harness/CellTurn/State")({
     Schema.withDecodingDefaultKey(Effect.succeed(0))
   ),
   /**
+   * Completions this run has already had bounced for a call their own cell
+   * failed before they were written. Capped at `FailedCall.cap`.
+   */
+  failedCallDemands: NonNegativeSafeInt.pipe(
+    Schema.withConstructorDefault(Effect.succeed(0)),
+    Schema.withDecodingDefaultKey(Effect.succeed(0))
+  ),
+  /**
    * Frames this run may be given to prove a claim its own record does not
    * support. Past it an unproven claim fails the run rather than standing.
    * Zero disarms the brake. See {@link defaultClaimDemands} and
@@ -913,6 +922,7 @@ export const make = (options: {
     unmovedDemands: 0,
     unresolvedCap: options.unresolvedCap ?? defaultUnresolvedDemands,
     unresolvedDemands: 0,
+    failedCallDemands: 0,
     claimCap: options.claimCap ?? defaultClaimDemands,
     claimDemands: 0,
     openingDigest: "",
@@ -1432,6 +1442,7 @@ const RecordedCompletion = Schema.Struct({
     event: Schema.Union([
       AgentEvent.UnmovedDemanded,
       AgentEvent.UnresolvedDemanded,
+      AgentEvent.FailedCallDemanded,
       AgentEvent.NarrowedDemanded,
       AgentEvent.NarrowOnlyDemanded,
       AgentEvent.ClaimDemanded
@@ -1441,6 +1452,7 @@ const RecordedCompletion = Schema.Struct({
     spent: Schema.Struct({
       unmovedDemands: Schema.optionalKey(NonNegativeSafeInt),
       unresolvedDemands: Schema.optionalKey(NonNegativeSafeInt),
+      failedCallDemands: Schema.optionalKey(NonNegativeSafeInt),
       narrowingDemands: Schema.optionalKey(NonNegativeSafeInt),
       claimDemands: Schema.optionalKey(NonNegativeSafeInt)
     })
@@ -2669,7 +2681,8 @@ const frame = (
       closed,
       minted: ran.minted,
       bindings: ran.frame.bindings,
-      captures: ran.captures
+      captures: ran.captures,
+      source: cell.text
     })
     yield* emit(accounting.observed)
     // The supervisor's snapshot of this frame: what the frame wrote, what it
@@ -3003,7 +3016,16 @@ const frame = (
           demandedFrame: state.frame + 1
         })
       }
-      yield* close(exit, "resolved", transition.output)
+      // A completion that stands over a call its own cell failed carries the
+      // failure in the flow's words; see `FailedCall.state`.
+      yield* close(
+        exit,
+        "resolved",
+        FailedCall.state(
+          transition.output,
+          FailedCall.find(accounting.calls, transition.output, accounting.source)
+        )
+      )
       return { _tag: "Done" }
     }
 

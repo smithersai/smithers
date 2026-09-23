@@ -267,7 +267,7 @@ const streamInto = (transcript: Transcript, text: string, at: number): Transcrip
 export const subject = (input: unknown): string => {
   if (typeof input !== "object" || input === null) return input === undefined ? "" : JSON.stringify(input)
   const record = input as Record<string, unknown>
-  for (const key of ["command", "path", "pattern", "file", "query", "url", "name"]) {
+  for (const key of ["command", "path", "pattern", "file", "query", "url", "name", "title"]) {
     const value = record[key]
     if (typeof value === "string") return value
   }

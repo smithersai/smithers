@@ -16,6 +16,7 @@ import { Result, Schema } from "effect"
 import * as AgentEvent from "./AgentEvent.ts"
 import type * as Cell from "./Cell.ts"
 import type * as EngineLike from "./EngineLike.ts"
+import * as FailedCall from "./FailedCall.ts"
 import { HarnessError } from "./HarnessError.ts"
 import * as DemandText from "./internal/demandText.ts"
 import { printsObservation } from "./internal/printsObservation.ts"
@@ -195,6 +196,7 @@ const decodeNarrowedDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowedDem
 const decodeNarrowOnlyDemanded = Schema.decodeUnknownResult(AgentEvent.NarrowOnlyDemanded)
 const decodeUnmovedDemanded = Schema.decodeUnknownResult(AgentEvent.UnmovedDemanded)
 const decodeUnresolvedDemanded = Schema.decodeUnknownResult(AgentEvent.UnresolvedDemanded)
+const decodeFailedCallDemanded = Schema.decodeUnknownResult(AgentEvent.FailedCallDemanded)
 const decodeClaimDemanded = Schema.decodeUnknownResult(AgentEvent.ClaimDemanded)
 
 const transcriptMessage = (
@@ -406,6 +408,12 @@ export const projectStateResult = (
         const decoded = decode(decodeUnresolvedDemanded, entry)
         if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
         appendDemand(DemandText.unresolved(decoded.success.flow, decoded.success.failed, decoded.success.instead))
+        break
+      }
+      case eventType.failedCallDemanded: {
+        const decoded = decode(decodeFailedCallDemanded, entry)
+        if (Result.isFailure(decoded)) return Result.fail(decoded.failure)
+        appendDemand(FailedCall.demand(decoded.success.failures))
         break
       }
       case eventType.claimDemanded: {

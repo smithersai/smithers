@@ -188,6 +188,11 @@ describe("AgentEvent", () => {
         currentDigest: "digest-after",
         nextFrame: 7
       }),
+      new AgentEvent.FailedCallDemanded({
+        eventType: "flows.harness.failed-call-demanded.v1",
+        failures: [{ flow: "agent.delegate", message: "Flow agent.delegate failed: Three workers are active" }],
+        nextFrame: 7
+      }),
       new AgentEvent.ClaimDemanded({
         eventType: "flows.harness.claim-demanded.v1",
         complete: 0.12,

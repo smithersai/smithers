@@ -64,6 +64,7 @@
     "./TruncatedOutput": "./src/TruncatedOutput.ts",
     "./UnmovedTree": "./src/UnmovedTree.ts",
     "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
+    "./FailedCall": "./src/FailedCall.ts",
     "./VacuousVerification": "./src/VacuousVerification.ts",
     "./VariablesPanel": "./src/VariablesPanel.ts",
     "./index": "./src/index.ts"
@@ -366,6 +367,16 @@
         "require": {
           "types": "./dist/cjs/UnresolvedFailure.d.ts",
           "default": "./dist/cjs/UnresolvedFailure.js"
+        }
+      },
+      "./FailedCall": {
+        "import": {
+          "types": "./dist/esm/FailedCall.d.ts",
+          "default": "./dist/esm/FailedCall.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FailedCall.d.ts",
+          "default": "./dist/cjs/FailedCall.js"
         }
       },
       "./VacuousVerification": {

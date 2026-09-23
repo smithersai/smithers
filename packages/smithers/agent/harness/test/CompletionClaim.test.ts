@@ -30,6 +30,7 @@ import * as CellTurn from "../src/CellTurn.ts"
 import * as CompletionClaim from "../src/CompletionClaim.ts"
 import * as ContextWindow from "../src/ContextWindow.ts"
 import * as EngineLike from "../src/EngineLike.ts"
+import * as FailedCall from "../src/FailedCall.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as Frame from "../src/internal/frame.ts"
 
@@ -90,7 +91,15 @@ const judge = (options: {
   readonly closed?: string
   readonly claim?: string
 } = {}) => {
-  const state = new CellTurn.State({ ...base, openingDigest: "t0", ...options.changes })
+  // The failed-call demand is spent: several cases put a failed call in the
+  // completing frame to test the evidence this brake reads, and that demand
+  // would otherwise hand the frame back first.
+  const state = new CellTurn.State({
+    ...base,
+    openingDigest: "t0",
+    failedCallDemands: FailedCall.cap,
+    ...options.changes
+  })
   const judged = Frame.judgeCompletion(
     state,
     Frame.account({

@@ -21,6 +21,7 @@ import type { State } from "../CellTurn.ts"
 import * as CompletionClaim from "../CompletionClaim.ts"
 import type * as ContextWindow from "../ContextWindow.ts"
 import type * as EngineLike from "../EngineLike.ts"
+import * as FailedCall from "../FailedCall.ts"
 import type * as HarnessError from "../HarnessError.ts"
 import * as NarrowedCheck from "../NarrowedCheck.ts"
 import * as Sufficiency from "../Sufficiency.ts"
@@ -219,6 +220,8 @@ export interface Accounting {
    * quotes the last check out of it; nothing else reads it.
    */
   readonly calls: ReadonlyArray<ObservedCall>
+  /** The cell the frame ran, verbatim, for `FailedCall`. */
+  readonly source: string
   /** The frame's own broken probes, stated once for whichever exit it takes. */
   readonly probeNotice: string | undefined
   /**
@@ -262,6 +265,8 @@ export const account = (options: {
   readonly bindings: ReadonlyArray<VariablesPanel.Binding>
   /** Output the run has been handed as a fragment, this frame's included. */
   readonly captures: ReadonlyArray<TruncatedOutput.Capture>
+  /** The cell the frame ran, verbatim; omitted reads as a cell that inspects nothing. */
+  readonly source?: string | undefined
 }): Accounting => {
   const { calls, closed, opened, state } = options
 
@@ -363,6 +368,7 @@ export const account = (options: {
   return {
     mutated,
     calls,
+    source: options.source ?? "",
     observed: new AgentEvent.MutationObserved({
       eventType: eventType.mutationObserved,
       basis: covered ? "observed" : measured ? "partial" : "declared",
@@ -457,6 +463,7 @@ export interface CompletionDemand {
   readonly event:
     | AgentEvent.UnmovedDemanded
     | AgentEvent.UnresolvedDemanded
+    | AgentEvent.FailedCallDemanded
     | AgentEvent.NarrowedDemanded
     | AgentEvent.NarrowOnlyDemanded
     | AgentEvent.ClaimDemanded
@@ -655,9 +662,29 @@ const measuredDemand = (
   state: State,
   accounting: Accounting,
   contextWindow: ContextWindow.ContextWindow,
-  nextFrame: number
-): Omit<CompletionDemand, "keeps"> | undefined => {
-  const { facts, frameChecks, workspaceDigest } = accounting
+  nextFrame: number,
+  claim: string
+): CompletionDemand | undefined => {
+  const { calls, facts, frameChecks, workspaceDigest } = accounting
+  // First, because the others read a record this completion was written
+  // without: its own cell failed a call before the claim existed. It is the
+  // one measured demand whose answer is not kept, because the answer it takes
+  // away is the sentence written blind. See `FailedCall`.
+  if (state.failedCallDemands < FailedCall.cap) {
+    const failures = FailedCall.find(calls, claim, accounting.source)
+    if (failures.length > 0) {
+      return {
+        event: new AgentEvent.FailedCallDemanded({
+          eventType: eventType.failedCallDemanded,
+          failures: failures.map((failure) => ({ flow: failure.flow, message: failure.message })),
+          nextFrame
+        }),
+        note: FailedCall.demand(failures),
+        keeps: false,
+        spent: { failedCallDemands: state.failedCallDemands + 1 }
+      }
+    }
+  }
   if (state.unmovedDemands < state.unmovedCap) {
     const unmoved = UnmovedTree.find({
       opened: facts.openingDigest,
@@ -673,6 +700,7 @@ const measuredDemand = (
           nextFrame
         }),
         note: UnmovedTree.demand(unmoved),
+        keeps: true,
         spent: { unmovedDemands: state.unmovedDemands + 1 }
       }
     }
@@ -690,6 +718,7 @@ const measuredDemand = (
           nextFrame
         }),
         note: UnresolvedFailure.demand(unresolved),
+        keeps: true,
         spent: { unresolvedDemands: state.unresolvedDemands + 1 }
       }
     }
@@ -709,6 +738,7 @@ const measuredDemand = (
         nextFrame
       }),
       note: NarrowedCheck.demand(narrowing),
+      keeps: true,
       spent
     }
   }
@@ -729,6 +759,7 @@ const measuredDemand = (
       nextFrame
     }),
     note: NarrowedCheck.demandOnly(only),
+    keeps: true,
     spent
   }
 }
@@ -844,10 +875,11 @@ export const judgeCompletion = (
       state.demandedFrame !== state.frame
     const nextFrame = state.frame + 1
     if (room) {
-      const measured = measuredDemand(state, accounting, contextWindow, nextFrame)
+      const measured = measuredDemand(state, accounting, contextWindow, nextFrame, claim)
       // A measured demand names a missing fact, so the answer it takes away
-      // is worth restoring if the budget runs out. See `CompletionDemand`.
-      if (measured !== undefined) return handBack({ ...measured, keeps: true })
+      // is worth restoring if the budget runs out, unless the demand says the
+      // answer was written blind. See `CompletionDemand`.
+      if (measured !== undefined) return handBack(measured)
     }
 
     // The sixth brake, and the only one that leaves this package to decide.

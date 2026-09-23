@@ -15,7 +15,7 @@ importable as `@smthrs/harness/<Module>`.
 | Module | Public exports | Description |
 | --- | --- | --- |
 | `HarnessError` | `HarnessErrorCode`, `HarnessError` | Stable failures reported at the harness translation boundary. |
-| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
+| `AgentEvent` | `DisciplineArmed`, `TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`, `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`, `CellPrinted`, `CellSettled`, `TransitionApplied`, `ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`, `NarrowedDemanded`, `UnmovedDemanded`, `UnresolvedDemanded`, `FailedCallDemanded`, `NarrowOnlyDemanded`, `ClaimDemanded`, `DecisionAnswer`, `decisionAnswers`, `DecisionSettled`, `SufficiencyObserved`, `VacuousVerificationObserved`, `MutationObserved`, `CheckpointMinted`, `Suspended`, `CompactionSettled`, `SteeringDrained`, `TurnClosed`, `PermissionRequired`, `Aborted`, `Resolved`, `AgentEvent`, `eventType` | Serializable events emitted by harness adapters. |
 | `Plan` | `Child`, `Batch`, `ChildResult`, `ChildProgress`, `ChildSettled`, `SpliceEvent` | Local structural plan nodes used at the harness-to-engine boundary. |
 | `EngineLike` | `SuspendReasonCode`, `SuspendReason`, `SealedModelStep`, `BoundaryIdentity`, `DurableSchema`, `RecordBoundary`, `Observation`, `Snapshot`, `Binding`, `Resolved`, `CaptureRequest`, `EngineLike`, `make`, `layer`, `resolve`, `makeNoop`, `layerNoop` | Narrow engine port consumed by the built-in harness. |
 | `Tokens` | `Count`, `Segment`, `Accounting`, `Estimator`, `estimate`, `count`, `combine` | Deterministic token accounting for context windows. |
@@ -38,6 +38,7 @@ importable as `@smthrs/harness/<Module>`.
 | `Supervisor` | `frameBytes`, `recentFrames`, `candidateLimit`, `recalledLimit`, `taskBytes`, `thrashingAt`, `offTargetAt`, `suspectAt`, `acceptAt`, `Level`, `levels`, `Help`, `emotions`, `Emotion`, `Frame`, `Signals`, `Recalled`, `Snapshot`, `classifierFor`, `classifier`, `Reading`, `UnjudgedReason`, `Unjudged`, `read`, `Options`, `defaultOptions`, `Memory`, `memoryNone`, `Verdict`, `nudge`, `recalledInsert`, `judge`, `head`, `tail`, `task`, `candidates` | The reading Jev takes of a run while it is still running. |
 | `UnmovedTree` | `Unmoved`, `find`, `demand` | The completion with nothing behind it. |
 | `UnresolvedFailure` | `exitStatusKey`, `failed`, `exitStatus`, `passed`, `Displaced`, `revisits`, `find`, `demand` | The failing check a completion stepped around. |
+| `FailedCall` | `cap`, `heading`, `stated`, `Failure`, `reason`, `inspects`, `find`, `demand`, `state` | The completion its own cell wrote before a call in it failed. |
 | `CompletionClaim` | `outputBytes`, `proseBytes`, `disprovenAt`, `overclaimedAt`, `unsupportedAt`, `inventedAt`, `checksRunLimit`, `Check`, `Ran`, `Evidence`, `classifier`, `Probabilities`, `Reading`, `find`, `unrecorded`, `newest`, `unjudged`, `unproven`, `read`, `demand`, `quote`, `prose` | The completion nothing in the record contradicts. |
 | `Sufficiency` | `retained`, `Failure`, `Ledger`, `remember`, `Sufficient`, `find`, `observation` | The evidence that is already complete. |
 | `VacuousVerification` | `retained`, `Pass`, `Ledger`, `remember`, `stored`, `find`, `observation` | The proof that was already true before anything changed. |
@@ -82,6 +83,7 @@ Serializable events emitted by harness adapters.
 | `NarrowedDemanded` | class | events | The controller refusing one completion whose evidence was narrowed. |
 | `UnmovedDemanded` | class | events | The controller refusing one completion with no change behind it. |
 | `UnresolvedDemanded` | class | events | The controller refusing one completion that stepped around a failing check. |
+| `FailedCallDemanded` | class | events | The controller handing back a completion its own cell wrote before a call in that cell failed. |
 | `NarrowOnlyDemanded` | class | events | The controller refusing one completion that holds a single reading. |
 | `ClaimDemanded` | class | events | What Jev read off one completion claim, whether or not it braked. |
 | `SupervisorSettled` | class | events | What Jev read off one frame of a running run, whether or not it nudged. |
@@ -586,6 +588,24 @@ The completion with nothing behind it.
 | `Unmoved` | interface | models | A completion taken over the tree the run was handed. |
 | `find` | const | conversions | Whether a completing frame is finishing on the tree the run started with. |
 | `demand` | const | constructors | States that the tree never moved, and names the two answers that end it. |
+
+## FailedCall
+
+`import * as FailedCall from "@smthrs/harness/FailedCall"`
+
+The completion its own cell wrote before a call in it failed.
+
+| Export | Kind | Category | Summary |
+| --- | --- | --- | --- |
+| `cap` | const | constants | How many completions one run may have handed back for a failed call. |
+| `heading` | const | constants | The heading of the demand. |
+| `stated` | const | constants | The line `state` appends a failure under. |
+| `Failure` | interface | models | One call a completing frame settled as a failure. |
+| `reason` | const | conversions | The flow's own words for why a call failed, without the harness's prefix. |
+| `inspects` | const | predicates | Whether a cell's source reads a call envelope's `ok` or `error`. |
+| `find` | const | constructors | The failed calls a completion was written before, oldest first. |
+| `demand` | const | conversions | The demand a completion over failed calls is handed back with. |
+| `state` | const | conversions | The answer a completion stands on when it could not be handed back. |
 
 ## UnresolvedFailure
 

@@ -974,6 +974,16 @@ export const trace = (
           nextFrame: event.nextFrame
         }
       }
+    case "failed-call-demanded":
+      // Each failed call in the flow's own words: the demand is that the
+      // completion was written before these results existed.
+      return {
+        eventType: "control.agent.failed-call-demanded",
+        payload: {
+          failures: event.failures.map((failure) => ({ flow: failure.flow, message: tracedField(failure.message) })),
+          nextFrame: event.nextFrame
+        }
+      }
     case "claim-demanded":
       // All three probabilities and the latency, on every reading rather than
       // only on a firing, because this is the one demand a grader cannot

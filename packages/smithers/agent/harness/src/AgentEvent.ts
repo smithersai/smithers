@@ -583,6 +583,27 @@ export class UnresolvedDemanded extends Schema.TaggedClass<UnresolvedDemanded>(
 }) {}
 
 /**
+ * The controller handing back a completion its own cell wrote before a call
+ * in that cell failed.
+ *
+ * `failures` quotes each failed call's flow and message as the flow reported
+ * them, so the record says which results the completion was written without.
+ * See `FailedCall`.
+ *
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class FailedCallDemanded extends Schema.TaggedClass<FailedCallDemanded>(
+  "flows/harness/AgentEvent/FailedCallDemanded"
+)("failed-call-demanded", {
+  eventType: Schema.Literal("flows.harness.failed-call-demanded.v1"),
+  /** The calls the completing frame settled as failures, oldest first. */
+  failures: Schema.Array(Schema.Struct({ flow: Schema.String, message: Schema.String })),
+  /** The frame the demand was attached to, which is the one that must answer it. */
+  nextFrame: Schema.Int
+}) {}
+
+/**
  * The controller refusing one completion that holds a single reading.
  *
  * Written when a frame returns `complete` while the last check it ran names
@@ -1251,6 +1272,7 @@ export const AgentEvent = Schema.Union([
   NarrowOnlyDemanded,
   UnmovedDemanded,
   UnresolvedDemanded,
+  FailedCallDemanded,
   ClaimDemanded,
   DecisionSettled,
   SupervisorSettled,
@@ -1326,5 +1348,6 @@ export const eventType = {
   turnOpened: "flows.harness.turn-opened.v1",
   unmovedDemanded: "flows.harness.unmoved-demanded.v1",
   unresolvedDemanded: "flows.harness.unresolved-demanded.v1",
+  failedCallDemanded: "flows.harness.failed-call-demanded.v1",
   vacuousVerificationObserved: "flows.harness.vacuous-verification-observed.v1"
 } as const

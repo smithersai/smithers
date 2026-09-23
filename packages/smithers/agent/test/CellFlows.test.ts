@@ -702,7 +702,7 @@ for (const input of [
   { mode: "unhermetic", command: "cat /host/tests/test_outputs.py" },
   { mode: "unhermetic", container: "other", command: "cat /solution/solve.sh" },
   { mode: "unhermetic", container: "testbed", command: "echo ok" }
-]) { try { seen.push((await ctx.call("bash", input)).stdout.trim()) } catch (error) { seen.push("refused") } }
+]) { const result = await ctx.call("bash", input); seen.push(result.ok === false ? "refused" : result.stdout.trim()) }
 ctx.done(seen.join(","))`
         ]
       })
@@ -802,7 +802,7 @@ ctx.done(suite.passed + " passed, " + suite.failed.join(","))`
       cells: [`for (const [name, input] of [
         ["bash", { mode: "unhermetic", command: "echo SYNTHETIC_COMMAND", timeoutMs: 1 }],
         ["test", {}]
-      ]) { try { await ctx.call(name, input) } catch {} }
+      ]) { const result = await ctx.call(name, input); if (result.ok === false) console.log(name) }
       ctx.done("done")`]
     }))
     const settled = settledCalls(eventsOf(outcome))
@@ -993,7 +993,8 @@ ctx.done(String(waited.waitedSeconds))`
           flows: [StandardFlows.clock(clockServices, { maxSeconds: 61 })],
           cells: [
             `const refused = []
-try { await ctx.call("wait", { seconds: 62 }) } catch (error) { refused.push(String(error.message)) }
+const over = await ctx.call("wait", { seconds: 62 })
+if (over.ok === false) refused.push(over.error.message)
 const exact = await ctx.call("wait", { seconds: 61 })
 ctx.done(refused.length + ":" + exact.waitedSeconds)`
           ]
@@ -1424,7 +1425,8 @@ ctx.done(done.output)`
         cells: [
           `const caught = []
 for (const call of [["agent/spawn", { flow: "review" }], ["agent/send", { child: "c", message: "hi" }], ["agent/await", { child: "c" }]]) {
-  try { await ctx.call(call[0], call[1]) } catch (error) { caught.push(String(error.message)) }
+  const result = await ctx.call(call[0], call[1])
+  if (result.ok === false) caught.push(result.error.message)
 }
 ctx.done(caught.join("|"))`
         ]
