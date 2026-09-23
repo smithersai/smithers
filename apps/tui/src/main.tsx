@@ -61,6 +61,7 @@ createRoot(renderer).render(
   <App
     host={host}
     seat={seat}
+    workerSeat={replay === undefined ? available.workerSeat ?? seat : seat}
     models={available.models}
     contextWindow={(id) => SeatResolver.contextWindowTokensFor(Seat.modelIdOf(id))}
     {...(resumeFile === undefined ? {} : { resume: resumeFile })}

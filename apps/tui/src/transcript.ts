@@ -7,11 +7,14 @@
  * settlement attach to that same cell.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Changes from "./changes.ts"
 import type * as Shell from "./shell.ts"
 
 export type CellStatus = "writing" | "running" | "done" | "failed" | "rejected"
 
 export interface Call {
+  readonly identity?: string
+  readonly patches?: ReadonlyArray<Changes.Patch>
   readonly flow: string
   readonly subject: string
   readonly status: "running" | "ok" | "failed"
@@ -126,7 +129,9 @@ const updateItem = <K extends Item["kind"]>(
   update: (item: Extract<Item, { kind: K }>) => Item
 ): Transcript => ({
   ...transcript,
-  items: transcript.items.map((item) => (item.id === id && item.kind === kind ? update(item as Extract<Item, { kind: K }>) : item))
+  items: transcript.items.map((
+    item
+  ) => (item.id === id && item.kind === kind ? update(item as Extract<Item, { kind: K }>) : item))
 })
 
 export const shellOutput = (transcript: Transcript, id: string, text: string): Transcript =>
@@ -194,7 +199,12 @@ const updateCell = (transcript: Transcript, update: (cell: CellItem) => CellItem
 const settleOpen = (transcript: Transcript, at: number, status: "failed" | "done"): Transcript =>
   updateCell(transcript, (cell) =>
     cell.status === "writing" || cell.status === "running"
-      ? { ...cell, status, endedAt: at, calls: cell.calls.map((call) => (call.status === "running" ? { ...call, status: "failed" } : call)) }
+      ? {
+        ...cell,
+        status,
+        endedAt: at,
+        calls: cell.calls.map((call) => (call.status === "running" ? { ...call, status: "failed" } : call))
+      }
       : cell)
 
 const streamInto = (transcript: Transcript, text: string, at: number): Transcript => {
@@ -296,6 +306,7 @@ const started = (call: AgentEvent.CellCallStarted["call"], at: number): Call => 
   const verb = call.presentation?.verb
   const changed = change(call.flowName, call.input)
   return {
+    ...(call.identity === undefined ? {} : { identity: Changes.identity(call.identity) }),
     flow: call.flowName,
     subject: subject(call.input),
     status: "running",
@@ -357,7 +368,11 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
       }))
     case "cell-call-settled":
       return updateCell(transcript, (cell) => {
-        const at_ = cell.calls.findLastIndex((call) => call.flow === event.flowName && call.status === "running")
+        const at_ = cell.calls.findLastIndex((call) =>
+          (call.identity === undefined
+            ? call.flow === event.flowName
+            : call.identity === Changes.identity(event.identity)) && call.status === "running"
+        )
         if (at_ < 0) return cell
         const ok = event.result.outcome === "success"
         const exit = exitCode(event.result.value)
@@ -404,3 +419,19 @@ export const duration = (ms: number): string => {
   const seconds = Math.floor((ms % 60_000) / 1000)
   return `${minutes}m${String(seconds).padStart(2, "0")}s`
 }
+
+/** File receipts attach to the actual call identity, including parallel calls of the same flow. */
+export const patched = (transcript: Transcript, receipt: Changes.Receipt): Transcript => ({
+  ...transcript,
+  items: transcript.items.map((item) =>
+    item.kind !== "cell"
+      ? item
+      : ({
+        ...item,
+        calls: item.calls.map((call) => call.identity !== receipt.call ? call : ({ ...call, patches: receipt.patches }))
+      })
+  )
+})
+
+export const caption = (transcript: Transcript, prose: string): Transcript =>
+  updateCell(transcript, (cell) => ({ ...cell, prose }))

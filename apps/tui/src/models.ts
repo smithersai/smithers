@@ -39,6 +39,7 @@ const anthropic: ReadonlyArray<Omit<Model, "provider">> = [
 export interface Available {
   readonly models: ReadonlyArray<Model>
   readonly defaultSeat: string | undefined
+  readonly workerSeat: string | undefined
   /** The process environment plus what the chosen credentials need. */
   readonly environment: Record<string, string | undefined>
 }
@@ -67,7 +68,8 @@ export const detect = (environment: NodeJS.ProcessEnv): Available => {
   }
   return {
     models,
-    defaultSeat: environment.SMITHERS_TUI_SEAT ?? models[0]?.seat,
+    defaultSeat: environment.SMITHERS_TUI_SEAT ?? models.find((model) => model.seat.startsWith("cerebras:"))?.seat ?? models[0]?.seat,
+    workerSeat: environment.SMITHERS_TUI_WORKER_SEAT ?? models.find((model) => !model.seat.startsWith("cerebras:"))?.seat ?? models[0]?.seat,
     environment: {
       ...environment,
       ...(subscribed && environment.SMITHERS_OPENAI_AUTH === undefined ? { SMITHERS_OPENAI_AUTH: "chatgpt" } : {})

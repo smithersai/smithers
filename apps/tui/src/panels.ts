@@ -1,0 +1,66 @@
+/** Runtime-authored, serializable UI. Cells construct these values; the host owns rendering and keys. */
+import { Schema } from "effect"
+
+const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240))
+const content = Schema.String.check(Schema.isMaxLength(200_000))
+export const Block = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("text"), text: content }),
+  Schema.Struct({ kind: Schema.Literal("code"), code: content, language: Schema.optional(short) }),
+  Schema.Struct({ kind: Schema.Literal("diff"), patch: content, path: short }),
+  Schema.Struct({
+    kind: Schema.Literal("table"),
+    columns: Schema.Array(short).check(Schema.isMaxLength(12)),
+    rows: Schema.Array(Schema.Array(content)).check(Schema.isMaxLength(200))
+  })
+])
+export type Block = typeof Block.Type
+export const Row = Schema.Struct({
+  id: short,
+  label: short,
+  status: Schema.optional(Schema.Literals(["running", "done", "failed", "requested", "cancelled"])),
+  details: Schema.Array(Block).check(Schema.isMaxLength(40)),
+  // A user selects an action; publishing a panel never executes its actions.
+  action: Schema.optional(Schema.Struct({ label: short, prompt: content }))
+})
+export type Row = typeof Row.Type
+export const Panel = Schema.Struct({
+  id: short,
+  title: short,
+  summary: short.check(Schema.isPattern(/^[^\r\n]+$/)),
+  rows: Schema.Array(Row).check(Schema.isMaxLength(500))
+})
+export type Panel = typeof Panel.Type
+export const decode = (value: unknown): Panel => {
+  const panel = Schema.decodeUnknownSync(Panel)(value)
+  if (JSON.stringify(panel).length > 1_000_000) throw new Error("Panel exceeds 1 MB")
+  if (new Set(panel.rows.map((row) => row.id)).size !== panel.rows.length) throw new Error("Row ids must be unique")
+  return panel
+}
+
+export interface Navigation {
+  readonly selected: number
+  readonly expanded: ReadonlySet<string>
+  readonly diff: boolean
+  readonly split: boolean
+}
+export const initial = (): Navigation => ({ selected: 0, expanded: new Set(), diff: false, split: false })
+/** Shared by the built-in summary and every agent-authored panel. */
+export const navigate = (state: Navigation, key: string, rows: ReadonlyArray<Row>): Navigation => {
+  const selected = Math.max(0, Math.min(state.selected, rows.length - 1))
+  if (key === "j" || key === "down") return { ...state, selected: Math.max(0, Math.min(rows.length - 1, selected + 1)) }
+  if (key === "k" || key === "up") return { ...state, selected: Math.max(0, selected - 1) }
+  if (key === "d") return { ...state, diff: !state.diff }
+  if (key === "v") return { ...state, split: !state.split }
+  const row = rows[selected]
+  if (row === undefined) return { ...state, selected: 0 }
+  const expanded = new Set(state.expanded)
+  if (key === "h" || key === "left") expanded.delete(row.id)
+  else if (key === "l" || key === "right") expanded.add(row.id)
+  else if (key === "return" || key === "kpenter" || key === "space") {
+    if (expanded.has(row.id)) expanded.delete(row.id)
+    else expanded.add(row.id)
+  }
+  return { ...state, selected, expanded }
+}
+export const teaching =
+  `Use ui.publish to build custom terminal UI whenever a view makes the answer easier to inspect: comparisons, plans, progress, choices, or results. Write JavaScript cells that construct a panel and call the flow; do not print UI JSON. Panels have {id,title,summary,rows:[{id,label,status?,details:[blocks],action?:{label,prompt}}]}. Blocks are {kind:"text",text}, {kind:"code",code,language?}, {kind:"diff",path,patch} or {kind:"table",columns,rows}. Reuse the panel id to update it. Keep summary to one sentence (e.g. "Investigation requested.", never "running" for a requested receipt) and row labels to concise human English. Details hold actual evidence and code. Actions send their prompt ONLY when the user presses a. Publishing never changes keyboard focus. Prefer useful UI to long prose. Never invent actions the user did not request.`

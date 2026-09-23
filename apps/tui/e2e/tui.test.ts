@@ -13,7 +13,8 @@ import { key, Tui } from "./zmux.ts"
 
 const app = resolve(import.meta.dir, "..")
 const fixture = join(app, "test", "fixtures", "fix-add.jsonl")
-const idle = (screen: string) => screen.includes("code  ·") && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
+const idle = (screen: string) =>
+  screen.includes("code  ·") && !screen.includes("esc interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
 let tui: Tui | undefined
 afterEach(async () => {
@@ -27,7 +28,7 @@ const repository = () => {
   writeFileSync(join(directory, "math.js"), "export const add = (a, b) => a - b\n")
   writeFileSync(
     join(directory, "check.mjs"),
-    'import { add } from "./math.js"\nif (add(2, 3) !== 5) { console.error("add is wrong"); process.exit(1) }\nconsole.log("ok")\n'
+    "import { add } from \"./math.js\"\nif (add(2, 3) !== 5) { console.error(\"add is wrong\"); process.exit(1) }\nconsole.log(\"ok\")\n"
   )
   return directory
 }
@@ -63,7 +64,10 @@ describe("ctrl+c and ctrl+d", () => {
     await tui.press(key.ctrlC)
     await new Promise((resolve) => setTimeout(resolve, 700))
     expect(tui.exited).toBeUndefined()
-    await tui.call("session.send", { sessionId: "tui", dataBase64: Buffer.from(key.ctrlC + key.ctrlC).toString("base64") })
+    await tui.call("session.send", {
+      sessionId: "tui",
+      dataBase64: Buffer.from(key.ctrlC + key.ctrlC).toString("base64")
+    })
     expect((await tui.waitForExit()).code).toBe(0)
   }, 60_000)
 
@@ -123,8 +127,14 @@ describe("! shell commands", () => {
     expect(screen).toContain("check.mjs")
     const [folder] = readdirSync(sessions)
     const [file] = readdirSync(join(sessions, folder!))
-    const records = readFileSync(join(sessions, folder!, file!), "utf8").trim().split("\n").map((line) => JSON.parse(line))
-    expect(records.at(-1)).toMatchObject({ type: "shell", excluded: false, result: { command: "ls && echo done-$((1+1))", exitCode: 0 } })
+    const records = readFileSync(join(sessions, folder!, file!), "utf8").trim().split("\n").map((line) =>
+      JSON.parse(line)
+    )
+    expect(records.at(-1)).toMatchObject({
+      type: "shell",
+      excluded: false,
+      result: { command: "ls && echo done-$((1+1))", exitCode: 0 }
+    })
     expect(cwd).toBeTruthy()
   }, 60_000)
 
@@ -235,8 +245,149 @@ describe("model dialog", () => {
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("Select model"), 5_000, "dialog")
     await tui.type("zzzz-none")
-    await tui.until((screen) => screen.includes('No model matches "zzzz-none"'), 5_000, "empty filter")
+    await tui.until((screen) => screen.includes("No model matches \"zzzz-none\""), 5_000, "empty filter")
     await tui.press(key.escape)
     await tui.until((screen) => !screen.includes("Select model"), 5_000, "closed dialog")
   }, 60_000)
 })
+
+describe("runtime views", () => {
+  it(
+    "navigates summary rows with hjkl/arrows, expands code, toggles the real diff, and returns focus to chat",
+    async () => {
+      const { tui } = await start()
+      await tui.type("node check.mjs fails. Fix it and show it passes.")
+      await tui.press(key.enter)
+      await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 120_000, "answer")
+      await tui.type("/summary")
+      await tui.press(key.enter)
+      await tui.until((screen) => screen.includes("enter details") && screen.includes("Asked:"), 5_000, "summary")
+      await tui.type("jl")
+      await tui.until((screen) => screen.includes("ctx.call(\"ls\""), 5_000, "expanded cell source")
+      await tui.type("hjd")
+      const diff = await tui.until(
+        (screen) => screen.includes("math.js") && screen.includes("a + b") && screen.includes("a - b"),
+        5_000,
+        "real edit diff"
+      )
+      expect(diff).toContain("Updated math.js")
+      await tui.type("v")
+      await tui.until((screen) => screen.includes("a + b") && screen.includes("a - b"), 5_000, "split diff")
+      await tui.press(key.up)
+      await tui.until((screen) => screen.includes("No recorded changes."), 5_000, "previous turn")
+      await tui.press(key.escape)
+      await tui.type("a new question")
+      await tui.until((screen) => /┃\s+a new question/.test(screen), 5_000, "usable composer")
+    },
+    180_000
+  )
+
+  it("renders agent-authored UI from a real cell and restores it after restart", async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-panels-"))
+    const recording = join(sessions, "ui-reply.jsonl")
+    const panel = {
+      id: "checks",
+      title: "Checks",
+      summary: "The addition check passed.",
+      rows: [{
+        id: "addition",
+        label: "Checked addition",
+        status: "done",
+        details: [{ kind: "code", language: "javascript", code: "assert(add(2, 3) === 5)" }]
+      }]
+    }
+    const reply = `\`\`\`javascript\nconst shown = await ctx.call("ui.publish", ${
+      JSON.stringify(panel)
+    }); if (shown.ok === false) throw new Error(JSON.stringify(shown)); ctx.done("Published the checks view.")\n\`\`\``
+    writeFileSync(
+      recording,
+      [
+        { at: 1, event: { _tag: "model-requested" } },
+        { at: 2, event: { _tag: "model-delta", delta: { type: "text-delta", id: "reply", text: reply } } },
+        { at: 3, event: { _tag: "model-settled", message: { stopReason: "stop" } } }
+      ].map((record) => JSON.stringify(record)).join("\n")
+    )
+    const launch = async (resume: boolean) => {
+      tui = await Tui.start({
+        cwd,
+        command: `bun ${join(app, "src", "main.tsx")} ${cwd} ${resume ? "-c" : ""}`,
+        env: {
+          PATH: process.env.PATH ?? "",
+          HOME: process.env.HOME ?? "",
+          SMITHERS_TUI_REPLAY: recording,
+          SMITHERS_TUI_SESSION_DIR: sessions
+        }
+      })
+      await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+      return tui
+    }
+    const first = await launch(false)
+    await first.type("Build a checks view")
+    await first.press(key.enter)
+    await first.until(
+      (screen) => idle(screen) && screen.includes("Published the checks view."),
+      30_000,
+      "runtime UI published"
+    )
+    await first.type("/ui")
+    await first.press(key.enter)
+    await first.until(
+      (screen) => screen.includes("The addition check passed.") && screen.includes("Checked addition"),
+      5_000,
+      "custom view"
+    )
+    await first.type("l")
+    await first.until((screen) => screen.includes("assert(add(2, 3) === 5)"), 5_000, "custom code")
+    await first.stop()
+    const resumed = await launch(true)
+    await resumed.type("/ui")
+    await resumed.press(key.enter)
+    await resumed.until((screen) => screen.includes("The addition check passed."), 5_000, "persisted custom view")
+  }, 90_000)
+})
+
+it(
+  "keeps chat and navigation usable through an unresolved worker, deduplicates its tab, and settles its toast on cancellation",
+  async () => {
+    const cwd = repository()
+    const sessions = mkdtempSync(join(tmpdir(), "tui-background-"))
+    tui = await Tui.start({
+      cwd,
+      command: `bun ${join(app, "e2e", "workspace-fixture.tsx")}`,
+      env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", SMITHERS_TUI_SESSION_DIR: sessions }
+    })
+    await tui.until((screen) => screen.includes("code  ·"), 20_000, "first draw")
+    await tui.type("investigate")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => screen.includes("Requested the investigation.") && screen.includes("Investigation · running"),
+      5_000,
+      "worker still running after chat acknowledges"
+    )
+    await tui.type("hello")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => screen.includes("Still here.") && screen.includes("Investigation · running"),
+      5_000,
+      "second chat turn during background work"
+    )
+    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const records = readFileSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), "utf8")
+      .trim().split("\n").map((line) => JSON.parse(line))
+    expect(records.filter((record) => record.type === "tab" && record.tab.status === "requested")).toHaveLength(1)
+    await tui.type("/tabs")
+    await tui.press(key.enter)
+    await tui.until(
+      (screen) => screen.includes("r retry") && screen.includes("Investigation · running"),
+      5_000,
+      "inspect running worker"
+    )
+    await tui.type("x")
+    await tui.until((screen) => screen.includes("Investigation · cancelled"), 5_000, "actual worker settlement")
+    await tui.press(key.escape)
+    await tui.type("still usable")
+    await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "composer after cancellation")
+  },
+  60_000
+)

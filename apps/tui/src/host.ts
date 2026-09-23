@@ -15,12 +15,10 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
-import * as NativeSearch from "@smthrs/std/NativeSearch"
-import * as NodeControl from "@smthrs/cli/NodeControl"
 import * as Capability from "@smthrs/capability/Capability"
+import * as NodeControl from "@smthrs/cli/NodeControl"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
-import { Node } from "@smthrs/plan"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
@@ -28,14 +26,20 @@ import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
+import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
+import * as NativeSearch from "@smthrs/std/NativeSearch"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime, Schema, Scope, Stream } from "effect"
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
-import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
+import type { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as Changes from "./changes.ts"
 import * as Context from "./context.ts"
+import * as Panels from "./panels.ts"
 import * as Replay from "./replay.ts"
+import * as Runtime from "./runtime.ts"
+import * as Transcript from "./transcript.ts"
 
 /** How a turn ended. */
 export type Outcome =
@@ -45,6 +49,12 @@ export type Outcome =
 
 export interface TurnInput {
   readonly prompt: string
+  readonly role?: "coordinator" | "worker"
+  readonly runtime?: Runtime.Ports
+  readonly workerSeat?: string
+  readonly background?: string
+  readonly onCaption?: (prose: string) => void
+  readonly onPatch?: (receipt: Changes.Receipt) => void
   readonly seat: string
   readonly history: ReadonlyArray<Context.Entry>
   /** Where messages typed mid-turn wait for the next cell boundary. */
@@ -134,7 +144,9 @@ export const make = (options: {
     const index = ++turns
     const program = Effect.gen(function*() {
       const seat = input.seat.startsWith("replay:")
-        ? Replay.seat({ file: input.seat.slice("replay:".length), holdMs: Number(env.SMITHERS_TUI_REPLAY_HOLD_MS ?? 0),
+        ? Replay.seat({
+          file: input.seat.slice("replay:".length),
+          holdMs: Number(env.SMITHERS_TUI_REPLAY_HOLD_MS ?? 0),
           speed: Number(env.SMITHERS_TUI_REPLAY_SPEED ?? 1)
         })
         : yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
@@ -144,34 +156,61 @@ export const make = (options: {
       const flow = turnFlow(index)
       const settled = Deferred.makeUnsafe<string, unknown>()
       let answer = ""
+      let reply = ""
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
         prompt: input.prompt,
-        system: Context.system(options.cwd, input.history),
-        ...(input.thinking === undefined
+        system: [
+          ...Context.system(options.cwd, input.history),
+          ...(input.runtime === undefined ? [] : [Panels.teaching]),
+          ...(input.role === "coordinator"
+            ? [
+              Runtime.coordinatorTeaching + (input.workerSeat ?? input.seat),
+              `Background tabs: ${input.background ?? "[]"}`
+            ]
+            : [
+              "Start each cell with a short sentence explaining its purpose in plain English. End with one sentence saying what happened, followed only by essential evidence. Never claim tests passed unless you observed them pass."
+            ])
+        ],
+        ...((input.thinking ??
+            (input.role === "coordinator" && input.seat.startsWith("cerebras:") ? "low" : undefined)) === undefined
           ? {}
-          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: input.thinking }) }),
+          : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: input.thinking ?? "low" }) }),
         registry,
         // `rg` searches this repository in seconds; the in-process walk took
         // longer than grep's 120 s ceiling. It stays the fallback without rg.
         flows: [
-          StandardFlows.filesystem(services, Bun.which("rg") === null ? undefined : NativeSearch.make(services)),
-          StandardFlows.shell(services)
+          ...(input.role === "coordinator" ? [] : [
+            Changes.capture(
+              StandardFlows.filesystem(services, Bun.which("rg") === null ? undefined : NativeSearch.make(services)),
+              options.cwd,
+              input.onPatch ?? (() => {})
+            ),
+            Changes.capture(StandardFlows.shell(services), options.cwd, input.onPatch ?? (() => {}))
+          ]),
+          ...(input.runtime === undefined ? [] : [Runtime.source(input.runtime)])
         ],
         capabilityEnvelope: [new Capability.CapabilityPattern({ action: "*", resource: "*" })],
         // The same explicit cell budget `smithers run` uses; never unlimited.
         limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 },
         // A person reads every answer here, so without a gateway key the one
         // brake that needs Jev is disarmed instead of failing every turn.
-        ...(judged ? {} : { claimCap: 0 }),
-        maxFrames: 40
+        ...(input.role === "coordinator"
+          ? { unmovedCap: 0, narrowingCap: 0, unresolvedCap: 0, claimCap: 0 }
+          : judged
+          ? {}
+          : { claimCap: 0 }),
+        maxFrames: input.role === "coordinator" ? 8 : 40
       }).pipe(
         Stream.provideService(Steering.Source, input.steering ?? Steering.makeNoop()),
         Stream.runForEach((event) =>
           Effect.sync(() => {
             if (event._tag === "resolved") answer = text(event.message.content)
+            if (event._tag === "model-requested") reply = ""
+            if (event._tag === "model-delta" && event.delta.type === "text-delta") reply += event.delta.text
             input.onEvent(event)
+            if (event._tag === "cell-produced") input.onCaption?.(Transcript.split(reply).prose)
           })
         )
       )

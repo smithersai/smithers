@@ -11,12 +11,25 @@ import { randomUUID } from "node:crypto"
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
+import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
+import type * as Panels from "./panels.ts"
 import * as Shell from "./shell.ts"
 import * as Transcript from "./transcript.ts"
+import type * as Workspace from "./workspace.ts"
 
 export type Record =
-  | { readonly type: "session"; readonly version: 1; readonly id: string; readonly cwd: string; readonly createdAt: number }
+  | { readonly type: "caption"; readonly prose: string }
+  | { readonly type: "panel"; readonly panel: Panels.Panel }
+  | { readonly type: "tab"; readonly tab: Workspace.Tab }
+  | { readonly type: "patch"; readonly receipt: Changes.Receipt }
+  | {
+    readonly type: "session"
+    readonly version: 1
+    readonly id: string
+    readonly cwd: string
+    readonly createdAt: number
+  }
   | { readonly type: "name"; readonly name: string }
   | { readonly type: "user"; readonly at: number; readonly text: string; readonly steered?: boolean }
   | { readonly type: "event"; readonly at: number; readonly event: AgentEvent.AgentEvent }
@@ -39,7 +52,8 @@ export const root = (): string =>
   process.env.SMITHERS_TUI_SESSION_DIR ?? join(homedir(), ".smithers", "tui", "sessions")
 
 /** pi's directory slug: the path with separators replaced, fenced by `--`. */
-export const directory = (cwd: string): string => join(root(), `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`)
+export const directory = (cwd: string): string =>
+  join(root(), `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`)
 
 export interface Writer {
   readonly file: string
@@ -47,9 +61,9 @@ export interface Writer {
 }
 
 /** A new session file, written lazily so an empty session leaves nothing behind. */
-export const create = (cwd: string): Writer => {
+export const create = (cwd: string, kind: "chat" | "worker" = "chat"): Writer => {
   const id = randomUUID()
-  const folder = directory(cwd)
+  const folder = kind === "worker" ? join(directory(cwd), "workers") : directory(cwd)
   const file = join(folder, `${new Date().toISOString().replace(/[:.]/g, "-")}_${id}.jsonl`)
   let opened = false
   return {
@@ -103,16 +117,31 @@ export const latest = (cwd: string): string | undefined => list(cwd)[0]?.file
 /** What a session file rebuilds: the screen, the agent's context, and the prompt history. */
 export const restore = (records: ReadonlyArray<Record>): {
   readonly transcript: Transcript.Transcript
+  readonly workspace: Workspace.Snapshot
   readonly entries: Array<Context.Entry>
   readonly prompts: Array<string>
   readonly name: string | undefined
 } => {
+  const panels = new Map<string, Panels.Panel>()
+  const tabs = new Map<string, Workspace.Tab>()
   let transcript = Transcript.empty
   const entries: Array<Context.Entry> = []
   const prompts: Array<string> = []
   let name: string | undefined
   for (const record of records) {
     switch (record.type) {
+      case "caption":
+        transcript = Transcript.caption(transcript, record.prose)
+        break
+      case "panel":
+        panels.set(record.panel.id, record.panel)
+        break
+      case "tab":
+        tabs.set(record.tab.id, record.tab)
+        break
+      case "patch":
+        transcript = Transcript.patched(transcript, record.receipt)
+        break
       case "name":
         name = record.name
         break
@@ -143,5 +172,5 @@ export const restore = (records: ReadonlyArray<Record>): {
         break
     }
   }
-  return { transcript, entries, prompts, name }
+  return { transcript, entries, prompts, name, workspace: { tabs: [...tabs.values()], panels: [...panels.values()] } }
 }

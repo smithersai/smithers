@@ -327,16 +327,27 @@ export function Dialog(props: {
 }
 
 /** Toasts ride the top right, like the app's toast stack. */
-export function Toast(props: { readonly text: string; readonly tone: "info" | "warning" | "danger" }) {
-  return (
-    <box
-      style={{ position: "absolute", top: 1, right: 2, maxWidth: 60, border: ["left"], zIndex: 50 }}
-      borderColor={props.tone === "info" ? color.brand : color[props.tone]}
-      customBorderChars={bar}
+export function ToastStack(
+  props: {
+    readonly rows: ReadonlyArray<
+      { readonly id: string; readonly text: string; readonly tone: "info" | "warning" | "danger" }
     >
-      <box style={{ paddingLeft: 1, paddingRight: 2 }} backgroundColor={color.element}>
-        <text fg={color.text}>{props.text}</text>
-      </box>
+  }
+) {
+  return (
+    <box style={{ position: "absolute", top: 1, right: 2, maxWidth: 60, zIndex: 50 }}>
+      {props.rows.map((row) => (
+        <box
+          key={row.id}
+          style={{ border: ["left"], marginBottom: 1 }}
+          borderColor={row.tone === "info" ? color.brand : color[row.tone]}
+          customBorderChars={bar}
+        >
+          <box style={{ paddingLeft: 1, paddingRight: 2 }} backgroundColor={color.element}>
+            <text fg={color.text}>{row.text}</text>
+          </box>
+        </box>
+      ))}
     </box>
   )
 }

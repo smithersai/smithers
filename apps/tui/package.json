@@ -29,6 +29,7 @@
     "@smthrs/plan": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/std": "workspace:*",
+    "diff": "9.0.0",
     "effect": "4.0.0-rc.115",
     "react": "19.2.8"
   },

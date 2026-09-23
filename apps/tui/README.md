@@ -16,8 +16,12 @@ bun run tui -p "prompt"          # print one answer and exit
 bun run tui --model openai:gpt-6-astra
 ```
 
-The default seat is `openai:gpt-6-sol` on the ChatGPT subscription
-(`codex login`). The picker lists only providers this machine can reach.
+Interactive chat prefers `cerebras:qwen-3.8-27b` with low reasoning effort
+when `CEREBRAS_API_KEY` is configured, falling back to an available provider.
+`--model` or `SMITHERS_TUI_SEAT` overrides chat. Background workers use the
+first available non-Cerebras seat (usually the ChatGPT subscription from
+`codex login`); `SMITHERS_TUI_WORKER_SEAT` overrides it. The picker lists only
+providers this machine can reach. Print mode runs a task directly.
 
 ## Keys
 
@@ -37,6 +41,15 @@ The default seat is `openai:gpt-6-sol` on the ChatGPT subscription
 | Ctrl+P, Shift+Ctrl+P | Next, previous model |
 | Shift+Tab | Cycle reasoning effort |
 | Ctrl+O | Expand cell code, output, diffs, and the key list |
+| Ctrl+S | Open summary / switch focus between the view and chat |
+| Ctrl+Left, Ctrl+Right | Switch Chat, Summary, worker tabs, and custom views |
+| hjkl or arrows | In a view: move between rows, collapse/expand details |
+| Enter | In a view: toggle the selected row's details |
+| d, v | In a view: toggle the selected turn's diff; toggle split/unified |
+| Tab | In a view: next tab |
+| Esc, i | In a view: focus the composer without stopping background work |
+| a | Activate the selected row's action, if present |
+| r, x | In a worker tab: retry / stop |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
 | PageUp, PageDown | Scroll |
 | `!cmd` | Run a shell command; its output joins the next turn's context |
@@ -45,7 +58,8 @@ The default seat is `openai:gpt-6-sol` on the ChatGPT subscription
 ## Commands
 
 `/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/session`,
-`/name <name>`, `/copy`, `/hotkeys`, `/quit`. After `/model ` and
+`/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/ui [id]`,
+`/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model ` and
 `/thinking ` the menu completes the argument.
 
 ## Look
@@ -54,7 +68,7 @@ Night Owl dark surfaces from the Smithers app (`apps/app/.../tokens.css`),
 layered page, panel, element. Your messages are right-aligned brand-tinted
 bubbles, as in the app's chat. Each cell is a left bar colored by status with
 one row per flow call (`→ read`, `$ ran`, `← edited`); an edit draws its diff.
-Cell code folds to a line count once settled. Panels, dialogs, and the
+The Summary view keeps cell code behind expandable rows. Panels, dialogs, and the
 completion menu follow opencode's shapes; fuzzy matching is pi's.
 
 ## Context and sessions
@@ -68,6 +82,56 @@ Sessions are JSONL under `~/.smithers/tui/sessions/<cwd>/`
 Without `AI_GATEWAY_API_KEY` the completion brake that asks Jev is disarmed
 (`claimCap: 0`); you read every answer. Edits are not rolled back by the
 harness; your VCS is the undo.
+
+## Runtime UI and delegation
+
+The summary is a projection onto the same panel format agents can publish.
+It starts with one sentence, followed by chronological rows. Each row retains
+its cell source, flow calls, output, errors, and observed file changes.
+Diffs have syntax highlighting, line numbers, contextual hunks, and a split
+view on wide terminals. Filesystem flows capture edits, whole-file overwrites,
+patches, deletions, and moves. Shell changes observed during a call are captured in Git and jj repositories;
+shell edits outside a repository have no automatic diff. Binary, large, or excessively
+expensive diffs are labeled instead of rendered as incomplete hunks.
+
+Agents construct UI in sandboxed JavaScript cells through ordinary flows:
+
+```js
+await ctx.call("ui.publish", {
+  id: "checks",
+  title: "Checks",
+  summary: "The addition check passed.",
+  rows: [{
+    id: "addition",
+    label: "Checked addition",
+    status: "done",
+    details: [{ kind: "code", language: "javascript", code: "assert(add(2, 3) === 5)" }]
+  }]
+})
+ctx.done("The check passed.")
+```
+
+Blocks support text, code, tables (`columns`, `rows`), and unified diffs
+(`path`, `patch`). Rows optionally carry `action: {label, prompt}`; only the
+user pressing **a** sends that prompt. Reusing a panel id updates it. Publishing
+never takes keyboard focus. Documents are schema-validated, capped at 1 MB,
+and persisted in the session. The host renders them; generated code is never
+loaded into the UI process.
+
+The chat coordinator has `ui.publish`, `agent.delegate`, `tab.read`, and
+`tab.list`. Workers have the filesystem/shell flows and `ui.publish`.
+Delegation takes `{id, title, prompt}`, persists before launch, and returns a
+`requested` receipt immediately. Reusing the id deduplicates the request.
+Up to three workers can run at once; they share the working directory, so
+independent tasks should name disjoint files. Worker transcripts persist in
+separate session files. Chat receives current worker status/results as context
+and remains usable while workers run. Progress uses the shared toast stack,
+with a 300 ms delay and real completion/failure as its end.
+
+Workers run locally. Restarting the TUI restores their transcripts and marks
+unfinished workers interrupted, with an explicit retry; it does not claim to
+reconnect to a process that no longer exists. `/new` and `/resume` require
+running work to finish or be stopped first.
 
 ## Tests
 

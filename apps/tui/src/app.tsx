@@ -19,12 +19,16 @@ import * as Files from "./files.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import type * as Host from "./host.ts"
 import type { Model } from "./models.ts"
+import { PanelView } from "./panel-view.tsx"
+import * as Panels from "./panels.ts"
 import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
+import * as Summary from "./summary.ts"
 import { color, spinner } from "./theme.ts"
 import * as Transcript from "./transcript.ts"
 import * as View from "./view.tsx"
+import { Workspace } from "./workspace.ts"
 
 const composerKeys: Array<KeyBinding> = [
   { name: "return", action: "submit" },
@@ -41,6 +45,7 @@ const menuRows = 8
 export interface AppProps {
   readonly host: Host.Host
   readonly seat: string
+  readonly workerSeat?: string
   readonly models: ReadonlyArray<Model>
   readonly contextWindow: (seat: string) => number
   /** A session file to continue, or undefined for a new one. */
@@ -58,7 +63,12 @@ interface TurnState {
 
 type Picker =
   | { readonly kind: "model"; readonly query: string; readonly selected: number }
-  | { readonly kind: "resume"; readonly query: string; readonly selected: number; readonly sessions: ReadonlyArray<Session.Summary> }
+  | {
+    readonly kind: "resume"
+    readonly query: string
+    readonly selected: number
+    readonly sessions: ReadonlyArray<Session.Summary>
+  }
 
 interface Toast {
   readonly text: string
@@ -87,7 +97,9 @@ const pickerRows = (
     ]
   }
   const now = Date.now()
-  return Fuzzy.filter(picker.sessions, picker.query, (session) => `${session.name ?? ""} ${session.firstPrompt}`).map((session) => ({
+  return Fuzzy.filter(picker.sessions, picker.query, (session) => `${session.name ?? ""} ${session.firstPrompt}`).map((
+    session
+  ) => ({
     key: session.file,
     label: (session.name ?? session.firstPrompt).split("\n")[0]!.slice(0, 60),
     detail: View.ago(session.modified, now),
@@ -97,7 +109,9 @@ const pickerRows = (
 
 export function App(props: AppProps) {
   const renderer = useRenderer()
-  const restored = useRef(props.resume === undefined ? undefined : Session.restore(Session.load(props.resume)))
+  const [restored] = useState(() => ({
+    current: props.resume === undefined ? undefined : Session.restore(Session.load(props.resume))
+  }))
   const [transcript, setTranscript] = useState(restored.current?.transcript ?? Transcript.empty)
   const [seat, setSeat] = useState(props.seat)
   const [thinking, setThinking] = useState<Editor.Thinking>(undefined)
@@ -105,7 +119,9 @@ export function App(props: AppProps) {
   const [shell, setShell] = useState<Shell.Running | undefined>()
   const [followUps, setFollowUps] = useState<ReadonlyArray<string>>([])
   const [picker, setPicker] = useState<Picker | undefined>(
-    props.pickSession === true ? { kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) } : undefined
+    props.pickSession === true
+      ? { kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) }
+      : undefined
   )
   const [expanded, setExpanded] = useState(false)
   const [toast, setToast] = useState<Toast | undefined>()
@@ -120,6 +136,45 @@ export function App(props: AppProps) {
   const writer = useRef<Session.Writer>(
     props.resume === undefined ? Session.create(props.host.cwd) : Session.reopen(props.resume)
   )
+  const [workspace, setWorkspace] = useState(() =>
+    new Workspace({
+      host: props.host,
+      workerSeat: props.workerSeat ?? props.seat,
+      history: () => entries.current,
+      persist: writer.current.append,
+      restored: restored.current?.workspace
+    })
+  )
+  const [revision, setRevision] = useState(0)
+  const [surface, setSurface] = useState("chat")
+  const [panelFocus, setPanelFocus] = useState(false)
+  const [navigation, setNavigation] = useState(Panels.initial)
+  useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
+  useEffect(() => () => workspace.dispose(), [workspace])
+  const snapshot = workspace.snapshot()
+  const surfaces = [
+    { id: "chat", title: "Chat" },
+    { id: "summary", title: "Summary" },
+    ...snapshot.tabs.map((tab) => ({
+      id: `tab:${tab.id}`,
+      title: `${
+        tab.status === "running" || tab.status === "requested"
+          ? "◌ "
+          : tab.status === "failed"
+          ? "✗ "
+          : tab.status === "done"
+          ? "✓ "
+          : "■ "
+      }${tab.title}`
+    })),
+    ...snapshot.panels.map((panel) => ({ id: `ui:${panel.id}`, title: panel.title }))
+  ]
+  const panel = surface === "summary"
+    ? Summary.panel(transcript)
+    : surface.startsWith("tab:")
+    ? workspace.panel(surface.slice(4))
+    : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
+  const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const composer = useRef<TextareaRenderable>(null)
   const scroll = useRef<ScrollBoxRenderable>(null)
   const lastCtrlC = useRef(0)
@@ -128,10 +183,14 @@ export function App(props: AppProps) {
   const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
 
   const completion = useMemo(
-    () => (menuDismissed ? undefined : Complete.complete(draft, cursor, { models: props.models, files: () => files.current() })),
+    () => (menuDismissed
+      ? undefined
+      : Complete.complete(draft, cursor, { models: props.models, files: () => files.current() })),
     [draft, cursor, menuDismissed, props.models]
   )
-  const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file") ? completion : undefined
+  const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file")
+    ? completion
+    : undefined
   const menuIdentity = menu === undefined ? "" : `${menu.kind}:${menu.query}`
   useEffect(() => setMenuIndex(0), [menuIdentity])
 
@@ -145,12 +204,14 @@ export function App(props: AppProps) {
 
   useEffect(() => Clipboard.copyOnSelect(renderer, Clipboard.write, () => setStatus("Copied")), [renderer])
 
-  // One clock drives every spinner and running duration, only while working.
+  // One clock drives foreground and background progress through real settlement.
+  const clockRunning = turn !== undefined || shell !== undefined || workspace.busy ||
+    snapshot.tabs.some((tab) => tab.endedAt !== undefined && now - tab.endedAt < 3000)
   useEffect(() => {
-    if (turn === undefined && shell === undefined) return
+    if (!clockRunning) return
     const timer = setInterval(() => setNow(Date.now()), 100)
     return () => clearInterval(timer)
-  }, [turn, shell])
+  }, [clockRunning])
 
   useEffect(() => {
     if (toast === undefined) return
@@ -169,11 +230,12 @@ export function App(props: AppProps) {
   }, [])
 
   const quit = useCallback(() => {
+    workspace.dispose()
     live.current.turn?.handle.cancel()
     live.current.shell?.cancel()
     renderer.destroy()
     void props.host.dispose().finally(() => process.exit(0))
-  }, [renderer, props.host])
+  }, [renderer, props.host, workspace])
 
   const startTurn = useCallback((prompt: string) => {
     const steering = Steering.make()
@@ -185,6 +247,23 @@ export function App(props: AppProps) {
       prompt,
       seat: live.current.seat,
       history: entries.current,
+      ...(live.current.seat.startsWith("replay:") ? {} : { role: "coordinator" as const }),
+      workerSeat: props.workerSeat ?? props.seat,
+      background: workspace.context(),
+      runtime: {
+        publish: workspace.publish,
+        delegate: workspace.request,
+        read: workspace.read,
+        list: () => workspace.snapshot().tabs
+      },
+      onCaption: (prose) => {
+        writer.current.append({ type: "caption", prose })
+        setTranscript((current) => Transcript.caption(current, prose))
+      },
+      onPatch: (receipt) => {
+        writer.current.append({ type: "patch", receipt })
+        setTranscript((current) => Transcript.patched(current, receipt))
+      },
       steering: steering.source,
       ...(live.current.thinking === undefined ? {} : { thinking: live.current.thinking }),
       onEvent: (event) => {
@@ -199,6 +278,7 @@ export function App(props: AppProps) {
       }
     })
     const state: TurnState = { handle, startedAt, steering }
+    live.current.turn = state
     setTurn(state)
     void handle.done.then((outcome) => {
       const at = Date.now()
@@ -207,6 +287,7 @@ export function App(props: AppProps) {
       if (outcome._tag === "done") entries.current.push({ kind: "exchange", user: said, answer: outcome.answer })
       if (outcome._tag === "failed") setTranscript((current) => Transcript.failure(current, outcome.message, at))
       if (outcome._tag === "cancelled") setTranscript((current) => Transcript.failure(current, "Stopped", at))
+      live.current.turn = undefined
       setTurn(undefined)
       if (outcome._tag === "cancelled") return
       // Steers no boundary reached, then follow-ups, go next, one turn each.
@@ -215,7 +296,7 @@ export function App(props: AppProps) {
       if (undelivered.length === 0 && next !== undefined) setFollowUps((queued) => queued.slice(1))
       if (next !== undefined) startTurnRef.current(next)
     })
-  }, [props.host])
+  }, [props.host, workspace])
   const startTurnRef = useRef(startTurn)
   startTurnRef.current = startTurn
 
@@ -251,6 +332,16 @@ export function App(props: AppProps) {
   const newSession = useCallback(() => {
     writer.current = Session.create(props.host.cwd)
     entries.current = []
+    setWorkspace(
+      new Workspace({
+        host: props.host,
+        workerSeat: props.workerSeat ?? props.seat,
+        history: () => entries.current,
+        persist: writer.current.append
+      })
+    )
+    setSurface("chat")
+    setPanelFocus(false)
     setName(undefined)
     setTranscript(Transcript.empty)
     setStatus("New session started")
@@ -261,6 +352,17 @@ export function App(props: AppProps) {
     writer.current = Session.reopen(file)
     entries.current = state.entries
     history.current = new Editor.History(state.prompts)
+    setWorkspace(
+      new Workspace({
+        host: props.host,
+        workerSeat: props.workerSeat ?? props.seat,
+        history: () => entries.current,
+        persist: writer.current.append,
+        restored: state.workspace
+      })
+    )
+    setSurface("chat")
+    setPanelFocus(false)
     setName(state.name)
     setTranscript(state.transcript)
     setStatus(`Resumed ${state.name ?? basename(file)}`)
@@ -271,6 +373,40 @@ export function App(props: AppProps) {
     if (parsed === undefined) return false
     const { name: verb, argument } = parsed
     switch (verb) {
+      case "summary":
+        setSurface("summary")
+        setPanelFocus(true)
+        setNavigation(Panels.initial())
+        return true
+      case "tabs":
+        setSurface(snapshot.tabs[0] === undefined ? "summary" : `tab:${snapshot.tabs[0].id}`)
+        setPanelFocus(true)
+        setNavigation(Panels.initial())
+        return true
+      case "chat":
+        setSurface("chat")
+        setPanelFocus(false)
+        return true
+      case "retry":
+        try {
+          workspace.retry(argument)
+        } catch (error) {
+          setStatus(String(error), "warning")
+        }
+        return true
+      case "stop":
+        workspace.cancel(argument)
+        return true
+      case "ui": {
+        const target = snapshot.panels.find((panel) => panel.id === argument) ?? snapshot.panels[0]
+        if (target === undefined) setStatus("No custom views")
+        else {
+          setSurface(`ui:${target.id}`)
+          setPanelFocus(true)
+          setNavigation(Panels.initial())
+        }
+        return true
+      }
       case "model":
         if (argument.includes(":")) switchSeat(argument)
         else setPicker({ kind: "model", query: argument, selected: 0 })
@@ -286,8 +422,9 @@ export function App(props: AppProps) {
         return true
       }
       case "new":
-        if (live.current.turn !== undefined) setStatus("Stop the running turn first (esc)", "warning")
-        else newSession()
+        if (live.current.turn !== undefined || live.current.shell !== undefined || workspace.busy) {
+          setStatus("Stop running work first", "warning")
+        } else newSession()
         return true
       case "resume":
         setPicker({ kind: "resume", query: "", selected: 0, sessions: Session.list(props.host.cwd) })
@@ -297,7 +434,9 @@ export function App(props: AppProps) {
         setTranscript((current) =>
           Transcript.note(
             current,
-            `${writer.current.file}\n${entries.current.length} exchanges · ↑${Editor.tokens(usage.input)} ↓${Editor.tokens(usage.output)} R${Editor.tokens(usage.cached)}`
+            `${writer.current.file}\n${entries.current.length} exchanges · ↑${Editor.tokens(usage.input)} ↓${
+              Editor.tokens(usage.output)
+            } R${Editor.tokens(usage.cached)}`
           )
         )
         return true
@@ -332,7 +471,7 @@ export function App(props: AppProps) {
         setStatus(`Unknown command /${verb}`, "warning")
         return true
     }
-  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd])
+  }, [transcript, name, newSession, quit, switchSeat, setStatus, props.host.cwd, workspace, revision])
 
   const submit = useCallback((followUp = false, typed?: string) => {
     const input = composer.current
@@ -403,9 +542,9 @@ export function App(props: AppProps) {
   const pick = useCallback((open: Picker, value: string) => {
     setPicker(undefined)
     if (open.kind === "model") return switchSeat(value)
-    if (live.current.turn === undefined) openSession(value)
-    else setStatus("Stop the running turn first (esc)", "warning")
-  }, [switchSeat, openSession, setStatus])
+    if (live.current.turn === undefined && live.current.shell === undefined && !workspace.busy) openSession(value)
+    else setStatus("Stop running work first", "warning")
+  }, [switchSeat, openSession, setStatus, workspace])
 
   /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
   const dialogKey = (key: KeyEvent, open: Picker) => {
@@ -464,7 +603,58 @@ export function App(props: AppProps) {
       if (at - lastCtrlC.current < Editor.exitWindowMs) return quit()
       lastCtrlC.current = at
       if (open !== undefined) setPicker(undefined)
+      setPanelFocus(false)
       setText("")
+      return
+    }
+    if (key.ctrl && key.name === "s") {
+      key.preventDefault()
+      setSurface(surface === "chat" ? "summary" : surface)
+      setPanelFocus(!panelFocus)
+      return
+    }
+    if (
+      (key.ctrl && (key.name === "right" || key.name === "left")) || (key.name === "tab" && panelFocus && !key.shift)
+    ) {
+      key.preventDefault()
+      const index = surfaces.findIndex((tab) => tab.id === surface)
+      const next = surfaces[(index + (key.name === "left" ? -1 : 1) + surfaces.length) % surfaces.length]!
+      setSurface(next.id)
+      setPanelFocus(next.id !== "chat")
+      setNavigation(Panels.initial())
+      return
+    }
+    if (panelFocus && panel !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
+      key.preventDefault()
+      if (key.name === "escape" || key.name === "i") {
+        setPanelFocus(false)
+        return
+      }
+      if (key.name === "r" && surface.startsWith("tab:")) {
+        try {
+          workspace.retry(surface.slice(4))
+        } catch (error) {
+          setStatus(String(error), "warning")
+        }
+        return
+      }
+      if (key.name === "x" && surface.startsWith("tab:")) {
+        workspace.cancel(surface.slice(4))
+        return
+      }
+      if (key.name === "a") {
+        const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
+        if (action !== undefined) {
+          setPanelFocus(false)
+          submit(false, action.prompt)
+        }
+        return
+      }
+      if (key.name === "pageup" || key.name === "pagedown") {
+        panelScroll.current?.(key.name === "pageup" ? -1 : 1)
+        return
+      }
+      setNavigation((current) => Panels.navigate(current, key.name, panel.rows))
       return
     }
     if (open !== undefined) return dialogKey(key, open)
@@ -535,11 +725,36 @@ export function App(props: AppProps) {
   const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2))
   const accent = bashMode ? color.success : working ? color.faint : color.brand
   const rows = picker === undefined ? [] : pickerRows(picker, props.models, seat)
+  const tabCount = Math.max(2, Math.floor(width / 24))
+  const firstTab = Math.max(
+    0,
+    Math.min(surfaces.findIndex((tab) => tab.id === surface) - Math.floor(tabCount / 2), surfaces.length - tabCount)
+  )
+  const visibleTabs = surfaces.slice(firstTab, firstTab + tabCount)
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page}>
       <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
-        {transcript.items.length === 0
+        <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
+          <text wrapMode="none">
+            {visibleTabs.map((tab) => (
+              <span key={tab.id} fg={surface === tab.id ? color.brand : color.faint}>{" "}{tab.title.length > 22 ? `${tab.title.slice(0, 21)}…` : tab.title}{" "}</span>
+            ))}
+          </text>
+        </box>
+        {panel !== undefined ?
+          (
+            <PanelView
+              panel={panel}
+              navigation={navigation}
+              height={dimensions.height - 10}
+              width={width}
+              focused={panelFocus}
+              worker={surface.startsWith("tab:")}
+              scrollRef={panelScroll}
+            />
+          ) :
+          transcript.items.length === 0
           ? <View.Home expanded={expanded} />
           : (
             <scrollbox
@@ -551,45 +766,57 @@ export function App(props: AppProps) {
               {transcript.items.map((item) => (
                 <View.Entry key={item.id} item={item} now={now} tick={tick} expanded={expanded} />
               ))}
-              {working && transcript.thinking ? <text fg={color.muted} style={{ paddingLeft: 2 }}>{tick} thinking</text> : null}
+              {working && transcript.thinking
+                ? <text fg={color.muted} style={{ paddingLeft: 2 }}>{tick} thinking</text>
+                : null}
             </scrollbox>
           )}
         {followUps.length === 0 ? null : (
           <box style={{ marginTop: 1, paddingLeft: 2, flexShrink: 0 }}>
-            {followUps.map((text, index) => (
-              <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>
-            ))}
+            {followUps.map((text, index) => <text key={index} fg={color.muted}>Follow-up: {text.split("\n")[0]}</text>)}
             <text fg={color.faint}>↳ alt+up to edit all queued messages</text>
           </box>
         )}
-        {menu === undefined ? null : (
-          <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.element} customBorderChars={View.bar}>
-            <box style={{ paddingTop: 0 }} backgroundColor={color.element}>
-              <View.List
-                rows={menu.items.map((item, index) => ({
-                  key: `${index}:${item.label}`,
-                  label: item.label,
-                  ...(item.hint === undefined ? {} : { hint: item.hint }),
-                  ...(item.detail === undefined ? {} : { detail: item.detail }),
-                  ...(menu.kind === "argument" &&
-                      (item.insert === `/model ${seat}` || item.insert === `/thinking ${thinking ?? "default"}`)
-                    ? { current: true }
-                    : {})
-                }))}
-                selected={menuIndex}
-                height={Math.min(menuRows, Math.max(1, menu.items.length))}
-                background={color.element}
-                empty={menu.kind === "command" ? "No matching commands" : "No matches"}
-              />
+        {menu === undefined || panelFocus ?
+          null :
+          (
+            <box
+              style={{ border: ["left"], marginTop: 1, flexShrink: 0 }}
+              borderColor={color.element}
+              customBorderChars={View.bar}
+            >
+              <box style={{ paddingTop: 0 }} backgroundColor={color.element}>
+                <View.List
+                  rows={menu.items.map((item, index) => ({
+                    key: `${index}:${item.label}`,
+                    label: item.label,
+                    ...(item.hint === undefined ? {} : { hint: item.hint }),
+                    ...(item.detail === undefined ? {} : { detail: item.detail }),
+                    ...(menu.kind === "argument" &&
+                        (item.insert === `/model ${seat}` || item.insert === `/thinking ${thinking ?? "default"}`)
+                      ? { current: true }
+                      : {})
+                  }))}
+                  selected={menuIndex}
+                  height={Math.min(menuRows, Math.max(1, menu.items.length))}
+                  background={color.element}
+                  empty={menu.kind === "command" ? "No matching commands" : "No matches"}
+                />
+              </box>
             </box>
-          </box>
-        )}
-        <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={accent} customBorderChars={View.bar}>
+          )}
+        <box
+          style={{ border: ["left"], marginTop: 1, flexShrink: 0 }}
+          borderColor={accent}
+          customBorderChars={View.bar}
+        >
           <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1 }} backgroundColor={color.surface}>
             <textarea
               ref={composer}
-              focused={picker === undefined}
-              placeholder={working ? "enter steers the next cell · alt+enter queues · esc stops" : "Ask Smithers to change this repository"}
+              focused={picker === undefined && !panelFocus}
+              placeholder={working
+                ? "enter steers the next cell · alt+enter queues · esc stops"
+                : "Ask Smithers to change this repository"}
               placeholderColor={color.faint}
               textColor={color.text}
               focusedTextColor={color.text}
@@ -608,21 +835,23 @@ export function App(props: AppProps) {
             />
             <text style={{ marginTop: 1, marginBottom: 1 }}>
               <span fg={bashMode ? color.success : color.brand}>{bashMode ? "shell" : "code"}</span>
-              <span fg={color.faint}>  ·  </span>
+              <span fg={color.faint}>{"  ·  "}</span>
               <span fg={color.text}>{label}</span>
-              {model === undefined ? null : <span fg={color.faint}> {model.provider}</span>}
-              {thinking === undefined ? null : <span fg={color.warning}>  {thinking}</span>}
+              {model === undefined ? null : <span fg={color.faint}>{" "}{model.provider}</span>}
+              {thinking === undefined ? null : <span fg={color.warning}>{"  "}{thinking}</span>}
             </text>
           </box>
         </box>
-        <box style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}>
+        <box
+          style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}
+        >
           <text wrapMode="none" style={{ flexShrink: 1 }}>
             {working
               ? (
                 <>
                   <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
-                  <span fg={color.text}>  esc</span>
-                  <span fg={color.faint}> interrupt</span>
+                  <span fg={color.text}>{"  esc"}</span>
+                  <span fg={color.faint}>{" interrupt"}</span>
                 </>
               )
               : (
@@ -634,18 +863,34 @@ export function App(props: AppProps) {
               )}
           </text>
           <text wrapMode="none" style={{ flexShrink: 0 }}>
-            <span fg={color.faint}>↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)} R{Editor.tokens(usage.cached)}</span>
+            <span fg={color.faint}>
+              ↑{Editor.tokens(usage.input)} ↓{Editor.tokens(usage.output)} R{Editor.tokens(usage.cached)}
+            </span>
             {window > 0
               ? (
                 <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>
-                  {"  "}{percent.toFixed(1)}%/{Editor.tokens(window)}
+                  {"  "}
+                  {percent.toFixed(1)}%/{Editor.tokens(window)}
                 </span>
               )
               : null}
           </text>
         </box>
       </box>
-      {toast === undefined ? null : <View.Toast text={toast.text} tone={toast.tone} />}
+      <View.ToastStack
+        rows={[
+          ...snapshot.tabs.filter((tab) =>
+            now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
+          ).map((tab) => ({
+            id: tab.id,
+            text: `${
+              tab.status === "running" || tab.status === "requested" ? tick : tab.status === "done" ? "✓" : "✗"
+            } ${tab.title} · ${tab.status}`,
+            tone: tab.status === "failed" ? "danger" as const : "info" as const
+          })),
+          ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
+        ]}
+      />
       {picker === undefined ? null : (
         <View.Dialog
           title={picker.kind === "model" ? "Select model" : "Resume session"}
@@ -662,7 +907,8 @@ export function App(props: AppProps) {
               backgroundColor={color.surface}
               focusedBackgroundColor={color.surface}
               cursorColor={color.brand}
-              onInput={(query: string) => setPicker((current) => (current === undefined ? current : { ...current, query, selected: 0 }))}
+              onInput={(query: string) =>
+                setPicker((current) => (current === undefined ? current : { ...current, query, selected: 0 }))}
             />
           </box>
           <box style={{ paddingLeft: 2, paddingRight: 2 }}>
