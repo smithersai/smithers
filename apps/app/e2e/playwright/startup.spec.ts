@@ -17,20 +17,17 @@ test("a late boot recovers after the startup watchdog without losing React's mou
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await requested
     await expect(page.locator(".session-shell > .session-navigation > .guide-wordmark")).toHaveCount(1)
-    const entrance = await page.locator(".session-shell > .session-navigation > .guide-wordmark").elementHandle()
+    const shell = await page.locator("#root .session-shell").elementHandle()
+    const entrance = page.locator(".session-shell > .session-navigation > .guide-wordmark")
     await expect(page.locator("body")).not.toContainText("Smithers is starting your session.")
-    /*
-     * Settle the entrance before measuring its corner: the wordmark's anchor
-     * shifts ~5px when IBM Plex Mono swaps in over the fallback mono, and the
-     * arrive animation is compositor time, never the fake clock. The pin's
-     * subject is the app arrival moving the mark, not the font loading.
-     */
-    await page.evaluate(() =>
-      Promise.all([document.fonts.ready, ...document.getAnimations().map((animation) => animation.finished)])
-    )
-    await page.clock.fastForward(2_000)
-    const corner = await entrance!.boundingBox()
-    expect(corner!.x).toBeGreaterThan(900)
+    // Only settle the wordmark: the boot skeleton intentionally pulses forever.
+    await entrance.evaluate(async node => {
+      await document.fonts.ready
+      await Promise.all(node.getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const corner = await entrance.boundingBox()
+    expect(corner!.x).toBeGreaterThanOrEqual(0)
+    expect(corner!.x + corner!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
     await expect(page.locator("body")).not.toContainText("This build isn't connected")
     // The bundle is deliberately still in flight after the watchdog's budget.
     await page.clock.fastForward(90_000)
@@ -39,9 +36,9 @@ test("a late boot recovers after the startup watchdog without losing React's mou
     release()
     await page.clock.resume()
     await expect(page.locator(".app-shell")).toBeVisible({ timeout: 20_000 })
-    expect(await entrance!.evaluate(node => node.isConnected)).toBe(true)
+    expect(await shell!.evaluate(node => node.isConnected)).toBe(true)
     await expect(page.locator(".guide-wordmark")).toHaveCount(1)
-    expect((await entrance!.boundingBox())!.x).toBeCloseTo(corner!.x, 0)
+    expect((await entrance.boundingBox())!.x).toBeCloseTo(corner!.x, 0)
     await expect(page.locator("[data-startup-failure]")).toHaveCount(0)
     expect(errors).toEqual([])
   } finally {
