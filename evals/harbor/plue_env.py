@@ -15,7 +15,7 @@ Usage:
 
     harbor run -d terminal-bench/terminal-bench@4.0.0 \
         -e evals.harbor.plue_env:PlueEnvironment --agent oracle -k 1
-    pier run -p <task-dir> --environment-import evals.harbor.plue_env:PluePierEnvironment
+    pier run -p <task-dir> --environment-import-path evals.harbor.plue_env:PluePierEnvironment
 
 The task image must be a prebuilt OCI image (`docker_image` in task.toml). A
 `Dockerfile` is honoured only when it is a single `FROM <image>` plus `COPY`
@@ -207,7 +207,12 @@ class _PlueOps:
             args += ["--disk", str(cfg.storage_mb)]
         for host in allow:
             args += ["--allow", host]
-        result = await self._run(*args, timeout=_DEFAULT_WAIT_SEC + 120)
+        try:
+            result = await self._run(*args, timeout=_DEFAULT_WAIT_SEC + 120)
+        except PlueError:
+            # `create --wait` reported a failed boot; the row still exists.
+            await self._plue_delete_by_name(_sanitize_name(self.session_id))
+            raise
         data = _envelope(result.stdout.decode(errors="replace"))
         self._workspace_id = str(data.get("id") or data.get("data", {}).get("id") or "")
         if not self._workspace_id:
@@ -220,6 +225,18 @@ class _PlueOps:
             await self._plue_upload(Path(self.environment_dir) / src, dst)
         for mode_bits, target in self._plue_chmods:
             await self._plue_exec(f"chmod {mode_bits} {target}", user="root", timeout_sec=120)
+
+    async def _plue_delete_by_name(self, name: str) -> None:
+        try:
+            result = await self._run("workspace", "list", "--repo", self._repo(), "--format", "json", timeout=120)
+            text = result.stdout.decode(errors="replace")
+            rows = json.loads(text[text.find("["):]) if "[" in text else []
+        except (PlueError, ValueError, json.JSONDecodeError):
+            return
+        for row in rows:
+            if row.get("name") == name and row.get("id"):
+                await self._run("workspace", "delete", row["id"], "--repo", self._repo(), "--format", "json",
+                                timeout=300, check=False)
 
     async def _plue_stop(self) -> None:
         if not self._workspace_id:
@@ -257,6 +274,7 @@ class _PlueOps:
     # --- files -------------------------------------------------------------
 
     async def _plue_upload(self, source: Path | str, target: str) -> None:
+        self._ws()  # refuse to let the CLI auto-detect some other workspace
         await self._run("workspace", "cp", str(source), f"{self._workspace_id}:{target}",
                         "--repo", self._repo(), "--user", "root", "--timeout", "1800",
                         "--format", "json", timeout=1900)
@@ -268,6 +286,7 @@ class _PlueOps:
         await self._plue_upload(str(Path(source_dir)) + "/.", target_dir)
 
     async def _plue_download(self, source: str, target: Path | str) -> None:
+        self._ws()
         Path(target).parent.mkdir(parents=True, exist_ok=True)
         await self._run("workspace", "cp", f"{self._workspace_id}:{source}", str(target),
                         "--repo", self._repo(), "--user", "root", "--timeout", "1800",
