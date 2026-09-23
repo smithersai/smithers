@@ -39,9 +39,12 @@ const relativePathsAvailable = (): boolean => {
 /** A repository holding one file, at one commit. */
 const repository = (): string => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "flows-checkpoint-")))
+  // Check exact fixture bytes even with the Windows checkout default enabled.
+  writeFileSync(join(root, ".gitattributes"), "* -text\n")
   writeFileSync(join(root, "mod.py"), "value = 'pristine'\n")
   writeFileSync(join(root, "probe.sh"), "#!/bin/bash\ncat mod.py\n", { mode: 0o755 })
   git(root, ["init", "-q"])
+  git(root, ["config", "core.autocrlf", "true"])
   git(root, ["config", "user.email", "rig@localhost"])
   git(root, ["config", "user.name", "rig"])
   git(root, ["add", "-A"])
