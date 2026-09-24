@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test"
 import * as Effect from "effect/Effect"
-import { createClientErrorReporter } from "./ClientErrors"
+import { CLIENT_ERRORS_PATH, createClientErrorReporter } from "./ClientErrors"
 import { runRequest } from "smithers-server/Boundary"
 import { ClientErrorLog } from "smithers-server/clientErrorLog"
 import { memoryStorage } from "smithers-server/DurableStorage"
@@ -61,7 +61,7 @@ const fixture = (options: {
     Effect.provideService(ExecutionContext, executionContextFrom({ waitUntil: work => { exports.push(work) } })),
     Effect.provide(layers)
   ), request.signal)
-  const post = (body = "{}", headers: Record<string, string> = {}) => call(new Request("https://app.test/api/client-errors", {
+  const post = (body = "{}", headers: Record<string, string> = {}) => call(new Request(`https://app.test${CLIENT_ERRORS_PATH}`, {
     method: "POST", headers: { origin: "https://app.test", "cf-connecting-ip": "192.0.2.1", ...headers }, body
   }))
   return { call, post, requests, exports, storage, object, webCounter: () => webCounter, drain: () => Promise.all(exports) }
@@ -141,7 +141,7 @@ describe("browser reporter → Worker → backend telemetry contract", () => {
     const f = fixture()
     expect((await f.post("x".repeat(16 * 1024 + 1))).status).toBe(413)
     expect((await f.post("{}", { origin: "https://elsewhere.test" })).status).toBe(403)
-    expect((await f.call(new Request("https://app.test/api/client-errors"))).status).toBe(404)
+    expect((await f.call(new Request(`https://app.test${CLIENT_ERRORS_PATH}`))).status).toBe(404)
     expect(f.storage.data.size).toBe(0)
     expect(f.requests).toHaveLength(0)
     expect(f.exports).toHaveLength(0)

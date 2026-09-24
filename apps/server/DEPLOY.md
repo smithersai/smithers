@@ -99,7 +99,7 @@ restores the previous build without a rebuild.
   the API's `SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN`. No value was read or set
   during the local review. This adds a secret declaration only; Worker names,
   domains, DO identities and persisted keys are unchanged by this fix.
-  Admitted `/api/client-errors` reports send one bounded background POST to
+  Admitted `/api/telemetry/errors` reports send one bounded background POST to
   `${SMITHERS_CLOUD_API_BASE_URL}/api/telemetry/errors`, with only `client`,
   build version and a fixed `Error` type. Browser credentials, addresses,
   report text and URLs remain out of the export. The API's matching bearer

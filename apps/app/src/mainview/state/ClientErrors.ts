@@ -1,21 +1,25 @@
 /*
- * The client half of the crash sink. A browser that throws in production
- * reports it to the Worker at /api/client-errors, which logs it and keeps the
- * last reports in a bounded Durable Object for GET /api/admin/errors. Without
- * this the first anyone hears of a broken flow is a user mentioning it.
+ * The client half of the crash sink. A page that throws posts one report to
+ * POST /api/telemetry/errors, the one route every target serves:
+ *   - the Go backend (the desktop app's default target, reached through the
+ *     relay) and Plue log it and count it in smithers_client_errors_total;
+ *   - the Worker in front of the web build keeps it in a bounded Durable Object
+ *     for GET /api/admin/errors and exports the count to Plue.
+ * Without this the first anyone hears of a broken flow is a user mentioning it.
  *
- * The behaviour lived inline in main.tsx, where `void main()` runs at import
- * time and nothing about it could be asserted. It is a module so the contract
- * with the Worker — the path, the body shape, the size the route will accept —
- * is testable, and so a rename on either side turns a test red instead of
- * quietly pointing every crash report at a 404. main.tsx imports this module;
- * there is no second copy of the reporter to drift from it.
+ * The body is the Go backend's ClientErrorReport (internal/routes/telemetry.go)
+ * plus `kind` and `at`, which Go ignores and the Worker's log keeps. The
+ * contract is testable here, so a rename on either side turns a test red
+ * instead of quietly pointing every crash report at a 404. There is no second
+ * copy of the reporter to drift from it.
  *
- * Three bounds, each for a reason:
+ * Bounds, each for a reason:
  *   - the path is a constant, not a literal at the call site, so the client
- *     and the Worker route cannot drift apart unnoticed;
- *   - the posted body is cut to CLIENT_ERROR_BODY_MAX_BYTES, so one runaway
- *     stack cannot exceed the route's cap and be answered 413;
+ *     and the routes cannot drift apart unnoticed;
+ *   - each error field is cut to the Go backend's own cap, in UTF-8 bytes, so
+ *     Go's byte-index truncation never splits a character;
+ *   - the posted body is cut to CLIENT_ERROR_BODY_MAX_BYTES, so escaping
+ *     cannot push a report past the Worker route's cap and be answered 413;
  *   - a page reports at most CLIENT_ERROR_REPORT_LIMIT times, so an error in
  *     a render loop cannot turn one broken tab into a request storm.
  *
@@ -24,8 +28,8 @@
  * helped by the report crashing too.
  */
 
-/** The Worker route. Must equal `CLIENT_ERRORS_PATH` in apps/server/src/index.ts. */
-export const CLIENT_ERRORS_PATH = "/api/client-errors"
+/** The crash sink every target routes: the Go backend, Plue and the Worker. */
+export const CLIENT_ERRORS_PATH = "/api/telemetry/errors"
 
 /** Reports one page may send. An error inside a render loop fires without end. */
 export const CLIENT_ERROR_REPORT_LIMIT = 20
@@ -33,38 +37,43 @@ export const CLIENT_ERROR_REPORT_LIMIT = 20
 /**
  * The largest body this client will post, in UTF-8 bytes.
  *
- * The number and the unit are both the Worker's: apps/server/src/index.ts
- * refuses a report with `body.byteLength > CLIENT_ERROR_MAX_BODY`, where
- * CLIENT_ERROR_MAX_BODY is 16 * 1024 and byteLength counts the bytes on the
- * wire. A character count cannot agree with that. JSON.stringify leaves
- * non-ASCII literal, so a stack written in Japanese costs three bytes a
- * character, and it escapes a control character or a lone surrogate to six.
- * Bounding characters therefore under-measures by up to 6x, exactly for the
- * users whose crash reports are hardest to reproduce: the client believes it
- * reported, the route answers 413, and the report is lost.
- *
- * The Worker's own log applies a second, softer bound after this one: it keeps
- * the first CLIENT_ERROR_RECORD_MAX_BYTES (4 KiB) of each record and says so in
- * the stored text (apps/server/src/clientErrorLog.ts). That truncation is
- * stated, and the full text is still in the worker tail, so the client posts
- * up to the route's cap rather than pre-cutting to the log's.
+ * The number and the unit are both the Worker's: apps/server/src/proxies.ts
+ * refuses a report with more than CLIENT_ERROR_MAX_BODY (16 * 1024) bytes on
+ * the wire. JSON.stringify leaves non-ASCII literal and escapes a control
+ * character or a lone surrogate to six bytes, so only the serialized string
+ * is an honest place to measure.
  */
 export const CLIENT_ERROR_BODY_MAX_BYTES = 16 * 1024
 
+/** The Go backend's maxErrorMessageLen, in bytes. */
+export const CLIENT_ERROR_MESSAGE_MAX_BYTES = 512
+
+/** The Go backend's maxErrorStackLen, in bytes. */
+export const CLIENT_ERROR_STACK_MAX_BYTES = 4096
+
+/** The Go backend's maxErrorTypeLen, in bytes. */
+export const CLIENT_ERROR_TYPE_MAX_BYTES = 128
+
 /**
  * Bytes of page path kept. The path is overhead on every report and a path
- * longer than this is not one anyone reads; capping it first leaves the rest
- * of the budget to the stack, which is the part worth having.
+ * longer than this is not one anyone reads.
  */
 export const CLIENT_ERROR_URL_MAX_BYTES = 1024
 
 export type ClientErrorKind = "error" | "unhandledrejection"
 
-/** Exactly what is posted. The Worker stores this verbatim under `report`. */
+/** Exactly what is posted: the Go backend's ClientErrorReport plus `kind` and `at`. */
 export interface ClientErrorReport {
+  /** The Go route logs and counts only "web" and "cli". */
+  readonly client: "web"
   readonly kind: ClientErrorKind
-  readonly message: string
-  readonly url: string
+  readonly error: {
+    /** The Error's name; empty for a thrown value that is not an Error. */
+    readonly type: string
+    readonly message: string
+    readonly stack: string
+  }
+  readonly context: { readonly url: string }
   readonly at: string
 }
 
@@ -101,12 +110,34 @@ export const errorMessage = (error: unknown): string => {
   try {
     return error instanceof Error ? (error.stack ?? error.message) : String(error)
   } catch {
+    return nonErrorLabel(error)
+  }
+}
+
+const nonErrorLabel = (error: unknown): string => {
+  try {
+    return Object.prototype.toString.call(error)
+  } catch {
+    return "Unknown error"
+  }
+}
+
+/* The three error fields, before any bound. A getter that throws costs its field only. */
+const errorDetail = (error: unknown): ClientErrorReport["error"] => {
+  if (!(error instanceof Error)) {
+    let message: string
+    try { message = String(error) } catch { message = nonErrorLabel(error) }
+    return { type: "", message, stack: "" }
+  }
+  const field = (read: () => unknown): string => {
     try {
-      return Object.prototype.toString.call(error)
+      const value = read()
+      return typeof value === "string" ? value : ""
     } catch {
-      return "Unknown error"
+      return ""
     }
   }
+  return { type: field(() => error.name), message: field(() => error.message), stack: field(() => error.stack) }
 }
 
 const encoder = new TextEncoder()
@@ -133,7 +164,7 @@ const cutToBytes = (text: string, maxBytes: number): string => {
 }
 
 /**
- * The exact bytes posted for one report, already inside the route's cap.
+ * The exact bytes posted for one report, already inside every sink's caps.
  *
  * Building the body and bounding it are one step on purpose: the escaping
  * JSON.stringify applies is part of what the Worker weighs, so the serialized
@@ -146,26 +177,24 @@ export const clientErrorBody = (
   at: Date,
   url: string
 ): string => {
-  const page = cutToBytes(url, CLIENT_ERROR_URL_MAX_BYTES)
+  const detail = errorDetail(error)
+  const type = cutToBytes(detail.type, CLIENT_ERROR_TYPE_MAX_BYTES)
+  const message = cutToBytes(detail.message, CLIENT_ERROR_MESSAGE_MAX_BYTES)
+  const context = { url: cutToBytes(url, CLIENT_ERROR_URL_MAX_BYTES) }
   const stamp = at.toISOString()
-  const bodyFor = (message: string): string =>
-    JSON.stringify({ kind, message, url: page, at: stamp } satisfies ClientErrorReport)
-  // Cheap pre-cut: a code unit costs at least one byte in the body, so
-  // nothing past the cap can survive it, and a 5 MB stack is never
-  // serialized whole.
-  let message = errorMessage(error).slice(0, CLIENT_ERROR_BODY_MAX_BYTES)
-  let body = bodyFor(message)
-  // The message is what gives, because the other three fields are the
-  // report's identity: a body with no kind, page or time reports nothing.
+  const bodyFor = (stack: string): string =>
+    JSON.stringify({ client: "web", kind, error: { type, message, stack }, context, at: stamp } satisfies ClientErrorReport)
+  // The stack is what gives: the other fields are cut to at most 1,664
+  // bytes, which JSON escaping can grow to about 10 KiB, so an empty stack
+  // always fits the cap and the loop ends with the head of the stack kept.
+  let stack = cutToBytes(detail.stack, CLIENT_ERROR_STACK_MAX_BYTES)
+  let body = bodyFor(stack)
   const fixed = byteLength(bodyFor(""))
-  while (byteLength(body) > CLIENT_ERROR_BODY_MAX_BYTES && message.length > 0) {
+  while (byteLength(body) > CLIENT_ERROR_BODY_MAX_BYTES && stack.length > 0) {
     const available = CLIENT_ERROR_BODY_MAX_BYTES - fixed
     const used = byteLength(body) - fixed
-    message = message.slice(
-      0,
-      Math.max(0, Math.min(message.length - 1, Math.floor((message.length * available) / used)))
-    )
-    body = bodyFor(message)
+    stack = stack.slice(0, Math.max(0, Math.min(stack.length - 1, Math.floor((stack.length * available) / used))))
+    body = bodyFor(stack)
   }
   return body
 }

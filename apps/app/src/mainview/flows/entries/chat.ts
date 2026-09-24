@@ -131,7 +131,7 @@ export const chatCopyFlows = (_actions: CommandActions): ReadonlyArray<FlowEntry
     /*
      * A.26: `void navigator.clipboard.writeText(...)` let the browser's
      * NotAllowedError escape as an unhandled rejection — the only trace was
-     * a POST to /api/client-errors, and the human who pressed Copy was told
+     * a POST to /api/telemetry/errors, and the human who pressed Copy was told
      * nothing at all. The refusal is awaited and answered.
      */
     handler: async ({ text }: { readonly text: string }, _signal: AbortSignal, _call: unknown, gesture?: CommandGesture) => {

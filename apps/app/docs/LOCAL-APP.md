@@ -182,7 +182,7 @@ never reaches a reader. A top-level page navigation (the system browser opening
 | GET | `/api/model/catalog` | Built-in models, credential names with `present` and their pinned origins, and seats; never a value |
 | POST | `/api/model/test` | One request to a configured model; 200 with a typed result for a pass and a failure; no sign-in |
 | POST | `/api/tools/browser-fetch` | Guarded, pinned HTTPS page read (501 offline) |
-| POST | `/api/client-errors` | Renderer error ingest; logged, never persisted |
+| POST | `/api/telemetry/errors` | Renderer crash report; logged and counted |
 | ANY | `/api/cloud/*` | Cloud proxy to `SMITHERS_CLOUD_API` (Bearer from the Bun credential; 501 offline) |
 | POST | `/api/cloud-auth/start` | Begin the browser login; answers `{ url }` |
 | GET | `/api/cloud-auth/session` | `{ state, username, expiresAt }`, never the token |

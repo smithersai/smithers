@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
-import type { ClientErrorFetch } from "./ClientErrors"
+import type { ClientErrorFetch, ClientErrorReport } from "./ClientErrors"
 import {
   byteLength,
   CLIENT_ERROR_BODY_MAX_BYTES,
+  CLIENT_ERROR_MESSAGE_MAX_BYTES,
   CLIENT_ERROR_REPORT_LIMIT,
+  CLIENT_ERROR_STACK_MAX_BYTES,
+  CLIENT_ERROR_TYPE_MAX_BYTES,
   CLIENT_ERROR_URL_MAX_BYTES,
   CLIENT_ERRORS_PATH,
   clientErrorBody,
@@ -18,13 +21,15 @@ import {
  *
  * Two halves are proved here, and only one of them is about this module.
  *
- * The half that matters is the CONTRACT with the Worker: the path the page
- * posts to is the path the Worker routes, the biggest body this reporter can
- * build is one the route will accept, measured in the Worker's unit (UTF-8
- * bytes on the wire), and AppIsland.tsx reports through THIS module rather than
- * through a copy of it. Every one of those can break from a change made in a
- * different file, in a way nothing else in the suite would notice: the sink
- * would simply go quiet, which looks exactly like no crashes.
+ * The half that matters is the CONTRACT with the sinks: the path the page
+ * posts to is the path the Go backend routes (the desktop app's default
+ * target, and Plue behind it) and the Worker routes for the web build, the
+ * body decodes into the backend's report struct, the biggest body this
+ * reporter can build is one the Worker will accept, measured in its unit
+ * (UTF-8 bytes on the wire), and AppIsland.tsx reports through THIS module
+ * rather than through a copy of it. Every one of those can break from a change
+ * made in a different file, in a way nothing else in the suite would notice:
+ * the sink would simply go quiet, which looks exactly like no crashes.
  *
  * The second half is the reporter's own behaviour. It is worth pinning because
  * the size bound above depends on the truncation being real.
@@ -33,25 +38,32 @@ import {
 const readSource = (relative: string): string => readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 
 /*
- * The sink is the local origin (src/bun/server.ts) in the local app; the
- * deployed Worker used to hold this half of the contract.
+ * The Go backend is the sink the desktop app reaches through the relay. Its
+ * router and report struct are read from source, so a rename on the Go side
+ * turns this suite red instead of pointing every desktop crash at a 404.
  */
-const serverIndex = readSource("../../bun/server.ts")
+const goRouter = readSource("../../../../../packages/backend/internal/compose/router.go")
+const goTelemetry = readSource("../../../../../packages/backend/internal/routes/telemetry.go")
+/** The registered path: the top-level route group enclosing the handler, plus its own path. */
+const goRoute = (): string => {
+  const handler = /\.Post\("([^"]+)", telemetryHandler\.PostClientError\)/.exec(goRouter)
+  expect(handler).not.toBeNull()
+  const groups = [...goRouter.matchAll(/\n\tr\.Route\("([^"]+)"/g)].filter((group) => group.index < (handler?.index ?? 0))
+  return `${groups.at(-1)?.[1]}${handler?.[1]}`
+}
+/** The json tags of one Go struct, by field order. */
+const goJsonTags = (struct: string): Array<string> => {
+  const body = new RegExp(`type ${struct} struct \\{([^}]*)\\}`).exec(goTelemetry)?.[1]
+  expect(body).toBeDefined()
+  return [...(body ?? "").matchAll(/json:"([^",]+)/g)].map((match) => match[1] as string)
+}
+const goConstant = (name: string): number => Number(new RegExp(`${name}\\s*=\\s*(\\d+)`).exec(goTelemetry)?.[1])
+
+/* The Worker route's cap (apps/server/src/proxies.ts CLIENT_ERROR_MAX_BODY). */
+const SINK_MAX_BODY_BYTES = 16 * 1024
 const mainSource = readSource("../main.tsx")
 const islandSource = readSource("../AppIsland.tsx")
 const watchdogSource = readSource("../StartupWatchdog.ts")
-
-/** A `const NAME = "value";` declaration in the Worker, or undefined. */
-const serverString = (name: string): string | undefined =>
-  new RegExp(`const ${name} = "([^"]+)"`).exec(serverIndex)?.[1]
-
-/** A `const NAME = 16 * 1024;` style declaration in the Worker, or undefined. */
-const serverBytes = (name: string): number | undefined => {
-  const match = new RegExp(`const ${name} = (\\d+)(?: \\* (\\d+))?`).exec(serverIndex)
-  if (match === null) return undefined
-  const base = Number(match[1])
-  return match[2] === undefined ? base : base * Number(match[2])
-}
 
 interface Sent {
   readonly input: string
@@ -62,40 +74,69 @@ const recordingFetch = (): { readonly sends: Array<Sent>; readonly fetchImpl: Cl
   const sends: Array<Sent> = []
   const fetchImpl: ClientErrorFetch = (input, init) => {
     sends.push({ input, init })
-    return Promise.resolve(new Response(JSON.stringify({ status: "accepted" }), { status: 202 }))
+    return Promise.resolve(new Response(null, { status: 204 }))
   }
   return { sends, fetchImpl }
 }
 
-const bodyOf = (sent: Sent): Record<string, unknown> => JSON.parse(String(sent.init.body)) as Record<string, unknown>
+const bodyOf = (sent: Sent): ClientErrorReport => JSON.parse(String(sent.init.body)) as ClientErrorReport
+const reportOf = (posted: string): ClientErrorReport => JSON.parse(posted) as ClientErrorReport
 
-describe("the client-error reporter's contract with the local origin", () => {
-  test("posts to the path the Worker actually routes, by the method it routes", () => {
-    // Red when the Worker renames the route or stops accepting POST: every
-    // crash report would 404 and the admin error log would stay empty.
-    expect(serverString("CLIENT_ERRORS_PATH")).toBe(CLIENT_ERRORS_PATH)
-    expect(serverIndex).toContain("router.add(\"POST\", CLIENT_ERRORS_PATH, ")
+describe("the client-error reporter's contract with the backend sink", () => {
+  test("posts to the route the Go backend serves, by the method it routes", () => {
+    // Red when either side renames the route: every desktop crash report
+    // would 404 behind the relay and the backend's counter would stay flat.
+    expect(CLIENT_ERRORS_PATH).toBe(goRoute())
     const { sends, fetchImpl } = recordingFetch()
     createClientErrorReporter({ fetchImpl, pathname: () => "/" }).report("error", new Error("boom"))
     expect(sends[0]?.input).toBe(CLIENT_ERRORS_PATH)
     expect(sends[0]?.init.method).toBe("POST")
   })
 
-  test("bounds the body by the Worker's own number, in the Worker's own unit", () => {
+  test("the body decodes into the Go report struct and passes its client check", () => {
+    // Red when a field is renamed on either side: Go's decoder drops an
+    // unknown key silently, and a client other than "web" or "cli" is
+    // answered 204 without being logged or counted.
+    const posted = reportOf(clientErrorBody("error", new TypeError("boom"), new Date(0), "/chat"))
+    expect(goJsonTags("ClientErrorReport")).toEqual(expect.arrayContaining(["client", "error", "context"]))
+    expect(goJsonTags("ClientErrorDetail")).toEqual(expect.arrayContaining(Object.keys(posted.error)))
+    expect(goJsonTags("ClientErrorContext")).toEqual(expect.arrayContaining(Object.keys(posted.context)))
+    expect(goTelemetry).toContain(`report.Client != "${posted.client}"`)
+    // The counter labels a known type by name; anything else is "other".
+    expect(posted.error.type).toBe("TypeError")
+    expect(goTelemetry).toContain(`"${posted.error.type}"`)
+    expect(posted.error.message).toBe("boom")
+    expect(posted.error.stack).toContain("ClientErrors.test")
+    expect(posted.context.url).toBe("/chat")
+  })
+
+  test("cuts each field to the backend's own cap, so Go never splits a character", () => {
+    // Go truncates by byte index, which can cut a UTF-8 sequence in half.
+    expect(CLIENT_ERROR_MESSAGE_MAX_BYTES).toBe(goConstant("maxErrorMessageLen"))
+    expect(CLIENT_ERROR_STACK_MAX_BYTES).toBe(goConstant("maxErrorStackLen"))
+    expect(CLIENT_ERROR_TYPE_MAX_BYTES).toBe(goConstant("maxErrorTypeLen"))
+    const error = new Error("亜".repeat(10_000))
+    error.name = "亜".repeat(1_000)
+    error.stack = "亜".repeat(10_000)
+    const posted = reportOf(clientErrorBody("error", error, new Date(0), "/"))
+    expect(byteLength(posted.error.message)).toBeLessThanOrEqual(CLIENT_ERROR_MESSAGE_MAX_BYTES)
+    expect(byteLength(posted.error.message)).toBeGreaterThan(CLIENT_ERROR_MESSAGE_MAX_BYTES - 3)
+    expect(byteLength(posted.error.stack)).toBeLessThanOrEqual(CLIENT_ERROR_STACK_MAX_BYTES)
+    expect(byteLength(posted.error.stack)).toBeGreaterThan(CLIENT_ERROR_STACK_MAX_BYTES - 3)
+    expect(byteLength(posted.error.type)).toBeLessThanOrEqual(CLIENT_ERROR_TYPE_MAX_BYTES)
+  })
+
+  test("bounds the body by the Worker route's number, in its own unit", () => {
     // The route measures `body.byteLength` — bytes on the wire — so the
-    // client's bound has to be bytes too. Red if either side moves its cap
-    // without the other, and red if the client goes back to bounding
-    // characters, which under-measures non-ASCII by up to six times.
-    expect(CLIENT_ERROR_BODY_MAX_BYTES).toBe(serverBytes("CLIENT_ERROR_MAX_BODY") ?? 0)
-    expect(CLIENT_ERROR_BODY_MAX_BYTES).toBe(16 * 1024)
-    expect(serverIndex).toContain("if (body.byteLength > CLIENT_ERROR_MAX_BODY) {")
+    // client's bound has to be bytes too.
+    expect(CLIENT_ERROR_BODY_MAX_BYTES).toBe(SINK_MAX_BODY_BYTES)
   })
 
   test("no report it can build exceeds the route's cap, in any alphabet", () => {
     // Red when the bound is raised, dropped, or counted in characters: the
     // route answers 413 and every one of these reports is lost, while the
     // client goes on believing it reported.
-    const maxBody = serverBytes("CLIENT_ERROR_MAX_BODY") ?? 0
+    const maxBody = SINK_MAX_BODY_BYTES
     const longPath = (unit: string): string => `/${unit.repeat(4_000)}`
     const runaways: ReadonlyArray<readonly [string, string, string]> = [
       ["ascii", "x".repeat(500_000), longPath("p")],
@@ -109,31 +150,25 @@ describe("the client-error reporter's contract with the local origin", () => {
       ["lone surrogate", "\ud800".repeat(200_000), longPath("\ud800")]
     ]
     for (const [name, runaway, path] of runaways) {
-      const posted = clientErrorBody("error", runaway, new Date(0), path)
+      const error = new Error(runaway)
+      error.name = runaway
+      error.stack = runaway
+      const posted = clientErrorBody("error", error, new Date(0), path)
       // Named so a failure says which alphabet overflowed.
       expect({ name, over: byteLength(posted) > maxBody }).toEqual({ name, over: false })
       // A bound that cut the report to nothing would also pass the line
       // above. The point is to deliver the head of the stack.
-      const message = String((JSON.parse(posted) as { message: unknown }).message)
-      expect({ name, kept: message.length > 0 }).toEqual({ name, kept: true })
-      expect(message[0]).toBe(runaway[0] as string)
+      const report = reportOf(posted)
+      expect({ name, kept: report.error.stack.length > 0 && report.error.message.length > 0 })
+        .toEqual({ name, kept: true })
+      expect(report.error.stack[0]).toBe(runaway[0] as string)
     }
   })
 
-  test("spends the budget it has instead of truncating to a token amount", () => {
-    // The proportional cut lands close to the cap. Subtracting the byte
-    // excess from a character count — the obvious wrong fix — collapses
-    // non-ASCII input to an empty message and reports nothing.
-    const posted = clientErrorBody("error", "亜".repeat(100_000), new Date(0), "/chat")
-    expect(byteLength(posted)).toBeGreaterThan(CLIENT_ERROR_BODY_MAX_BYTES - 256)
-    expect(byteLength(posted)).toBeLessThanOrEqual(CLIENT_ERROR_BODY_MAX_BYTES)
-  })
-
   test("caps the page path, so a runaway URL cannot crowd out the stack", () => {
-    const posted = clientErrorBody("error", new Error("boom"), new Date(0), `/${"亜".repeat(10_000)}`)
-    const report = JSON.parse(posted) as { url: string; message: string }
-    expect(byteLength(report.url)).toBeLessThanOrEqual(CLIENT_ERROR_URL_MAX_BYTES)
-    expect(report.message).toContain("boom")
+    const posted = reportOf(clientErrorBody("error", new Error("boom"), new Date(0), `/${"亜".repeat(10_000)}`))
+    expect(byteLength(posted.context.url)).toBeLessThanOrEqual(CLIENT_ERROR_URL_MAX_BYTES)
+    expect(posted.error.message).toBe("boom")
   })
 
   test("main.tsx reports through this module and holds no bound of its own", () => {
@@ -169,7 +204,7 @@ describe("the client-error reporter's contract with the local origin", () => {
       if (!/\.(ts|tsx)$/.test(relative)) continue
       if (relative.endsWith("ClientErrors.test.ts")) continue
       const text = readFileSync(`${root}${relative}`, "utf8")
-      for (const match of text.matchAll(/["'`](\/api\/client-error[^"'`]*)["'`]/g)) {
+      for (const match of text.matchAll(/["'`](\/api\/(?:client-error|telemetry\/error)[^"'`]*)["'`]/g)) {
         literals.add(match[1] as string)
       }
     }
@@ -193,15 +228,16 @@ describe("the client-error reporter", () => {
     )
     expect(sends[0]?.init.keepalive).toBe(true)
     const body = bodyOf(sends[0] as Sent)
-    expect(body["kind"]).toBe("error")
-    expect(body["url"]).toBe("/chat")
-    expect(body["at"]).toBe("2026-08-18T12:00:00.000Z")
-    expect(String(body["message"])).toContain("boom")
+    expect(body.kind).toBe("error")
+    expect(body.context.url).toBe("/chat")
+    expect(body.at).toBe("2026-08-18T12:00:00.000Z")
+    expect(body.error).toMatchObject({ type: "Error", message: "boom" })
+    expect(body.error.stack).toContain("ClientErrors.test")
   })
 
-  test("keeps the stack, not just the error's name", () => {
-    // Red if errorMessage degrades to String(error): the log would read
-    // "Error: boom" for every crash and name no line of code.
+  test("errorMessage keeps the stack, not just the error's name", () => {
+    // Red if errorMessage degrades to String(error): the startup panel
+    // would read "Error: boom" for every crash and name no line of code.
     const message = errorMessage(new Error("boom"))
     expect(message).toContain("ClientErrors.test")
   })
@@ -213,15 +249,15 @@ describe("the client-error reporter", () => {
       "plain string reason"
     )
     const body = bodyOf(sends[0] as Sent)
-    expect(body["kind"]).toBe("unhandledrejection")
-    expect(body["message"]).toBe("plain string reason")
+    expect(body.kind).toBe("unhandledrejection")
+    expect(body.error).toEqual({ type: "", message: "plain string reason", stack: "" })
   })
 
   test("cuts a runaway message so the body it posts fits the cap", () => {
     const { sends, fetchImpl } = recordingFetch()
     createClientErrorReporter({ fetchImpl, pathname: () => "/" }).report("error", "y".repeat(100_000))
     expect(byteLength(String(sends[0]?.init.body))).toBeLessThanOrEqual(CLIENT_ERROR_BODY_MAX_BYTES)
-    expect(String(bodyOf(sends[0] as Sent)["message"]).startsWith("yyy")).toBe(true)
+    expect(bodyOf(sends[0] as Sent).error.message.startsWith("yyy")).toBe(true)
   })
 
   test.each([
@@ -236,7 +272,7 @@ describe("the client-error reporter", () => {
     const reporter = createClientErrorReporter({ fetchImpl, pathname: () => "/" })
     expect(() => reporter.report("unhandledrejection", reason)).not.toThrow()
     expect(sends).toHaveLength(1)
-    expect(bodyOf(sends[0] as Sent)).toMatchObject({ kind: "unhandledrejection", message })
+    expect(bodyOf(sends[0] as Sent)).toMatchObject({ kind: "unhandledrejection", error: { message } })
     expect(reporter.reported()).toBe(1)
   })
 

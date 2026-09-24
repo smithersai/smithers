@@ -310,12 +310,13 @@ export const handleBrowserFetch = (request: Request): Effect.Effect<Response, ne
   })
 
 /*
- * Frontend error ingest (multi's /api/client-errors, minimal form): bounded
- * body, logged to the worker tail, kept in the client-error log. The
- * throttle is the log's own (clientErrorLog.ts): a counter here would be per
- * isolate, and workerd runs as many isolates as a flood asks for.
+ * Frontend error ingest on the Go backend's own route, so the renderer posts
+ * one path whichever target serves it: bounded body, logged to the worker
+ * tail, kept in the client-error log. The throttle is the log's own
+ * (clientErrorLog.ts): a counter here would be per isolate, and workerd runs
+ * as many isolates as a flood asks for.
  */
-export const CLIENT_ERRORS_PATH = "/api/client-errors"
+export const CLIENT_ERRORS_PATH = "/api/telemetry/errors"
 const CLIENT_ERROR_MAX_BODY = 16 * 1024
 
 /**

@@ -89,7 +89,7 @@ export const DEFAULT_CLOUD_API = "https://api.jjhub.tech"
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 20_000
 export const APP_VERSION = "0.0.1"
 /** Where the SPA posts uncaught errors; the client half is state/ClientErrors.ts. */
-export const CLIENT_ERRORS_PATH = "/api/client-errors"
+export const CLIENT_ERRORS_PATH = "/api/telemetry/errors"
 
 /**
  * Constant-time comparison for the local session capability, the same

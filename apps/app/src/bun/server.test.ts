@@ -148,12 +148,12 @@ describe("the local origin", () => {
     }
   })
 
-  test("POST /api/client-errors logs the report with its secrets redacted", async () => {
+  test("POST /api/telemetry/errors logs the report with its secrets redacted", async () => {
     const report = JSON.stringify({
       name: "TypeError",
       message: "fetch https://api.example.test/v1/items?key=live_c4p4b1l1ty failed with Authorization: Bearer abcdef0123456789token"
     })
-    const response = await apiFetch("/api/client-errors", { method: "POST", headers: { "content-type": "application/json" }, body: report })
+    const response = await apiFetch("/api/telemetry/errors", { method: "POST", headers: { "content-type": "application/json" }, body: report })
     expect(response.status).toBe(202)
     const line = logs.find((entry) => entry.startsWith("client-error: ") && entry.includes("TypeError"))
     expect(line).toBeDefined()

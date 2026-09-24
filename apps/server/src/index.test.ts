@@ -5036,7 +5036,7 @@ describe("the client-error route", () => {
   })
 
   const report = (body: unknown, headers: Record<string, string> = {}): Request =>
-    new Request("https://mvp.test/api/client-errors", {
+    new Request("https://mvp.test/api/telemetry/errors", {
       method: "POST",
       headers: { "content-type": "application/json", ...headers },
       body: typeof body === "string" ? body : JSON.stringify(body)
@@ -5113,7 +5113,7 @@ describe("the client-error route", () => {
     expect(big.status).toBe(413)
     expect(await big.json()).toEqual({ status: "error", code: "request_body_too_large", message: "Error report too large." })
     const declared = await worker.fetch(
-      new Request("https://mvp.test/api/client-errors", {
+      new Request("https://mvp.test/api/telemetry/errors", {
         method: "POST",
         headers: { "content-length": String(17 * 1024) },
         body: "{}"
@@ -5128,7 +5128,7 @@ describe("the client-error route", () => {
 
   test("only POST is served, and the route stays behind the same-origin guard", async () => {
     const env = adminEnv(memoryLog())
-    expect((await worker.fetch(new Request("https://mvp.test/api/client-errors"), env)).status).toBe(404)
+    expect((await worker.fetch(new Request("https://mvp.test/api/telemetry/errors"), env)).status).toBe(404)
     const cross = await worker.fetch(report({ message: "x" }, { origin: "https://evil.example" }), env)
     expect(cross.status).toBe(403)
   })

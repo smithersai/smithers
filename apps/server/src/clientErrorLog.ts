@@ -11,7 +11,7 @@ import { discardBody, readJsonOrUndefined } from "./Http"
 /**
  * A readable record of what broke in a user's browser.
  *
- * The client already posts its errors to `/api/client-errors`. Until now the
+ * The client already posts its errors to `/api/telemetry/errors`. Until now the
  * handler ran `console.error` and stopped, which means the report survived only
  * as long as someone happened to be running `wrangler tail`. During a private
  * alpha that is the same as having no report at all: the first anyone learns of
