@@ -16,8 +16,9 @@ under a bare Flow runtime fails loudly instead of doing nothing.
 **Unsupported in this release candidate:** `Npm.Publish`, `Changesets.Publish`,
 `Github.Release`, `Github.Pages`, `Git.Pr`, and `Github.Pr` have no outward
 transport. The plan refuses each one as `not implemented by this executor`, so
-`run` fails before any gate or effect. `Npm.Downstream` also refuses because the
-isolated remote checkout runner is not implemented.
+`run` fails before any gate or effect. The plan also refuses `Npm.Downstream`
+as `not implemented by this executor` because the isolated remote checkout
+runner is not implemented.
 Their declarations remain available for planning; they are not working release
 or pull-request operations. Use an implemented publication tool or CI job.
 

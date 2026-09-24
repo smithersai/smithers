@@ -171,6 +171,12 @@ export const attrMember = (attrs: unknown, name: string): unknown => {
 const notImplementedOutward = (rule: string): string =>
   `${rule}: not implemented by this executor; the plan refuses before any gate or outward effect`
 
+// Non-outward rules with no runner in this executor. `Npm.Downstream` needs an
+// isolated remote checkout that applies its overrides; until that runner lands
+// the plan refuses it instead of scheduling a node whose only result is a failure.
+const notImplementedRunner = (rule: string): string =>
+  `${rule}: not implemented by this executor; the plan refuses before it runs`
+
 const attrTargets = (attrs: unknown, name: string): ReadonlyArray<Target.AnyTarget> =>
   collectTargets(attrMember(attrs, name))
 
@@ -2465,7 +2471,8 @@ const visit = async (
         selection = { family: "value", rule, lane: { kind: "inert" } }
         break
       case "Npm.Downstream":
-        selection = { family: "value", rule, lane: { kind: "inert" } }
+        selection = { family: "value", rule, lane: { kind: "unimplemented" } }
+        noteRefusal(notImplementedRunner(rule))
         break
       case "Npm.Publish":
       case "Changesets.Publish":

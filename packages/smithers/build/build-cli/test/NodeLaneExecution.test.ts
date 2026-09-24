@@ -373,7 +373,7 @@ describe("Node lane package execution", () => {
     expect(packed.logs).toContain("overlay/base.txt")
   })
 
-  it("keeps Cron and Overlay values inert and gives unsupported remote runners typed reasons", async () => {
+  it("keeps Cron and Overlay values inert", async () => {
     const root = await fixture()
     const cron = await serve(root, ["//:cron"])
     expect(cron.exitCode).toBe(0)
@@ -386,7 +386,16 @@ describe("Node lane package execution", () => {
     expect(await Fs.readFile(NodePath.join(root, ".github/workflows/cron-cron.yml"), "utf8"))
       .toContain("cron: \"0 6 * * 1\"")
     expect((await serve(root, ["//:overlay"])).exitCode).toBe(0)
-    expect((await serve(root, ["//:downstream"])).logs).toContain("isolated remote checkout runner")
+  })
+
+  it("refuses Npm.Downstream in the plan until its remote checkout runner exists", async () => {
+    const root = await fixture()
+    const planned = await serve(root, ["//:downstream", "--plan"])
+    expect(planned.output).toContain("Npm.Downstream: not implemented by this executor")
+    const run = await serve(root, ["//:downstream"])
+    expect(run.exitCode).toBe(1)
+    expect(run.logs).toContain("Npm.Downstream: not implemented by this executor")
+    expect(run.logs).not.toContain("isolated remote checkout runner")
   })
 
   it("refuses every outward rule without a transport in the plan, before any gate runs", async () => {

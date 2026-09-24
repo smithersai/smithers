@@ -2219,9 +2219,9 @@ export const executeEffect = (
             case "Overlay":
               return green("ran")
             case "Npm.Downstream":
-              return fail(
-                "Npm.Downstream execution requires an isolated remote checkout runner; this host runner cannot apply overrides honestly"
-              )
+              // The planner refuses this rule; reaching here means a plan
+              // skipped that refusal, so fail rather than report green.
+              return fail(`${node.rule}: not implemented by this executor`)
             case "Cron": {
               const cron = CronTarget.attrsOf(node.declaration)
               log(`${node.label}  inert schedule ${cron.schedule}; rendered through generated GitHub CI`)

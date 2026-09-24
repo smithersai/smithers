@@ -233,7 +233,7 @@ The GitHub target flavors: `Github.Setup`, `Github.Workflow`, `Github.CiGen`, `G
 - **Type:** `{ NodeModules, Pack, Publish, Published, Downstream }`
 - **Since:** `0.1.0`
 
-The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and the plan refuses it before any gate runs; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented.
+The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and the plan refuses it before any gate runs; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented, so the plan refuses it before it runs.
 
 ### `Smithers.Markdown`
 

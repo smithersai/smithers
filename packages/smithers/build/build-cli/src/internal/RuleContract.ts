@@ -130,6 +130,8 @@ export type LaneData =
   | { readonly kind: "overlay" }
   | { readonly kind: "outward"; readonly required: ReadonlyArray<string> }
   | { readonly kind: "inert" }
+  /** A declared rule this executor has no runner for; the plan always refuses it. */
+  | { readonly kind: "unimplemented" }
   | { readonly kind: "memory-retain" }
   | {
     readonly kind: "cargo"
@@ -340,7 +342,8 @@ export type Selection =
     "Npm.Publish" | "Changesets.Publish" | "Github.Release" | "Github.Pages" | "Git.Pr",
     Lane<"outward">
   >
-  | Variant<"value", "Changesets.Version" | "Size.Budgets" | "Cron" | "Npm.Downstream", Lane<"inert">>
+  | Variant<"value", "Changesets.Version" | "Size.Budgets" | "Cron", Lane<"inert">>
+  | Variant<"value", "Npm.Downstream", Lane<"unimplemented">>
   | Variant<"outward", "Memory.Retain", Lane<"memory-retain">>
   | Variant<
     "language",

@@ -107,7 +107,8 @@ value is never a declaration field or key input.
 
 The catalog includes declaration-only APIs in this RC. `Npm.Publish`,
 `Changesets.Publish`, `Github.Release`, `Github.Pages`, `Git.Pr`, `Github.Pr`,
-and `Npm.Downstream` are unsupported by the package executor and always refuse.
+and `Npm.Downstream` are unsupported by the package executor and the plan always
+refuses them.
 See [the catalog](./docs/rules.md) before selecting a publication target.
 
 ## Presentation
