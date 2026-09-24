@@ -55,6 +55,9 @@ export * as Evaluator from "./Evaluator.ts"
  */
 export * as Framing from "./Framing.ts"
 
+/** @since 1.0.0-rc.1 */
+export * as FailureCopy from "./FailureCopy.ts"
+
 /**
  * @since 0.1.0
  * @slop

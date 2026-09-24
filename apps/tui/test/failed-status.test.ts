@@ -51,7 +51,8 @@ const expectFailed = async (workspace: Workspace, message: string) => {
   expect(workspace.busy).toBe(false)
   // The activity strip reads "Researching" while this stays "running".
   expect(workspace.transcript(tab.id).activity?.status).toBe("failed")
-  expect(tabToast(tab)).toContain(message)
+  expect(tabToast(tab)).toContain(tab.failure?.headline ?? "Worker stopped unexpectedly")
+  expect(tabToast(tab)).not.toContain(message)
   expect(await tabRead(workspace, tab.id)).toMatchObject({
     outcome: "success",
     value: { id: tab.id, status: "failed", message: expect.stringContaining(message) }
@@ -92,15 +93,19 @@ describe("failed worker status", () => {
     expect(await tabRead(f.workspace, request.id)).toMatchObject({ outcome: "success", value: { status: "running" } })
   })
 
-  it("settles a worker whose host process died mid-run", async () => {
+  it("relaunches a worker whose host process died mid-run", async () => {
     const f = setup(() => ({ done: new Promise(() => {}), cancel: () => {} }))
     f.workspace.request(request)
     await tick()
     // The TUI process exits here: no outcome is written for the running worker.
+    let launches = 0
     const restored = setup(() => {
-      throw new Error("must not relaunch")
+      launches++
+      return { done: new Promise(() => {}), cancel: () => {} }
     }, Session.restore(f.records).workspace)
-    await expectFailed(restored.workspace, "Interrupted")
+    await tick()
+    expect(launches).toBe(1)
+    expect(restored.workspace.snapshot().tabs[0]).toMatchObject({ id: request.id, status: "running" })
   })
 
   it("keeps the real error of a worker that failed before its parent recorded it", async () => {

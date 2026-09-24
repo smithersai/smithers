@@ -87,3 +87,10 @@ export const detect = (environment: NodeJS.ProcessEnv): Available => {
     }
   }
 }
+
+/** Worker fallback order, excluding Cerebras and the requested seat. */
+export const workerFallbackSeats = (requested: string, available: Available, environment: Readonly<Record<string, string | undefined>>): ReadonlyArray<string> => {
+  const override = environment.SMITHERS_TUI_WORKER_SEATS
+  const seats = override === undefined ? available.models.map((model) => model.seat) : override.split(",").map((seat) => seat.trim())
+  return [...new Set(seats.filter((seat) => seat !== "" && seat !== requested && !seat.startsWith("cerebras:")))]
+}

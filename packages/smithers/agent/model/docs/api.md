@@ -175,6 +175,15 @@ itself, so nothing about the request's settlement is known.
 | `isContextOverflow(providerCode, message)` | refinement  | Whether a provider's own code and message describe a context overflow. Protocol adapters call it ahead of their generic bad-request branch.                     |
 | `isQuotaExhausted(providerCode, message)`  | refinement  | Whether a provider's own code and message describe an exhausted account rather than a transient rate limit, so a durable consumer can park instead of retrying. |
 
+## `FailureCopy`
+
+`describe(error, seat?)` walks wrapped causes for a typed `ModelError` or
+`HarnessError` and returns `{ headline, fault, line, actions }`. The five fault
+values are `user`, `wait`, `infra`, `dependency`, and `bug`; actions are
+`resume`, `switch-model`, `wait`, and `details`. A model seat supplies the
+provider name for a limit. Unknown errors have a generic bug headline. Raw
+messages and stacks belong in technical details, never in the headline.
+
 ## `Route`
 
 A resolved model route: an endpoint, a protocol, a framing, and the

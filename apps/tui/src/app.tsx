@@ -27,7 +27,7 @@ import * as Improve from "./improve.ts"
 import type * as Host from "./host.ts"
 import * as Keys from "./keys.ts"
 import { delegateModels, type Model } from "./models.ts"
-import { PanelView } from "./panel-view.tsx"
+import { FailureCard, PanelView } from "./panel-view.tsx"
 import * as Palette from "./palette.ts"
 import * as Panels from "./panels.ts"
 import * as Search from "./search.ts"
@@ -83,6 +83,7 @@ interface TurnState {
 
 type Picker =
   | { readonly kind: "model"; readonly query: string; readonly selected: number }
+  | { readonly kind: "worker-model"; readonly id: string; readonly query: string; readonly selected: number }
   | { readonly kind: "theme"; readonly query: string; readonly selected: number }
   | { readonly kind: "flows"; readonly query: string; readonly selected: number }
   | { readonly kind: "filter"; readonly query: string; readonly selected: number }
@@ -187,7 +188,7 @@ const pickerRows = (
   if (picker.kind === "theme") return Fuzzy.filter(Object.keys(themes), picker.query, (name) => name).map((name) => ({
     key: name, label: name, current: name === activeTheme(), value: name
   }))
-  if (picker.kind === "model") {
+  if (picker.kind === "model" || picker.kind === "worker-model") {
     const listed = Fuzzy.filter(models, picker.query, (model) => `${model.label} ${model.seat} ${model.provider}`)
     const custom = picker.query.includes(":") && !models.some((model) => model.seat === picker.query)
     return [
@@ -409,8 +410,10 @@ export function App(props: AppProps) {
     ...snapshot.tabs.map((tab) => ({
       id: `tab:${tab.id}`,
       title: `${
-        tab.status === "running" || tab.status === "requested"
+        tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
           ? "◌ "
+          : tab.status === "parked"
+          ? "⏸ "
           : tab.status === "queued"
           ? "… "
           : tab.status === "failed"
@@ -418,7 +421,7 @@ export function App(props: AppProps) {
           : tab.status === "done"
           ? "✓ "
           : "■ "
-      }${tab.title}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
+      }${tab.status === "failed" ? tab.failure?.headline ?? tab.title : tab.status === "parked" ? tabToast(tab) : tab.title}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
     })),
     ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id))
       .map((tab) => ({ id: `tree:${tab.id}`, title: `Tree: ${tab.title}` })),
@@ -1219,6 +1222,7 @@ export function App(props: AppProps) {
       return forkSession(turn)
     }
     if (open.kind === "model") return switchSeat(value)
+    if (open.kind === "worker-model") return workspace.retry(open.id, value)
     if (open.kind === "flows") {
       command(`/flow ${value}`)
       return
@@ -1496,6 +1500,15 @@ export function App(props: AppProps) {
         }
         return
       }
+      if (key.name === "m" && surface.startsWith("tab:")) {
+        setPicker({ kind: "worker-model", id: surface.slice(4), query: "", selected: 0 })
+        return
+      }
+      if (key.name === "w" && surface.startsWith("tab:")) {
+        try { workspace.waitForReset(surface.slice(4)) }
+        catch (error) { setStatus(error instanceof Error ? error.message : String(error), "warning") }
+        return
+      }
       if (key.name === "x" && (surface.startsWith("tab:") || surface.startsWith("flow:"))) {
         if (surface.startsWith("flow:")) runs.cancel(surface.slice(5))
         else workspace.cancel(surface.slice(4))
@@ -1616,7 +1629,7 @@ export function App(props: AppProps) {
   }, [props.host, transcript.usage.context, window, writer.current.file])
   const usage = transcript.usage
   const activeTabs = snapshot.tabs.filter((tab) =>
-    tab.status === "queued" || tab.status === "requested" || tab.status === "running"
+    tab.status === "queued" || tab.status === "requested" || tab.status === "running" || tab.status === "waiting" || tab.status === "parked"
   )
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
   const sideChat = focusMain && dimensions.width >= 120
@@ -1678,15 +1691,22 @@ export function App(props: AppProps) {
             : null}
         </box>
         {panel !== undefined && !focusMain ?
-          (
+          (<>
+            {surface.startsWith("tab:") ? (() => {
+              const tab = snapshot.tabs.find((entry) => entry.id === surface.slice(4))
+              return tab?.status === "failed"
+                ? <FailureCard tab={tab} transcript={workspace.transcript(tab.id)} details={expanded} />
+                : null
+            })() : null}
             <PanelView
               panel={panel}
               navigation={navigation}
               height={dimensions.height - 10}
               width={width}
               scrollRef={panelScroll}
+              hideSummary={surface.startsWith("tab:") && snapshot.tabs.some((tab) => tab.id === surface.slice(4) && tab.status === "failed")}
             />
-          ) :
+          </>) :
           timeline.length === 0 && !Timeline.active(filter)
           ? <View.Home expanded={expanded} />
           : (
@@ -1906,8 +1926,10 @@ export function App(props: AppProps) {
           ).map((tab) => ({
             id: tab.id,
             text: `${
-              tab.status === "running" || tab.status === "requested"
+              tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
                 ? tick
+                : tab.status === "parked"
+                ? "⏸"
                 : tab.status === "queued"
                 ? "…"
                 : tab.status === "done"
@@ -1934,7 +1956,7 @@ export function App(props: AppProps) {
       />
       {picker === undefined ? null : (
         <View.Dialog
-          title={picker.kind === "model"
+          title={picker.kind === "model" || picker.kind === "worker-model"
             ? "Select model"
             : picker.kind === "theme"
             ? "Select theme"

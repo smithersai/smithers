@@ -30,7 +30,7 @@ import * as Classifier from "@smthrs/model/Classifier"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
-import { delegateModels } from "./models.ts"
+import { delegateModels, detect, workerFallbackSeats } from "./models.ts"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import * as NativeSearch from "@smthrs/std/NativeSearch"
@@ -53,7 +53,7 @@ import * as Transcript from "./transcript.ts"
 /** How a turn ended. */
 export type Outcome =
   | { readonly _tag: "done"; readonly answer: string }
-  | { readonly _tag: "failed"; readonly message: string; readonly detail: string }
+  | { readonly _tag: "failed"; readonly message: string; readonly detail: string; readonly error?: unknown }
   | { readonly _tag: "cancelled" }
 
 export interface TurnInput {
@@ -65,6 +65,7 @@ export interface TurnInput {
   readonly onCaption?: (prose: string) => void
   readonly onPatch?: (receipt: Changes.Receipt) => void
   readonly seat: string
+  readonly fallbackSeats?: ReadonlyArray<string>
   /** Who waits on an approval: `chat` (the default) or a worker tab id. */
   readonly source?: string
   readonly history: ReadonlyArray<Context.Entry>
@@ -152,6 +153,7 @@ export const make = (options: {
 }): Host => {
   const approvalMode = options.approvals ?? "ask"
   const env = options.environment
+  const available = detect(env as NodeJS.ProcessEnv)
   const judged = (env[Evaluator.environmentKey] ?? "").trim() !== ""
   const judge = judged
     ? Evaluator.layerFromEnvironment(env, "smithers-tui").pipe(Layer.provide(FetchHttpClient.layer))
@@ -244,6 +246,10 @@ export const make = (options: {
           speed: Number(env.SMITHERS_TUI_REPLAY_SPEED ?? 1)
         })
         : yield* (yield* SeatResolver.SeatResolver).resolve(input.seat)
+      const fallbackSeats = input.role === "worker" && !input.seat.startsWith("replay:")
+        ? yield* Effect.forEach(input.fallbackSeats ?? workerFallbackSeats(input.seat, available, env),
+          (name) => Effect.flatMap(SeatResolver.SeatResolver, (resolver) => resolver.resolve(name)))
+        : []
       const agent = yield* Agent.Agent
       const engine = yield* FlowRuntime.FlowRuntime
       const services = yield* Effect.context<FileSystem.FileSystem | Path.Path | ChildProcessSpawner>()
@@ -259,6 +265,7 @@ export const make = (options: {
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
+        ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true } } : {}),
         prompt: input.prompt,
         system: [
           ...Context.system(options.cwd, input.history),
@@ -337,7 +344,7 @@ export const make = (options: {
       fiber.addObserver((exit) => {
         if (Exit.isSuccess(exit)) return resolve({ _tag: "done", answer: exit.value })
         if (Cause.hasInterruptsOnly(exit.cause)) return resolve({ _tag: "cancelled" })
-        resolve({ _tag: "failed", message: describe(exit.cause), detail: Cause.pretty(exit.cause) })
+        resolve({ _tag: "failed", message: describe(exit.cause), detail: Cause.pretty(exit.cause), error: Cause.squash(exit.cause) })
       })
     })
     return { done, cancel: () => void runtime.runFork(Fiber.interrupt(fiber)) }

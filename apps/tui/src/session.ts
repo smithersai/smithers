@@ -52,7 +52,7 @@ export type Record =
     readonly type: "outcome"
     readonly at: number
     readonly prompt: string
-    readonly outcome: { readonly _tag: string; readonly answer?: string; readonly message?: string }
+    readonly outcome: { readonly _tag: string; readonly answer?: string; readonly message?: string; readonly headline?: string }
   }
   | { readonly type: "shell"; readonly at: number; readonly result: Shell.Result; readonly excluded: boolean }
   /** `/compact`: the model no longer receives the oldest `dropped` context entries. */
@@ -370,7 +370,7 @@ export const restore = (records: ReadonlyArray<Record>): {
         } else {
           transcript = Transcript.failure(
             transcript,
-            record.outcome._tag === "cancelled" ? "Stopped" : record.outcome.message ?? "Failed",
+            record.outcome._tag === "cancelled" ? "Stopped" : record.outcome.headline ?? record.outcome.message ?? "Failed",
             record.at
           )
         }

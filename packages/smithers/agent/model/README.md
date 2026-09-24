@@ -87,6 +87,8 @@ The root entry point exports these namespaces. Each is also importable from
   `EvaluatorErrorCode`, `EvaluatorError`, `BooleanQuestion`, `ChoiceQuestion`, `ScoreQuestion`, `Question`, `RawBooleanAnswer`, `RawChoiceAnswer`, `RawScoreAnswer`, `RawAnswer`, `RawAnswers`, `Request`, `Usage`, `Response`, `Evaluator`, `defaultBaseUrl`, `defaultModel`, `defaultTimeoutMs`, `defaultAttempts`, `retryBackoffMs`, `protocolVersion`, `specificationVersion`, `VercelGatewayOptions`, `layerVercelGateway`, `ScriptedAnswer`, `Script`, `layerScripted`, `environmentKey`, `layerFromEnvironment`, `layerUnavailable`
 - **`Framing`**: Byte-stream framing, chosen independently of the protocol that interprets the frames.
   `Framing`, `sse`, `ndjson`
+- **`FailureCopy`**: Safe headlines and actions for typed model and harness failures.
+  `Fault`, `Action`, `Description`, `describe`
 - **`Model`**: The one provider seam: a request in, a stream of typed events out.
   `ModelFailure`, `Model`, `make`, `layer`, `makeNoop`, `layerNoop`
 - **`ModelCatalog`**: Static facts about known provider models, read from a model id alone.

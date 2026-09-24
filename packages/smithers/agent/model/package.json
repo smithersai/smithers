@@ -45,6 +45,7 @@
     "./Endpoint": "./src/Endpoint.ts",
     "./Evaluator": "./src/Evaluator.ts",
     "./Framing": "./src/Framing.ts",
+    "./FailureCopy": "./src/FailureCopy.ts",
     "./Model": "./src/Model.ts",
     "./ModelCatalog": "./src/ModelCatalog.ts",
     "./ModelError": "./src/ModelError.ts",
@@ -166,6 +167,16 @@
         "require": {
           "types": "./dist/cjs/Framing.d.ts",
           "default": "./dist/cjs/Framing.js"
+        }
+      },
+      "./FailureCopy": {
+        "import": {
+          "types": "./dist/esm/FailureCopy.d.ts",
+          "default": "./dist/esm/FailureCopy.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FailureCopy.d.ts",
+          "default": "./dist/cjs/FailureCopy.js"
         }
       },
       "./Model": {

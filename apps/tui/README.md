@@ -32,7 +32,9 @@ Interactive chat prefers `cerebras:qwen-3.8-27b` with low reasoning effort
 when `CEREBRAS_API_KEY` is configured, falling back to an available provider.
 `--model` or `SMITHERS_TUI_SEAT` overrides chat. Background workers use the
 first available non-Cerebras seat (usually the ChatGPT subscription from
-`codex login`); `SMITHERS_TUI_WORKER_SEAT` overrides it. The picker lists only
+`codex login`); `SMITHERS_TUI_WORKER_SEAT` overrides it. Workers try the other
+detected non-Cerebras seats after a provider limit; `SMITHERS_TUI_WORKER_SEATS=a,b`
+sets that fallback order. The picker lists only
 providers this machine can reach. Print mode runs a task directly.
 
 Edits, shell commands, and network calls run without asking. `--approve ask`
@@ -74,7 +76,8 @@ Ctrl+O read it.
 | Tab | In a view: next tab |
 | Esc, i | In a view: focus the composer without stopping background work |
 | a | Activate the selected row's action, if present |
-| r, x | In a worker or flow tab: retry / stop |
+| r, x | In a worker or flow tab: resume / stop. A worker resumes with its prior steps on its original model |
+| m, w | In a failed worker tab: choose a model for resume / wait for reset |
 | a | In a flow tab: approve or fill in |
 | Tab/Down, Shift+Tab/Up, Space, Left/Right, Enter, Esc | In a flow form: next, previous field, toggle, choose, run, close (the run stays parked) |
 | Ctrl+G | Edit the prompt in `$VISUAL` / `$EDITOR` |
@@ -104,6 +107,11 @@ The bottom timeline shows recorded phases, edits, stalls, and verification
 receipts. It follows running workers while chat stays usable. Inspection reads
 the journal up to the selected event, so later results do not appear early.
 Restoring a session reconstructs the same timeline from its saved events.
+Worker tabs show `queued`, `requested`, `running`, `waiting` for children,
+`parked` (⏸ with a reset time), `done`, `failed`, or `cancelled`. A running or
+parked worker resumes from its recorded
+steps when the TUI restarts. A failed worker shows a short failure card; Ctrl+O
+reveals the raw error and stack.
 
 ## Context and sessions
 

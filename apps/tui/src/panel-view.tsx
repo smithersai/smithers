@@ -1,8 +1,27 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
 import { type RefObject, useEffect, useRef } from "react"
 import * as Panels from "./panels.ts"
+import * as Workspace from "./workspace.ts"
+import * as Transcript from "./transcript.ts"
 import { color, syntax } from "./theme.ts"
 import { bar } from "./view.tsx"
+
+/** A stopped worker's compact action card; technical details open with Ctrl+O. */
+export function FailureCard({ tab, transcript, details }: { tab: Workspace.Tab; transcript: Transcript.Transcript; details: boolean }) {
+  const failure = tab.failure
+  if (failure === undefined) return null
+  const fault = failure.fault === "wait" && /limit|quota/.test(failure.headline)
+    ? "not your fault · provider"
+    : failure.fault === "infra" ? "not your fault · infra" : failure.fault
+  return <box style={{ flexShrink: 0, paddingLeft: 1, marginBottom: 1 }}>
+    <text fg={color.danger}>{failure.headline}  ·  {fault}</text>
+    <text fg={color.muted}>{Workspace.failureLine(tab, transcript)}</text>
+    <text fg={color.brand}>[r] Resume here   [m] Switch model   {failure.actions.includes("wait") ? "[w] Wait for reset   " : ""}[ctrl+o] Details</text>
+    {details ? <text fg={color.faint}>{tab.detail?.includes(tab.message ?? "") && tab.detail !== ""
+      ? tab.detail
+      : [tab.message, tab.detail].filter((part) => part !== undefined && part !== "").join("\n")}</text> : null}
+  </box>
+}
 
 function BlockView({ block, split }: { block: Panels.Block; split: boolean }) {
   switch (block.kind) {
@@ -65,6 +84,7 @@ export function PanelView(
     height: number
     width: number
     scrollRef?: RefObject<((direction: number) => void) | undefined>
+    hideSummary?: boolean
   }
 ) {
   const scroll = useRef<ScrollBoxRenderable>(null)
@@ -84,7 +104,7 @@ export function PanelView(
   }, [panel.id, row?.id, expanded, nav.diff])
   return (
     <box style={{ flexGrow: 1, flexShrink: 1, minHeight: 0 }}>
-      <text fg={color.text} style={{ paddingLeft: 1, marginBottom: 1 }}>{panel.summary}</text>
+      {props.hideSummary ? null : <text fg={color.text} style={{ paddingLeft: 1, marginBottom: 1 }}>{panel.summary}</text>}
       <box style={{ flexShrink: 0 }}>
         {panel.rows.slice(first, first + visible).map((item, index) => (
           <box

@@ -842,7 +842,7 @@ describe("runtime views", () => {
     await tui.until((screen) => screen.includes("review · running"))
     await tui.type("/tabs")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("r Retry") && screen.includes("u Undo changes"), 5_000, "worker footer")
+    await tui.until((screen) => screen.includes("r Resume") && screen.includes("u Undo changes"), 5_000, "worker footer")
     await tui.press("u")
     const screen = await tui.until((screen) => screen.includes("Stop running work first") || screen.includes("Undo math.js?"))
     expect(screen).toContain("Stop running work first")
@@ -1005,14 +1005,14 @@ it(
     await tui.until((screen) => screen.includes("Search") && /Investigation\s+running/.test(screen), 5_000, "tab row")
     await tui.press(key.enter)
     await tui.until(
-      (screen) => screen.includes("r Retry") && screen.includes("x Stop") && screen.includes("Investigation · running"),
+      (screen) => screen.includes("r Resume") && screen.includes("x Stop") && screen.includes("Investigation · running"),
       5_000,
       "inspect running worker"
     )
     await tui.type("x")
     await tui.until((screen) => screen.includes("Investigation · cancelled"), 5_000, "actual worker settlement")
     await tui.press(key.escape)
-    await tui.until((screen) => screen.includes("Still here.") && !screen.includes("r Retry"), 5_000, "escape returns to chat")
+    await tui.until((screen) => screen.includes("Still here.") && !screen.includes("r Resume"), 5_000, "escape returns to chat")
     await tui.type("still usable")
     await tui.until((screen) => /┃\s+still usable/.test(screen), 5_000, "composer after cancellation")
   },
@@ -1049,7 +1049,7 @@ describe("flows", () => {
     await tui.until((screen) => /┃\s+hello/.test(screen), 5_000, "composer usable while the flow runs")
     await tui.press(ctrlRight)
     await tui.press(ctrlRight)
-    await tui.until((screen) => screen.includes("r Retry") && screen.includes("x Stop"), 5_000, "flow tab footer")
+    await tui.until((screen) => screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
     await tui.type("x")
     await tui.until((screen) => screen.includes("review · cancelled") && screen.includes("■ review"), 5_000, "settled from the watch")
   }, 60_000)
@@ -1065,7 +1065,7 @@ describe("flows", () => {
     await tui.press(key.ctrlC)
     await tui.press(ctrlRight)
     await tui.press(ctrlRight)
-    await tui.until((screen) => screen.includes("r Retry") && screen.includes("x Stop"), 5_000, "flow tab footer")
+    await tui.until((screen) => screen.includes("r Resume") && screen.includes("x Stop"), 5_000, "flow tab footer")
     await tui.type("a")
     await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form reopened")
     await tui.press(ctrlRight)

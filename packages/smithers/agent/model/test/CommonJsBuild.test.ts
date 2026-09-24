@@ -12,6 +12,7 @@ const expectedExports = [
   "DeferredTools",
   "Endpoint",
   "Evaluator",
+  "FailureCopy",
   "Framing",
   "Model",
   "ModelCatalog",

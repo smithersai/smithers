@@ -134,7 +134,7 @@ describe("key registry", () => {
       Keys.panelHints(options).map((binding) => `${Keys.primaryKey(binding)} ${binding.label}`)
     expect(hints({})).toEqual(["esc Chat", "hjkl/arrows Navigate", "enter Expand row", "? Keys"])
     expect(hints({ worker: true, undo: true, action: "Approve" })).toEqual([
-      "r Retry",
+      "r Resume",
       "x Stop",
       "u Undo changes",
       "a Approve",

@@ -557,21 +557,24 @@ describe("background work", () => {
       expect(f.workspace.read("g").status).toBe("cancelled")
     })
   })
-  it("restores custom UI and marks a lost local worker interrupted instead of claiming success", async () => {
+  it("restores custom UI and relaunches a lost local worker", async () => {
     const f = setup()
     f.workspace.request(request)
     f.workspace.publish(panel)
+    const saved = Session.restore(f.records).workspace
+    f.workspace.dispose()
     const restored = new Workspace({
       host: f.host,
       workerSeat: "worker:test",
       history: () => [],
       persist: () => {},
-      restored: Session.restore(f.records).workspace
+      restored: saved
     })
     expect(restored.snapshot().panels).toEqual([panel])
-    expect(restored.read("fix")).toMatchObject({ status: "failed", message: "Interrupted; retry to continue." })
-    expect(f.launched()).toBe(0)
-    f.workspace.dispose()
+    await tick()
+    expect(restored.read("fix")).toMatchObject({ status: "running" })
+    expect(f.launched()).toBe(1)
+    restored.dispose()
   })
 })
 

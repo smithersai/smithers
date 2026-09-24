@@ -365,6 +365,10 @@ const onlyDone = (cell: CellItem): boolean =>
 
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
 export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
+  if (event._tag === "seat-failed-over") {
+    const provider = event.from.startsWith("openai:") ? "ChatGPT" : event.from.split(":")[0] ?? "provider"
+    return note(transcript, `↪ switched to ${event.to} · ${provider} limit`, at)
+  }
   if (event._tag === "supervisor-settled" && transcript.contextAssessment?.scope === event.scope &&
     transcript.contextAssessment.frame > event.frame) return transcript
   const activity = Activity.apply(transcript.activity ?? Activity.empty, event, at)
