@@ -619,3 +619,23 @@ func TestWorkerRefusesInternalRoutesWithoutControllerIdentity(t *testing.T) {
 	dev.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	assert.NotEqual(t, http.StatusServiceUnavailable, workerRequest(dev, http.MethodGet, "/internal/v1/sandboxes/msb_open", "", headers).Code)
 }
+
+// The revoke route decodes like every other worker route: size-capped,
+// strict, and failing with the shared invalid_json code.
+func TestRevokeEgressDecodesBodyLikeOtherRoutes(t *testing.T) {
+	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
+	require.NoError(t, err)
+	require.NoError(t, state.Register("msb_revoke", Allocation{
+		Generation: 1, ObservedState: "running", BootstrapComplete: true,
+	}))
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: NewSDKRuntime()})
+	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
+	headers := http.Header{}
+	headers.Set(msb.WorkerIDHeader, "worker-a")
+	headers.Set(msb.PlacementGenerationHeader, "1")
+	for _, body := range []string{`{"unexpected":true}`, `{} {}`, `not json`} {
+		response := workerRequest(server, http.MethodPost, "/internal/v1/sandboxes/msb_revoke/egress/revoke", body, headers)
+		assert.Equal(t, http.StatusBadRequest, response.Code, body)
+		assert.Contains(t, response.Body.String(), `"invalid_json"`, body)
+	}
+}

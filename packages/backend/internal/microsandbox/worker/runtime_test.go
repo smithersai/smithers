@@ -21,6 +21,19 @@ func TestServeSSHBridgeRequiresAuthorizedKeysFile(t *testing.T) {
 	require.EqualError(t, err, "Microsandbox SSH authorized keys file is required")
 }
 
+// The SSH bridge only attaches to a live guest. Booting a stopped one here
+// would bypass the controller's admission, compute reservation and egress
+// proxy, so every non-running status is refused.
+func TestSSHBridgeAttachesOnlyToRunningGuests(t *testing.T) {
+	require.NoError(t, sshBridgeAttachable(upstream.SandboxStatusRunning))
+	require.NoError(t, sshBridgeAttachable(upstream.SandboxStatusDraining))
+	for _, status := range []upstream.SandboxStatus{
+		upstream.SandboxStatusStopped, upstream.SandboxStatusPaused, upstream.SandboxStatusCrashed,
+	} {
+		require.ErrorIs(t, sshBridgeAttachable(status), ErrSandboxNotRunning, string(status))
+	}
+}
+
 func TestSnapshotArchiveMetadataHashesTransferredBytes(t *testing.T) {
 	payload := []byte("plain-tar-snapshot-bytes")
 	archive := filepath.Join(t.TempDir(), "snapshot.tar")
@@ -133,6 +146,23 @@ func TestGuestBootOptionsSelectInitByKind(t *testing.T) {
 	assert.Nil(t, config.Init)
 	assert.Equal(t, []string{"/bin/sh", "-lc", "while :; do sleep 3600; done"}, config.Entrypoint)
 	assert.Equal(t, "container", normalizeCreateRequest(sandbox.CreateRequest{Kind: "invalid"}).Kind)
+}
+
+// ServiceSpec.Exec is a command line: elements are space-joined and the shell
+// splits them again. This pins the documented contract so a change to argv
+// semantics is a deliberate, visible wire change.
+func TestServiceLaunchCommandTreatsExecAsCommandLine(t *testing.T) {
+	ready := true
+	command, _ := serviceLaunchCommand(sandbox.ServiceSpec{
+		Exec:        []string{"/bin/sh -c 'cd /w && npm start'"},
+		ReadySignal: &ready,
+	}, "/tmp/app.log")
+	assert.Equal(t, "exec /bin/sh -c 'cd /w && npm start'", command)
+	command, _ = serviceLaunchCommand(sandbox.ServiceSpec{
+		Exec:        []string{"/bin/echo", "two words"},
+		ReadySignal: &ready,
+	}, "/tmp/app.log")
+	assert.Equal(t, "exec /bin/echo two words", command, "elements are joined, never quoted")
 }
 
 func TestServiceLaunchCommandWaitsForReadySignalService(t *testing.T) {

@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -149,12 +150,42 @@ func TestStateRefreshDeletesInterruptedCreateAfterWorkerRestart(t *testing.T) {
 }
 
 func TestStateRefreshDeletesRuntimeMissingFromDurableIndex(t *testing.T) {
-	state, err := LoadState(filepath.Join(t.TempDir(), "worker-state.json"))
+	path := filepath.Join(t.TempDir(), "worker-state.json")
+	require.NoError(t, os.WriteFile(path, []byte("{}"), 0o600))
+	state, err := LoadState(path)
 	require.NoError(t, err)
 	runtime := &refreshTestRuntime{listed: []string{"msb_unindexed"}}
 	require.NoError(t, state.RefreshRuntime(context.Background(), runtime))
 	assert.Equal(t, []string{"msb_unindexed"}, runtime.deleted)
 	assert.Empty(t, state.Inventory())
+}
+
+// A missing index is not an empty one. A remounted or deleted state file must
+// not turn the first refresh into a delete of every guest on the host; the
+// refresh refuses and names the hazard so the worker can fence.
+func TestStateRefreshRefusesToDeleteGuestsWhenIndexFileIsMissing(t *testing.T) {
+	state, err := LoadState(filepath.Join(t.TempDir(), "worker-state.json"))
+	require.NoError(t, err)
+	runtime := &refreshTestRuntime{listed: []string{"msb_persistent_a", "msb_persistent_b"}}
+	err = state.RefreshRuntime(context.Background(), runtime)
+	require.ErrorIs(t, err, ErrStateIndexMissing)
+	assert.Contains(t, err.Error(), "2 runtime guests")
+	assert.Empty(t, runtime.deleted)
+	// The refusal holds for the life of this process, not just one tick.
+	require.ErrorIs(t, state.RefreshRuntime(context.Background(), runtime), ErrStateIndexMissing)
+	assert.Empty(t, runtime.deleted)
+}
+
+// A fresh node has no index and no guests: the first clean refresh proves the
+// index complete, and later leaked guests are reclaimed as usual.
+func TestStateRefreshTrustsMissingIndexOnceRuntimeWasEmpty(t *testing.T) {
+	state, err := LoadState(filepath.Join(t.TempDir(), "worker-state.json"))
+	require.NoError(t, err)
+	runtime := &refreshTestRuntime{listed: []string{}}
+	require.NoError(t, state.RefreshRuntime(context.Background(), runtime))
+	runtime.listed = []string{"msb_leaked"}
+	require.NoError(t, state.RefreshRuntime(context.Background(), runtime))
+	assert.Equal(t, []string{"msb_leaked"}, runtime.deleted)
 }
 
 func TestStateRefreshSkipsBusySandboxWithoutStarvingHeartbeat(t *testing.T) {

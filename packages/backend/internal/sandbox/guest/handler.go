@@ -303,9 +303,7 @@ func (h *Handler) HandleRequest(ctx context.Context, req *Request) *Response {
 		}
 
 	case MethodPostResume:
-		result, err := h.handlePostResume(ctx)
-		mustNoErr(err)
-		resp.Result = MarshalResult(result)
+		resp.Result = MarshalResult(h.handlePostResume(ctx))
 
 	case MethodEmitApprovalRequest:
 		var p EmitApprovalRequestRequest
@@ -353,12 +351,6 @@ func (h *Handler) HandleRequest(ctx context.Context, req *Request) *Response {
 func setErr(resp *Response, code string, err error) {
 	resp.Error = err.Error()
 	resp.ErrorCode = code
-}
-
-func mustNoErr(err error) {
-	if err != nil {
-		panic(err)
-	}
 }
 
 // handleHello returns this guest build's protocol version and capability set.
@@ -1027,7 +1019,9 @@ func (h *Handler) handlePrepareSnapshot(ctx context.Context) (*PrepareSnapshotRe
 	return &PrepareSnapshotResponse{Synced: true}, nil
 }
 
-func (h *Handler) handlePostResume(ctx context.Context) (*PostResumeResponse, error) {
+// handlePostResume cannot fail: a missing or failing NTP client is reported as
+// ClockRefreshed=false, never as an RPC error.
+func (h *Handler) handlePostResume(ctx context.Context) *PostResumeResponse {
 	slog.Info("post-resume: refreshing clock and state")
 
 	// Force NTP sync if chronyc/ntpdate is available.
@@ -1052,7 +1046,7 @@ func (h *Handler) handlePostResume(ctx context.Context) (*PostResumeResponse, er
 	h.touchActivity()
 
 	slog.Info("post-resume complete", "clock_refreshed", clockRefreshed)
-	return &PostResumeResponse{ClockRefreshed: clockRefreshed}, nil
+	return &PostResumeResponse{ClockRefreshed: clockRefreshed}
 }
 
 // handleEmitApprovalRequest validates the request payload and returns an

@@ -195,8 +195,8 @@ type Request struct {
 // It is deliberately NOT pkg/errors.APIError, and its {error, error_code} pair
 // is not a second spelling of {message, code} on the API. This is a private
 // RPC between two plue components over vsock (see VsockPort above): the only
-// writer is cmd/guest-agent inside the VM, the only reader is
-// internal/sandbox/guest.Client on the host, no HTTP client ever sees these
+// writer is cmd/guest-agent inside the VM, the only reader is a host-side
+// RPC client (in this package only the test driver), no HTTP client ever sees these
 // bytes, and ErrorCode's values are capability-negotiation signals
 // (unknown_method, unsupported_capability) rather than failure verdicts a user
 // could act on. A host that decides a guest failure should reach a user

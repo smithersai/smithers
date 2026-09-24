@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -170,6 +171,19 @@ func mergeProxyEnv(env, proxyEnv map[string]string) map[string]string {
 	return merged
 }
 
+// ErrSandboxNotRunning refuses an SSH bridge to a guest that is not live.
+var ErrSandboxNotRunning = errors.New("sandbox is not running")
+
+// sshBridgeAttachable admits only a live guest. The bridge never boots one:
+// starting a guest belongs to the controller's startPlacement, which holds
+// the compute reservation and starts the egress proxy first.
+func sshBridgeAttachable(status upstream.SandboxStatus) error {
+	if status == upstream.SandboxStatusRunning || status == upstream.SandboxStatusDraining {
+		return nil
+	}
+	return fmt.Errorf("%w: status %s", ErrSandboxNotRunning, status)
+}
+
 // ServeSSHBridge runs in a short-lived worker child process because the
 // Microsandbox Go SDK's stdio bridge intentionally owns process stdin/stdout.
 // WithSSHServerUser binds every shell/exec/SFTP request to the user authorized
@@ -183,12 +197,10 @@ func ServeSSHBridge(ctx context.Context, id, user, authorizedKeysPath string) er
 	if err != nil {
 		return err
 	}
-	var live *upstream.Sandbox
-	if handle.Status() != upstream.SandboxStatusRunning && handle.Status() != upstream.SandboxStatusDraining {
-		live, err = handle.StartDetached(ctx)
-	} else {
-		live, err = handle.Connect(ctx)
+	if err := sshBridgeAttachable(handle.Status()); err != nil {
+		return err
 	}
+	live, err := handle.Connect(ctx)
 	if err != nil {
 		return err
 	}
@@ -1083,40 +1095,84 @@ func bootstrap(ctx context.Context, live *upstream.Sandbox, request sandbox.Crea
 	return nil
 }
 
-func cloneRepository(ctx context.Context, live *upstream.Sandbox, repository sandbox.GitRepositorySpec, users []sandbox.LinuxUserSpec, proxyEnv map[string]string) error {
+// clonePlan is one guest `git clone`: its argv, its exec env, and, for a
+// credentialed remote, the git config file that carries the auth header.
+type clonePlan struct {
+	args             []string
+	env              map[string]string
+	credentialConfig []byte
+}
+
+// planClone strips userinfo from the remote. The credential goes into a git
+// config file included by path, never into the exec env: WithExecEnv
+// persists values into runtime state and logs (see
+// ErrSecretDeliveryUnavailable), so the env names only the file.
+func planClone(repository sandbox.GitRepositorySpec, proxyEnv map[string]string, credentialDir string) (clonePlan, error) {
 	parsed, err := url.Parse(repository.Repo)
 	if err != nil {
-		return fmt.Errorf("parse repository URL: %w", err)
+		return clonePlan{}, fmt.Errorf("parse repository URL: %w", err)
 	}
-	environment := map[string]string{}
+	plan := clonePlan{env: map[string]string{}}
 	for key, value := range proxyEnv {
-		environment[key] = value
+		plan.env[key] = value
 	}
 	if parsed.User != nil {
 		username := parsed.User.Username()
 		password, _ := parsed.User.Password()
 		credential := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
-		environment["GIT_CONFIG_COUNT"] = "1"
-		environment["GIT_CONFIG_KEY_0"] = "http.extraHeader"
-		environment["GIT_CONFIG_VALUE_0"] = "Authorization: Basic " + credential
+		plan.credentialConfig = []byte("[http]\n\textraHeader = \"Authorization: Basic " + credential + "\"\n")
+		plan.env["GIT_CONFIG_COUNT"] = "1"
+		plan.env["GIT_CONFIG_KEY_0"] = "include.path"
+		plan.env["GIT_CONFIG_VALUE_0"] = path.Join(credentialDir, "config")
 		parsed.User = nil
 	}
 	destination := repository.Path
 	if destination == "" {
 		destination = path.Join("/workspace", path.Base(strings.TrimSuffix(parsed.Path, ".git")))
 	}
-	if err := ensureGuestParent(ctx, live, destination); err != nil {
+	plan.args = cloneArgs(repository, parsed.String(), destination)
+	return plan, nil
+}
+
+func cloneRepository(ctx context.Context, live *upstream.Sandbox, repository sandbox.GitRepositorySpec, users []sandbox.LinuxUserSpec, proxyEnv map[string]string) error {
+	nonce := make([]byte, 16)
+	if _, err := rand.Read(nonce); err != nil {
+		return fmt.Errorf("clone credential nonce: %w", err)
+	}
+	credentialDir := "/tmp/plue-git-credential-" + hex.EncodeToString(nonce)
+	plan, err := planClone(repository, proxyEnv, credentialDir)
+	if err != nil {
 		return err
 	}
-	args := cloneArgs(repository, parsed.String(), destination)
-	options := []upstream.ExecOption{upstream.WithExecEnv(environment), upstream.WithExecTimeout(10 * time.Minute)}
+	cloneUser := ""
 	if len(users) > 0 && users[0].Name != "" {
-		options = append(options, upstream.WithExecUser(users[0].Name))
+		cloneUser = users[0].Name
 	}
-	output, err := live.Exec(ctx, "git", args, options...)
-	for key := range environment {
-		environment[key] = ""
+	if plan.credentialConfig != nil {
+		// A 0700 directory owned by the clone user fences the file from every
+		// other guest user whatever mode FS().Write gives it.
+		prepare := "umask 077 && mkdir " + shellQuote(credentialDir)
+		if cloneUser != "" {
+			prepare += " && chown " + shellQuote(cloneUser) + " " + shellQuote(credentialDir)
+		}
+		if err := shellSuccess(ctx, live, prepare); err != nil {
+			return fmt.Errorf("prepare clone credential: %w", err)
+		}
+		defer func() {
+			_ = shellSuccess(context.WithoutCancel(ctx), live, "rm -rf "+shellQuote(credentialDir))
+		}()
+		if err := live.FS().Write(ctx, plan.env["GIT_CONFIG_VALUE_0"], plan.credentialConfig); err != nil {
+			return fmt.Errorf("write clone credential: %w", err)
+		}
 	}
+	if err := ensureGuestParent(ctx, live, plan.args[len(plan.args)-1]); err != nil {
+		return err
+	}
+	options := []upstream.ExecOption{upstream.WithExecEnv(plan.env), upstream.WithExecTimeout(10 * time.Minute)}
+	if cloneUser != "" {
+		options = append(options, upstream.WithExecUser(cloneUser))
+	}
+	output, err := live.Exec(ctx, "git", plan.args, options...)
 	if err != nil {
 		return fmt.Errorf("clone repository: %w", err)
 	}

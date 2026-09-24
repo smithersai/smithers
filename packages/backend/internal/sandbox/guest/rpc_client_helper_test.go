@@ -17,11 +17,6 @@ import (
 // as "feature unavailable," not a transport error.
 var ErrCapabilityUnavailable = errors.New("guest: capability unavailable")
 
-// ErrNotHandshaken is retained for backward compatibility with callers that
-// explicitly enforced Negotiate-before-Invoke. Invoke now auto-negotiates and
-// no longer returns this sentinel.
-var ErrNotHandshaken = errors.New("guest: handshake not completed")
-
 // Transport is the minimal I/O contract the host-side Client needs. A vsock
 // connection satisfies this via net.Conn, but splitting it out lets tests
 // inject an in-process pipe driven by a real *Handler.
@@ -29,7 +24,9 @@ type Transport interface {
 	io.ReadWriteCloser
 }
 
-// Client is the host-side guest-agent RPC client. It is responsible for:
+// Client is a test-only host-side driver for Handler. No production host
+// speaks this protocol (the Microsandbox worker reaches guests through its
+// SDK), so it lives in a _test.go file. It is responsible for:
 //
 //   - running the MethodHello handshake exactly once per connection,
 //   - caching the negotiated protocol version and capability set,

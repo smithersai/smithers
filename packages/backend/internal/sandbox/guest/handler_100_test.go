@@ -87,17 +87,6 @@ esac
 	return argsFile
 }
 
-func TestHandler_H_MustNoErrPanics(t *testing.T) {
-	mustNoErr(nil)
-
-	defer func() {
-		if recover() == nil {
-			t.Fatal("mustNoErr did not panic for a non-nil error")
-		}
-	}()
-	mustNoErr(errors.New("h boom"))
-}
-
 func TestHandler_H_EnsureUserCreatedSuccess(t *testing.T) {
 	h := NewHandler(time.Hour)
 	const username = "h-created-user"

@@ -1038,7 +1038,7 @@ func (c *Controller) Reconcile(ctx context.Context, now time.Time) (ReconcileRes
 			break
 		}
 		if claimErr != nil {
-			return result, claimErr
+			return result, errors.Join(append(recoveryErrors, claimErr)...)
 		}
 		result.CleanupAttempted++
 		if placement.WorkerURL == "" {
@@ -1157,7 +1157,7 @@ func (c *Controller) Reconcile(ctx context.Context, now time.Time) (ReconcileRes
 			break
 		}
 		if claimErr != nil {
-			return result, claimErr
+			return result, errors.Join(append(recoveryErrors, claimErr)...)
 		}
 		result.RestartAttempted++
 		hydrated, hydrateErr := c.store.GetPlacement(ctx, placement.SandboxID)
@@ -1750,12 +1750,19 @@ func (c *Controller) handlePreviewPortStream(writer http.ResponseWriter, request
 			writeStoreError(writer, err)
 			return
 		}
+		// Preview hosts carry no caller credential, so any visitor wakes a
+		// suspended sandbox and holds its reservation. Log every wake so a
+		// crawler keeping a sandbox awake is visible to the operator.
 		if _, err := c.startPlacement(request.Context(), placement, sandbox.StartRequest{}); err != nil {
+			c.logger.Warn("Microsandbox preview wake failed",
+				"domain", target.Domain, "sandbox_id", target.SandboxID, "error", redactedError(err))
 			_ = c.store.SetState(context.WithoutCancel(request.Context()), target.SandboxID,
 				target.Generation, "running", "degraded", redactedError(err))
 			writeControllerError(writer, err)
 			return
 		}
+		c.logger.Info("Microsandbox preview request woke a stopped sandbox",
+			"domain", target.Domain, "sandbox_id", target.SandboxID, "observed_state", target.State)
 		_ = c.store.SetState(request.Context(), target.SandboxID, target.Generation, "running", "running", "")
 	}
 
@@ -1839,6 +1846,19 @@ func (c *Controller) handleSSHStream(writer http.ResponseWriter, request *http.R
 	access, err := c.store.ValidateAccess(request.Context(), validation, HashAccessToken(token))
 	if err != nil || !access.Allowed {
 		writeError(writer, http.StatusForbidden, "access_denied", "sandbox SSH grant is invalid or expired")
+		return
+	}
+	// A grant outlives a suspend. Bridging a stopped placement would let the
+	// worker cold-boot the guest outside startPlacement, skipping the compute
+	// reservation and the egress proxy, so only a running placement of the
+	// granted generation is bridged.
+	placement, err := c.store.GetPlacement(request.Context(), sandboxID)
+	if err != nil {
+		writeStoreError(writer, err)
+		return
+	}
+	if placement.ObservedState != "running" || placement.Generation != access.Generation {
+		writeError(writer, http.StatusConflict, "sandbox_not_running", "sandbox must be running before an SSH session can attach")
 		return
 	}
 

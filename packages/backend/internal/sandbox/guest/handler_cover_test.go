@@ -853,10 +853,7 @@ func TestHandlerCover_PostResume_NoNTPClient(t *testing.T) {
 	h := NewHandler(time.Hour)
 	// Neither chronyc nor ntpdate is on PATH here, so the "no NTP client"
 	// branch runs and clock refresh is reported as false.
-	resp, err := h.handlePostResume(context.Background())
-	if err != nil {
-		t.Fatalf("handlePostResume: %v", err)
-	}
+	resp := h.handlePostResume(context.Background())
 	if resp.ClockRefreshed {
 		t.Error("ClockRefreshed = true, want false when no NTP client is available")
 	}
@@ -877,19 +874,13 @@ esac
 `,
 	})
 
-	resp, err := h.handlePostResume(context.Background())
-	if err != nil {
-		t.Fatalf("handlePostResume chronyc success: %v", err)
-	}
+	resp := h.handlePostResume(context.Background())
 	if !resp.ClockRefreshed {
 		t.Fatal("ClockRefreshed = false, want true for chronyc success")
 	}
 
 	t.Setenv("HANDLER_COVER_NTP_MODE", "chronyc-fail")
-	resp, err = h.handlePostResume(context.Background())
-	if err != nil {
-		t.Fatalf("handlePostResume chronyc failure: %v", err)
-	}
+	resp = h.handlePostResume(context.Background())
 	if resp.ClockRefreshed {
 		t.Fatal("ClockRefreshed = true, want false for chronyc failure")
 	}
@@ -907,19 +898,13 @@ esac
 `,
 	})
 	t.Setenv("HANDLER_COVER_NTP_MODE", "")
-	resp, err = h.handlePostResume(context.Background())
-	if err != nil {
-		t.Fatalf("handlePostResume ntpdate success: %v", err)
-	}
+	resp = h.handlePostResume(context.Background())
 	if !resp.ClockRefreshed {
 		t.Fatal("ClockRefreshed = false, want true for ntpdate success")
 	}
 
 	t.Setenv("HANDLER_COVER_NTP_MODE", "ntpdate-fail")
-	resp, err = h.handlePostResume(context.Background())
-	if err != nil {
-		t.Fatalf("handlePostResume ntpdate failure: %v", err)
-	}
+	resp = h.handlePostResume(context.Background())
 	if resp.ClockRefreshed {
 		t.Fatal("ClockRefreshed = true, want false for ntpdate failure")
 	}

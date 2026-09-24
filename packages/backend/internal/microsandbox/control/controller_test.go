@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -52,6 +53,7 @@ type controllerTestStore struct {
 	completeContextErr    error
 	heartbeatCalls        int
 	previewResolveCalls   int
+	previewTarget         *msb.PreviewTarget
 	// Reservation accounting mirror. Stored inverted so the zero value matches
 	// a freshly allocated placement, which holds its reservation.
 	reservationReleased     bool
@@ -366,6 +368,9 @@ func (s *controllerTestStore) RecordService(context.Context, string, int64, json
 
 func (s *controllerTestStore) ResolveDomainMapping(context.Context, string) (msb.PreviewTarget, error) {
 	s.previewResolveCalls++
+	if s.previewTarget != nil {
+		return *s.previewTarget, nil
+	}
 	return msb.PreviewTarget{}, ErrNotFound
 }
 
@@ -440,6 +445,46 @@ func TestPreviewRouteRequiresPreviewScopedIdentityAndKey(t *testing.T) {
 	assert.Equal(t, 1, store.previewResolveCalls)
 }
 
+// A preview hit on a suspended sandbox boots it with no caller credential.
+// Every such wake must leave an operator-visible trace naming the domain and
+// sandbox, so a crawler holding the sandbox awake is diagnosable.
+func TestPreviewWakeOfStoppedSandboxIsLogged(t *testing.T) {
+	var startCalls atomic.Int32
+	worker := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if strings.HasSuffix(request.URL.Path, "/start") {
+			startCalls.Add(1)
+		}
+		writeJSON(writer, http.StatusOK, sandbox.StartResult{})
+	}))
+	defer worker.Close()
+	store := &controllerTestStore{
+		workerURL: worker.URL,
+		placement: &Placement{WorkerID: "worker-a", Generation: 3, DesiredState: "stopped", ObservedState: "running"},
+		previewTarget: &msb.PreviewTarget{
+			Domain: "shared.preview.jjhub.tech", SandboxID: "msb_sleepy", LocalID: "msb_sleepy",
+			WorkerID: "worker-a", WorkerURL: worker.URL, Generation: 3, GuestPort: 3000, State: "stopped",
+		},
+	}
+	_, bridgeKey, err := ed25519.GenerateKey(rand.Reader)
+	require.NoError(t, err)
+	bridgeSigner, err := gossh.NewSignerFromKey(bridgeKey)
+	require.NoError(t, err)
+	var logs bytes.Buffer
+	controller := New(store, Config{
+		PreviewAPIKey: "preview-key", PreviewClientIdentity: "plue-microsandbox-preview",
+		BridgeSigner: bridgeSigner, Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+	})
+	request := httptest.NewRequest(http.MethodGet, "/v1/domains/shared.preview.jjhub.tech/port", nil)
+	request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{Subject: pkix.Name{CommonName: "plue-microsandbox-preview"}}}}
+	request.Header.Set("Authorization", "Bearer preview-key")
+	controller.ServeHTTP(httptest.NewRecorder(), request)
+
+	require.EqualValues(t, 1, startCalls.Load())
+	assert.Contains(t, logs.String(), "Microsandbox preview request woke a stopped sandbox")
+	assert.Contains(t, logs.String(), "domain=shared.preview.jjhub.tech")
+	assert.Contains(t, logs.String(), "sandbox_id=msb_sleepy")
+}
+
 func TestSSHStreamRejectsInvalidGrantAndBindsAuthorizedGuestUser(t *testing.T) {
 	workerSawUser := make(chan string, 1)
 	worker := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -469,6 +514,7 @@ func TestSSHStreamRejectsInvalidGrantAndBindsAuthorizedGuestUser(t *testing.T) {
 			WorkerID: "worker-a", WorkerURL: worker.URL, Generation: 7,
 		}, nil
 	}}
+	store.placement = &Placement{WorkerID: "worker-a", Generation: 7, DesiredState: "running", ObservedState: "running"}
 	controllerServer := httptest.NewServer(New(store, Config{AllowInsecureDev: true}))
 	defer controllerServer.Close()
 	endpoint := "ws" + strings.TrimPrefix(controllerServer.URL, "http") + "/v1/sandboxes/msb_stream/ssh?user=developer"
@@ -498,6 +544,50 @@ func TestSSHStreamRejectsInvalidGrantAndBindsAuthorizedGuestUser(t *testing.T) {
 	assert.Equal(t, websocket.MessageBinary, kind)
 	assert.Equal(t, []byte("ssh-transport"), payload)
 	assert.Equal(t, "developer", <-workerSawUser)
+}
+
+// A still-valid SSH grant must not wake a suspended sandbox: the worker
+// bridge would cold-boot the guest outside admission, so the compute
+// reservation and egress proxy would be skipped. Only a running placement
+// is bridged.
+func TestSSHStreamRefusesStoppedPlacementWithoutDialingWorker(t *testing.T) {
+	var workerDials atomic.Int32
+	worker := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		workerDials.Add(1)
+	}))
+	defer worker.Close()
+
+	for _, observed := range []string{"stopped", "degraded", "starting"} {
+		t.Run(observed, func(t *testing.T) {
+			store := &controllerTestStore{
+				workerURL: worker.URL,
+				placement: &Placement{WorkerID: "worker-a", Generation: 7, DesiredState: "stopped", ObservedState: observed},
+				validateAccessFn: func(request msb.AccessValidationRequest) (msb.AccessValidationResponse, error) {
+					return msb.AccessValidationResponse{
+						Allowed: true, SandboxID: request.SandboxID, LocalID: request.SandboxID,
+						WorkerID: "worker-a", WorkerURL: worker.URL, Generation: 7,
+					}, nil
+				},
+			}
+			controllerServer := httptest.NewServer(New(store, Config{AllowInsecureDev: true}))
+			defer controllerServer.Close()
+			endpoint := "ws" + strings.TrimPrefix(controllerServer.URL, "http") + "/v1/sandboxes/msb_stream/ssh?user=developer"
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			socket, response, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{
+				HTTPHeader: http.Header{"X-Plue-Access-Token": []string{"valid-grant"}},
+			})
+			if socket != nil {
+				_ = socket.CloseNow()
+			}
+			require.Error(t, err)
+			require.NotNil(t, response)
+			assert.Equal(t, http.StatusConflict, response.StatusCode)
+			_ = response.Body.Close()
+			assert.Zero(t, store.reservationAcquires)
+		})
+	}
+	assert.Zero(t, workerDials.Load(), "a stopped placement must never reach the worker SSH bridge")
 }
 
 func (s *controllerTestStore) GetPlacement(_ context.Context, id string) (Placement, error) {

@@ -240,8 +240,13 @@ type RestartPolicy struct {
 
 // ServiceSpec describes an init-managed guest service.
 type ServiceSpec struct {
-	Name               string            `json:"name"`
-	Mode               ServiceMode       `json:"mode"`
+	Name string      `json:"name"`
+	Mode ServiceMode `json:"mode"`
+	// Exec is a command line, not an argv. Providers join the elements with
+	// single spaces and hand the result to a shell (Microsandbox) or to
+	// systemd ExecStart= (guest agent), so an element containing a space or
+	// shell metacharacter is split again. Pass one element holding the whole,
+	// already-quoted command line.
 	Exec               []string          `json:"exec"`
 	After              []string          `json:"after,omitempty"`
 	DeleteAfterSuccess *bool             `json:"deleteAfterSuccess,omitempty"`

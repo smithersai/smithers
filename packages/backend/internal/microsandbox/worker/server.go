@@ -1001,11 +1001,8 @@ func (s *Server) handleRevokeEgress(writer http.ResponseWriter, request *http.Re
 	}
 	defer unlock()
 	var req sandbox.EgressRevokeRequest
-	if request.Body != nil && request.ContentLength != 0 {
-		if err := json.NewDecoder(request.Body).Decode(&req); err != nil {
-			writeError(writer, http.StatusBadRequest, "invalid_request", "invalid egress revoke body")
-			return
-		}
+	if request.Body != nil && request.ContentLength != 0 && !decodeJSON(writer, request, &req) {
+		return
 	}
 	revoker, ok := s.runtime.(egressRevoker)
 	if !ok {

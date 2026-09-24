@@ -33,7 +33,17 @@ type State struct {
 	startupPending map[string]struct{}
 	mutations      keyedMutex
 	bootID         string
+	// indexUnverified is set when the state file was absent at load. An
+	// absent index is not proof of an empty host, so unindexed guests are
+	// not deleted until a refresh sees a runtime with none.
+	indexUnverified bool
 }
+
+// ErrStateIndexMissing refuses to delete unindexed guests when the worker
+// state file was absent at load: a remounted or removed index would otherwise
+// make the first refresh delete every guest on the host. The worker should
+// fence and page an operator; writing an empty index confirms the deletion.
+var ErrStateIndexMissing = errors.New("worker state index is missing")
 
 func LoadState(path string) (*State, error) {
 	state := &State{
@@ -42,6 +52,7 @@ func LoadState(path string) (*State, error) {
 	}
 	payload, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
+		state.indexUnverified = true
 		return state, nil
 	}
 	if err != nil {
@@ -236,14 +247,31 @@ func (s *State) RefreshRuntime(ctx context.Context, runtime Runtime) error {
 	// because bootstrap completion and capacity accounting are unprovable; fence
 	// them by deletion so persistent placements recover from their checkpoint and
 	// ephemeral placements converge through normal missing-runtime handling.
+	// An index file that was absent at load is the exception: it proves
+	// nothing, so deletion waits for a refresh whose runtime has no unindexed
+	// guest (see ErrStateIndexMissing).
 	runtimeIDs, listErr := runtime.List(ctx)
 	if listErr != nil {
 		refreshErrors = append(refreshErrors, fmt.Errorf("list Microsandbox runtimes: %w", listErr))
 	} else {
+		var unindexed []string
 		for _, id := range runtimeIDs {
-			if _, known := allocations[id]; known {
-				continue
+			if _, known := allocations[id]; !known {
+				unindexed = append(unindexed, id)
 			}
+		}
+		s.mu.Lock()
+		if len(unindexed) == 0 {
+			s.indexUnverified = false
+		}
+		refuse := s.indexUnverified
+		s.mu.Unlock()
+		if refuse {
+			refreshErrors = append(refreshErrors, fmt.Errorf(
+				"%w: refusing to delete %d runtime guests absent from %s", ErrStateIndexMissing, len(unindexed), s.path))
+			unindexed = nil
+		}
+		for _, id := range unindexed {
 			unlock, locked := s.TryLock(id)
 			if !locked {
 				continue
