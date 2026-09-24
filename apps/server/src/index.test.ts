@@ -2185,6 +2185,30 @@ describe("the admin surface (non-enumerable)", () => {
     expect(posts).toBe(0)
   })
 
+  test("admin grants refuse over $100 before billing and audit the boundary grant", async () => {
+    let posts = 0
+    const logs: unknown[][] = []
+    const originalLog = console.log
+    console.log = (...args) => { logs.push(args) }
+    try {
+      await withMockedFetch(request => {
+        if (new URL(request.url).hostname === "identity.test") return adminValidate.clone()
+        if (new URL(request.url).hostname === "billing.test") { posts++; return new Response("{}", { status: 201 }) }
+        return undefined
+      }, async () => {
+        for (const amountUsd of [100.01, 50000]) {
+          const response = await worker.fetch(post("/api/admin/grant", { login: "octocat", amountUsd, operationKey: grantKey }, SESSION), adminEnv())
+          expect(response.status).toBe(400)
+        }
+        expect(posts).toBe(0)
+        const response = await worker.fetch(post("/api/admin/grant", { login: "octocat", amountUsd: 100, operationKey: grantKey }, SESSION), adminEnv())
+        expect(response.status).toBe(201)
+        expect(posts).toBe(1)
+        expect(logs).toContainEqual([JSON.stringify({ event: "admin_grant", requester: "will", userId: "octocat", amountUsd: 100, grantId, status: 201 })])
+      })
+    } finally { console.log = originalLog }
+  })
+
   test("admin grants forward to billing with attribution and the grant id derived from the operation key", async () => {
     let seen: { headers: Headers; body: unknown } | undefined
     await withMockedFetch(

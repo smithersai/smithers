@@ -30,6 +30,9 @@ import { causeMessage, ISOLATION_HEADERS, json, notConfigured, notFound, readBod
  * the timestamp is fresh — the siblings refuse unattributed writes by contract.
  */
 
+/** Maximum credit issued by one confirmed grant. */
+export const ADMIN_GRANT_MAX_USD = 100
+
 /** Forward an admin upstream call, passing the upstream status and body through verbatim. */
 const forwardAdminCall = (
   upstream: string,
@@ -388,6 +391,7 @@ export const handleAdmin = (
           `Body must be { login, amountUsd, operationKey } with a positive dollar amount and an operationKey ${GRANT_OPERATION_KEY_GRAMMAR}.`
         )
       }
+      if (amountUsd > ADMIN_GRANT_MAX_USD) return refuse("request_invalid", `One grant credits at most $${ADMIN_GRANT_MAX_USD}.`)
       /*
        * The grant id is derived from the caller's operation key, never minted
        * here: a confirmation retried after a lost billing response carries the
@@ -418,7 +422,7 @@ export const handleAdmin = (
         }
         return json(200, { granted: true, duplicate: true, grantId, userId: login, grant: existing })
       }
-      return yield* forwardAdminCall(
+      const response = yield* forwardAdminCall(
         config.billingUpstreamUrl,
         "/api/billing/admin/grants",
         Redacted.value(config.billingAdminToken),
@@ -435,6 +439,8 @@ export const handleAdmin = (
         },
         config.upstreamTimeoutMs
       )
+      console.log(JSON.stringify({ event: "admin_grant", requester: session.login, userId: login, amountUsd, grantId, status: response.status }))
+      return response
     }
 
     if (url.pathname === ADMIN_REQUESTS_PATH && request.method === "GET") {
