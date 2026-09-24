@@ -353,6 +353,14 @@ const validateLimits = (limits: Limits | undefined): SandboxError | undefined =>
     )
   }
 
+  if (
+    limits.pauseTotalMsFor !== undefined &&
+    (!Array.isArray(limits.pauseTotalMsFor) ||
+      limits.pauseTotalMsFor.some((name) => typeof name !== "string" || name.trim().length === 0))
+  ) {
+    return invalidLimit("pauseTotalMsFor", "an array of non-empty flow names")
+  }
+
   return undefined
 }
 

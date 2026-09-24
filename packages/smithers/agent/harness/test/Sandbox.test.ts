@@ -834,7 +834,11 @@ describe("Sandbox projections", () => {
         { steps: Number.POSITIVE_INFINITY },
         { steps: Number.NaN },
         { memoryBytes: 0 },
-        { memoryBytes: 1 }
+        { memoryBytes: 1 },
+        { pauseTotalMsFor: [""] },
+        { pauseTotalMsFor: [" "] },
+        { pauseTotalMsFor: ["agent.wait", 7] as unknown as ReadonlyArray<string> },
+        { pauseTotalMsFor: "agent.wait" as unknown as ReadonlyArray<string> }
       ]
     ) {
       const result = await Effect.runPromise(
