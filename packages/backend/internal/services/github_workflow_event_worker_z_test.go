@@ -79,7 +79,9 @@ func TestGitHubWebhookEventWorker_Z_ProcessJobErrorBranches(t *testing.T) {
 	assert.Contains(t, queries.markFailed[0].Error, "parse payload")
 
 	worker = NewGitHubWebhookEventWorker(&mockGitHubWebhookEventWorkerQuerier{
-		markGitHubWebhookJobDoneFn: func(context.Context, int64) error { return errors.New("done failed") },
+		markGitHubWebhookJobDoneFn: func(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+			return 0, errors.New("done failed")
+		},
 	}, &mockGitHubWebhookEventRunDispatcher{})
 	err := worker.processJob(ctx, db.GithubWebhookJob{ID: 2, EventType: "issues"})
 	require.ErrorContains(t, err, "mark job done")
@@ -90,7 +92,9 @@ func TestGitHubWebhookEventWorker_Z_ProcessJobErrorBranches(t *testing.T) {
 	assert.Equal(t, []int64{3}, queries.markDoneIDs)
 
 	worker = NewGitHubWebhookEventWorker(&mockGitHubWebhookEventWorkerQuerier{
-		markGitHubWebhookJobDoneFn: func(context.Context, int64) error { return errors.New("done failed") },
+		markGitHubWebhookJobDoneFn: func(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+			return 0, errors.New("done failed")
+		},
 	}, &mockGitHubWebhookEventRunDispatcher{})
 	err = worker.processJob(ctx, db.GithubWebhookJob{ID: 33, EventType: "push", Payload: json.RawMessage(`{}`)})
 	require.ErrorContains(t, err, "mark job done")
@@ -118,7 +122,9 @@ func TestGitHubWebhookEventWorker_Z_ProcessJobErrorBranches(t *testing.T) {
 		listRepositoryIDsForGitHubWebhookJobFn: func(context.Context, db.ListRepositoryIDsForGitHubWebhookJobParams) ([]int64, error) {
 			return nil, nil
 		},
-		markGitHubWebhookJobDoneFn: func(context.Context, int64) error { return errors.New("done failed") },
+		markGitHubWebhookJobDoneFn: func(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+			return 0, errors.New("done failed")
+		},
 	}, &mockGitHubWebhookEventRunDispatcher{})
 	err = worker.processJob(ctx, db.GithubWebhookJob{ID: 6, EventType: "push", Payload: json.RawMessage(`{"repository":{"id":1,"name":"demo","owner":{"login":"acme"}}}`)})
 	require.ErrorContains(t, err, "mark job done")

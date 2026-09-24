@@ -142,28 +142,6 @@ func (q *Queries) MarkAlertRemediationJobDone(ctx context.Context, id int64) err
 	return err
 }
 
-const markAlertRemediationJobFailed = `
-UPDATE alert_remediation_jobs
-SET status = 'failed',
-    error = $2,
-    processed_at = NOW(),
-    updated_at = NOW()
-WHERE id = $1
-  AND status = 'processing'
-`
-
-type MarkAlertRemediationJobFailedParams struct {
-	ID    int64  `json:"id"`
-	Error string `json:"error"`
-}
-
-// MarkAlertRemediationJobFailed marks a job failed. The status='processing'
-// guard mirrors MarkAlertRemediationJobDone (#324).
-func (q *Queries) MarkAlertRemediationJobFailed(ctx context.Context, arg MarkAlertRemediationJobFailedParams) error {
-	_, err := q.db.Exec(ctx, markAlertRemediationJobFailed, arg.ID, strings.TrimSpace(arg.Error))
-	return err
-}
-
 const retryAlertRemediationJob = `
 UPDATE alert_remediation_jobs
 SET status = 'pending',

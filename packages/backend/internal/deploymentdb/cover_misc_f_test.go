@@ -283,9 +283,6 @@ func TestFCov_AlertRemediationJobs_RoundTrip(t *testing.T) {
 	require.GreaterOrEqual(t, len(claimed), 1)
 
 	require.NoError(t, q.MarkAlertRemediationJobDone(ctx, jobID))
-	// The job is now 'done'; MarkAlertRemediationJobFailed's status='processing'
-	// guard must make this a no-op instead of clobbering the terminal state (#324).
-	require.NoError(t, q.MarkAlertRemediationJobFailed(ctx, MarkAlertRemediationJobFailedParams{ID: jobID, Error: "  boom  "}))
 }
 
 // TestFCov_AlertRemediationJobs_ReclaimAndExhaustion covers issue #21: a job

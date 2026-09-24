@@ -16,9 +16,9 @@ import (
 
 type mockGitHubWebhookEventWorkerQuerier struct {
 	claimPendingGitHubWebhookJobsFn        func(ctx context.Context, claimLimit int32) ([]db.GithubWebhookJob, error)
-	markGitHubWebhookJobDoneFn             func(ctx context.Context, id int64) error
-	markGitHubWebhookJobFailedFn           func(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) error
-	retryGitHubWebhookJobFn                func(ctx context.Context, arg db.RetryGitHubWebhookJobParams) error
+	markGitHubWebhookJobDoneFn             func(ctx context.Context, arg db.MarkGitHubWebhookJobDoneParams) (int64, error)
+	markGitHubWebhookJobFailedFn           func(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) (int64, error)
+	retryGitHubWebhookJobFn                func(ctx context.Context, arg db.RetryGitHubWebhookJobParams) (int64, error)
 	resetStalledGitHubWebhookJobsFn        func(ctx context.Context, olderThanSeconds float64) (int64, error)
 	listRepositoryIDsForGitHubWebhookJobFn func(ctx context.Context, arg db.ListRepositoryIDsForGitHubWebhookJobParams) ([]int64, error)
 	listWorkflowTriggersByRepositoryFn     func(ctx context.Context, repositoryID int64) ([]db.WorkflowTrigger, error)
@@ -26,6 +26,7 @@ type mockGitHubWebhookEventWorkerQuerier struct {
 	updateWorkflowScheduleFireTimesFn      func(ctx context.Context, arg db.UpdateWorkflowScheduleFireTimesParams) error
 
 	markDoneIDs   []int64
+	markDone      []db.MarkGitHubWebhookJobDoneParams
 	markFailed    []db.MarkGitHubWebhookJobFailedParams
 	retried       []db.RetryGitHubWebhookJobParams
 	stalledResets []float64
@@ -40,28 +41,29 @@ func (m *mockGitHubWebhookEventWorkerQuerier) ClaimPendingGitHubWebhookJobs(ctx 
 	return nil, nil
 }
 
-func (m *mockGitHubWebhookEventWorkerQuerier) MarkGitHubWebhookJobDone(ctx context.Context, id int64) error {
-	m.markDoneIDs = append(m.markDoneIDs, id)
+func (m *mockGitHubWebhookEventWorkerQuerier) MarkGitHubWebhookJobDone(ctx context.Context, arg db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+	m.markDoneIDs = append(m.markDoneIDs, arg.ID)
+	m.markDone = append(m.markDone, arg)
 	if m.markGitHubWebhookJobDoneFn != nil {
-		return m.markGitHubWebhookJobDoneFn(ctx, id)
+		return m.markGitHubWebhookJobDoneFn(ctx, arg)
 	}
-	return nil
+	return 1, nil
 }
 
-func (m *mockGitHubWebhookEventWorkerQuerier) MarkGitHubWebhookJobFailed(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) error {
+func (m *mockGitHubWebhookEventWorkerQuerier) MarkGitHubWebhookJobFailed(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) (int64, error) {
 	m.markFailed = append(m.markFailed, arg)
 	if m.markGitHubWebhookJobFailedFn != nil {
 		return m.markGitHubWebhookJobFailedFn(ctx, arg)
 	}
-	return nil
+	return 1, nil
 }
 
-func (m *mockGitHubWebhookEventWorkerQuerier) RetryGitHubWebhookJob(ctx context.Context, arg db.RetryGitHubWebhookJobParams) error {
+func (m *mockGitHubWebhookEventWorkerQuerier) RetryGitHubWebhookJob(ctx context.Context, arg db.RetryGitHubWebhookJobParams) (int64, error) {
 	m.retried = append(m.retried, arg)
 	if m.retryGitHubWebhookJobFn != nil {
 		return m.retryGitHubWebhookJobFn(ctx, arg)
 	}
-	return nil
+	return 1, nil
 }
 
 func (m *mockGitHubWebhookEventWorkerQuerier) ResetStalledGitHubWebhookJobs(ctx context.Context, olderThanSeconds float64) (int64, error) {
@@ -257,10 +259,35 @@ func TestGitHubWebhookEventWorker_PollOnce_DispatchFailureRetriesWithBackoff(t *
 	assert.Empty(t, queries.markFailed)
 	require.Len(t, queries.retried, 1)
 	assert.Equal(t, int64(3), queries.retried[0].ID)
+	assert.Equal(t, int32(1), queries.retried[0].ExpectedAttempts)
 	assert.Contains(t, queries.retried[0].Error, "boom")
 	assert.Equal(t, gitHubWebhookJobRetryBaseBackoff.Seconds(), queries.retried[0].BackoffSeconds)
 	require.Len(t, queries.stalledResets, 1)
 	assert.Equal(t, gitHubWebhookJobStalledAfter.Seconds(), queries.stalledResets[0])
+}
+
+func TestGitHubWebhookEventWorker_PollOnce_LostClaimWritesAreFencedAndNotReported(t *testing.T) {
+	t.Parallel()
+
+	queries := pushJobQuerier(pushJob(6, 2))
+	queries.retryGitHubWebhookJobFn = func(context.Context, db.RetryGitHubWebhookJobParams) (int64, error) { return 0, nil }
+	dispatcher := &mockGitHubWebhookEventRunDispatcher{
+		dispatchForEventFn: func(ctx context.Context, input DispatchForEventInput) ([]WorkflowRunResult, error) {
+			return nil, errors.New("boom")
+		},
+	}
+	require.NoError(t, NewGitHubWebhookEventWorker(queries, dispatcher).PollOnce(context.Background()))
+	require.Len(t, queries.retried, 1)
+	assert.Equal(t, int32(2), queries.retried[0].ExpectedAttempts)
+	assert.Empty(t, queries.markFailed)
+
+	done := pushJobQuerier(pushJob(7, 3))
+	done.markGitHubWebhookJobDoneFn = func(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) { return 0, nil }
+	require.NoError(t, NewGitHubWebhookEventWorker(done, &mockGitHubWebhookEventRunDispatcher{}).PollOnce(context.Background()))
+	require.Len(t, done.markDone, 1)
+	assert.Equal(t, db.MarkGitHubWebhookJobDoneParams{ID: 7, ExpectedAttempts: 3}, done.markDone[0])
+	assert.Empty(t, done.retried, "a lost done claim is not an error to retry")
+	assert.Empty(t, done.markFailed)
 }
 
 func TestGitHubWebhookEventWorker_PollOnce_DispatchFailureAtAttemptCapMarksJobFailed(t *testing.T) {
@@ -279,6 +306,7 @@ func TestGitHubWebhookEventWorker_PollOnce_DispatchFailureAtAttemptCapMarksJobFa
 	assert.Empty(t, queries.retried)
 	require.Len(t, queries.markFailed, 1)
 	assert.Equal(t, int64(4), queries.markFailed[0].ID)
+	assert.Equal(t, gitHubWebhookJobMaxAttempts, queries.markFailed[0].ExpectedAttempts)
 	assert.Contains(t, queries.markFailed[0].Error, "boom")
 }
 

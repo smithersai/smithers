@@ -34,9 +34,9 @@ const (
 // GitHubWebhookEventWorkerQuerier contains DB methods needed by the webhook → workflow bridge worker.
 type GitHubWebhookEventWorkerQuerier interface {
 	ClaimPendingGitHubWebhookJobs(ctx context.Context, claimLimit int32) ([]db.GithubWebhookJob, error)
-	MarkGitHubWebhookJobDone(ctx context.Context, id int64) error
-	MarkGitHubWebhookJobFailed(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) error
-	RetryGitHubWebhookJob(ctx context.Context, arg db.RetryGitHubWebhookJobParams) error
+	MarkGitHubWebhookJobDone(ctx context.Context, arg db.MarkGitHubWebhookJobDoneParams) (int64, error)
+	MarkGitHubWebhookJobFailed(ctx context.Context, arg db.MarkGitHubWebhookJobFailedParams) (int64, error)
+	RetryGitHubWebhookJob(ctx context.Context, arg db.RetryGitHubWebhookJobParams) (int64, error)
 	ResetStalledGitHubWebhookJobs(ctx context.Context, olderThanSeconds float64) (int64, error)
 	ListRepositoryIDsForGitHubWebhookJob(ctx context.Context, arg db.ListRepositoryIDsForGitHubWebhookJobParams) ([]int64, error)
 	ListWorkflowTriggersByRepository(ctx context.Context, repositoryID int64) ([]db.WorkflowTrigger, error)
@@ -133,26 +133,35 @@ func (w *GitHubWebhookEventWorker) PollOnce(ctx context.Context) error {
 
 		var permanent *permanentGitHubWebhookJobError
 		if errors.As(err, &permanent) || job.Attempts >= gitHubWebhookJobMaxAttempts {
-			if markErr := w.queries.MarkGitHubWebhookJobFailed(ctx, db.MarkGitHubWebhookJobFailedParams{
-				ID:    job.ID,
-				Error: err.Error(),
-			}); markErr != nil {
+			marked, markErr := w.queries.MarkGitHubWebhookJobFailed(ctx, db.MarkGitHubWebhookJobFailedParams{
+				ID:               job.ID,
+				ExpectedAttempts: job.Attempts,
+				Error:            err.Error(),
+			})
+			if markErr != nil {
 				// The row stays 'processing' and the stalled-job sweep
 				// re-pends it, so a failed mark cannot strand the job.
 				w.logger.Error("failed to mark github webhook job failed", "job_id", job.ID, "error", markErr)
+			} else if marked == 0 {
+				w.logLostClaim(job, "fail")
 			}
 			w.logger.Error("github webhook job failed permanently", "job_id", job.ID, "attempts", job.Attempts, "error", err)
 			continue
 		}
 
 		backoff := gitHubWebhookJobRetryBackoff(job.Attempts)
-		if retryErr := w.queries.RetryGitHubWebhookJob(ctx, db.RetryGitHubWebhookJobParams{
-			ID:             job.ID,
-			Error:          err.Error(),
-			BackoffSeconds: backoff.Seconds(),
-		}); retryErr != nil {
+		retried, retryErr := w.queries.RetryGitHubWebhookJob(ctx, db.RetryGitHubWebhookJobParams{
+			ID:               job.ID,
+			ExpectedAttempts: job.Attempts,
+			Error:            err.Error(),
+			BackoffSeconds:   backoff.Seconds(),
+		})
+		if retryErr != nil {
 			// Same safety net: the stalled-job sweep re-pends the row.
 			w.logger.Error("failed to re-pend github webhook job", "job_id", job.ID, "error", retryErr)
+		} else if retried == 0 {
+			w.logLostClaim(job, "retry")
+			continue
 		}
 		w.logger.Warn("github webhook job failed, will retry", "job_id", job.ID, "attempts", job.Attempts, "backoff", backoff.String(), "error", err)
 	}
@@ -185,19 +194,13 @@ func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.Github
 
 	event, supported := mapGitHubWebhookJobToTriggerEvent(job, payload)
 	if !supported {
-		if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
-			return fmt.Errorf("mark job done: %w", err)
-		}
-		return nil
+		return w.markJobDone(ctx, job)
 	}
 
 	selector := buildGitHubWebhookRepositorySelector(job, payload)
 	if selector.InstallationID == 0 && selector.GitHubRepositoryID == 0 &&
 		(strings.TrimSpace(selector.OwnerLoginLower) == "" || strings.TrimSpace(selector.RepoNameLower) == "") {
-		if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
-			return fmt.Errorf("mark job done: %w", err)
-		}
-		return nil
+		return w.markJobDone(ctx, job)
 	}
 	repoIDs, err := w.queries.ListRepositoryIDsForGitHubWebhookJob(ctx, selector)
 	if err != nil {
@@ -228,11 +231,28 @@ func (w *GitHubWebhookEventWorker) processJob(ctx context.Context, job db.Github
 		}
 	}
 
-	if err := w.queries.MarkGitHubWebhookJobDone(ctx, job.ID); err != nil {
+	return w.markJobDone(ctx, job)
+}
+
+// markJobDone finishes this worker's claim generation. A zero-row write means
+// the claim was reset as stalled and re-claimed, so the newer claimant owns
+// the outcome and this worker only logs.
+func (w *GitHubWebhookEventWorker) markJobDone(ctx context.Context, job db.GithubWebhookJob) error {
+	marked, err := w.queries.MarkGitHubWebhookJobDone(ctx, db.MarkGitHubWebhookJobDoneParams{
+		ID:               job.ID,
+		ExpectedAttempts: job.Attempts,
+	})
+	if err != nil {
 		return fmt.Errorf("mark job done: %w", err)
 	}
-
+	if marked == 0 {
+		w.logLostClaim(job, "done")
+	}
 	return nil
+}
+
+func (w *GitHubWebhookEventWorker) logLostClaim(job db.GithubWebhookJob, write string) {
+	w.logger.Warn("github webhook job claim lost to a newer claimant", "job_id", job.ID, "attempts", job.Attempts, "write", write)
 }
 
 func matchingWorkflowDefinitionIDs(triggers []db.WorkflowTrigger, event TriggerEvent) []int64 {

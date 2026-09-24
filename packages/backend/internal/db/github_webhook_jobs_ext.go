@@ -63,6 +63,11 @@ func (q *Queries) ClaimPendingGitHubWebhookJobs(ctx context.Context, claimLimit 
 	return items, nil
 }
 
+// Each terminal or retry write is fenced on the exact claim generation
+// (status='processing' AND attempts=$n). A worker whose claim was reset as
+// stalled and re-claimed by another worker writes zero rows, so it can neither
+// re-pend a job another worker holds nor overwrite that worker's outcome.
+
 const markGitHubWebhookJobDone = `
 UPDATE github_webhook_jobs
 SET status = 'done',
@@ -70,52 +75,79 @@ SET status = 'done',
     processed_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
+  AND status = 'processing'
+  AND attempts = $2
 `
 
-func (q *Queries) MarkGitHubWebhookJobDone(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, markGitHubWebhookJobDone, id)
-	return err
+type MarkGitHubWebhookJobDoneParams struct {
+	ID               int64 `json:"id"`
+	ExpectedAttempts int32 `json:"expected_attempts"`
+}
+
+// MarkGitHubWebhookJobDone finishes one claim generation and returns the rows
+// it changed; 0 means the claim was lost.
+func (q *Queries) MarkGitHubWebhookJobDone(ctx context.Context, arg MarkGitHubWebhookJobDoneParams) (int64, error) {
+	tag, err := q.db.Exec(ctx, markGitHubWebhookJobDone, arg.ID, arg.ExpectedAttempts)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 const markGitHubWebhookJobFailed = `
 UPDATE github_webhook_jobs
 SET status = 'failed',
-    error = $2,
+    error = $3,
     processed_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
+  AND status = 'processing'
+  AND attempts = $2
 `
 
 type MarkGitHubWebhookJobFailedParams struct {
-	ID    int64  `json:"id"`
-	Error string `json:"error"`
+	ID               int64  `json:"id"`
+	ExpectedAttempts int32  `json:"expected_attempts"`
+	Error            string `json:"error"`
 }
 
-func (q *Queries) MarkGitHubWebhookJobFailed(ctx context.Context, arg MarkGitHubWebhookJobFailedParams) error {
-	_, err := q.db.Exec(ctx, markGitHubWebhookJobFailed, arg.ID, strings.TrimSpace(arg.Error))
-	return err
+// MarkGitHubWebhookJobFailed terminally fails one claim generation and
+// returns the rows it changed; 0 means the claim was lost.
+func (q *Queries) MarkGitHubWebhookJobFailed(ctx context.Context, arg MarkGitHubWebhookJobFailedParams) (int64, error) {
+	tag, err := q.db.Exec(ctx, markGitHubWebhookJobFailed, arg.ID, arg.ExpectedAttempts, strings.TrimSpace(arg.Error))
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 const retryGitHubWebhookJob = `
 UPDATE github_webhook_jobs
 SET status = 'pending',
-    error = $2,
-    available_at = NOW() + make_interval(secs => $3),
+    error = $3,
+    available_at = NOW() + make_interval(secs => $4),
     updated_at = NOW()
 WHERE id = $1
+  AND status = 'processing'
+  AND attempts = $2
 `
 
 type RetryGitHubWebhookJobParams struct {
-	ID             int64   `json:"id"`
-	Error          string  `json:"error"`
-	BackoffSeconds float64 `json:"backoff_seconds"`
+	ID               int64   `json:"id"`
+	ExpectedAttempts int32   `json:"expected_attempts"`
+	Error            string  `json:"error"`
+	BackoffSeconds   float64 `json:"backoff_seconds"`
 }
 
-// RetryGitHubWebhookJob re-pends a transiently failed job so a later poll
-// re-claims it after the backoff window, instead of terminally failing it.
-func (q *Queries) RetryGitHubWebhookJob(ctx context.Context, arg RetryGitHubWebhookJobParams) error {
-	_, err := q.db.Exec(ctx, retryGitHubWebhookJob, arg.ID, strings.TrimSpace(arg.Error), arg.BackoffSeconds)
-	return err
+// RetryGitHubWebhookJob re-pends a transiently failed claim generation so a
+// later poll re-claims it after the backoff window, and returns the rows it
+// changed; 0 means the claim was lost.
+func (q *Queries) RetryGitHubWebhookJob(ctx context.Context, arg RetryGitHubWebhookJobParams) (int64, error) {
+	tag, err := q.db.Exec(ctx, retryGitHubWebhookJob, arg.ID, arg.ExpectedAttempts, strings.TrimSpace(arg.Error), arg.BackoffSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
 
 const resetStalledGitHubWebhookJobs = `

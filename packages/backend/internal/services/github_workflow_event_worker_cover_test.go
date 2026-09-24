@@ -19,16 +19,16 @@ func (githubWorkflowEventWorkerCovNonCronQuerier) ClaimPendingGitHubWebhookJobs(
 	return nil, nil
 }
 
-func (githubWorkflowEventWorkerCovNonCronQuerier) MarkGitHubWebhookJobDone(context.Context, int64) error {
-	return nil
+func (githubWorkflowEventWorkerCovNonCronQuerier) MarkGitHubWebhookJobDone(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+	return 1, nil
 }
 
-func (githubWorkflowEventWorkerCovNonCronQuerier) MarkGitHubWebhookJobFailed(context.Context, db.MarkGitHubWebhookJobFailedParams) error {
-	return nil
+func (githubWorkflowEventWorkerCovNonCronQuerier) MarkGitHubWebhookJobFailed(context.Context, db.MarkGitHubWebhookJobFailedParams) (int64, error) {
+	return 1, nil
 }
 
-func (githubWorkflowEventWorkerCovNonCronQuerier) RetryGitHubWebhookJob(context.Context, db.RetryGitHubWebhookJobParams) error {
-	return nil
+func (githubWorkflowEventWorkerCovNonCronQuerier) RetryGitHubWebhookJob(context.Context, db.RetryGitHubWebhookJobParams) (int64, error) {
+	return 1, nil
 }
 
 func (githubWorkflowEventWorkerCovNonCronQuerier) ResetStalledGitHubWebhookJobs(context.Context, float64) (int64, error) {
@@ -121,8 +121,8 @@ func TestGitHubWorkflowEventWorker_Cov_ProcessJobMarksUnsupportedAndFailures(t *
 
 	t.Run("mark done failure is surfaced", func(t *testing.T) {
 		queries := &mockGitHubWebhookEventWorkerQuerier{
-			markGitHubWebhookJobDoneFn: func(context.Context, int64) error {
-				return pgx.ErrTxClosed
+			markGitHubWebhookJobDoneFn: func(context.Context, db.MarkGitHubWebhookJobDoneParams) (int64, error) {
+				return 0, pgx.ErrTxClosed
 			},
 		}
 		worker := NewGitHubWebhookEventWorker(queries, &mockGitHubWebhookEventRunDispatcher{})
