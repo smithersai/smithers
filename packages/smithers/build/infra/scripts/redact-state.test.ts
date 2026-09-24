@@ -37,7 +37,10 @@ const withFixture = async <A>(use: (root: string) => Promise<A>): Promise<A> => 
   }
 }
 
-describe("redactAlchemyState", () => {
+// Several cases write and scan 16 MiB files or 1,025-entry trees. Alone they
+// take 5-18 s; under coverage beside the other suites they pass the 30 s
+// default, so the whole file gets a ceiling that bounds a hang, not a load.
+describe("redactAlchemyState", { timeout: 120_000 }, () => {
   it("atomically replaces every matching legacy token representation", async () => {
     await withFixture(async (root) => {
       const directory = NodePath.join(root, "nested")
@@ -647,6 +650,7 @@ describe("redactAlchemyState", () => {
 
   it("bounds the number of Worker state files", async () => {
     await withFixture(async (root) => {
+      // Batches of 128 keep open descriptors under macOS's default 256 limit.
       for (let offset = 0; offset < 1_025; offset += 128) {
         await Promise.all(
           Array.from({ length: Math.min(128, 1_025 - offset) }, async (_, index) => {

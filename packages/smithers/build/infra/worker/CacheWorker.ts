@@ -52,6 +52,8 @@ const makeHealth = (database: D1Database, bucket: R2Bucket) => async (): Promise
  * row unique and the dataset useless for aggregation.
  */
 const routeOf = (request: Request): string => {
+  // The handler answers an unparseable URL with 400; its datapoint is "other".
+  if (!URL.canParse(request.url)) return "other"
   const path = new URL(request.url).pathname
   if (path === "/healthz") return "healthz"
   if (path === "/cas/findMissing") return "findMissing"
@@ -106,6 +108,7 @@ const handlerFor = (env: CacheWorkerEnv): CacheHandler => {
 const worker = {
   async fetch(request: Request, env: CacheWorkerEnv): Promise<Response> {
     const started = Date.now()
+    const route = routeOf(request)
     let response: Response
     try {
       response = await handlerFor(env)(request)
@@ -116,7 +119,7 @@ const worker = {
         headers: { "content-type": "application/json", "Smithers-Cache-Contract": "result-only-v1" }
       })
     }
-    record(env.CACHE_REQUEST_METRICS, routeOf(request), request.method, String(response.status), [
+    record(env.CACHE_REQUEST_METRICS, route, request.method, String(response.status), [
       Date.now() - started
     ])
     return response

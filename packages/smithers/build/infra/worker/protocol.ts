@@ -12,11 +12,11 @@ import { CacheFailure } from "./cache-failure.ts"
 import { constantTimeEquals } from "./constantTimeEquals.ts"
 import { digestBytes } from "./digestBytes.ts"
 import { discardBody } from "./discardBody.ts"
+import { jsonTextFault } from "./jsonTextFault.ts"
 
 const hexDigest = /^[0-9a-f]{64}$/
 const jsonContentType = /^application\/(?:[a-z0-9!#$&^_.+-]+\+)?json$/
 const decimalDigits = /^[0-9]+$/
-const numberLexeme = /[0-9eE+.-]/
 const controlCharacters = /[\u0000-\u001f\u007f]/
 
 /** The buffer an undeclared-length body starts at before it grows. */
@@ -614,54 +614,9 @@ const readBody = async (request: Request, limit: number): Promise<BodyRead> => {
  * already bounded.
  */
 const irreversibleJson = (text: string): string | null => {
-  const scopes: Array<Set<string> | null> = []
-  // The member names of the object whose key comes next, or `null` when the
-  // next string is a value.
-  let keyScope: Set<string> | null = null
-  let index = 0
-  while (index < text.length) {
-    const character = text.charAt(index)
-    if (character === "{") {
-      keyScope = new Set<string>()
-      scopes.push(keyScope)
-      index += 1
-    } else if (character === "[") {
-      scopes.push(null)
-      keyScope = null
-      index += 1
-    } else if (character === "}" || character === "]") {
-      scopes.pop()
-      keyScope = null
-      index += 1
-    } else if (character === ",") {
-      const enclosing = scopes.at(-1)
-      keyScope = enclosing instanceof Set ? enclosing : null
-      index += 1
-    } else if (character === ":") {
-      keyScope = null
-      index += 1
-    } else if (character === "\"") {
-      let end = index + 1
-      while (end < text.length && text.charAt(end) !== "\"") end += text.charAt(end) === "\\" ? 2 : 1
-      if (keyScope !== null) {
-        // The caller already parsed this text, so every string token in it
-        // parses on its own.
-        const name = JSON.parse(text.slice(index, end + 1)) as string
-        if (keyScope.has(name)) return "body contains a duplicate object member name"
-        keyScope.add(name)
-      }
-      index = end + 1
-    } else if (character === "-" || (character >= "0" && character <= "9")) {
-      let end = index + 1
-      while (end < text.length && numberLexeme.test(text.charAt(end))) end += 1
-      const lexeme = text.slice(index, end)
-      const value = Number(lexeme)
-      if (!Number.isFinite(value) || Object.is(value, -0) || String(value) !== lexeme) {
-        return "body contains a JSON number that does not round-trip through a double"
-      }
-      index = end
-    } else index += 1
-  }
+  const fault = jsonTextFault(text, { numbers: true })
+  if (fault === "duplicate-member") return "body contains a duplicate object member name"
+  if (fault === "lossy-number") return "body contains a JSON number that does not round-trip through a double"
   return null
 }
 

@@ -12,6 +12,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { stackName } from "../deployment.ts"
+import { jsonTextFault } from "../worker/jsonTextFault.ts"
 import { failureMessage } from "./failure-message.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
 
@@ -242,51 +243,6 @@ const validateJsonBudget = (root: unknown): void => {
 }
 
 /**
- * Audits member names in text already accepted by JSON.parse. Like the
- * protocol prescan, this keeps a separate name set for each object and
- * decodes escaped keys before comparing them. Parsed values alone cannot
- * expose credentials hidden in members that JSON.parse discarded.
- */
-const assertNoDuplicateJsonMembers = (text: string): void => {
-  const scopes: Array<Set<string> | null> = []
-  let keyScope: Set<string> | null = null
-  let index = 0
-  while (index < text.length) {
-    const character = text.charAt(index)
-    if (character === "{") {
-      keyScope = new Set<string>()
-      scopes.push(keyScope)
-      index += 1
-    } else if (character === "[") {
-      scopes.push(null)
-      keyScope = null
-      index += 1
-    } else if (character === "}" || character === "]") {
-      scopes.pop()
-      keyScope = null
-      index += 1
-    } else if (character === ",") {
-      const enclosing = scopes.at(-1)
-      keyScope = enclosing instanceof Set ? enclosing : null
-      index += 1
-    } else if (character === ":") {
-      keyScope = null
-      index += 1
-    } else if (character === "\"") {
-      let end = index + 1
-      // Valid JSON guarantees a closing quote; escaped quotes are skipped.
-      while (text.charAt(end) !== "\"") end += text.charAt(end) === "\\" ? 2 : 1
-      if (keyScope !== null) {
-        const name = JSON.parse(text.slice(index, end + 1)) as string
-        if (keyScope.has(name)) throw new TypeError("Alchemy state contains a duplicate object member name")
-        keyScope.add(name)
-      }
-      index = end + 1
-    } else index += 1
-  }
-}
-
-/**
  * Runs `use` over an open handle and closes the handle afterwards.
  *
  * The operation's own failure is the one reported: a close that fails after
@@ -358,7 +314,11 @@ const readStateFile = async (file: string): Promise<{ readonly identity: FileIde
     throw new TypeError(`Alchemy state file is not valid JSON: ${file}`)
   }
   validateJsonBudget(state)
-  assertNoDuplicateJsonMembers(text)
+  // Parsed values alone cannot expose credentials hidden in members that
+  // JSON.parse discarded.
+  if (jsonTextFault(text, { numbers: false }) !== null) {
+    throw new TypeError("Alchemy state contains a duplicate object member name")
+  }
   return { identity, state }
 }
 

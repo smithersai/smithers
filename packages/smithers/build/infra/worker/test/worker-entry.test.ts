@@ -184,6 +184,21 @@ describe("worker entry point", () => {
     }
   })
 
+  it("answers 400 to an unparseable request URL and counts it under other", async () => {
+    const worker = await load()
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const metrics = { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
+    const request = { url: "not a url", method: "GET", headers: new Headers(), body: null } as unknown as Request
+
+    const response = await worker.fetch(request, env({ CACHE_REQUEST_METRICS: metrics }))
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: "request URL is malformed" })
+    expect(points.map(({ indexes, blobs }) => ({ indexes, blobs }))).toEqual([
+      { indexes: ["other"], blobs: ["other", "GET", "400"] }
+    ])
+  })
+
   it("records the initialization failure and never fails a request on a metrics write", async () => {
     const worker = await load()
     const points: Array<AnalyticsEngineDataPoint> = []
