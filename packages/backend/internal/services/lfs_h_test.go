@@ -313,7 +313,7 @@ func TestLfs_H_AccessAndValidationBranches(t *testing.T) {
 		},
 	}
 	svc := NewLFSService(q, &mockBlobStore{}, time.Minute)
-	permission, owner, err := svc.repoPermissionForUser(ctx, repo, actor.ID)
+	permission, owner, err := repoPermissionForUser(ctx, svc.queries, repo, actor.ID)
 	require.NoError(t, err)
 	assert.False(t, owner)
 	assert.Equal(t, "read", permission)

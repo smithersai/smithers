@@ -267,7 +267,7 @@ func BenchmarkRepoPermission_OwnerCheck(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, err := svc.repoPermissionForUser(ctx, repo, 42)
+		_, _, err := repoPermissionForUser(ctx, svc.queries, repo, 42)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -285,7 +285,7 @@ func BenchmarkRepoPermission_CollaboratorCheck(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _, err := svc.repoPermissionForUser(ctx, repo, 42)
+		_, _, err := repoPermissionForUser(ctx, svc.queries, repo, 42)
 		if err != nil {
 			b.Fatal(err)
 		}

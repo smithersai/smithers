@@ -148,7 +148,7 @@ func TestIssue_Cov_PrivatePermissionWrappersAndPayloadHelpers(t *testing.T) {
 		},
 	})
 
-	permission, owner, err := svc.repoPermissionForUser(context.Background(), privateRepo, 10)
+	permission, owner, err := repoPermissionForUser(context.Background(), svc.queries, privateRepo, 10)
 	require.NoError(t, err)
 	assert.True(t, owner)
 	assert.Empty(t, permission)

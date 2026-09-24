@@ -331,11 +331,18 @@ func (w *WorkflowSandboxSchedulerWorker) PollOnce(ctx context.Context) error {
 	claims := make([]workflowSandboxRunClaim, 0, len(rows))
 	for _, row := range rows {
 		claim := workflowSandboxRunClaimFromRow(row)
+		// Skip a claim this worker cannot own instead of aborting the batch:
+		// every other row is already claimed in the database and would sit
+		// idle until its lease expires. A skipped row is re-claimed once its
+		// own lease lapses; it cannot be fenced-finalized without ownership.
 		if claim.Token == "" || claim.Generation <= 0 || !row.ClaimLeaseExpiresAt.Valid {
-			return fmt.Errorf("workflow sandbox claim %d missing durable ownership", claim.Run.ID)
+			w.logger.Error("workflow sandbox claim missing durable ownership; skipping", "run_id", claim.Run.ID, "generation", claim.Generation)
+			continue
 		}
 		if !claim.LeaseExpiresAt.After(time.Now()) {
-			return fmt.Errorf("workflow sandbox claim %d already expired", claim.Run.ID)
+			w.logger.Error("workflow sandbox claim already expired on arrival; skipping (check host clock skew against the database)",
+				"run_id", claim.Run.ID, "generation", claim.Generation, "lease_expires_at", claim.LeaseExpiresAt)
+			continue
 		}
 		claims = append(claims, claim)
 	}

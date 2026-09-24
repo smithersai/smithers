@@ -28,7 +28,7 @@ func TestProtectedBookmark_Cov_AdminAccessViaOrgTeamAndCollaborator(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			q := &mockProtectedBookmarkQuerier{
 				getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
-					return db.Repository{ID: 4, UserID: pgtype.Int8{Int64: 99, Valid: true}}, nil
+					return db.Repository{ID: 4, UserID: pgtype.Int8{Int64: 99, Valid: true}, OrgID: pgtype.Int8{Int64: 5, Valid: true}}, nil
 				},
 				isOrgOwnerForRepoUserFn: func(context.Context, db.IsOrgOwnerForRepoUserParams) (bool, error) {
 					return tc.orgOwner, nil
@@ -61,7 +61,7 @@ func TestProtectedBookmark_Cov_AdminAccessViaOrgTeamAndCollaborator(t *testing.T
 func TestProtectedBookmark_Cov_DeleteAndInternalErrors(t *testing.T) {
 	actor := &db.User{ID: 1, IsAdmin: true}
 
-	t.Run("delete success uses pattern", func(t *testing.T) {
+	t.Run("delete success uses trimmed pattern", func(t *testing.T) {
 		q := &mockProtectedBookmarkQuerier{
 			getRepoByOwnerAndLowerNameFn: func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 				return db.Repository{ID: 44}, nil
@@ -71,7 +71,7 @@ func TestProtectedBookmark_Cov_DeleteAndInternalErrors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DeleteProtectedBookmark returned error: %v", err)
 		}
-		if q.lastDeleteArg.Pattern != " release/* " || q.lastDeleteArg.RepositoryID != 44 {
+		if q.lastDeleteArg.Pattern != "release/*" || q.lastDeleteArg.RepositoryID != 44 {
 			t.Fatalf("delete args = %+v", q.lastDeleteArg)
 		}
 	})

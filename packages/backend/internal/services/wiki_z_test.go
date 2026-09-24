@@ -106,8 +106,7 @@ func TestWiki_Z_ResolveAndPermissionBranches(t *testing.T) {
 		CreateWikiPage(ctx, viewer, "alice", "demo", CreateWikiPageInput{Title: "Home"})
 	assert.Equal(t, 403, apiStatus(t, err))
 
-	permission, owner, err := NewWikiService(wikiZPublicOwnedQuerier(actor), nil).
-		repoPermissionForUser(ctx, sampleWikiRepository(), 1)
+	permission, owner, err := repoPermissionForUser(ctx, wikiZPublicOwnedQuerier(actor), sampleWikiRepository(), 1)
 	require.NoError(t, err)
 	assert.True(t, owner)
 	assert.Empty(t, permission)

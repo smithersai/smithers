@@ -19,17 +19,20 @@ import (
 // inline code blocks.
 var mentionPattern = regexp.MustCompile(`(?:^|[^a-zA-Z0-9\-_@])@([a-zA-Z0-9][a-zA-Z0-9\-_]*)`)
 
+var (
+	// mentionFenceRe strips fenced code blocks (``` or ~~~).
+	mentionFenceRe = regexp.MustCompile("(?s)```.*?```|~~~.*?~~~")
+	// mentionInlineCodeRe strips inline code spans.
+	mentionInlineCodeRe = regexp.MustCompile("`[^`]*`")
+)
+
 // ExtractMentions parses a text body and returns the unique lowercase usernames
 // that are mentioned via @username syntax. Code-fenced blocks (``` ... ```) and
 // inline code spans (` ... `) are stripped before scanning to avoid extracting
 // usernames from code examples.
 func ExtractMentions(body string) []string {
-	// Strip fenced code blocks (``` or ~~~).
-	fenceRe := regexp.MustCompile("(?s)```.*?```|~~~.*?~~~")
-	stripped := fenceRe.ReplaceAllString(body, "")
-	// Strip inline code spans.
-	inlineRe := regexp.MustCompile("`[^`]*`")
-	stripped = inlineRe.ReplaceAllString(stripped, "")
+	stripped := mentionFenceRe.ReplaceAllString(body, "")
+	stripped = mentionInlineCodeRe.ReplaceAllString(stripped, "")
 
 	matches := mentionPattern.FindAllStringSubmatch(stripped, -1)
 	seen := make(map[string]struct{})

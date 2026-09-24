@@ -1453,7 +1453,10 @@ func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*W
 	// Reconstruct dispatch inputs from the original run.
 	var inputs map[string]interface{}
 	if len(originalRun.DispatchInputs) > 0 {
-		_ = json.Unmarshal(originalRun.DispatchInputs, &inputs)
+		if err := json.Unmarshal(originalRun.DispatchInputs, &inputs); err != nil {
+			slog.Warn("rerun refused: stored dispatch inputs are not a JSON object", "run_id", originalRun.ID, "error", err)
+			return nil, pkgerrors.Conflict("the original run's dispatch inputs are not a JSON object, so a rerun cannot reproduce them")
+		}
 	}
 
 	// Create a new run using the same trigger details as the original

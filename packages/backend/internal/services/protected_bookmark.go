@@ -6,8 +6,6 @@ import (
 	"path"
 	"strings"
 
-	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -113,6 +111,12 @@ func (s *ProtectedBookmarkService) UpsertProtectedBookmark(ctx context.Context, 
 	if err := validateSafeText("ProtectedBookmark", "pattern", pattern); err != nil {
 		return ProtectedBookmarkResponse{}, err
 	}
+	// RequireBookmarkNotProtected evaluates every stored pattern with
+	// path.Match on each push and bookmark mutation, and a malformed glob fails
+	// that check for the whole repository. Reject it here instead.
+	if _, err := path.Match(pattern, ""); err != nil {
+		return ProtectedBookmarkResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "ProtectedBookmark", Field: "pattern", Code: "invalid"})
+	}
 	if input.RequireHumanApprovals < 0 {
 		return ProtectedBookmarkResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "ProtectedBookmark", Field: "require_human_approvals", Code: "invalid"})
 	}
@@ -186,7 +190,8 @@ func (s *ProtectedBookmarkService) DeleteProtectedBookmark(ctx context.Context, 
 
 	affected, err := s.queries.DeleteProtectedBookmarkByPattern(ctx, db.DeleteProtectedBookmarkByPatternParams{
 		RepositoryID: repository.ID,
-		Pattern:      pattern,
+		// Upsert stores the trimmed pattern, so delete must match it the same way.
+		Pattern: strings.TrimSpace(pattern),
 	})
 	if err != nil {
 		return pkgerrors.Internal("failed to delete protected bookmark").WithCause(err)
@@ -218,25 +223,11 @@ func (s *ProtectedBookmarkService) requireAdminAccess(ctx context.Context, repos
 	if repository.UserID.Valid && repository.UserID.Int64 == user.ID {
 		return nil
 	}
-	isOrgOwner, _ := s.queries.IsOrgOwnerForRepoUser(ctx, db.IsOrgOwnerForRepoUserParams{
-		RepositoryID: repository.ID,
-		UserID:       user.ID,
-	})
-	if isOrgOwner {
-		return nil
+	isAdmin, err := canAdminRepo(ctx, s.queries, repository, user.ID)
+	if err != nil {
+		return err
 	}
-	perm, _ := s.queries.GetHighestTeamPermissionForRepoUser(ctx, db.GetHighestTeamPermissionForRepoUserParams{
-		RepositoryID: repository.ID,
-		UserID:       user.ID,
-	})
-	if perm == "admin" {
-		return nil
-	}
-	perm, _ = s.queries.GetCollaboratorPermissionForRepoUser(ctx, db.GetCollaboratorPermissionForRepoUserParams{
-		RepositoryID: repository.ID,
-		UserID:       pgtype.Int8{Int64: user.ID, Valid: true},
-	})
-	if perm == "admin" {
+	if isAdmin {
 		return nil
 	}
 	return pkgerrors.Forbidden("admin access required")

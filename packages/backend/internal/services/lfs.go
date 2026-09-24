@@ -1265,10 +1265,6 @@ func (s *LFSService) requireWriteAccess(ctx context.Context, repository db.Repos
 	return nil
 }
 
-func (s *LFSService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
-}
-
 func (s *LFSService) canReadRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
 	return canReadRepo(ctx, s.queries, repository, userID)
 }

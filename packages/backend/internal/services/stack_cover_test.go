@@ -78,7 +78,7 @@ func TestStack_Cov_AccessPermissionsAndWriteErrors(t *testing.T) {
 		},
 	}
 	svc = NewStackService(q)
-	permission, owner, err := svc.repoPermissionForUser(ctx, orgRepo, actor.ID)
+	permission, owner, err := repoPermissionForUser(ctx, svc.queries, orgRepo, actor.ID)
 	require.NoError(t, err)
 	assert.False(t, owner)
 	assert.Equal(t, "write", permission)
@@ -207,9 +207,11 @@ func TestStack_Cov_ServiceFailureBranches(t *testing.T) {
 	q.listStackChangesByStackFn = func(context.Context, int64) ([]db.StackChange, error) {
 		return []db.StackChange{{StackID: 5, ChangeID: "c1", BranchName: "b1", Position: 0, PrNumber: pgtype.Int8{Int64: 1, Valid: true}}}, nil
 	}
-	_, err = svc.GetActiveStack(ctx, actor, "alice", "demo", "main")
-	require.Error(t, err)
-	stackCovAssertAPIStatus(t, err, http.StatusInternalServerError)
+	// An installation lookup failure degrades GitHub fields to defaults.
+	stack, err := svc.GetActiveStack(ctx, actor, "alice", "demo", "main")
+	require.NoError(t, err)
+	require.Len(t, stack.Changes, 1)
+	assert.Equal(t, "open", stack.Changes[0].PRState)
 
 	q.upsertActiveStackFn = func(context.Context, db.UpsertActiveStackParams) (db.Stack, error) {
 		return db.Stack{ID: 6, RepositoryID: repo.ID, UserID: actor.ID, TargetRef: "main"}, nil

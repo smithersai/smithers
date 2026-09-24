@@ -304,9 +304,9 @@ func TestVariable_H_HelperPermissionBranches(t *testing.T) {
 	}}).requireWriteAccess(ctx, repo, variableHUser(1))
 	require.Equal(t, 500, variableHStatus(t, err))
 
-	permission, owner, err := NewVariableService(&variableHQuerier{collabPermFn: func(context.Context, db.GetCollaboratorPermissionForRepoUserParams) (string, error) {
+	permission, owner, err := repoPermissionForUser(ctx, &variableHQuerier{collabPermFn: func(context.Context, db.GetCollaboratorPermissionForRepoUserParams) (string, error) {
 		return "write", nil
-	}}).repoPermissionForUser(ctx, repo, 1)
+	}}, repo, 1)
 	require.NoError(t, err)
 	assert.False(t, owner)
 	assert.Equal(t, "write", permission)

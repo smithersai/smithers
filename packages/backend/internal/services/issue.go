@@ -1588,10 +1588,6 @@ func (s *IssueService) requireWriteAccess(ctx context.Context, repository db.Rep
 	return nil
 }
 
-func (s *IssueService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
-}
-
 func (s *IssueService) canReadRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
 	return canReadRepo(ctx, s.queries, repository, userID)
 }

@@ -424,7 +424,7 @@ func TestLanding_Cov_ResolveAndPermissionBranches(t *testing.T) {
 	_, err = svc.resolveRepoByOwnerAndName(context.Background(), "owner", " ")
 	assert.Equal(t, http.StatusBadRequest, landingAPIStatus(t, err))
 
-	perm, owner, err := svc.repoPermissionForUser(context.Background(), orgRepo, actor.ID)
+	perm, owner, err := repoPermissionForUser(context.Background(), svc.queries, orgRepo, actor.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "admin", perm)
 	assert.False(t, owner)

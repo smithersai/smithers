@@ -85,7 +85,7 @@ func (s *VariableService) SetVariable(ctx context.Context, actor *db.User, owner
 	if len(trimmedName) > 255 {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "name", Code: "invalid"})
 	}
-	if isReservedInjectedEnvName(trimmedName) {
+	if !IsInjectedSecretName(trimmedName) {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "name", Code: "invalid"})
 	}
 	if len(value) > maxVariableValueBytes {
@@ -203,7 +203,7 @@ func (s *VariableService) SetOrgVariable(ctx context.Context, actor *db.User, or
 	if len(trimmedName) > 255 {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "name", Code: "invalid"})
 	}
-	if isReservedInjectedEnvName(trimmedName) {
+	if !IsInjectedSecretName(trimmedName) {
 		return VariableResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Variable", Field: "name", Code: "invalid"})
 	}
 	if len(value) > maxVariableValueBytes {
@@ -412,8 +412,4 @@ func (s *VariableService) canReadRepo(ctx context.Context, repository db.Reposit
 
 func (s *VariableService) canWriteRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
 	return canWriteRepo(ctx, s.queries, repository, userID)
-}
-
-func (s *VariableService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
 }

@@ -507,10 +507,6 @@ func (s *WikiService) requireWriteAccess(ctx context.Context, repository db.Repo
 	return nil
 }
 
-func (s *WikiService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
-}
-
 func (s *WikiService) canReadRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
 	return canReadRepo(ctx, s.queries, repository, userID)
 }

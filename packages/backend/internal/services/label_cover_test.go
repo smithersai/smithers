@@ -23,7 +23,7 @@ func TestLabel_Cov_PermissionHelpers(t *testing.T) {
 				return "", nil
 			},
 		})
-		permission, isOwner, err := svc.repoPermissionForUser(ctx, db.Repository{ID: 11, UserID: pgtype.Int8{Int64: 7, Valid: true}}, 7)
+		permission, isOwner, err := repoPermissionForUser(ctx, svc.queries, db.Repository{ID: 11, UserID: pgtype.Int8{Int64: 7, Valid: true}}, 7)
 		require.NoError(t, err)
 		assert.Empty(t, permission)
 		assert.True(t, isOwner)
@@ -35,7 +35,7 @@ func TestLabel_Cov_PermissionHelpers(t *testing.T) {
 				return true, nil
 			},
 		})
-		permission, isOwner, err := svc.repoPermissionForUser(ctx, db.Repository{ID: 12, OrgID: pgtype.Int8{Int64: 3, Valid: true}}, 7)
+		permission, isOwner, err := repoPermissionForUser(ctx, svc.queries, db.Repository{ID: 12, OrgID: pgtype.Int8{Int64: 3, Valid: true}}, 7)
 		require.NoError(t, err)
 		assert.Empty(t, permission)
 		assert.True(t, isOwner)
@@ -50,7 +50,7 @@ func TestLabel_Cov_PermissionHelpers(t *testing.T) {
 				return " ADMIN ", nil
 			},
 		})
-		permission, isOwner, err := svc.repoPermissionForUser(ctx, db.Repository{ID: 12, OrgID: pgtype.Int8{Int64: 3, Valid: true}}, 7)
+		permission, isOwner, err := repoPermissionForUser(ctx, svc.queries, db.Repository{ID: 12, OrgID: pgtype.Int8{Int64: 3, Valid: true}}, 7)
 		require.NoError(t, err)
 		assert.Equal(t, "admin", permission)
 		assert.False(t, isOwner)

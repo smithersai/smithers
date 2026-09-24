@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -477,10 +478,6 @@ func (s *StackService) canWriteRepo(ctx context.Context, repository db.Repositor
 	return canWriteRepo(ctx, s.queries, repository, userID)
 }
 
-func (s *StackService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
-}
-
 func normalizeStackTargetRef(targetRef string) string {
 	trimmed := strings.TrimSpace(targetRef)
 	if trimmed == "" {
@@ -659,9 +656,17 @@ type stackGitHubCheckRunList struct {
 }
 
 type stackGitHubTokenResponse struct {
-	Message string `json:"message"`
-	Token   string `json:"token"`
+	Message   string `json:"message"`
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
 }
+
+// stackGitHubEnrichTimeout bounds all GitHub lookups for one stack read, and
+// stackGitHubEnrichConcurrency bounds how many changes are looked up at once.
+// Changes that miss the deadline keep their local defaults.
+var stackGitHubEnrichTimeout = 5 * time.Second
+
+const stackGitHubEnrichConcurrency = 4
 
 type stackGitHubState struct {
 	PRState      string
@@ -692,7 +697,10 @@ func (s *StackService) enrichStackResponseWithGitHub(
 
 	installationID, err := s.githubInstallations.GetGitHubInstallationIDForUserRepo(ctx, viewerID, normalizedOwner, normalizedRepo)
 	if err != nil {
-		return pkgerrors.Internal("failed to load github app installation").WithCause(err)
+		// GitHub state is decoration on a readable local stack; degrade to
+		// defaults instead of failing the whole read.
+		slog.Warn("stack: failed to load github app installation", "owner", normalizedOwner, "repo", normalizedRepo, "error", err)
+		installationID = 0
 	}
 	if installationID <= 0 {
 		for index := range response.Changes {
@@ -709,22 +717,44 @@ func (s *StackService) enrichStackResponseWithGitHub(
 		return nil
 	}
 
+	enrichCtx, cancel := context.WithTimeout(ctx, stackGitHubEnrichTimeout)
+	defer cancel()
+	states := make([]*stackGitHubState, len(response.Changes))
+	sem := make(chan struct{}, stackGitHubEnrichConcurrency)
+	var wg sync.WaitGroup
+	for index, change := range response.Changes {
+		if change.PRNumber == nil || *change.PRNumber <= 0 {
+			continue
+		}
+		wg.Add(1)
+		go func(index int, prNumber int64) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-enrichCtx.Done():
+				return
+			}
+			defer func() { <-sem }()
+			state, err := loadStackGitHubState(enrichCtx, token, owner, repo, prNumber)
+			if err == nil {
+				states[index] = &state
+			}
+		}(index, *change.PRNumber)
+	}
+	wg.Wait()
+
 	for index := range response.Changes {
 		change := &response.Changes[index]
-		if change.PRNumber != nil && *change.PRNumber > 0 {
-			state, err := loadStackGitHubState(ctx, token, owner, repo, *change.PRNumber)
-			if err == nil {
-				if state.PRState != "" {
-					change.PRState = normalizeStackPRState(state.PRState)
-				}
-				if state.PRURL != "" {
-					change.PRURL = strings.TrimSpace(state.PRURL)
-				}
-				change.ReviewStatus = normalizeStackReviewStatus(state.ReviewStatus)
-				change.CIStatus = normalizeStackCIStatus(state.CIStatus)
+		if state := states[index]; state != nil {
+			if state.PRState != "" {
+				change.PRState = normalizeStackPRState(state.PRState)
 			}
+			if state.PRURL != "" {
+				change.PRURL = strings.TrimSpace(state.PRURL)
+			}
+			change.ReviewStatus = normalizeStackReviewStatus(state.ReviewStatus)
+			change.CIStatus = normalizeStackCIStatus(state.CIStatus)
 		}
-
 		applyStackChangeDefaults(change, owner, repo)
 	}
 
@@ -946,6 +976,11 @@ func createStackGitHubInstallationToken(ctx context.Context, installationID int6
 	if installationID <= 0 {
 		return "", stdErrors.New("invalid installation id")
 	}
+	// Installation tokens live about an hour and GitHub rate-limits minting;
+	// share the per-installation cache with RepoConnectionService.
+	if cached, ok := getCachedInstallationToken(installationID); ok {
+		return cached.token, nil
+	}
 
 	appID, privateKey, err := readGitHubAppCredentialsFromEnv()
 	if err != nil {
@@ -994,6 +1029,9 @@ func createStackGitHubInstallationToken(ctx context.Context, installationID int6
 	token := strings.TrimSpace(payload.Token)
 	if token == "" {
 		return "", stdErrors.New("github installation token response was missing token")
+	}
+	if expiresAt, err := time.Parse(time.RFC3339, strings.TrimSpace(payload.ExpiresAt)); err == nil {
+		storeCachedInstallationToken(installationID, token, expiresAt)
 	}
 	return token, nil
 }

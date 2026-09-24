@@ -2500,10 +2500,6 @@ func (s *RepoService) resolveReadableRepo(ctx context.Context, viewer *db.User, 
 	return repository, nil
 }
 
-func (s *RepoService) repoPermissionForUser(ctx context.Context, repository db.Repository, userID int64) (string, bool, error) {
-	return repoPermissionForUser(ctx, s.queries, repository, userID)
-}
-
 func (s *RepoService) canReadRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
 	return canReadRepo(ctx, s.queries, repository, userID)
 }

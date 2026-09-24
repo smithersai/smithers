@@ -96,7 +96,7 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 	if len(trimmedName) > 255 {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
 	}
-	if isReservedInjectedEnvName(trimmedName) {
+	if !IsInjectedSecretName(trimmedName) {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
 	}
 	if value == "" {
@@ -246,7 +246,7 @@ func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgNam
 	if len(trimmedName) > 255 {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
 	}
-	if isReservedInjectedEnvName(trimmedName) {
+	if !IsInjectedSecretName(trimmedName) {
 		return SecretResponse{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Secret", Field: "name", Code: "invalid"})
 	}
 	if value == "" {

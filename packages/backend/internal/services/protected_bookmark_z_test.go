@@ -172,7 +172,7 @@ func TestProtectedBookmark_Z_OperationBranches(t *testing.T) {
 
 func TestProtectedBookmark_Z_AdminAccessBranches(t *testing.T) {
 	ctx := context.Background()
-	repo := db.Repository{ID: 11, UserID: pgtype.Int8{Int64: 99, Valid: true}}
+	repo := db.Repository{ID: 11, UserID: pgtype.Int8{Int64: 99, Valid: true}, OrgID: pgtype.Int8{Int64: 5, Valid: true}}
 	svc := NewProtectedBookmarkService(protectedBookmarkZQuerier{})
 
 	require.Equal(t, 401, apiStatus(t, svc.requireAdminAccess(ctx, repo, nil)))

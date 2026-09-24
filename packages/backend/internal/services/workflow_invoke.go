@@ -72,17 +72,9 @@ func (s *workflowAPIService) InvokeWorkflow(ctx context.Context, input InvokeWor
 		return nil, pkgerrors.BadRequest("a workflow name or path is required")
 	}
 
-	definitions, err := s.ListWorkflowDefinitions(ctx, input.RepositoryID, 1, listWorkflowDefinitionsBatchSize)
+	matched, err := s.findActiveWorkflowDefinition(ctx, input.RepositoryID, identifier)
 	if err != nil {
 		return nil, err
-	}
-	var matched *db.WorkflowDefinition
-	for i := range definitions {
-		if invokeDefinitionMatches(definitions[i], identifier) {
-			def := definitions[i]
-			matched = &def
-			break
-		}
 	}
 	if matched == nil {
 		return nil, pkgerrors.NotFound("workflow definition not found")
@@ -123,4 +115,29 @@ func (s *workflowAPIService) InvokeWorkflow(ctx context.Context, input InvokeWor
 		return nil, pkgerrors.Internal("failed to create workflow run").WithCause(err)
 	}
 	return &InvokeWorkflowResult{Run: run, Definition: *matched}, nil
+}
+
+// findActiveWorkflowDefinition scans every active definition in the
+// repository, batch by batch, for the first one matching identifier. Sync
+// allows up to 1000 workflow files, more than one listing batch holds.
+func (s *workflowAPIService) findActiveWorkflowDefinition(ctx context.Context, repositoryID int64, identifier string) (*db.WorkflowDefinition, error) {
+	for offset := 0; ; offset += listWorkflowDefinitionsBatchSize {
+		rows, err := s.queries.ListWorkflowDefinitionsByRepo(ctx, db.ListWorkflowDefinitionsByRepoParams{
+			RepositoryID: repositoryID,
+			PageOffset:   ClampInt32(offset),
+			PageSize:     int32(listWorkflowDefinitionsBatchSize),
+		})
+		if err != nil {
+			return nil, err
+		}
+		for i := range rows {
+			if rows[i].IsActive && invokeDefinitionMatches(rows[i], identifier) {
+				def := rows[i]
+				return &def, nil
+			}
+		}
+		if len(rows) < listWorkflowDefinitionsBatchSize {
+			return nil, nil
+		}
+	}
 }
