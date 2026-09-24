@@ -9,16 +9,21 @@ const out = resolve(process.argv[2] ?? join(tmpdir(), "tui-shots"))
 mkdirSync(out, { recursive: true })
 const app = resolve(import.meta.dir, "..")
 const chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-const shoot = (tui: Tui, name: string) => {
-  const html = join(out, `${name}.html`)
-  writeFileSync(html, tui.html())
-  spawnSync(chrome, [
-    "--headless=new",
-    `--user-data-dir=${mkdtempSync(join(tmpdir(), "chrome-"))}`,
-    `--screenshot=${join(out, `${name}.png`)}`,
-    `--window-size=${tui.cols * 8 + 40},${tui.rows * 17 + 24}`,
-    `file://${html}`
-  ], { timeout: 120_000 })
+/** Each capture is taken now and rendered once the TUIs stop, so Chrome never stalls a live session. */
+const captures: Array<{ readonly name: string; readonly html: string; readonly cols: number; readonly rows: number }> = []
+const shoot = (tui: Tui, name: string) => captures.push({ name, html: tui.html(), cols: tui.cols, rows: tui.rows })
+const render = () => {
+  for (const capture of captures) {
+    const html = join(out, `${capture.name}.html`)
+    writeFileSync(html, capture.html)
+    spawnSync(chrome, [
+      "--headless=new",
+      `--user-data-dir=${mkdtempSync(join(tmpdir(), "chrome-"))}`,
+      `--screenshot=${join(out, `${capture.name}.png`)}`,
+      `--window-size=${capture.cols * 8 + 40},${capture.rows * 17 + 24}`,
+      `file://${html}`
+    ], { timeout: 180_000 })
+  }
 }
 const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms))
 for (const cols of [120, 84]) {
@@ -64,4 +69,5 @@ for (const cols of [120, 84]) {
     await tui.stop()
   }
 }
+render()
 console.log(out)
