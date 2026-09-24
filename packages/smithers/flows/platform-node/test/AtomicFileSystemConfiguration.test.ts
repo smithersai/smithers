@@ -10,7 +10,7 @@ import { usableExecutable } from "../src/internal/AtomicFileSystemTransport.ts"
 
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>()
-  return { ...actual, stat: vi.fn(actual.stat) }
+  return { ...actual, stat: vi.fn(actual.stat), realpath: vi.fn(actual.realpath) }
 })
 
 const roots: Array<string> = []
@@ -34,6 +34,22 @@ const refused = (options: AtomicFileSystem.Options, input = request) =>
   Effect.runPromise(Effect.flip(execute(options, input)))
 
 describe("atomic helper configuration admission", () => {
+  it("uses native canonical root spelling and preserves root resolution failures", async () => {
+    const root = await temporary()
+    const resolveRoot = (path: string) =>
+      Effect.flatMap(FileSystem.FileSystem, (fs) => fs.realPath(path))
+        .pipe(Effect.provide(AtomicFileSystem.layerWith({})))
+    expect(await Effect.runPromise(resolveRoot(root))).toBe(await realpath(root))
+    const absent = join(root, "missing")
+    expect(await Effect.runPromise(Effect.flip(resolveRoot(absent)))).toMatchObject({
+      reason: { _tag: "NotFound", method: "realPath", pathOrDescriptor: absent, syscall: "realpath" }
+    })
+    vi.spyOn(NativeFs, "realpath").mockRejectedValueOnce(new Error("root path unavailable"))
+    expect(await Effect.runPromise(Effect.flip(resolveRoot(root)))).toMatchObject({
+      reason: { _tag: "PermissionDenied", description: expect.stringContaining("root path unavailable") }
+    })
+  })
+
   it("pins exact BigInt identities and preserves a failed root observation", async () => {
     const root = await temporary()
     const actual = await NativeFs.stat(root, { bigint: true })

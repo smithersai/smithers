@@ -58,6 +58,51 @@ const provide = (
     Effect.provideService(GrantStore, grants)
   )
 
+itEffect("authorizes no-follow executors without resolving or statting descendant targets", () => {
+  const checks: Array<Capability.Capability> = []
+  const requests: Array<FileSystem.AtomicRequest> = []
+  const inspected: Array<string> = []
+  const refusal = PlatformError.systemError({ _tag: "BadResource", module: "test", method: "readFile" })
+  const host = FileSystem.withAtomicFileSystem(
+    EffectFileSystem.makeNoop({
+      realPath: (path) => {
+        inspected.push(path)
+        return path === "/workspace" ? Effect.succeed("/canonical") : Effect.die("descendant metadata was followed")
+      },
+      stat: () => Effect.die("descendant metadata was opened")
+    }),
+    {
+      noFollowAuthorization: true,
+      identifyRoot: () => Effect.succeed("7:9"),
+      execute: (request) =>
+        Effect.suspend(() => {
+          requests.push(request)
+          return ("path" in request && request.path.endsWith("/link")
+            ? Effect.fail(refusal)
+            : Effect.succeed(new Uint8Array([7]))) as Effect.Effect<never, PlatformError.PlatformError>
+        })
+    }
+  )
+  return provide(
+    Effect.gen(function*() {
+      const fs = yield* EffectFileSystem.FileSystem
+      expect(yield* fs.readFile("a")).toEqual(new Uint8Array([7]))
+      expect(yield* fs.readFile("/canonical/a")).toEqual(new Uint8Array([7]))
+      expect(yield* Effect.flip(fs.readFile("link"))).toBe(refusal)
+      expect((yield* Effect.exit(fs.readFile("/outside/a")))._tag).toBe("Failure")
+      expect(inspected).toEqual(["/workspace"])
+      expect(requests).toHaveLength(3)
+      expect(checks).toEqual([
+        { action: "fs:read", resource: "/workspace/a" },
+        { action: "fs:read", resource: "/workspace/a" },
+        { action: "fs:read", resource: "/workspace/link" }
+      ])
+    }),
+    host,
+    scriptedStore(new Set(["fs:read:/workspace/a", "fs:read:/workspace/link"]), checks)
+  )
+})
+
 describe("FileSystem", () => {
   it("attaches one descriptor-relative executor in place", () => {
     const fileSystem = EffectFileSystem.makeNoop({})

@@ -200,6 +200,12 @@ export type AtomicHandlers = {
  * @category security
  */
 export interface AtomicFileSystem {
+  /**
+   * The executor refuses links during every handle-relative operation. Grants
+   * can name the logical path directly, without following links to inspect a
+   * target that the executor will never access.
+   */
+  readonly noFollowAuthorization?: true | undefined
   /** Exact composition-time identity when native file IDs exceed numeric precision. */
   readonly identifyRoot?: ((path: string) => Effect.Effect<string, PlatformError.PlatformError>) | undefined
   readonly execute: <R extends AtomicRequest>(
@@ -639,9 +645,10 @@ export const canonicalResource = (
 
 /**
  * Decorates Effect's filesystem service in place with workspace-normalized
- * capability checks. Canonical-path and hard-link guards are always evaluated
- * before the capability check and delegate acquisition, and the canonical
- * resource is resolved again after every grant decision: a decision can
+ * capability checks. Executors that refuse links during descriptor-relative
+ * operations authorize logical workspace paths without opening descendants.
+ * Other hosts evaluate canonical-path and hard-link guards before the capability
+ * check and resolve the canonical resource again after every grant decision: a decision can
  * suspend (an attended request, a journal-backed store), and an operation
  * whose path no longer names the resource that was authorized is refused
  * rather than performed. Open file handles bind their authorization to the
@@ -690,8 +697,8 @@ export const layer: Layer.Layer<
         Effect.mapError(refuse(method, resource))
       )
     /**
-     * Resolves the canonical capability resource a path names right now and
-     * applies the always-on hard-link refusal. `guard` runs it twice — once
+     * Names the logical resource for executors that refuse links themselves;
+     * otherwise resolves the canonical resource and refuses hard links. `guard` runs it twice — once
      * before the grant decision and once after — so the resolution must be a
      * pure question about the current filesystem state.
      */
@@ -701,6 +708,16 @@ export const layer: Layer.Layer<
       value: string
     ): Effect.Effect<string, PlatformError.PlatformError> => {
       const normalized = normalize(value)
+      if (atomic?.noFollowAuthorization === true) {
+        const resource = isInside(path, logicalRoot, normalized)
+          ? normalized
+          : isInside(path, boundaryRoot, normalized)
+          ? path.join(logicalRoot, path.relative(boundaryRoot, normalized))
+          : undefined
+        return resource === undefined
+          ? deny(action, method, normalized, "path is outside the workspace")
+          : Effect.succeed(resource)
+      }
       return canonicalResource(fileSystem, path, workspace.root, normalized).pipe(
         Effect.flatMap((resource) =>
           fileSystem.stat(normalized).pipe(
