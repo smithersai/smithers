@@ -402,6 +402,28 @@ test("simultaneous equivalent inputs across the user and agent bindings share on
   expect(t.calls.filter(call => call.procedure === "Plan")).toHaveLength(1)
 })
 
+test("an agent's first flow command keeps the user's in-flight plan and shares its request", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  const plan = () => {
+    const card = [...t.store.collections.cards.values()].find(candidate => candidate.kind === "flow-plan")
+    return card?.kind === "flow-plan" ? card.payload : undefined
+  }
+  try {
+    await t.controller.commands.run("flow.plan", `review ${repo}`)
+    expect(plan()?.status).toBe("pending")
+    await t.controller.commands.runForAgent("flow.run", `other ${repo}`)
+    expect(plan()?.status).toBe("pending")
+    expect(await t.controller.commands.runForAgent("flow.plan", `review ${repo}`))
+      .toMatchObject({ status: "executed", value: `plan-requested flow=review repo=${repo}` })
+    gate.resolve(json(200, { status: "ready" }))
+    await waitFor(() => plan()?.status !== "pending")
+    expect(plan()?.error).not.toBe("The app restarted before this plan came back.")
+    expect(t.calls.filter(call => call.procedure === "Plan" && call.payload.flowId === "review")).toHaveLength(1)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
+
 test("a persisted request launches its admitted input even if the caller later changes its object", async () => {
   const t = await fixture()
   const gate = deferred<Response>()

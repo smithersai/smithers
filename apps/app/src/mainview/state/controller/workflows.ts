@@ -353,34 +353,47 @@ export const createWorkflowController = (
     `flow-plan-${repo}-${name}-${Object.keys(input).length === 0 ? "" : digest(canonical(input)).slice(0, 16)}${
       against === undefined ? "" : `-vs-${against}`}`
 
-  /** The plan requests this controller has in flight, by card id. */
-  const planning = new Set<string>()
-  /** The newest ask per card, so an older answer that lands late writes nothing. */
-  const planAttempts = new Map<string, number>()
-
   /*
-   * A plan the reload outlived.
+   * Plan dedup state, shared by the user and agent bindings.
    *
-   * Both maps above are this controller's memory, so a `pending` plan card
-   * read back from storage has nothing behind it: no request is in flight,
-   * nothing will ever settle it, and the body offers Run over a graph it
-   * never drew. Planning is cheap and idempotent, but a silent re-issue would
-   * also be a launch nobody asked for on this visit, so the card settles to
-   * the failure it already is and keeps the Plan door that asks again.
+   * `actors.pair` builds this controller a second time, lazily, on the
+   * agent's first call. Both copies must see one set of in-flight asks, or a
+   * plan asked by each goes out twice and either copy's late answer can
+   * overwrite the other's newer one. The restart sweep runs inside the same
+   * initializer, so it runs once, at boot, and never against a plan the user
+   * copy has in flight.
    */
-  for (const card of store.collections.cards.values()) {
-    if (card.kind !== "flow-plan" || card.payload.status !== "pending") continue
-    if (card.payload.sourceReceipt !== undefined) continue
-    store.dispatch({
-      type: "card.upsert",
-      actor: "system",
-      card: {
-        ...card,
-        status: "acted",
-        payload: { ...card.payload, status: "failed", error: "The app restarted before this plan came back." }
-      }
-    })
-  }
+  const { planning, planAttempts } = actorSharedState(ctx, "flow-plan", () => {
+    /*
+     * A plan the reload outlived.
+     *
+     * The maps below are memory, so a `pending` plan card read back from
+     * storage has nothing behind it: no request is in flight, nothing will
+     * ever settle it, and the body offers Run over a graph it never drew.
+     * Planning is cheap and idempotent, but a silent re-issue would also be a
+     * launch nobody asked for on this visit, so the card settles to the
+     * failure it already is and keeps the Plan door that asks again.
+     */
+    for (const card of store.collections.cards.values()) {
+      if (card.kind !== "flow-plan" || card.payload.status !== "pending") continue
+      if (card.payload.sourceReceipt !== undefined) continue
+      store.dispatch({
+        type: "card.upsert",
+        actor: "system",
+        card: {
+          ...card,
+          status: "acted",
+          payload: { ...card.payload, status: "failed", error: "The app restarted before this plan came back." }
+        }
+      })
+    }
+    return {
+      /** The plan requests in flight, by card id. */
+      planning: new Set<string>(),
+      /** The newest ask per card, so an older answer that lands late writes nothing. */
+      planAttempts: new Map<string, number>()
+    }
+  })
 
   /**
    * Fill one plan card from the workspace, in the background.
