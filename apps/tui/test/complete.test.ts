@@ -128,3 +128,12 @@ describe("edit diffs", () => {
     })
   })
 })
+
+it("replaces only the argument token and preserves the draft after the cursor", () => {
+  const draft = "/model gpt trailing draft"
+  const completion = Complete.complete(draft, "/model gp".length, sources)!
+  expect(completion).toBeDefined()
+  const item = completion.items.find((item) => item.insert.includes("gpt-6-sol"))!
+  expect(draft.slice(0, completion.start) + item.insert + draft.slice(completion.end))
+    .toBe("/model openai:gpt-6-sol trailing draft")
+})

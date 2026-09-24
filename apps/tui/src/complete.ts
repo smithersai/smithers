@@ -124,7 +124,7 @@ export const complete = (text: string, cursor: number, sources: Sources): Comple
     const typed = before.slice(space + 1)
     const items = argumentItems(name, typed.trimStart(), sources)
     if (items === undefined) return undefined
-    return { kind: "argument", query: `${name} ${typed}`, start: 0, end: text.length, items }
+    return { kind: "argument", query: `${name} ${typed}`, start: 0, end: cursor + /^\S*/.exec(text.slice(cursor))![0].length, items }
   }
   const found = /(^|\s)@(\S*)$/.exec(before)
   if (found === null) return undefined
