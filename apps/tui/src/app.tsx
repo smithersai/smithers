@@ -230,7 +230,7 @@ export function App(props: AppProps) {
   workspaceRef.current = workspace
   const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
   const {
-    composer, draft, setText, history, parkedDraft, menu, menuIndex, setMenuIndex, dismissMenu, accept, externalEditor,
+    composer, draft, setText, history, parkedDraft, menu, menuIndex, liveMenu, setMenuIndex, dismissMenu, accept, externalEditor,
     onContentChange, onCursorChange
   } = Composer.useComposer({ models: props.models, runs, revision, files, arming, prompts: restored.current?.prompts ?? [] })
   /** Runs the user started here; their form opens without a key. */
@@ -521,8 +521,8 @@ export function App(props: AppProps) {
 
   // Key handlers read the latest values through these, never a stale render.
   // `now` is the clock the approval row rendered with, so its keys and its hints agree.
-  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey, steered })
-  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, menu, menuIndex, approvals, now, whichKey, steered }
+  const live = useRef({ turn, shell, undoing, followUps, seat, thinking, picker, approvals, now, whichKey, steered })
+  live.current = { turn, shell, undoing, followUps, seat, thinking, picker, approvals, now, whichKey, steered }
 
   useEffect(() => {
     renderer.setTerminalTitle(`smithers - ${basename(props.host.cwd)}`)
@@ -1220,7 +1220,7 @@ export function App(props: AppProps) {
     approvals: live.current.approvals.length > 0,
     empty: composer.current?.plainText === "",
     panel: panelFocus && panel !== undefined,
-    completion: live.current.menu !== undefined,
+    completion: liveMenu().menu !== undefined,
     card: focusedCard !== undefined,
     shell: live.current.shell !== undefined || composer.current?.plainText.startsWith("!") === true,
     turn: live.current.turn !== undefined
@@ -1245,7 +1245,8 @@ export function App(props: AppProps) {
   }
 
   const handleKey = (key: KeyEvent): void => {
-    const { turn: running, shell: shellRunning, picker: open, menu: completing } = live.current
+    const { turn: running, shell: shellRunning, picker: open } = live.current
+    const { menu: completing, index: completingIndex } = liveMenu()
     const text = composer.current?.plainText ?? ""
     if (whichKeyRef.current) {
       if (Dispatch.whichKeyKey(key, Keys.bindingFor(key, keyContext(), merged), { close: () => setWhichKeyOpen(false), type: setText })) return
@@ -1404,7 +1405,7 @@ export function App(props: AppProps) {
     if (completing !== undefined && Dispatch.menuKey(key, completing, {
       select: setMenuIndex,
       dismiss: dismissMenu,
-      accept: (run) => accept(completing, live.current.menuIndex, run, (typed) => submit(false, typed))
+      accept: (run) => accept(completing, completingIndex, run, (typed) => submit(false, typed))
     })) return
     Dispatch.composerKey(key, {
       text,

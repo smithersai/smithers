@@ -55,28 +55,56 @@ export const useComposer = (options: {
   const composer = useRef<TextareaRenderable>(null)
   const [draft, setDraft] = useState("")
   const [cursor, setCursor] = useState(0)
-  const [menuIndex, setMenuIndex] = useState(0)
+  /** The selected row, for the menu it was picked in; a different menu starts at its first row. */
+  const [selection, setSelection] = useState({ identity: "", index: 0 })
+  // Keys in one burst read and move the selection here, before the next render.
+  const selected = useRef(selection)
   const [menuDismissed, setMenuDismissed] = useState(false)
   const history = useRef(new Editor.History(options.prompts))
   /** The draft a palette command with an argument displaced; restored by the next submit. */
   const parkedDraft = useRef<string | undefined>(undefined)
 
-  const completion = useMemo(
-    () => (menuDismissed
-      ? undefined
-      : Complete.complete(draft, cursor, {
-        models,
-        files: () => files.current(),
-        flows: runs.listed,
-        agents: () => runs.listed().filter(Extension.isAgent)
-      })),
+  const completeAt = (text: string, at: number): Complete.Completion | undefined => {
+    const completion = Complete.complete(text, at, {
+      models,
+      files: () => files.current(),
+      flows: runs.listed,
+      agents: () => runs.listed().filter(Extension.isAgent)
+    })
+    return completion !== undefined && (completion.items.length > 0 || completion.kind !== "file") ? completion : undefined
+  }
+  const menu = useMemo(
+    () => (menuDismissed ? undefined : completeAt(draft, cursor)),
     [draft, cursor, menuDismissed, models, runs, revision]
   )
-  const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file")
-    ? completion
-    : undefined
-  const menuIdentity = menu === undefined ? "" : `${menu.kind}:${menu.query}`
-  useEffect(() => setMenuIndex(0), [menuIdentity])
+  const identity = (open: Complete.Completion | undefined) => open === undefined ? "" : `${open.kind}:${open.query}`
+  const indexFor = (open: Complete.Completion | undefined) =>
+    selected.current.identity === identity(open) ? selected.current.index : 0
+  // A menu that differs from the rendered one starts at its first row, as a new menu does.
+  if (selected.current.identity !== identity(menu)) selected.current = { identity: identity(menu), index: 0 }
+  const menuIndex = selected.current.index
+  /**
+   * The menu for the text the composer holds now, and its selection. Keys in
+   * one input burst are handled before the next render, so the rendered menu
+   * can belong to an older draft: Enter then accepted `/summ`'s span and ran
+   * `/summaryary`. An edit since the render also undoes a dismissal, as
+   * `onContentChange` does.
+   */
+  const liveMenu = (): { readonly menu: Complete.Completion | undefined; readonly index: number } => {
+    const input = composer.current
+    const now = input === null || (input.plainText === draft && input.cursorOffset === cursor)
+      ? menu
+      : input.plainText === draft && menuDismissed
+      ? undefined
+      : completeAt(input.plainText, input.cursorOffset)
+    return { menu: now, index: indexFor(now) }
+  }
+  /** Moves the live menu's selection. */
+  const setMenuIndex = (update: (index: number) => number) => {
+    const { menu: now, index } = liveMenu()
+    selected.current = { identity: identity(now), index: update(index) }
+    setSelection(selected.current)
+  }
 
   const setText = useCallback((text: string, at?: number) => {
     const input = composer.current
@@ -133,6 +161,7 @@ export const useComposer = (options: {
     parkedDraft,
     menu,
     menuIndex,
+    liveMenu,
     setMenuIndex,
     dismissMenu: () => setMenuDismissed(true),
     accept,

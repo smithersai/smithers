@@ -396,6 +396,14 @@ describe("completion", () => {
     await tui.until((screen) => screen.includes("Thinking level: xhigh"), 5_000, "level set")
   }, 60_000)
 
+  it("down and enter in one burst pick the row down moved to", async () => {
+    const { tui } = await start()
+    await tui.type("/thinking hi")
+    await tui.until((screen) => screen.includes("xhigh") && /┃\s+\/thinking hi/.test(screen), 5_000, "levels")
+    await tui.press(key.down + key.enter)
+    await tui.until((screen) => screen.includes("Thinking level: xhigh"), 5_000, "level set")
+  }, 60_000)
+
   it("inserts an @file mention with tab and leaves the draft unsent", async () => {
     const { tui } = await start()
     await tui.type("look at @chk")
@@ -404,6 +412,15 @@ describe("completion", () => {
     await tui.until((screen) => /┃\s+look at @check\.mjs/.test(screen), 5_000, "mention")
     await tui.type("please")
     await tui.until((screen) => screen.includes("@check.mjs please"), 5_000, "typing continues")
+  }, 60_000)
+
+  it("enter in the burst that finishes a command runs the whole command", async () => {
+    const { tui } = await start()
+    await tui.type("/summ")
+    await tui.until((screen) => /┃\s+\/summ/.test(screen) && screen.includes("/summary"), 5_000, "menu")
+    // The rest of the word and Enter arrive before the next render, as they do under load.
+    await tui.press("ary" + key.enter)
+    await tui.until((screen) => screen.includes("u Undo changes"), 5_000, "summary")
   }, 60_000)
 
   it("esc closes the menu without clearing the draft", async () => {
