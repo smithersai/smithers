@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -14,11 +15,10 @@ import (
 )
 
 const (
-	// maxSecretsPerRepo and maxSecretsPerOrg are best-effort read-then-write
-	// caps enforced in the service layer. They are not transactional and can
-	// slightly overshoot under concurrent writers (TOCTOU); hard enforcement
-	// via a transactional COUNT query is tracked separately at the db-queries
-	// layer.
+	// maxSecretsPerRepo and maxSecretsPerOrg are the secret caps. The service
+	// checks them first for a friendly refusal; the
+	// trg_repository_secrets_repo_cap and trg_organization_secrets_org_cap
+	// triggers enforce them atomically against concurrent writers.
 	maxSecretsPerRepo   = 100
 	maxSecretsPerOrg    = 100
 	maxSecretValueBytes = 64 * 1024
@@ -132,6 +132,9 @@ func (s *SecretService) SetSecret(ctx context.Context, actor *db.User, owner, re
 			Name:           trimmedName,
 			ValueEncrypted: []byte(encrypted),
 		})
+		if isSecretCapViolation(werr, "repository_secrets_repo_cap") {
+			return repoSecretQuotaExceeded()
+		}
 		if werr != nil {
 			return pkgerrors.Internal("failed to set secret")
 		}
@@ -274,6 +277,9 @@ func (s *SecretService) SetOrgSecret(ctx context.Context, actor *db.User, orgNam
 		Name:           trimmedName,
 		ValueEncrypted: []byte(encrypted),
 	})
+	if isSecretCapViolation(err, "organization_secrets_org_cap") {
+		return SecretResponse{}, orgSecretQuotaExceeded()
+	}
 	if err != nil {
 		return SecretResponse{}, pkgerrors.Internal("failed to set organization secret")
 	}
@@ -333,8 +339,7 @@ func (s *SecretService) DeleteOrgSecret(ctx context.Context, actor *db.User, org
 
 // enforceSecretQuota rejects a write that would create a new secret beyond
 // maxSecretsPerRepo. Updates to an already-existing name are always allowed.
-// This is a best-effort read-then-write cap (TOCTOU races can slightly
-// overshoot); hard transactional enforcement is deferred to a COUNT query.
+// It is the friendly pre-check; the cap trigger catches writers that race it.
 func (s *SecretService) enforceSecretQuota(ctx context.Context, repositoryID int64, name string) error {
 	rows, err := s.queries.ListSecrets(ctx, repositoryID)
 	if err != nil {
@@ -346,7 +351,7 @@ func (s *SecretService) enforceSecretQuota(ctx context.Context, repositoryID int
 		}
 	}
 	if len(rows) >= maxSecretsPerRepo {
-		return pkgerrors.QuotaExceeded("repository secret limit reached (100)")
+		return repoSecretQuotaExceeded()
 	}
 	return nil
 }
@@ -364,9 +369,24 @@ func (s *SecretService) enforceOrgSecretQuota(ctx context.Context, organizationI
 		}
 	}
 	if len(rows) >= maxSecretsPerOrg {
-		return pkgerrors.QuotaExceeded("organization secret limit reached (100)")
+		return orgSecretQuotaExceeded()
 	}
 	return nil
+}
+
+func repoSecretQuotaExceeded() *pkgerrors.APIError {
+	return pkgerrors.QuotaExceeded("repository secret limit reached (100)")
+}
+
+func orgSecretQuotaExceeded() *pkgerrors.APIError {
+	return pkgerrors.QuotaExceeded("organization secret limit reached (100)")
+}
+
+// isSecretCapViolation reports whether err is the named secret cap trigger
+// rejecting a write that raced past the pre-check.
+func isSecretCapViolation(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return stdErrors.As(err, &pgErr) && pgErr.ConstraintName == constraint
 }
 
 // --- permission helpers (same pattern as webhook service) ---

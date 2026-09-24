@@ -29,6 +29,7 @@ type mockSecretQuerier struct {
 	listSecretValuesFn func(ctx context.Context, repositoryID int64) ([]db.ListSecretValuesForRepoRow, error)
 	deleteSecretFn     func(ctx context.Context, arg db.DeleteSecretParams) error
 	listOrgSecretsFn   func(ctx context.Context, organizationID int64) ([]db.ListOrgSecretsRow, error)
+	createOrgSecretFn  func(ctx context.Context, arg db.CreateOrUpdateOrgSecretParams) (db.OrganizationSecret, error)
 }
 
 func (m *mockSecretQuerier) GetRepoByOwnerAndLowerName(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
@@ -103,6 +104,9 @@ func (m *mockSecretQuerier) DeleteSecret(ctx context.Context, arg db.DeleteSecre
 }
 
 func (m *mockSecretQuerier) CreateOrUpdateOrgSecret(ctx context.Context, arg db.CreateOrUpdateOrgSecretParams) (db.OrganizationSecret, error) {
+	if m.createOrgSecretFn != nil {
+		return m.createOrgSecretFn(ctx, arg)
+	}
 	now := time.Now()
 	return db.OrganizationSecret{Name: arg.Name, CreatedAt: now, UpdatedAt: now}, nil
 }

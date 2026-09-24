@@ -50,6 +50,7 @@ var migrationRegistry = []migrationSpec{
 	{14, "migrations/0014_recommendation_logs.sql"},
 	{15, "migrations/0015_github_synced_repo_read_grants.sql"},
 	{16, "migrations/0016_repo_push_events.sql"},
+	{17, "migrations/0017_secret_caps.sql"},
 }
 
 type migration struct {
