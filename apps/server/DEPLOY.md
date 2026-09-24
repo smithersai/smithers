@@ -166,15 +166,6 @@ state, so a new entry here lands in the same commit as the test change.
   the live tag (`v4`, unchanged). Rollback of any version = `wrangler rollback
   <prior version id>`.
 
-Anonymous tutorial cutover (2026-09-12): add the kept secret
-`TUTORIAL_SERVICE_TOKEN` and kept optional setting `TUTORIAL_SERVICE_URL` for
-the isolated live coordinator at `https://api.jjhub.tech/__tutorial`. The
-Worker name, domains, routes, five Durable Objects, and migrations remain
-unchanged. Set these through secret stdin after a real-provider coordinator
-canary succeeds. Rollback uses the preceding Worker version and removes the
-dedicated `/__tutorial` ingress path only if retiring the live service; no
-existing backend paths or state are migrated.
-
 ## The preflight (read before every deploy)
 
 `wrangler deploy` uploads the Durable Object bindings and migrations
@@ -205,17 +196,15 @@ live or not, never by value, and never fail: the deploy keeps them.
    cd apps/server
    bun scripts/adopt-durable-objects.ts
    ```
-   Verified live on 2026-09-12: all five bindings match by name and class,
-   the five frozen vars match, `canary.smithers.sh` and `smithers.sh/*` are
-   attached to this script, `workers.dev` is off, compatibility is
-   `2026-08-01 [nodejs_compat]`, eleven declared secrets are live, and the
-   legacy `RECO_ADMIN_TOKEN` is the one warning.
+   A clean run passes all six bindings by name and class, the five frozen
+   vars, the domain and routes, `workers.dev` off, the compatibility date and
+   flags, and every required secret. Each `WARN` names a leftover to retire.
 3. Dry run:
    ```sh
    pnpm run deploy:dry     # site build + `wrangler deploy --dry-run`
    ```
    The dry run bundles `src/index.ts`, reads the assets directory and prints
-   the bindings it would upload (five Durable Objects, `ASSETS`, five vars).
+   the bindings it would upload (six Durable Objects, `ASSETS`, five vars).
    It reads no live script and needs no credential; step 2 is the verdict.
 4. Deploy:
    ```sh
@@ -284,9 +273,9 @@ and are replaced wholesale on every deploy, so a knob that an old deploy bound
 as a plain var (not a secret) is the one thing a deploy drops; the preflight
 names it and `wrangler secret put` re-adds it.
 
-Retiring a secret is `wrangler secret delete <NAME>`. An undeclared live
-secret (the legacy `GATEWAY_*` names, `RECO_ADMIN_TOKEN`) feeds nothing the
-Worker reads; the preflight lists it as a warning until it is deleted.
+Retiring a secret is `wrangler secret delete <NAME>`. A live secret that
+`WORKER_IDENTITY` does not declare feeds nothing the Worker reads; the
+preflight lists it as a warning until it is deleted.
 
 The secret values above exist only on Cloudflare. They are not in any shell,
 repository secret or secret manager, and Cloudflare never reads them back;
@@ -604,7 +593,7 @@ run from `apps/server`, with the same `CLOUDFLARE_API_TOKEN` set. This
 targets the immediately-prior version; for a specific historical version, use
 `bun x wrangler deployments list` to find its Version ID and
 `bun x wrangler rollback <version-id>`. Rollback does not touch Durable Object
-state: storage for all five bindings listed above is unaffected, since it is
+state: storage for all six bindings listed above is unaffected, since it is
 keyed to the unchanged Worker identity, not to a version. A rollback also
 restores that version's bindings, secrets included.
 
@@ -658,10 +647,7 @@ Both response shapes were read back from the live account on 2026-08-18:
 `/versions` answers `{ success, result: { items: [{ id, number, metadata: {
 created_on }, annotations }] } }` newest first, and `/deployments` answers
 `{ success, result: { deployments: [{ versions: [{ version_id, percentage }] }] } }`
-newest first. Cloudflare lists 10 versions for `smithers-mvp-web`, and the
-version serving 100% of traffic is `dffd4070-e5c6-4fd0-86b6-73ebedff5600`
-(created 2026-08-13T06:21:59Z) — so a rollback target exists today even though
-no receipt on disk names the deployed version.
+newest first.
 
 **"Reachable" means rollback-eligible, not fetchable.** A prior Worker version
 has no public URL; nothing can HTTP it. The probe never claims otherwise.
@@ -684,14 +670,18 @@ deliberately not automated.
    `wranglerVersionId` is version **N**.
 2. Run `bun scripts/canary/rollback-probe.ts --receipt <path to latest.json>`.
    It must pass and must name the prior version, **N-1**.
-3. `bun x wrangler@4.124.0 rollback <N-1 id> --message "CN-24 drill"` from
-   `apps/server`.
+3. `bun x wrangler rollback <N-1 id> --message "CN-24 drill"` from
+   `apps/server`, which runs this package's wrangler.
 4. Confirm `https://canary.smithers.sh` serves the older build, and that
-   `bun x wrangler@4.124.0 deployments list` shows N-1 at 100%.
-5. Roll forward: `bun x wrangler@4.124.0 rollback <N id> --message "CN-24 drill, forward"`.
+   `bun x wrangler deployments list` shows N-1 at 100%.
+5. Roll forward: `bun x wrangler rollback <N id> --message "CN-24 drill, forward"`.
 6. Confirm the canary serves N again and re-run the probe.
-7. Write the drill up in an `apps/WAVE*-RECEIPT.md` note with both version ids
-   and the timestamps, so the next person can see it was really done.
+7. Add a line to "Drill record" below with the date, both version ids and
+   the rollback and roll-forward timestamps.
+
+#### Drill record
+
+Not run yet.
 
 ### Web Cloud session (2026-09-14)
 

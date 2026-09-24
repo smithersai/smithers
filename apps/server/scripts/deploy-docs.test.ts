@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
 import { stripComments } from "./effect-policy"
 
@@ -139,4 +139,70 @@ test("the deploy tags the version with its sha and the guide names the one deplo
   expect(section).toContain("`production` environment")
   expect(section).toContain("origin/main")
   expect(guide).not.toContain("apps-v")
+})
+
+/*
+ * Drift an operator acts on. The guide once told operators to set tutorial
+ * secrets no code read, counted five Durable Objects after the sixth landed,
+ * pinned a wrangler the lockfile had left, and sent the drill write-up to a
+ * file that never existed.
+ */
+const deploymentNames = new Set<string>([
+  ...Object.keys(WORKER_IDENTITY.secrets),
+  ...WORKER_IDENTITY.optionalVars,
+  ...Object.keys(WORKER_IDENTITY.vars)
+])
+const retiredGatewayNames = (): ReadonlySet<string> => {
+  const section = guide.split("### 1.0 gateway migration")[1]!.split("\n### ")[0]!
+  return new Set([...section.matchAll(/`([A-Z][A-Z0-9_]*)`/g)].map(([, name]) => name!))
+}
+
+test("the guide names no Worker setting outside src/workerIdentity.ts", () => {
+  const external = new Set(["CLOUDFLARE_API_TOKEN", "SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN"])
+  const retired = retiredGatewayNames()
+  const settings = [...guide.matchAll(/`([A-Z][A-Z0-9_]*_(?:TOKEN|URL|KEY|SALT|SECRET))`/g)].map(([, name]) => name!)
+  expect(settings.length).toBeGreaterThan(0)
+  const stray = [...new Set(settings)].filter((name) => !deploymentNames.has(name) && !external.has(name) && !retired.has(name))
+  expect(stray).toEqual([])
+})
+
+const numberWords = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty"]
+
+test("every count the guide states matches src/workerIdentity.ts", () => {
+  const expected: Record<string, number> = {
+    "durable objects": WORKER_IDENTITY.durableObjects.length,
+    "bindings": WORKER_IDENTITY.durableObjects.length,
+    "vars": Object.keys(WORKER_IDENTITY.vars).length,
+    "declared secrets": Object.keys(WORKER_IDENTITY.secrets).length
+  }
+  const pattern = new RegExp(`\\b(${numberWords.join("|")})\\s+(?:frozen\\s+)?(Durable Objects|bindings|vars|declared secrets)\\b`, "gi")
+  const counts = [...guide.matchAll(pattern)].map(([match, word, noun]) => ({ match, stated: numberWords.indexOf(word!.toLowerCase()), noun: noun!.toLowerCase() }))
+  expect(counts.length).toBeGreaterThan(0)
+  for (const { match, stated, noun } of counts) expect(`${match} = ${stated}`).toBe(`${match} = ${expected[noun]}`)
+})
+
+test("every wrangler command in the guide runs this package's wrangler", () => {
+  expect(guide).not.toMatch(/wrangler@\d/)
+})
+
+test("every Markdown file the guide points at exists", () => {
+  const paths = [...guide.matchAll(/`([^`\s]+\.md)`/g)].map(([, path]) => path!)
+  expect(paths.length).toBeGreaterThan(0)
+  const roots = [new URL("../", import.meta.url), new URL("../../../", import.meta.url)]
+  const missing = paths.filter((path) => !roots.some((root) => existsSync(new URL(path, root))))
+  expect(missing).toEqual([])
+})
+
+test("the rollback drill records its result in the guide", () => {
+  const drill = guide.split("### The drill")[1]!.split("\n### ")[0]!
+  expect(drill).toContain("\"Drill record\"")
+  expect(drill).toMatch(/^#### Drill record$/m)
+})
+
+test("wrangler.jsonc lists no var among the Cloudflare secrets", () => {
+  const secretNotes = config.split("Cloudflare secrets")[1]!.split("\n\t}")[0]!
+  const listed = [...secretNotes.matchAll(/^\s*\/\/\s{3}([A-Z][A-Z0-9_]*)\s/gm)].map(([, name]) => name!)
+  expect(listed.length).toBeGreaterThan(0)
+  expect(listed.filter((name) => name in WORKER_IDENTITY.vars)).toEqual([])
+  expect(listed.filter((name) => !(name in WORKER_IDENTITY.secrets) && !WORKER_IDENTITY.optionalVars.includes(name))).toEqual([])
 })

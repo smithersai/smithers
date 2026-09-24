@@ -90,6 +90,12 @@
 	"vars": {
 		// Wave 7 canary upstreams. identity lives on workers.dev until will
 		// proxies its stale Vercel CNAME; billing is on its public hostname.
+		// IDENTITY_UPSTREAM_URL is the identity worker (GitHub OAuth + allowlist); it
+		// proxies /api/auth/* and /api/identity/*. Setting it also ARMS the turn gate:
+		// /api/agent/turn and its cancel then require a validated, allowlisted session
+		// (they spend the model credential and meter real dollars, and the same-origin
+		// guard does not stop a curl). BILLING_UPSTREAM_URL is the billing worker; it
+		// proxies /api/billing/* with the validated login as context.
 		"IDENTITY_UPSTREAM_URL": "https://smithers-cloud-identity.willcory10.workers.dev",
 		"BILLING_UPSTREAM_URL": "https://billing.smithers.sh",
 		// Wave 11: Smithers Cloud API — the per-user gateway provision route
@@ -109,19 +115,13 @@
 		//   BILLING_CHECKOUT_ENABLED   — "1" opens POST /api/billing/checkout and /portal. Unset is
 		//                                the closed-alpha state: every balance is comped, so both
 		//                                answer an honest refusal instead of reaching Stripe.
-		// Backend seams. The three upstream URLs above are SET on canary; the
-		// rest are Cloudflare secrets (`wrangler secret put`), not vars, and an
-		// unset one makes its route answer an honest 501:
+		// Backend seams. These are Cloudflare secrets (`wrangler secret put`), not
+		// vars, and an unset one makes its route answer an honest 501:
 		//   SMITHERS_CHAT_AUTH_TOKEN — the deployment bearer the chat upstream authenticates turns with
 		//                              (workers/chat accepts only authorization: Bearer; unset = the forward
 		//                              can only ever come back the upstream's honest 401)
-		//   IDENTITY_UPSTREAM_URL    — the identity worker (GitHub OAuth + allowlist); proxies /api/auth/*, /api/identity/*.
-		//                              Setting it also ARMS the turn gate: /api/agent/turn and its cancel then
-		//                              require a validated, allowlisted session (they spend the model credential
-		//                              and meter real dollars, and the same-origin guard does not stop a curl).
 		//   IDENTITY_SERVICE_TOKEN   — service token for the product Worker → /api/identity/validate call
 		//   PLUE_WORKER_EXCHANGE_TOKEN — backend telemetry bearer; matches SMITHERS_AUTH_WORKER_EXCHANGE_TOKEN
-		//   BILLING_UPSTREAM_URL     — the billing worker; proxies /api/billing/* with the validated login as context
 		//   BILLING_PRODUCT_SERVICE_TOKEN — billing's PRODUCT_SERVICE_TOKEN (the wave-5 bridge key): a validated
 		//                              session's billing reads authenticate AS THE USER (x-smithers-service-token +
 		//                              x-user-login); the deployment bearer below is only the signed-out/native fallback
@@ -134,7 +134,7 @@
 		//   CEREBRAS_API_KEY         (secret) the Cerebras key the CLOUD ROLES spend: a turn asking the Librarian
 		//                              or the Flows agent is answered by this Worker on Cerebras and never reaches
 		//                              the chat upstream (src/cloudRoleTurn.ts); unset = those turns answer an
-		//                              honest 503. CEREBRAS_MODEL_LIBRARIAN / CEREBRAS_MODEL_FLOWS (vars, optional)
+		//                              honest 503. CEREBRAS_MODEL_LIBRARIAN / CEREBRAS_MODEL_FLOWS (optional knobs)
 		//                              override the served model ids. It is NOT spent on command suggestions.
 		//   AI_GATEWAY_API_KEY       (secret, REQUIRED) the Vercel AI Gateway key POST /api/recommend and the turn
 		//                              route's front door spend on Jev, the TypeSafe AI decision model (src/jev.ts).

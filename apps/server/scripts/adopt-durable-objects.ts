@@ -175,8 +175,7 @@ export const compareVars = (live: ReadonlyArray<LiveBinding>): ReadonlyArray<Fin
   /*
    * An UNDECLARED live secret is kept too, but flagged: a name outside
    * src/workerIdentity.ts feeds nothing the Worker reads (the legacy
-   * `GATEWAY_*` and `RECO_ADMIN_TOKEN` names) and is retired by hand with
-   * `wrangler secret delete`.
+   * `GATEWAY_*` names) and is retired by hand with `wrangler secret delete`.
    */
   for (const name of liveSecrets) {
     if (knobNames.has(name) || Object.hasOwn(WORKER_IDENTITY.secrets, name)) continue
