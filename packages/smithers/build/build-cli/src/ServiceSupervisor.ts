@@ -965,36 +965,51 @@ const serviceSecretBoundary = (
   const vault = SecretProxy.makeVault()
   const minted: Record<string, string> = {}
   for (const credential of spec.secrets ?? []) minted[credential.secret.env] = vault.mint(credential)
-  return Effect.map(
+  const boundaryFailed = (what: string) => (cause: unknown) =>
+    new ServiceError({
+      key: spec.key,
+      reason: "spawn-failed",
+      message: `service ${spec.key} ${what}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      outputTail: ""
+    })
+  return Effect.flatMap(
     Effect.acquireRelease(
       Effect.tryPromise({
         try: () => SecretProxy.startProxy(vault),
-        catch: (cause) =>
-          new ServiceError({
-            key: spec.key,
-            reason: "spawn-failed",
-            message: `service ${spec.key} secret boundary could not start: ${
-              cause instanceof Error ? cause.message : String(cause)
-            }`,
-            outputTail: ""
-          })
+        catch: boundaryFailed("secret boundary could not start")
       }),
       (proxy) => Effect.promise(() => proxy.close())
     ),
-    (proxy) => {
-      const environment: Record<string, string> = {
-        ...minted,
-        HTTP_PROXY: proxy.endpoint,
-        HTTPS_PROXY: proxy.endpoint
-      }
-      if (process.platform !== "win32") {
-        environment["http_proxy"] = proxy.endpoint
-        environment["https_proxy"] = proxy.endpoint
-      }
-      const argv = [...spec.argv] as [string, ...Array<string>]
-      for (const { index, secret } of spec.secretUrls ?? []) argv[index] = proxy.urlFor(secret)
-      return { environment, argv }
-    }
+    (proxy) =>
+      Effect.tryPromise({
+        try: async () => {
+          // `S.SecretOrigin(audience)` tokens resolve to the loopback origin
+          // brokering that audience, exactly as the exec boundary does.
+          const origins = new Map<string, string>()
+          const declared = [...spec.argv, ...Object.values(spec.env ?? {})]
+          for (const origin of declared.flatMap(Secret.secretOriginsIn)) {
+            if (!origins.has(origin)) origins.set(origin, await proxy.originFor(origin))
+          }
+          const brokered = (value: string): string =>
+            value.replace(Secret.secretOriginPattern, (_token, origin: string) => origins.get(origin)!)
+          const environment: Record<string, string> = {
+            ...minted,
+            HTTP_PROXY: proxy.endpoint,
+            HTTPS_PROXY: proxy.endpoint
+          }
+          for (const [name, value] of Object.entries(spec.env ?? {})) {
+            if (brokered(value) !== value) environment[name] = brokered(value)
+          }
+          if (process.platform !== "win32") {
+            environment["http_proxy"] = proxy.endpoint
+            environment["https_proxy"] = proxy.endpoint
+          }
+          const argv = spec.argv.map(brokered) as [string, ...Array<string>]
+          for (const { index, secret } of spec.secretUrls ?? []) argv[index] = proxy.urlFor(secret)
+          return { environment, argv }
+        },
+        catch: boundaryFailed("secret boundary could not bind a brokered origin")
+      })
   )
 }
 

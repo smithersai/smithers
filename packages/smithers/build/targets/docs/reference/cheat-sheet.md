@@ -593,8 +593,8 @@ const shellTest = S.Shell.Test({
   timeout: "20m"
 })
 const shellRun = S.Shell.Run({
-  bin: S.Runtime.npx("react-scan@latest"),
-  args: ["http://localhost:3000"],
+  shell: "curl -fsS -H \"authorization: token $GITHUB_TOKEN\" \"$GITHUB_API/user\"",
+  env: { GITHUB_API: S.SecretOrigin("https://api.github.com") },
   secrets: [credential],
   sandbox: { network: true },
   approval: "required"
@@ -637,7 +637,7 @@ const toolBuild = S.ToolBuild({
 })
 const toolRun = S.ToolRun({
   command: "curl",
-  args: ["https://api.github.com/rate_limit"],
+  args: [`${S.SecretOrigin("https://api.github.com")}/rate_limit`],
   inputs: [],
   deps: [],
   env: {},
@@ -944,7 +944,6 @@ const dockerPush = S.Docker.Push({
   name: "acme/widget",
   tags: ["latest", S.Stamp.version],
   gates: [goTest],
-  secrets: [S.HttpSecret(S.Secret("GITHUB_TOKEN"), ["https://ghcr.io"])],
   sandbox: { network: true },
   approval: "required"
 })

@@ -1347,7 +1347,7 @@ describe("secrets", () => {
       `import { Smithers as S } from "@smthrs/targets"
 const push = S.Shell.Run({
   shell: "true",
-  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_ABSENT_SECRET"), ["https://example.test"])],
+  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_ABSENT_SECRET"), ["http://127.0.0.1:9"])],
   // A closed network cannot reach the secret proxy, so Exec refuses it.
   sandbox: { network: true }
 })
@@ -1359,6 +1359,70 @@ export const Package = S.Package({ targets: { push } })
     const { exitCode, logs } = await serve(root, ["//:push"])
     expect(exitCode).toBe(0)
     expect(logs).not.toContain("missing secret")
+  })
+
+  it("refuses in --plan an HTTPS audience the payload never names through S.SecretOrigin", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const push = S.Shell.Run({
+  shell: "curl -fsS https://api.example.test/user",
+  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_HTTPS_SECRET"), ["https://api.example.test"])],
+  sandbox: { network: true }
+})
+export const Package = S.Package({ targets: { push } })
+`
+    )
+    commitAll(root)
+    const planned = await serve(root, ["//:push", "--plan"])
+    expect(planned.output).toContain(
+      "the declared secret SMTHRS_TEST_HTTPS_SECRET is bound to https://api.example.test"
+    )
+    // The plan renders the refusal as a quoted string, so its quotes are escaped.
+    expect(planned.output).toContain("point the tool at S.SecretOrigin(\\\"https://api.example.test\\\")")
+  })
+
+  it("resolves S.SecretOrigin in env to a brokered origin that substitutes the placeholder", async () => {
+    let authorization: string | undefined
+    const upstream = NodeHttp.createServer((request, response) => {
+      authorization = request.headers.authorization
+      response.end("ok")
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    const secret = "package-origin-secret"
+    process.env["SMTHRS_TEST_ORIGIN_SECRET"] = secret
+    try {
+      const root = await temporaryWorkspace()
+      await write(root, "WORKSPACE.ts", workspaceModule())
+      const command = `case "$API" in http://127.0.0.1:${port}) exit 92;; http://127.0.0.1:*) ;; *) exit 91;; esac; ` +
+        `curl -sf --noproxy '*' -H "authorization: Bearer $SMTHRS_TEST_ORIGIN_SECRET" "$API/"`
+      await write(
+        root,
+        "PACKAGE.ts",
+        `import { Smithers as S } from "@smthrs/targets"
+const push = S.Shell.Run({
+  shell: ${JSON.stringify(command)},
+  env: { API: S.SecretOrigin("http://127.0.0.1:${port}") },
+  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_ORIGIN_SECRET"), ["http://127.0.0.1:${port}"])],
+  sandbox: "none"
+})
+export const Package = S.Package({ targets: { push } })
+`
+      )
+      commitAll(root)
+      const { exitCode, logs } = await serve(root, ["//:push"])
+      expect(exitCode).toBe(0)
+      expect(authorization).toBe(`Bearer ${secret}`)
+      expect(logs).not.toContain(secret)
+    } finally {
+      delete process.env["SMTHRS_TEST_ORIGIN_SECRET"]
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
   })
 
   it("gives the job a placeholder and substitutes only on the outbound request", async () => {

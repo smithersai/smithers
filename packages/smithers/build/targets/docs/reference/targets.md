@@ -123,6 +123,21 @@ Names a set of files under one label. `srcs` is an array of files, globs, and ot
 
 Declares one secret source, read lazily at a host-owned request boundary. The declaration names the environment variable and never the value. The name is bounded at `Secret.maximumNameLength`, 256 code units, and a `fallback` at `Secret.maximumFallbackLength`, 16384. A source alone is not egress authority: `Smithers.HttpSecret(source, origins)` binds it to exact origins, at most `Secret.maximumAudiences`, 32, each bounded at `Secret.maximumAudienceLength`, 2048.
 
+### `Smithers.SecretOrigin`
+
+- **Signature:** `SecretOrigin(audience: string): string`
+- **Since:** `0.1.0`
+
+Returns a plan-time token naming one declared audience. When an exec target spawns, each token in its argv or env becomes a loopback `http://127.0.0.1:<port>` origin. That origin forwards every request to the audience over TLS, substitutes the placeholders bound to that audience, and rewrites the audience origin in responses back to the loopback origin. The proxy cannot substitute inside an HTTPS `CONNECT` tunnel, so an exec target that declares an HTTPS audience must name it with `SecretOrigin`, or the plan and the exec boundary refuse it with `invalid_payload`. A loopback HTTP audience also works through `HTTP_PROXY` for clients that proxy loopback, such as curl and Bun; Node and Go clients skip the proxy for loopback and need the token. A token naming an origin no declared secret is bound to is refused. A tool that hardcodes its host, such as `gh`, cannot be pointed at the origin and needs a host-owned adapter.
+
+```ts
+const whoami = Smithers.Shell.Run({
+  shell: "curl -fsS -H \"authorization: token $GITHUB_TOKEN\" \"$GITHUB_API/user\"",
+  env: { GITHUB_API: Smithers.SecretOrigin("https://api.github.com") },
+  secrets: [Smithers.HttpSecret(Smithers.Secret("GITHUB_TOKEN"), ["https://api.github.com"])]
+})
+```
+
 ### `Smithers.Runtime`
 
 - **Type:** the `Runtime` module, and `type Runtime = Runtime.Runtime`
@@ -299,6 +314,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.PnpmWorkspace`          | rule               | Generates and drift-checks `pnpm-workspace.yaml`.                                                                                                                                 |
 | `Smithers.Tsconfig`               | rule               | Generates and drift-checks a `tsconfig.json`.                                                                                                                                     |
 | `Smithers.HttpSecret`             | constructor        | Binds a declared secret to one or more exact HTTP origins.                                                                                                                        |
+| `Smithers.SecretOrigin`           | constructor        | Names a declared audience as the loopback origin that forwards to it and substitutes its secret.                                                                                  |
 | `Smithers.TsBuild`                | rule               | Builds a JavaScript distribution with `tsc -p`, `tsup`, or the package's own build program.                                                                                       |
 | `Smithers.DtsBuild`               | rule               | Emits type declarations with `tsc --emitDeclarationOnly` or `tsup --dts-only`.                                                                                                    |
 | `Smithers.Typecheck`              | rule               | Checks a package with `tsc --noEmit` or TypeScript build mode.                                                                                                                    |

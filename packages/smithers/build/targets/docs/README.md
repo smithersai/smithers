@@ -30,8 +30,10 @@ read:
   of passing.
 - **Declared permissions.** `Smithers.Secret("GITHUB_TOKEN")` names an
   environment variable, never a value, and `Smithers.HttpSecret` binds it to
-  the exact origins allowed to receive it. A sandbox policy rides the
-  declaration rather than the command line.
+  the exact origins allowed to receive it. `Smithers.SecretOrigin(origin)`
+  gives the tool a loopback origin that forwards there with the value
+  substituted. A sandbox policy rides the declaration rather than the command
+  line.
 
 Because the declaration is data rather than a script, the same plan runs the
 same way on a laptop and in CI, and a label is all a command needs.

@@ -2588,6 +2588,14 @@ const visit = async (
       )
     }
   }
+  // A declared HTTPS audience the planned payload never names through
+  // `S.SecretOrigin` would spawn and then fail at the proxy, which cannot
+  // substitute inside a TLS tunnel. The exec boundary refuses it too; here
+  // the fix is visible in `--plan` before anything spawns. It is noted last, so
+  // an approval or gate refusal, which blocks the invocation outright, wins.
+  if (argv !== undefined && secrets.length > 0) {
+    for (const problem of Exec.unservableAudiences({ argv, env, secrets })) noteRefusal(`${rule}: ${problem}`)
+  }
 
   // NodeModule is an installation dependency, not an executable reference.
   // ambient.lockfile below hashes the FULL lockfile (not a package slice),

@@ -154,9 +154,14 @@ export const CreateApp = (options: CreateAppOptions): AppTargets => {
   // that redirect points at the built Worker bundle. The source
   // `wrangler.jsonc` is the vite plugin's input, not wrangler's. The redirect
   // is a declared output of `build`, so gating on `build` restores it too.
+  //
+  // The proxy cannot substitute inside an HTTPS tunnel, so wrangler reaches
+  // the Cloudflare API through the brokered loopback origin, which forwards
+  // over TLS and replaces the token and account placeholders on the way.
   const deploy = S.Shell.Run({
     bin: S.NodeModule.Bin("wrangler"),
     args: ["deploy"],
+    env: { CLOUDFLARE_API_BASE_URL: `${S.SecretOrigin("https://api.cloudflare.com")}/client/v4` },
     gates: [build],
     secrets: [
       S.HttpSecret(S.Secret("CLOUDFLARE_API_TOKEN"), ["https://api.cloudflare.com"]),

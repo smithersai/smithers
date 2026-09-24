@@ -82,10 +82,14 @@ target binds that source to exact origins with
 not egress authority. The child receives an unguessable placeholder. The
 loopback proxy resolves it once, only after an authorized destination is known,
 and removes an exact value echoed in the bounded response. A mismatched origin
-is denied before any upstream connection. Opaque HTTPS `CONNECT` is refused
-while placeholders exist; HTTPS credentials require a brokered destination or
-a host-owned request adapter. Key material records the source and audience,
-never the value.
+is denied before any upstream connection. The proxy cannot read an HTTPS
+`CONNECT` tunnel, so it refuses one to a declared audience and passes others
+through. A tool reaches an HTTPS audience through
+`Smithers.SecretOrigin("https://api.example.com")` in its argv or env: at spawn
+the token becomes a loopback origin that forwards to the audience over TLS and
+substitutes the placeholder. The plan refuses a target whose HTTPS audience no
+token names. Key material records the source, audience, and token, never the
+value or the loopback port.
 
 `Smithers.Workspace(name, options)` is the workspace declaration a `WORKSPACE.ts`
 file exports. It validates and performs no I/O. The name comes first and must be

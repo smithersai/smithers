@@ -821,6 +821,47 @@ request.end()
     }
   })
 
+  it("resolves brokered-origin tokens in service argv and env to the substituting origin", async () => {
+    const seen: Array<string | undefined> = []
+    const upstream = (await import("node:http")).createServer((request, response) => {
+      seen.push(request.headers.authorization)
+      response.end("ok")
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    const port = typeof address === "object" && address !== null ? address.port : 0
+    const audience = `http://127.0.0.1:${port}`
+    process.env["SMITHERS_SERVICE_ORIGIN_SECRET"] = "service-origin-secret"
+    try {
+      const program = String.raw`
+const http = require("node:http")
+const call = (base) => new Promise((resolve) => {
+  if (base.includes("{smthrs:") || base === ${JSON.stringify(audience)}) process.exit(96)
+  http.get(base + "/x", { headers: { authorization: process.env.SMITHERS_SERVICE_ORIGIN_SECRET } }, (response) => {
+    response.resume()
+    response.on("end", resolve)
+  }).on("error", () => process.exit(97))
+})
+call(process.env.API).then(() => call(process.argv[1])).then(() => setInterval(() => {}, 1000))
+`
+      await run(Effect.scoped(Effect.gen(function*() {
+        const supervisor = yield* ServiceSupervisor.make
+        yield* supervisor.acquire({
+          key: "//x:secret-origin",
+          cwd: fixtureDir,
+          argv: [process.execPath, "-e", program, Secret.SecretOrigin(audience)],
+          env: { API: Secret.SecretOrigin(audience) },
+          secrets: [Secret.HttpSecret(Secret.Secret("SMITHERS_SERVICE_ORIGIN_SECRET"), [audience])]
+        })
+        yield* Effect.promise(() => waitFor(() => seen.length === 2, 5_000))
+      })))
+      expect(seen).toEqual(["service-origin-secret", "service-origin-secret"])
+    } finally {
+      delete process.env["SMITHERS_SERVICE_ORIGIN_SECRET"]
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+  })
+
   it("replaces a secret URL argv slot with a loopback egress capability", async () => {
     let requested = false
     const upstream = (await import("node:http")).createServer((_request, response) => {

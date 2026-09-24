@@ -501,6 +501,55 @@ const usableText = (value: string, what: string): string => {
   return value
 }
 
+/**
+ * Explains each declared secret audience this payload has no transport for.
+ *
+ * The loopback proxy cannot substitute inside an HTTPS tunnel, so an HTTPS
+ * audience is reachable with its placeholder resolved only through a
+ * brokered origin, which the payload names with `S.SecretOrigin(audience)` in
+ * argv or env. A loopback HTTP audience may use either that token or the
+ * proxy variables. A token naming an origin no declared secret is bound to
+ * would broker nothing, so it is refused too. The planner calls this on the
+ * planned payload so `--plan` shows the fix before anything spawns; the exec
+ * boundary calls it again on the payload it receives.
+ *
+ * @category validation
+ * @since 0.1.0
+ */
+export const unservableAudiences = (payload: {
+  readonly argv: ReadonlyArray<string>
+  readonly env: Readonly<Record<string, string>>
+  readonly secrets: ReadonlyArray<Secret.HttpCredential>
+}): ReadonlyArray<string> => {
+  const declared = new Map<string, Array<string>>()
+  for (const credential of payload.secrets) {
+    for (const audience of credential.audiences) {
+      const names = declared.get(audience) ?? []
+      names.push(credential.secret.env)
+      declared.set(audience, names)
+    }
+  }
+  const referenced = new Set([...payload.argv, ...Object.values(payload.env)].flatMap(Secret.secretOriginsIn))
+  const problems: Array<string> = []
+  for (const origin of referenced) {
+    if (!declared.has(origin)) {
+      problems.push(
+        `exec names S.SecretOrigin(${JSON.stringify(origin)}), but no declared S.HttpSecret is bound to that audience`
+      )
+    }
+  }
+  for (const [audience, names] of declared) {
+    if (audience.startsWith("https:") && !referenced.has(audience)) {
+      problems.push(
+        `the declared secret ${names.join(", ")} is bound to ${audience}, which the tool can reach with the ` +
+          `secret substituted only through a brokered origin; point the tool at ` +
+          `S.SecretOrigin(${JSON.stringify(audience)}) in argv or env`
+      )
+    }
+  }
+  return problems
+}
+
 /** Re-decodes and applies aggregate limits at the child-process trust boundary. */
 const validatedPayload = (untrusted: Payload): Payload => {
   const record = plainRecord(untrusted, "exec payload")
@@ -591,6 +640,8 @@ const validatedPayload = (untrusted: Payload): Payload => {
       )
     }
   }
+  const unservable = unservableAudiences({ argv: payload.argv, env, secrets: payload.secrets })
+  if (unservable.length > 0) throw new TypeError(unservable[0])
   return {
     ...payload,
     argv: [...payload.argv],
@@ -1161,39 +1212,74 @@ const spawnTool = (
  * proxy endpoint under the conventional proxy variables. It never receives the
  * credential, so a tool that dumps its environment, writes it to a log, or
  * passes it to a subprocess leaks a value that is worthless off this host.
+ * Each `S.SecretOrigin(audience)` token in argv or env is replaced with the
+ * loopback origin the proxy brokers for that audience, and `use` receives the
+ * payload with those replacements.
  */
 const withSecretEnvironment = <A, E>(
-  secrets: ReadonlyArray<Secret.HttpCredential>,
+  payload: Payload,
   diagnostic: { readonly argv: readonly [string, ...Array<string>]; readonly cwd: string },
-  use: (secretEnv: Readonly<Record<string, string>>) => Effect.Effect<A, E>
+  use: (secretEnv: Readonly<Record<string, string>>, payload: Payload) => Effect.Effect<A, E>
 ): Effect.Effect<A, E | ExecError> => {
-  if (secrets.length === 0) return use({})
+  if (payload.secrets.length === 0) return use({}, payload)
   const vault = SecretProxy.makeVault()
   const minted: Record<string, string> = {}
-  for (const binding of secrets) minted[binding.secret.env] = vault.mint(binding)
+  for (const binding of payload.secrets) minted[binding.secret.env] = vault.mint(binding)
+  const proxyFailed = (what: string) => (cause: unknown) =>
+    execError({
+      argv: diagnostic.argv,
+      cwd: diagnostic.cwd,
+      exitCode: -1,
+      code: "secret_proxy_failed",
+      stdout: "",
+      stderr: tail(`${what}: ${failureMessage(cause)}`)
+    })
   return Effect.acquireUseRelease(
     Effect.tryPromise({
       try: () => SecretProxy.startProxy(vault),
-      catch: (cause) =>
-        execError({
-          argv: diagnostic.argv,
-          cwd: diagnostic.cwd,
-          exitCode: -1,
-          code: "secret_proxy_failed",
-          stdout: "",
-          stderr: tail(`the secret substitution proxy did not start: ${failureMessage(cause)}`)
-        })
+      catch: proxyFailed("the secret substitution proxy did not start")
     }),
-    (proxy) => {
-      const secretEnv: Record<string, string> = { ...minted, HTTP_PROXY: proxy.endpoint, HTTPS_PROXY: proxy.endpoint }
-      // Tools split on which spelling they read, and a host with
-      // case-insensitive environment variables would see the two as one name.
-      if (process.platform !== "win32") {
-        secretEnv["http_proxy"] = proxy.endpoint
-        secretEnv["https_proxy"] = proxy.endpoint
-      }
-      return use(secretEnv)
-    },
+    (proxy) =>
+      Effect.flatMap(
+        Effect.tryPromise({
+          try: async () => {
+            // Each brokered-origin token becomes the loopback origin that
+            // forwards to its audience. The port exists only now, which is why
+            // the plan carries the token and not the address.
+            const origins = new Map<string, string>()
+            for (const value of [...payload.argv, ...Object.values(payload.env)]) {
+              for (const origin of Secret.secretOriginsIn(value)) {
+                if (!origins.has(origin)) origins.set(origin, await proxy.originFor(origin))
+              }
+            }
+            const brokered = (value: string): string =>
+              value.replace(Secret.secretOriginPattern, (_token, origin: string) => origins.get(origin)!)
+            const [executable, ...args] = payload.argv
+            const env: Record<string, string> = {}
+            for (const [name, value] of Object.entries(payload.env)) env[name] = brokered(value)
+            return { ...payload, argv: [brokered(executable), ...args.map(brokered)], env } satisfies Payload
+          },
+          catch: proxyFailed("the secret substitution proxy could not bind a brokered origin")
+        }),
+        (resolved) => {
+          const secretEnv: Record<string, string> = {
+            ...minted,
+            HTTP_PROXY: proxy.endpoint,
+            HTTPS_PROXY: proxy.endpoint
+          }
+          // NODE_USE_ENV_PROXY stays unset: with it, Node rejects a request a
+          // tool addresses to the proxy in absolute form itself. Node and Go
+          // clients skip the proxy for loopback, so they reach a loopback
+          // audience through S.SecretOrigin like any HTTPS audience.
+          // Tools split on which spelling they read, and a host with
+          // case-insensitive environment variables would see the two as one name.
+          if (process.platform !== "win32") {
+            secretEnv["http_proxy"] = proxy.endpoint
+            secretEnv["https_proxy"] = proxy.endpoint
+          }
+          return use(secretEnv, resolved)
+        }
+      ),
     (proxy) => Effect.promise(() => proxy.close())
   )
 }
@@ -1319,9 +1405,9 @@ export const run = (
           })
         )
       }
-      return withSecretEnvironment(resolved.secrets, diagnostic, (secretEnv) =>
+      return withSecretEnvironment(resolved, diagnostic, (secretEnv, brokered) =>
         Effect.flatMap(
-          confined(confinement, cwd, resolved, sensitiveEnv, secretEnv, options),
+          confined(confinement, cwd, brokered, sensitiveEnv, secretEnv, options),
           (output) =>
             resolved.expectedExitCodes.includes(output.exitCode)
               ? Effect.succeed({

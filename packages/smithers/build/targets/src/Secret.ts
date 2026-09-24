@@ -361,3 +361,54 @@ export const placeholderBytes = 32
  * @since 0.1.0
  */
 export const placeholderPattern = new RegExp(`${placeholderPrefix}[0-9a-f]{${placeholderBytes * 2}}`, "g")
+
+/**
+ * Matches a brokered-origin token and captures the origin it names.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const secretOriginPattern = /\{smthrs:secret-origin:([^{}\s]+)\}/g
+
+/**
+ * Names a declared HTTPS audience as a loopback origin the child can call.
+ *
+ * The proxy cannot see inside an HTTPS tunnel, so a placeholder sent through
+ * `CONNECT` would reach the destination unresolved. This token instead
+ * resolves, at spawn time, to a loopback `http://127.0.0.1:<port>` origin that
+ * forwards every request to the audience over TLS and substitutes authorized
+ * placeholders on the way. The tool needs no certificate and no proxy
+ * support: the loopback origin is its destination.
+ *
+ * The token is a plan-time literal, so the ephemeral port never enters key
+ * material or the recorded plan. A target must also declare an
+ * {@link HttpSecret} bound to the same origin.
+ *
+ * @example
+ * ```ts
+ * import { Smithers as S } from "@smthrs/targets"
+ *
+ * export const whoami = S.Shell.Run({
+ *   command: "curl -fsS -H \"authorization: token $GITHUB_TOKEN\" \"$GITHUB_API/user\"",
+ *   env: { GITHUB_API: S.SecretOrigin("https://api.github.com") },
+ *   secrets: [S.HttpSecret(S.Secret("GITHUB_TOKEN"), ["https://api.github.com"])]
+ * })
+ * ```
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const SecretOrigin = (audience: string): string => `{smthrs:secret-origin:${normalizeAudience(audience)}}`
+
+/**
+ * Lists the origins named by brokered-origin tokens in one string, in order.
+ *
+ * The captured text is returned as written. A caller checks it against the
+ * declared audiences, so a hand-written token that is not a normalized origin
+ * never matches one.
+ *
+ * @category parsing
+ * @since 0.1.0
+ */
+export const secretOriginsIn = (text: string): ReadonlyArray<string> =>
+  Array.from(text.matchAll(secretOriginPattern), (match) => match[1]!)

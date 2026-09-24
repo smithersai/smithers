@@ -194,6 +194,7 @@ describe("targets", () => {
   it("gates deploy on the build and requires approval and both credentials", () => {
     const attrs = Target.metadata(app().deploy).attrs as {
       readonly args: ReadonlyArray<string>
+      readonly env: Readonly<Record<string, string>>
       readonly approval: string
       readonly gates: ReadonlyArray<unknown>
       readonly secrets: ReadonlyArray<{
@@ -204,6 +205,11 @@ describe("targets", () => {
     // No `--config`: wrangler follows the vite plugin's deploy redirect only
     // when the flag is absent.
     expect(attrs.args).toEqual(["deploy"])
+    // An HTTPS audience is reachable with its secret substituted only through
+    // the brokered origin; wrangler takes its API base from this variable.
+    expect(attrs.env).toEqual({
+      CLOUDFLARE_API_BASE_URL: "{smthrs:secret-origin:https://api.cloudflare.com}/client/v4"
+    })
     expect(attrs.approval).toBe("required")
     expect(attrs.gates).toHaveLength(1)
     // Re-pinned 2026-09-01. Until 74a8ad64ca the scaffold declared both

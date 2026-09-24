@@ -23,6 +23,7 @@ import { ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildPr
 import { spawnSync } from "node:child_process"
 import * as NodeFs from "node:fs"
 import * as Fs from "node:fs/promises"
+import * as NodeHttp from "node:http"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -305,7 +306,7 @@ describe("run", () => {
     const marker = NodePath.join(root, "spawned")
     const error = await failed({
       ...payload([process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`]),
-      secrets: [Secret.HttpSecret(Secret.Secret("EXEC_TEST_TOKEN"), ["https://example.test"])]
+      secrets: [Secret.HttpSecret(Secret.Secret("EXEC_TEST_TOKEN"), ["http://127.0.0.1:9"])]
     }, {
       workspaceRoot: root,
       sandbox: { policy: {}, reads: [], writes: [] }
@@ -746,6 +747,89 @@ describe("run", () => {
  * reads the same on a case-sensitive and a case-insensitive filesystem. The
  * one test that deliberately mismatches the case says so.
  */
+describe("brokered secret origins", () => {
+  const credential = (audience: string) =>
+    Secret.HttpSecret(Secret.Secret("EXEC_ORIGIN_TOKEN", { fallback: "real-origin-value" }), [audience])
+
+  it("explains every audience the payload has no transport for", () => {
+    const api = Secret.SecretOrigin("https://api.example.test")
+    expect(
+      Exec.unservableAudiences({
+        argv: ["curl", `${api}/user`],
+        env: {},
+        secrets: [credential("https://api.example.test")]
+      })
+    )
+      .toEqual([])
+    expect(Exec.unservableAudiences({ argv: ["curl"], env: {}, secrets: [credential("http://127.0.0.1:9")] }))
+      .toEqual([])
+    expect(Exec.unservableAudiences({ argv: ["curl"], env: { API: api }, secrets: [] })).toEqual([
+      "exec names S.SecretOrigin(\"https://api.example.test\"), but no declared S.HttpSecret is bound to that audience"
+    ])
+    expect(Exec.unservableAudiences({ argv: ["curl"], env: {}, secrets: [credential("https://api.example.test")] }))
+      .toEqual([
+        "the declared secret EXEC_ORIGIN_TOKEN is bound to https://api.example.test, which the tool can reach " +
+        "with the secret substituted only through a brokered origin; point the tool at " +
+        "S.SecretOrigin(\"https://api.example.test\") in argv or env"
+      ])
+  })
+
+  it("refuses an HTTPS audience with no brokered origin before spawning", async () => {
+    const marker = NodePath.join(root, "spawned")
+    const error = await failed({
+      ...payload([process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`]),
+      secrets: [credential("https://api.example.test")]
+    })
+    expect(error.code).toBe("invalid_payload")
+    expect(error.stderr).toContain("S.SecretOrigin(\"https://api.example.test\")")
+    expect(NodeFs.existsSync(marker)).toBe(false)
+  })
+
+  it("refuses a brokered origin no declared secret is bound to", async () => {
+    const error = await failed({
+      ...payload([process.execPath, "-e", "0"]),
+      env: { API: Secret.SecretOrigin("https://api.example.test") }
+    })
+    expect(error.code).toBe("invalid_payload")
+    expect(error.stderr).toContain("no declared S.HttpSecret is bound to that audience")
+  })
+
+  it("resolves tokens in argv and env to one loopback origin that substitutes the placeholder", async () => {
+    const seen: Array<{ authorization: string | undefined; path: string }> = []
+    const upstream = NodeHttp.createServer((request, response) => {
+      seen.push({ authorization: request.headers.authorization, path: request.url ?? "" })
+      response.end("upstream-ok")
+    })
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve))
+    const address = upstream.address()
+    if (address === null || typeof address === "string") throw new Error("no upstream port")
+    const audience = `http://127.0.0.1:${address.port}`
+    const token = Secret.SecretOrigin(audience)
+    const program = [
+      "const [, fromArgv] = process.argv",
+      "fetch(process.env.API + '/x', { headers: { authorization: 'token ' + process.env.EXEC_ORIGIN_TOKEN } })",
+      "  .then((response) => response.text())",
+      "  .then((body) => process.stdout.write(JSON.stringify({ env: process.env.API, fromArgv, body })))"
+    ].join("\n")
+    try {
+      const exit = await run({ workspaceRoot: root }, {
+        ...payload([process.execPath, "-e", program, `url=${token}/y`]),
+        env: { API: token },
+        secrets: [credential(audience)]
+      })
+      if (!Exit.isSuccess(exit)) throw new Error(`expected a success: ${JSON.stringify(exit.cause)}`)
+      const output = JSON.parse(exit.value.stdout) as { env: string; fromArgv: string; body: string }
+      expect(output.env).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(output.env).not.toBe(audience)
+      expect(output.fromArgv).toBe(`url=${output.env}/y`)
+      expect(output.body).toBe("upstream-ok")
+      expect(seen).toEqual([{ authorization: "token real-origin-value", path: "/x" }])
+    } finally {
+      await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+  })
+})
+
 describe("windows executable resolution", () => {
   let bin: string
   const comspec = "C:\\WINDOWS\\system32\\cmd.exe"

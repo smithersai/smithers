@@ -104,12 +104,17 @@ describe("a declared secret", () => {
     )
     const exit = await Effect.runPromiseExit(Exec.run({ workspaceRoot: root }, {
       ...payload(
-        "process.stdout.write([process.env.EXEC_STREAMS_TOKEN, process.env.HTTP_PROXY, process.env.http_proxy].join(\"\\n\"))"
+        "process.stdout.write([process.env.EXEC_STREAMS_TOKEN, process.env.HTTP_PROXY, process.env.http_proxy, " +
+          "process.env.EXAMPLE_API].join(\"\\n\"))",
+        { env: { EXAMPLE_API: Secret.SecretOrigin("https://example.test") } }
       ),
       secrets: [credential]
     }))
     if (!Exit.isSuccess(exit)) throw new Error(`expected a success: ${JSON.stringify(exit.cause)}`)
-    const [token, upper, lower] = exit.value.stdout.split("\n")
+    const [token, upper, lower, origin] = exit.value.stdout.split("\n")
+    // The brokered origin is its own loopback listener, not the proxy endpoint.
+    expect(origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(origin).not.toBe(upper)
     expect(token).toMatch(new RegExp(`^${Secret.placeholderPrefix}[0-9a-f]{${Secret.placeholderBytes * 2}}$`))
     expect(exit.value.stdout).not.toContain("the-real-credential")
     expect(upper).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/?$/)

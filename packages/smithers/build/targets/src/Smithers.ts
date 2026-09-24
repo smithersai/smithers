@@ -156,6 +156,8 @@ export { Tsconfig } from "./Tsconfig.ts"
 export { Secret } from "./Secret.ts"
 /** @category constructors @since 0.1.0 */
 export { HttpSecret } from "./Secret.ts"
+/** @category constructors @since 0.1.0 */
+export { SecretOrigin } from "./Secret.ts"
 /** @category targets @since 0.1.0 */
 export { TsBuild } from "./TsBuild.ts"
 /** @category targets @since 0.1.0 */

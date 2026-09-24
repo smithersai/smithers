@@ -487,6 +487,26 @@ const boundedProxyRequest = (
     outgoing.end()
   })
 
+/** Sends one CONNECT through the proxy and returns the first response bytes. */
+const connectThrough = (endpoint: string, authority: string): Promise<string> =>
+  new Promise<string>((resolve, reject) => {
+    const socket = NodeNet.connect({ host: "127.0.0.1", port: Number(new URL(endpoint).port) }, () => {
+      socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`)
+    })
+    socket.setEncoding("utf8")
+    let received = ""
+    socket.on("data", (chunk: string) => {
+      received += chunk
+      // A refusal closes the socket after its body; an open tunnel does not.
+      if (received.startsWith("HTTP/1.1 200") && received.includes("\r\n\r\n")) {
+        socket.destroy()
+        resolve(received)
+      }
+    })
+    socket.once("end", () => resolve(received))
+    socket.once("error", reject)
+  })
+
 describe("SecretProxy server", () => {
   const token = Secret.Secret("PROXY_TEST_TOKEN")
 
@@ -949,7 +969,7 @@ describe("SecretProxy server", () => {
     }
   })
 
-  it("refuses an opaque CONNECT tunnel when the vault holds a placeholder", async () => {
+  it("refuses an opaque CONNECT tunnel to a declared audience and names the brokered origin", async () => {
     let upstreamConnections = 0
     const upstream = NodeNet.createServer((socket) => {
       upstreamConnections += 1
@@ -960,25 +980,268 @@ describe("SecretProxy server", () => {
     if (upstreamAddress === null || typeof upstreamAddress === "string") throw new Error("no upstream port")
 
     const vault = SecretProxy.makeVault({ read: () => "real-value" })
-    vault.mint(Secret.HttpSecret(token, ["https://example.com"]))
+    // Declared as localhost, reached as 127.0.0.1: one loopback host.
+    vault.mint(Secret.HttpSecret(token, [`http://localhost:${upstreamAddress.port}`]))
     const proxy = await SecretProxy.startProxy(vault)
     try {
-      const port = Number(new URL(proxy.endpoint).port)
-      const response = await new Promise<string>((resolve, reject) => {
-        const socket = NodeNet.connect({ host: "127.0.0.1", port }, () => {
-          socket.write(
-            `CONNECT 127.0.0.1:${upstreamAddress.port} HTTP/1.1\r\nHost: 127.0.0.1:${upstreamAddress.port}\r\n\r\n`
-          )
-        })
-        socket.setEncoding("utf8")
-        socket.once("data", resolve)
-        socket.once("error", reject)
-      })
+      const response = await connectThrough(proxy.endpoint, `127.0.0.1:${upstreamAddress.port}`)
       expect(response.startsWith("HTTP/1.1 501 Not Implemented")).toBe(true)
+      expect(response).toContain(
+        `http://localhost:${upstreamAddress.port} is a declared secret audience; ` +
+          `point the tool at S.SecretOrigin("http://localhost:${upstreamAddress.port}")`
+      )
       expect(upstreamConnections).toBe(0)
     } finally {
       await proxy.close()
       await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    }
+  })
+})
+
+describe("SecretOrigin tokens", () => {
+  it("names a normalized audience and is found again in text", () => {
+    const token = Secret.SecretOrigin("https://API.github.com:443")
+    expect(token).toBe("{smthrs:secret-origin:https://api.github.com}")
+    expect(Secret.secretOriginsIn(`--url=${token}/user and ${Secret.SecretOrigin("http://127.0.0.1:9")}`))
+      .toEqual(["https://api.github.com", "http://127.0.0.1:9"])
+    expect(Secret.secretOriginsIn("no token here")).toEqual([])
+  })
+
+  it("refuses an origin a credential could not be bound to", () => {
+    expect(() => Secret.SecretOrigin("http://example.com")).toThrow(/exact HTTPS or loopback HTTP origin/)
+    expect(() => Secret.SecretOrigin("https://example.com/path")).toThrow(/exact HTTPS or loopback HTTP origin/)
+  })
+})
+
+/** Starts an upstream that records what reached it and answers with `reply`. */
+const recordingUpstream = async (
+  reply: (origin: string) => { readonly headers?: Record<string, string>; readonly body: string }
+) => {
+  const seen: Array<{ readonly headers: NodeHttp.IncomingHttpHeaders; readonly path: string }> = []
+  let origin = ""
+  const server = NodeHttp.createServer((incoming, response) => {
+    seen.push({ headers: incoming.headers, path: incoming.url ?? "" })
+    incoming.resume()
+    incoming.on("end", () => {
+      const answer = reply(origin)
+      response.writeHead(200, { "content-type": "text/plain", ...answer.headers }).end(answer.body)
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (address === null || typeof address === "string") throw new Error("no upstream port")
+  origin = `http://127.0.0.1:${address.port}`
+  return {
+    origin,
+    seen,
+    close: () => new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+}
+
+const get = (
+  url: string,
+  headers: Record<string, string> = {},
+  via?: string
+): Promise<{ status: number; headers: NodeHttp.IncomingHttpHeaders; body: string }> =>
+  new Promise((resolve, reject) => {
+    const target = new URL(url)
+    const proxy = via === undefined ? undefined : new URL(via)
+    const outgoing = NodeHttp.request({
+      host: "127.0.0.1",
+      port: Number((proxy ?? target).port),
+      path: proxy === undefined ? `${target.pathname}${target.search}` : url,
+      headers
+    }, (response) => {
+      const chunks: Array<Buffer> = []
+      response.on("data", (chunk: Buffer) => chunks.push(chunk))
+      response.on("end", () =>
+        resolve({
+          status: response.statusCode ?? 0,
+          headers: response.headers,
+          body: Buffer.concat(chunks).toString("utf8")
+        }))
+    })
+    outgoing.on("error", reject)
+    outgoing.end()
+  })
+
+describe("SecretProxy brokered origins", () => {
+  const token = Secret.Secret("ORIGIN_TEST_TOKEN")
+
+  it("binds one loopback origin per audience, memoized, and only for declared audiences", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    vault.mint(Secret.HttpSecret(token, ["https://api.example.test", "https://uploads.example.test"]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const api = await proxy.originFor("https://api.example.test")
+      const uploads = await proxy.originFor("https://uploads.example.test")
+      expect(api).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(uploads).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+      expect(api).not.toBe(uploads)
+      expect(api).not.toBe(proxy.endpoint)
+      expect(await proxy.originFor("https://API.example.test:443")).toBe(api)
+      await expect(proxy.originFor("https://other.example.test")).rejects.toThrow(
+        "no declared secret is bound to https://other.example.test"
+      )
+      await expect(proxy.originFor("not a url")).rejects.toThrow(/exact HTTP origin/)
+    } finally {
+      await proxy.close()
+    }
+  })
+
+  it("forwards to the audience, substitutes its placeholder, and rewrites the audience echo", async () => {
+    const upstream = await recordingUpstream((origin) => ({
+      headers: { location: `${origin}/next` },
+      body: `see ${origin}/docs, token real-value`
+    }))
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const placeholder = vault.mint(Secret.HttpSecret(token, [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const origin = await proxy.originFor(upstream.origin)
+      const response = await get(`${origin}/user?q=${placeholder}`, { authorization: `token ${placeholder}` })
+      expect(response.status).toBe(200)
+      expect(upstream.seen[0]!.headers.authorization).toBe("token real-value")
+      expect(upstream.seen[0]!.headers.host).toBe(new URL(upstream.origin).host)
+      expect(upstream.seen[0]!.path).toBe("/user?q=real-value")
+      expect(response.headers.location).toBe(`${origin}/next`)
+      expect(response.body).toBe(`see ${origin}/docs, token ${placeholder}`)
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("routes a brokered origin sent through the proxy in absolute form to the same audience", async () => {
+    const upstream = await recordingUpstream(() => ({ body: "ok" }))
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const placeholder = vault.mint(Secret.HttpSecret(token, [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const origin = await proxy.originFor(upstream.origin)
+      const response = await get(`${origin}/x`, { authorization: placeholder }, proxy.endpoint)
+      expect(response.status).toBe(200)
+      expect(upstream.seen[0]!.headers.authorization).toBe("real-value")
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("denies a placeholder bound to another audience before contacting the upstream", async () => {
+    const upstream = await recordingUpstream(() => ({ body: "ok" }))
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    vault.mint(Secret.HttpSecret(token, [upstream.origin]))
+    const other = vault.mint(Secret.HttpSecret(Secret.Secret("ORIGIN_OTHER_TOKEN"), ["https://other.example.test"]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const origin = await proxy.originFor(upstream.origin)
+      const response = await get(`${origin}/x`, { authorization: other })
+      expect(response.status).toBe(403)
+      expect(response.body).toBe(`the declared secret ORIGIN_OTHER_TOKEN is not authorized for ${upstream.origin}`)
+      expect(upstream.seen).toEqual([])
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("refuses a request target that would leave the audience", async () => {
+    const upstream = await recordingUpstream(() => ({ body: "ok" }))
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    vault.mint(Secret.HttpSecret(token, [upstream.origin]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const origin = new URL(await proxy.originFor(upstream.origin))
+      for (const path of ["//evil.example.test/x", "*"]) {
+        const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+          const socket = NodeNet.connect({ host: "127.0.0.1", port: Number(origin.port) }, () => {
+            socket.write(`GET ${path} HTTP/1.1\r\nHost: ${origin.host}\r\nConnection: close\r\n\r\n`)
+          })
+          socket.setEncoding("utf8")
+          let text = ""
+          socket.on("data", (chunk: string) => (text += chunk))
+          socket.once("end", () => resolve({ status: Number(text.split(" ")[1]), body: text }))
+          socket.once("error", reject)
+        })
+        expect(response.status).toBe(400)
+        expect(response.body).toContain("brokered origin requires an origin-form request target")
+      }
+      expect(upstream.seen).toEqual([])
+    } finally {
+      await proxy.close()
+      await upstream.close()
+    }
+  })
+
+  it("closes every brokered origin with the proxy", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    vault.mint(Secret.HttpSecret(token, ["https://api.example.test"]))
+    const proxy = await SecretProxy.startProxy(vault)
+    const origin = await proxy.originFor("https://api.example.test")
+    await proxy.close()
+    await expect(get(`${origin}/x`)).rejects.toThrow(/ECONNREFUSED/)
+  })
+
+  it("tunnels CONNECT to a host that is not an audience even while the vault holds a placeholder", async () => {
+    const echo = NodeNet.createServer((socket) => socket.pipe(socket))
+    await new Promise<void>((resolve) => echo.listen(0, "127.0.0.1", resolve))
+    const echoAddress = echo.address()
+    if (echoAddress === null || typeof echoAddress === "string") throw new Error("no echo port")
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    vault.mint(Secret.HttpSecret(token, ["https://api.example.test"]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const response = await connectThrough(proxy.endpoint, `127.0.0.1:${echoAddress.port}`)
+      expect(response.startsWith("HTTP/1.1 200 Connection Established")).toBe(true)
+      const refused = await connectThrough(proxy.endpoint, "api.example.test:443")
+      expect(refused).toContain("CONNECT to api.example.test:443 refused: https://api.example.test")
+    } finally {
+      await proxy.close()
+      await new Promise<void>((resolve) => echo.close(() => resolve()))
+    }
+  })
+})
+
+describe.runIf(process.env["SMITHERS_E2E_NETWORK"] === "1")("SecretProxy brokered origins over the network", () => {
+  it("forwards a brokered origin to a public HTTPS audience over TLS", async () => {
+    const vault = SecretProxy.makeVault({ read: () => "unused-network-value" })
+    vault.mint(Secret.HttpSecret(Secret.Secret("ORIGIN_NETWORK_TOKEN"), ["https://api.github.com"]))
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      const origin = await proxy.originFor("https://api.github.com")
+      const response = await get(`${origin}/zen`, { "user-agent": "smithers-secret-origin-e2e" })
+      expect(response.status).toBe(200)
+      expect(response.body.length).toBeGreaterThan(0)
+    } finally {
+      await proxy.close()
+    }
+  }, 30_000)
+})
+
+describe("SecretProxy brokered origin bound", () => {
+  it(`refuses more than ${SecretProxy.maximumBrokeredOrigins} brokered origins`, async () => {
+    const vault = SecretProxy.makeVault({ read: () => "real-value" })
+    const audiences = Array.from(
+      { length: SecretProxy.maximumBrokeredOrigins + 1 },
+      (_, index) => `https://a${index}.example.test`
+    )
+    for (let start = 0; start < audiences.length; start += Secret.maximumAudiences) {
+      vault.mint(
+        Secret.HttpSecret(
+          Secret.Secret(`ORIGIN_BOUND_${start}`),
+          audiences.slice(start, start + Secret.maximumAudiences)
+        )
+      )
+    }
+    const proxy = await SecretProxy.startProxy(vault)
+    try {
+      for (const audience of audiences.slice(0, -1)) await proxy.originFor(audience)
+      await expect(proxy.originFor(audiences.at(-1)!)).rejects.toThrow(
+        `secret proxy brokers at most ${SecretProxy.maximumBrokeredOrigins} origins`
+      )
+    } finally {
+      await proxy.close()
     }
   })
 })
