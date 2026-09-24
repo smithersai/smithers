@@ -427,7 +427,7 @@ export function App(props: AppProps) {
   }, [revision, runs, openForm, changeForm, approvals, picker, draft])
   const snapshot = workspace.snapshot()
   const eta = (id: string, status: string, startedAt: number) => {
-    if (status === "done" || status === "failed" || status === "cancelled") return ""
+    if (status === "done" || status === "failed" || status === "cancelled" || status === "parked" || status === "waiting") return ""
     // Queued work has not started: its label is the whole estimate.
     const text = Estimate.label(estimator.get(id), status === "queued" ? now : startedAt, now)
     return text === "" ? "" : ` ${text}`
@@ -453,7 +453,8 @@ export function App(props: AppProps) {
           : "■ "
       }${tab.status === "failed" ? tab.failure?.headline ?? tabTitle(tab) : tab.status === "parked" ? tabToast(tab) : tabTitle(tab)}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
     })),
-    ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id))
+    ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id) &&
+      !snapshot.panels.some((panel) => panel.bind?.tree === tab.id))
       .map((tab) => ({ id: `tree:${tab.id}`, title: `Tree: ${tab.title}` })),
     ...flowRuns.map((run) => ({
       id: `flow:${run.id}`,
@@ -744,8 +745,9 @@ export function App(props: AppProps) {
       background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}\nAgents: ${Agents.context(runs.listed())}`,
       runtime: {
         publish: (panel) => {
+          const first = !workspace.snapshot().panels.some((shown) => shown.id === panel.id)
           workspace.publish(panel)
-          if (panel.placement === "main") {
+          if (first && panel.placement === "main") {
             setSurface((current) => current === "chat" ? `ui:${panel.id}` : current)
             setPanelFocus(false)
           }
@@ -1692,12 +1694,13 @@ export function App(props: AppProps) {
   const activeTabs = snapshot.tabs.filter((tab) =>
     tab.status === "queued" || tab.status === "requested" || tab.status === "running" || tab.status === "waiting" || tab.status === "parked"
   )
-  const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
   const sideChat = focusMain && dimensions.width >= 120
+  const showSidebar = dimensions.width >= 100 && activeTabs.length > 0 && (!focusMain || sideChat)
   const width = sideChat ? 40 : Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
   const mainWidth = Math.max(20, dimensions.width - width - (showSidebar ? 24 : 0) - 2)
   const accent = bashMode ? color.success : working ? color.faint : color.brand
-  const tabCount = Math.max(2, Math.floor(width / 24))
+  const tabCount = Math.max(1, Math.floor(width / 24))
+  const tabTitleWidth = Math.min(22, Math.max(1, Math.floor(width / tabCount) - 2))
   const firstTab = Math.max(
     0,
     Math.min(surfaces.findIndex((tab) => tab.id === surface) - Math.floor(tabCount / 2), surfaces.length - tabCount)
@@ -1744,7 +1747,7 @@ export function App(props: AppProps) {
         <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
           {visibleTabs.map((tab) => (
             <text key={tab.id} wrapMode="none" fg={surface === tab.id ? color.brand : color.faint} onMouseDown={() => clickTab(tab.id)}>
-              {" "}{tab.title.length > 22 ? `${tab.title.slice(0, 21)}…` : tab.title}{" "}
+              {" "}{tab.title.length > tabTitleWidth ? `${tab.title.slice(0, tabTitleWidth - 1)}…` : tab.title}{" "}
             </text>
           ))}
           {Timeline.active(filter) && surface === "chat"
