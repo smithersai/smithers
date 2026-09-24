@@ -151,6 +151,13 @@ type SourceResolver interface {
 type BindingLease interface {
 	Binding() Binding
 	Credential() string
+	// Supersedes reports a durable owner whose artifact digest, service name,
+	// or source revision no longer matches the catalog/authority. Acquire
+	// succeeds for such a row; the resolver stops that owner and calls Rebind.
+	Supersedes() (Binding, bool)
+	// Rebind installs the current identity on the same row with a new owner
+	// generation, fencing any late host of the superseded identity.
+	Rebind(context.Context) (Binding, error)
 	PrepareStart(context.Context, bool) (Binding, error)
 	MarkRunning(context.Context) error
 	// MarkFailed records a failed start so the next start fences a new owner.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ type memoryBindingStore struct {
 	binding       Binding
 	credential    string
 	acquires      int
+	rebinds       int
 	lastErrorCode string
 }
 
@@ -42,12 +44,46 @@ func (store *memoryBindingStore) Acquire(_ context.Context, authority Authority,
 		}
 		store.credential = "server-held-bearer"
 	}
-	return &memoryBindingLease{store: store, binding: store.binding}, nil
+	if err := authorityMatches(store.binding, authority, catalog); err != nil {
+		return nil, err
+	}
+	lease := &memoryBindingLease{store: store, binding: store.binding}
+	if target, drifted := identityDrift(store.binding, authority, catalog); drifted {
+		old := store.binding
+		lease.supersedes, lease.target = &old, target
+	}
+	return lease, nil
 }
 
 type memoryBindingLease struct {
-	store   *memoryBindingStore
-	binding Binding
+	store      *memoryBindingStore
+	binding    Binding
+	supersedes *Binding
+	target     Binding
+}
+
+func (lease *memoryBindingLease) Supersedes() (Binding, bool) {
+	if lease.supersedes == nil {
+		return Binding{}, false
+	}
+	return *lease.supersedes, true
+}
+
+func (lease *memoryBindingLease) Rebind(context.Context) (Binding, error) {
+	lease.store.mu.Lock()
+	defer lease.store.mu.Unlock()
+	if lease.supersedes == nil {
+		return lease.binding, nil
+	}
+	if lease.store.binding.OwnerGeneration != lease.binding.OwnerGeneration {
+		return Binding{}, errors.New("flow host rebind lost its owner fence")
+	}
+	lease.target.OwnerGeneration = lease.binding.OwnerGeneration + 1
+	lease.target.State = "pending"
+	lease.binding, lease.supersedes = lease.target, nil
+	lease.store.binding = lease.binding
+	lease.store.rebinds++
+	return lease.binding, nil
 }
 
 func (lease *memoryBindingLease) Binding() Binding   { return lease.binding }
@@ -101,15 +137,7 @@ func (transport *identityTransport) RoundTrip(request *http.Request) (*http.Resp
 		Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
 }
 
-func intString(value int64) string {
-	if value == 1 {
-		return "1"
-	}
-	if value == 2 {
-		return "2"
-	}
-	return "0"
-}
+func intString(value int64) string { return strconv.FormatInt(value, 10) }
 
 type memoryLauncher struct {
 	mu        sync.Mutex
@@ -118,6 +146,23 @@ type memoryLauncher struct {
 	binding   Binding
 	transport *identityTransport
 	starts    []HostLaunch
+	stopErr   error
+	stops     []Binding
+	calls     []string
+}
+
+func (launcher *memoryLauncher) StopFlowHost(_ context.Context, binding Binding) error {
+	launcher.mu.Lock()
+	defer launcher.mu.Unlock()
+	launcher.calls = append(launcher.calls, "stop")
+	launcher.stops = append(launcher.stops, binding)
+	if launcher.stopErr != nil {
+		return launcher.stopErr
+	}
+	if launcher.binding.ServiceName == binding.ServiceName {
+		launcher.running = false
+	}
+	return nil
 }
 
 func (launcher *memoryLauncher) connection(binding Binding, credential string) Connection {
@@ -131,6 +176,7 @@ func (launcher *memoryLauncher) connection(binding Binding, credential string) C
 func (launcher *memoryLauncher) InspectFlowHost(_ context.Context, _ HostLaunch) (Connection, error) {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
+	launcher.calls = append(launcher.calls, "inspect")
 	if !launcher.running {
 		return Connection{}, ErrHostNotRunning
 	}
@@ -140,6 +186,7 @@ func (launcher *memoryLauncher) InspectFlowHost(_ context.Context, _ HostLaunch)
 func (launcher *memoryLauncher) StartFlowHost(_ context.Context, request HostLaunch) (Connection, error) {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
+	launcher.calls = append(launcher.calls, "start")
 	launcher.starts = append(launcher.starts, request)
 	if launcher.startErr != nil {
 		return Connection{}, launcher.startErr
@@ -313,4 +360,118 @@ func TestResolverRecordsFailedStartAndFencesTheNextOwner(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), identity.OwnerGeneration, "a start after a failure must fence a new owner")
 	assert.Equal(t, "running", store.binding.State)
+}
+
+func upgradeCatalog(resolver *Resolver, digest string) {
+	catalog := resolver.catalogs[CatalogCoding]
+	catalog.ArtifactDigest = digest
+	resolver.catalogs[CatalogCoding] = catalog
+}
+
+func TestResolverRebindsDurableBindingAfterHostBundleUpgrade(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	old := store.binding
+	launcher.calls = nil
+
+	upgradeCatalog(resolver, strings.Repeat("c", 64))
+	runtime, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	identity, err := runtime.Identity(context.Background())
+	require.NoError(t, err)
+
+	assert.Equal(t, []string{"stop", "inspect", "start"}, launcher.calls, "the superseded host must stop before the new owner starts")
+	require.Len(t, launcher.stops, 1)
+	assert.Equal(t, old, launcher.stops[0])
+	require.Len(t, launcher.starts, 2)
+	assert.Equal(t, strings.Repeat("c", 64), launcher.starts[1].Binding.RuntimeArtifactDigest)
+	assert.Equal(t, int64(2), launcher.starts[1].Binding.OwnerGeneration)
+	assert.Equal(t, launcher.starts[0].Credential, launcher.starts[1].Credential)
+	assert.Equal(t, old.ID, launcher.starts[1].Binding.ID)
+	assert.Equal(t, strings.Repeat("c", 64), identity.RuntimeArtifactDigest)
+	assert.Equal(t, int64(2), identity.OwnerGeneration)
+	assert.Equal(t, "running", store.binding.State)
+	assert.Equal(t, 1, store.rebinds)
+
+	launcher.calls = nil
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"inspect"}, launcher.calls, "a rebound binding reconnects without another replacement")
+}
+
+func TestResolverRebindsRepositoryJobOnNewSourceRevision(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	original := resolver.targets
+	resolver.targets = TargetResolverFunc(func(ctx context.Context, target flowruntime.Target) (Authority, error) {
+		authority, err := original.ResolveFlowHostTarget(ctx, target)
+		authority.SourceRevision = strings.Repeat("e", 40)
+		return authority, err
+	})
+	runtime, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	identity, err := runtime.Identity(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("e", 40), identity.SourceRevision)
+	assert.Equal(t, strings.Repeat("e", 40), store.binding.SourceRevision)
+	assert.Equal(t, strings.Repeat("a", 64), store.binding.RuntimeArtifactDigest)
+	require.Len(t, launcher.stops, 1)
+	assert.Equal(t, strings.Repeat("b", 40), launcher.stops[0].SourceRevision)
+}
+
+func TestResolverUpgradeStopFailureIsRetryableAndStartsNothing(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	old := store.binding
+	launcher.stopErr = errors.New("workspace runtime unavailable")
+	upgradeCatalog(resolver, strings.Repeat("c", 64))
+
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	var bridgeFailure flowruntime.Failure
+	require.ErrorAs(t, err, &bridgeFailure)
+	assert.Equal(t, "runtime_upgrade_stop_failed", bridgeFailure.FlowRuntimeCode())
+	assert.True(t, bridgeFailure.FlowRuntimeRetryable())
+	require.Len(t, launcher.stops, 1, "the stop control must have been consulted")
+	require.Len(t, launcher.starts, 1, "no new owner may start while the old one may be live")
+	assert.Equal(t, old, store.binding, "the durable row keeps the old owner until the stop succeeds")
+	assert.Equal(t, 0, store.rebinds)
+
+	launcher.stopErr = nil
+	runtime, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	identity, err := runtime.Identity(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, strings.Repeat("c", 64), identity.RuntimeArtifactDigest)
+}
+
+func TestResolverUpgradeWithoutStopperIsTerminal(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	resolver.launcher = struct{ Launcher }{launcher}
+	upgradeCatalog(resolver, strings.Repeat("c", 64))
+
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	var bridgeFailure flowruntime.Failure
+	require.ErrorAs(t, err, &bridgeFailure)
+	assert.Equal(t, "runtime_upgrade_unsupported", bridgeFailure.FlowRuntimeCode())
+	assert.False(t, bridgeFailure.FlowRuntimeRetryable())
+	assert.Empty(t, launcher.stops)
+	require.Len(t, launcher.starts, 1)
+	assert.Equal(t, strings.Repeat("a", 64), store.binding.RuntimeArtifactDigest)
+}
+
+func TestResolverStillRefusesAuthorityMismatchOnDurableBinding(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	store.binding.UserID = 10 // the workspace row now belongs to another user
+	upgradeCatalog(resolver, strings.Repeat("c", 64))
+	_, err = resolver.ResolveFlowRuntime(context.Background(), target)
+	require.Error(t, err)
+	assert.Empty(t, launcher.stops, "an authority conflict must never stop or rebind the host")
+	require.Len(t, launcher.starts, 1)
 }

@@ -53,6 +53,10 @@ type lease struct {
 	binding    Binding
 	credential string
 	closed     bool
+	// supersedes holds the durable owner whose identity no longer matches the
+	// operator catalog or authority; target is the identity Rebind installs.
+	supersedes *Binding
+	target     Binding
 }
 
 func bindingLockKey(authority Authority, catalog Catalog) string {
@@ -155,8 +159,13 @@ func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catal
 	} else if err != nil {
 		return err
 	}
-	if err := bindingMatches(binding, authority, catalog); err != nil {
+	if err := authorityMatches(binding, authority, catalog); err != nil {
 		return err
+	}
+	if target, drifted := identityDrift(binding, authority, catalog); drifted {
+		old := binding
+		value.supersedes = &old
+		value.target = target
 	}
 	if value.credential == "" {
 		credential, err := value.store.codec.DecryptString(encrypted)
@@ -193,13 +202,41 @@ func scanBinding(row pgx.Row) (Binding, string, []byte, error) {
 	return binding, encrypted, credentialHash, err
 }
 
-func bindingMatches(binding Binding, authority Authority, catalog Catalog) error {
+// authorityMatches checks the immutable part of a durable binding: who owns
+// it and which workspace/catalog it serves. A mismatch is a hard conflict.
+func authorityMatches(binding Binding, authority Authority, catalog Catalog) error {
 	if binding.TenantID != authority.Target.TenantID || binding.PrincipalID != authority.Target.PrincipalID ||
 		binding.RepositoryID != authority.RepositoryID || binding.UserID != authority.UserID ||
 		binding.WorkspaceID != authority.WorkspaceID || binding.CatalogKey != catalog.Key ||
-		binding.ServiceName != catalog.ServiceName || binding.RuntimeArtifactDigest != catalog.ArtifactDigest ||
-		(authority.SourceRevision != "" && binding.SourceRevision != authority.SourceRevision) || !lowerHex(binding.SourceRevision, 40) || binding.OwnerGeneration <= 0 || binding.State == "retired" {
+		!lowerHex(binding.SourceRevision, 40) || binding.OwnerGeneration <= 0 || binding.State == "retired" {
 		return errors.New("flow host durable binding conflicts with resolved authority")
+	}
+	return nil
+}
+
+// identityDrift returns the host identity the operator catalog and authority
+// now require. Artifact digest and service name follow the catalog; the source
+// revision follows the authority only when it names one (reconnects keep the
+// pinned revision). Drift is a planned owner replacement, never a conflict.
+func identityDrift(binding Binding, authority Authority, catalog Catalog) (Binding, bool) {
+	target := binding
+	target.ServiceName = catalog.ServiceName
+	target.RuntimeArtifactDigest = catalog.ArtifactDigest
+	if authority.SourceRevision != "" {
+		target.SourceRevision = authority.SourceRevision
+	}
+	return target, target.ServiceName != binding.ServiceName ||
+		target.RuntimeArtifactDigest != binding.RuntimeArtifactDigest || target.SourceRevision != binding.SourceRevision
+}
+
+// bindingMatches is the launch-time check: the binding must match both the
+// authority and the current identity exactly.
+func bindingMatches(binding Binding, authority Authority, catalog Catalog) error {
+	if err := authorityMatches(binding, authority, catalog); err != nil {
+		return err
+	}
+	if _, drifted := identityDrift(binding, authority, catalog); drifted {
+		return errors.New("flow host durable binding identity differs from its catalog")
 	}
 	return nil
 }
@@ -207,6 +244,51 @@ func bindingMatches(binding Binding, authority Authority, catalog Catalog) error
 func (value *lease) Binding() Binding { return value.binding }
 
 func (value *lease) Credential() string { return value.credential }
+
+// Supersedes reports the durable owner a Rebind would replace.
+func (value *lease) Supersedes() (Binding, bool) {
+	if value == nil || value.supersedes == nil {
+		return Binding{}, false
+	}
+	return *value.supersedes, true
+}
+
+// Rebind installs the drifted identity on the same durable row and fences the
+// superseded owner by advancing its generation. The caller must stop the
+// superseded host first; the bearer and state directory are retained.
+func (value *lease) Rebind(ctx context.Context) (Binding, error) {
+	if value == nil || value.closed || value.connection == nil {
+		return Binding{}, errors.New("flow host binding lease is closed")
+	}
+	if value.supersedes == nil {
+		return value.binding, nil
+	}
+	if value.binding.OwnerGeneration == int64(^uint64(0)>>1) {
+		return Binding{}, errors.New("flow host owner generation exhausted")
+	}
+	target := value.target
+	var generation int64
+	err := value.connection.QueryRow(ctx, `UPDATE flow_runtime_host_bindings
+		SET runtime_artifact_digest=$3, service_name=$4, source_revision=$5,
+			owner_generation=owner_generation+1, state='pending', last_error_code='', updated_at=clock_timestamp()
+		WHERE id=$1 AND owner_generation=$2 AND state <> 'retired'
+		RETURNING owner_generation`, value.binding.ID, value.binding.OwnerGeneration,
+		target.RuntimeArtifactDigest, target.ServiceName, target.SourceRevision).Scan(&generation)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Binding{}, errors.New("flow host rebind lost its owner fence")
+	}
+	if err != nil {
+		return Binding{}, err
+	}
+	if generation != value.binding.OwnerGeneration+1 {
+		return Binding{}, errors.New("flow host owner fence was not committed")
+	}
+	target.OwnerGeneration = generation
+	target.State = "pending"
+	value.binding = target
+	value.supersedes = nil
+	return value.binding, nil
+}
 
 func (value *lease) PrepareStart(ctx context.Context, replaceOwner bool) (Binding, error) {
 	if value == nil || value.closed || value.connection == nil {

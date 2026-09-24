@@ -201,12 +201,15 @@ func ensureManagedHostState(workspaceState string, spec workspaceapi.ManagedHost
 	contents, err := os.ReadFile(metadataPath)
 	if err == nil {
 		var binding managedHostBinding
-		if json.Unmarshal(contents, &binding) != nil || binding.ID != spec.ID || binding.Name != spec.Name {
+		if json.Unmarshal(contents, &binding) != nil || binding.ID != spec.ID {
 			return "", errors.New("managed host state belongs to another binding")
 		}
-		return directory, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+		if binding.Name == spec.Name {
+			return directory, nil
+		}
+		// The binding ID owns the state. A renamed service (a host upgrade
+		// that changed the catalog service name) keeps it and records the name.
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("read managed host state identity: %w", err)
 	}
 	contents, err = json.Marshal(managedHostBinding{ID: spec.ID, Name: spec.Name})

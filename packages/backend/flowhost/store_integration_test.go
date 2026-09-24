@@ -147,10 +147,113 @@ func TestPostgresHostBindingConcurrencyAuthorityAndRestart(t *testing.T) {
 	foreign.UserID++
 	_, err = store.Acquire(ctx, foreign, catalog)
 	require.Error(t, err)
+	// A new source revision is a planned owner replacement, not a conflict.
 	changed := another
 	changed.SourceRevision = strings.Repeat("c", 40)
-	_, err = store.Acquire(ctx, changed, catalog)
+	drifted, err := store.Acquire(ctx, changed, catalog)
+	require.NoError(t, err)
+	_, superseded := drifted.Supersedes()
+	require.True(t, superseded)
+	require.NoError(t, drifted.Close())
+}
+
+func TestPostgresHostBindingRebindsOnIdentityDrift(t *testing.T) {
+	pool := hostTestPool(t)
+	ctx := context.Background()
+	authority, catalog := hostFixture(t, pool)
+	store, err := NewStore(pool, testCodec{})
+	require.NoError(t, err)
+	first, err := store.Acquire(ctx, authority, catalog)
+	require.NoError(t, err)
+	_, superseded := first.Supersedes()
+	require.False(t, superseded)
+	_, err = first.PrepareStart(ctx, false)
+	require.NoError(t, err)
+	require.NoError(t, first.MarkRunning(ctx))
+	original, bearer := first.Binding(), first.Credential()
+	require.NoError(t, first.Close())
+
+	// A host-bundle upgrade: the catalog digest changes; reconnect omits the revision.
+	reconnect := authority
+	reconnect.SourceRevision = ""
+	upgraded := catalog
+	upgraded.ArtifactDigest = strings.Repeat("c", 64)
+	held, err := store.Acquire(ctx, reconnect, upgraded)
+	require.NoError(t, err)
+	old, superseded := held.Supersedes()
+	require.True(t, superseded)
+	require.Equal(t, original, old)
+	require.Equal(t, original, held.Binding(), "the lease hands out the old owner until Rebind")
+	rebound, err := held.Rebind(ctx)
+	require.NoError(t, err)
+	require.Equal(t, original.ID, rebound.ID)
+	require.EqualValues(t, 2, rebound.OwnerGeneration)
+	require.Equal(t, "pending", rebound.State)
+	require.Equal(t, upgraded.ArtifactDigest, rebound.RuntimeArtifactDigest)
+	require.Equal(t, authority.SourceRevision, rebound.SourceRevision, "an empty authority revision keeps the pinned one")
+	require.Equal(t, bearer, held.Credential())
+	_, superseded = held.Supersedes()
+	require.False(t, superseded)
+	require.NoError(t, held.Close())
+
+	reloaded, err := store.Acquire(ctx, reconnect, upgraded)
+	require.NoError(t, err)
+	_, superseded = reloaded.Supersedes()
+	require.False(t, superseded)
+	require.Equal(t, rebound, reloaded.Binding())
+	require.Equal(t, bearer, reloaded.Credential())
+	require.NoError(t, reloaded.Close())
+
+	// A repository job re-registered on a new revision plus a renamed service.
+	job := authority
+	job.SourceRevision = strings.Repeat("d", 40)
+	renamed := upgraded
+	renamed.ServiceName = "coding-v2"
+	held, err = store.Acquire(ctx, job, renamed)
+	require.NoError(t, err)
+	rebound, err = held.Rebind(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 3, rebound.OwnerGeneration)
+	require.Equal(t, job.SourceRevision, rebound.SourceRevision)
+	require.Equal(t, "coding-v2", rebound.ServiceName)
+	require.NoError(t, held.Close())
+
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM flow_runtime_host_bindings`).Scan(&count))
+	require.Equal(t, 1, count)
+
+	// Authority is still immutable: another user never rebinds the row.
+	foreign := job
+	foreign.UserID++
+	_, err = store.Acquire(ctx, foreign, renamed)
 	require.Error(t, err)
+}
+
+func TestPostgresHostRebindFencesSupersededOwner(t *testing.T) {
+	pool := hostTestPool(t)
+	ctx := context.Background()
+	authority, catalog := hostFixture(t, pool)
+	store, err := NewStore(pool, testCodec{})
+	require.NoError(t, err)
+	first, err := store.Acquire(ctx, authority, catalog)
+	require.NoError(t, err)
+	_, err = first.PrepareStart(ctx, false)
+	require.NoError(t, err)
+	require.NoError(t, first.MarkRunning(ctx))
+	require.NoError(t, first.Close())
+
+	upgraded := catalog
+	upgraded.ArtifactDigest = strings.Repeat("c", 64)
+	held, err := store.Acquire(ctx, authority, upgraded)
+	require.NoError(t, err)
+	superseded := held.(*lease)
+	// Another replica rebinds first (simulated by a direct generation bump).
+	_, err = pool.Exec(ctx, `UPDATE flow_runtime_host_bindings SET owner_generation=owner_generation+1 WHERE id=$1`, superseded.binding.ID)
+	require.NoError(t, err)
+	_, err = held.Rebind(ctx)
+	require.Error(t, err, "a rebind from a stale generation must lose its fence")
+	require.Error(t, held.MarkRunning(ctx), "the superseded generation can no longer checkpoint")
+	require.NoError(t, held.Close())
 }
 
 func TestPostgresHostRetirementSurvivesDeleteAndStopFailure(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -320,6 +321,31 @@ func TestResolverPreservesFailureClassification(t *testing.T) {
 			require.Equal(t, item.retryable, retryable)
 		})
 	}
+}
+
+// A host-bundle upgrade rebinds the workspace host to a new artifact. A run
+// whose checkpoint pins the old artifact must fail terminal, never re-poll.
+func TestResolveFailsRunPinnedToSupersededHostIdentity(t *testing.T) {
+	upgraded := newRecordingRuntime()
+	upgraded.identity.RuntimeArtifactDigest = strings.Repeat("c", 64)
+	upgraded.identity.OwnerGeneration = 2
+	service := &Service{
+		resolver: flowruntime.ResolverFunc(func(context.Context, flowruntime.Target) (flowruntime.Runtime, error) {
+			return upgraded, nil
+		}), runtimeCallTimeout: time.Second,
+	}
+	pinned := newRecordingRuntime().identity
+	_, _, err := service.resolve(context.Background(), flowruntime.Target{}, pinned)
+	require.Error(t, err)
+	code, retryable := runtimeFailure(err)
+	require.Equal(t, "runtime_identity_changed", code)
+	require.False(t, retryable)
+
+	current := upgraded.identity
+	current.OwnerGeneration = 1
+	_, identity, err := service.resolve(context.Background(), flowruntime.Target{}, current)
+	require.NoError(t, err, "an owner-generation change alone is reconnectable")
+	require.Equal(t, upgraded.identity, identity)
 }
 
 func TestCancellationBeforeDispatchRetriesProjectionInWorker(t *testing.T) {

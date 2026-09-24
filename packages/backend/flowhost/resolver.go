@@ -173,6 +173,12 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 	defer lease.Close() // best effort: caller error takes precedence over unlock diagnostics.
 
 	binding := lease.Binding()
+	if superseded, ok := lease.Supersedes(); ok {
+		binding, err = resolver.rebind(ctx, lease, superseded)
+		if err != nil {
+			return nil, err
+		}
+	}
 	connection, inspectErr := resolver.launcher.InspectFlowHost(ctx, HostLaunch{Binding: binding, Authority: authority, Catalog: catalog, Credential: lease.Credential()})
 	if inspectErr == nil {
 		client, err := resolver.verifiedClient(ctx, connection, lease.Credential(), binding)
@@ -209,6 +215,30 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 		return nil, failure{code: "runtime_binding_checkpoint_failed", retryable: true}
 	}
 	return client, nil
+}
+
+// rebind replaces a host whose pinned identity drifted from the catalog (for
+// example a host-bundle upgrade). The superseded service is stopped before the
+// row moves, so the new owner never meets a live process under its name with
+// an older fingerprint. Runs pinned to the old identity fail typed in dispatch.
+func (resolver *Resolver) rebind(ctx context.Context, lease BindingLease, superseded Binding) (Binding, error) {
+	stopper, ok := resolver.launcher.(RetirementStopper)
+	if !ok {
+		return superseded, refuse(ctx, "runtime_upgrade_unsupported", failure{code: "runtime_upgrade_unsupported"}, superseded)
+	}
+	if err := stopper.StopFlowHost(ctx, superseded); err != nil {
+		return superseded, refuse(ctx, "runtime_upgrade_stop_failed", err, superseded)
+	}
+	binding, err := lease.Rebind(ctx)
+	if err != nil {
+		return superseded, refuse(ctx, "runtime_owner_fence_failed", err, superseded)
+	}
+	slog.InfoContext(ctx, "flow host rebound", "binding_id", binding.ID, "workspace_id", binding.WorkspaceID,
+		"catalog", binding.CatalogKey, "old_artifact", superseded.RuntimeArtifactDigest, "new_artifact", binding.RuntimeArtifactDigest,
+		"old_service", superseded.ServiceName, "new_service", binding.ServiceName,
+		"old_source_revision", superseded.SourceRevision, "new_source_revision", binding.SourceRevision,
+		"owner_generation", binding.OwnerGeneration)
+	return binding, nil
 }
 
 func (resolver *Resolver) verifiedClient(ctx context.Context, connection Connection, credential string, binding Binding) (*runtimebridge.Client, error) {

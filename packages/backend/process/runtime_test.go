@@ -355,6 +355,42 @@ func TestManagedHostAllocatesAddressPersistsBindingAndVerifiesIdentity(t *testin
 	journal, err := os.ReadFile(filepath.Join(placements[1].StateDir, "journal"))
 	require.NoError(t, err)
 	assert.Equal(t, "durable", string(journal))
+
+	// A host-bundle upgrade: the same binding gets a new artifact, owner
+	// generation, fingerprint, and service name. The live old service is a
+	// conflict until it is stopped; after that the new identity starts and
+	// keeps the binding's durable state.
+	upgraded := spec
+	upgraded.Name = "flow-coding-v2"
+	upgraded.Identity = "flow-host:fixture-owner-8"
+	upgraded.Expected.ArtifactDigest = strings.Repeat("c", 64)
+	upgraded.Expected.OwnerGeneration = 8
+	upgraded.Builder = workspaceapi.ManagedHostBuilderFunc(func(_ context.Context, placement workspaceapi.ManagedHostPlacement) (workspaceapi.Command, error) {
+		placements = append(placements, placement)
+		return helperCommand("managed-host", map[string]string{
+			"SMITHERS_TEST_ADDRESS":          placement.Address,
+			"SMITHERS_TEST_MARKER":           marker,
+			"SMITHERS_TEST_STATE_DIR":        placement.StateDir,
+			"SMITHERS_TEST_PROTOCOL":         upgraded.Expected.Protocol,
+			"SMITHERS_TEST_ARTIFACT_DIGEST":  upgraded.Expected.ArtifactDigest,
+			"SMITHERS_TEST_SOURCE_REVISION":  upgraded.Expected.SourceRevision,
+			"SMITHERS_TEST_OWNER_GENERATION": strconv.FormatInt(upgraded.Expected.OwnerGeneration, 10),
+		}), nil
+	})
+	sameName := upgraded
+	sameName.Name = spec.Name
+	_, err = runtime.InspectManagedHost(context.Background(), workspace.ID, sameName)
+	require.ErrorIs(t, err, workspaceapi.ErrManagedHostIdentityConflict, "an unstopped old host blocks its replacement")
+	require.NoError(t, runtime.StopService(context.Background(), workspace.ID, spec.Name))
+	_, err = runtime.StartManagedHost(context.Background(), workspace.ID, upgraded)
+	require.NoError(t, err)
+	require.Len(t, placements, 3)
+	assert.Equal(t, placements[0].StateDir, placements[2].StateDir)
+	journal, err = os.ReadFile(filepath.Join(placements[2].StateDir, "journal"))
+	require.NoError(t, err)
+	assert.Equal(t, "durable", string(journal))
+	_, err = runtime.InspectManagedHost(context.Background(), workspace.ID, upgraded)
+	require.NoError(t, err)
 }
 
 func TestWorkspaceSourceRevisionUsesJujutsuSnapshotOrCleanGitHead(t *testing.T) {
