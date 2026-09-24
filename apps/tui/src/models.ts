@@ -17,10 +17,7 @@ export interface Model {
 }
 
 export const delegateModels = {
-  quince: "openai:gpt-5.6-quince",
   cerebras: Providers.defaultSeat.cerebras,
-  chat: "openai:gpt-5.6-chat",
-  gpt: "openai:gpt-5.6",
   luna: "openai:gpt-6-luna",
   sol: "openai:gpt-6-sol",
   astra: "openai:gpt-6-astra"
@@ -29,8 +26,7 @@ export type DelegateModel = keyof typeof delegateModels
 
 const subscription: ReadonlyArray<Omit<Model, "provider">> = [
   { seat: "openai:gpt-6-sol", label: "GPT-6 Sol" },
-  { seat: "openai:gpt-6-astra", label: "GPT-6 Astra" },
-  { seat: "openai:gpt-5.6-sol", label: "GPT-5.6 Sol" }
+  { seat: "openai:gpt-6-astra", label: "GPT-6 Astra" }
 ]
 
 const byProvider: Readonly<Record<Providers.Candidate, ReadonlyArray<Omit<Model, "provider">>>> = {
@@ -38,7 +34,8 @@ const byProvider: Readonly<Record<Providers.Candidate, ReadonlyArray<Omit<Model,
   openai: subscription,
   "kimi-k3": [{ seat: Providers.defaultSeat["kimi-k3"], label: "Kimi K3" }],
   gemini: [{ seat: Providers.defaultSeat.gemini, label: "Gemini 2.5 Pro" }],
-  openrouter: [{ seat: Providers.defaultSeat.openrouter, label: "GPT-5.6 Sol" }],
+  // Pinned: the shared OpenRouter default seat is an older OpenAI model.
+  openrouter: [{ seat: "openrouter:openai/gpt-6-sol", label: "GPT-6 Sol" }],
   cerebras: [{ seat: Providers.defaultSeat.cerebras, label: "Qwen 3.8" }]
 }
 
@@ -46,6 +43,9 @@ const anthropic: ReadonlyArray<Omit<Model, "provider">> = [
   { seat: "anthropic:claude-opus-5-5", label: "Claude Opus 5.5" },
   { seat: "anthropic:claude-fable-5-1", label: "Claude Fable 5.1" }
 ]
+
+/** Every seat the picker can offer, whichever providers are detected. */
+export const offered: ReadonlyArray<Omit<Model, "provider">> = [...Object.values(byProvider).flat(), ...anthropic]
 
 export interface Available {
   readonly models: ReadonlyArray<Model>

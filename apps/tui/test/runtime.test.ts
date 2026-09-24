@@ -188,7 +188,7 @@ it("accepts only named models in the delegate flow", async () => {
   }
   expect((await Effect.runPromise(call(input))).outcome).toBe("success")
   expect((await Effect.runPromise(call({ ...input, model: "unknown" }))).outcome).toBe("failure")
-  expect(requests).toHaveLength(8)
+  expect(requests).toHaveLength(Object.keys(Models.delegateModels).length + 1)
 })
 
 it("lets the agent retry a tab and reports why a retry is refused", async () => {
@@ -572,6 +572,46 @@ describe("background work", () => {
     expect(f.launched()).toBe(0)
     f.workspace.dispose()
   })
+})
+
+it("never offers a GPT-5.6 model as a picker, delegate, default or worker seat", async () => {
+  const everyProvider = {
+    OPENAI_API_KEY: "test",
+    OPENROUTER_API_KEY: "test",
+    MOONSHOT_API_KEY: "test",
+    GEMINI_API_KEY: "test",
+    CEREBRAS_API_KEY: "test",
+    ANTHROPIC_API_KEY: "test"
+  }
+  const available = Models.detect(everyProvider)
+  const openAiFirst = Models.detect({ OPENAI_API_KEY: "test" })
+  const seats = [
+    ...available.models.map((model) => model.seat),
+    ...Models.offered.map((model) => model.seat),
+    ...Object.values(Models.delegateModels),
+    available.defaultSeat,
+    available.workerSeat,
+    openAiFirst.defaultSeat,
+    openAiFirst.workerSeat
+  ]
+  const labels = [...available.models, ...Models.offered].map((model) => model.label)
+  expect(available.models.length).toBeGreaterThan(0)
+  expect(seats.filter((seat) => seat === undefined || /5\.6/.test(seat))).toEqual([])
+  expect(labels.filter((label) => /5\.6/.test(label))).toEqual([])
+  expect(Object.keys(Models.delegateModels).sort()).toEqual(["astra", "cerebras", "luna", "sol"])
+
+  const bindings = await Effect.runPromise(Runtime.source({
+    publish: () => {},
+    delegate: () => ({ status: "requested" }),
+    read: () => ({}),
+    list: () => []
+  }).bindings())
+  const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
+  for (const model of ["quince", "chat", "gpt"]) {
+    const call = { input: { id: "t", title: "T", prompt: "P", model } } as unknown as Parameters<typeof delegate.run>[0]
+    const result = await Effect.runPromise(delegate.run(call))
+    expect(result.outcome).toBe("failure")
+  }
 })
 
 it("prefers Cerebras for chat and keeps a distinct worker seat and explicit overrides", () => {

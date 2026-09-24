@@ -129,7 +129,7 @@ export const source = (ports: Ports): FlowBinding.Source =>
           id: short,
           title: short,
           prompt: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(32_000)),
-          model: Schema.optional(Schema.Literals(["quince", "cerebras", "chat", "gpt", "luna", "sol", "astra"]))
+          model: Schema.optional(Schema.Literals(["cerebras", "luna", "sol", "astra"]))
         }),
         (input) => ports.delegate!(input)
       ),
