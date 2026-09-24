@@ -106,10 +106,6 @@ func TestInternalErrorsLogTheirCause(t *testing.T) {
 			(&AdminGitHubAppHandler{Service: failingGitHubAppReconciler{cause}}).Reconcile,
 			httptest.NewRequest(http.MethodPost, "/api/admin/github-app/reconcile", nil),
 		},
-		"anonymous sandbox": {
-			func(w http.ResponseWriter, r *http.Request) { anonSandboxErr(w, r, cause) },
-			httptest.NewRequest(http.MethodPost, "/api/public/sandboxes", nil),
-		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {

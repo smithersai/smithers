@@ -61,11 +61,6 @@ var allEnvKeys = []string{
 	"SMITHERS_SANDBOX_DESKTOP_VCPU_COUNT",
 	"SMITHERS_DESKTOP_OBSERVE_TEXT",
 	"SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT",
-	"SMITHERS_SANDBOX_ANON_ENABLED",
-	"SMITHERS_SANDBOX_ANON_REPO_ALLOWLIST",
-	"SMITHERS_SANDBOX_ANON_TTL_SECS",
-	"SMITHERS_SANDBOX_ANON_MAX_CONCURRENT",
-	"SMITHERS_SANDBOX_ANON_MAX_PER_IP",
 	"SMITHERS_SANDBOX_WORKSPACE_IDLE_TIMEOUT",
 	"SMITHERS_SANDBOX_WORKSPACE_PERSISTENCE",
 	"SMITHERS_SANDBOX_WORKSPACE_SSH_HOST",
@@ -211,7 +206,6 @@ var allEnvKeys = []string{
 	"SMITHERS_CHAT_CONCURRENCY",
 	"SMITHERS_CHAT_QUEUE_SIZE",
 	"SMITHERS_CHAT_LEASE_SECONDS",
-	"SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR",
 	"SMITHERS_RATE_LIMIT_SHARE_LISTING_EVENT_PER_MIN",
 }
 
@@ -422,29 +416,6 @@ func TestLoad_SSHConfigEnvOverrides(t *testing.T) {
 	assert.Equal(t, "9m", cfg.SSH.IdleTimeout)
 	assert.Equal(t, "3h", cfg.SSH.MaxTimeout)
 	assert.Equal(t, 4, cfg.SSH.MaxSessionsPerConn)
-}
-
-// TestLoad_AnonSandboxConfigEnvOverrides guards the anonymous-sandbox kill
-// switch and limits: these are the only knobs for the unauthenticated
-// VM-creating route, and prod supplies config through env only.
-func TestLoad_AnonSandboxConfigEnvOverrides(t *testing.T) {
-	clearConfigEnv(t)
-	t.Setenv("SMITHERS_SANDBOX_ANON_ENABLED", "false")
-	t.Setenv("SMITHERS_SANDBOX_ANON_REPO_ALLOWLIST", "acme/one, acme/two")
-	t.Setenv("SMITHERS_SANDBOX_ANON_TTL_SECS", "600")
-	t.Setenv("SMITHERS_SANDBOX_ANON_MAX_CONCURRENT", "3")
-	t.Setenv("SMITHERS_SANDBOX_ANON_MAX_PER_IP", "1")
-	t.Setenv("SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR", "2")
-
-	cfg, err := Load("")
-	require.NoError(t, err)
-
-	assert.False(t, cfg.Sandbox.AnonEnabled)
-	assert.Equal(t, []string{"acme/one", "acme/two"}, cfg.Sandbox.AnonRepoAllowlist)
-	assert.Equal(t, int64(600), cfg.Sandbox.AnonTTLSecs)
-	assert.Equal(t, int32(3), cfg.Sandbox.AnonMaxConcurrent)
-	assert.Equal(t, int32(1), cfg.Sandbox.AnonMaxPerIP)
-	assert.Equal(t, 2, cfg.RateLimit.AnonSandboxCreatePerHour)
 }
 
 func TestLoad_CleanupConfigDefaults(t *testing.T) {
@@ -734,11 +705,6 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			WorkspacePersistence:   "persistent",
 			WorkspaceSSHHost:       "ssh.smithers.sh",
 			WorkspaceSSHDialHost:   "",
-			AnonEnabled:            true,
-			AnonRepoAllowlist:      []string{"smithersai/smithers"},
-			AnonTTLSecs:            1800,
-			AnonMaxConcurrent:      10,
-			AnonMaxPerIP:           2,
 		},
 		SSH: SSHConfig{
 			Addr:                     ":2222",
@@ -853,13 +819,12 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			Secrets:              true,
 		},
 		RateLimit: RateLimitConfig{
-			TerminalOpenPerMin:       20,
-			TerminalActiveMax:        5,
-			ApprovalDecidePerMin:     30,
-			AppTimelineWritePerMin:   240,
-			ShareListingEventPerMin:  30,
-			AnonSandboxCreatePerHour: 5,
-			BuildCachePerMinute:      1200,
+			TerminalOpenPerMin:      20,
+			TerminalActiveMax:       5,
+			ApprovalDecidePerMin:    30,
+			AppTimelineWritePerMin:  240,
+			ShareListingEventPerMin: 30,
+			BuildCachePerMinute:     1200,
 		},
 	}
 	assert.Equal(t, expected, cfg)

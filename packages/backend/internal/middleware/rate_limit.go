@@ -374,7 +374,6 @@ const (
 	devtoolsSnapshotPostScope       = "devtools_snapshot_post"
 	workflowDispatchScope           = "workflow_dispatch"
 	appTimelineWriteScope           = "app_timeline_write"
-	anonSandboxCreateScope          = "anon_sandbox_create"
 	shareListingEventScope          = "share_listing_event"
 )
 
@@ -396,15 +395,6 @@ func AppTimelineWriteRateLimit(store SearchRateLimitStore, limit int) func(http.
 // survives restarts and holds across API replicas.
 func ShareListingEventRateLimit(store SearchRateLimitStore, limit int) func(http.Handler) http.Handler {
 	return newRateLimit(store, shareListingEventScope, limit, time.Minute, 30, time.Minute)
-}
-
-// AnonSandboxCreateRateLimit enforces the anonymous-sandbox creation rate.
-// Callers have no user identity, so the shared principal-key logic buckets by
-// client IP (searchRateLimitKey's `ip:<host>` fallback; RealIP runs upstream).
-// Default 5/hour: an anonymous visitor opens the popular repo once, maybe
-// retries — anything chattier is a script.
-func AnonSandboxCreateRateLimit(store SearchRateLimitStore, limit int) func(http.Handler) http.Handler {
-	return newRateLimit(store, anonSandboxCreateScope, limit, time.Hour, 5, time.Hour)
 }
 
 // EmailVerificationRateLimit enforces verification email rate limit: 5 requests/hour per user.

@@ -86,7 +86,6 @@ func buildRouter(
 	workspaceHandler *routes.WorkspaceHandler,
 	workspaceInternalHandler *routes.WorkspaceInternalHandler,
 	repoGatewayHandler *routes.RepoGatewayHandler,
-	anonSandboxHandler *routes.AnonSandboxHandler,
 	gitHubProxyHandler *routes.GitHubProxyHandler,
 	gitHubRepoListHandler *routes.GitHubRepoListHandler,
 	gitHubUserReposHandler *routes.GitHubUserReposHandler,
@@ -722,25 +721,6 @@ func buildRouter(
 			// caps the snapshot at 256 KiB and this bounds the envelope.
 			r.Use(middleware.MaxBodySize(shareListingMaxRequestBodySize))
 			shareListingHandler.Mount(r, shareListingEventLimiter)
-		})
-	}
-
-	// Anonymous sandboxes (../multi SPEC.md §3) — the only functional /api
-	// routes without RequireAuth: a signed-out visitor opens an allowlisted
-	// public repo in a short-lived sandbox. AuthLoader still runs (a signed-in
-	// caller is simply treated the same), CSRF passes because anonymous
-	// requests bypass it by policy, and the global anonymous API bucket
-	// (600/hr per IP) still applies on top of the dedicated per-IP creation
-	// limiter. Access to a created sandbox is a capability token, never a
-	// session.
-	if anonSandboxHandler != nil {
-		createLimiter := middleware.AnonSandboxCreateRateLimit(queries, cfg.RateLimit.AnonSandboxCreatePerHour)
-		r.Group(func(r chi.Router) {
-			r.Use(cors.Handler(apiCORS))
-			r.Use(authLoader(queries, cfg.Auth))
-			r.Use(apiCSRFMiddleware)
-			r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
-			anonSandboxHandler.Mount(r, createLimiter)
 		})
 	}
 

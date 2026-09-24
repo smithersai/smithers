@@ -24,6 +24,9 @@ func TestServerRouter_RetiredProductFeatures(t *testing.T) {
 		require.NotContains(t, path, "/issues/{number}/dependencies")
 		require.NotContains(t, path, "/issues/{number}/artifacts")
 		require.NotEqual(t, "/api/user/avatar", path)
+		// Anonymous sandboxes booted a VM for any signed-out caller and had
+		// no client once ../multi retired.
+		require.False(t, strings.HasPrefix(path, "/api/public/sandboxes"), "anonymous sandbox route mounted: %s %s", method, path)
 		return nil
 	}))
 	for _, retained := range []string{"POST /api/user/tokens", "POST /api/user/keys", "POST /api/repos/{owner}/{repo}/issues", "GET /api/repos/{owner}/{repo}/issues/{number}"} {

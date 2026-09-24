@@ -134,7 +134,6 @@ func buildRouterCompat(
 		workspaceHandler,
 		workspaceInternalHandler,
 		nil, // repoGatewayHandler
-		nil, // anonSandboxHandler
 		nil, // gitHubProxyHandler
 		nil, // gitHubRepoListHandler
 		nil, // gitHubUserReposHandler

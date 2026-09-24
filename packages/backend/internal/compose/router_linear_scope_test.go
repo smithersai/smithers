@@ -99,7 +99,6 @@ func linearScopeRouter() http.Handler {
 		nil, // workspaceHandler
 		nil, // workspaceInternalHandler
 		nil, // repoGatewayHandler
-		nil, // anonSandboxHandler
 		nil, // gitHubProxyHandler
 		nil, // gitHubRepoListHandler
 		nil, // gitHubUserReposHandler

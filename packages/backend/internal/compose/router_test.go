@@ -561,7 +561,6 @@ func longTimeoutJSONCSRFCoverageRouter(repoGatewayServices ...routes.RepoGateway
 		&routes.WorkspaceHandler{},
 		nil, // workspaceInternalHandler
 		repoGatewayHandler,
-		nil, // anonSandboxHandler
 		nil, // gitHubProxyHandler
 		nil, // gitHubRepoListHandler
 		nil, // gitHubUserReposHandler
@@ -633,7 +632,6 @@ func buildCacheCSRFCoverageRouter() http.Handler {
 		&routes.WorkspaceHandler{},
 		nil, // workspaceInternalHandler
 		repoGatewayHandler,
-		nil, // anonSandboxHandler
 		nil, // gitHubProxyHandler
 		nil, // gitHubRepoListHandler
 		nil, // gitHubUserReposHandler

@@ -1167,31 +1167,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	}
 
-	// Anonymous sandboxes (../multi SPEC.md §3): signed-out open of the
-	// allowlisted public repo. Boots from the same golden snapshot as
-	// workspaces (GoldenBakeVMRequest is the repo-agnostic, secret-free base),
-	// sized down to the agent-class caps, hard-deleted at TTL by its reaper.
-	var anonSandboxVMClient services.AnonSandboxVMClient
-	if provider != nil {
-		anonSandboxVMClient = provider
-	}
-	anonSandboxService := services.NewAnonSandboxService(
-		queries,
-		anonSandboxVMClient,
-		goldenSnapshotService,
-		workspaceService.GoldenBakeVMRequest,
-		services.AnonSandboxConfig{
-			Enabled:       cfg.Sandbox.AnonEnabled,
-			RepoAllowlist: cfg.Sandbox.AnonRepoAllowlist,
-			TTL:           time.Duration(cfg.Sandbox.AnonTTLSecs) * time.Second,
-			MaxConcurrent: cfg.Sandbox.AnonMaxConcurrent,
-			MaxPerIP:      cfg.Sandbox.AnonMaxPerIP,
-			MemSizeMB:     cfg.Sandbox.AgentMemoryMB,
-			VCPUCount:     cfg.Sandbox.AgentVCPUCount,
-			RootfsSizeMB:  cfg.Sandbox.AgentRootfsSizeMB,
-		},
-	)
-	anonSandboxHandler := routes.NewAnonSandboxHandler(anonSandboxService)
 	gitHubProxyHandler := &routes.GitHubProxyHandler{
 		Service: services.NewGitHubProxyService(
 			repoConnectionService,
@@ -1384,7 +1359,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		workspaceHandler,
 		workspaceInternalHandler,
 		repoGatewayHandler,
-		anonSandboxHandler,
 		gitHubProxyHandler,
 		gitHubRepoListHandler,
 		gitHubUserReposHandler,
@@ -1555,9 +1529,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() { gitHubSyncedRepoService.StartReconciler(workerCtx) })
 		launchWorker(func() { pairSessionService.StartStaleSweeper(workerCtx) })
 		agentService.StartSessionReaper(workerCtx, time.Duration(cfg.Sandbox.AgentMaxRuntimeSecs)*time.Second)
-		if cfg.Sandbox.AnonEnabled {
-			anonSandboxService.StartReaper(workerCtx)
-		}
 		authCleaner.Start(workerCtx)
 		workflowCacheCleaner.Start(workerCtx)
 		workflowArtifactCleaner.Start(workerCtx)

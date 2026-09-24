@@ -90,12 +90,6 @@ type RateLimitConfig struct {
 	// SMITHERS_RATE_LIMIT_SHARE_LISTING_EVENT_PER_MIN. Default: 30.
 	ShareListingEventPerMin int `mapstructure:"share_listing_event_per_min"`
 
-	// AnonSandboxCreatePerHour is the per-IP rate at which anonymous sandbox
-	// creations are accepted (the caller has no user identity, so the bucket
-	// keys on client IP). Env:
-	// SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR. Default: 5.
-	AnonSandboxCreatePerHour int `mapstructure:"anon_sandbox_create_per_hour"`
-
 	// BuildCachePerMinute is the per-principal rate for the smithers build
 	// cache routes (reads and publications share one bucket). Env:
 	// SMITHERS_RATE_LIMIT_BUILD_CACHE_PER_MIN. Default: 1200.
@@ -302,24 +296,6 @@ type SandboxConfig struct {
 	WorkspaceSSHHost     string `mapstructure:"workspace_ssh_host"`
 	WorkspaceSSHDialHost string `mapstructure:"workspace_ssh_dial_host"`
 
-	// Anonymous sandboxes (../multi SPEC.md §3): a signed-out visitor may open
-	// an allowlisted public repository in a short-lived sandbox. The allowlist
-	// is server-side and exact (`owner/name` full names, comma-separated in
-	// env). Env: SMITHERS_SANDBOX_ANON_ENABLED,
-	// SMITHERS_SANDBOX_ANON_REPO_ALLOWLIST, SMITHERS_SANDBOX_ANON_TTL_SECS,
-	// SMITHERS_SANDBOX_ANON_MAX_CONCURRENT, SMITHERS_SANDBOX_ANON_MAX_PER_IP.
-	AnonEnabled       bool     `mapstructure:"anon_enabled"`
-	AnonRepoAllowlist []string `mapstructure:"anon_repo_allowlist"`
-	// AnonTTLSecs is the hard wall-clock lifetime of an anonymous sandbox.
-	// Expiry hard-DELETES the VM (disk included) — anonymous sandboxes are
-	// never suspended-with-disk-retained. Default 1800 (30 min).
-	AnonTTLSecs int64 `mapstructure:"anon_ttl_secs"`
-	// AnonMaxConcurrent is the GLOBAL cap on live anonymous sandboxes;
-	// AnonMaxPerIP caps a single client IP. Both are DB-COUNT enforced on the
-	// create path and fail closed.
-	AnonMaxConcurrent int32 `mapstructure:"anon_max_concurrent"`
-	AnonMaxPerIP      int32 `mapstructure:"anon_max_per_ip"`
-
 	// GatewayAgentCerebrasAPIKey is the AI-provider seat injected into
 	// repo-gateway VMs (CEREBRAS_API_KEY in the gateway systemd env). Without
 	// it the stock smithers pack falls back to a keyless OpenRouter default
@@ -523,13 +499,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("sandbox.workspace_idle_timeout", 1800)
 	v.SetDefault("sandbox.workspace_persistence", "persistent")
 	v.SetDefault("sandbox.workspace_ssh_host", "ssh.smithers.sh")
-	// Anonymous sandboxes (../multi SPEC.md §3). The allowlist ships with
-	// exactly the popular signed-out repo; widening it is a deliberate change.
-	v.SetDefault("sandbox.anon_enabled", true)
-	v.SetDefault("sandbox.anon_repo_allowlist", "smithersai/smithers")
-	v.SetDefault("sandbox.anon_ttl_secs", 1800)
-	v.SetDefault("sandbox.anon_max_concurrent", 10)
-	v.SetDefault("sandbox.anon_max_per_ip", 2)
 	v.SetDefault("ssh.addr", ":2222")
 	v.SetDefault("ssh.host_key_dir", "./data/ssh")
 	v.SetDefault("ssh.max_connections", 100)
@@ -632,7 +601,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("rate_limit.approval_decide_per_min", 30)
 	v.SetDefault("rate_limit.app_timeline_write_per_min", 240)
 	v.SetDefault("rate_limit.share_listing_event_per_min", 30)
-	v.SetDefault("rate_limit.anon_sandbox_create_per_hour", 5)
 	v.SetDefault("rate_limit.build_cache_per_min", 1200)
 	v.SetDefault("chat.concurrency", 0)
 	v.SetDefault("chat.queue_size", 0)
@@ -826,7 +794,6 @@ func Load(configFile string) (*Config, error) {
 		{"rate_limit.app_timeline_write_per_min", "SMITHERS_RATE_LIMIT_APP_TIMELINE_WRITE_PER_MIN"},
 		{"rate_limit.share_listing_event_per_min", "SMITHERS_RATE_LIMIT_SHARE_LISTING_EVENT_PER_MIN"},
 		{"rate_limit.build_cache_per_min", "SMITHERS_RATE_LIMIT_BUILD_CACHE_PER_MIN"},
-		{"rate_limit.anon_sandbox_create_per_hour", "SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR"},
 		{"chat.concurrency", "SMITHERS_CHAT_CONCURRENCY"},
 		{"chat.queue_size", "SMITHERS_CHAT_QUEUE_SIZE"},
 		{"chat.lease_seconds", "SMITHERS_CHAT_LEASE_SECONDS"},
@@ -874,11 +841,6 @@ func Load(configFile string) (*Config, error) {
 		{"sandbox.desktop_vcpu_count", "SMITHERS_SANDBOX_DESKTOP_VCPU_COUNT"},
 		{"sandbox.desktop_observe_text", "SMITHERS_DESKTOP_OBSERVE_TEXT"},
 		{"sandbox.agent_max_concurrent", "SMITHERS_SANDBOX_AGENT_MAX_CONCURRENT"},
-		{"sandbox.anon_enabled", "SMITHERS_SANDBOX_ANON_ENABLED"},
-		{"sandbox.anon_repo_allowlist", "SMITHERS_SANDBOX_ANON_REPO_ALLOWLIST"},
-		{"sandbox.anon_ttl_secs", "SMITHERS_SANDBOX_ANON_TTL_SECS"},
-		{"sandbox.anon_max_concurrent", "SMITHERS_SANDBOX_ANON_MAX_CONCURRENT"},
-		{"sandbox.anon_max_per_ip", "SMITHERS_SANDBOX_ANON_MAX_PER_IP"},
 		{"sandbox.workspace_idle_timeout", "SMITHERS_SANDBOX_WORKSPACE_IDLE_TIMEOUT"},
 		{"sandbox.workspace_persistence", "SMITHERS_SANDBOX_WORKSPACE_PERSISTENCE"},
 	} {
@@ -918,7 +880,6 @@ func Load(configFile string) (*Config, error) {
 	cfg.RepoHost.PushHookCallbackToken = strings.TrimSpace(cfg.RepoHost.PushHookCallbackToken)
 	cfg.Auth.LFSSigningSecret = strings.TrimSpace(cfg.Auth.LFSSigningSecret)
 	cfg.Server.AllowedOrigins = splitCommaSeparatedList(cfg.Server.AllowedOrigins)
-	cfg.Sandbox.AnonRepoAllowlist = splitCommaSeparatedList(cfg.Sandbox.AnonRepoAllowlist)
 	if err := normalizeAgentAvailability(&cfg); err != nil {
 		return nil, err
 	}

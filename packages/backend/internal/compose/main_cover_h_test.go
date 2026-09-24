@@ -197,7 +197,6 @@ func sseIdentityRouterForTest() http.Handler {
 		nil,                       // workspaceHandler
 		nil,                       // workspaceInternalHandler
 		nil,                       // repoGatewayHandler
-		nil,                       // anonSandboxHandler
 		nil,                       // gitHubProxyHandler
 		nil,                       // gitHubRepoListHandler
 		nil,                       // gitHubUserReposHandler
@@ -276,7 +275,6 @@ func featureGateRouterForTest(cfg *config.Config) http.Handler {
 		nil, // workspaceHandler
 		nil, // workspaceInternalHandler
 		nil, // repoGatewayHandler
-		nil, // anonSandboxHandler
 		nil, // gitHubProxyHandler
 		nil, // gitHubRepoListHandler
 		nil, // gitHubUserReposHandler

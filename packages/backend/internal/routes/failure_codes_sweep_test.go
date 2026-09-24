@@ -26,7 +26,7 @@ func decodeAPIError(t *testing.T, rec *httptest.ResponseRecorder) pkgerrors.APIE
 	return body
 }
 
-// TestMissingTableDegradesToFeatureNotEnabled pins the four endpoints that
+// TestMissingTableDegradesToFeatureNotEnabled pins the endpoints that
 // answer 503 when their table is absent.
 //
 // Before this sweep every one of them wrote a bare composite and inherited
@@ -39,10 +39,7 @@ func TestMissingTableDegradesToFeatureNotEnabled(t *testing.T) {
 	undefinedTable := &pgconn.PgError{Code: "42P01", Message: "relation does not exist"}
 
 	for name, write := range map[string]func(http.ResponseWriter, error){
-		"share listings": shareListingErr,
-		"anonymous sandbox": func(w http.ResponseWriter, err error) {
-			anonSandboxErr(w, httptest.NewRequest(http.MethodPost, "/api/public/sandboxes", nil), err)
-		},
+		"share listings":    shareListingErr,
 		"app timeline sync": appTimelineErr,
 	} {
 		t.Run(name, func(t *testing.T) {
