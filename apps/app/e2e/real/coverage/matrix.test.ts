@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import {
+  canonicalBootstrapSHA256,
   MANDATORY_DETERMINISTIC_BUN_TESTS,
   MANDATORY_DETERMINISTIC_BROWSER_SPECS,
   MATRIX_OBLIGATIONS,
@@ -77,6 +78,14 @@ const writeReceipt = (value: unknown): string => {
 }
 
 describe("deployment mode matrix", () => {
+  test("bootstrap identity includes complete configuration and ignores only object key order", () => {
+    const body = { buildSha: deployed, capabilities: ["identity", "cloud"], sandbox: { mode: "remote", ready: true } }
+    expect(canonicalBootstrapSHA256(body)).toBe(canonicalBootstrapSHA256({ sandbox: { ready: true, mode: "remote" }, capabilities: body.capabilities, buildSha: deployed }))
+    expect(canonicalBootstrapSHA256(body)).not.toBe(canonicalBootstrapSHA256({ ...body, sandbox: { mode: "remote", ready: false } }))
+    expect(canonicalBootstrapSHA256(body)).not.toBe(canonicalBootstrapSHA256({ ...body, capabilities: [...body.capabilities].reverse() }))
+    expect(() => canonicalBootstrapSHA256({ value: undefined })).toThrow("JSON response")
+  })
+
   test("enumerates six modes over one obligation catalog", () => {
     expect(Object.keys(MODE_DESCRIPTORS)).toEqual([...DEPLOYMENT_MODES])
     expect(MATRIX_OBLIGATIONS.length).toBeGreaterThan(10)
@@ -199,7 +208,7 @@ describe("deployment mode matrix", () => {
       mode: "local-plue", origin: "https://example.test", endpoint: "https://example.test", auth: { kind: "browser-profile", environment: "PROFILE" }, executionReceipt: path
     }] }).modes[0]!
     const { fetcher } = recordingOrigin(cloudBootstrap(deployed))
-    expect((await probeMode(config, revision, { PROFILE: "configured" }, fetcher)).status).toBe("passed")
+    expect(await probeMode(config, revision, { PROFILE: "configured" }, fetcher)).toMatchObject({ status: "passed", bootstrapSHA256: canonicalBootstrapSHA256(cloudBootstrap(deployed)) })
   })
 
   test("readiness rejects a bootstrap from the wrong provider or revision", async () => {

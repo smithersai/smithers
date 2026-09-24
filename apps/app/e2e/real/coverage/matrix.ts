@@ -1,9 +1,21 @@
+import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import type { RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { DEPLOYMENT_MODES } from "./types"
 import type { DeploymentMode, RealHost, RealScenarioRunEvidence } from "./types"
+
+/** Digest the actual public bootstrap response, independent of JSON object key order. */
+export const canonicalBootstrapSHA256 = (body: unknown): string => {
+  const canonical = (value: unknown): string => {
+    if (value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) return JSON.stringify(value)
+    if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`
+    if (typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype) return `{${Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => `${JSON.stringify(key)}:${canonical(item)}`).join(",")}}`
+    throw new Error("Bootstrap digest requires a JSON response")
+  }
+  return createHash("sha256").update(canonical(body)).digest("hex")
+}
 
 export type MatrixTier = "deterministic" | "local-infrastructure" | "live-provider" | "plue-production"
 export type MatrixStatus = "passed" | "failed" | "unavailable" | "not-configured"
@@ -161,6 +173,7 @@ export interface ModeReadiness {
   readonly capabilities: readonly string[]
   /** The build the mode's backend reported: the checkout for selfhost, the deployed Worker for Plue. */
   readonly buildSha?: string
+  readonly bootstrapSHA256?: string
   readonly reasons: readonly string[]
 }
 
@@ -290,6 +303,7 @@ export const probeMode = async (
   if (!environment[config.auth.environment]?.trim()) reasons.push(`auth environment ${config.auth.environment} is unavailable`)
   let capabilities: readonly string[] = []
   let buildSha: string | undefined
+  let bootstrapSHA256: string | undefined
   try {
     const bootstrap = await fetcher(new URL("/api/bootstrap", config.origin))
     if (!bootstrap.ok) reasons.push(`bootstrap returned HTTP ${bootstrap.status}`)
@@ -301,6 +315,7 @@ export const probeMode = async (
       const parsed = AppBootstrapSchema.safeParse(body)
       if (!parsed.success) reasons.push(`bootstrap contract is invalid: ${parsed.error.message}`)
       else {
+        bootstrapSHA256 = canonicalBootstrapSHA256(body)
         capabilities = parsed.data.capabilities
         const bootstrapHost: RealHost = parsed.data.host === "cloud" ? "production" : "local"
         if (bootstrapHost !== descriptor.legacyHost) {
@@ -334,6 +349,7 @@ export const probeMode = async (
     endpoint: config.endpoint,
     capabilities,
     ...(buildSha === undefined ? {} : { buildSha }),
+    ...(bootstrapSHA256 === undefined ? {} : { bootstrapSHA256 }),
     reasons
   }
 }
