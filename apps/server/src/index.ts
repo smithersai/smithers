@@ -399,16 +399,14 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (gate instanceof Response) return gate.status === 401 ? yield* anonymousCatalogTurn(request, gate) : gate
       // A fresh durable leg spends capacity before its acceptance is written;
       // a repeated POST only observes existing acceptance and spends nothing.
-      return yield* handleTurn(request, gate, undefined, gate === undefined ? Effect.succeed(undefined) : loginBudget(gate.login))
+      return yield* handleTurn(request, gate, undefined, loginBudget(gate.login))
     }
     if (url.pathname === MODEL_STREAM_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate
-      if (gate !== undefined) {
-        const refused = yield* loginBudget(gate.login)
-        if (refused !== undefined) return refused
-      }
+      const refused = yield* loginBudget(gate.login)
+      if (refused !== undefined) return refused
       return yield* handleModelStream(request, gate)
     }
     // The Models surface (src/modelProbe.ts). Naming what this deployment
@@ -420,7 +418,6 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== (url.pathname === MODEL_CREDENTIAL_PATH ? "POST" : "GET")) return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate
-      if (!gate) return refuse("sign_in_required", "Sign in to use this credential.")
       return yield* handleModelCredential(request, gate.login, url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH ? url.searchParams.get("id") ?? "" : undefined)
     }
     if (url.pathname === MODEL_CATALOG_PATH) {
@@ -435,12 +432,9 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate
-      if (gate !== undefined) {
-        const refused = yield* loginBudget(gate.login)
-        if (refused !== undefined) return refused
-      }
-      const account = gate === undefined ? undefined : yield* accountModelCredentials(request, gate.login)
-      return yield* handleModelTest(request, account)
+      const refused = yield* loginBudget(gate.login)
+      if (refused !== undefined) return refused
+      return yield* handleModelTest(request, yield* accountModelCredentials(request, gate.login))
     }
     if (url.pathname.startsWith("/api/repository-setup/")) return yield* handleRepositorySetup(request)
     if (url.pathname === WORKFLOW_PROVISION_PATH) {

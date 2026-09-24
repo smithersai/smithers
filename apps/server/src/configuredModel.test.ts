@@ -251,15 +251,6 @@ describe("a sealed turn that binds a model", () => {
     expect([refused.status, refused.code]).toEqual([401, "sign_in_required"])
   })
 
-  test("a deployment with no sign-in seam serves it, as it serves every other turn", async () => {
-    const served = await serve(explainBody(), {
-      session: undefined,
-      config: { identityUpstreamUrl: undefined },
-      provider: () => completion("ok")
-    })
-    expect(served.response.status).toBe(200)
-  })
-
   test("on a deployment without the key is seam_not_configured, naming the key", async () => {
     const refused = await refusalOf(await serve(explainBody(), { config: { cerebrasApiKey: undefined } }))
     expect([refused.status, refused.code]).toEqual([503, "seam_not_configured"])

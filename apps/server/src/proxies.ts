@@ -154,17 +154,14 @@ export const handlePlatformProxy = (
   Effect.gen(function* () {
     const config = yield* ServerConfig
     const publicRead = isPublicRepositoryRead(request.method, url.pathname)
-    if (publicRead && !request.headers.has("cookie")) return withIsolationHeaders(yield* publicAnswer(url))
+    // A cookie no identity seam can read is no cookie: the read stays public.
+    const unreadableCookie = !request.headers.has("cookie") || config.identityUpstreamUrl === undefined
+    if (publicRead && unreadableCookie) return withIsolationHeaders(yield* publicAnswer(url))
     const gate = yield* requireTurnSession(request)
-    if (publicRead && (gate === undefined || (gate instanceof Response && (gate.status === 401 || gate.status === 403)))) {
+    if (publicRead && gate instanceof Response && (gate.status === 401 || gate.status === 403)) {
       return withIsolationHeaders(yield* publicAnswer(url))
     }
     if (gate instanceof Response) return gate
-    if (gate === undefined) {
-      // No identity seam on this deployment (local dev/stub): the honest state,
-      // not a 404 — the client renders the message as-is.
-      return refuse("seam_not_configured", "Repository actions need the identity seam, which this deployment does not have.")
-    }
     if (CHECKOUT_PATHS.includes(url.pathname) && !config.billingCheckoutEnabled) {
       return refuse(
         "feature_unavailable_here",

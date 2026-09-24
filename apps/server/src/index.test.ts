@@ -25,11 +25,15 @@ import { WORKSPACE_GONE_REFUSAL } from "./gateway"
 import type { ProvisionOutcome } from "./gateway"
 import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
+import { asAdmitted } from "./admittedSession"
 import { memoryDurableObjects } from "./memoryDurableObjects"
 import type { TurnCancelNamespace, TurnCancelStorage, WorkerEnv } from "./index"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 import { memoryRecommendStorage, RecommendLog } from "./recommend"
 import { TURN_WINDOW_MAX, TurnRateLimiter } from "./turnLimit"
+
+/** The Worker's fetch as one admitted login: every model-spending route fails closed without identity. */
+const admitted = asAdmitted(worker.fetch)
 
 const assetsEnv = (html = "<html><body>smithers</body></html>"): WorkerEnv => ({
   ...memoryDurableObjects(),
@@ -257,7 +261,7 @@ describe("smithers mvp worker", () => {
   })
 
   test("rejects a turn body over the 1 MB cap with 413", async () => {
-    const response = await worker.fetch(
+    const response = await admitted(
       post("/api/agent/turn", { ...turnBody, instructions: "x".repeat(1100 * 1024) }),
       assetsEnv()
     )
@@ -275,7 +279,7 @@ describe("smithers mvp worker", () => {
         cancelled = true
       }
     })
-    const response = await worker.fetch(
+    const response = await admitted(
       new Request("https://mvp.test/api/agent/turn", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -306,7 +310,7 @@ describe("smithers mvp worker", () => {
         post("/api/model/stream", { messages: [oversize] })
       ]
     ) {
-      const response = await worker.fetch(request, assetsEnv())
+      const response = await admitted(request, assetsEnv())
       expect(response.status).toBe(413)
       const body = (await response.json()) as { message: string }
       expect(body.message).toContain("This conversation has grown too long")
@@ -320,7 +324,7 @@ describe("smithers mvp worker", () => {
     const instructions = "é".repeat(768 * 1024)
     expect(instructions.length).toBeLessThan(1024 * 1024)
     expect(new TextEncoder().encode(instructions).byteLength).toBeGreaterThan(1024 * 1024)
-    const response = await worker.fetch(
+    const response = await admitted(
       post("/api/agent/turn", { ...turnBody, instructions }),
       assetsEnv()
     )
@@ -347,7 +351,7 @@ describe("smithers mvp worker", () => {
         role: index % 2 === 0 ? "user" : "assistant",
         content: "x".repeat(6 * 1024)
       }))
-      const response = await worker.fetch(
+      const response = await admitted(
         post("/api/agent/turn", { ...turnBody, runId: "run-4-13-wedge", messages }),
         env
       )
@@ -362,7 +366,7 @@ describe("smithers mvp worker", () => {
 
   /* A refusal a reader can act on: which thing is too long, and the way out. */
   test("the oversize refusal names the conversation and the way out", async () => {
-    const response = await worker.fetch(
+    const response = await admitted(
       post("/api/agent/turn", { ...turnBody, instructions: "x".repeat(1100 * 1024) }),
       assetsEnv()
     )
@@ -393,7 +397,7 @@ describe("smithers mvp worker", () => {
         { status: 429, headers: { "content-type": "application/json", "retry-after": "45" } }
       )) as unknown as typeof fetch
     try {
-      const response = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-429" }), env)
+      const response = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-429" }), env)
       expect(response.status).toBe(429)
       const body = (await response.json()) as { message: string }
       expect(body.message).toContain("rate-limiting")
@@ -420,7 +424,7 @@ describe("smithers mvp worker", () => {
           headers: { "content-type": "text/html" }
         })) as unknown as typeof fetch
     try {
-      const response = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-500" }), env)
+      const response = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-500" }), env)
       expect(response.status).toBe(500)
       const body = (await response.json()) as { message: string }
       expect(body.message).not.toContain("<")
@@ -443,7 +447,7 @@ describe("smithers mvp worker", () => {
         }
       )) as unknown as typeof fetch
     try {
-      const response = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-503" }), env)
+      const response = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-503" }), env)
       const body = (await response.json()) as { message: string }
       expect(body.message).toContain("The canary chat queue is draining")
     } finally {
@@ -501,7 +505,7 @@ describe("smithers mvp worker", () => {
       return originalFetch(input as Request, init)
     }) as typeof fetch
     try {
-      const response = await worker.fetch(post("/api/agent/turn", turnBody), env)
+      const response = await admitted(post("/api/agent/turn", turnBody), env)
       expect(response.status).toBe(200)
       expect(response.headers.get("content-type")).toBe("application/x-ndjson")
       const lines = (await response.text()).trim().split("\n").map((line) => JSON.parse(line))
@@ -544,7 +548,7 @@ describe("smithers mvp worker", () => {
         headers: { "content-type": "application/json", authorization: "Bearer client-picked-token" },
         body: JSON.stringify(turnBody)
       })
-      const response = await worker.fetch(withClientBearer, env)
+      const response = await admitted(withClientBearer, env)
       expect(response.status).toBe(200)
       await response.text()
       // The upstream authenticates the deployment, never the browser.
@@ -555,7 +559,7 @@ describe("smithers mvp worker", () => {
   })
 
   test("cancel reports not-found for an unknown run", async () => {
-    const response = await worker.fetch(post("/api/agent/turn/cancel", { runId: "nope" }), assetsEnv())
+    const response = await admitted(post("/api/agent/turn/cancel", { runId: "nope" }), assetsEnv())
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ status: "not-found" })
   })
@@ -1280,41 +1284,49 @@ describe("turn seam session gate", () => {
     expect(seen?.get("x-user-login")).toBe("will")
     expect(seen?.get("x-smithers-service-token")).toBe("chat-product-token-123")
     expect(seen?.get("authorization")).toBe("Bearer chat-bearer-123")
-
-    let unseamed: Headers | undefined
-    await withMockedFetch(
-      (request) => {
-        unseamed = request.headers
-        return ndjsonUpstream([{ type: "done" }])
-      },
-      async () => {
-        const response = await worker.fetch(
-          post("/api/agent/turn", { ...turnBody, runId: "run-unvouched" }),
-          { ...assetsEnv(), SMITHERS_CHAT_URL: "https://upstream.test/chat" }
-        )
-        expect(response.status).toBe(200)
-        await response.text()
-      }
-    )
-    expect(unseamed?.get("x-user-login")).toBeNull()
-    expect(unseamed?.get("x-smithers-service-token")).toBeNull()
   })
 
   /**
-   * The local dev / stub stack has no identity seam at all, so there is nothing
-   * that could authenticate anyone — the gate must not brick it.
+   * A deployment that lost IDENTITY_UPSTREAM_URL (a dropped or blank var) can
+   * authenticate no one, so every route the gate protects refuses as an infra
+   * fault and never reaches a credential, even with every key configured.
    */
-  test("stays out of the way when no identity seam is configured", async () => {
+  test("fails closed with deployment_not_configured when no identity seam is configured", async () => {
+    const keyed: WorkerEnv = {
+      ...assetsEnv(),
+      SMITHERS_CHAT_URL: "https://upstream.test/chat",
+      SMITHERS_CHAT_AUTH_TOKEN: "chat-bearer-123",
+      CEREBRAS_API_KEY: "cerebras-key",
+      AI_GATEWAY_API_KEY: "gateway-key"
+    }
+    const gated: ReadonlyArray<Request> = [
+      post("/api/agent/turn", { ...turnBody, runId: "run-ungated" }),
+      post("/api/agent/turn", { ...turnBody, runId: "run-ungated-cookie" }, SESSION),
+      post("/api/agent/turn/cancel", { runId: "run-ungated" }),
+      post("/api/agent/turn/replay", { runId: "run-ungated" }),
+      post("/api/agent/turn/retire", { runId: "run-ungated" }),
+      post("/api/model/stream", { messages: [{ role: "user", content: "hi" }] }),
+      post("/api/model/test", {}),
+      post("/api/model/credential", {}, SESSION),
+      post("/api/tools/browser-fetch", { url: "https://example.com" })
+    ]
+    const fetched: Array<string> = []
     await withMockedFetch(
-      () => ndjsonUpstream([{ type: "done" }]),
+      (request) => {
+        fetched.push(request.url)
+        return ndjsonUpstream([{ type: "done" }])
+      },
       async () => {
-        const response = await worker.fetch(
-          post("/api/agent/turn", { ...turnBody, runId: "run-ungated" }),
-          { ...assetsEnv(), SMITHERS_CHAT_URL: "https://upstream.test/chat" }
-        )
-        expect(response.status).toBe(200)
+        for (const request of gated) {
+          const path = new URL(request.url).pathname
+          const response = await worker.fetch(request, keyed)
+          const body = (await response.json()) as { code: string; message: string }
+          expect({ path, status: response.status, code: body.code }).toEqual({ path, status: 501, code: "deployment_not_configured" })
+          expect(body.message).toContain("IDENTITY_UPSTREAM_URL")
+        }
       }
     )
+    expect(fetched).toEqual([])
   })
 })
 
@@ -2314,7 +2326,7 @@ describe("the tool-loop forwarding", () => {
           return originalFetch(request)
         }) as typeof fetch
         try {
-          const response = await worker.fetch(
+          const response = await admitted(
             post("/api/agent/turn", { ...turnBody, runId: "run-tools", tools }),
             env
           )
@@ -2341,7 +2353,7 @@ describe("the tool-loop forwarding", () => {
         return ndjsonUpstream([{ type: "done" }])
       },
       async () => {
-        const response = await worker.fetch(
+        const response = await admitted(
           post("/api/agent/turn", {
             ...turnBody,
             runId: "run-tool-items",
@@ -2440,7 +2452,7 @@ describe("the server-side kill route (B-3)", () => {
   }
 
   const kill = (runId: string, env: WorkerEnv): Promise<Response> =>
-    worker.fetch(post("/api/agent/turn/cancel", { runId }), env)
+    admitted(post("/api/agent/turn/cancel", { runId }), env)
 
   test("a mid-stream kill ends the turn with an honest cancelled frame, then not-found", async () => {
     const upstream = hangingUpstream()
@@ -2455,7 +2467,7 @@ describe("the server-side kill route (B-3)", () => {
         return upstream.response()
       },
       async () => {
-        const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-kill" }), env)
+        const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-kill" }), env)
         expect(turn.status).toBe(200)
         const reader = turn.body!.getReader()
         const decoder = new TextDecoder()
@@ -2513,7 +2525,7 @@ describe("the server-side kill route (B-3)", () => {
         ])
       },
       async () => {
-        const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-settled" }), env)
+        const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-settled" }), env)
         expect(turn.status).toBe(200)
         await turn.text()
         const late = await kill("run-settled", env)
@@ -2626,7 +2638,7 @@ describe("the server-side kill route (B-3)", () => {
         ])
       },
       async () => {
-        const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-long" }), env)
+        const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-long" }), env)
         expect(turn.status).toBe(200)
         const body = await turn.text()
         expect(body.trim().split("\n")).toHaveLength(chunks + 1)
@@ -2657,9 +2669,9 @@ describe("the server-side kill route (B-3)", () => {
         return upstream.response()
       },
       async () => {
-        const first = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-dupe" }), env)
+        const first = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-dupe" }), env)
         expect(first.status).toBe(200)
-        const second = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "run-dupe" }), env)
+        const second = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-dupe" }), env)
         expect(second.status).toBe(409)
         // Clean up: kill the hanging turn and drain it.
         await kill("run-dupe", env)
@@ -2676,8 +2688,9 @@ describe("the browser tool route (§2d)", () => {
     try {
       const bootstrap = await worker.fetch(new Request("https://mvp.test/api/bootstrap"), assetsEnv())
       expect(AppBootstrapSchema.parse(await bootstrap.json()).capabilities).not.toContain("browser.read")
-      const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://example.com/" }), assetsEnv())
+      const response = await admitted(post("/api/tools/browser-fetch", { url: "https://example.com/" }), assetsEnv())
       expect(response.status).toBe(501)
+      expect(((await response.json()) as { message: string }).message).not.toContain("IDENTITY_UPSTREAM_URL")
     } finally { globalThis.fetch = original }
   })
 
@@ -2703,12 +2716,12 @@ describe("the browser tool route (§2d)", () => {
         : new Response("<p>Read securely</p>", { headers: { "content-type": "text/html" } })
     } } }
     try {
-      const bootstrap = await worker.fetch(new Request("https://mvp.test/api/bootstrap"), env)
+      const bootstrap = await admitted(new Request("https://mvp.test/api/bootstrap"), env)
       expect(AppBootstrapSchema.parse(await bootstrap.json()).capabilities).toContain("browser.read")
       const request = post("/api/tools/browser-fetch", { url: "https://first.test/" })
       request.headers.set("authorization", "Bearer never-forward-this")
       request.headers.set("cookie", "never=forward-this")
-      const response = await worker.fetch(request, env)
+      const response = await admitted(request, env)
       expect(response.status).toBe(200)
       expect(await response.json()).toMatchObject({ finalUrl: "https://next.test/page", text: "Read securely" })
       expect(calls.map(({ address, url, version }) => ({ address, url, version }))).toEqual([
@@ -2726,25 +2739,25 @@ describe("the browser tool route (§2d)", () => {
       calls += 1
       return new Response(null, { status: 302, headers: { location: "https://127.0.0.1/private" } })
     } } }
-    const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://8.8.8.8/" }), env)
+    const response = await admitted(post("/api/tools/browser-fetch", { url: "https://8.8.8.8/" }), env)
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ code: "request_invalid" })
     expect(calls).toBe(1)
   })
 
   test("a malformed body and a refused target are coded 400s — no fetch happens", async () => {
-    const bad = await worker.fetch(post("/api/tools/browser-fetch", { nope: true }), assetsEnv())
+    const bad = await admitted(post("/api/tools/browser-fetch", { nope: true }), assetsEnv())
     expect(bad.status).toBe(400)
     const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("must not fetch") } } }
-    const http = await worker.fetch(post("/api/tools/browser-fetch", { url: "http://example.com/" }), env)
+    const http = await admitted(post("/api/tools/browser-fetch", { url: "http://example.com/" }), env)
     expect(http.status).toBe(400)
     expect(await http.json()).toMatchObject({ code: "request_invalid", message: expect.stringContaining("https") })
-    const privateIp = await worker.fetch(
+    const privateIp = await admitted(
       post("/api/tools/browser-fetch", { url: "https://127.0.0.1/" }),
       env
     )
     expect(privateIp.status).toBe(400)
-    const internal = await worker.fetch(
+    const internal = await admitted(
       post("/api/tools/browser-fetch", { url: "https://db.internal/" }),
       env
     )
@@ -2756,7 +2769,7 @@ describe("the browser tool route (§2d)", () => {
     globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as unknown as typeof fetch
     const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("must not fetch") } } }
     try {
-      const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
+      const response = await admitted(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
       expect(response.status).toBe(502)
       expect(await response.json()).toMatchObject({ status: "error", code: "upstream_unreachable" })
     } finally {
@@ -2769,7 +2782,7 @@ describe("the browser tool route (§2d)", () => {
     globalThis.fetch = (async () => Response.json({ Answer: [{ type: 1, data: "8.8.8.8" }] })) as unknown as typeof fetch
     const env: WorkerEnv = { ...assetsEnv(), BROWSER_EGRESS: { fetch: async () => { throw new Error("binding down") } } }
     try {
-      const response = await worker.fetch(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
+      const response = await admitted(post("/api/tools/browser-fetch", { url: "https://example.com/" }), env)
       expect(response.status).toBe(502)
       expect(await response.json()).toMatchObject({ code: "upstream_unreachable" })
     } finally {
@@ -2822,10 +2835,10 @@ describe("the browser tool route (§2d)", () => {
   /*
    * The curated platform proxy (MULTI-ACTIONS-GAP.md): allowlisted paths are
    * CLAIMED by the worker even when the deployment cannot serve them — the
-   * honest 503, never the canonical 404 — and anything off the allowlist
-   * stays the canonical 404.
+   * honest deployment_not_configured, never the canonical 404 — and anything
+   * off the allowlist stays the canonical 404.
    */
-  test("account and write proxy paths answer the honest no-identity 503, never the canonical 404", async () => {
+  test("account and write proxy paths answer the honest no-identity refusal, never the canonical 404", async () => {
     const paths: ReadonlyArray<readonly [string, string]> = [
       ["POST", "/api/repos/will/flows/issues"],
       ["POST", "/api/github/import"],
@@ -2845,7 +2858,8 @@ describe("the browser tool route (§2d)", () => {
     ]
     for (const [method, path] of paths) {
       const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method }), assetsEnv())
-      expect(`${method} ${path} → ${response.status}`).toBe(`${method} ${path} → 503`)
+      expect(`${method} ${path} → ${response.status}`).toBe(`${method} ${path} → 501`)
+      expect(((await response.json()) as { code: string }).code).toBe("deployment_not_configured")
     }
   })
 
@@ -3479,11 +3493,31 @@ describe("the /api/cloud bridge", () => {
     })
   })
 
-  test("without an identity seam the bridge answers the platform proxy's honest 503, not a 404", async () => {
+  test("without an identity seam a public repository read with a cookie stays public", async () => {
+    const env: WorkerEnv = { ...assetsEnv(), SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" }
+    const fetched: Array<string> = []
+    await withMockedFetch(
+      (request) => {
+        fetched.push(request.url)
+        return Response.json([{ name: "README.md", type: "file" }])
+      },
+      async () => {
+        const response = await worker.fetch(
+          new Request("https://mvp.test/api/repos/smithersai/smithers/contents", { headers: SESSION }),
+          env
+        )
+        expect(response.status).toBe(200)
+        expect(await response.json()).toEqual([{ name: "README.md", type: "file" }])
+      }
+    )
+    expect(fetched).toEqual(["https://cloud.test/api/repos/smithers-canary/smithers/contents"])
+  })
+
+  test("without an identity seam the bridge answers the platform proxy's honest refusal, not a 404", async () => {
     const direct = await worker.fetch(new Request("https://mvp.test/api/user/repos"), assetsEnv())
     const bridged = await worker.fetch(new Request("https://mvp.test/api/cloud/api/user/repos"), assetsEnv())
-    expect(direct.status).toBe(503)
-    expect(bridged.status).toBe(503)
+    expect(direct.status).toBe(501)
+    expect(bridged.status).toBe(501)
     expect(await bridged.json()).toEqual(await direct.json())
   })
 
@@ -3574,7 +3608,7 @@ describe("cloud roles on Cerebras", () => {
   test("a librarian turn reaches Cerebras on the librarian model and never the chat upstream", async () => {
     const wire = network(() => completion("Triggers live in flows/triggers.ts."))
     await withMockedFetch(wire.handler, async () => {
-      const response = await worker.fetch(post("/api/agent/turn", librarian), env)
+      const response = await admitted(post("/api/agent/turn", librarian), env)
       expect(response.status).toBe(200)
       expect(response.headers.get("content-type")).toBe("application/x-ndjson")
       const frames = (await response.text()).trim().split("\n").map((line) => JSON.parse(line))
@@ -3598,8 +3632,8 @@ describe("cloud roles on Cerebras", () => {
     const wire = network(() => completion("ok"))
     await withMockedFetch(wire.handler, async () => {
       const models = { ...env, CEREBRAS_MODEL_LIBRARIAN: "gpt-oss-120b", CEREBRAS_MODEL_FLOWS: "qwen-3-coder-480b" }
-      await (await worker.fetch(post("/api/agent/turn", librarian), models)).text()
-      await (await worker.fetch(post("/api/agent/turn", { ...librarian, runId: "run-flows", role: "flows", purpose: "flows" }), models)).text()
+      await (await admitted(post("/api/agent/turn", librarian), models)).text()
+      await (await admitted(post("/api/agent/turn", { ...librarian, runId: "run-flows", role: "flows", purpose: "flows" }), models)).text()
     })
     const sent = await Promise.all(wire.calls.cerebras.map(async (request) => ((await request.json()) as { model: string }).model))
     expect(sent).toEqual(["gpt-oss-120b", "qwen-3-coder-480b"])
@@ -3610,7 +3644,7 @@ describe("cloud roles on Cerebras", () => {
     const wire = network(() => completion("never"))
     const tools = [{ type: "function", name: "commands", description: "the one tool", parameters: { type: "object", properties: {} } }]
     await withMockedFetch(wire.handler, async () => {
-      const response = await worker.fetch(post("/api/agent/turn", { ...librarian, tools }), env)
+      const response = await admitted(post("/api/agent/turn", { ...librarian, tools }), env)
       expect(response.status).toBe(400)
       expect(((await response.json()) as { message: string }).message).toContain("Librarian")
     })
@@ -3621,13 +3655,13 @@ describe("cloud roles on Cerebras", () => {
   test("an explainer turn rides upstream carrying tier, purpose and role; unknown hint values are dropped, never refused", async () => {
     const wire = network(() => completion("never"), () => ndjsonUpstream([{ type: "delta", kind: "text", text: "Because." }, { type: "done" }]))
     await withMockedFetch(wire.handler, async () => {
-      const explained = await worker.fetch(
+      const explained = await admitted(
         post("/api/agent/turn", { ...turnBody, runId: "run-explain", tier: "cheap", purpose: "explain", role: "explainer" }),
         env
       )
       expect(explained.status).toBe(200)
       await explained.text()
-      const odd = await worker.fetch(
+      const odd = await admitted(
         post("/api/agent/turn", { ...turnBody, runId: "run-odd", tier: "gold", purpose: "p".repeat(201), role: "Not A Role" }),
         env
       )
@@ -3700,7 +3734,7 @@ describe("cloud roles on Cerebras", () => {
   test("without a Cerebras key the librarian is an honest 503 and the chat upstream is never asked instead", async () => {
     const wire = network(() => completion("never"))
     await withMockedFetch(wire.handler, async () => {
-      const response = await worker.fetch(post("/api/agent/turn", librarian), { ...env, CEREBRAS_API_KEY: undefined })
+      const response = await admitted(post("/api/agent/turn", librarian), { ...env, CEREBRAS_API_KEY: undefined })
       expect(response.status).toBe(503)
       expect(((await response.json()) as { message: string }).message).toContain("CEREBRAS_API_KEY is unset")
     })
@@ -3802,7 +3836,7 @@ describe("Durable Object rejections and the Worker error boundary", () => {
         upstreamCalls += 1
         return new Response("unexpected upstream call", { status: 500 })
       }, async () => {
-        const response = await worker.fetch(post(path, turnBody), {
+        const response = await admitted(post(path, turnBody), {
           ...assetsEnv(), TURN_CANCELS: rejectingNamespace
         })
         expect(response.status).toBe(502)
@@ -3832,7 +3866,7 @@ describe("Durable Object rejections and the Worker error boundary", () => {
   test("the error boundary awaits promises returned by route handlers", async () => {
     const logged = spyOn(console, "error").mockImplementation(() => {})
     try {
-      const response = await worker.fetch(post("/api/agent/turn", turnBody), {
+      const response = await admitted(post("/api/agent/turn", turnBody), {
         ...assetsEnv(),
         TURN_CANCELS: { ...rejectingNamespace, idFromName: () => { throw cause } }
       })
@@ -3983,16 +4017,16 @@ describe("generation-scoped turn lifecycle", () => {
       }
     })), async () => {
       const request = () => post("/api/agent/turn", { ...turnBody, runId: "generation-eof" })
-      const old = (await worker.fetch(request(), env)).body!.getReader()
+      const old = (await admitted(request(), env)).body!.getReader()
       expect(JSON.parse(new TextDecoder().decode((await old.read()).value)).type).toBe("done")
-      const next = await worker.fetch(request(), env)
+      const next = await admitted(request(), env)
       expect(next.status).toBe(200)
       try {
         first.close()
         expect((await old.read()).done).toBe(true)
         await Bun.sleep(10) // let the old pipe's finalizer run
         expect(settlements).toBe(1)
-        const kill = await worker.fetch(post("/api/agent/turn/cancel", { runId: "generation-eof" }), env)
+        const kill = await admitted(post("/api/agent/turn/cancel", { runId: "generation-eof" }), env)
         expect(await kill.json()).toEqual({ status: "cancelled" })
       } finally {
         await next.body!.cancel()
@@ -4039,7 +4073,7 @@ describe("generation-scoped turn lifecycle", () => {
     } }
     const pending: Promise<unknown>[] = []
     await withMockedFetch(() => new Response(new ReadableStream<Uint8Array>()), async () => {
-      const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "generation-disconnect" }), env,
+      const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "generation-disconnect" }), env,
         { waitUntil: (promise) => { pending.push(promise) } })
       const disconnect = turn.body!.cancel("client disconnected")
       await started
@@ -4083,7 +4117,7 @@ describe("generation-scoped turn lifecycle", () => {
       await withMockedFetch(() => new Response(new ReadableStream<Uint8Array>({
         cancel() { throw cancelError }
       })), async () => {
-        const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "generation-failure" }), env,
+        const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "generation-failure" }), env,
           { waitUntil: (promise) => { pending.push(promise) } })
         expect(JSON.parse((await turn.text()).trim())).toEqual({
           runId: "generation-failure", type: "done", reason: "stop",
@@ -4134,7 +4168,7 @@ describe("generation-scoped turn lifecycle", () => {
           cancel() { cancelled = true }
         }))
       }, async () => {
-        const turn = await worker.fetch(post("/api/agent/turn", { ...turnBody, runId: "generation-poll-cap" }), env)
+        const turn = await admitted(post("/api/agent/turn", { ...turnBody, runId: "generation-poll-cap" }), env)
         const text = await turn.text()
         const frames = text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line))
         expect(frames).toEqual([{ runId: "generation-poll-cap", type: "done", reason: "stop",

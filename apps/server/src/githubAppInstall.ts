@@ -19,7 +19,6 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
   const config = yield* ServerConfig
   const gate = yield* requireTurnSession(request)
   if (gate instanceof Response) return gate
-  if (gate === undefined) return refuse("seam_not_configured", "Repository actions need the identity seam, which this deployment does not have.")
   const token = yield* fetchCloudToken(gate.login)
   if (token.status !== "ok") {
     const refusal = cloudTokenRefusal(token, `Smithers Cloud isn't reachable for your account right now (${token.status}).`)

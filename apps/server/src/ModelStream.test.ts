@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { MODEL_STREAM_PATH, TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { asAdmitted } from "./admittedSession"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
 import { memoryDurableObjects } from "./memoryDurableObjects"
@@ -12,6 +13,8 @@ import { memoryDurableObjects } from "./memoryDurableObjects"
  * non-allowlisted callers BEFORE any upstream call, and the sealed-step law
  * rejects tool-bearing bodies.
  */
+
+const admitted = asAdmitted(worker.fetch)
 
 const env = (overrides: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
@@ -68,7 +71,7 @@ describe("the model relay route", () => {
   test("forwards the sealed call to the managed-inference upstream and streams its frames back", async () => {
     const captured = withFetch(() => ndjson([{ type: "delta", kind: "text", text: "ok" }, { type: "done" }]))
 
-    const response = await worker.fetch(relayRequest(), env())
+    const response = await admitted(relayRequest(), env())
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toBe("application/x-ndjson")
     expect(await response.text()).toContain("\"type\":\"done\"")
@@ -83,7 +86,7 @@ describe("the model relay route", () => {
 
   test("mints its own run id — a caller can never choose the charge's idempotency key", async () => {
     const captured = withFetch(() => ndjson([{ type: "done" }]))
-    await worker.fetch(relayRequest(relayBody, { "x-smithers-run-id": "attacker-chosen" }), env())
+    await admitted(relayRequest(relayBody, { "x-smithers-run-id": "attacker-chosen" }), env())
     const runId = captured[0]!.headers.get("x-smithers-run-id")
     expect(runId).not.toBe("attacker-chosen")
     expect(runId).toMatch(/^[0-9a-f-]{36}$/)
@@ -162,7 +165,7 @@ describe("the model relay route", () => {
       upstreamCalls += 1
       return ndjson([{ type: "done" }])
     })
-    const response = await worker.fetch(
+    const response = await admitted(
       relayRequest({ ...relayBody, tools: [{ type: "function", name: "bash" }] }),
       env()
     )
@@ -172,14 +175,14 @@ describe("the model relay route", () => {
   })
 
   test("rejects a body with no messages", async () => {
-    const response = await worker.fetch(relayRequest({ messages: [] }), env())
+    const response = await admitted(relayRequest({ messages: [] }), env())
     expect(response.status).toBe(400)
     expect(await response.text()).toContain("messages")
   })
 
   test("surfaces an upstream failure with its status and detail", async () => {
     withFetch(() => new Response(JSON.stringify({ error: "overloaded" }), { status: 529 }))
-    const response = await worker.fetch(relayRequest(), env())
+    const response = await admitted(relayRequest(), env())
     expect(response.status).toBe(529)
   })
 

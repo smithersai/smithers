@@ -718,11 +718,9 @@ const handleTransientTurn = (
     if (body instanceof Response) return body
     // A sealed turn bound to a configured model (the `explainer` seat) is
     // answered here on that model or refused, never upstream. It spends a
-    // deployment key, so where sign-in exists a signed-out caller is refused.
+    // deployment key, so a signed-out caller is refused.
     if (body.model !== undefined) {
-      if (session === undefined && (yield* ServerConfig).identityUpstreamUrl !== undefined) {
-        return refuse("sign_in_required", "Sign in to use a configured model.")
-      }
+      if (session === undefined) return refuse("sign_in_required", "Sign in to use a configured model.")
       return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS, session ? { request, login: session.login } : undefined)
     }
     // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.

@@ -59,7 +59,7 @@ export interface ServerConfigShape {
   readonly chatProductServiceToken: Redacted.Redacted<string> | undefined
   /** How long any one upstream gets to send HEADERS, in ms. */
   readonly upstreamTimeoutMs: number
-  /** Set = the turn gate is armed; unset = no seam can authenticate anyone. */
+  /** Unset = no seam can authenticate anyone, so every session-gated route refuses deployment_not_configured. */
   readonly identityUpstreamUrl: string | undefined
   readonly identityServiceToken: Redacted.Redacted<string> | undefined
   readonly identityAdminToken: Redacted.Redacted<string> | undefined

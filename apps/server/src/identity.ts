@@ -27,6 +27,10 @@ import {
 
 const IDENTITY_SEAM = "The identity service"
 
+/** A deployment with no identity seam: an infra fault, never an open door. */
+const identityNotConfigured = (): Response =>
+  notConfigured("The identity seam", "IDENTITY_UPSTREAM_URL is unset. Sign-in is unavailable")
+
 /** Forward one already-built request under the seam's deadline, never failing. */
 export const forwardUnderDeadline = (
   seam: string,
@@ -45,9 +49,7 @@ export const forwardUnderDeadline = (
 export const proxyToIdentity = (request: Request): Effect.Effect<Response, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
-    if (config.identityUpstreamUrl === undefined) {
-      return notConfigured("The identity seam", "IDENTITY_UPSTREAM_URL is unset. Sign-in is unavailable")
-    }
+    if (config.identityUpstreamUrl === undefined) return identityNotConfigured()
     const url = new URL(request.url)
     if (siblingAdminRoute(url.pathname)) return notFound()
     const target = new URL(url.pathname + url.search, config.identityUpstreamUrl)
@@ -170,25 +172,26 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
 
 /**
  * The turn seam spends the deployment's own model credential and meters real
- * dollars onto the deployment's billing account, so on any deployment that HAS
- * an identity seam it must never answer an anonymous caller. The same-origin
- * guard is not that gate: it only fires for a request that *sends* an `Origin`,
- * so a plain `curl -X POST` sails past it. Wave 7 published this Worker at
- * canary.smithers.sh, where that made `/api/agent/turn` a world-reachable spend.
+ * dollars onto the deployment's billing account, so it must never answer an
+ * anonymous caller. The same-origin guard is not that gate: it only fires for
+ * a request that *sends* an `Origin`, so a plain `curl -X POST` sails past it.
+ * Wave 7 published this Worker at canary.smithers.sh, where that made
+ * `/api/agent/turn` a world-reachable spend.
  *
- * When IDENTITY_UPSTREAM_URL is unset there is no seam that could authenticate
- * anyone (the local dev/stub stack, the e2e), so the gate stays out of the way.
+ * When IDENTITY_UPSTREAM_URL is unset (a dropped or blank var) no seam can
+ * authenticate anyone, so the gate fails closed with deployment_not_configured
+ * and the deployment's keys stay unspent.
  *
  * The one exception is decided by the router, not here: a signed-out turn
  * about a public catalog repository runs under the anonymous per-address
- * ceiling. Every other route keeps this 401.
+ * ceiling. Every other route keeps this refusal.
  */
 export const requireTurnSession = (
   request: Request
-): Effect.Effect<Response | ValidatedIdentity | undefined, never, Transport | ServerConfig> =>
+): Effect.Effect<Response | ValidatedIdentity, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
-    if (config.identityUpstreamUrl === undefined) return undefined
+    if (config.identityUpstreamUrl === undefined) return identityNotConfigured()
     const validation = yield* validateSession(request)
     if (validation.status === "unavailable") return validation.response
     if (validation.status === "invalid") {

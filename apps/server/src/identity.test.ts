@@ -155,8 +155,17 @@ describe("requireTurnSession", () => {
     const signedOut = await run(requireTurnSession(session("smithers_session=stale")), wire(() => jsonAnswer(200, { admission: "public" })).layer, config())
     expect((signedOut as Response).status).toBe(401)
   })
-  test("stays out of the way without a seam, refuses 401 signed out and 403 off the allowlist, and admits a member", async () => {
-    expect(await run(requireTurnSession(session()), wire(() => jsonAnswer(200, {})).layer, testConfigLayer())).toBeUndefined()
+  test("fails closed without a seam and asks no one", async () => {
+    const { seen, layer } = wire(() => jsonAnswer(200, { login: "will", allowlisted: true }))
+    const unseamed = await run(requireTurnSession(session("smithers_session=abc")), layer, testConfigLayer())
+    expect(unseamed).toBeInstanceOf(Response)
+    expect((unseamed as Response).status).toBe(501)
+    const body = (await (unseamed as Response).json()) as { code: string; message: string }
+    expect(body.code).toBe("deployment_not_configured")
+    expect(body.message).toContain("IDENTITY_UPSTREAM_URL")
+    expect(seen).toEqual([])
+  })
+  test("refuses 401 signed out and 403 off the allowlist, and admits a member", async () => {
     const signedOut = await run(requireTurnSession(session()), wire(() => new Response("{}", { status: 401 })).layer, config())
     expect(signedOut).toBeInstanceOf(Response)
     expect((signedOut as Response).status).toBe(401)
