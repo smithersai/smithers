@@ -1273,6 +1273,15 @@ describe("AnthropicMessages prompt caching", () => {
     expect(breakpoints(body(frameRequest([Message.user("volatile")], 0)))).toEqual(["system[1]"])
   })
 
+  it("rejects a leading signed thinking message even when it offers no cacheable block", () => {
+    const request = frameRequest([
+      Message.assistant([ThinkingPart.make({ text: "reasoning", signature: "sig" })], { stopReason: "stop" }),
+      Message.user("volatile")
+    ], 1)
+    const error = Effect.runSync(AnthropicMessages.protocol.body.from(request, { native: true }).pipe(Effect.flip))
+    expect(error).toMatchObject({ code: "invalid_request", path: "messages[0].role" })
+  })
+
   it("counts the boundary in request messages even when lowering drops some", () => {
     const wire = body(frameRequest([
       Message.user("first"),

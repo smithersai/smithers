@@ -127,6 +127,37 @@ describe("Route.prepare", () => {
     expect(JSON.stringify(new ModelError({ code: "transport", message: "safe" }))).not.toContain(key)
   })
 
+  it("supplies JSON content type when the route declares no public headers", async () => {
+    const prepared = await Effect.runPromise(Route.prepare({
+      id: "default-headers",
+      protocol,
+      endpoint: endpoint({ url: "https://example.test" }),
+      auth: Auth.bearer(Redacted.make("test-key")),
+      framing: Framing.sse
+    }, request))
+    expect(prepared.publicHeaders).toEqual({ "content-type": "application/json" })
+  })
+
+  it("canonicalizes public headers independently of caller insertion order", async () => {
+    const headers = { "x-z": "last", "x-a": "first", "x-m": "middle" }
+    const prepare = (headers: Readonly<Record<string, string>>) =>
+      Effect.runPromise(Route.prepare(
+        Route.make({
+          id: "header-order",
+          protocol,
+          endpoint: endpoint({ url: "https://example.test" }),
+          auth: Auth.bearer(Redacted.make("test-key")),
+          framing: Framing.sse,
+          headers
+        }),
+        request
+      ))
+    const first = await prepare(headers)
+    const second = await prepare(Object.fromEntries(Object.entries(headers).reverse()))
+    expect(JSON.stringify(first.publicHeaders)).toBe(JSON.stringify(second.publicHeaders))
+    expect(Object.keys(first.publicHeaders)).toEqual(["content-type", "x-a", "x-m", "x-z"])
+  })
+
   it("rejects credential-bearing headers before they can enter the prepared view", async () => {
     const route = Route.make({
       id: "unsafe",

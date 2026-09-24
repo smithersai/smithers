@@ -14,6 +14,7 @@ import * as Auth from "./Auth.ts"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as Endpoint from "./Endpoint.ts"
 import * as Framing from "./Framing.ts"
+import * as WireTrace from "./internal/WireTrace.ts"
 import * as Model from "./Model.ts"
 import { ModelError } from "./ModelError.ts"
 import type { ModelEvent } from "./ModelEvent.ts"
@@ -22,7 +23,6 @@ import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import type * as Protocol from "./Protocol.ts"
 import * as RequestExecutor from "./RequestExecutor.ts"
-import * as WireTrace from "./internal/WireTrace.ts"
 
 /**
  * The credential-free representation used to construct a sealed model step.
@@ -76,10 +76,10 @@ const sensitiveHeader = (name: string): boolean => Auth.isCredentialName(name)
 const compareCanonical = (left: string, right: string): number => left < right ? -1 : 1
 
 const publicHeaders = (
-  headers: Readonly<Record<string, string>> | undefined
+  headers: Readonly<Record<string, string>>
 ): Result.Result<Record<string, string>, ModelError> => {
   const normalized = new Map<string, string>([["content-type", "application/json"]])
-  for (const [name, value] of Object.entries(headers ?? {})) {
+  for (const [name, value] of Object.entries(headers)) {
     if (sensitiveHeader(name)) {
       return Result.fail(
         new ModelError({
