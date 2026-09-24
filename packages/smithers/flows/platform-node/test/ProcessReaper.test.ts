@@ -1,5 +1,5 @@
 import { ProcessLedger } from "@smthrs/kernel"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import { execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -114,5 +114,46 @@ describe.skipIf(process.platform === "win32")("ProcessReaper.groupVacant", () =>
     } finally {
       kill.mockRestore()
     }
+  })
+})
+
+describe("ProcessReaper over an unreadable ledger history", () => {
+  const unreadable = (touched: Array<string>): ProcessLedger.Service => ({
+    record: () => Effect.die("unused"),
+    release: () => Effect.void,
+    reaped: () => Effect.sync(() => void touched.push("reaped")),
+    skipped: () => Effect.sync(() => void touched.push("skipped")),
+    live: Effect.succeed([]),
+    orphans: Effect.fail(
+      new ProcessLedger.ProcessLedgerReplayError({ code: "journal_unreadable", message: "journal offline" })
+    )
+  })
+  const system: ProcessReaper.System = {
+    ...ProcessReaper.posixSystem,
+    killTree: () => {
+      throw new Error("a sweep over an unread history must not signal anything")
+    }
+  }
+
+  it("fails the sweep with the replay error instead of reporting nothing to reap", async () => {
+    const touched: Array<string> = []
+    const failure = await Effect.runPromise(
+      Effect.flip(ProcessReaper.reap({ system })).pipe(
+        Effect.provideService(ProcessLedger.ProcessLedger, unreadable(touched))
+      )
+    )
+    expect(failure._tag).toBe("@smthrs/kernel/ProcessLedgerReplayError")
+    expect(touched).toEqual([])
+  })
+
+  it("still builds the host layer, refusing the sweep and retiring nothing", async () => {
+    const touched: Array<string> = []
+    await Effect.runPromise(
+      Layer.build(ProcessReaper.layer({ system })).pipe(
+        Effect.scoped,
+        Effect.provideService(ProcessLedger.ProcessLedger, unreadable(touched))
+      )
+    )
+    expect(touched).toEqual([])
   })
 })

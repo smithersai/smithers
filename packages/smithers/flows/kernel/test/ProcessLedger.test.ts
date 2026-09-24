@@ -206,7 +206,7 @@ describe("ProcessLedger", () => {
       expect(call).toBe(2)
     }))
 
-  it.effect("stops reading a journal page that does not advance its cursor", () =>
+  it.effect("refuses a history whose journal cursor stops advancing", () =>
     Effect.gen(function*() {
       const stuck = {
         entries: [entry({ seq: 0, eventType: "flows.host.process-spawned.v1", payload: record(41, 1) })],
@@ -215,7 +215,11 @@ describe("ProcessLedger", () => {
       const ledger = yield* ProcessLedger.make({ hostId: "host-a", ownerPid: 2 }).pipe(
         Effect.provide(JournalModule.layerNoop({ entries: () => Effect.succeed(stuck) }))
       )
-      expect((yield* ledger.orphans).map((row) => row.pid)).toEqual([41])
+      // A history that was not read to its end is not the history: a record
+      // past the stall could retire pid 41 or name another abandoned child.
+      const failure = yield* Effect.flip(ledger.orphans)
+      expect(failure._tag).toBe("@smthrs/kernel/ProcessLedgerReplayError")
+      expect(failure.code).toBe("cursor_stalled")
     }))
 
   it.effect("REPORTS every refused write instead of pretending it committed", () =>
@@ -243,8 +247,11 @@ describe("ProcessLedger", () => {
       expect((yield* Effect.flip(ledger.skipped(held, "pre-boot")))._tag).toBe("@smthrs/journal/JournalError")
       expect((yield* Effect.flip(ledger.release(held)))._tag).toBe("@smthrs/journal/JournalError")
       expect(yield* ledger.live).toEqual([])
-      // The history cannot be read either, so no orphan can be claimed.
-      expect(yield* ledger.orphans).toEqual([])
+      // The history cannot be read either. An unreadable history is not an
+      // empty one: the ledger says so instead of claiming nothing was left.
+      const replay = yield* Effect.flip(ledger.orphans)
+      expect(replay._tag).toBe("@smthrs/kernel/ProcessLedgerReplayError")
+      expect(replay.code).toBe("journal_unreadable")
     }).pipe(Effect.provide(JournalModule.layerNoop())))
 
   it.effect("retires a skipped record and says in the journal that nothing was signalled", () =>

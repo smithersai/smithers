@@ -30,7 +30,7 @@ import {
   Rule
 } from "@smthrs/capability/Permission"
 import { digestSync } from "@smthrs/crypto/Sha256"
-import { Context, Deferred, Effect, Layer, Option, Schema, type Scope, Semaphore } from "effect"
+import { Cause, Context, Deferred, Effect, Layer, Option, Schema, type Scope, Semaphore } from "effect"
 import { allows, type CapabilitySet, current, fromPatterns, intersect } from "./CapabilitySet.ts"
 import { DeniedGrant, EnvelopeGrant, type GrantEvent, OnceGrant, RememberedGrant, RunGrant } from "./GrantEvent.ts"
 import { Workspace } from "./Workspace.ts"
@@ -1201,9 +1201,15 @@ export const make = (
                 return
               case "Wait": {
                 // The identical envelope is mid-flight elsewhere; adopt its
-                // outcome, then re-plan so a failed attempt is retried here.
-                yield* Effect.ignore(restore(Deferred.await(planned.completion)))
-                return yield* admit(prepared)
+                // outcome. A failed write fails here too: re-planning would
+                // turn one journal outage into an unbounded loop of writes.
+                // Only an interrupted first admission is retried here, since
+                // it decided nothing.
+                return yield* restore(Deferred.await(planned.completion)).pipe(
+                  Effect.catchCause((cause) =>
+                    Cause.hasInterruptsOnly(cause) ? admit(prepared) : Effect.failCause(cause)
+                  )
+                )
               }
               case "Fresh": {
                 // Journal IO never holds the permit: only this admission

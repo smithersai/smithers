@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern, format } from "@smthrs/capability/Capability"
-import { Rule } from "@smthrs/capability/Permission"
+import { GrantStoreError, Rule } from "@smthrs/capability/Permission"
 import { Deferred, Effect, Exit, Fiber, Scope } from "effect"
 import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
@@ -220,6 +220,73 @@ describe("GrantStore journal write boundaries", () => {
         yield* Fiber.join(first)
         yield* Fiber.join(second)
         expect(events).toHaveLength(1)
+        yield* store.check(other)
+      })
+    ))
+
+  it.effect("a concurrent identical envelope admission receives a failed write instead of retrying it", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        let writes = 0
+        const store = yield* make({
+          planDigest: "plan-1",
+          attended: false,
+          persist: () =>
+            Effect.sync(() => {
+              writes += 1
+            }).pipe(
+              Effect.andThen(Deferred.succeed(started, undefined)),
+              Effect.andThen(Deferred.await(release)),
+              Effect.andThen(Effect.fail(new GrantStoreError({ code: "journal_failed", message: "journal offline" })))
+            )
+        })
+        const envelope = { planDigest: "plan-1", patterns: [workspacePattern()] }
+        const first = yield* Effect.flip(store.grantEnvelope(envelope)).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Deferred.await(started)
+        const second = yield* Effect.flip(store.grantEnvelope(envelope)).pipe(
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Effect.yieldNow
+
+        yield* Deferred.succeed(release, undefined)
+        expect((yield* Fiber.join(first)).code).toBe("journal_failed")
+        expect((yield* Fiber.join(second)).code).toBe("journal_failed")
+        // One admission, one write: the waiter adopted the outcome rather than
+        // turning a journal outage into a loop of fresh writes.
+        expect(writes).toBe(1)
+        expect((yield* Effect.flip(store.check(other))).code).toBe("permission_required")
+      })
+    ))
+
+  it.effect("a concurrent identical envelope admission retries when the first admission is interrupted", () =>
+    Effect.scoped(
+      Effect.gen(function*() {
+        const started = yield* Deferred.make<void>()
+        let writes = 0
+        const store = yield* make({
+          planDigest: "plan-1",
+          attended: false,
+          persist: () =>
+            Effect.suspend(() => {
+              writes += 1
+              return writes === 1
+                ? Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))
+                : Effect.void
+            })
+        })
+        const envelope = { planDigest: "plan-1", patterns: [workspacePattern()] }
+        const first = yield* store.grantEnvelope(envelope).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(started)
+        const second = yield* store.grantEnvelope(envelope).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Effect.yieldNow
+
+        yield* Fiber.interrupt(first)
+        yield* Fiber.join(second)
+        expect(writes).toBe(2)
         yield* store.check(other)
       })
     ))

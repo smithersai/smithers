@@ -145,6 +145,35 @@ export const ProcessRecord = Schema.Struct({
  */
 export type ProcessRecord = typeof ProcessRecord.Type
 
+/**
+ * Why a ledger history could not be replayed.
+ *
+ * - `journal_unreadable`: a page of the host's history could not be read.
+ * - `cursor_stalled`: the journal reported more history but did not advance.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export const ProcessLedgerReplayErrorCode = Schema.Literals(["journal_unreadable", "cursor_stalled"])
+
+/**
+ * The ledger could not read a previous incarnation's history to its end.
+ *
+ * An unread history is never reported as an empty one: a caller that treated
+ * it as empty would leave every abandoned child running with no owner.
+ *
+ * @category errors
+ * @since 1.0.0-rc.1
+ */
+export class ProcessLedgerReplayError extends Schema.TaggedError<ProcessLedgerReplayError>()(
+  "@smthrs/kernel/ProcessLedgerReplayError",
+  {
+    code: ProcessLedgerReplayErrorCode,
+    message: Schema.String,
+    cause: Schema.optional(Schema.Defect())
+  }
+) {}
+
 const decodeRecord = Schema.decodeUnknownResult(ProcessRecord)
 const encodeRecord = Schema.encodeSync(ProcessRecord)
 
@@ -180,8 +209,13 @@ export interface Service {
   readonly skipped: (record: ProcessRecord, reason: string) => Effect.Effect<void, JournalError>
   /** The processes this incarnation started and has not yet released. */
   readonly live: Effect.Effect<ReadonlyArray<ProcessRecord>>
-  /** The processes a previous incarnation of this host left running. */
-  readonly orphans: Effect.Effect<ReadonlyArray<ProcessRecord>>
+  /**
+   * The processes a previous incarnation of this host left running.
+   *
+   * Fails when that history cannot be read to its end, so an unreadable
+   * history is never mistaken for one with nothing left running.
+   */
+  readonly orphans: Effect.Effect<ReadonlyArray<ProcessRecord>, ProcessLedgerReplayError>
 }
 
 /**
@@ -214,7 +248,7 @@ interface Sink {
     record: ProcessRecord,
     extra?: Record<string, unknown>
   ) => Effect.Effect<void, JournalError>
-  readonly replay: Effect.Effect<ReadonlyArray<ProcessRecord>>
+  readonly replay: Effect.Effect<ReadonlyArray<ProcessRecord>, ProcessLedgerReplayError>
 }
 
 /** The event types that retire a record from the inherited set. */
@@ -224,18 +258,25 @@ const retires = (eventType: string): boolean =>
 /** A pid may be reused before the previous process's scope releases its record. */
 const identity = (record: ProcessRecord): string => `${record.pid}:${record.startedAtMs}`
 
-/** One page's worth of history folded onto the live set. */
-const apply = (live: Map<string, ProcessRecord>, entry: JournalEvent.Entry): void => {
-  if (entry.sourceId !== sourceId) return
+/**
+ * One entry folded onto the live set.
+ *
+ * Returns the entry when it is one of the ledger's own records but its payload
+ * does not decode, so replay can report it. Such an entry names no process
+ * that could be signalled, so failing the whole replay over it would stop
+ * every later incarnation from reaping the well-formed records beside it.
+ */
+const apply = (live: Map<string, ProcessRecord>, entry: JournalEvent.Entry): JournalEvent.Entry | undefined => {
+  if (entry.sourceId !== sourceId) return undefined
+  if (entry.eventType !== SpawnedEventType && !retires(entry.eventType)) return undefined
   const decoded = decodeRecord(entry.payload)
-  if (decoded._tag === "Failure") return
+  if (decoded._tag === "Failure") return entry
   if (entry.eventType === SpawnedEventType) {
     live.set(identity(decoded.success), decoded.success)
     return
   }
-  if (retires(entry.eventType)) {
-    live.delete(identity(decoded.success))
-  }
+  live.delete(identity(decoded.success))
+  return undefined
 }
 
 const PAGE = 256
@@ -266,18 +307,39 @@ const journalSink = (options: Options, journal: JournalModule.Service): Sink => 
         runId: hostRunId(options.hostId),
         limit: PAGE,
         ...(after === undefined ? {} : { after })
-      })
-      for (const entry of page.entries) apply(live, entry)
+      }).pipe(
+        Effect.mapError((cause) =>
+          new ProcessLedgerReplayError({
+            code: "journal_unreadable",
+            message: `process ledger could not read the history of host ${options.hostId}`,
+            cause
+          })
+        )
+      )
+      for (const entry of page.entries) {
+        const malformed = apply(live, entry)
+        if (malformed !== undefined) {
+          yield* Effect.logWarning(
+            `process ledger skipped an undecodable ${malformed.eventType} record at seq ${malformed.seq}`
+          )
+        }
+      }
       const last = page.entries.at(-1)
+      if (last === undefined || !page.hasMore) break
       // A page that ends where the previous one did would be replayed
-      // forever. Containment is best effort: stop with what was read.
-      if (last === undefined || !page.hasMore || (after !== undefined && last.seq <= after)) break
+      // forever, and stopping there would report a partial history as whole.
+      if (after !== undefined && last.seq <= after) {
+        return yield* Effect.fail(
+          new ProcessLedgerReplayError({
+            code: "cursor_stalled",
+            message: `process ledger history of host ${options.hostId} stopped advancing at seq ${last.seq}`
+          })
+        )
+      }
       after = last.seq
     }
     return [...live.values()]
-  }).pipe(
-    Effect.catch((error) => Effect.as(Effect.logWarning("process ledger could not replay its history", error), []))
-  )
+  })
 })
 
 const memorySink: Sink = {

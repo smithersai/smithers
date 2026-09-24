@@ -706,14 +706,17 @@ const refuse = (
  * Kills the process groups a previous incarnation of this host abandoned.
  *
  * Returns one entry per inherited record so a caller can log what it decided;
- * `killed: false` carries the {@link Refusal} that produced it.
+ * `killed: false` carries the {@link Refusal} that produced it. Fails with
+ * {@link ProcessLedger.ProcessLedgerReplayError} when the inherited history
+ * cannot be read to its end: nothing is signalled or retired, so the next
+ * sweep inherits every record again.
  *
  * @category constructors
  * @since 0.1.0
  */
 export const reap = (
   options?: Options
-): Effect.Effect<ReadonlyArray<Reaped>, never, ProcessLedger.ProcessLedger> =>
+): Effect.Effect<ReadonlyArray<Reaped>, ProcessLedger.ProcessLedgerReplayError, ProcessLedger.ProcessLedger> =>
   Effect.gen(function*() {
     const ledger = yield* ProcessLedger.ProcessLedger
     const system = options?.system ?? systemFor(process.platform)
@@ -767,10 +770,20 @@ const retire = (
  * Runs {@link reap} once while the layer is built.
  *
  * Compose it into a host layer so standing a host up is also what cleans up
- * after the incarnation that crashed.
+ * after the incarnation that crashed. A history that cannot be read refuses
+ * the sweep with an error log and leaves every record inherited; the host
+ * still starts, because the processes it will spawn are recorded and
+ * contained regardless.
  *
  * @category layers
  * @since 0.1.0
  */
 export const layer = (options?: Options): Layer.Layer<never, never, ProcessLedger.ProcessLedger> =>
-  Layer.effectDiscard(reap(options))
+  Layer.effectDiscard(
+    reap(options).pipe(
+      Effect.catchTag(
+        "@smthrs/kernel/ProcessLedgerReplayError",
+        (error) => Effect.logError("process reaper refused to sweep: the ledger history is incomplete", error)
+      )
+    )
+  )
