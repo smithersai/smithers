@@ -14,7 +14,7 @@
  */
 import type { ControlError } from "@smthrs/control/ControlError"
 import { PersistenceError } from "@smthrs/control/ControlError"
-import type { FireSummary, TriggerSummary } from "@smthrs/control/ControlSchema"
+import { defaultPageSize, type FireSummary, type TriggerSummary } from "@smthrs/control/ControlSchema"
 import * as Port from "@smthrs/control/DispatchReader"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -32,6 +32,20 @@ import { type FireRecord, type Held, isReservation, type Registered, TriggerStor
  * @since 1.0.0-rc.0
  */
 export const nextOccurrenceCount = 5
+
+/**
+ * How many ledger rows one `fires` page needs: every row before the page's
+ * offset cursor, the page, and one more so `Control.list` can tell a next page
+ * exists. A cursor Control will refuse reads nothing extra: it answers
+ * `undefined`, and the refusal comes from Control.
+ */
+const firesNeeded = (request: Port.FiresRequest): number | undefined => {
+  const start = request.cursor === undefined ? 0 : Number(request.cursor)
+  const size = request.limit ?? defaultPageSize
+  return Number.isSafeInteger(start) && start >= 0 && Number.isSafeInteger(size) && size >= 1
+    ? start + size + 1
+    : undefined
+}
 
 const persistence = (operation: string) => (error: TriggerError): ControlError =>
   new PersistenceError({ operation, message: error.message, cause: error })
@@ -109,7 +123,8 @@ export const toFireSummary = (record: FireRecord): FireSummary => ({
  *
  * `list` answers every trigger the store holds, taking each row's held state
  * from the listing itself; `fires` pushes the request's filters into the
- * ledger query and answers every matching row newest first.
+ * ledger query and answers the matching rows newest first, reading only as
+ * many as the requested page needs.
  * `Control.list` applies the filters again and pages. A store failure is a
  * `PersistenceError` naming the listing that failed.
  *
@@ -142,7 +157,8 @@ export const make: Effect.Effect<Port.Service, never, TriggerStore> = Effect.gen
       store.history({
         triggerId: request.filters?.triggerId,
         runId: request.filters?.runId,
-        outcome: request.filters?.outcome
+        outcome: request.filters?.outcome,
+        limit: firesNeeded(request)
       }).pipe(
         Effect.map((page) => page.items.map(toFireSummary)),
         Effect.mapError(persistence("fires"))

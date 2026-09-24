@@ -42,6 +42,35 @@ const score = (overrides: Partial<ScoreStore.ScoreObservation> = {}): ScoreStore
 const failed = <A>(program: Effect.Effect<A, ScorerError, StoreServices>) => run(Effect.flip(program))
 
 describe("ScoreStore", () => {
+  // Neither table was ever pruned, so a host scoring live runs grew both
+  // forever.
+  it("prunes observations and job claims older than a cutoff and nothing newer", async () => {
+    const output = await run(Effect.gen(function*() {
+      const store = yield* ScoreStore.ScoreStore
+      yield* store.record(score({ at: 1 }))
+      yield* store.recordOnce("old-job", score({ at: 2 }))
+      yield* store.recordOnce("new-job", score({ at: 10 }))
+      const removed = yield* store.prune({ olderThan: 5 })
+      return {
+        removed,
+        remaining: (yield* store.observations("a", "s")).map((observation) => observation.at),
+        // The claim is gone, so the identity can be claimed again.
+        reclaimed: yield* store.recordOnce("old-job", score({ at: 11 })),
+        stillClaimed: yield* store.recordOnce("new-job", score({ at: 12 })),
+        refused: yield* Effect.flip(store.prune({ olderThan: 1.5 }))
+      }
+    }))
+    expect(output.removed).toEqual({ observations: 2, jobs: 1 })
+    expect(output.remaining).toEqual([10])
+    expect(output.reclaimed).toBe(true)
+    expect(output.stillClaimed).toBe(false)
+    expect(output.refused).toMatchObject({ code: "invalid_request" })
+    expect(await Effect.runPromise(ScoreStore.makeNoop().prune({ olderThan: 5 }))).toEqual({
+      observations: 0,
+      jobs: 0
+    })
+  })
+
   it("retains repeated observations and atomically records jobs once", async () => {
     const output = await run(Effect.gen(function*() {
       const store = yield* ScoreStore.ScoreStore

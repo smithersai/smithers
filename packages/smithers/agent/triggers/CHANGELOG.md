@@ -22,8 +22,26 @@
   occurrence and the row naming the active run. Nothing else in the store
   deletes from `flows_trigger_fires`, so a host that never prunes keeps one row
   per occurrence for as long as the database lives.
+- `Scheduler.Options.fireRetention`, defaulting to thirty days
+  (`Scheduler.defaultFireRetention`): a tick prunes settled fires older than
+  that at most once an hour. The `0004_fire_run_index` migration indexes the
+  ledger by run id.
+- The scheduler traces `Scheduler.runOnce`, `Scheduler.processTrigger`, and
+  `Scheduler.launch`, and records `smithers.triggers.fires` by outcome plus
+  tick and launch duration histograms (`Scheduler.durationBoundaries`).
 
 ### Changed
+
+- `RunnerService.isActive` is replaced by `inspect`, which answers a
+  `RunState`. A run that failed, was cancelled, or is unknown to the runner is
+  recorded as a `failed` fire naming that state; it used to be recorded as
+  `completed`.
+- A tick no longer waits for a launch. The claim is durable and the launch runs
+  on its own fiber, so a plan parked awaiting approval no longer holds other
+  triggers, and a boundary another trigger crosses meanwhile is claimed.
+- The first poll after a restart dispatches the current occurrence even when
+  the backlog exceeds `maxCatchUp` or the policy is `catchUp: "none"`.
+- `DispatchReader.fires` reads only the ledger rows the requested page needs.
 
 - `TriggerStore.list` answers `Listed` rows: the decode result for each row and
   the state that row holds. A row whose stored input cannot be decoded is

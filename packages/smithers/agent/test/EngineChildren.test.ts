@@ -224,32 +224,50 @@ const withTempFile = async <A>(body: (filename: string) => Promise<A>): Promise<
   }
 }
 
-/** Waits for a run row to reach `completed`, or gives up loudly. */
-const untilCompleted = (
+/** Waits for a run row to reach `status`, or gives up loudly. */
+const untilStatus = (
   store: RunStore.Service,
   runId: string,
+  status: RunStore.RunRow["status"],
   attempts = 400
 ): Effect.Effect<void> =>
   Effect.gen(function*() {
     const row = yield* Effect.orDie(store.get(runId))
-    if (row.status === "completed") return
-    if (attempts <= 0) return yield* Effect.die(new Error(`run ${runId} never completed (${row.status})`))
+    if (row.status === status) return
+    if (attempts <= 0) return yield* Effect.die(new Error(`run ${runId} never reached ${status} (${row.status})`))
     yield* Effect.sleep("10 millis")
-    return yield* untilCompleted(store, runId, attempts - 1)
+    return yield* untilStatus(store, runId, status, attempts - 1)
   })
 
+/** Waits for a run row to reach `completed`, or gives up loudly. */
+const untilCompleted = (store: RunStore.Service, runId: string, attempts = 400): Effect.Effect<void> =>
+  untilStatus(store, runId, "completed", attempts)
+
 /** Waits for a run row to reach `suspended`, or gives up loudly. */
-const untilSuspended = (
-  store: RunStore.Service,
-  runId: string,
-  attempts = 400
-): Effect.Effect<void> =>
+const untilSuspended = (store: RunStore.Service, runId: string, attempts = 400): Effect.Effect<void> =>
+  untilStatus(store, runId, "suspended", attempts)
+
+/** Waits for a run row to reach `failed`, or gives up loudly. */
+const untilFailed = (store: RunStore.Service, runId: string, attempts = 400): Effect.Effect<void> =>
+  untilStatus(store, runId, "failed", attempts)
+
+/**
+ * A children port whose run store completes `polled` once `await` has read
+ * `child`'s row twice: it found the child unsettled and came back to look
+ * again, which is the waiting path a test means to exercise.
+ */
+const pollingChildren = (child: string, polled: Deferred.Deferred<void>) =>
   Effect.gen(function*() {
-    const row = yield* Effect.orDie(store.get(runId))
-    if (row.status === "suspended") return
-    if (attempts <= 0) return yield* Effect.die(new Error(`run ${runId} never suspended (${row.status})`))
-    yield* Effect.sleep("10 millis")
-    return yield* untilSuspended(store, runId, attempts - 1)
+    const store = yield* RunStore.RunStore
+    let reads = 0
+    const counting: RunStore.Service = {
+      ...store,
+      get: (runId) =>
+        runId !== child ? store.get(runId) : store.get(runId).pipe(
+          Effect.tap(() => (++reads >= 2 ? Deferred.succeed(polled, undefined) : Effect.void))
+        )
+    }
+    return yield* children().pipe(Effect.provideService(RunStore.RunStore, counting))
   })
 
 /**
@@ -689,8 +707,12 @@ describe("EngineChildren.await", () => {
       yield* runtime.execute(Parent, { executionId: "await-waiting", payload: {}, discard: true })
       const child = yield* Deferred.await(spawnedChild)
 
-      const collector = yield* Effect.forkChild(port.await({ child }), { startImmediately: true })
-      yield* Effect.sleep("20 millis")
+      const polled = yield* Deferred.make<void>()
+      const watched = yield* pollingChildren(child, polled).pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+      )
+      const collector = yield* Effect.forkChild(watched.await({ child }), { startImmediately: true })
+      yield* Deferred.await(polled)
       yield* runtime.deferredDone(gate, {
         flowName: Worker._tag,
         executionId: child,
@@ -706,7 +728,6 @@ describe("EngineChildren.await", () => {
     run(Effect.gen(function*() {
       const runtime = yield* engine("children-await-unstarted-row")
       const store = yield* RunStore.RunStore
-      const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       yield* runtime.register(Worker, () => Effect.succeed("worker finished"))
       // A run row with no result at all: created, claimed by nobody, never
       // driven. `await` has nothing to read yet and has to come back.
@@ -716,10 +737,14 @@ describe("EngineChildren.await", () => {
         { lineageId: FlowEngine.Round.initial("pending-child").rootExecutionId, roundOrdinal: 0 }
       )
 
-      const collector = yield* Effect.forkChild(port.await({ child: "pending-child" }), {
+      const polled = yield* Deferred.make<void>()
+      const watched = yield* pollingChildren("pending-child", polled).pipe(
+        Effect.provideService(FlowRuntime.FlowRuntime, runtime)
+      )
+      const collector = yield* Effect.forkChild(watched.await({ child: "pending-child" }), {
         startImmediately: true
       })
-      yield* Effect.sleep("20 millis")
+      yield* Deferred.await(polled)
       yield* runtime.execute(Worker, { executionId: "pending-child", payload: {} })
 
       expect((yield* Fiber.join(collector)).output).toBe("worker finished")
@@ -754,9 +779,8 @@ describe("EngineChildren.await", () => {
           Effect.orDie
         ))
       const child = yield* runtime.execute(Parent, { executionId: "await-failed", payload: {} })
-      // The forked drive settles the child before the collector reads it.
-      yield* Effect.sleep("50 millis")
-      expect((yield* store.get(child)).status).toBe("failed")
+      // The forked drive settles the child; wait for it before reading.
+      yield* untilFailed(store, child)
 
       const refusal = childErrorOf(yield* Effect.exit(port.await({ child })))
       expect(refusal?.code).toBe("failed")

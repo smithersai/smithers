@@ -4,6 +4,7 @@ import * as Migrator from "effect/unstable/sql/Migrator"
 import { triggers } from "./0001_triggers.ts"
 import { reservationLease } from "./0002_reservation_lease.ts"
 import { schedulerHeartbeat } from "./0003_heartbeat.ts"
+import { fireRunIndex } from "./0004_fire_run_index.ts"
 
 /**
  * The migration record {@link run} applies, keyed by migration file name.
@@ -17,7 +18,8 @@ import { schedulerHeartbeat } from "./0003_heartbeat.ts"
 export const migrations = {
   "0001_triggers": triggers,
   "0002_reservation_lease": reservationLease,
-  "0003_heartbeat": schedulerHeartbeat
+  "0003_heartbeat": schedulerHeartbeat,
+  "0004_fire_run_index": fireRunIndex
 }
 
 /**

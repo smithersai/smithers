@@ -1,5 +1,5 @@
 import { PersistenceError } from "@smthrs/control/ControlError"
-import { FireSummary, TriggerSummary } from "@smthrs/control/ControlSchema"
+import { defaultPageSize, FireSummary, TriggerSummary } from "@smthrs/control/ControlSchema"
 import * as Port from "@smthrs/control/DispatchReader"
 import { Option, Result } from "effect"
 import * as Effect from "effect/Effect"
@@ -175,6 +175,31 @@ describe("DispatchReader", () => {
     for (const fire of result.all) {
       expect(Schema.decodeUnknownSync(FireSummary)(fire)).toEqual(fire)
     }
+  })
+
+  // `fires` used to read the whole ledger for every page Control served.
+  it("reads only the rows the requested page needs, plus one to detect a next page", async () => {
+    const limits: Array<number | undefined> = []
+    await run(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        const reader = yield* DispatchReader.make.pipe(
+          Effect.provideService(
+            TriggerStore.TriggerStore,
+            TriggerStore.TriggerStore.of({
+              ...store,
+              history: (query) =>
+                Effect.sync(() => limits.push(query?.limit)).pipe(Effect.andThen(store.history(query)))
+            })
+          )
+        )
+        yield* reader.fires(fires)
+        yield* reader.fires({ ...fires, limit: 10 })
+        yield* reader.fires({ ...fires, cursor: "20", limit: 10 })
+        yield* reader.fires({ ...fires, cursor: "not a cursor", limit: 10 })
+      })
+    )
+    expect(limits).toEqual([defaultPageSize + 1, 11, 31, undefined])
   })
 
   it("reports a store it cannot read as a persistence failure naming the listing", async () => {

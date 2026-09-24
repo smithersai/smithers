@@ -90,11 +90,9 @@ bound, raise `maxCatchUp`, or accept the abandonment. For an unbounded search,
 pass a `limit`.
 
 The scheduler logs a warning annotated with the trigger id and abandons the
-backlog when catch-up exceeds its bound. On the first poll of a trigger in a
-process, including after restart, it drops the entire owed list, including the
-current occurrence, records the current in-process watermark, and waits for a
-later boundary. On subsequent polls, it drops the missed backlog but still
-dispatches the current occurrence subject to overlap.
+backlog when catch-up exceeds its bound. It still dispatches the current
+occurrence subject to overlap, on the first poll after a restart and on every
+later poll.
 
 The trap worth naming: `maxCatchUp` defaults to 0, and a declaration that sets
 `catchUp: "one"` without raising it owes one occurrence it is not allowed to
@@ -186,7 +184,7 @@ An inspection outage does not record a failed run or cancel it.
 
 ## runner_timeout
 
-**What happened.** One `Runner.start`, `isActive`, or `cancel` call exceeded
+**What happened.** One `Runner.start`, `inspect`, or `cancel` call exceeded
 `startTimeout`, `inspectTimeout`, or `cancelTimeout`. The defaults are four
 minutes, thirty seconds, and thirty seconds. The call was interrupted.
 
@@ -241,11 +239,11 @@ overran four boundaries leaves one pending occurrence, the newest.
 `store.activeRun(triggerId)` tells you whether something is still holding the
 trigger.
 
-**A backlog disappeared after downtime.** Either `catchUp` is `none`, which owes
-nothing, or the backlog exceeded `maxCatchUp` and was abandoned with a warning
-annotated with the trigger id. Check the logs for `A trigger abandoned catch-up
-work beyond its bound`. On the first poll after restart, a breached bound also
-drops the current occurrence; scheduling resumes at a later boundary.
+**A backlog disappeared after downtime.** Either `catchUp` is `none`, which
+replays no missed boundary, or the backlog exceeded `maxCatchUp` and was
+abandoned with a warning annotated with the trigger id. Check the logs for
+`A trigger abandoned catch-up work beyond its bound`. The current occurrence
+still fires in both cases.
 
 ## The trigger fired twice
 

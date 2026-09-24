@@ -288,18 +288,17 @@ The occurrences a trigger owes since it last fired, oldest first.
   occurrence may be caught up, so a missed occurrence under `one` is
   `catch_up_bound_exceeded` exactly as three missed occurrences under `all` are.
 
-The scheduler dispatches these occurrences subject to overlap. It waits for
-launch acknowledgement, not completion, so `all` with `skip` can drop work and
+The scheduler dispatches these occurrences subject to overlap. A launched
+occurrence holds the trigger until its run settles, so `all` with `skip` can
+drop work and
 `all` with `buffer-one` can coalesce intermediate occurrences. Use a durable
 queue or a flow that processes its own interval backlog when every boundary
 must be processed.
 
 The scheduler logs a warning annotated with the trigger id and abandons the
-backlog when catch-up exceeds its bound. On the first poll of a trigger in a
-process, including after restart, it drops the entire owed list, including the
-current occurrence, records the current in-process watermark, and waits for a
-later boundary. On subsequent polls, it drops the missed backlog but still
-dispatches the current occurrence subject to overlap.
+backlog when catch-up exceeds its bound. It still dispatches the current
+occurrence subject to overlap, on the first poll after a restart and on every
+later poll.
 
 ## TriggerStore
 
@@ -447,8 +446,9 @@ longer matches, so it stays a no-op for both. `history`, `pruneFires`,
 `heartbeat`, and `lastHeartbeat` address the whole store.
 
 Nothing else in the store deletes from the fire ledger: every claim inserts a
-row and every result updates it, so a host that never calls `pruneFires` keeps
-one row per occurrence for as long as the database lives.
+row and every result updates it. The scheduler calls `pruneFires` at most once
+an hour with its `fireRetention`; a host that runs no scheduler and never calls
+it keeps one row per occurrence for as long as the database lives.
 
 ### TriggerStore.FireRecord, HistoryQuery, HistoryPage, Held, Listed, and Heartbeat
 
@@ -591,12 +591,19 @@ interface StartInput {
   readonly idempotencyKey: string
 }
 
+type RunState = "active" | "completed" | "failed" | "cancelled" | "missing"
+
 interface RunnerService {
   readonly start: (input: StartInput) => Effect.Effect<string, TriggerError>
-  readonly isActive: (runId: string) => Effect.Effect<boolean, TriggerError>
+  readonly inspect: (runId: string) => Effect.Effect<RunState, TriggerError>
   readonly cancel: (runId: string) => Effect.Effect<void, TriggerError>
 }
 ```
+
+`inspect` says what the runtime knows about one run. `active` keeps the monitor
+polling. `completed` is recorded as a `completed` fire. `failed`, `cancelled`,
+and `missing` (the runtime has no record of the run) are recorded as `failed`,
+with the state in the fire's error.
 
 `idempotencyKey` is `<triggerId>:<occurrence ISO instant>`, so two hosts that
 notice the same boundary derive the same key.
@@ -619,7 +626,7 @@ const layerNoopRunner: (overrides?: Partial<RunnerService>) => Layer.Layer<Runne
 ```
 
 The no-op launcher returns the idempotency key as a terminal run: `start`
-answers with the key, `isActive` with `false`, and `cancel` with nothing.
+answers with the key, `inspect` with `"completed"`, and `cancel` with nothing.
 
 ### Scheduler.layerControlRunner
 
@@ -639,9 +646,10 @@ Cancellation sends ``{ runId, idempotencyKey: `trigger-cancel:${runId}` }`` to
 acknowledge cancellation. `Conflict` and `Parked` fail with `TriggerError` code
 `runner`, so supersession retains the predecessor and queues the replacement.
 
-Liveness is read as the complement of the settled statuses `cancelled`,
-`completed`, and `failed`, so a status Control adds later is treated as live
-until this package says otherwise.
+`inspect` answers each settled status `cancelled`, `completed`, and `failed` as
+itself, `missing` for a run Control does not list, and `active` for every other
+status, so a status Control adds later is treated as live until this package
+says otherwise.
 
 ### Scheduler.parkedAttempts
 
@@ -664,6 +672,7 @@ interface Options {
   readonly inspectTimeout?: Duration.Input | undefined
   readonly cancelTimeout?: Duration.Input | undefined
   readonly host?: string | undefined
+  readonly fireRetention?: Duration.Input | undefined
 }
 
 interface Service {
@@ -672,6 +681,8 @@ interface Service {
 
 const defaultHost: string
 const defaultConcurrency: number
+const defaultFireRetention: Duration.Duration
+const durationBoundaries: ReadonlyArray<number>
 ```
 
 `pollInterval` defaults to one minute and paces the tick loop.
@@ -683,13 +694,14 @@ an infinite interval never completes, and both are refused with
 `concurrency` is how many triggers one tick processes at the same time. It
 defaults to `defaultConcurrency`, which is 4, and must be a positive integer;
 anything else is refused with `invalid_options` at `concurrency`. Triggers are
-independent once claimed, because the store fences every claim on its own row,
-so a launch waiting on a parked plan holds one slot rather than every trigger
-listed after it. Each trigger reads the clock when its own processing starts,
+independent once claimed, because the store fences every claim on its own row.
+A tick never waits for a launch: the claim is durable, the launch runs on its
+own fiber, and a plan parked awaiting approval holds only its own trigger. Each
+trigger reads the clock when its own processing starts,
 not once for the tick.
 
 `startTimeout`, `inspectTimeout`, and `cancelTimeout` bound one `Runner.start`,
-`Runner.isActive`, and `Runner.cancel` call. They default to four minutes,
+`Runner.inspect`, and `Runner.cancel` call. They default to four minutes,
 thirty seconds, and thirty seconds, must be finite, positive Effect durations,
 and are refused with `invalid_options` naming the field. The start default
 outlasts `layerControlRunner`'s bounded parked-approval retries and stays below
@@ -715,8 +727,25 @@ observability, not dispatch: a store that cannot record it is logged with the
 host annotated and the tick goes on, so a listing's "nothing is listening" can
 never be caused by the row that reports it.
 
+`fireRetention` is how long settled fire ledger rows are kept. It defaults to
+`defaultFireRetention`, thirty days, and must be a finite, positive Effect
+duration. A tick calls `TriggerStore.pruneFires` with the cutoff at most once
+an hour; a prune that fails is logged and the tick goes on.
+
 `runOnce` holds a semaphore permit, so concurrent calls on one scheduler
 serialize.
+
+The scheduler traces `Scheduler.runOnce` (attribute `host`),
+`Scheduler.processTrigger` (attribute `triggerId`), and `Scheduler.launch`
+(attributes `triggerId` and `occurrence`), and records three metrics:
+
+| Metric                                 | Kind      | Meaning                                              |
+| -------------------------------------- | --------- | ---------------------------------------------------- |
+| `smithers.triggers.fires`              | counter   | Fire results recorded, with the attribute `outcome`. |
+| `smithers.triggers.tick_duration_ms`   | histogram | Duration of one `runOnce`.                           |
+| `smithers.triggers.launch_duration_ms` | histogram | Duration of one `Runner.start`, the launch latency.  |
+
+Both histograms use `durationBoundaries`.
 
 ### Scheduler.make, makeNoop, layer, and layerNoop
 
@@ -751,10 +780,12 @@ local entry. Later ticks inspect that owner again. Only an inspection that
 reports the run stopped permits a completed result; inspection and completion
 write failures never become failed run outcomes.
 
-Every launch child exit completes its acknowledgement, including defects and
-interruption before launch persistence. The waiting tick observes the full
-cause. Non-interruption failures are logged and isolated so later triggers in
-the same tick can launch; interruption propagates and releases the tick permit.
+A launch runs on its own fiber and compensates its own failures: a start that
+failed outright records `failed`, an ambiguous one (timed out, or answered but
+not persisted) re-arms the occurrence as pending, and a buffered occurrence is
+re-armed. Every failure other than interruption is logged with the trigger id.
+Interrupting the fiber detaches it; the reservation lease re-arms the
+occurrence.
 
 ## DispatchReader
 
@@ -780,8 +811,10 @@ run (a launch reservation is not a run the runtime knows about and is reported
 as no active run), the next `nextOccurrenceCount` occurrences after the store
 clock, and `schedulerLastTickMs` from the newest heartbeat when any scheduler
 has polled. `fires` pushes the request's `triggerId`, `runId`, and `outcome`
-filters into `TriggerStore.history` and answers every matching row newest
-first; `Control.list` applies the filters again and pages. A store failure is a
+filters into `TriggerStore.history` with a limit of the page's offset cursor
+plus its size plus one, so it reads only the rows the requested page needs,
+and answers them newest first; `Control.list` applies the filters again and
+pages. A store failure is a
 control `PersistenceError` whose `operation` names the listing, `triggers` or
 `fires`.
 
@@ -996,7 +1029,7 @@ message.
 | `verification_failed`     | Webhook verification fails, including a signature mismatch or typed credential-resolution failure.                                                                         |
 | `catch_up_bound_exceeded` | `maxCatchUp` is invalid, catch-up exceeds its bound, or an unbounded interval exceeds the package cap.                                                                     |
 | `runner`                  | The scheduler cannot plan, launch, inspect, cancel, or finish approval retries for a run.                                                                                  |
-| `runner_timeout`          | A `Runner.start`, `isActive`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.                                                              |
+| `runner_timeout`          | A `Runner.start`, `inspect`, or `cancel` call exceeded `startTimeout`, `inspectTimeout`, or `cancelTimeout`.                                                               |
 | `store`                   | A migration, persistence, or row-decoding operation fails, or a no-op store method is unavailable.                                                                         |
 
 `TriggerError.path` optionally identifies the offending declaration or option
@@ -1088,10 +1121,9 @@ with `invalid_options` and identify the field in `TriggerError.path`.
 `Scheduler.parkedAttempts` is 8. If the eighth Control attempt remains parked
 awaiting approval, the launch fails with `runner`.
 
-A bound breach logs a warning and abandons catch-up. On the first poll after
-restart, that includes the current occurrence; scheduling resumes at a later
-boundary. On subsequent polls, the current occurrence is still dispatched
-subject to overlap. See [Overlap and catch-up](./concepts/policies.md).
+A bound breach logs a warning and abandons the backlog. The current occurrence
+is still dispatched subject to overlap, on the first poll after a restart
+included. See [Overlap and catch-up](./concepts/policies.md).
 
 ## Webhook verification and input ownership
 
@@ -1132,6 +1164,7 @@ accepting traffic.
 
 Migrations are internal. The export map null-maps
 `@smthrs/triggers/migrations/*`. Use `SqlTriggerStore.layer`; it applies
-`0001_triggers`, `0002_reservation_lease`, and `0003_heartbeat` in order. The package exports
+`0001_triggers`, `0002_reservation_lease`, `0003_heartbeat`, and
+`0004_fire_run_index` in order. The package exports
 `@smthrs/triggers/package.json`. It does not export `internal/*` or nested
 `*/index` subpaths.

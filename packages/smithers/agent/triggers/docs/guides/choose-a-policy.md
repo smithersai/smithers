@@ -58,8 +58,8 @@ trigger fires the most recent missed boundary and forgets the rest. This is the
 right answer for most report and sync schedules.
 
 **Choose `all` to enumerate missed occurrences, oldest first, subject to overlap.**
-Dispatch waits for launch acknowledgement, not completion. While a run remains
-active, `skip` drops later occurrences and `buffer-one` coalesces them to the
+A launched occurrence holds the trigger until its run settles. While a run
+remains active, `skip` drops later occurrences and `buffer-one` coalesces them to the
 newest. Enumeration does not guarantee that every occurrence executes.
 
 A search refresh can tolerate coalescing because each run rebuilds current
@@ -86,11 +86,9 @@ occurrence search returns.
 ## What a breached bound does
 
 The scheduler logs a warning annotated with the trigger id and abandons the
-backlog when catch-up exceeds its bound. On the first poll of a trigger in a
-process, including after restart, it drops the entire owed list, including the
-current occurrence, records the current in-process watermark, and waits for a
-later boundary. On subsequent polls, it drops the missed backlog but still
-dispatches the current occurrence subject to overlap.
+backlog when catch-up exceeds its bound. It still dispatches the current
+occurrence subject to overlap, on the first poll after a restart and on every
+later poll.
 
 Size `maxCatchUp` for the longest outage you are willing to enumerate. It is
 not a limit on how many runs finish.

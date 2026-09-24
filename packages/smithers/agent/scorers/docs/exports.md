@@ -7,7 +7,7 @@ Every categorized member reachable through the root namespaces, in source
 order. Signatures, bounds, and the reasoning behind each rule are on the
 [API reference](./api.md).
 
-10 namespaces, 60 documented members.
+10 namespaces, 61 documented members.
 
 | Export                               | Kind      | Category     | Summary                                                                                       |
 | ------------------------------------ | --------- | ------------ | --------------------------------------------------------------------------------------------- |
@@ -39,6 +39,7 @@ order. Signatures, bounds, and the reasoning behind each rule are on the
 | `ScoreStore.Aggregate`               | interface | models       | Aggregate over one target's observations.                                                     |
 | `ScoreStore.Page`                    | interface | models       | Page bounds for `Service.observations`.                                                       |
 | `ScoreStore.Service`                 | interface | services     | Durable score store implementation.                                                           |
+| `ScoreStore.Pruned`                  | interface | models       | How many rows one `Service.prune` call removed from each table.                               |
 | `ScoreStore.ScoreStore`              | class     | services     | Context service for durable scorer observations.                                              |
 | `ScoreStore.makeNoop`                | const     | constructors | Constructs an inoperative score store.                                                        |
 | `ScoreStore.layerNoop`               | const     | layers       | Provides the inoperative score store.                                                         |

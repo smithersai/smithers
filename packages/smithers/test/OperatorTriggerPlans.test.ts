@@ -41,10 +41,11 @@ const input = { flowId: "system/test", input: { suite: "scheduled" }, idempotenc
 const start = Effect.gen(function*() {
   return yield* (yield* Scheduler.Runner).start(input)
 })
-const active = (handle: string) =>
+const state = (handle: string) =>
   Effect.gen(function*() {
-    return yield* (yield* Scheduler.Runner).isActive(handle)
+    return yield* (yield* Scheduler.Runner).inspect(handle)
   })
+const active = (handle: string) => Effect.map(state(handle), (current) => current === "active")
 const rows = (root: string, query: string) => {
   const db = new DatabaseSync(join(root, ".flows", "control.db"), { readOnly: true })
   try {
@@ -90,7 +91,7 @@ describe("durable trigger approval plans", () => {
         yield* (yield* Scheduler.Runner).cancel(handle)
       })
     )
-    expect(await run(root, active(handle))).toBe(false)
+    expect(await run(root, state(handle))).toBe("cancelled")
     expect(await TriggerPlans.inspect(root, handle)).toMatchObject({ status: "cancelled", runId: running!.runId })
     expect(await TriggerPlans.inspect(root, "run-not-a-trigger-plan")).toBeNull()
   })
@@ -185,7 +186,7 @@ describe("durable trigger approval plans", () => {
         runId: operation === "run" ? null : expect.any(String)
       })
     }
-    expect(await run(root, active(handle))).toBe(false)
+    expect(await run(root, state(handle))).toBe("cancelled")
     expect(await TriggerPlans.inspect(root, handle)).toMatchObject({
       status: "cancelled",
       runId: expect.any(String)
@@ -248,9 +249,9 @@ describe("durable trigger approval plans", () => {
       ).pipe(Layer.provide(controlLayer(root)))
       expect(
         await Effect.runPromise(
-          active(handle).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(cancelDuringLaunch))))
+          state(handle).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(cancelDuringLaunch))))
         )
-      ).toBe(false)
+      ).toBe("cancelled")
       expect(await TriggerPlans.inspect(root, handle)).toMatchObject({
         status: "cancelled",
         runId: approval === "approved" ? expect.any(String) : null
@@ -369,15 +370,15 @@ describe("durable trigger approval plans", () => {
           })
         ).pipe(Layer.provide(controlLayer(root)))
         return Effect.runPromise(
-          active(handle).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(projected))))
+          state(handle).pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provide(projected))))
         )
       }
-      expect(await withStatus(undefined)).toBe(true)
+      expect(await withStatus(undefined)).toBe("active")
       expect(await TriggerPlans.inspect(root, handle)).toMatchObject({
         status: "running",
         error: expect.stringContaining("no durable record")
       })
-      expect(await withStatus(terminalStatus)).toBe(false)
+      expect(await withStatus(terminalStatus)).toBe(terminalStatus)
       expect(await TriggerPlans.inspect(root, handle)).toMatchObject({ status: terminalStatus, error: null })
     }
   )

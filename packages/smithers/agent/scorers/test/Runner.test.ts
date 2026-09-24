@@ -28,7 +28,8 @@ const recorder = (
           })
           : recordOnce(identity, observation),
       observations: () => Effect.succeed([]),
-      aggregate: () => Effect.succeed(undefined)
+      aggregate: () => Effect.succeed(undefined),
+      prune: () => Effect.succeed({ observations: 0, jobs: 0 })
     })
   }
 }
@@ -254,6 +255,38 @@ describe("Runner", () => {
     expect(Effect.runSync(Deferred.isDone(stopped))).toBe(true)
     expect(queuedStarted).toBe(false)
     expect(sink.seen).toEqual([])
+  })
+
+  // Jobs still queued when the layer scope closed vanished with no trace.
+  it("warns with the count of queued jobs a closing scope discards", async () => {
+    const warnings: Array<{ readonly message: unknown; readonly annotations: Readonly<Record<string, unknown>> }> = []
+    const capture = Logger.make<unknown, void>((options) => {
+      if (options.logLevel === "Warn") {
+        warnings.push({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })
+      }
+    })
+    const sink = recorder()
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const runner = yield* Runner.Runner
+        const entered = yield* Deferred.make<void>()
+        yield* runner.submit({
+          ...job({ identity: "running" }),
+          score: Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+        })
+        yield* Deferred.await(entered)
+        yield* runner.submit(job({ identity: "queued-one" }))
+        yield* runner.submit(job({ identity: "queued-two" }))
+      }).pipe(
+        Effect.provide(RunnerLive.layer()),
+        Effect.provideService(ScoreStore.ScoreStore, sink.store),
+        Effect.provide(Logger.layer([capture])),
+        Effect.scoped
+      )
+    )
+    expect(warnings).toEqual([
+      { message: ["The scorer runner closed with queued jobs unscored"], annotations: { discarded: 2 } }
+    ])
   })
 
   it("attributes a submitted job's failed durable write in the warning", async () => {

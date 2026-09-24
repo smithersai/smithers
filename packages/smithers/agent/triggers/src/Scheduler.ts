@@ -10,11 +10,11 @@ import type { PlanCard, Receipt, RunStatus } from "@smthrs/control/ControlSchema
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
@@ -45,6 +45,18 @@ export interface StartInput {
 }
 
 /**
+ * What the runtime says about one scheduled run.
+ *
+ * `active` keeps the monitor polling. `completed` is the only state recorded as
+ * a completed occurrence; `failed`, `cancelled`, and `missing` (the runtime has
+ * no record of the run) are recorded as `failed` with the state in the error.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export type RunState = "active" | "completed" | "failed" | "cancelled" | "missing"
+
+/**
  * Runtime operations required by the scheduler.
  *
  * @category models
@@ -52,7 +64,7 @@ export interface StartInput {
  */
 export interface RunnerService {
   readonly start: (input: StartInput) => Effect.Effect<string, TriggerError>
-  readonly isActive: (runId: string) => Effect.Effect<boolean, TriggerError>
+  readonly inspect: (runId: string) => Effect.Effect<RunState, TriggerError>
   readonly cancel: (runId: string) => Effect.Effect<void, TriggerError>
 }
 
@@ -86,7 +98,7 @@ export const makeRunner = (implementation: RunnerService): RunnerService => Runn
 export const makeNoopRunner = (overrides: Partial<RunnerService> = {}): RunnerService =>
   makeRunner({
     start: (input) => Effect.succeed(input.idempotencyKey),
-    isActive: () => Effect.succeed(false),
+    inspect: () => Effect.succeed("completed"),
     cancel: () => Effect.void,
     ...overrides
   })
@@ -137,6 +149,17 @@ const duration = (
         ? Effect.succeed(value)
         : Effect.fail(invalidOption(field, "a finite positive duration"))
   })
+
+const stoppedMessage = (runId: string, state: Exclude<RunState, "active" | "completed">): string => {
+  switch (state) {
+    case "failed":
+      return `Run ${runId} failed`
+    case "cancelled":
+      return `Run ${runId} was cancelled`
+    case "missing":
+      return `Run ${runId} is unknown to the runner`
+  }
+}
 
 const runIdFromReceipt = (
   receipt: Exclude<Receipt, { readonly _tag: "Parked" }>
@@ -205,7 +228,8 @@ const runApprovedPlan = (
  * `accepted`, the status every run holds between its claim and its first
  * executed step (`packages/smithers/control/src/ControlLive.ts`).
  */
-const settled: ReadonlySet<RunStatus> = new Set<RunStatus>(["cancelled", "completed", "failed"])
+const settledState = (status: RunStatus): RunState | undefined =>
+  status === "cancelled" || status === "completed" || status === "failed" ? status : undefined
 
 /**
  * Runner layer backed by the authoritative Control plan/run/list/cancel API.
@@ -229,13 +253,15 @@ export const layerControlRunner: Layer.Layer<Runner, never, Control.Control> = L
           ),
           "Control could not launch the scheduled run"
         ),
-      isActive: (runId) =>
+      inspect: (runId) =>
         translateRunnerFailure(
           control.list({ _tag: "runs", filters: { runId }, limit: 1 }).pipe(
-            Effect.map((response) => {
-              if (response._tag !== "runs") return false
-              const run = response.items.find((candidate) => candidate.runId === runId)
-              return run !== undefined && !settled.has(run.status)
+            Effect.map((response): RunState => {
+              const run = response._tag === "runs"
+                ? response.items.find((candidate) => candidate.runId === runId)
+                : undefined
+              if (run === undefined) return "missing"
+              return settledState(run.status) ?? "active"
             })
           ),
           `Control could not inspect run ${runId}`
@@ -276,8 +302,8 @@ export interface Options {
   readonly runPollInterval?: Duration.Input | undefined
   /**
    * How many triggers one tick processes at the same time. Defaults to
-   * {@link defaultConcurrency}. Triggers are independent once claimed, so a
-   * launch waiting on a parked plan holds one slot, not the tick.
+   * {@link defaultConcurrency}. A tick never waits for a launch: the claim is
+   * durable and the launch runs on its own fiber.
    */
   readonly concurrency?: number | undefined
   /**
@@ -291,7 +317,7 @@ export interface Options {
    */
   readonly startTimeout?: Duration.Input | undefined
   /**
-   * How long one `Runner.isActive` may take. Defaults to thirty seconds. A
+   * How long one `Runner.inspect` may take. Defaults to thirty seconds. A
    * timeout is an inspection failure: the monitor retries and then detaches,
    * retaining the durable owner.
    */
@@ -307,6 +333,13 @@ export interface Options {
    * which host last polled the store. Defaults to {@link defaultHost}.
    */
   readonly host?: string | undefined
+  /**
+   * How long settled fire ledger rows are kept. Defaults to
+   * {@link defaultFireRetention}. A tick deletes older settled rows through
+   * `TriggerStore.pruneFires` at most once an hour; a failed prune is logged
+   * and the tick goes on.
+   */
+  readonly fireRetention?: Duration.Input | undefined
 }
 
 /**
@@ -326,6 +359,43 @@ export const defaultHost = "local"
  * @since 1.0.0-rc.0
  */
 export const defaultConcurrency = 4
+
+/**
+ * How long settled fire ledger rows are kept when the options name no
+ * `fireRetention`: thirty days.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const defaultFireRetention: Duration.Duration = Duration.days(30)
+
+const pruneEvery = 60 * 60 * 1_000
+
+/**
+ * Histogram boundaries, in milliseconds, of `smithers.triggers.tick_duration_ms`
+ * and `smithers.triggers.launch_duration_ms`.
+ *
+ * @category constants
+ * @since 1.0.0-rc.1
+ */
+export const durationBoundaries: ReadonlyArray<number> = [10, 100, 1_000, 10_000, 60_000, 300_000]
+
+const firesRecorded = Metric.counter("smithers.triggers.fires")
+const tickDuration = Metric.histogram("smithers.triggers.tick_duration_ms", { boundaries: durationBoundaries })
+const launchDuration = Metric.histogram("smithers.triggers.launch_duration_ms", { boundaries: durationBoundaries })
+
+const timed = <A, E, R>(
+  histogram: typeof tickDuration,
+  effect: Effect.Effect<A, E, R>
+): Effect.Effect<A, E, R> =>
+  Effect.gen(function*() {
+    const started = yield* Clock.currentTimeMillis
+    return yield* effect.pipe(
+      Effect.ensuring(
+        Effect.flatMap(Clock.currentTimeMillis, (ended) => Metric.update(histogram, ended - started))
+      )
+    )
+  })
 
 const deadline = <A>(
   effect: Effect.Effect<A, TriggerError>,
@@ -407,7 +477,16 @@ export const make = (
 ): Effect.Effect<Service, TriggerError, Runner | Scope.Scope | TriggerStore> =>
   Effect.gen(function*() {
     const parentScope = yield* Effect.scope
-    const store = yield* TriggerStore
+    const providedStore = yield* TriggerStore
+    // Every fire the ledger records is counted by outcome, so a dropped,
+    // skipped, or failed occurrence is visible without reading the ledger.
+    const store: typeof providedStore = {
+      ...providedStore,
+      recordResult: (result) =>
+        providedStore.recordResult(result).pipe(
+          Effect.tap(() => Metric.update(firesRecorded.pipe(Metric.withAttributes({ outcome: result.outcome })), 1))
+        )
+    }
     const active = yield* ActiveRuns.make
     const observedAt = yield* Ref.make<ReadonlyMap<string, number>>(new Map())
     const semaphore = yield* Semaphore.make(1)
@@ -419,13 +498,15 @@ export const make = (
     const startTimeout = yield* duration(options.startTimeout ?? "4 minutes", "startTimeout")
     const inspectTimeout = yield* duration(options.inspectTimeout ?? "30 seconds", "inspectTimeout")
     const cancelTimeout = yield* duration(options.cancelTimeout ?? "30 seconds", "cancelTimeout")
+    const fireRetention = yield* duration(options.fireRetention ?? defaultFireRetention, "fireRetention")
+    const lastPrunedAt = yield* Ref.make<number | undefined>(undefined)
     // Every runner call carries a deadline. A runtime that never answers used
     // to hold the launch, and the tick waiting on it, for the life of the
     // scope with nothing written down.
     const provided = yield* Runner
     const runner: RunnerService = {
       start: (input) => deadline(provided.start(input), startTimeout, `Runner.start for ${input.idempotencyKey}`),
-      isActive: (runId) => deadline(provided.isActive(runId), inspectTimeout, `Runner.isActive for run ${runId}`),
+      inspect: (runId) => deadline(provided.inspect(runId), inspectTimeout, `Runner.inspect for run ${runId}`),
       cancel: (runId) => deadline(provided.cancel(runId), cancelTimeout, `Runner.cancel for run ${runId}`)
     }
 
@@ -442,8 +523,8 @@ export const make = (
     // A reservation is not a run: the Runner has never heard of it, and asking
     // answers "not active" for a launch that is still in flight. Its lease is
     // the only thing entitled to release it, in either branch.
-    const stillRunning = (runId: string): Effect.Effect<boolean, TriggerError> =>
-      isReservation(runId) ? Effect.succeed(true) : runner.isActive(runId)
+    const inspectStored = (runId: string): Effect.Effect<RunState, TriggerError> =>
+      isReservation(runId) ? Effect.succeed("active") : runner.inspect(runId)
 
     const occurrenceOf = (
       triggerId: string,
@@ -456,16 +537,28 @@ export const make = (
       )
     }
 
-    // A recovered monitor cannot report the runtime's detailed terminal
-    // status, but the same poll ending in this process records `completed`.
-    // Recording that result also clears the matching active run atomically.
+    // Only `completed` is a completed occurrence. A failed, cancelled, or
+    // vanished run used to be recorded as `completed` because the runner
+    // answered only "not active". Recording the result also clears the
+    // matching active run atomically.
+    const recordSettled = (
+      triggerId: string,
+      occurrence: number,
+      runId: string,
+      state: Exclude<RunState, "active">
+    ): Effect.Effect<void, TriggerError> =>
+      state === "completed"
+        ? store.recordResult({ triggerId, occurrence, outcome: "completed", runId })
+        : store.recordResult({ triggerId, occurrence, outcome: "failed", runId, error: stoppedMessage(runId, state) })
+
     const settleRecovered = (
       triggerId: string,
       occurrence: number,
-      runId: string
+      runId: string,
+      state: Exclude<RunState, "active">
     ): Effect.Effect<void, TriggerError> =>
       Number.isFinite(occurrence)
-        ? store.recordResult({ triggerId, occurrence, outcome: "completed", runId })
+        ? recordSettled(triggerId, occurrence, runId, state)
         : store.clearActive(triggerId, runId)
 
     // The listed row already answers what the store would: with no run and no
@@ -488,8 +581,9 @@ export const make = (
     ): Effect.Effect<ActiveRuns.Active | undefined, TriggerError> =>
       Effect.gen(function*() {
         const occurrence = yield* occurrenceOf(trigger.id, runId)
-        if (!(yield* stillRunning(runId))) {
-          yield* settleRecovered(trigger.id, occurrence, runId)
+        const state = yield* inspectStored(runId)
+        if (state !== "active") {
+          yield* settleRecovered(trigger.id, occurrence, runId, state)
           return undefined
         }
         const recovered: ActiveRuns.Active = { occurrence, runId }
@@ -509,8 +603,9 @@ export const make = (
           // only the runtime can say whether that run is still going.
           if (local.fiber !== undefined) return local
           if (!isReservation(local.runId)) {
-            if (yield* stillRunning(local.runId)) return local
-            yield* settleRecovered(trigger.id, local.occurrence, local.runId)
+            const state = yield* inspectStored(local.runId)
+            if (state === "active") return local
+            yield* settleRecovered(trigger.id, local.occurrence, local.runId, state)
             yield* active.remove(trigger.id, local.occurrence)
           } else {
             // A recovered reservation has no monitor that can remove it. Ask
@@ -548,17 +643,17 @@ export const make = (
     // An inspection error is not evidence that a run stopped. Retry three
     // times, doubling the poll interval up to a minute, then let the next tick
     // inspect the durable owner again. Interruption must still close the scope.
-    const inspectRun = (triggerId: string, runId: string): Effect.Effect<Option.Option<boolean>, TriggerError> =>
+    const inspectRun = (triggerId: string, runId: string): Effect.Effect<Option.Option<RunState>, TriggerError> =>
       Effect.gen(function*() {
         for (let attempt = 0;; attempt++) {
-          const inspected = yield* runner.isActive(runId).pipe(
+          const inspected = yield* runner.inspect(runId).pipe(
             Effect.map(Option.some),
             Effect.catchCause((cause) =>
               Cause.hasInterrupts(cause) ?
                 Effect.failCause(cause) :
                 Effect.logWarning("A trigger run inspection failed", cause).pipe(
                   Effect.annotateLogs({ triggerId, runId, attempt: String(attempt + 1) }),
-                  Effect.as(Option.none<boolean>())
+                  Effect.as(Option.none<RunState>())
                 )
             )
           )
@@ -567,7 +662,7 @@ export const make = (
             yield* Effect.logWarning("A trigger run monitor detached after inspection retries").pipe(
               Effect.annotateLogs({ triggerId, runId })
             )
-            return Option.none<boolean>()
+            return Option.none<RunState>()
           }
           yield* Effect.sleep(Math.min(Duration.toMillis(runPollInterval) * 2 ** attempt, 60_000))
         }
@@ -586,13 +681,19 @@ export const make = (
         let runId: string | undefined
         let launchRecorded = false
         let completed = false
-        const started = yield* Deferred.make<void, TriggerError>()
         const lifecycle = Effect.gen(function*() {
-          runId = yield* runner.start({
-            flowId: trigger.flowId,
-            input: trigger.input,
-            idempotencyKey: idempotencyKey(trigger.id, occurrence)
-          })
+          runId = yield* timed(
+            launchDuration,
+            runner.start({
+              flowId: trigger.flowId,
+              input: trigger.input,
+              idempotencyKey: idempotencyKey(trigger.id, occurrence)
+            })
+          ).pipe(
+            Effect.withSpan("Scheduler.launch", {
+              attributes: { triggerId: trigger.id, occurrence: new Date(occurrence).toISOString() }
+            })
+          )
           const startedRunId = runId
           yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, runId: startedRunId }))
           yield* store.recordResult({
@@ -603,19 +704,15 @@ export const make = (
             reservationId: reservation
           })
           launchRecorded = true
-          yield* Deferred.succeed(started, undefined)
+          let state: RunState
           while (true) {
             const inspected = yield* inspectRun(trigger.id, runId)
             if (Option.isNone(inspected)) return
-            if (!inspected.value) break
+            state = inspected.value
+            if (state !== "active") break
             yield* Effect.sleep(runPollInterval)
           }
-          yield* store.recordResult({
-            triggerId: trigger.id,
-            occurrence,
-            outcome: "completed",
-            runId
-          })
+          yield* recordSettled(trigger.id, occurrence, runId, state)
           completed = true
         }).pipe(
           Effect.catch((error) =>
@@ -645,10 +742,18 @@ export const make = (
                     yield* runner.cancel(losingRunId)
                   })
                 ).pipe(Effect.ignore)
-                yield* Deferred.succeed(started, undefined)
                 return
               }
-              if (!preserveBuffered) {
+              if (preserveBuffered) {
+                // A buffered occurrence was taken off the buffer by the claim
+                // that led here. Re-arm it under this reservation so the next
+                // tick retries it rather than losing it.
+                yield* isolate(
+                  { triggerId: trigger.id },
+                  "buffered launch compensation",
+                  store.restorePending({ triggerId: trigger.id, occurrence, reservationId: reservation })
+                ).pipe(Effect.ignore)
+              } else {
                 // A start that answered too late is ambiguous: the runtime may
                 // hold the run. Keep the occurrence pending exactly as when the
                 // launched result failed to persist, so the next tick retries
@@ -668,9 +773,9 @@ export const make = (
                   yield* recordFailed(trigger, occurrence, error, reservation).pipe(Effect.ignore)
                 }
               }
-              // Buffered dispatch is compensated once by resumePending. Until
-              // its atomic write commits the original lease stays recoverable.
-              yield* Deferred.fail(started, error)
+              yield* Effect.logWarning("A trigger launch failed", error).pipe(
+                Effect.annotateLogs({ triggerId: trigger.id, occurrence: String(occurrence) })
+              )
             })
           ),
           // Interrupting this fiber detaches the monitor; it never cancels the
@@ -684,19 +789,26 @@ export const make = (
               : active.remove(trigger.id, occurrence)
           ))
         )
+        // The tick does not wait for the launch. The claim already fenced
+        // the occurrence under its reservation, and every failure below is
+        // compensated in the lifecycle itself. A tick that waited held every
+        // other trigger for as long as one plan sat parked or one runner was
+        // slow, and a boundary that passed meanwhile was never claimed.
         const fiber = yield* Effect.forkIn(
           Effect.scoped(lifecycle).pipe(
-            // A defect or interruption before acknowledgement must reach the
-            // waiting tick with its full cause and release the semaphore.
             Effect.onExit((exit) =>
-              Effect.gen(function*() {
-                yield* Deferred.done(started, exit)
-                if (launchRecorded && exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause)) {
-                  yield* Effect.logWarning("A trigger run monitor failed", exit.cause).pipe(
-                    Effect.annotateLogs({ triggerId: trigger.id, runId: runId! })
-                  )
-                }
-              })
+              exit._tag === "Failure" && !Cause.hasInterrupts(exit.cause)
+                ? Effect.logWarning(
+                  launchRecorded ? "A trigger run monitor failed" : "A trigger launch failed",
+                  exit.cause
+                ).pipe(
+                  Effect.annotateLogs({
+                    triggerId: trigger.id,
+                    occurrence: String(occurrence),
+                    runId: runId ?? reservation
+                  })
+                )
+                : Effect.void
             )
           ),
           parentScope,
@@ -708,7 +820,6 @@ export const make = (
         if (fiber.pollUnsafe() === undefined) {
           yield* active.update(trigger.id, occurrence, (entry) => ({ ...entry, fiber }))
         }
-        yield* Deferred.await(started)
       })
 
     // Only a claim that named the run it is superseding gets here, so the run
@@ -938,7 +1049,7 @@ export const make = (
         }
         if (!interrupted) return yield* observe(trigger.id, due.watermark)
         if (dispatched !== undefined) yield* observe(trigger.id, dispatched)
-      })
+      }).pipe(Effect.withSpan("Scheduler.processTrigger", { attributes: { triggerId: trigger.id } }))
 
     const host = options.host ?? defaultHost
 
@@ -948,6 +1059,18 @@ export const make = (
         // record it is logged and the tick goes on, so a listing's "nothing is
         // listening" can never be caused by the row that reports it.
         yield* isolate({ host }, "heartbeat", store.heartbeat(host))
+        // Nothing else deletes from the fire ledger, so without this it keeps
+        // one row per occurrence forever and every fires listing reads it all.
+        const now = yield* Clock.currentTimeMillis
+        const last = yield* Ref.get(lastPrunedAt)
+        if (last === undefined || now - last >= pruneEvery) {
+          yield* Ref.set(lastPrunedAt, now)
+          yield* isolate(
+            { host },
+            "fire ledger prune",
+            Effect.asVoid(store.pruneFires({ olderThan: now - Duration.toMillis(fireRetention) }))
+          )
+        }
         // Every trigger, not only the enabled ones: a disabled trigger can
         // still hold an active occurrence that has to recover, and the enabled
         // check below it stops the new claims.
@@ -969,7 +1092,7 @@ export const make = (
             ),
           { concurrency, discard: true }
         )
-      })
+      }).pipe((tick) => timed(tickDuration, tick), Effect.withSpan("Scheduler.runOnce", { attributes: { host } }))
     )
 
     return Scheduler.of({ runOnce })

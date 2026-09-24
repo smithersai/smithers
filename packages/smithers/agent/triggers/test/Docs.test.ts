@@ -29,14 +29,14 @@ describe("documentation contracts", () => {
   it("describes catch-up enumeration subject to overlap, not lossless billing (documentation/2, api-design/2)", () => {
     const guide = read("docs/guides/choose-a-policy.md")
     expect(guide).toContain("subject to overlap")
-    expect(guide).toContain("launch acknowledgement, not completion")
+    expect(guide).toContain("holds the trigger until its run settles")
     expect(guide).toContain("durable queue")
     expect(guide).toContain("interval backlog")
     expect(guide).not.toContain("const hourlyRollup")
     expect(guide).not.toContain("pair `all` with `skip` or `buffer-one`")
   })
 
-  it("distinguishes a first-poll bound breach from subsequent polls (documentation/3)", () => {
+  it("states that a bound breach abandons the backlog but never the current occurrence (documentation/3)", () => {
     for (
       const path of [
         "docs/concepts/policies.md",
@@ -46,11 +46,9 @@ describe("documentation contracts", () => {
       ]
     ) {
       const doc = read(path)
-      expect(doc, path).toContain("first poll")
-      expect(doc, path).toContain("including the current occurrence")
-      expect(doc, path).toContain("subsequent polls")
+      expect(doc, path).toContain("first poll after a restart")
       expect(doc, path).toContain("subject to overlap")
-      expect(doc, path).not.toContain("and still fires the current occurrence")
+      expect(doc, path).not.toContain("drops the entire owed list")
     }
   })
 

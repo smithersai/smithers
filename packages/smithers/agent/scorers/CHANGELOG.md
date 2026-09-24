@@ -8,6 +8,17 @@ are history, not the release that carries it.
 
 ## [Unreleased]
 
+### Added
+
+- `ScoreStore.Service.prune({ olderThan })` deletes observations and job
+  claims older than a cutoff and answers `ScoreStore.Pruned`. Neither table
+  was pruned before, so a host scoring live runs grew both forever.
+
+### Fixed
+
+- `RunnerLive.layer` logs a warning with the count of queued jobs a closing
+  scope discards; they used to vanish with no trace.
+
 ## [1.0.0-rc.1] - 2026-09-22
 
 ### Changed

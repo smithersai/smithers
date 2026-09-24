@@ -5,10 +5,12 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
 import * as Stream from "effect/Stream"
 import { TestClock } from "effect/testing"
+import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as Scheduler from "../src/Scheduler.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
@@ -22,6 +24,8 @@ interface RunnerFixture {
   readonly service: Scheduler.RunnerService
   readonly starts: Array<Scheduler.StartInput>
   readonly active: Set<string>
+  /** How a run that left `active` stopped; absent means `completed`. */
+  readonly stopped: Map<string, Scheduler.RunState>
   readonly cancels: Set<string>
   /** Every cancel, in order, so a double cancel is visible. */
   readonly cancelled: Array<string>
@@ -33,12 +37,14 @@ interface RunnerFixture {
 const runnerFixture = (failures = 0): RunnerFixture => {
   const starts: Array<Scheduler.StartInput> = []
   const active = new Set<string>()
+  const stopped = new Map<string, Scheduler.RunState>()
   const cancels = new Set<string>()
   const cancelled: Array<string> = []
   const inspected: Array<string> = []
   const fixture: RunnerFixture = {
     starts,
     active,
+    stopped,
     cancels,
     cancelled,
     inspected,
@@ -57,10 +63,10 @@ const runnerFixture = (failures = 0): RunnerFixture => {
           active.add(runId)
           return Effect.succeed(runId)
         }),
-      isActive: (runId) =>
+      inspect: (runId) =>
         Effect.sync(() => {
           inspected.push(runId)
-          return active.has(runId)
+          return active.has(runId) ? "active" : stopped.get(runId) ?? "completed"
         }),
       cancel: (runId) =>
         Effect.sync(() => {
@@ -138,6 +144,93 @@ const seed = (
   })
 
 describe("Scheduler", () => {
+  // Nothing called `pruneFires`, so the ledger kept one row per occurrence
+  // forever and every fires listing read all of it.
+  it("prunes settled fires older than fireRetention at most once per hour", async () => {
+    const day = 24 * hour
+    const pruned: Array<number> = []
+    const runner = runnerFixture()
+    const remaining = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* seed(store, trigger("skip", "none"), runner, "completed")
+        const counting = TriggerStore.TriggerStore.of({
+          ...store,
+          pruneFires: (options) =>
+            Effect.sync(() => pruned.push(options.olderThan)).pipe(Effect.andThen(store.pruneFires(options)))
+        })
+        const scheduler = yield* Scheduler.make({ fireRetention: "1 day" }).pipe(
+          Effect.provideService(Scheduler.Runner, runner.service),
+          Effect.provideService(TriggerStore.TriggerStore, counting)
+        )
+        yield* TestClock.setTime(2 * day)
+        yield* scheduler.runOnce
+        yield* TestClock.setTime(2 * day + 30 * 60 * 1_000)
+        yield* scheduler.runOnce
+        yield* TestClock.setTime(2 * day + hour)
+        yield* scheduler.runOnce
+        return (yield* store.history({ triggerId: "hourly" })).items.map((fire) => fire.occurrence)
+      })).pipe(Effect.provide(TestTriggers.layer), Effect.provide(TestClock.layer()))
+    )
+    expect(pruned).toEqual([day, day + hour])
+    expect(remaining).not.toContain(0)
+  })
+
+  // The scheduler emitted no spans and no metrics, so a lost boundary or a
+  // slow tick was invisible in production.
+  it("traces ticks, triggers and launches and counts every recorded fire by outcome", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span: (options) => {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const runner = runnerFixture()
+    const counts = await Effect.runPromise(provideTest(
+      Effect.scoped(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* store.register(trigger("skip", "one"))
+        const scheduler = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+        yield* TestClock.setTime(hour)
+        yield* scheduler.runOnce
+        yield* TestClock.setTime(2 * hour)
+        yield* scheduler.runOnce
+        for (let n = 0; n < 10; n++) yield* Effect.yieldNow
+        yield* TestClock.setTime(3 * hour)
+        yield* scheduler.runOnce
+        const count = (outcome: string) =>
+          Metric.value(Metric.counter("smithers.triggers.fires").pipe(Metric.withAttributes({ outcome }))).pipe(
+            Effect.map((state) => state.count)
+          )
+        const ticks = yield* Metric.value(
+          Metric.histogram("smithers.triggers.tick_duration_ms", { boundaries: Scheduler.durationBoundaries })
+        )
+        return { launched: yield* count("launched"), skipped: yield* count("skipped"), ticks: ticks.count }
+      })).pipe(Effect.provideService(Metric.MetricRegistry, new Map()), Effect.provideService(Tracer.Tracer, tracer)),
+      []
+    ))
+    expect(counts).toEqual({ launched: 1, skipped: 1, ticks: 3 })
+    const names = spans.map((span) => span.name)
+    expect(names.filter((name) => name === "Scheduler.runOnce")).toHaveLength(3)
+    expect(names).toContain("Scheduler.launch")
+    const processed = spans.filter((span) => span.name === "Scheduler.processTrigger")
+    expect(processed.length).toBeGreaterThan(0)
+    for (const span of processed) expect(span.attributes.get("triggerId")).toBe("hourly")
+  })
+
+  it("refuses a fireRetention that is not a finite positive duration", async () => {
+    const refused = await Effect.runPromise(
+      Effect.flip(Scheduler.make({ fireRetention: "0 millis" })).pipe(
+        Effect.provideService(Scheduler.Runner, runnerFixture().service),
+        Effect.provide(TestTriggers.layer),
+        Effect.scoped
+      )
+    )
+    expect(refused).toMatchObject({ code: "invalid_options", path: "fireRetention" })
+  })
+
   it("recovers disabled active occurrences without scheduling new ones", async () => {
     const results: Array<TriggerStore.Result> = []
     const runner = runnerFixture()
@@ -159,6 +252,63 @@ describe("Scheduler", () => {
       })),
       results
     ))
+  })
+
+  // A run that stopped any other way than completing used to be recorded as
+  // `completed`, because the runner answered only "not active".
+  for (
+    const [state, error] of [
+      ["failed", "Run run-1 failed"],
+      ["cancelled", "Run run-1 was cancelled"],
+      ["missing", "Run run-1 is unknown to the runner"]
+    ] as const
+  ) {
+    it(`records a ${state} run as failed, not completed`, async () => {
+      const results: Array<TriggerStore.Result> = []
+      const runner = runnerFixture()
+      await Effect.runPromise(provideTest(
+        Effect.scoped(Effect.gen(function*() {
+          const store = yield* TriggerStore.TriggerStore
+          yield* store.register(trigger("skip", "one"))
+          yield* TestClock.setTime(hour)
+          const scheduler = yield* Scheduler.make({ runPollInterval: "1 minute" }).pipe(
+            Effect.provideService(Scheduler.Runner, runner.service)
+          )
+          yield* scheduler.runOnce
+          yield* TestClock.setTime(2 * hour)
+          yield* scheduler.runOnce
+          expect(runner.starts).toHaveLength(1)
+          runner.active.delete("run-1")
+          runner.stopped.set("run-1", state)
+          yield* TestClock.adjust("1 minute")
+          yield* Effect.yieldNow
+        })),
+        results
+      ))
+      expect(results.map((result) => result.outcome)).toEqual(["launched", "failed"])
+      expect(results[1]).toMatchObject({ outcome: "failed", runId: "run-1", error })
+    })
+  }
+
+  it("records a recovered failed run as failed", async () => {
+    const results: Array<TriggerStore.Result> = []
+    const runner = runnerFixture()
+    await Effect.runPromise(provideTest(
+      Effect.scoped(Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* seed(store, trigger("skip", "none"), runner)
+        results.length = 0
+        runner.active.delete("seed")
+        runner.stopped.set("seed", "failed")
+        yield* TestClock.setTime(30 * 60 * 1_000)
+        const scheduler = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner.service))
+        yield* scheduler.runOnce
+      })),
+      results
+    ))
+    expect(results).toEqual([
+      expect.objectContaining({ outcome: "failed", runId: "seed", error: "Run seed failed" })
+    ])
   })
 
   for (const overlap of ["skip", "buffer-one", "supersede"] as const) {
@@ -185,7 +335,7 @@ describe("Scheduler", () => {
           )
         )
 
-        const count = catchUp === "none" ? 0 : catchUp === "one" ? 1 : 3
+        const count = catchUp === "all" ? 3 : 1
         if (overlap === "skip") {
           expect(runner.starts).toHaveLength(0)
           expect(results.filter((result) => result.outcome === "skipped")).toHaveLength(count)
@@ -624,11 +774,11 @@ describe("Scheduler", () => {
     const runner = Scheduler.makeNoopRunner()
     expect(await Effect.runPromise(runner.start({ flowId: "flow", input: {}, idempotencyKey: "key" })))
       .toBe("key")
-    expect(await Effect.runPromise(runner.isActive("key"))).toBe(false)
+    expect(await Effect.runPromise(runner.inspect("key"))).toBe("completed")
     expect(await Effect.runPromise(runner.cancel("key"))).toBeUndefined()
 
-    const overridden = Scheduler.makeNoopRunner({ isActive: () => Effect.succeed(true) })
-    expect(await Effect.runPromise(overridden.isActive("key"))).toBe(true)
+    const overridden = Scheduler.makeNoopRunner({ inspect: () => Effect.succeed("active") })
+    expect(await Effect.runPromise(overridden.inspect("key"))).toBe("active")
     expect(await Effect.runPromise(overridden.start({ flowId: "flow", input: {}, idempotencyKey: "k2" })))
       .toBe("k2")
 
@@ -637,13 +787,13 @@ describe("Scheduler", () => {
         const scheduler = yield* Scheduler.Scheduler
         const injected = yield* Scheduler.Runner
         yield* scheduler.runOnce
-        return yield* injected.isActive("anything")
+        return yield* injected.inspect("anything")
       }).pipe(
         Effect.provide(Scheduler.layerNoop),
         Effect.provide(Scheduler.layerNoopRunner())
       )
     )
-    expect(fromLayers).toBe(false)
+    expect(fromLayers).toBe("completed")
   })
 
   // Zero polls a CPU-tight loop and an infinite interval never detects
@@ -786,23 +936,23 @@ describe("Scheduler.layerControlRunner", () => {
   // every run holds between its claim and its first executed step, and reading
   // liveness as a list of live statuses is what dropped it: the monitor exited
   // on its first poll and recorded a run that had not started as completed.
-  it("treats every unsettled status as live, accepted included", async () => {
+  it("treats every unsettled status as active and reports each settled status as itself", async () => {
     for (
       const [status, live] of [
-        ["accepted", true],
-        ["running", true],
-        ["parked", true],
-        ["waiting-approval", true],
-        ["cancelled", false],
-        ["completed", false],
-        ["failed", false]
+        ["accepted", "active"],
+        ["running", "active"],
+        ["parked", "active"],
+        ["waiting-approval", "active"],
+        ["cancelled", "cancelled"],
+        ["completed", "completed"],
+        ["failed", "failed"]
       ] as const
     ) {
       const fixture = controlFixture({
         list: () => Effect.succeed({ _tag: "runs" as const, items: [summary(status)] as never })
       })
       const actual = await withRunner(
-        Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-1")),
+        Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-1")),
         fixture
       )
       expect([status, actual]).toEqual([status, live])
@@ -811,29 +961,29 @@ describe("Scheduler.layerControlRunner", () => {
 
   it("asks Control for the one run it cares about rather than listing every run", async () => {
     const fixture = controlFixture()
-    await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-7")), fixture)
+    await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-7")), fixture)
     expect(fixture.listRequests).toEqual([{ _tag: "runs", filters: { runId: "run-7" }, limit: 1 }])
   })
 
-  it("reports an unknown run and a mismatched page as not active", async () => {
+  it("reports an unknown run and a mismatched page as missing", async () => {
     const missing = controlFixture()
     expect(
-      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-1")), missing)
-    ).toBe(false)
+      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-1")), missing)
+    ).toBe("missing")
 
     const other = controlFixture({
       list: () => Effect.succeed({ _tag: "runs" as const, items: [{ ...summary("running"), runId: "run-2" }] as never })
     })
     expect(
-      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-1")), other)
-    ).toBe(false)
+      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-1")), other)
+    ).toBe("missing")
 
     const flows = controlFixture({
       list: () => Effect.succeed({ _tag: "flows" as const, items: [] })
     })
     expect(
-      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-1")), flows)
-    ).toBe(false)
+      await withRunner(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-1")), flows)
+    ).toBe("missing")
   })
 
   it("cancels through Control under a derived idempotency key", async () => {
@@ -924,7 +1074,7 @@ describe("Scheduler.layerControlRunner", () => {
     expect(planFailure.message).toBe("Control could not launch the scheduled run")
 
     const listFailure = await withRunner(
-      Effect.flip(Effect.flatMap(Scheduler.Runner, (runner) => runner.isActive("run-1"))),
+      Effect.flip(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect("run-1"))),
       listing
     )
     expect(listFailure).toMatchObject({ code: "runner" })
@@ -1163,10 +1313,64 @@ describe("Scheduler tick dispatch", () => {
     expect(after).toEqual([`z:${new Date(hour).toISOString()}`, `a:${new Date(hour).toISOString()}`])
   })
 
-  it("serializes triggers when concurrency is one", async () => {
+  it("never lets a slow launch hold a later trigger, even at concurrency one", async () => {
     const { after, beforeAdjust } = await slowFirst(1)
-    expect(beforeAdjust).toEqual([])
-    expect(after).toEqual([`a:${new Date(hour).toISOString()}`, `z:${new Date(hour).toISOString()}`])
+    expect(beforeAdjust).toEqual([`z:${new Date(hour).toISOString()}`])
+    expect(after).toEqual([`z:${new Date(hour).toISOString()}`, `a:${new Date(hour).toISOString()}`])
+  })
+
+  // A tick used to wait for every launch it started. While one plan sat
+  // parked, the next tick could not begin, and a boundary another trigger
+  // crossed meanwhile was never claimed under `catchUp: "none"`.
+  it("claims every boundary of one trigger while another trigger's launch is parked", async () => {
+    const minute = 60_000
+    const { minutely, tickDone } = await Effect.runPromise(
+      provideStore(
+        Effect.scoped(
+          Effect.gen(function*() {
+            const store = yield* TriggerStore.TriggerStore
+            const fixture = runnerFixture()
+            yield* seed(store, named("a"), fixture, "completed")
+            yield* seed(store, { ...named("b"), cron: "* * * * *", catchUp: "none" }, fixture, "completed")
+            const runner = Scheduler.makeRunner({
+              ...fixture.service,
+              // "a" parks forever; every "b" run finishes the moment it starts.
+              start: (input) =>
+                input.idempotencyKey.startsWith("a:")
+                  ? Effect.never
+                  : fixture.service.start(input).pipe(
+                    Effect.tap((runId) => Effect.sync(() => fixture.active.delete(runId)))
+                  )
+            })
+            const scheduler = yield* Scheduler.make().pipe(Effect.provideService(Scheduler.Runner, runner))
+            yield* TestClock.setTime(hour)
+            yield* scheduler.runOnce
+            yield* TestClock.setTime(hour + 30_000)
+            const tick = yield* Effect.forkScoped(scheduler.runOnce)
+            yield* settle
+            const tickDone = tick.pollUnsafe() !== undefined
+            for (const at of [hour + minute, hour + 2 * minute]) {
+              yield* TestClock.setTime(at)
+              yield* scheduler.runOnce
+              yield* settle
+            }
+            return {
+              tickDone,
+              minutely: fixture.starts.filter((start) =>
+                start.flowId === "flow" && start.idempotencyKey.startsWith("b:")
+              )
+                .map((start) => start.idempotencyKey)
+            }
+          })
+        )
+      )
+    )
+    expect(tickDone).toBe(true)
+    expect(minutely).toEqual([
+      `b:${new Date(hour).toISOString()}`,
+      `b:${new Date(hour + minute).toISOString()}`,
+      `b:${new Date(hour + 2 * minute).toISOString()}`
+    ])
   })
 
   it("refuses a concurrency that is not a positive integer and a deadline that is not finite and positive", async () => {
@@ -1266,7 +1470,7 @@ describe("Scheduler tick dispatch", () => {
             yield* seed(store, trigger(), fixture, "completed")
             const runner = Scheduler.makeRunner({
               ...fixture.service,
-              isActive: () =>
+              inspect: () =>
                 Effect.suspend(() => {
                   inspections++
                   return Effect.never

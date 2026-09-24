@@ -69,7 +69,8 @@ const snapshot = (job: Runner.Job): Runner.Job => ({
  * table, and an observation lost to a database failure indistinguishable.
  *
  * `submit` does not wait for the scorer to run, but it backpressures once
- * `capacity` queued jobs are outstanding.
+ * `capacity` queued jobs are outstanding. Jobs still queued when the layer
+ * scope closes are not scored; the runner logs a warning with their count.
  *
  * @category layers
  * @since 0.1.0
@@ -80,6 +81,20 @@ export const layer = (options: Options = {}): Layer.Layer<Runner.Runner, never, 
     Effect.gen(function*() {
       const store = yield* ScoreStore.ScoreStore
       const queue = yield* Queue.bounded<Runner.Job>(capacity(options.capacity))
+      // Added before the workers fork, so it runs after they are interrupted
+      // and no worker can take a job it counts. A closing scope used to drop
+      // every queued job with nothing written down.
+      yield* Effect.addFinalizer(() =>
+        Queue.clear(queue).pipe(
+          Effect.flatMap((discarded) =>
+            discarded.length === 0
+              ? Effect.void
+              : Effect.logWarning("The scorer runner closed with queued jobs unscored").pipe(
+                Effect.annotateLogs({ discarded: discarded.length })
+              )
+          )
+        )
+      )
       const execute = (job: Runner.Job): Effect.Effect<Runner.Outcome> =>
         job.score.pipe(
           Effect.flatMap(Scorer.validate),

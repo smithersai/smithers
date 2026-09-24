@@ -64,6 +64,7 @@ export const compute = (
       // passed: registering a weekly trigger on a Sunday evening owes nothing
       // for the Monday six days gone, which is what `catchUp` says.
       if (trigger.lastFiredAt === undefined) return { occurrences: [], watermark: current }
+      if (current <= trigger.lastFiredAt) return { occurrences: [], watermark: current }
       const owed = yield* withinBound(
         trigger.id,
         CatchUp.occurrences(
@@ -74,7 +75,12 @@ export const compute = (
           cron
         )
       )
-      return { occurrences: owed.map((occurrence) => occurrence.getTime()), watermark: current }
+      // The current boundary is owed whatever the policy says about the
+      // backlog, exactly as on every later poll. Under `none`, or once the
+      // bound abandoned the backlog, a restart used to skip it.
+      const occurrences = owed.map((occurrence) => occurrence.getTime())
+      if (occurrences.at(-1) !== current) occurrences.push(current)
+      return { occurrences, watermark: current }
     }
     if (current <= observed) return { occurrences: [], watermark: observed }
     const backlog = yield* withinBound(

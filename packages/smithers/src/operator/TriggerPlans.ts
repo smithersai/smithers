@@ -108,6 +108,12 @@ export const inspect = (root: string, handle: string): Promise<StoredPlan | null
 
 const terminalErrors = new Set(["PlanDenied", "PlanNotFound", "PlanDigestMismatch", "EnvelopeMismatch", "InvalidInput"])
 const settled = new Set(["cancelled", "completed", "failed"])
+const stateOf = (status: StoredPlan["status"] | undefined): Scheduler.RunState =>
+  status === undefined
+    ? "missing"
+    : status === "cancelled" || status === "completed" || status === "failed"
+    ? status
+    : "active"
 
 /**
  * Provides recoverable scheduled launches without approving or timing out a plan.
@@ -158,7 +164,9 @@ export const layer = (root: string) =>
           WHERE handle = ${entry.handle}
         `).pipe(
           Effect.andThen(read(entry.handle)),
-          Effect.map((current) => current?.status === "cancelling" || !terminalErrors.has(tag))
+          Effect.map((current): Scheduler.RunState =>
+            current?.status === "cancelling" || !terminalErrors.has(tag) ? "active" : stateOf(current?.status)
+          )
         )
       }
       const findRun = (runId: string) =>
@@ -190,10 +198,14 @@ export const layer = (root: string) =>
               return handle
             })
           ),
-        isActive: (handle) =>
+        inspect: (handle) =>
           Effect.gen(function*() {
             if (!handle.startsWith(prefix)) {
-              return yield* findRun(handle).pipe(Effect.map((run) => !settled.has(run.status)))
+              return yield* findRun(handle).pipe(
+                Effect.map((run): Scheduler.RunState =>
+                  settled.has(run.status) ? stateOf(run.status as StoredPlan["status"]) : "active"
+                )
+              )
             }
             const entry = yield* read(handle)
             if (entry === null) return yield* Effect.fail(failure(`Unknown scheduled launch ${handle}`))
@@ -202,17 +214,17 @@ export const layer = (root: string) =>
                 Effect.andThen(write(sql`
                   UPDATE control_trigger_plans SET status = 'cancelled', error = NULL WHERE handle = ${handle}
                 `)),
-                Effect.as(false),
-                Effect.catch(() => Effect.succeed(true))
+                Effect.as<Scheduler.RunState>("cancelled"),
+                Effect.catch(() => Effect.succeed<Scheduler.RunState>("active"))
               )
             }
-            if (settled.has(entry.status)) return false
+            if (settled.has(entry.status)) return stateOf(entry.status)
             if (entry.runId !== null) {
               return yield* findRun(entry.runId).pipe(
                 Effect.flatMap((run) =>
                   run.status === "completed" || run.status === "failed" || run.status === "cancelled"
-                    ? mark(handle, run.status).pipe(Effect.as(false))
-                    : Effect.succeed(true)
+                    ? mark(handle, run.status).pipe(Effect.as<Scheduler.RunState>(run.status))
+                    : Effect.succeed<Scheduler.RunState>("active")
                 ),
                 Effect.catch((error) => rememberFailure(entry, error))
               )
@@ -226,7 +238,7 @@ export const layer = (root: string) =>
               WHERE handle = ${handle} AND status IN ('waiting-approval', 'launching', 'cancelling') AND run_id IS NULL
               RETURNING handle
             `)
-            if (launching.length === 0) return true
+            if (launching.length === 0) return "active"
             return yield* control.run({
               _tag: "Plan",
               planId: entry.plan.planId,
@@ -242,7 +254,7 @@ export const layer = (root: string) =>
                       SET status = CASE WHEN status = 'cancelling' THEN 'cancelled' ELSE 'waiting-approval' END
                       WHERE handle = ${handle} AND status IN ('launching', 'cancelling') AND run_id IS NULL
                     `)
-                    return (yield* read(handle))?.status !== "cancelled"
+                    return (yield* read(handle))?.status === "cancelled" ? "cancelled" : "active"
                   }
                   if (receipt._tag === "Conflict") {
                     yield* write(sql`
@@ -251,7 +263,7 @@ export const layer = (root: string) =>
                           error = ${receipt.message}
                       WHERE handle = ${handle} AND status != 'cancelled' AND run_id IS NULL
                     `)
-                    return false
+                    return stateOf((yield* read(handle))?.status)
                   }
                   const runId = receipt.runId
                   if (runId === undefined) {
@@ -271,9 +283,9 @@ export const layer = (root: string) =>
                     yield* write(sql`
                       UPDATE control_trigger_plans SET status = 'cancelled', error = NULL WHERE handle = ${handle}
                     `)
-                    return false
+                    return "cancelled"
                   }
-                  return true
+                  return "active"
                 })
               ),
               Effect.catch((error) => rememberFailure(entry, error))

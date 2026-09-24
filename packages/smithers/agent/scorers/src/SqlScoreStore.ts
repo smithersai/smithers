@@ -77,7 +77,7 @@ const classify = (message: string) => (error: DurableWriter.DatabaseError): Scor
 /**
  * The scrub every stored `reason` and `meta` passes through.
  *
- * `flows_scores` is never pruned and is read back by `observations()`, by eval
+ * `flows_scores` is kept until a host calls `prune` and is read back by `observations()`, by eval
  * reports, and by gate summaries printed in CI, so a credential that reaches
  * `reason` or `metadata_json` is exactly as durable and as broadly readable as
  * one in a journal payload. A scorer earns those strings from places nobody
@@ -444,7 +444,28 @@ export const make: Effect.Effect<
       })
     },
     observations,
-    aggregate
+    aggregate,
+    prune: ({ olderThan }) =>
+      Number.isSafeInteger(olderThan)
+        ? writer.write(
+          Effect.gen(function*() {
+            const observations = yield* sql`DELETE FROM flows_scores WHERE at_ms < ${olderThan}`.raw.pipe(
+              Effect.mapError(DurableWriter.fromSqlError),
+              Effect.flatMap(DurableWriter.affectedRows)
+            )
+            const jobs = yield* sql`DELETE FROM flows_score_jobs WHERE created_at_ms < ${olderThan}`.raw.pipe(
+              Effect.mapError(DurableWriter.fromSqlError),
+              Effect.flatMap(DurableWriter.affectedRows)
+            )
+            return { observations, jobs }
+          })
+        ).pipe(Effect.mapError(classify("Could not prune score observations")))
+        : Effect.fail(
+          new ScorerError({
+            code: "invalid_request",
+            message: `A prune cutoff must be a safe integer, received ${String(olderThan)}`
+          })
+        )
   })
 })
 

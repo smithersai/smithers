@@ -41,6 +41,18 @@ describe("DueOccurrences", () => {
     })
   })
 
+  // A restart that crosses a boundary owes that boundary under every policy.
+  it("owes the current boundary on first sight under catchUp none, and nothing once it fired", async () => {
+    expect(await compute(hourly({ lastFiredAt: 0, catchUp: "none" }), undefined)).toEqual({
+      occurrences: [3 * hour],
+      watermark: 3 * hour
+    })
+    expect(await compute(hourly({ lastFiredAt: 3 * hour, catchUp: "none" }), undefined)).toEqual({
+      occurrences: [],
+      watermark: 3 * hour
+    })
+  })
+
   it("owes nothing and keeps the watermark until a new boundary passes", async () => {
     expect(await compute(hourly(), 3 * hour)).toEqual({ occurrences: [], watermark: 3 * hour })
     expect(await compute(hourly(), 4 * hour)).toEqual({ occurrences: [], watermark: 4 * hour })
@@ -51,7 +63,7 @@ describe("DueOccurrences", () => {
     expect(await compute(hourly({ catchUp: "none" }), hour)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
   })
 
-  it("abandons a backlog beyond the bound with a warning, and still owes the current boundary after the first poll", async () => {
+  it("abandons a backlog beyond the bound with a warning, and still owes the current boundary", async () => {
     const warnings: Array<{ readonly message: unknown; readonly annotations: Record<string, unknown> }> = []
     const capture = Logger.make((entry) => {
       warnings.push({ message: entry.message, annotations: entry.fiber.getRef(References.CurrentLogAnnotations) })
@@ -62,9 +74,9 @@ describe("DueOccurrences", () => {
           Effect.provide(Logger.layer([capture], { mergeWithExisting: false }))
         )
       )
-    // The first poll's owed list includes the current occurrence, so the
-    // abandoned list takes it too; a subsequent poll owes the boundary alone.
-    expect(await run(undefined)).toEqual({ occurrences: [], watermark: 3 * hour })
+    // The bound limits the replayed backlog. The current occurrence fires on
+    // the first poll after a restart exactly as on any later poll.
+    expect(await run(undefined)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
     expect(await run(0)).toEqual({ occurrences: [3 * hour], watermark: 3 * hour })
     expect(warnings).toHaveLength(2)
     for (const warning of warnings) {

@@ -44,10 +44,10 @@ const runnerFixture = (
           active.add(runId)
           return runId
         }),
-      isActive: (runId) =>
+      inspect: (runId) =>
         Effect.sync(() => {
           inspected.push(runId)
-          return active.has(runId)
+          return active.has(runId) ? "active" as const : "completed" as const
         }),
       cancel: (runId) =>
         Effect.sync(() => {
@@ -162,6 +162,9 @@ describe("Scheduler recovery", () => {
       )
       yield* TestClock.setTime(hour)
       yield* scheduler.runOnce
+      // The tick returns once the claim is durable; the launch finishes on
+      // its own fiber.
+      for (let n = 0; n < 10; n++) yield* Effect.yieldNow
       expect(runner.cancelled).toEqual([])
       const held = yield* store.inspect("hourly")
       if (owner === "committed") expect(held.activeRunId).toBe("shared-run")
@@ -642,7 +645,11 @@ describe("Scheduler recovery", () => {
           yield* TestClock.setTime(10 * hour)
           yield* scheduler.runOnce
           yield* Effect.yieldNow
-          expect(runner.starts).toHaveLength(0)
+          // The backlog is abandoned; the current boundary still fires.
+          expect(runner.starts.map((input) => input.idempotencyKey)).toEqual([
+            `hourly:${new Date(10 * hour).toISOString()}`
+          ])
+          runner.active.clear()
 
           yield* TestClock.setTime(11 * hour)
           yield* scheduler.runOnce
@@ -652,6 +659,7 @@ describe("Scheduler recovery", () => {
       )
     )
     expect(starts.map((input) => input.idempotencyKey)).toEqual([
+      `hourly:${new Date(10 * hour).toISOString()}`,
       `hourly:${new Date(11 * hour).toISOString()}`
     ])
   })
@@ -661,12 +669,12 @@ describe("Scheduler recovery", () => {
     const runner = runnerFixture()
     const inspecting = {
       ...runner.service,
-      isActive: (runId: string) =>
+      inspect: (runId: string) =>
         Effect.suspend(() => {
           polls++
           return polls <= failures
             ? Effect.fail(new TriggerError({ code: "runner", message: "transient inspection outage" }))
-            : runner.service.isActive(runId)
+            : runner.service.inspect(runId)
         })
     }
     await inMemory(Effect.scoped(Effect.gen(function*() {
@@ -717,10 +725,10 @@ describe("Scheduler recovery", () => {
       const scheduler = yield* Scheduler.make().pipe(
         Effect.provideService(Scheduler.Runner, {
           ...runner.service,
-          isActive: (runId) =>
+          inspect: (runId) =>
             Effect.sync(() => {
               runner.active.delete(runId)
-              return false
+              return "completed" as const
             })
         }),
         Effect.provideService(TriggerStore.TriggerStore, {
@@ -759,7 +767,7 @@ describe("Scheduler recovery", () => {
       const scheduler = yield* Scheduler.make().pipe(
         Effect.provideService(Scheduler.Runner, {
           ...runner.service,
-          isActive: () => Effect.interrupt
+          inspect: () => Effect.interrupt
         })
       )
       yield* TestClock.setTime(hour)
@@ -773,8 +781,8 @@ describe("Scheduler recovery", () => {
       const retrying = yield* Scheduler.make({ runPollInterval: "1 hour" }).pipe(
         Effect.provideService(Scheduler.Runner, {
           ...runner.service,
-          isActive: (runId) =>
-            runId === "run-1" ? runner.service.isActive(runId) : Effect.suspend(() => {
+          inspect: (runId) =>
+            runId === "run-1" ? runner.service.inspect(runId) : Effect.suspend(() => {
               polls++
               return Effect.die("inspection defect")
             })
@@ -797,7 +805,7 @@ describe("Scheduler recovery", () => {
   })
 
   it.each(["typed", "start defect", "record defect", "interrupt"])(
-    "settles the launch acknowledgement on %s and releases the tick semaphore",
+    "isolates a launch %s from the tick and releases the tick semaphore",
     async (failure) => {
       await inMemory(Effect.scoped(Effect.gen(function*() {
         const store = yield* TriggerStore.TriggerStore
@@ -836,13 +844,10 @@ describe("Scheduler recovery", () => {
         for (let n = 0; n < 10; n++) yield* Effect.yieldNow
         const exit = tick.pollUnsafe()
         expect(exit).toBeDefined()
-        if (failure === "interrupt") {
-          expect(exit?._tag).toBe("Failure")
-          expect(runner.starts).toHaveLength(0)
-        } else {
-          expect(exit?._tag).toBe("Success")
-          expect(runner.starts.filter((input) => input.flowId === "healthy")).toHaveLength(1)
-        }
+        // The tick never waits on a launch, so no launch failure, interruption
+        // included, reaches it or the trigger beside it.
+        expect(exit?._tag).toBe("Success")
+        expect(runner.starts.filter((input) => input.flowId === "healthy")).toHaveLength(1)
         const held = yield* store.inspect("hourly")
         if (failure === "typed") expect(held.activeRunId).toBeUndefined()
         else expect(TriggerStore.isReservation(held.activeRunId)).toBe(true)
@@ -1276,7 +1281,7 @@ describe("Scheduler dispatch edges", () => {
 
   it("records a run that finished before the first poll as completed", async () => {
     const results: Array<TriggerStore.Result> = []
-    const runner = runnerFixture({ isActive: () => Effect.succeed(false) })
+    const runner = runnerFixture({ inspect: () => Effect.succeed("completed") })
     await tick(
       scripted({
         recordResult: (result) =>

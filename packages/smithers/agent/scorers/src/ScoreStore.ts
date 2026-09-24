@@ -197,6 +197,26 @@ export interface Service {
     targetStepKey: string,
     scorerKey?: string | undefined
   ) => Effect.Effect<Aggregate | undefined, ScorerError>
+  /**
+   * Deletes observations whose `at` and job claims whose creation time are
+   * older than `olderThan`, answering how many of each it removed. Nothing
+   * else deletes from the store, so a host that never calls this keeps every
+   * observation and claim forever. A pruned claim no longer suppresses a
+   * duplicate, so prune only past the oldest job a host may still replay.
+   * A cutoff that is not a safe integer is refused with `invalid_request`.
+   */
+  readonly prune: (options: { readonly olderThan: number }) => Effect.Effect<Pruned, ScorerError>
+}
+
+/**
+ * How many rows one {@link Service.prune} call removed from each table.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface Pruned {
+  readonly observations: number
+  readonly jobs: number
 }
 
 /**
@@ -218,7 +238,8 @@ export const makeNoop = (): Service =>
     record: () => Effect.void,
     recordOnce: () => Effect.succeed(true),
     observations: () => Effect.succeed([]),
-    aggregate: () => Effect.succeed(undefined)
+    aggregate: () => Effect.succeed(undefined),
+    prune: () => Effect.succeed({ observations: 0, jobs: 0 })
   })
 
 /**

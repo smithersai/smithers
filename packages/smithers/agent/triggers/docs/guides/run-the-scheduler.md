@@ -57,9 +57,9 @@ Scheduler.layer({ pollInterval: "30 seconds", runPollInterval: "5 seconds" })
 | `pollInterval`    | `"1 minute"`   | How often a tick lists triggers and evaluates due work.                                |
 | `runPollInterval` | `"1 second"`   | How often a launched run's monitor asks the runner whether it is still active.         |
 | `host`            | `"local"`      | The name every tick records its heartbeat under, so a listing can say who last polled. |
-| `concurrency`     | `4`            | How many triggers one tick processes at the same time.                                 |
+| `concurrency`     | `4`            | How many triggers one tick claims at the same time.                                    |
 | `startTimeout`    | `"4 minutes"`  | How long one `Runner.start` may take before the launch is abandoned and left pending.  |
-| `inspectTimeout`  | `"30 seconds"` | How long one `Runner.isActive` may take before it counts as a failed inspection.       |
+| `inspectTimeout`  | `"30 seconds"` | How long one `Runner.inspect` may take before it counts as a failed inspection.        |
 | `cancelTimeout`   | `"30 seconds"` | How long one `Runner.cancel` may take before the supersede fails and is compensated.   |
 
 Both must be finite, positive Effect durations. Zero polls a CPU-tight loop and
@@ -73,10 +73,10 @@ skipped, but only if the declaration asked for catch-up.
 
 ## Bound a slow runner
 
-A tick processes up to `concurrency` triggers at once and waits for each
-launch to be acknowledged, so one launch waiting on a parked plan holds one
-slot, not the triggers listed after it. Every runner call also carries a
-deadline. A call that exceeds it is interrupted and fails with
+A tick processes up to `concurrency` triggers at once and never waits for a
+launch: once the claim is durable, the launch runs on its own fiber, so a plan
+parked awaiting approval holds only its own trigger. Every runner call also
+carries a deadline. A call that exceeds it is interrupted and fails with
 `runner_timeout`, and the durable state a retry needs is kept:
 
 - A start that timed out is ambiguous, because the runtime may hold the run.
@@ -88,9 +88,6 @@ deadline. A call that exceeds it is interrupted and fails with
 - A cancellation that timed out restores the prior run as active and queues the
   replacement.
 
-The tick still waits up to `startTimeout` for its slowest launch, and the
-supervisor sleeps `pollInterval` only after the tick returns. Boundaries that
-pass during that wait are replayed only if the declaration asked for catch-up.
 Keep `startTimeout` above the two minutes `parkedAttempts` allows when
 scheduled flows can park for approval.
 

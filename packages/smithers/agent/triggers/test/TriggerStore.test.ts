@@ -27,6 +27,19 @@ const layerWithSql = SqlTriggerStore.layer.pipe(Layer.provideMerge(TestDatabase.
 storeConformance("SqlTriggerStore", layer)
 
 describe("TriggerStore", () => {
+  it("answers a fires query filtered by run through the run_id index", async () => {
+    const plan = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        yield* TriggerStore.TriggerStore
+        return yield* sql<{ readonly detail: string }>`
+          EXPLAIN QUERY PLAN SELECT * FROM flows_trigger_fires WHERE run_id = ${"run-1"}
+        `
+      }).pipe(Effect.provide(layerWithSql))
+    )
+    expect(plan.map((row) => row.detail).join("\n")).toContain("flows_trigger_fires_run_id")
+  })
+
   it("settles a legacy launched row with no run id without clearing a newer reservation", async () => {
     await Effect.runPromise(
       Effect.gen(function*() {

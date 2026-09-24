@@ -59,8 +59,8 @@ const layer = Layer.mergeAll(
 )
 ```
 
-`Scheduler.layerNoopRunner` answers `isActive` with `false` and `cancel` with
-nothing, so a launch settles the moment it starts. The override replaces only
+`Scheduler.layerNoopRunner` answers `inspect` with `"completed"` and `cancel`
+with nothing, so a launch settles the moment it starts. The override replaces only
 `start`.
 
 ## Register the trigger and run two ticks

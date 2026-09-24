@@ -55,7 +55,8 @@ const recording = ScoreStore.ScoreStore.of({
       return true
     }),
   observations: () => Effect.succeed([]),
-  aggregate: () => Effect.succeed(undefined)
+  aggregate: () => Effect.succeed(undefined),
+  prune: () => Effect.succeed({ observations: 0, jobs: 0 })
 })
 ```
 
