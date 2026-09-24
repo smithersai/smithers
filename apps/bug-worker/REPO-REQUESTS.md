@@ -86,9 +86,8 @@ contract, not the repository view inside that app.
 The first accepted nomination of a repository forks it into the
 [smithers-community](https://github.com/smithers-community) GitHub
 organization with `POST https://api.github.com/repos/{owner}/{repo}/forks` and
-the body `{ "organization": "smithers-community" }`. Set `GITHUB_FORK_TOKEN`
-when deploying the Worker to a token that can create forks in that
-organization. The outcome is stored under `repo-fork:<owner/repo>` as
+the body `{ "organization": "smithers-community" }`. The deploy requires
+`GITHUB_FORK_TOKEN`, a token that can create forks in that organization. The outcome is stored under `repo-fork:<owner/repo>` as
 `{ "status": "forked", "forkedAt": "..." }`, `{ "status": "failed", "error": "..." }`,
 or `{ "status": "skipped" }` when the token is unset. A fork failure is logged
 and recorded but never fails the nomination; the repository is still stored as
@@ -139,8 +138,8 @@ with the claim and never appears in responses.
 
 ## Notifications
 
-Configure `RESEND_API_KEY` and `NOTIFICATION_FROM` (a verified sender) when
-deploying the Worker. No emails are sent during development tests. Delivery
+The deploy requires `RESEND_API_KEY` and `NOTIFICATION_FROM` (a verified
+sender). No emails are sent during development tests. Delivery
 uses the [Resend send endpoint](https://resend.com/docs/api-reference/emails/send-email)
 and [idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys).
 
@@ -196,8 +195,6 @@ and logged with the affected key, so healthy repositories continue and the
 global cursor advances. Future full scans revisit those records.
 
 Completion reports `email_not_configured` while the provider is unconfigured.
-Always supply both email variables on redeploy so Alchemy does not remove the
-bindings.
 
 Maintainers can also call `POST /api/repo-requests/notify` with `x-bug-admin`
 and `{ "repo": "owner/repo" }`. A batch handles up to 50 subscriptions and
@@ -242,7 +239,6 @@ Run `pnpm -C apps/bug-worker test` and `pnpm -C apps/site build`. Deploy the
 Worker before the site; otherwise the new form gets a visible API error and
 the most nominated list stays hidden. `alchemy.run.ts` is an Alchemy 2 stack
 (`import * as Alchemy from "alchemy"` and `alchemy/Cloudflare`), matching the
-`alchemy` version the workspace installs; deploy with
-`BUG_ADMIN_TOKEN=... pnpm -C apps/bug-worker deploy`. Deployment needs the
-email bindings above, `GITHUB_FORK_TOKEN` for community forks, and the
-ten-minute cron.
+`alchemy` version the workspace installs; deploy as the README's Deploy
+section describes. The stack declares the ten-minute cron and fails the
+deploy when the email bindings above or `GITHUB_FORK_TOKEN` are missing.

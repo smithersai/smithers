@@ -96,16 +96,31 @@ TTL semantics (`tests/helpers/memoryKv.ts`); no route mocking.
 
 ## Deploy
 
-Not run by CI. `alchemy.run.ts` requires `CLOUDFLARE_API_TOKEN`,
-`ALCHEMY_PASSWORD`, and `BUG_ADMIN_TOKEN` in the environment. Configure them
-through your usual secret mechanism (a gitignored `.env`, or the runner's
-secret store); never type them on the command line, where shell history keeps
-them in plaintext. Then, from this directory:
+Not run by CI. Set `CLOUDFLARE_API_TOKEN`, `ALCHEMY_PASSWORD`,
+`BUG_ADMIN_TOKEN`, `RESEND_API_KEY`, `NOTIFICATION_FROM`, and
+`GITHUB_FORK_TOKEN` through your usual secret mechanism (a gitignored `.env`,
+or the runner's secret store); never type them on the command line, where
+shell history keeps them in plaintext. A deploy without one fails rather than
+removing the live binding.
+
+The first Alchemy 2 run takes over the Worker and KV namespace Alchemy 1
+created. Read the plan, then deploy:
 
 ```sh
-pnpm -C apps/bug-worker deploy
+pnpm -C apps/bug-worker run plan --adopt
+pnpm -C apps/bug-worker run deploy --adopt
 ```
 
-Optional: `CLOUDFLARE_SMITHERS_ZONE_ID` (zone id for smithers.sh; alchemy
-resolves it from the domain when omitted) and `BUG_PUBLIC_BASE_URL`
-(defaults to `https://bug.smithers.sh`). See `alchemy.run.ts`.
+Every later run, from any machine, drops the flag:
+
+```sh
+pnpm -C apps/bug-worker run plan
+pnpm -C apps/bug-worker run deploy
+```
+
+Both run stage `prod` against the account's shared `alchemy-state-store`
+Worker. The stack pins the live physical names: Worker
+`smithers-bug-worker-smithers-bug-worker-williamcory`, KV namespace
+`smithers-bug-worker-bug-reports-williamcory`, and hostnames
+`bug.smithers.sh` and `bugs.smithers.sh`. Alchemy detaches any live hostname
+the stack does not declare.

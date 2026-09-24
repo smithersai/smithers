@@ -10,6 +10,6 @@ const deploySection = readme.slice(readme.indexOf("## Deploy"));
 
 describe("README deploy section", () => {
   test("never inlines a secret on a command line", () => {
-    expect(deploySection).not.toMatch(/(CLOUDFLARE_API_TOKEN|ALCHEMY_PASSWORD|BUG_ADMIN_TOKEN)=/);
+    expect(deploySection).not.toMatch(/(CLOUDFLARE_API_TOKEN|ALCHEMY_PASSWORD|BUG_ADMIN_TOKEN|RESEND_API_KEY|GITHUB_FORK_TOKEN)=/);
   });
 });

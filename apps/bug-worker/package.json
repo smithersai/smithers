@@ -7,8 +7,9 @@
   "scripts": {
     "test": "bun test tests",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy"
+    "plan": "alchemy deploy --dry-run --stage prod",
+    "deploy": "alchemy deploy --stage prod",
+    "destroy": "alchemy destroy --stage prod"
   },
   "dependencies": {
     "zod": "4.5.4"

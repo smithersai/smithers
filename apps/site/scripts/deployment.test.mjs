@@ -17,9 +17,6 @@ const appEntries = ["review", "bug-worker", "status-site"].map((name) => join(ro
 const appOptions = [
   "REVIEW_ENABLE_SMITHERS_SH_ROUTE",
   "REVIEW_PUBLIC_BASE_URL",
-  "BUG_PUBLIC_BASE_URL",
-  "RESEND_API_KEY",
-  "NOTIFICATION_FROM",
   "STATUS_SITE_DOMAIN",
   "CLOUDFLARE_SMITHERS_ZONE_ID"
 ]
@@ -150,21 +147,46 @@ test("app stacks retain their Worker routing and defer required redacted credent
   assert.ok(Effect.isEffect(review.workerProps.env.WALKTHROUGHS))
   assert.ok(Effect.isEffect(review.workerProps.env.DB))
 
-  assert.equal(bugs.workerProps.name, "smithers-bug-worker")
+  // The live Worker, KV namespace and hostnames observed on Cloudflare 2026-09-23.
+  // Another name creates a second Worker and an empty namespace; a declared
+  // domain detaches every live hostname it does not list.
+  assert.equal(bugs.workerProps.name, "smithers-bug-worker-smithers-bug-worker-williamcory")
+  assert.equal(bugs.bugReportsProps.title, "smithers-bug-worker-bug-reports-williamcory")
   assert.equal(bugs.workerProps.main, "src/worker.ts")
-  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh" })
+  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" })
+  // A workers.dev origin would serve the same routes outside the smithers.sh zone's rules.
+  assert.equal(bugs.workerProps.workersDev, false)
   assert.deepEqual(bugs.workerProps.crons, ["*/10 * * * *"])
   assert.equal(bugs.workerProps.env.PUBLIC_BASE_URL, "https://bug.smithers.sh")
   assert.ok(Effect.isEffect(bugs.workerProps.env.BUGS))
-  assert.ok(!("RESEND_API_KEY" in bugs.workerProps.env))
-  assert.ok(!("NOTIFICATION_FROM" in bugs.workerProps.env))
+  // Local state and the CLI's default dev_$USER stage give each machine its own view of production.
+  const bugStack = readFileSync(join(root, "apps/bug-worker/alchemy.run.ts"), "utf8")
+  assert.ok(bugStack.includes("state: Cloudflare.state()") && !bugStack.includes("localState"))
+  const bugScripts = JSON.parse(readFileSync(join(root, "apps/bug-worker/package.json"), "utf8")).scripts
+  assert.deepEqual(Object.values(bugScripts).filter((script) => script.startsWith("alchemy ")).sort(), [
+    "alchemy deploy --dry-run --stage prod",
+    "alchemy deploy --stage prod",
+    "alchemy destroy --stage prod"
+  ])
+
+  // A deploy from a shell without a binding's variable must fail, not delete the binding.
+  const sender = bugs.workerProps.env.NOTIFICATION_FROM
+  assert.ok(Config.isConfig(sender), "NOTIFICATION_FROM: resolve only while evaluating the stack")
+  assert.equal(Effect.runSyncExit(sender.parse(ConfigProvider.fromUnknown({})))._tag, "Failure")
+  assert.equal(Effect.runSyncExit(sender.parse(ConfigProvider.fromUnknown({ NOTIFICATION_FROM: "  " })))._tag, "Failure")
+  assert.equal(
+    Effect.runSync(sender.parse(ConfigProvider.fromUnknown({ NOTIFICATION_FROM: " Smithers <reports@example.test> " }))),
+    "Smithers <reports@example.test>"
+  )
 
   const credentials = [
     [review.workerProps.env.REVIEW_PUBLISH_TOKEN, "REVIEW_PUBLISH_TOKEN"],
     [review.workerProps.env.ADMIN_TOKEN, "REVIEW_ADMIN_TOKEN"],
     [review.workerProps.env.METRICS_TOKEN, "REVIEW_METRICS_TOKEN"],
     [review.workerProps.env.ANTHROPIC_API_KEY, "REVIEW_ANTHROPIC_API_KEY"],
-    [bugs.workerProps.env.BUG_ADMIN_TOKEN, "BUG_ADMIN_TOKEN"]
+    [bugs.workerProps.env.BUG_ADMIN_TOKEN, "BUG_ADMIN_TOKEN"],
+    [bugs.workerProps.env.RESEND_API_KEY, "RESEND_API_KEY"],
+    [bugs.workerProps.env.GITHUB_FORK_TOKEN, "GITHUB_FORK_TOKEN"]
   ]
   for (const [config, name] of credentials) {
     assert.ok(Config.isConfig(config), `${name}: resolve credentials only while evaluating the stack`)
@@ -203,13 +225,10 @@ test("app stack overrides preserve the optional route, bindings, domain and zone
   Object.assign(process.env, {
     REVIEW_ENABLE_SMITHERS_SH_ROUTE: "1",
     REVIEW_PUBLIC_BASE_URL: " https://review-preview.example ",
-    BUG_PUBLIC_BASE_URL: " https://bug-preview.example ",
-    RESEND_API_KEY: "deployment-test-placeholder",
-    NOTIFICATION_FROM: "reports@example.test",
     STATUS_SITE_DOMAIN: " status-preview.example ",
     CLOUDFLARE_SMITHERS_ZONE_ID: " test-zone "
   })
-  const [review, bugs, status] = await Promise.all(
+  const [review, , status] = await Promise.all(
     appEntries.map((path) => import(`${pathToFileURL(path).href}?deployment-overrides`))
   )
   assert.deepEqual(review.workerProps.routes, [{
@@ -217,10 +236,6 @@ test("app stack overrides preserve the optional route, bindings, domain and zone
     zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14"
   }])
   assert.equal(review.workerProps.env.PUBLIC_BASE_URL, "https://review-preview.example")
-  assert.equal(bugs.workerProps.env.PUBLIC_BASE_URL, "https://bug-preview.example")
-  assert.equal(bugs.workerProps.env.NOTIFICATION_FROM, "reports@example.test")
-  assert.ok(Config.isConfig(bugs.workerProps.env.RESEND_API_KEY))
-  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh", zoneId: "test-zone" })
   assert.deepEqual(status.workerProps.domain, { name: "status-preview.example", zoneId: "test-zone" })
 })
 

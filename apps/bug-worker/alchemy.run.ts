@@ -7,17 +7,18 @@
  * this Cloudflare account (migrated from Vercel DNS 2026-06-25), so the
  * Worker serves bug.smithers.sh as a custom domain directly.
  *
- * Deploy:   BUG_ADMIN_TOKEN=... bun x alchemy deploy
- *           (equivalently: BUG_ADMIN_TOKEN=... pnpm -C apps/bug-worker deploy)
- * Destroy:  bun x alchemy destroy
- * Review existing resource names and Alchemy 2 state/adoption before the
- * first deployment; importing old Alchemy 1 state is not automatic.
+ * Plan:     pnpm -C apps/bug-worker run plan
+ * Deploy:   pnpm -C apps/bug-worker run deploy
+ * Destroy:  pnpm -C apps/bug-worker run destroy
+ * Every command pins `--stage prod` and state lives in the account's shared
+ * `alchemy-state-store` Worker, so every machine plans against one record.
+ * The physical names are the ones Alchemy 1 derived for the live resources;
+ * the first Alchemy 2 plan and deploy add `--adopt` to take them over.
  *
- * Required env: CLOUDFLARE_API_TOKEN, ALCHEMY_PASSWORD, BUG_ADMIN_TOKEN.
- * Optional env: GITHUB_FORK_TOKEN forks nominated repositories into the
- * smithers-community organization; without it forks are recorded as skipped.
- * Optional env: CLOUDFLARE_SMITHERS_ZONE_ID (alchemy resolves the zone from
- * the domain when omitted, same convention as apps/telegram-summary).
+ * Required env: CLOUDFLARE_API_TOKEN, ALCHEMY_PASSWORD, BUG_ADMIN_TOKEN,
+ * RESEND_API_KEY, NOTIFICATION_FROM (a verified sender) and GITHUB_FORK_TOKEN
+ * (forks nominated repositories into smithers-community). A deploy without one
+ * fails instead of removing the live binding.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -25,36 +26,38 @@ import * as Config from "effect/Config";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-const zoneId = process.env.CLOUDFLARE_SMITHERS_ZONE_ID?.trim() || undefined;
-
-const adminToken = Config.schema(
-  Schema.Redacted(Schema.Trim.check(Schema.isNonEmpty())),
-  "BUG_ADMIN_TOKEN",
-).pipe(Config.map((value) => Redacted.make(Redacted.value(value).trim())));
-const bugs = Cloudflare.KV.Namespace("bug-reports", { title: "bug-reports" });
+const requireSecret = (name: string) =>
+  Config.schema(Schema.Redacted(Schema.Trim.check(Schema.isNonEmpty())), name).pipe(
+    Config.map((value) => Redacted.make(Redacted.value(value).trim())),
+  );
+const requireText = (name: string) =>
+  Config.schema(Schema.Trim.check(Schema.isNonEmpty()), name).pipe(Config.map((value) => value.trim()));
+export const bugReportsProps = { title: "smithers-bug-worker-bug-reports-williamcory" };
+const bugs = Cloudflare.KV.Namespace("bug-reports", bugReportsProps);
 
 export const workerProps = {
-  name: "smithers-bug-worker",
+  name: "smithers-bug-worker-smithers-bug-worker-williamcory",
   main: "src/worker.ts",
   compatibility: { date: "2025-05-01" },
-  workersDev: true,
+  workersDev: false,
   crons: ["*/10 * * * *"],
   env: {
     BUGS: bugs,
     REPO_COMPLETIONS: Cloudflare.DurableObject("RepoCompletion"),
-    ...(process.env.RESEND_API_KEY ? { RESEND_API_KEY: Config.Redacted("RESEND_API_KEY") } : {}),
-    ...(process.env.NOTIFICATION_FROM ? { NOTIFICATION_FROM: process.env.NOTIFICATION_FROM } : {}),
-    ...(process.env.GITHUB_FORK_TOKEN ? { GITHUB_FORK_TOKEN: Config.Redacted("GITHUB_FORK_TOKEN") } : {}),
-    BUG_ADMIN_TOKEN: adminToken,
-    PUBLIC_BASE_URL: process.env.BUG_PUBLIC_BASE_URL?.trim() || "https://bug.smithers.sh",
+    RESEND_API_KEY: requireSecret("RESEND_API_KEY"),
+    NOTIFICATION_FROM: requireText("NOTIFICATION_FROM"),
+    GITHUB_FORK_TOKEN: requireSecret("GITHUB_FORK_TOKEN"),
+    BUG_ADMIN_TOKEN: requireSecret("BUG_ADMIN_TOKEN"),
+    PUBLIC_BASE_URL: "https://bug.smithers.sh",
   },
-  domain: { name: "bug.smithers.sh", ...(zoneId ? { zoneId } : {}) },
+  // A declared domain detaches every live hostname it does not list.
+  domain: { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
 } satisfies Cloudflare.WorkerProps;
 
 export const worker = Cloudflare.Worker("smithers-bug-worker", workerProps);
 
 export default Alchemy.Stack(
   "smithers-bug-worker",
-  { providers: Cloudflare.providers(), state: Alchemy.localState() },
+  { providers: Cloudflare.providers(), state: Cloudflare.state() },
   worker,
 );
