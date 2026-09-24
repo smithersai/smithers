@@ -9,6 +9,7 @@ import { extractRequestedGrep } from "../e2e/real/coverage/selection"
 import { admitSourceRevision } from "../e2e/real/coverage/revision"
 import { MODEL_CREDENTIAL_ENV_PREFIX, MODEL_CREDENTIAL_ORIGIN_SUFFIX, MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 import { sourceRevision } from "./mode-matrix/source-revision"
+import { productionBuild } from "./production-preflight"
 
 const appDir = fileURLToPath(new URL("../", import.meta.url))
 const args = process.argv.slice(2)
@@ -124,11 +125,7 @@ if (args[0] === "serve") {
   const external = process.env.SMITHERS_REAL_BASE_URL
   process.env.SMITHERS_REAL_E2E_HOST ??= external ? "production" : "local"
   if (external && process.env.SMITHERS_REAL_E2E_HOST === "production") {
-    const response = await fetch(new URL("/api/bootstrap", external))
-    if (!response.ok) throw new Error(`Production bootstrap failed: HTTP ${response.status}`)
-    const body = await response.json() as { host?: string; buildSha?: string }
-    if (body.host !== "cloud" || !body.buildSha || !/^[0-9a-f]{40,64}$/.test(body.buildSha)) throw new Error("Production preflight requires a cloud host with an exact deployed revision.")
-    process.env.SMITHERS_REAL_E2E_BUILD_SHA = body.buildSha
+    process.env.SMITHERS_REAL_E2E_BUILD_SHA = await productionBuild(external, process.env.SMITHERS_REAL_E2E_BUILD_SHA?.trim() || undefined)
   }
   const evidence = process.env.SMITHERS_REAL_E2E_RESULTS ?? join(appDir, "test-results/real-e2e-evidence.json")
   process.env.SMITHERS_REAL_E2E_RESULTS = evidence

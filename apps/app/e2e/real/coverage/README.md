@@ -128,18 +128,36 @@ real injection seam. The launcher receipt binds mode, origin, revision, readines
 started process roles. Own modes must prove fresh launch and data-preserving
 restart. `native-own` must prove its supervisor, app, and PostgreSQL;
 Plue-backed local/native modes fail if they started any of those processes.
-The readiness probe then reads the real health/bootstrap endpoints and records
-advertised capabilities.
+
+Readiness reads `/api/bootstrap` for every mode and records its `buildSha`.
+A mode owes each scenario whose capabilities its host type opens, read from
+`@smthrs/rpc/HostCapabilities`, so a Plue mode never owes `model.turn`. Plue
+modes also owe `github`: Plue serves GitHub import behind the Worker's
+`/api/github/import` proxy. The report has one row per owed scenario, and
+every obligation is owed by at least one mode.
+
+| Provider | Also requires | Build check |
+| --- | --- | --- |
+| selfhost | `/api/health` ok | `buildSha` equals the checkout revision |
+| Plue (the Worker origin, e.g. `https://smithers.sh`) | `authFlow` is not `none` | `buildSha` is exact; the `web-plue` receipt names it |
+
+The `web-plue` launcher runs nothing from the checkout: it observes the
+Worker's bootstrap and app document. Scenario runs receive the certified
+`buildSha`, and a Plue attempt against any other build fails its obligation.
 
 The default run selects all six modes. Missing Plue configuration appears as
 `not-configured` and fails the gate. For a developer run, `--modes own-only`
 selects the three owned modes; an explicit comma-separated list can select
 other subsets. A passing subset report has `scope: "partial"`, lists its modes,
 and has `sixModeAccepted: false`. Only a passing full selection sets
-`sixModeAccepted: true`. Applicable scenarios need executed passing receipts;
-`not-applicable` is accepted only when a capability is absent. Deterministic,
-local-infrastructure, live-provider, and Plue-production tiers remain separate
-rows.
+`sixModeAccepted: true`.
+
+Rows are `passed`, `failed`, `unavailable`, or `not-configured`; there is no
+skip state. `failed` means the mode's launch or readiness failed, an attempt
+failed, the Plue build moved, or the bootstrap omits an owed capability.
+`unavailable` means no executed receipt. Every status but `passed` fails the
+gate. Deterministic, local-infrastructure, live-provider, and Plue-production
+tiers remain separate rows.
 
 The shared `scenario()` details also derive `@real-host:*` Playwright tags.
 The real config selects the current host before fixtures execute, so a

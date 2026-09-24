@@ -80,6 +80,7 @@ for (const mode of selectedModes) {
     : ["bun", "scripts/run-native-mode-matrix.ts"]
   const childEnvironment = { ...process.env }
   delete childEnvironment.SMITHERS_REAL_GIT_ORIGIN
+  delete childEnvironment.SMITHERS_REAL_E2E_BUILD_SHA
   if (nativeDriver === undefined) {
     delete childEnvironment.SMITHERS_REAL_NATIVE_CDP_ENDPOINT
     delete childEnvironment.SMITHERS_REAL_NATIVE_WINDOW_URL
@@ -100,6 +101,8 @@ for (const mode of selectedModes) {
       SMITHERS_REAL_E2E_MODE: mode,
       ...(mode === "local-own" && process.env.SMITHERS_LOCAL_GIT_ORIGIN ? { SMITHERS_REAL_GIT_ORIGIN: process.env.SMITHERS_LOCAL_GIT_ORIGIN } : {}),
       SMITHERS_REAL_E2E_HOST: MODE_DESCRIPTORS[mode].legacyHost,
+      // Every Plue scenario must run against the deployment readiness certified.
+      ...(MODE_DESCRIPTORS[mode].provider === "plue" && state.buildSha ? { SMITHERS_REAL_E2E_BUILD_SHA: state.buildSha } : {}),
       SMITHERS_REAL_E2E_REVISION: config.revision,
       SMITHERS_REAL_E2E_RESULTS: evidence,
       SMITHERS_REAL_MATRIX_SCENARIOS: JSON.stringify(selectedScenarios),
@@ -134,7 +137,7 @@ mkdirSync(dirname(reportPath), { recursive: true })
 writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n")
 
 for (const state of readiness) console.log(`${state.status.toUpperCase()} ${state.mode}${state.reasons.length ? `: ${state.reasons.join("; ")}` : ""}`)
-const counts = scenarios.reduce((result, row) => ({ ...result, [row.status]: result[row.status] + 1 }), { passed: 0, failed: 0, unavailable: 0, "not-configured": 0, "not-applicable": 0 })
-console.log(`matrix scenarios: ${counts.passed} passed, ${counts.failed} failed, ${counts.unavailable} unavailable, ${counts["not-configured"]} not configured, ${counts["not-applicable"]} not applicable`)
+const counts = scenarios.reduce((result, row) => ({ ...result, [row.status]: result[row.status] + 1 }), { passed: 0, failed: 0, unavailable: 0, "not-configured": 0 })
+console.log(`matrix scenarios: ${counts.passed} passed, ${counts.failed} failed, ${counts.unavailable} unavailable, ${counts["not-configured"]} not configured`)
 console.log(`matrix report: ${reportPath}`)
 if (!report.ok) process.exitCode = 1

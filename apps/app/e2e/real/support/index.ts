@@ -4,8 +4,9 @@ import { tmpdir } from "node:os"
 import { basename, dirname, join, resolve, sep } from "node:path"
 import { spawn } from "node:child_process"
 import { nativeTarget } from "../native-target"
+import { appEntryPath } from "./app-entry"
 
-export { expect }
+export { appEntryPath, expect }
 
 export type RealScenarioMetadata = {
   /** Stable lower-case identifier, shared by local proof and production canary evidence. */
@@ -156,13 +157,6 @@ export const realApi = async (
     } } : {}),
     ...(data === undefined ? {} : { data })
   })
-}
-
-/** The same product entry, with the deployed site's marketing root excluded. */
-export const appEntryPath = (): string => {
-  const path = process.env.SMITHERS_REAL_APP_PATH ?? (process.env.SMITHERS_REAL_E2E_HOST === "production" ? "/codeplanesmithers/canary-sandbox" : "/")
-  if (!path.startsWith("/") || path.startsWith("//")) throw new Error("SMITHERS_REAL_APP_PATH must be a same-origin absolute path.")
-  return path
 }
 
 export const productUrl = (page: Page, path: string): string => {

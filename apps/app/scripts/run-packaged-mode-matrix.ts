@@ -8,7 +8,7 @@ import { startPackagedWebSelfhost } from "./mode-matrix/docker-web-selfhost"
 import type { WebSelfhostSession } from "./mode-matrix/docker-web-selfhost"
 import { startLocalOwn } from "./mode-matrix/local-own"
 import type { LocalOwnSession } from "./mode-matrix/local-own"
-import { startPlueTargets } from "./mode-matrix/plue-target"
+import { startLocalPlue, startWebPlue } from "./mode-matrix/plue-target"
 import type { PlueSession } from "./mode-matrix/plue-target"
 import { startNativeOwn } from "./mode-matrix/native-own"
 import type { NativeOwnSession } from "./mode-matrix/native-own"
@@ -54,7 +54,7 @@ if (externalPath !== undefined) {
 let session: WebSelfhostSession | undefined
 let localSession: LocalOwnSession | undefined
 let nativeSession: NativeOwnSession | undefined
-let plueSessions: readonly PlueSession[] = []
+let plueSessions: PlueSession[] = []
 let launchFailure: unknown
 if (wants("web-selfhost")) try {
   session = await startPackagedWebSelfhost({
@@ -74,10 +74,15 @@ if (plueTarget && process.env[plueTokenEnvironment]?.trim() && (wants("web-plue"
   if (external.modes.some(({ mode }) => mode === "web-plue" || mode === "local-plue")) {
     throw new Error("external configuration must not duplicate the configured Plue web or local target")
   }
-  try { plueSessions = await startPlueTargets(appDir, revision, outputDir, plueTarget, plueTokenEnvironment) }
+  if (wants("web-plue")) try { plueSessions.push(await startWebPlue(outputDir, plueTarget, plueTokenEnvironment)) }
   catch (error) {
     launchFailure = error
-    console.error(`Plue target launch failed: ${error instanceof Error ? error.message : String(error)}`)
+    console.error(`web-plue launch failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  if (wants("local-plue")) try { plueSessions.push(await startLocalPlue(appDir, revision, outputDir, plueTarget, plueTokenEnvironment)) }
+  catch (error) {
+    launchFailure = error
+    console.error(`local-plue launch failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 if (wants("local-own")) try {
