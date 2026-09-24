@@ -245,9 +245,12 @@ bun x wrangler secret list                         # names only
 ```
 
 `src/Config.ts` reads each name below from the Worker's `env` bag into
-`ServerConfig` as `Redacted`; unset required credentials normally make their
-route answer 501/503. Telemetry preserves local admission and logs an explicit
-export configuration failure instead:
+`ServerConfig` as `Redacted`. `WORKER_IDENTITY.secrets` marks each one
+required or not and states what the Worker does while it is unset. The
+preflight prints that state for every missing secret and FAILs on a missing
+required one (`SMITHERS_CHAT_AUTH_TOKEN`, `IDENTITY_SERVICE_TOKEN`,
+`CEREBRAS_API_KEY`, `AI_GATEWAY_API_KEY`), because each leaves a core route
+refusing every user:
 
 | Name | Spent by |
 | --- | --- |
@@ -265,11 +268,10 @@ export configuration failure instead:
 | `SMITHERS_GITHUB_APP_ID` | the GitHub App JWT (`src/githubApp.ts`) |
 | `SMITHERS_GITHUB_APP_PRIVATE_KEY` | the GitHub App JWT (PEM, PKCS#1 or PKCS#8) |
 | `GITHUB_TOKEN` | optional override of the App for catalog stats |
-| `TUTORIAL_SERVICE_TOKEN` | authenticating the live tutorial service |
 
 Optional knobs are set the same way (`wrangler secret put`) and kept the same
 way: `UPSTREAM_TIMEOUT_MS`, `BILLING_CHECKOUT_ENABLED`,
-`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`, `TUTORIAL_SERVICE_URL`.
+`CEREBRAS_MODEL_LIBRARIAN`, `CEREBRAS_MODEL_FLOWS`.
 `MODEL_VAULT_KEY` is also an optional secret (base64 of 32 random bytes), not
 a deployment requirement: unset disables account enrollment alone. See the v5
 cutover entry for the one-time installation command and encryption-key backup.

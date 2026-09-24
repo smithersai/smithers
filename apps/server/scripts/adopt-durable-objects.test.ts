@@ -53,7 +53,7 @@ describe("compareDurableObjects", () => {
 describe("compareVars", () => {
   const plain: ReadonlyArray<LiveBinding> = Object.entries(WORKER_IDENTITY.vars).map(([name, text]) => ({ type: "plain_text", name, text }))
   test("the optional vault key is named and cannot block the first deployment", () => {
-    expect(WORKER_IDENTITY.secrets).not.toContain("MODEL_VAULT_KEY")
+    expect(Object.keys(WORKER_IDENTITY.secrets)).not.toContain("MODEL_VAULT_KEY")
     expect(WORKER_IDENTITY.optionalVars).toContain("MODEL_VAULT_KEY")
     expect(compareVars(plain).filter(f => f.check.includes("MODEL_VAULT_KEY")).every(f => f.level !== "FAIL")).toBe(true)
   })
@@ -71,10 +71,39 @@ describe("compareVars", () => {
     expect(pass?.detail).toContain("keeps it")
   })
 
-  test("a declared secret that is not live is an INFO naming the honest 501/503, not a failure", () => {
-    const info = compareVars(plain).find((f) => f.check === "secret CEREBRAS_API_KEY")
+  /*
+   * A deploy keeps every live secret, so a missing one was already missing.
+   * A required one means a core route refuses every user, and the preflight
+   * must not print GREEN over that: live, AI_GATEWAY_API_KEY missing would
+   * have left Jev, and so every turn's front door, answering 503.
+   */
+  test("a required secret that is not live is a FAIL that says what refuses", () => {
+    const fail = compareVars(plain).find((f) => f.check === "secret AI_GATEWAY_API_KEY")
+    expect(fail?.level).toBe("FAIL")
+    expect(fail?.detail).toContain("front door")
+    expect(fail?.detail).toContain("wrangler secret put")
+  })
+
+  test("an optional secret that is not live is an INFO stating its own absent state", () => {
+    // Client-error export never answers 501/503: it skips the export and logs.
+    const info = compareVars(plain).find((f) => f.check === "secret PLUE_WORKER_EXCHANGE_TOKEN")
     expect(info?.level).toBe("INFO")
-    expect(info?.detail).toContain("wrangler secret put")
+    expect(info?.detail).toContain("client-error export skipped")
+    expect(info?.detail).not.toContain("501")
+  })
+
+  test("every declared secret that is not live reports its declared level and absent state", () => {
+    const findings = compareVars(plain)
+    for (const [name, secret] of Object.entries(WORKER_IDENTITY.secrets)) {
+      const finding = findings.find((f) => f.check === `secret ${name}`)
+      expect(`${name}: ${finding?.level}`).toBe(`${name}: ${secret.required ? "FAIL" : "INFO"}`)
+      expect(finding?.detail).toContain(secret.absent)
+    }
+  })
+
+  test("with every declared secret live, no secret finding fails", () => {
+    const secrets: ReadonlyArray<LiveBinding> = Object.keys(WORKER_IDENTITY.secrets).map((name) => ({ type: "secret_text", name }))
+    expect(compareVars([...plain, ...secrets]).filter((f) => f.check.startsWith("secret ") && f.level !== "PASS")).toEqual([])
   })
 
   test("no finding ever carries a value, because none is read", () => {

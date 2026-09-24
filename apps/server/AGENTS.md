@@ -20,11 +20,12 @@
   facts live; `src/workerIdentity.test.ts` pins it and holds `wrangler.jsonc`
   (what `wrangler deploy` reads) to it. A change there is a DEPLOY.md
   cutover-log entry in the same commit.
-- Secrets are declared by name in `WORKER_IDENTITY.secrets`, set once on the
-  live script with `wrangler secret put`, and kept by every deploy
-  (`keep_bindings`); a deploying shell never carries a value, and no script,
-  test or workflow may ask for one. Never print a secret value, in code or in
-  a report.
+- Secrets are declared in `WORKER_IDENTITY.secrets`, each marked required or
+  not with the state its absence leaves (the preflight FAILs on a missing
+  required one and prints the rest), set once on the live script with
+  `wrangler secret put`, and kept by every deploy (`keep_bindings`); a
+  deploying shell never carries a value, and no script, test or workflow may
+  ask for one. Never print a secret value, in code or in a report.
 - Deploys are the Deploy apps workflow on a push to `main`: landing on `main`
   is the deploy. It runs `scripts/deploy.ts` (site build, preflight, then
   `wrangler deploy`), which refuses a real deploy of a dirty tree or of a

@@ -25,6 +25,14 @@ export interface MigrationIdentity {
   readonly newSqliteClasses: ReadonlyArray<string>
 }
 
+/** One Worker secret as the deploy preflight grades it. */
+export interface SecretIdentity {
+  /** Unset, a core route refuses every user, so the preflight FAILs. */
+  readonly required: boolean
+  /** What the Worker does while the secret is unset, as the preflight prints it. */
+  readonly absent: string
+}
+
 export const WORKER_IDENTITY = {
   /** The physical script name. Durable Object storage is keyed to it. */
   name: "smithers-mvp-web",
@@ -99,31 +107,27 @@ export const WORKER_IDENTITY = {
    * Every secret the Worker reads (src/Config.ts). Each is set once on the
    * live script with `wrangler secret put` and kept by every `wrangler deploy`
    * after that: wrangler uploads with `keep_bindings: ["secret_text"]`, so a
-   * deploying shell never needs to carry a value, and the preflight only
-   * reports each name as live or not. All are optional to the code (an unset
-   * one makes its route answer an honest refusal). MODEL_VAULT_KEY is OPTIONAL
-   * even on production: absent disables account enrollment alone with
-   * vault_unavailable, never deployment or identity. `AI_GATEWAY_API_KEY` joined the list when Jev became the
-   * only model behind the composer pills and the turn route's front door
-   * (src/recommend.ts, src/frontDoor.ts): without it both refuse, because
-   * neither has an LLM to fall back to.
+   * deploying shell never needs a value. The preflight reports each name as
+   * live or not: a missing `required` secret is a FAIL, any other an INFO,
+   * and both print `absent`. MODEL_VAULT_KEY is an optional knob, not listed
+   * here: absent disables account enrollment alone.
    */
-  secrets: [
-    "SMITHERS_CHAT_AUTH_TOKEN",
-    "CHAT_PRODUCT_SERVICE_TOKEN",
-    "IDENTITY_SERVICE_TOKEN",
-    "PLUE_WORKER_EXCHANGE_TOKEN",
-    "IDENTITY_ADMIN_TOKEN",
-    "BILLING_AUTH_TOKEN",
-    "BILLING_PRODUCT_SERVICE_TOKEN",
-    "BILLING_ADMIN_TOKEN",
-    "ANONYMOUS_TURN_SALT",
-    "CEREBRAS_API_KEY",
-    "AI_GATEWAY_API_KEY",
-    "SMITHERS_GITHUB_APP_ID",
-    "SMITHERS_GITHUB_APP_PRIVATE_KEY",
-    "GITHUB_TOKEN"
-  ] as ReadonlyArray<string>,
+  secrets: {
+    SMITHERS_CHAT_AUTH_TOKEN: { required: true, absent: "the chat forward carries no bearer, so every turn comes back chat's 401" },
+    CHAT_PRODUCT_SERVICE_TOKEN: { required: false, absent: "signed-in turns meter onto the deployment account, not the user's" },
+    IDENTITY_SERVICE_TOKEN: { required: true, absent: "the Cloud token door answers not_configured and identity rate-limits every sign-in as one address" },
+    PLUE_WORKER_EXCHANGE_TOKEN: { required: false, absent: "client-error export skipped; /api/client-errors still answers 202 and logs `skipped: unconfigured`" },
+    IDENTITY_ADMIN_TOKEN: { required: false, absent: "POST /api/admin/allowlist and GET /api/admin/requests answer 501" },
+    BILLING_AUTH_TOKEN: { required: false, absent: "the admin charge summary reads no charges" },
+    BILLING_PRODUCT_SERVICE_TOKEN: { required: false, absent: "signed-in balance reads and POST /api/admin/grant answer 501" },
+    BILLING_ADMIN_TOKEN: { required: false, absent: "POST /api/admin/grant answers 501" },
+    ANONYMOUS_TURN_SALT: { required: false, absent: "anonymous turn buckets hash addresses unsalted" },
+    CEREBRAS_API_KEY: { required: true, absent: "Librarian and Flows agent turns answer 503" },
+    AI_GATEWAY_API_KEY: { required: true, absent: "Jev refuses, so POST /api/recommend, POST /api/jev and every turn's front door answer 503" },
+    SMITHERS_GITHUB_APP_ID: { required: false, absent: "catalog stats read GitHub without the App (GITHUB_TOKEN, else anonymous at 60 requests an hour)" },
+    SMITHERS_GITHUB_APP_PRIVATE_KEY: { required: false, absent: "the GitHub App cannot sign, so catalog stats read with GITHUB_TOKEN, else anonymously" },
+    GITHUB_TOKEN: { required: false, absent: "catalog stats read as the GitHub App, else anonymously" }
+  } as Readonly<Record<string, SecretIdentity>>,
   /**
    * Optional knobs, and the optional secrets a working canary does without.
    * `SMITHERS_BUILD_SHA` is not a binding at all: it is baked into the site

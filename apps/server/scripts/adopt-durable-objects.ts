@@ -20,8 +20,9 @@
  * Secrets are NOT a deploy input. wrangler uploads with
  * `keep_bindings: ["secret_text"]`, so every secret set on the live script
  * with `wrangler secret put` survives a deploy from a shell that does not
- * carry it. The report lists each declared secret as live or not, and never
- * a value: only names, kinds, and presence.
+ * carry it. The report lists each declared secret as live or not, FAILs on
+ * a missing required one, and never prints a value: only names, kinds, and
+ * presence.
  *
  * With CLOUDFLARE_API_TOKEN unset it prints what it would check and exits 0,
  * marked INCONCLUSIVE, so a credential-less shell can still read the plan.
@@ -143,7 +144,8 @@ export const compareObservability = (live: unknown): Finding => {
  * var that drifted live is a FAIL and an undeclared live var is dropped.
  * Secrets and the optional knobs are `secret_text`, set once with
  * `wrangler secret put` and KEPT by every deploy (`keep_bindings`), so this
- * function only reports whether each is live. A knob that a Wrangler-era
+ * function only reports whether each is live: a missing required secret is a
+ * FAIL, because a core route already refuses every user. A knob that a Wrangler-era
  * deploy bound as `plain_text` is the one exception: it is not in `vars`, so
  * the deploy drops it, and re-adding it is `wrangler secret put`.
  */
@@ -163,9 +165,9 @@ export const compareVars = (live: ReadonlyArray<LiveBinding>): ReadonlyArray<Fin
     else findings.push({ level: "WARN", check: `live var ${name}`, detail: "not declared by src/workerIdentity.ts; the deploy DROPS it" })
   }
   const liveSecrets = new Set(live.filter((b) => b.type === "secret_text").map((b) => b.name))
-  for (const name of WORKER_IDENTITY.secrets) {
+  for (const [name, secret] of Object.entries(WORKER_IDENTITY.secrets)) {
     if (liveSecrets.has(name)) findings.push({ level: "PASS", check: `secret ${name}`, detail: "live; the deploy keeps it (value never read)" })
-    else findings.push({ level: "INFO", check: `secret ${name}`, detail: "not live; its route answers its honest 501/503 until `wrangler secret put` sets it" })
+    else findings.push({ level: secret.required ? "FAIL" : "INFO", check: `secret ${name}`, detail: `not live: ${secret.absent}; \`wrangler secret put ${name}\` sets it` })
   }
   for (const name of WORKER_IDENTITY.optionalVars) {
     if (liveSecrets.has(name)) findings.push({ level: "PASS", check: `knob ${name}`, detail: "live; the deploy keeps it (value never read)" })
@@ -177,7 +179,7 @@ export const compareVars = (live: ReadonlyArray<LiveBinding>): ReadonlyArray<Fin
    * `wrangler secret delete`.
    */
   for (const name of liveSecrets) {
-    if (knobNames.has(name) || WORKER_IDENTITY.secrets.includes(name)) continue
+    if (knobNames.has(name) || Object.hasOwn(WORKER_IDENTITY.secrets, name)) continue
     findings.push({ level: "WARN", check: `live secret ${name}`, detail: "not declared by src/workerIdentity.ts; the deploy keeps it, `wrangler secret delete` retires it (DEPLOY.md \"1.0 gateway migration\")" })
   }
   return findings
@@ -213,7 +215,7 @@ const explain = (): void => {
   console.log(`  GET /accounts/${WORKER_IDENTITY.accountId}/workers/scripts/${WORKER_IDENTITY.name}/settings`)
   console.log(`      and hold its durable_object_namespace bindings to: ${WORKER_IDENTITY.durableObjects.map(pair).join(", ")}`)
   console.log(`      (a live binding missing here = deleted class; a declared binding missing live = empty new class),`)
-  console.log(`      its plain_text vars to src/workerIdentity.ts, its secret_text names to WORKER_IDENTITY.secrets`)
+  console.log(`      its plain_text vars to src/workerIdentity.ts, its secret_text names to WORKER_IDENTITY.secrets (a missing required one fails)`)
   console.log(`      and WORKER_IDENTITY.optionalVars (every secret_text is kept by the deploy), and its compatibility date/flags.`)
   console.log(`  GET /accounts/${WORKER_IDENTITY.accountId}/workers/domains?service=${WORKER_IDENTITY.name}`)
   console.log(`      ${WORKER_IDENTITY.domain.name} must be attached to this script or to nothing.`)

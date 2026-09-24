@@ -85,8 +85,10 @@ test("the preflight section names every way a deploy loses Durable Object data",
 
 test("the secrets section names every secret and knob the Worker reads, and no value", () => {
   const section = guide.split("## Secrets")[1]!.split("## Scripted deploy")[0]!
-  for (const name of WORKER_IDENTITY.secrets) expect(section).toContain(`\`${name}\``)
+  for (const name of Object.keys(WORKER_IDENTITY.secrets)) expect(section).toContain(`\`${name}\``)
   for (const name of WORKER_IDENTITY.optionalVars) expect(section).toContain(`\`${name}\``)
+  const required = Object.entries(WORKER_IDENTITY.secrets).filter(([, secret]) => secret.required).map(([name]) => `\`${name}\``)
+  expect(section.split("FAILs on a missing\nrequired one (")[1]?.split(")")[0]?.split(/,\s+/)).toEqual(required)
   expect(guide).not.toMatch(/-----BEGIN [A-Z ]*PRIVATE KEY-----\n[A-Za-z0-9+/=]{20,}/)
 })
 
@@ -106,7 +108,7 @@ test("the CI deploy step exports the Cloudflare credentials and no Worker secret
   const env = deployRealEnv()
   expect(env).toContain("CLOUDFLARE_API_TOKEN:")
   expect(env).toContain("CLOUDFLARE_ACCOUNT_ID:")
-  for (const name of [...WORKER_IDENTITY.secrets, ...WORKER_IDENTITY.optionalVars]) {
+  for (const name of [...Object.keys(WORKER_IDENTITY.secrets), ...WORKER_IDENTITY.optionalVars]) {
     expect(`${name}: ${new RegExp(`^\\s+${name}: `, "m").test(env)}`).toBe(`${name}: false`)
   }
   expect(env).not.toContain("${{ secrets.GITHUB_TOKEN }}")
