@@ -1,3 +1,4 @@
+import { upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import { Data, Effect } from "effect"
 import { SetupOperationResponseSchema, type SetupReceipt } from "@smthrs/rpc/RepositorySetup"
 import { callGateway, cloudTokenRefusalMessage, ensureGateway, fetchCloudToken, isGatewayWorkspaceId, WORKSPACE_GONE_REFUSAL, type GatewaySessions } from "./gateway"
@@ -53,7 +54,7 @@ const setupWorkspace = (login: string, record: SetupRecord, workspaceId: string 
   // fact the pin already proved: its side still holds the dead binding. Say
   // the one thing that is true and leave the queue, instead of asking again.
   if (replacing && response.status === 409 && body.code === "conflict") return { status: "gone" } as const
-  if (!response.ok) return yield* Effect.fail(failure(typeof body.message === "string" ? body.message : `The repository workspace answered HTTP ${response.status}`))
+  if (!response.ok) return yield* Effect.fail(failure(upstreamRefusalMessage("The repository workspace", response.status, JSON.stringify(body))))
   if (!isGatewayWorkspaceId(body.id) || (workspaceId !== undefined && body.id !== workspaceId)
     || (body.repo_full_name !== undefined && body.repo_full_name !== record.input.repo)) return yield* Effect.fail(failure("Cloud returned a different repository workspace"))
   if (body.status === "failed" || body.status === "deleted") return yield* Effect.fail(failure(typeof body.failure_message === "string" ? body.failure_message : "The repository workspace could not start"))

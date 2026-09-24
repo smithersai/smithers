@@ -294,3 +294,18 @@ test("the row reader keeps a trigger and drops everything else", () => {
   expect(triggerRegistrationRow(triggerRow("nightly", { schedule: "" }))).toBeUndefined()
   expect(triggerRegistrationRow(triggerRow("nightly", { next_fire_at: null }))?.nextFireAt).toBeNull()
 })
+
+test.each([[403, "forbidden"], [404, "not_found"], [422, "validation_failed"], [500, "internal"]] as const)("trigger refusals preserve Cloud's typed %s code %s and bound prose", async (status, code) => {
+  const t = deployment(() => Response.json({ code, message: "x".repeat(500) }, { status }))
+  const response = await t.fetchAs(`${TRIGGER_REGISTRATIONS_PATH}?repo=org%2Frepo`)
+  expect(t.calls).toHaveLength(1)
+  expect(response.status).toBe(status)
+  expect(await body(response)).toMatchObject({ code, message: "x".repeat(200) })
+})
+
+test("a token refused twice is an infrastructure refusal, with no raw HTML", async () => {
+  const t = deployment(() => new Response("<html>provider debug</html>", { status: 401 }))
+  const response = await t.fetchAs(`${TRIGGER_REGISTRATIONS_PATH}?repo=org%2Frepo`)
+  expect(t.calls).toHaveLength(2)
+  expect(await body(response)).toMatchObject({ code: "upstream_refused" })
+})

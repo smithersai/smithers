@@ -16,13 +16,15 @@
  * is a separate reader that this file never touches.
  */
 import { BudgetTokensSchema, SetupDraftSchema } from "@smthrs/rpc/RepositorySetup"
+import { plueFailureCode } from "@smthrs/rpc/Refusal"
+import { machineReadableRefusal, upstreamRefusalMessage } from "@smthrs/rpc/UpstreamProse"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { Data, Effect, Result } from "effect"
 import { z } from "zod"
 import { ServerConfig } from "./Config"
 import { cloudTokenRefusal, fetchCloudToken, isRelayRepoName } from "./gateway"
 import type { UpstreamFailure } from "./Failures"
-import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
+import { discardBody, fetchWithDeadline, readBoundedJson, readRefusalDetail } from "./Http"
 import type { Transport } from "./Http"
 import { json, readBody, refuse, upstreamUnreachable } from "./Responses"
 import { requireWorkflowSession } from "./workflows"
@@ -44,7 +46,7 @@ export const flowJobKey = (slug: string): string => `flow:${slug}`
 
 type TriggerServices = Transport | ServerConfig
 
-class TriggerError extends Data.TaggedError("TriggerError")<{ readonly status: number; readonly message: string }> {}
+class TriggerError extends Data.TaggedError("TriggerError")<{ readonly status: number; readonly detail: string }> {}
 
 /**
  * This deployment never got as far as asking, and the reason is a fact about
@@ -127,13 +129,8 @@ const cloud = (
       if (token.status !== "ok") return yield* Effect.fail(new TokenError(cloudTokenRefusal(token, token.detail)))
       response = yield* call(token.token)
     }
-    const body = yield* readBoundedJson(response, limit).pipe(Effect.catch(() => Effect.succeed(undefined)))
-    if (response.ok) return body
-    const record = typeof body === "object" && body !== null ? body as Record<string, unknown> : {}
-    const message = typeof record.message === "string" && record.message !== ""
-      ? record.message
-      : `Smithers Cloud answered HTTP ${response.status}.`
-    return yield* Effect.fail(new TriggerError({ status: response.status, message }))
+    if (response.ok) return yield* readBoundedJson(response, limit).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    return yield* Effect.fail(new TriggerError({ status: response.status, detail: yield* readRefusalDetail(response) }))
   })
 
 /**
@@ -145,14 +142,15 @@ const cloud = (
  * approval is on file for the plan a schedule names, which a person clears by
  * approving the preview again and waiting never clears.
  */
-const cloudRefusal = (failure: TriggerFailure): Response =>
-  failure._tag === "TokenError"
-    ? refuse(failure.code, failure.message)
-    : failure._tag !== "TriggerError"
-    ? upstreamUnreachable("Smithers Cloud", failure)
-    : failure.status === 409
-    ? refuse("trigger_approval_missing", failure.message)
-    : refuse("upstream_refused", failure.message)
+const cloudRefusal = (failure: TriggerFailure): Response => {
+  if (failure._tag === "TokenError") return refuse(failure.code, failure.message)
+  if (failure._tag !== "TriggerError") return upstreamUnreachable("Smithers Cloud", failure)
+  const message = upstreamRefusalMessage("Smithers Cloud", failure.status, failure.detail)
+  if (failure.status === 409) return refuse("trigger_approval_missing", message)
+  // A second 401 refused a freshly minted service credential, not user input.
+  const code = failure.status === 401 ? undefined : plueFailureCode(machineReadableRefusal(failure.detail).code)
+  return code ? json(failure.status, { status: "error", code, message }) : refuse("upstream_refused", message)
+}
 
 const repoOf = (value: unknown): string | undefined =>
   typeof value === "string" && isRelayRepoName(value) ? value : undefined

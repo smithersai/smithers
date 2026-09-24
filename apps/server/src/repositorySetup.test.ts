@@ -191,7 +191,7 @@ test("a non-JSON or oversized workspace answer is a visible selection error, not
   t.options.workspaceRaw = { status: 502, text: "<html><body>502 Bad Gateway</body></html>" }
   const response = await t.send("POST", "evaluate", "alice", t.input); await t.settle()
   expect(response.status).toBe(202)
-  expect(stored().observationError).toBe("The repository workspace answered HTTP 502")
+  expect(stored().observationError).toBe("The repository workspace is having trouble right now (HTTP 502).")
   expect((await t.read()).status).toBe(503)
   await t.settle()
   t.options.workspaceRaw = { status: 200, text: "x".repeat(20_000) }
