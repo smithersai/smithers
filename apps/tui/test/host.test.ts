@@ -392,3 +392,37 @@ describe("Host.complete", () => {
     }
   })
 })
+
+describe("Host.run under a provider quota refusal", () => {
+  test("a worker refused for ten minutes settles failed with the provider's words instead of waiting", async () => {
+    let asked = 0
+    const provider = Bun.serve({
+      port: 0,
+      fetch: () => {
+        asked += 1
+        return Response.json(
+          { error: { message: "Rate limit reached. Try again in 10m.", type: "rate_limit_exceeded", code: "rate_limit_exceeded" } },
+          { status: 429, headers: { "retry-after": "600" } }
+        )
+      }
+    })
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-quota-"))
+    roots.push(cwd)
+    const host = Host.make({
+      cwd,
+      environment: { OPENAI_API_KEY: "sk-test", SMITHERS_OPENAI_COMPATIBLE_BASE_URL: `http://127.0.0.1:${provider.port}` },
+      approvals: "all"
+    })
+    try {
+      const outcome = await Promise.race([
+        host.run({ prompt: "answer", role: "worker", seat: "openai:gpt-test", history: [], onEvent: () => {} }).done,
+        Bun.sleep(60_000).then(() => ({ _tag: "still running" }))
+      ])
+      expect(outcome).toMatchObject({ _tag: "failed", message: "Rate limit reached. Try again in 10m." })
+      expect(asked).toBe(1)
+    } finally {
+      await host.dispose()
+      provider.stop(true)
+    }
+  }, 90_000)
+})
