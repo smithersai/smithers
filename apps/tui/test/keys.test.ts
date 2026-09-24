@@ -6,6 +6,9 @@ import * as Tabs from "../src/tabs.ts"
 
 const read = (file: string) => readFileSync(join(import.meta.dir, "../src", file), "utf8")
 const app = read("app.tsx")
+/** The key layers the app dispatches through, and the composer's own bindings. */
+const dispatch = read("key-dispatch.ts")
+const composer = read("composer.ts")
 
 /** A key literal a handler compares against, with whether Ctrl must be held. */
 interface Handled {
@@ -43,6 +46,7 @@ const helper = (file: string, parameter: string): ReadonlyArray<Handled> =>
 
 const handlerKeys = (source: string): ReadonlyArray<Handled> => [
   ...handled(source, "app.tsx"),
+  ...handled(dispatch, "key-dispatch.ts"),
   ...helper("approvals.ts", "name"),
   ...helper("panels.ts", "key"),
   ...helper("scrubber.ts", "name")
@@ -92,6 +96,7 @@ describe("key registry", () => {
     expect(keys.some(({ name }) => name === "j")).toBe(true)
     expect(unregistered(keys)).toEqual([])
     expect(strayReads(app)).toEqual([])
+    expect(strayReads(dispatch)).toEqual([])
   })
 
   it("fails for a handler key added without a binding", () => {
@@ -112,7 +117,7 @@ describe("key registry", () => {
 
   it("lists only keys some handler compares", () => {
     const names = new Set([...handlerKeys(app).map(({ name }) => Keys.normalizeName(name)), "?", "/", "@", "!", "shift+enter", "linefeed"])
-    const composerKeys = [...app.matchAll(/\{ name: "([^"]+)"/g)].map((match) => match[1]!)
+    const composerKeys = [...composer.matchAll(/\{ name: "([^"]+)"/g)].map((match) => match[1]!)
     // A worker tab dispatches its actions through `Keys.bindingFor`, never a literal.
     for (const action of Tabs.bindings) for (const spelling of action.keys) names.add(spelling)
     for (const name of composerKeys) names.add(Keys.normalizeName(name))

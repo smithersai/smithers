@@ -6,7 +6,7 @@ import * as TabCommand from "./tab-command.ts"
  * Keys and commands follow pi (`badlogic/pi-mono` coding-agent) wherever the
  * cell harness has the same idea; `editor.ts` lists them. `view.tsx` draws.
  */
-import type { KeyBinding, KeyEvent, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
+import type { KeyEvent } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
@@ -15,8 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as Agents from "./agents.ts"
 import * as Approvals from "./approvals.ts"
 import * as Clipboard from "./clipboard.ts"
-import * as Complete from "./complete.ts"
-import * as DragScroll from "./drag-scroll.ts"
+import * as Composer from "./composer.ts"
 import * as Context from "./context.ts"
 import * as Contributions from "./contributions.ts"
 import * as Extension from "./extension.ts"
@@ -24,47 +23,43 @@ import * as Editor from "./editor.ts"
 import * as Estimate from "./estimate.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
-import { FlowRuns, type Listed, type Port as FlowPort, type Run, running as flowRunning } from "./flows.ts"
+import { FlowRuns, type Port as FlowPort } from "./flows.ts"
 import * as Form from "./form.ts"
-import * as Fuzzy from "./fuzzy.ts"
 import * as Monitors from "./monitors.ts"
 import * as Improve from "./improve.ts"
 import type * as Host from "./host.ts"
+import * as Dispatch from "./key-dispatch.ts"
 import * as Keys from "./keys.ts"
 import * as Models from "./models.ts"
-import { FailureCard, PanelView } from "./panel-view.tsx"
+import { PanelView } from "./panel-view.tsx"
 import * as Palette from "./palette.ts"
+import * as Pickers from "./picker.ts"
 import * as Panels from "./panels.ts"
-import * as Search from "./search.ts"
 import * as Session from "./session.ts"
 import * as Shell from "./shell.ts"
 import * as Steering from "./steering.ts"
 import * as Smithers from "./smithers.ts"
 import * as Summary from "./summary.ts"
+import * as Surfaces from "./surfaces.ts"
+import { tabTitle } from "./surfaces.ts"
 import * as Tabs from "./tabs.ts"
 import { chip as workerChip, TabStrip, WorkerList, WorkerView } from "./tabs-view.tsx"
-import { activeTheme, color, isTheme, lane, loadTheme, saveTheme, setTheme, spinner, themes } from "./theme.ts"
+import { color, isTheme, loadTheme, saveTheme, setTheme, spinner } from "./theme.ts"
 import * as Timeline from "./timeline.ts"
-import * as Activity from "./activity.ts"
+import * as Toasts from "./toasts.ts"
 import { ActivityView } from "./activity-view.tsx"
+import * as AppView from "./app-view.tsx"
+import { CompletionMenu, FlowFormView, PickerDialog, StatusLine } from "./app-view.tsx"
 import * as Scrubber from "./scrubber.ts"
 import * as Transcript from "./transcript.ts"
+import * as TranscriptView from "./transcript-view.ts"
 import * as Undo from "./undo.ts"
 import * as View from "./view.tsx"
 import * as Watch from "./watch.ts"
-import { seats, type Snapshot, type Tab, tabToast, Workspace } from "./workspace.ts"
-
-const composerKeys: Array<KeyBinding> = [
-  { name: "return", action: "submit" },
-  { name: "kpenter", action: "submit" },
-  { name: "return", shift: true, action: "newline" },
-  { name: "linefeed", action: "newline" }
-]
+import { seats, type Snapshot, type Tab, Workspace } from "./workspace.ts"
 
 /** The transcript and composer never grow wider than this, like the app's chat column. */
 const columnWidth = 120
-/** Completion rows shown at once. */
-const menuRows = 8
 
 export interface AppProps {
   readonly host: Host.Host
@@ -91,157 +86,9 @@ interface TurnState {
   readonly estimate: string
 }
 
-type Picker =
-  | { readonly kind: "model"; readonly query: string; readonly selected: number }
-  | { readonly kind: "worker-model"; readonly id: string; readonly query: string; readonly selected: number }
-  | { readonly kind: "theme"; readonly query: string; readonly selected: number }
-  | { readonly kind: "flows"; readonly query: string; readonly selected: number }
-  | { readonly kind: "agents"; readonly query: string; readonly selected: number }
-  | { readonly kind: "filter"; readonly query: string; readonly selected: number }
-  | {
-    readonly kind: "resume"
-    readonly query: string
-    readonly selected: number
-    readonly sessions: ReadonlyArray<Session.Summary>
-  }
-  | {
-    readonly kind: "palette"
-    readonly query: string
-    readonly selected: number
-    /** Read on the first `session:`; undefined until then. */
-    readonly sessions?: ReadonlyArray<Session.Summary>
-  }
-  | {
-    readonly kind: "fork"
-    readonly query: string
-    readonly selected: number
-    readonly turns: ReadonlyArray<Session.Turn>
-  }
-  | { readonly kind: "undo"; readonly query: ""; readonly selected: number; readonly target: Undo.Target; readonly tab?: string }
+type Picker = Pickers.Picker
 
-/** A `text:` search in the palette, from launch through its real settlement. */
-interface TextSearch {
-  readonly query: string
-  readonly startedAt: number
-  readonly status: "running" | "done"
-  readonly hits: ReadonlyArray<Search.Hit>
-  /** rg stopped at `Search.limit`. */
-  readonly truncated: boolean
-}
-
-/** A flow run's inline form for its missing input. */
-interface FlowForm {
-  readonly id: string
-  readonly flow: string
-  readonly fields: ReadonlyArray<Form.Field>
-  readonly draft: Record<string, Form.Value>
-  readonly focus: number
-  readonly error?: string
-}
-
-/** A tab's name; an agent's tab leads with the agent. */
-const tabTitle = (tab: Tab): string => (tab.agent === undefined ? tab.title : `${tab.agent.name}: ${tab.title}`)
-
-const flowGlyph = (status: Run["status"]): string =>
-  status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : "◌ "
-
-interface Toast {
-  readonly text: string
-  readonly tone: "info" | "warning" | "danger"
-}
-
-/** A dialog's rows and the value each one picks. */
-const pickerRows = (
-  picker: Picker,
-  models: ReadonlyArray<Models.Model>,
-  seat: string,
-  filter: Timeline.Filter,
-  tabs: ReadonlyArray<Tab>,
-  files: () => ReadonlyArray<string>,
-  hits: ReadonlyArray<Search.Hit>,
-  flows: ReadonlyArray<Listed>,
-  actions: NonNullable<Palette.Sources["actions"]> = []
-): ReadonlyArray<View.Row & { readonly value: string }> => {
-  if (picker.kind === "agents") {
-    return Fuzzy.filter(flows.filter(Extension.isAgent), picker.query, (agent) => agent.name).map((agent) => {
-      const declared = agent.seat === undefined ? undefined : Models.seatOf(agent.seat, models)
-      return {
-        key: agent.name,
-        label: agent.name,
-        hint: declared === undefined ? agent.seat ?? "" : Models.labelOf(declared, models),
-        detail: agent.description,
-        value: agent.name
-      }
-    })
-  }
-  if (picker.kind === "flows") {
-    return Fuzzy.filter(flows, picker.query, (flow) => flow.name).map((flow) => ({
-      key: flow.name,
-      label: flow.name,
-      detail: flow.description,
-      value: flow.name
-    }))
-  }
-  if (picker.kind === "palette") {
-    const sources = { commands: Editor.commands, files, sessions: picker.sessions, tabs, hits, now: Date.now(), actions }
-    // The value is the JSON of a `Palette.Value`, so every dialog picks a string.
-    return Palette.rows(Palette.parse(picker.query), sources).map((row) => ({ ...row, value: JSON.stringify(row.value) }))
-  }
-  if (picker.kind === "filter") {
-    const rows = [
-      { key: "source:chat", label: "Chat", current: !filter.sources.includes(Timeline.chat), value: `source:${Timeline.chat}` },
-      ...tabs.map((tab) => ({
-        key: `source:${tab.id}`,
-        label: `↳ ${tab.title}`,
-        hint: tab.status,
-        current: !filter.sources.includes(tab.id),
-        value: `source:${tab.id}`
-      })),
-      ...Timeline.kinds.map(([kind, label]) => ({
-        key: `kind:${kind}`,
-        label,
-        current: !filter.kinds.includes(kind),
-        value: `kind:${kind}`
-      }))
-    ]
-    return [
-      // Always first, so toggling never moves the selected row.
-      { key: "all", label: "Show all", value: "all" },
-      ...Fuzzy.filter(rows, picker.query, (row) => row.label)
-    ]
-  }
-  if (picker.kind === "theme") return Fuzzy.filter(Object.keys(themes), picker.query, (name) => name).map((name) => ({
-    key: name, label: name, current: name === activeTheme(), value: name
-  }))
-  if (picker.kind === "model" || picker.kind === "worker-model") {
-    const listed = Fuzzy.filter(models, picker.query, (model) => `${model.label} ${model.seat} ${model.provider}`)
-    const custom = picker.query.includes(":") && !models.some((model) => model.seat === picker.query)
-    return [
-      ...(custom ? [{ key: picker.query, label: picker.query, hint: "any seat", value: picker.query }] : []),
-      ...listed.map((model) => ({
-        key: model.seat,
-        label: model.label,
-        hint: model.provider,
-        detail: model.seat,
-        current: model.seat === seat,
-        value: model.seat
-      }))
-    ]
-  }
-  if (picker.kind === "undo") {
-    return [{ key: "undo", label: "Undo", value: "undo" }, { key: "cancel", label: "Cancel", value: "cancel" }]
-  }
-  if (picker.kind === "fork") {
-    const now = Date.now()
-    return Fuzzy.filter(picker.turns, picker.query, (turn) => turn.text).map((turn) => ({
-      key: String(turn.index),
-      label: turn.text.split("\n")[0]!.slice(0, 60),
-      detail: View.ago(turn.at, now),
-      value: String(turn.index)
-    }))
-  }
-  return Palette.sessionRows(picker.sessions, picker.query, Date.now()).map(({ file, ...row }) => ({ ...row, value: file }))
-}
+type FlowForm = Dispatch.FlowForm
 
 export function App(props: AppProps) {
   const renderer = useRenderer()
@@ -274,13 +121,7 @@ export function App(props: AppProps) {
       : undefined
   )
   const [expanded, setExpanded] = useState(false)
-  const [toast, setToast] = useState<Toast | undefined>()
-  const [search, setSearch] = useState<TextSearch | undefined>()
-  const searchGeneration = useRef(0)
-  const [draft, setDraft] = useState("")
-  const [cursor, setCursor] = useState(0)
-  const [menuIndex, setMenuIndex] = useState(0)
-  const [menuDismissed, setMenuDismissed] = useState(false)
+  const { toast, setStatus, clearFailure } = Toasts.useToast()
   const [name, setName] = useState(restored.current?.name)
   const [now, setNow] = useState(Date.now())
   const [approvals, setApprovals] = useState<ReadonlyArray<Approvals.Pending>>([])
@@ -289,11 +130,10 @@ export function App(props: AppProps) {
   // When the front row starts taking y, n and a; see `Approvals.Arming`.
   const arming = useRef(Approvals.idle)
   const entries = useRef<Array<Context.Entry>>(restored.current?.entries ?? [])
-  const history = useRef(new Editor.History(restored.current?.prompts ?? []))
   // A record the disk refused never stops the screen: the row says what went unsaved.
   const unsaved = useCallback((failure: Session.WriteFailed) => {
     const text = `Session not saved: ${failure.message}`
-    setToast({ text, tone: "danger" })
+    setStatus(text, "danger")
     setTranscript((current) => Transcript.alert(current, text, Date.now()))
   }, [])
   const writer = useRef<Session.Writer>(
@@ -373,7 +213,7 @@ export function App(props: AppProps) {
   )
   useEffect(() => () => monitors.dispose(), [monitors])
   // One ledger per directory: every session's work calibrates the next estimate.
-  // Its failures toast once each; `setStatus` is defined below, so they go through a ref.
+  // Its failures toast once each, through a ref the render sets.
   const estimateProblem = useRef((_: string) => {})
   const [estimator] = useState(() =>
     new Estimate.Estimator({
@@ -388,6 +228,11 @@ export function App(props: AppProps) {
   )
   runsRef.current = runs
   workspaceRef.current = workspace
+  const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
+  const {
+    composer, draft, setText, history, parkedDraft, menu, menuIndex, setMenuIndex, dismissMenu, accept, externalEditor,
+    onContentChange, onCursorChange
+  } = Composer.useComposer({ models: props.models, runs, revision, files, arming, prompts: restored.current?.prompts ?? [] })
   /** Runs the user started here; their form opens without a key. */
   const userRuns = useRef(new Set<string>())
   const formOpened = useRef(new Set<string>())
@@ -398,24 +243,14 @@ export function App(props: AppProps) {
     liveForm.current = next
     setForm(next)
   }, [])
-  const [surface, setSurface] = useState("chat")
-  const [panelFocus, setPanelFocus] = useState(false)
+  const { surface, setSurface, panelFocus, setPanelFocus, navigation, setNavigation, steerTarget, setSteerTarget, showTab } = Surfaces.useSurface()
   const [whichKey, setWhichKey] = useState(false)
   const whichKeyRef = useRef(false)
   const setWhichKeyOpen = useCallback((open: boolean) => {
     whichKeyRef.current = open
     setWhichKey(open)
   }, [])
-  const [navigation, setNavigation] = useState(Panels.initial)
   const [filter, setFilter] = useState(Timeline.all)
-  /** The chat card `tab` focused, by timeline row key; `enter` opens it. */
-  const [cardFocus, setCardFocus] = useState<string | undefined>()
-  const [steerTarget, setSteerTarget] = useState<string | undefined>()
-  // Steering is for the tab it started in: any surface change ends it.
-  useEffect(() => setSteerTarget(undefined), [surface])
-  /** A worker whose chat lane the next render scrolls to. */
-  const revealWorker = useRef<string | undefined>(undefined)
-  const [inspection, setInspection] = useState<{ source: string; seq: number; first: Activity.Activity["records"][number] } | undefined>()
   useEffect(() => workspace.subscribe(() => setRevision((value) => value + 1)), [workspace])
   useEffect(() => () => workspace.dispose(), [workspace])
   useEffect(() => runs.subscribe(() => setRevision((value) => value + 1)), [runs])
@@ -577,26 +412,14 @@ export function App(props: AppProps) {
   }, [revision, runs, cardFlows])
   const tabEta = (tab: Tab) => eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab)).trim()
   const tick = spinner[Math.floor(now / 100) % spinner.length]!
-  const surfaces = [
-    { id: "chat", label: "Chat" },
-    { id: "summary", label: "Summary" },
-    // Built-in plugins' tabs sit beside Summary while open; runtime and problem views follow the work tabs.
-    ...pluginTabs.map((panel) => ({ id: `ui:${panel.id}`, label: panel.title })),
-    ...snapshot.tabs.map((tab) => workerChip({ ...tab, title: tabTitle(tab) }, props.models, now, tick, tabEta(tab))),
-    ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id) &&
-      !snapshot.panels.some((panel) => panel.bind?.tree === tab.id))
-      .map((tab) => ({ id: `tree:${tab.id}`, label: `Tree: ${tab.title}` })),
-    ...flowRuns.map((run) => ({
-      id: `flow:${run.id}`,
-      label: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
-    })),
-    ...uiPanels.filter((panel) => !pluginPanels.includes(panel)).map((panel) => ({ id: `ui:${panel.id}`, label: panel.title }))
-  ]
-  const showTab = (id: string) => {
-    setSurface(id)
-    setPanelFocus(id !== "chat")
-    setNavigation(Panels.initial())
-  }
+  const surfaces = Surfaces.chips({
+    workspace: snapshot,
+    runs: flowRuns,
+    plugins: pluginTabs,
+    views: uiPanels.filter((panel) => !pluginPanels.includes(panel)),
+    worker: (tab) => workerChip({ ...tab, title: tabTitle(tab) }, props.models, now, tick, tabEta(tab)),
+    runEta: (run) => eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)
+  })
   const clickTab = (id: string) => {
     if (liveForm.current !== undefined) changeForm(undefined)
     showTab(id)
@@ -612,7 +435,7 @@ export function App(props: AppProps) {
   /** Back to the chat with the worker's lane shown and scrolled into view. */
   const openInChat = (id: string) => {
     setFilter((current) => (current.sources.includes(id) ? Timeline.toggleSource(current, id) : current))
-    revealWorker.current = id
+    revealLane(id)
     showTab("chat")
   }
   const workerAction = (tab: Tab, action: Tabs.ActionId) => {
@@ -641,102 +464,28 @@ export function App(props: AppProps) {
         return openInChat(tab.id)
     }
   }
-  const basePanel = surface === "summary"
-    ? Summary.panel(transcript)
-    : surface.startsWith("tab:")
-    ? workspace.panel(surface.slice(4))
-    : surface.startsWith("flow:")
-    ? runs.panel(surface.slice(5))
-    : surface.startsWith("tree:")
-    ? workspace.tree(surface.slice(5))
-    : uiPanels.find((panel) => `ui:${panel.id}` === surface)
-  const panel = basePanel?.bind === undefined ? basePanel : (() => {
-    const tree = workspace.tree(basePanel.bind.tree)
-    return { ...basePanel, rows: [...tree.rows, ...basePanel.rows.map((row) => ({ ...row, id: `${basePanel.id}/${row.id}` }))] }
-  })()
+  const { base: basePanel, panel } = Surfaces.panelFor(surface, {
+    summary: () => Summary.panel(transcript),
+    tab: workspace.panel,
+    run: runs.panel,
+    tree: workspace.tree,
+    views: uiPanels
+  })
   const focusMain = basePanel?.placement === "main"
   /** Approval keys the focused panel acts on: its `a` runs the selected row's action or opens a flow's form. */
   const panelKeys = panelFocus && panel !== undefined &&
       (surface.startsWith("flow:") || panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action !== undefined)
     ? ["a"]
     : []
-  const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tabTitle(tab), tone: lane(index) }]))
-  const mergeTimeline = useMemo(() => Timeline.cached(), [])
-  const timeline = mergeTimeline(
-    [
-      { id: Timeline.chat, transcript },
-      ...snapshot.tabs.map((tab) => ({ id: tab.id, transcript: workspace.transcript(tab.id) }))
-    ],
-    filter
-  )  /** Cards in the chat, oldest first; `tab` on an empty composer walks them. */
-  const cardKeys = surface === "chat" && panel === undefined
-    ? timeline.filter((row) => row.item.kind === "card").map((row) => row.key)
-    : []
-  const focusedCard = cardFocus !== undefined && cardKeys.includes(cardFocus) ? cardFocus : undefined
-
-  const activitySources = [
-    { id: "chat", title: "Chat", activity: transcript.activity },
-    ...snapshot.tabs.map(tab => ({ id: tab.id, title: tabTitle(tab), activity: workspace.transcript(tab.id).activity }))
-  ].filter((source): source is { id: string; title: string; activity: Activity.Activity } =>
-    source.activity !== undefined && source.activity.records.length > 0)
-  const latestActivity = [...activitySources].sort((a, b) =>
-    (b.activity.records.at(-1)?.occurredAt ?? 0) - (a.activity.records.at(-1)?.occurredAt ?? 0))
-  // A new turn or restored session cannot inherit a cursor from an old turn.
-  const pinnedActivity = activitySources.find(source => source.id === inspection?.source &&
-    source.activity.records[0] === inspection.first)
-  const monitored = (surface.startsWith("tab:") ? activitySources.find(source => source.id === surface.slice(4)) : pinnedActivity)
-    ?? latestActivity.find(source => source.activity.status === "running") ?? latestActivity[0]
-  const showActivity = monitored !== undefined && (panel === undefined || surface.startsWith("tab:"))
-  const activeInspection = showActivity && pinnedActivity === monitored ? inspection : undefined
-  const transcriptOf = (source: string) => source === Timeline.chat ? transcript : workspace.transcript(source)
-  /** The chat row a scrubber position lands on. */
-  const jumpTarget = activeInspection === undefined ? undefined : (() => {
-    const id = Scrubber.target(transcriptOf(activeInspection.source), activeInspection.seq)
-    return id === undefined ? undefined : `${activeInspection.source}:${id}`
-  })()
-  const reveal = (key: string) => {
-    const box = scroll.current
-    const child = box?.content.findDescendantById(key)
-    if (box === null || box === undefined || child === undefined) return
-    box.scrollTop = Math.max(0, box.scrollTop + child.y - box.viewport.y - 1)
-  }
-  const inspectActivity = (seq: number, jump = true) => {
-    if (monitored === undefined) return
-    setPanelFocus(false)
-    setInspection({ source: monitored.id, seq, first: monitored.activity.records[0]! })
-    const id = Scrubber.target(transcriptOf(monitored.id), seq)
-    if (id === undefined || !jump) return
-    if (surface !== "chat") setSurface("chat")
-    const key = `${monitored.id}:${id}`
-    reveal(key)
-    // A surface switch mounts the chat first; lay it out, then aim again.
-    setTimeout(() => reveal(key), 60)
-  }
-  const followLive = () => {
-    setInspection(undefined)
-    const box = scroll.current
-    if (box !== null) box.scrollTop = box.scrollHeight
-  }
-  const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
-  const composer = useRef<TextareaRenderable>(null)
-  const scroll = useRef<ScrollBoxRenderable>(null)
-  const dragScroll = useMemo(() => DragScroll.make(() => renderer.getSelection()?.isDragging === true), [renderer])
-  useEffect(() => {
-    const id = revealWorker.current
-    if (id === undefined || surface !== "chat") return
-    revealWorker.current = undefined
-    const row = timeline.findLast((each) => each.source === id)
-    if (row === undefined) return
-    reveal(row.key)
-    // The chat mounts on this render; lay it out, then aim again.
-    setTimeout(() => reveal(row.key), 60)
+  const {
+    scroll, dragScroll, lanes, timeline, cardKeys, focusedCard, setCardFocus, reveal, revealLane, monitored, showActivity,
+    activeInspection, jumpTarget, transcriptOf, inspectActivity, followLive, clearInspection
+  } = TranscriptView.useTranscriptView({
+    renderer, transcript, tabs: snapshot.tabs, worker: workspace.transcript, filter, surface, setSurface, panel, setPanelFocus
   })
+  const panelScroll = useRef<((direction: number) => void) | undefined>(undefined)
   const lastCtrlC = useRef(0)
-  const files = useRef(Files.lister(props.host.cwd, Date.now, () => setRevision((value) => value + 1)))
-  /** The draft a palette command with an argument displaced; restored by the next submit. */
-  const parkedDraft = useRef<string | undefined>(undefined)
   const dimensions = useTerminalDimensions()
-  const setStatus = useCallback((text: string, tone: Toast["tone"] = "info") => setToast({ text, tone }), [])
   useEffect(() => Log.subscribe((message) => setStatus(message, "danger")), [setStatus])
   const discoveryFailure = runs.failure()
   useEffect(() => {
@@ -752,23 +501,8 @@ export function App(props: AppProps) {
     if (restored.damaged !== undefined) setStatus(restored.damaged, "danger")
   }, [])
   estimateProblem.current = (text) => setStatus(text, "warning")
+  const { search, parsed: parsedPalette } = Pickers.useSearch({ picker, setPicker, cwd: props.host.cwd, setStatus })
 
-  const completion = useMemo(
-    () => (menuDismissed
-      ? undefined
-      : Complete.complete(draft, cursor, {
-        models: props.models,
-        files: () => files.current(),
-        flows: runs.listed,
-        agents: () => runs.listed().filter(Extension.isAgent)
-      })),
-    [draft, cursor, menuDismissed, props.models, runs, revision]
-  )
-  const menu = completion !== undefined && (completion.items.length > 0 || completion.kind !== "file")
-    ? completion
-    : undefined
-  const menuIdentity = menu === undefined ? "" : `${menu.kind}:${menu.query}`
-  useEffect(() => setMenuIndex(0), [menuIdentity])
 
   // A dialog's rows follow the dialog and its sources, never the 100 ms clock: the palette ranks every file.
   const tabsKey = snapshot.tabs.map((tab) => `${tab.id}\0${tab.title}\0${tab.status}`).join("\n")
@@ -781,7 +515,7 @@ export function App(props: AppProps) {
   const rows = useMemo(
     () => picker === undefined
       ? []
-      : pickerRows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed(), paletteActions),
+      : Pickers.rows(picker, props.models, seat, filter, snapshot.tabs, files.current, search?.hits ?? [], runs.listed(), paletteActions),
     [picker, props.models, seat, filter, tabsKey, search?.hits, runs, revision, actionsKey]
   )
 
@@ -841,75 +575,6 @@ export function App(props: AppProps) {
     }
   }, [clockRunning, props.host, setStatus])
 
-  useEffect(() => {
-    // A failure stays until another notice replaces it or the next submit.
-    if (toast === undefined || toast.tone === "danger") return
-    const timer = setTimeout(() => setToast(undefined), 3000)
-    return () => clearTimeout(timer)
-  }, [toast])
-
-  // `text:` runs rg in the background; a newer query, leaving text mode, or closing cancels it.
-  const parsedPalette = picker?.kind === "palette" ? Palette.parse(picker.query) : undefined
-  const textQuery = parsedPalette?.mode === "text" && parsedPalette.query.length >= 2 ? parsedPalette : undefined
-  const textKey = textQuery === undefined ? "" : `${textQuery.query}\0${textQuery.regex ?? ""}`
-  useEffect(() => {
-    const generation = ++searchGeneration.current
-    setSearch(undefined)
-    if (textQuery === undefined) return
-    let running: ReturnType<typeof Search.run> | undefined
-    const timer = setTimeout(() => {
-      running = Search.run({
-        cwd: props.host.cwd,
-        query: textQuery.query,
-        ...(textQuery.regex === undefined ? {} : { regex: textQuery.regex })
-      })
-      setSearch({ query: textQuery.query, startedAt: Date.now(), status: "running", hits: [], truncated: false })
-      void running.done.then((outcome) => {
-        if (generation !== searchGeneration.current || outcome._tag === "cancelled") return
-        if (outcome._tag === "done") {
-          setSearch({ query: textQuery.query, startedAt: 0, status: "done", hits: outcome.hits, truncated: outcome.truncated })
-          return
-        }
-        setSearch(undefined)
-        setStatus(
-          outcome.reason === "missing-rg"
-            ? "rg not found"
-            : outcome.reason === "bad-pattern"
-            ? `Bad pattern: ${outcome.message}`
-            : `rg: ${outcome.message}`,
-          "danger"
-        )
-      })
-    }, 150)
-    return () => {
-      clearTimeout(timer)
-      running?.cancel()
-    }
-  }, [textKey, props.host.cwd])
-
-  // `session:` reads the session files once per palette opening.
-  const needsSessions = parsedPalette?.mode === "sessions" && picker?.kind === "palette" && picker.sessions === undefined
-  useEffect(() => {
-    if (!needsSessions) return
-    let sessions: ReadonlyArray<Session.Summary> = []
-    try {
-      sessions = Session.list(props.host.cwd)
-    } catch (error) {
-      setStatus(String(error), "danger")
-    }
-    setPicker((current) => (current?.kind === "palette" ? { ...current, sessions } : current))
-  }, [needsSessions, props.host.cwd])
-
-  const setText = useCallback((text: string, at?: number) => {
-    const input = composer.current
-    if (input === null) return
-    input.setText(text)
-    if (at === undefined) input.gotoBufferEnd()
-    else input.cursorOffset = at
-    arming.current = Approvals.edited(arming.current, Date.now())
-    setDraft(text)
-    setCursor(input.cursorOffset)
-  }, [])
 
   const quit = useCallback(() => {
     flowWatch.current?.dispose()
@@ -1105,7 +770,7 @@ export function App(props: AppProps) {
     formOpened.current = new Set()
     setFollowUps([])
     setFilter(Timeline.all)
-    setInspection(undefined)
+    clearInspection()
     setNavigation(Panels.initial())
     setCompact(undefined)
     const nextWorkspace = makeWorkspace(state.workspace)
@@ -1163,20 +828,14 @@ export function App(props: AppProps) {
     const { name: verb, argument } = parsed
     switch (verb) {
       case "summary":
-        setSurface("summary")
-        setPanelFocus(true)
-        setNavigation(Panels.initial())
+        showTab("summary")
         return true
       case "smithers":
         runs.refresh()
-        setSurface(`ui:${Smithers.id}`)
-        setPanelFocus(true)
-        setNavigation(Panels.initial())
+        showTab(`ui:${Smithers.id}`)
         return true
       case "tabs":
-        setSurface(snapshot.tabs[0] === undefined ? "summary" : `tab:${snapshot.tabs[0].id}`)
-        setPanelFocus(true)
-        setNavigation(Panels.initial())
+        showTab(snapshot.tabs[0] === undefined ? "summary" : `tab:${snapshot.tabs[0].id}`)
         return true
       case "chat":
         setSurface("chat")
@@ -1256,9 +915,7 @@ export function App(props: AppProps) {
         const target = uiPanels.find((panel) => panel.id === argument) ?? uiPanels[0]
         if (target === undefined) setStatus("No custom views")
         else {
-          setSurface(`ui:${target.id}`)
-          setPanelFocus(true)
-          setNavigation(Panels.initial())
+          showTab(`ui:${target.id}`)
         }
         return true
       }
@@ -1390,22 +1047,22 @@ export function App(props: AppProps) {
     if (input === null) return
     const text = (typed ?? input.plainText).trim()
     if (text === "") return
-    setToast((current) => (current?.tone === "danger" ? undefined : current))
-    const shellLine = Shell.parse(text)
+    clearFailure()
     const parked = parkedDraft.current
     parkedDraft.current = undefined
     history.current.add(text)
     setText(parked ?? "")
     const steering = live.current.steered
-    if (steering !== undefined && shellLine === undefined && !text.startsWith("/")) {
-      if (!workspace.steer(steering.id, text)) setStatus(`${steering.title} is not running`, "warning")
+    const route = Composer.route(text, steering !== undefined)
+    if (route._tag === "steer") {
+      if (!workspace.steer(steering!.id, text)) setStatus(`${steering!.title} is not running`, "warning")
       return
     }
-    if (shellLine !== undefined) {
-      if (shellLine.command !== "") runShell(shellLine.command, shellLine.excluded)
+    if (route._tag === "shell") {
+      if (route.command !== "") runShell(route.command, route.excluded)
       return
     }
-    if (text.startsWith("/") && command(text)) return
+    if (route._tag === "command" && command(text)) return
     send(text, followUp)
   }, [setText, runShell, command, send, workspace, setStatus])
 
@@ -1447,31 +1104,7 @@ export function App(props: AppProps) {
       }
     }
   }
-  /** Which owner a surface belongs to, so a `panel` key works only on its owner's own views. */
-  const ownerOf = (id: string): string | undefined => {
-    if (id.startsWith("flow:")) {
-      const run = runs.get(id.slice(5))
-      return run === undefined ? undefined : `repo:${run.flow}`
-    }
-    if (id.startsWith("tab:")) return `runtime:${id.slice(4)}`
-    if (!id.startsWith("ui:")) return undefined
-    const plugin = extensions.panels.find((each) => `ui:${each.panel.id}` === id)
-    if (plugin !== undefined) return plugin.owner
-    const slash = id.indexOf("/")
-    return slash < 0 ? "runtime:chat" : `runtime:${id.slice(3, slash)}`
-  }
-
-  /** Tab inserts the selected completion; Enter also runs it when it is a whole command. */
-  const acceptCompletion = useCallback((run: boolean) => {
-    const { menu: open, menuIndex: index } = live.current
-    const input = composer.current
-    if (open === undefined || input === null) return
-    const suggestion = open.items[index]
-    if (suggestion === undefined) return
-    const next = Complete.apply(input.plainText, open, suggestion)
-    if (run && suggestion.submit) return submit(false, next.text)
-    setText(next.text, next.cursor)
-  }, [setText, submit])
+  const ownerOf = (id: string): string | undefined => Surfaces.ownerOf(id, { run: runs.get, plugins: extensions.panels })
 
   /** pi's restore: queued messages go back into the editor, above the draft. */
   const restoreQueued = useCallback((extra: ReadonlyArray<string> = []) => {
@@ -1482,21 +1115,6 @@ export function App(props: AppProps) {
     setText([...queued, ...(current === "" ? [] : [current])].join("\n\n"))
     setStatus(`Restored ${queued.length} queued message${queued.length === 1 ? "" : "s"} to editor`)
   }, [setText, setStatus])
-
-  const externalEditor = useCallback(async () => {
-    const editor = process.env.VISUAL ?? process.env.EDITOR ?? "nano"
-    renderer.suspend()
-    let edited: string | undefined
-    try {
-      edited = await External.edit(composer.current?.plainText ?? "", editor)
-    } catch (error) {
-      Log.write("editor", error)
-      setStatus("Editor unavailable", "warning")
-    } finally {
-      renderer.resume()
-    }
-    if (edited !== undefined) setText(edited)
-  }, [renderer, setText, setStatus])
 
   const cycleModel = useCallback((step: number) => {
     if (props.models.length < 2) {
@@ -1583,9 +1201,7 @@ export function App(props: AppProps) {
         case "session":
           return resumeGuarded(chosen.file)
         case "tab":
-          setSurface(`tab:${chosen.id}`)
-          setPanelFocus(true)
-          setNavigation(Panels.initial())
+          showTab(`tab:${chosen.id}`)
           return
         case "prefix":
           return setPicker({ kind: "palette", query: chosen.prefix, selected: 0 })
@@ -1596,126 +1212,43 @@ export function App(props: AppProps) {
     resumeGuarded(value)
   }, [switchSeat, openSession, forkSession, runUndo, setStatus, workspace, runs, setText, command])
 
-  /** Keys while a flow form is open; its focused input takes the typing. */
-  const formKey = (key: KeyEvent, open: FlowForm) => {
-    const field = open.fields[open.focus]
-    const move = (step: number) => {
-      key.preventDefault()
-      if (open.fields.length > 0) changeForm({ ...open, focus: (open.focus + step + open.fields.length) % open.fields.length })
-    }
-    if (key.name === "escape") {
-      // Closes only; the run stays parked (`a` in its tab reopens, `x` stops it).
-      key.preventDefault()
-      return changeForm(undefined)
-    }
-    if ((key.name === "tab" && !key.shift) || key.name === "down") return move(1)
-    if ((key.name === "tab" && key.shift) || key.name === "up") return move(-1)
-    if (key.name === "space" && field?.kind === "boolean") {
-      key.preventDefault()
-      return changeForm({ ...open, draft: { ...open.draft, [field.name]: open.draft[field.name] !== true }, error: undefined })
-    }
-    if ((key.name === "left" || key.name === "right") && field?.kind === "select" && field.options !== undefined) {
-      key.preventDefault()
-      const options = field.options
-      const at = options.indexOf(open.draft[field.name] ?? "")
-      const next = options[(at + (key.name === "left" ? -1 : 1) + options.length) % options.length]!
-      return changeForm({ ...open, draft: { ...open.draft, [field.name]: next }, error: undefined })
-    }
-    if (key.name === "return" || key.name === "kpenter") {
-      key.preventDefault()
-      const schema = runs.schema(open.id)
-      const run = runs.get(open.id)
-      if (schema === undefined || run === undefined) return changeForm(undefined)
-      const result = Form.payload(schema, open.fields, run.input, open.draft)
-      if ("error" in result) return changeForm({ ...open, error: result.error })
-      changeForm(undefined)
-      runs.fill(open.id, result.payload)
-    }
-  }
-
-  /** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
-  const dialogKey = (key: KeyEvent, open: Picker) => {
-    const move = (step: number) => {
-      key.preventDefault()
-      if (rows.length > 0) setPicker((current) => current === undefined ? current : { ...current, selected: (current.selected + step + rows.length) % rows.length })
-    }
-    if (key.name === "escape") return setPicker(undefined)
-    // Typing that arrives before the dialog's input mounts would reach the still-focused composer.
-    const typed = key.sequence
-    if (composer.current?.focused === true && open.kind !== "undo" && !key.ctrl && !key.meta && !key.option &&
-      typed.length === 1 && typed >= " " && typed !== "\x7f") {
-      key.preventDefault()
-      return setPicker((current) => current === undefined || current.kind === "undo" ? current : { ...current, query: current.query + typed, selected: 0 })
-    }
-    if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
-    if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
-    if (key.name === "pageup") return move(-Math.min(10, open.selected))
-    if (key.name === "pagedown") return move(Math.min(10, rows.length - 1 - open.selected))
-    if (key.name === "return" || key.name === "kpenter") {
-      key.preventDefault()
-      const row = rows[open.selected]
-      if (row !== undefined) pick(open, row.value)
-    }
-  }
-
-  /** Keys while the completion menu is open; true when the menu took the key. */
-  const menuKey = (key: KeyEvent, open: Complete.Completion): boolean => {
-    const count = open.items.length
-    const move = (step: number) => {
-      key.preventDefault()
-      if (count > 0) setMenuIndex((index) => (index + step + count) % count)
-      return true
-    }
-    if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
-    if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
-    if (key.name === "escape") {
-      key.preventDefault()
-      setMenuDismissed(true)
-      return true
-    }
-    if (count === 0) return false
-    if (key.name === "tab" && !key.shift) {
-      key.preventDefault()
-      acceptCompletion(false)
-      return true
-    }
-    if ((key.name === "return" || key.name === "kpenter") && !key.shift && !key.meta && !key.option) {
-      key.preventDefault()
-      acceptCompletion(true)
-      return true
-    }
-    return false
-  }
-
   /** Which keys act right now, in the order `handleKey` tries them. */
-  const keyContext = (): Keys.KeyContext => {
-    if (live.current.picker !== undefined) return "picker"
-    if (activeInspection !== undefined) return "selection"
-    if (liveForm.current !== undefined) return "form"
-    if (live.current.approvals.length > 0 && composer.current?.plainText === "") return "approval"
-    if (panelFocus && panel !== undefined) return "panel"
-    if (live.current.menu !== undefined) return "completion"
-    if (focusedCard !== undefined) return "card"
-    if (live.current.shell !== undefined || composer.current?.plainText.startsWith("!") === true) return "shell"
-    if (live.current.turn !== undefined) return "working"
-    return "composer"
+  const keyContext = (): Keys.KeyContext => Dispatch.context({
+    picker: live.current.picker !== undefined,
+    inspecting: activeInspection !== undefined,
+    form: liveForm.current !== undefined,
+    approvals: live.current.approvals.length > 0,
+    empty: composer.current?.plainText === "",
+    panel: panelFocus && panel !== undefined,
+    completion: live.current.menu !== undefined,
+    card: focusedCard !== undefined,
+    shell: live.current.shell !== undefined || composer.current?.plainText.startsWith("!") === true,
+    turn: live.current.turn !== undefined
+  })
+
+  /** Undoes a Summary or worker tab row's changes after the confirm dialog. */
+  const undoRow = (row: Panels.Row | undefined, tab: string | undefined) => {
+    const current = live.current
+    if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy || runs.busy) {
+      return setStatus(Undo.message({ _tag: "Busy" }), "warning")
+    }
+    const found = row === undefined
+      ? { _tag: "NothingToUndo" as const }
+      : Undo.target(tab === undefined ? transcript : workspace.transcript(tab), row.id)
+    if ("_tag" in found) {
+      return setStatus(
+        Undo.message(found),
+        found._tag === "NothingToUndo" || found._tag === "AlreadyUndone" ? "warning" : "danger"
+      )
+    }
+    return setPicker({ kind: "undo", query: "", selected: 0, target: found, ...(tab === undefined ? {} : { tab }) })
   }
 
   const handleKey = (key: KeyEvent): void => {
     const { turn: running, shell: shellRunning, picker: open, menu: completing } = live.current
     const text = composer.current?.plainText ?? ""
-    // `?` on an empty composer opens the key panel. Any key closes it: esc and
-    // `?` only close, a listed key then acts, and other typing becomes `?` plus
-    // that character, so a message that starts with `?` is never lost.
     if (whichKeyRef.current) {
-      setWhichKeyOpen(false)
-      const binding = Keys.bindingFor(key, keyContext(), merged)
-      if (key.name === "escape" || binding?.id === "keys") return key.preventDefault()
-      const typed = key.sequence
-      if (binding === undefined && !key.ctrl && !key.meta && !key.option && typed.length === 1 && typed >= " " && typed !== "\x7f") {
-        key.preventDefault()
-        return setText(`?${typed}`)
-      }
+      if (Dispatch.whichKeyKey(key, Keys.bindingFor(key, keyContext(), merged), { close: () => setWhichKeyOpen(false), type: setText })) return
     } else if (key.name === "?" && text === "" && open === undefined && liveForm.current === undefined) {
       key.preventDefault()
       return setWhichKeyOpen(true)
@@ -1727,38 +1260,18 @@ export function App(props: AppProps) {
       return
     }
     if (activeInspection !== undefined && monitored !== undefined && open === undefined &&
-      !key.ctrl && !key.meta && !key.option &&
-      ["left", "right", "up", "down", "home", "end", "escape", "return", "[", "]"].includes(key.name)) {
-      key.preventDefault()
-      if (key.name === "escape" || key.name === "return") return followLive()
-      // Shift steps milestone to milestone, the way brackets do.
-      const name = key.shift && key.name === "left" ? "[" : key.shift && key.name === "right" ? "]" : key.name
-      const next = Scrubber.key(monitored.activity, activeInspection.seq, name)
-      if (next !== undefined) inspectActivity(next)
-      return
-    }
+      Dispatch.scrubberKey(key, monitored.activity, activeInspection.seq, { follow: followLive, inspect: inspectActivity })) return
     if (focusedCard !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
-      if (key.name === "return" || key.name === "kpenter") {
-        key.preventDefault()
-        setCardFocus(undefined)
-        const row = timeline.find((each) => each.key === focusedCard)
-        if (row?.item.kind !== "card") return
-        const id = row.item.panel.id
-        return perform({ kind: "open", surface: id.startsWith("flow:") ? id : `ui:${id}` })
-      }
-      if (key.name === "escape") {
-        key.preventDefault()
-        return setCardFocus(undefined)
-      }
-      if (key.name === "up" || key.name === "down" || key.name === "tab") {
-        key.preventDefault()
-        const back = key.name === "up" || (key.name === "tab" && key.shift)
-        const next = cardKeys[(cardKeys.indexOf(focusedCard) + (back ? -1 : 1) + cardKeys.length) % cardKeys.length]!
-        setCardFocus(next)
-        return reveal(next)
-      }
-      // Anything else goes back to the composer.
-      setCardFocus(undefined)
+      if (Dispatch.cardKey(key, focusedCard, cardKeys, {
+        focus: setCardFocus,
+        reveal,
+        open: () => {
+          const row = timeline.find((each) => each.key === focusedCard)
+          if (row?.item.kind !== "card") return
+          const id = row.item.panel.id
+          perform({ kind: "open", surface: id.startsWith("flow:") ? id : `ui:${id}` })
+        }
+      })) return
     } else if (
       key.name === "tab" && !key.shift && !key.ctrl && !key.meta && !key.option && text === "" &&
       open === undefined && completing === undefined && liveForm.current === undefined && cardKeys.length > 0 &&
@@ -1783,7 +1296,9 @@ export function App(props: AppProps) {
     const filling = liveForm.current
     if (filling !== undefined && open === undefined) {
       // Palette, summary and tab switching still work: they close the form and leave the run parked.
-      if (!(key.ctrl && ["k", "s", "left", "right", "]", "\\"].includes(key.name))) return formKey(key, filling)
+      if (!(key.ctrl && ["k", "s", "left", "right", "]", "\\"].includes(key.name))) {
+        return Dispatch.formKey(key, filling, { change: changeForm, schema: runs.schema, input: (id) => runs.get(id)?.input, fill: runs.fill })
+      }
       changeForm(undefined)
     }
     if (key.ctrl && key.name === "k") {
@@ -1810,9 +1325,7 @@ export function App(props: AppProps) {
       (key.ctrl && ["right", "left", "]", "\\"].includes(key.name)) || (key.name === "tab" && panelFocus && !key.shift)
     ) {
       key.preventDefault()
-      const index = surfaces.findIndex((tab) => tab.id === surface)
-      const back = key.name === "left" || key.name === "\\"
-      showTab(surfaces[(index + (back ? -1 : 1) + surfaces.length) % surfaces.length]!.id)
+      showTab(Surfaces.step(surfaces, surface, key.name === "left" || key.name === "\\"))
       return
     }
     // Contributed keys never shadow a built-in one (`Contributions` refused those), and a
@@ -1854,134 +1367,76 @@ export function App(props: AppProps) {
       return
     }
     if (panelFocus && panel !== undefined && open === undefined && !key.ctrl && !key.meta && !key.option) {
-      key.preventDefault()
-      if (key.name === "escape") {
-        setSurface("chat")
-        setPanelFocus(false)
-        return
-      }
-      if (key.name === "i") {
-        setPanelFocus(false)
-        return
-      }
-      if (key.name === "r" && surface.startsWith("flow:")) {
-        try {
-          runs.retry(surface.slice(5))
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : String(error), "warning")
-        }
-        return
-      }
-      if (key.name === "x" && surface.startsWith("flow:")) return runs.cancel(surface.slice(5))
-      if (key.name === "a" && surface.startsWith("flow:")) return openForm(surface.slice(5))
-      if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
-        const current = live.current
-        if (current.turn !== undefined || current.shell !== undefined || current.undoing !== undefined || workspace.busy || runs.busy) {
-          return setStatus(Undo.message({ _tag: "Busy" }), "warning")
-        }
-        const tab = surface.startsWith("tab:") ? surface.slice(4) : undefined
-        const row = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]
-        const found = row === undefined
-          ? { _tag: "NothingToUndo" as const }
-          : Undo.target(tab === undefined ? transcript : workspace.transcript(tab), row.id)
-        if ("_tag" in found) {
-          return setStatus(
-            Undo.message(found),
-            found._tag === "NothingToUndo" || found._tag === "AlreadyUndone" ? "warning" : "danger"
-          )
-        }
-        return setPicker({ kind: "undo", query: "", selected: 0, target: found, ...(tab === undefined ? {} : { tab }) })
-      }
-      if (workerTab !== undefined) {
-        const binding = Keys.bindingFor(key, "panel")
-        const action = binding === undefined ? undefined : Tabs.actionFor(binding.id, workerTab)
-        if (action !== undefined) return workerAction(workerTab, action.id)
-        if (key.name === "pageup" || key.name === "pagedown") return panelScroll.current?.(key.name === "pageup" ? -1 : 1)
-        // j/k pick the transcript row `u` undoes.
-        if (["j", "k", "up", "down"].includes(key.name)) return setNavigation((current) => Panels.navigate(current, key.name, panel.rows))
-        return
-      }
-      if (key.name === "a") {
-        const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
-        if (action === undefined) return
-        // An agent wrote this prompt: it goes to the agent as text, never through `!` or `/` parsing.
-        if ("prompt" in action) {
-          if (action.prompt.trim() === "") return
+      return Dispatch.panelKey(key, panel, { surface, navigation, worker: workerTab }, {
+        close: () => {
+          setSurface("chat")
           setPanelFocus(false)
-          return send(action.prompt.trim())
+        },
+        release: () => setPanelFocus(false),
+        retryRun: (id) => {
+          try {
+            runs.retry(id)
+          } catch (error) {
+            setStatus(error instanceof Error ? error.message : String(error), "warning")
+          }
+        },
+        cancelRun: runs.cancel,
+        fillRun: openForm,
+        undo: undoRow,
+        workerAction,
+        scroll: (direction) => panelScroll.current?.(direction),
+        navigate: setNavigation,
+        send: (prompt) => send(prompt),
+        perform
+      })
+    }
+    if (open !== undefined) {
+      return Dispatch.dialogKey(key, open, { rows: rows.length, composerFocused: composer.current?.focused === true }, {
+        close: () => setPicker(undefined),
+        select: (update) => setPicker((current) => current === undefined ? current : { ...current, selected: update(current.selected) }),
+        type: (typed) => setPicker((current) => current === undefined || current.kind === "undo" ? current : { ...current, query: current.query + typed, selected: 0 }),
+        pick: (index) => {
+          const row = rows[index]
+          if (row !== undefined) pick(open, row.value)
         }
-        return perform(action.action)
-      }
-      if (key.name === "pageup" || key.name === "pagedown") {
-        panelScroll.current?.(key.name === "pageup" ? -1 : 1)
-        return
-      }
-      setNavigation((current) => Panels.navigate(current, key.name, panel.rows))
-      return
+      })
     }
-    if (open !== undefined) return dialogKey(key, open)
-    if (completing !== undefined && menuKey(key, completing)) return
-    if (key.name === "escape") {
-      if (live.current.steered !== undefined) {
+    if (completing !== undefined && Dispatch.menuKey(key, completing, {
+      select: setMenuIndex,
+      dismiss: dismissMenu,
+      accept: (run) => accept(completing, live.current.menuIndex, run, (typed) => submit(false, typed))
+    })) return
+    Dispatch.composerKey(key, {
+      text,
+      steering: live.current.steered !== undefined,
+      turn: running === undefined ? undefined : {
+        stop: () => {
+          restoreQueued(running.steering.take())
+          running.handle.cancel()
+        }
+      },
+      shell: shellRunning,
+      history: history.current,
+      scroll: scroll.current
+    }, {
+      stopSteering: () => {
         setSteerTarget(undefined)
-        return setPanelFocus(true)
-      }
-      if (running !== undefined) {
-        restoreQueued(running.steering.take())
-        return running.handle.cancel()
-      }
-      if (shellRunning !== undefined) return shellRunning.cancel()
-      if (text.startsWith("!")) return setText("")
-      return
-    }
-    if (key.ctrl && key.name === "d") {
-      if (text === "") {
-        key.preventDefault()
-        quit()
-      }
-      return
-    }
-    if ((key.meta || key.option) && (key.name === "return" || key.name === "enter")) {
-      key.preventDefault()
-      return submit(true)
-    }
-    if ((key.meta || key.option) && key.name === "up") {
-      key.preventDefault()
-      return restoreQueued()
-    }
-    if (key.name === "tab" && key.shift) {
-      key.preventDefault()
-      const next = Editor.nextThinking(live.current.thinking)
-      setThinking(next)
-      setStatus(`Thinking level: ${next ?? "default"}`)
-      return
-    }
-    if (key.ctrl && key.name === "l") return setPicker({ kind: "model", query: "", selected: 0 })
-    if (key.ctrl && key.name === "p") return cycleModel(key.shift ? -1 : 1)
-    if (key.ctrl && key.name === "o") return setExpanded((value) => !value)
-    if (key.ctrl && key.name === "g") return void externalEditor()
-    if (key.shift && (key.name === "up" || key.name === "down")) {
-      key.preventDefault()
-      return scroll.current?.scrollBy(key.name === "up" ? -1 : 1)
-    }
-    if (key.name === "pageup") return scroll.current?.scrollBy(-0.5, "viewport")
-    if (key.name === "pagedown") return scroll.current?.scrollBy(0.5, "viewport")
-    // History only from an empty editor or while already browsing (pi's rule).
-    if (key.name === "up" && !key.ctrl && (text === "" || history.current.browsing)) {
-      const older = history.current.up(text)
-      if (older !== undefined) {
-        key.preventDefault()
-        setText(older)
-      }
-      return
-    }
-    if (key.name === "down" && !key.ctrl && history.current.browsing) {
-      const newer = history.current.down()
-      if (newer !== undefined) {
-        key.preventDefault()
-        setText(newer)
-      }
-    }
+        setPanelFocus(true)
+      },
+      setText: (next) => setText(next),
+      quit,
+      submit: (followUp) => submit(followUp),
+      restoreQueued: () => restoreQueued(),
+      nextThinking: () => {
+        const next = Editor.nextThinking(live.current.thinking)
+        setThinking(next)
+        setStatus(`Thinking level: ${next ?? "default"}`)
+      },
+      pickModel: () => setPicker({ kind: "model", query: "", selected: 0 }),
+      cycleModel,
+      toggleExpanded: () => setExpanded((value) => !value),
+      externalEditor: () => void externalEditor(renderer, setStatus)
+    })
   }
 
   useKeyboard(handleKey)
@@ -1991,7 +1446,6 @@ export function App(props: AppProps) {
   const label = model?.label ?? (seat.startsWith("replay:") ? `replay ${basename(seat)}` : seat)
   const bashMode = draft.startsWith("!")
   const window = props.contextWindow(seat)
-  const percent = window > 0 ? (transcript.usage.context / window) * 100 : 0
   useEffect(() => {
     let active = true
     setCompact(undefined)
@@ -2000,7 +1454,6 @@ export function App(props: AppProps) {
     })
     return () => { active = false }
   }, [props.host, transcript.usage.context, window, writer.current.file])
-  const usage = transcript.usage
   const activeTabs = snapshot.tabs.filter((tab) => Tabs.live(tab.status))
   const sideChat = focusMain && dimensions.width >= 120
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0 && (!focusMain || sideChat)
@@ -2025,45 +1478,12 @@ export function App(props: AppProps) {
       )
     ]
     : Keys.hintsFor(footerContext, merged)
-  const meter = {
-    context: transcript.contextAssessment?.outdated || transcript.contextAssessment?.irrelevant
-      ? `context: ${[
-        transcript.contextAssessment.outdated ? "outdated" : "",
-        transcript.contextAssessment.irrelevant ? "irrelevant" : ""
-      ].filter(Boolean).join(" + ")} · compact?  `
-      : "",
-    usage: `↑${Editor.tokens(usage.input)} ↓${Editor.tokens(usage.output)}${usage.cached === 0 ? "" : ` R${Editor.tokens(usage.cached)}`}`,
-    window: window > 0
-      ? `  ${percent.toFixed(1)}%/${Editor.tokens(window)}${compact === undefined ? "" : ` · compact ${Editor.tokens(compact)}`}`
-      : ""
-  }
+  const meter = AppView.meter(transcript, window, compact)
   // The hints get the row less its padding, the margins, the status items and the meter; the path gives way first.
   const hintColumns = width - 5 -
     statusItems.reduce((total, item) => total + Bun.stringWidth(item.text) + 2, 0) -
     Bun.stringWidth(meter.context + meter.usage + meter.window)
-  const toastRows = [
-    ...snapshot.tabs.filter((tab) =>
-      now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
-    ).map((tab) => ({
-      id: tab.id,
-      text: `${Tabs.style(tab.status, tick).glyph} ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
-      tone: tab.status === "failed" ? "danger" as const : "info" as const
-    })),
-    ...flowRuns.filter((run) =>
-      run.status === "input" || now - run.startedAt >= 300 && (run.endedAt === undefined || now - run.endedAt < 3000)
-    ).map((run) => ({
-      id: `flow:${run.id}`,
-      text: `${flowRunning(run) ? `${tick} ` : flowGlyph(run.status)}${run.flow} · ${run.status}`,
-      tone: run.status === "failed" ? "danger" as const : "info" as const
-    })),
-    ...(search?.status === "running" && now - search.startedAt >= 300
-      ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
-      : []),
-    ...(undoing !== undefined && now - undoing >= 300
-      ? [{ id: "undo", text: `${tick} Undoing`, tone: "info" as const }]
-      : []),
-    ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
-  ]
+  const toastRows = Toasts.rows({ tabs: snapshot.tabs, runs: flowRuns, approvals, search, undoing, toast, now, tick })
   const toastWidth = Math.min(60, mainWidth - 2)
   const toastHeight = Math.min(Math.floor(dimensions.height / 2), Math.max(1, toastRows.length * 3))
 
@@ -2166,75 +1586,19 @@ export function App(props: AppProps) {
           </box>
         )}
         {form === undefined ? null : (
-          <box style={{ border: ["left"], marginTop: 1, flexShrink: 0 }} borderColor={color.brand} customBorderChars={View.bar}>
-            <box style={{ paddingLeft: 2, paddingRight: 2, paddingTop: 1, paddingBottom: 1 }} backgroundColor={color.element}>
-              <text fg={color.text} wrapMode="none">{form.flow}</text>
-              {form.fields.map((field, index) => {
-                const value = form.draft[field.name]
-                const focused = index === form.focus
-                return (
-                  <box key={field.name} style={{ flexDirection: "row" }}>
-                    <text fg={focused ? color.brand : color.muted} wrapMode="none" style={{ width: 16, flexShrink: 0 }}>
-                      {field.label}
-                    </text>
-                    {focused && (field.kind === "text" || field.kind === "number")
-                      ? (
-                        <input
-                          focused
-                          value={value === undefined ? "" : String(value)}
-                          textColor={color.text}
-                          backgroundColor={color.surface}
-                          focusedBackgroundColor={color.surface}
-                          cursorColor={color.brand}
-                          style={{ flexGrow: 1 }}
-                          onInput={(text: string) => {
-                            const current = liveForm.current
-                            if (current !== undefined) {
-                              changeForm({ ...current, draft: { ...current.draft, [field.name]: text }, error: undefined })
-                            }
-                          }}
-                        />
-                      )
-                      : (
-                        <text fg={color.text} wrapMode="none">
-                          {field.kind === "boolean" ? (value === true ? "✓" : "✗") : value === undefined ? "" : String(value)}
-                        </text>
-                      )}
-                  </box>
-                )
-              })}
-              {form.error === undefined ? null : <text fg={color.danger}>{form.error}</text>}
-            </box>
-          </box>
+          <FlowFormView
+            form={form}
+            onField={(field, text) => {
+              const current = liveForm.current
+              if (current !== undefined) {
+                changeForm({ ...current, draft: { ...current.draft, [field]: text }, error: undefined })
+              }
+            }}
+          />
         )}
         {menu === undefined || panelFocus || form !== undefined ?
           null :
-          (
-            <box
-              style={{ border: ["left"], marginTop: 1, flexShrink: 0 }}
-              borderColor={color.element}
-              customBorderChars={View.bar}
-            >
-              <box style={{ paddingTop: 0 }} backgroundColor={color.element}>
-                <View.List
-                  rows={menu.items.map((item, index) => ({
-                    key: `${index}:${item.label}`,
-                    label: item.label,
-                    ...(item.hint === undefined ? {} : { hint: item.hint }),
-                    ...(item.detail === undefined ? {} : { detail: item.detail }),
-                    ...(menu.kind === "argument" &&
-                        (item.insert === `/model ${seat}` || item.insert === `/thinking ${thinking ?? "default"}`)
-                      ? { current: true }
-                      : {})
-                  }))}
-                  selected={menuIndex}
-                  height={Math.min(menuRows, Math.max(1, menu.items.length))}
-                  background={color.element}
-                  empty={menu.kind === "command" ? "No matching commands" : "No matches"}
-                />
-              </box>
-            </box>
-          )}
+          <CompletionMenu menu={menu} selected={menuIndex} seat={seat} thinking={thinking} />}
         {sideChat ? null : <View.ToastStack rows={toastRows} />}
         {approvals[0] === undefined ? null : (
           <View.Approval
@@ -2269,15 +1633,10 @@ export function App(props: AppProps) {
               backgroundColor={color.surface}
               focusedBackgroundColor={color.surface}
               cursorColor={color.brand}
-              keyBindings={composerKeys}
+              keyBindings={Composer.keys}
               onSubmit={() => submit(false)}
-              onContentChange={() => {
-                arming.current = Approvals.edited(arming.current, Date.now())
-                setDraft(composer.current?.plainText ?? "")
-                setCursor(composer.current?.cursorOffset ?? 0)
-                setMenuDismissed(false)
-              }}
-              onCursorChange={() => setCursor(composer.current?.cursorOffset ?? 0)}
+              onContentChange={onContentChange}
+              onCursorChange={onCursorChange}
               style={{ minHeight: 1, maxHeight: Math.max(6, Math.floor(dimensions.height / 3)) }}
             />
             <text style={{ marginTop: 1, marginBottom: 1 }}>
@@ -2295,40 +1654,26 @@ export function App(props: AppProps) {
             </text>
           </box>
         </box>
-        <box
-          style={{ flexDirection: "row", justifyContent: "space-between", height: 1, paddingLeft: 1, flexShrink: 0 }}
-        >
-          <box style={{ flexDirection: "row", flexShrink: 1, marginRight: 2 }}>
-            {/* The path gives way before the hints do. */}
-            <text wrapMode="none" style={{ flexShrink: 100, marginRight: 2 }}>
-              {working
-                ? (
-                  <>
-                    <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
-                    <span fg={color.faint}>{eta(turn.estimate, "running", turn.startedAt)}</span>
-                  </>
-                )
-                : (
-                  <span fg={color.faint}>
-                    {props.host.cwd.replace(homedir(), "~")}
-                    {props.branch === undefined ? "" : ` (${props.branch})`}
-                    {name === undefined ? "" : ` • ${name}`}
-                  </span>
-                )}
-            </text>
-            <View.KeyHints bindings={Keys.fit(footerHints, hintColumns, Bun.stringWidth)} />
-          </box>
-          <box style={{ flexDirection: "row", flexShrink: 0 }}>
-          <View.StatusItems items={statusItems} onSelect={(item) => item.action === undefined ? undefined : perform(item.action)} />
-          <text wrapMode="none" style={{ flexShrink: 0 }}>
-            {meter.context === "" ? null : <span fg={color.warning}>{meter.context}</span>}
-            <span fg={color.faint}>{meter.usage}</span>
-            {meter.window === "" ? null : (
-              <span fg={percent > 90 ? color.danger : percent > 70 ? color.warning : color.faint}>{meter.window}</span>
+        <StatusLine
+          lead={working
+            ? (
+              <>
+                <span fg={color.brand}>{tick} {Transcript.duration(now - turn.startedAt)}</span>
+                <span fg={color.faint}>{eta(turn.estimate, "running", turn.startedAt)}</span>
+              </>
+            )
+            : (
+              <span fg={color.faint}>
+                {props.host.cwd.replace(homedir(), "~")}
+                {props.branch === undefined ? "" : ` (${props.branch})`}
+                {name === undefined ? "" : ` • ${name}`}
+              </span>
             )}
-          </text>
-          </box>
-        </box>
+          hints={Keys.fit(footerHints, hintColumns, Bun.stringWidth)}
+          items={statusItems}
+          onItem={(item) => item.action === undefined ? undefined : perform(item.action)}
+          meter={meter}
+        />
       </box>
       </box>
       {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext, merged)} width={dimensions.width} height={dimensions.height} /> : null}
@@ -2339,63 +1684,17 @@ export function App(props: AppProps) {
         </box>
         : null}
       {picker === undefined ? null : (
-        <View.Dialog
-          title={picker.kind === "model" || picker.kind === "worker-model"
-            ? "Select model"
-            : picker.kind === "theme"
-            ? "Select theme"
-            : picker.kind === "flows"
-            ? "Flows"
-            : picker.kind === "agents"
-            ? "Agents"
-            : picker.kind === "filter"
-            ? "Filter chat"
-            : picker.kind === "palette"
-            ? parsedPalette?.mode === "text" && search?.truncated === true ? `Search · first ${Search.limit}` : "Search"
-            : picker.kind === "fork"
-            ? "Fork from message"
-            : picker.kind === "undo"
-            ? `Undo ${picker.target.paths.length === 1 ? picker.target.paths[0] : `${picker.target.paths.length} files`}?`
-            : "Resume session"}
+        <PickerDialog
+          title={Pickers.title(picker, parsedPalette?.mode === "text" && search?.truncated === true)}
+          query={picker.kind === "undo" ? undefined : picker.query}
+          onQuery={(query) =>
+            setPicker((current) => (current === undefined || current.kind === "undo" ? current : { ...current, query, selected: 0 }))}
+          rows={rows}
+          selected={picker.selected}
+          empty={Pickers.empty(picker, () => runs.failure()?.message ?? (runs.opening ? "Opening flows" : "No flows"), search?.status === "running")}
           width={Math.min(72, dimensions.width - 4)}
           height={dimensions.height}
-        >
-          {picker.kind === "undo" ? null : (
-          <box style={{ paddingLeft: 3, paddingRight: 3, marginBottom: 1 }}>
-            <input
-              focused
-              value={picker.query}
-              placeholder="Search"
-              placeholderColor={color.faint}
-              textColor={color.text}
-              backgroundColor={color.surface}
-              focusedBackgroundColor={color.surface}
-              cursorColor={color.brand}
-              onInput={(query: string) =>
-                setPicker((current) => (current === undefined || current.kind === "undo" ? current : { ...current, query, selected: 0 }))}
-            />
-          </box>
-          )}
-          <box style={{ paddingLeft: 2, paddingRight: 2 }}>
-            <View.List
-              rows={rows}
-              selected={picker.selected}
-              height={Math.min(rows.length, Math.max(3, Math.floor(dimensions.height / 2) - 6))}
-              background={color.surface}
-              empty={picker.kind === "resume"
-                ? "No sessions in this directory"
-                : picker.kind === "flows"
-                ? runs.failure()?.message ?? (runs.opening ? "Opening flows" : "No flows")
-                : picker.kind === "agents"
-                ? "No agents"
-                : picker.kind === "palette"
-                ? search?.status === "running" ? "Searching" : "No matches"
-                : picker.kind === "fork"
-                ? `No messages match "${picker.query}"`
-                : `No ${picker.kind} matches "${picker.query}"`}
-            />
-          </box>
-        </View.Dialog>
+        />
       )}
     </box>
   )

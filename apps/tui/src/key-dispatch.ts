@@ -1,0 +1,380 @@
+/**
+ * Key handling by layer. The app's `handleKey` tries the layers in the order
+ * `keys.ts` documents for its contexts; each layer here sees only its own
+ * state and the acts it may take. Every key a layer compares is registered
+ * in `keys.ts` (see `test/keys.test.ts`).
+ */
+import type { KeyEvent, ScrollBoxRenderable } from "@opentui/core"
+import type { Schema } from "effect"
+import type * as Activity from "./activity.ts"
+import type * as Complete from "./complete.ts"
+import type * as Editor from "./editor.ts"
+import type * as Extension from "./extension.ts"
+import * as Form from "./form.ts"
+import * as Keys from "./keys.ts"
+import * as Panels from "./panels.ts"
+import * as Scrubber from "./scrubber.ts"
+import * as Tabs from "./tabs.ts"
+import type { Tab } from "./workspace.ts"
+
+/** A flow run's inline form for its missing input. */
+export interface FlowForm {
+  readonly id: string
+  readonly flow: string
+  readonly fields: ReadonlyArray<Form.Field>
+  readonly draft: Record<string, Form.Value>
+  readonly focus: number
+  readonly error?: string
+}
+
+/** Which keys act right now, in the order `handleKey` tries them. */
+export const context = (state: {
+  readonly picker: boolean
+  readonly inspecting: boolean
+  readonly form: boolean
+  readonly approvals: boolean
+  /** The composer is empty. */
+  readonly empty: boolean
+  /** A panel shows and has the keys. */
+  readonly panel: boolean
+  readonly completion: boolean
+  readonly card: boolean
+  /** A `!` command runs, or the draft starts with `!`. */
+  readonly shell: boolean
+  readonly turn: boolean
+}): Keys.KeyContext => {
+  if (state.picker) return "picker"
+  if (state.inspecting) return "selection"
+  if (state.form) return "form"
+  if (state.approvals && state.empty) return "approval"
+  if (state.panel) return "panel"
+  if (state.completion) return "completion"
+  if (state.card) return "card"
+  if (state.shell) return "shell"
+  if (state.turn) return "working"
+  return "composer"
+}
+
+/** A printable key with no modifier: typing, not a command. */
+const typing = (key: KeyEvent): string | undefined => {
+  const typed = key.sequence
+  return !key.ctrl && !key.meta && !key.option && typed.length === 1 && typed >= " " && typed !== "\x7f" ? typed : undefined
+}
+
+/**
+ * The `?` popup. Any key closes it: esc and `?` only close, a listed key then
+ * acts, and other typing becomes `?` plus that character, so a message that
+ * starts with `?` is never lost. True when the key was consumed.
+ */
+export const whichKeyKey = (key: KeyEvent, binding: Keys.Binding | undefined, act: {
+  readonly close: () => void
+  readonly type: (text: string) => void
+}): boolean => {
+  act.close()
+  if (key.name === "escape" || binding?.id === "keys") {
+    key.preventDefault()
+    return true
+  }
+  const typed = typing(key)
+  if (binding === undefined && typed !== undefined) {
+    key.preventDefault()
+    act.type(`?${typed}`)
+    return true
+  }
+  return false
+}
+
+/** The activity scrubber while a step is selected; true when the key was consumed. */
+export const scrubberKey = (key: KeyEvent, activity: Activity.Activity, seq: number, act: {
+  readonly follow: () => void
+  readonly inspect: (seq: number) => void
+}): boolean => {
+  if (key.ctrl || key.meta || key.option ||
+    !["left", "right", "up", "down", "home", "end", "escape", "return", "[", "]"].includes(key.name)) return false
+  key.preventDefault()
+  if (key.name === "escape" || key.name === "return") {
+    act.follow()
+    return true
+  }
+  // Shift steps milestone to milestone, the way brackets do.
+  const name = key.shift && key.name === "left" ? "[" : key.shift && key.name === "right" ? "]" : key.name
+  const next = Scrubber.key(activity, seq, name)
+  if (next !== undefined) act.inspect(next)
+  return true
+}
+
+/**
+ * A focused chat card: enter opens it, esc leaves it, up, down and tab walk
+ * the cards. Anything else unfocuses it and goes on to the composer; false then.
+ */
+export const cardKey = (key: KeyEvent, focused: string, cards: ReadonlyArray<string>, act: {
+  readonly focus: (key: string | undefined) => void
+  readonly open: () => void
+  readonly reveal: (key: string) => void
+}): boolean => {
+  if (key.name === "return" || key.name === "kpenter") {
+    key.preventDefault()
+    act.focus(undefined)
+    act.open()
+    return true
+  }
+  if (key.name === "escape") {
+    key.preventDefault()
+    act.focus(undefined)
+    return true
+  }
+  if (key.name === "up" || key.name === "down" || key.name === "tab") {
+    key.preventDefault()
+    const back = key.name === "up" || (key.name === "tab" && key.shift)
+    const next = cards[(cards.indexOf(focused) + (back ? -1 : 1) + cards.length) % cards.length]!
+    act.focus(next)
+    act.reveal(next)
+    return true
+  }
+  // Anything else goes back to the composer.
+  act.focus(undefined)
+  return false
+}
+
+/** Keys while a flow form is open; its focused input takes the typing. */
+export const formKey = (key: KeyEvent, open: FlowForm, act: {
+  readonly change: (next: FlowForm | undefined) => void
+  readonly schema: (id: string) => Schema.Top | undefined
+  readonly input: (id: string) => Record<string, unknown> | undefined
+  readonly fill: (id: string, payload: Record<string, unknown>) => void
+}) => {
+  const field = open.fields[open.focus]
+  const move = (step: number) => {
+    key.preventDefault()
+    if (open.fields.length > 0) act.change({ ...open, focus: (open.focus + step + open.fields.length) % open.fields.length })
+  }
+  if (key.name === "escape") {
+    // Closes only; the run stays parked (`a` in its tab reopens, `x` stops it).
+    key.preventDefault()
+    return act.change(undefined)
+  }
+  if ((key.name === "tab" && !key.shift) || key.name === "down") return move(1)
+  if ((key.name === "tab" && key.shift) || key.name === "up") return move(-1)
+  if (key.name === "space" && field?.kind === "boolean") {
+    key.preventDefault()
+    return act.change({ ...open, draft: { ...open.draft, [field.name]: open.draft[field.name] !== true }, error: undefined })
+  }
+  if ((key.name === "left" || key.name === "right") && field?.kind === "select" && field.options !== undefined) {
+    key.preventDefault()
+    const options = field.options
+    const at = options.indexOf(open.draft[field.name] ?? "")
+    const next = options[(at + (key.name === "left" ? -1 : 1) + options.length) % options.length]!
+    return act.change({ ...open, draft: { ...open.draft, [field.name]: next }, error: undefined })
+  }
+  if (key.name === "return" || key.name === "kpenter") {
+    key.preventDefault()
+    const schema = act.schema(open.id)
+    const input = act.input(open.id)
+    if (schema === undefined || input === undefined) return act.change(undefined)
+    const result = Form.payload(schema, open.fields, input, open.draft)
+    if ("error" in result) return act.change({ ...open, error: result.error })
+    act.change(undefined)
+    act.fill(open.id, result.payload)
+  }
+}
+
+/** Keys while a dialog is open: its filter input takes the typing, these move and pick. */
+export const dialogKey = (key: KeyEvent, open: { readonly kind: string; readonly selected: number }, state: {
+  readonly rows: number
+  /** The composer still has focus: the dialog's input has not mounted yet. */
+  readonly composerFocused: boolean
+}, act: {
+  readonly close: () => void
+  readonly select: (update: (selected: number) => number) => void
+  readonly type: (text: string) => void
+  /** Picks the row at `index`, if there is one. */
+  readonly pick: (index: number) => void
+}) => {
+  const { rows } = state
+  const move = (step: number) => {
+    key.preventDefault()
+    if (rows > 0) act.select((selected) => (selected + step + rows) % rows)
+  }
+  if (key.name === "escape") return act.close()
+  // Typing that arrives before the dialog's input mounts would reach the still-focused composer.
+  const typed = typing(key)
+  if (state.composerFocused && open.kind !== "undo" && typed !== undefined) {
+    key.preventDefault()
+    return act.type(typed)
+  }
+  if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
+  if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
+  if (key.name === "pageup") return move(-Math.min(10, open.selected))
+  if (key.name === "pagedown") return move(Math.min(10, rows - 1 - open.selected))
+  if (key.name === "return" || key.name === "kpenter") {
+    key.preventDefault()
+    act.pick(open.selected)
+  }
+}
+
+/** Keys while the completion menu is open; true when the menu took the key. */
+export const menuKey = (key: KeyEvent, open: Complete.Completion, act: {
+  readonly select: (update: (index: number) => number) => void
+  readonly dismiss: () => void
+  /** Inserts the selected item; `run` also submits a whole command. */
+  readonly accept: (run: boolean) => void
+}): boolean => {
+  const count = open.items.length
+  const move = (step: number) => {
+    key.preventDefault()
+    if (count > 0) act.select((index) => (index + step + count) % count)
+    return true
+  }
+  if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
+  if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
+  if (key.name === "escape") {
+    key.preventDefault()
+    act.dismiss()
+    return true
+  }
+  if (count === 0) return false
+  if (key.name === "tab" && !key.shift) {
+    key.preventDefault()
+    act.accept(false)
+    return true
+  }
+  if ((key.name === "return" || key.name === "kpenter") && !key.shift && !key.meta && !key.option) {
+    key.preventDefault()
+    act.accept(true)
+    return true
+  }
+  return false
+}
+
+/** Keys while a panel has focus. Every unmodified key stops here. */
+export const panelKey = (key: KeyEvent, panel: Panels.Panel, state: {
+  readonly surface: string
+  readonly navigation: Panels.Navigation
+  /** The shown worker tab, whose actions are its own keys. */
+  readonly worker: Tab | undefined
+}, act: {
+  /** Back to the chat. */
+  readonly close: () => void
+  /** Keys back to the composer, the panel still shown. */
+  readonly release: () => void
+  readonly retryRun: (id: string) => void
+  readonly cancelRun: (id: string) => void
+  readonly fillRun: (id: string) => void
+  /** Undo the selected row's changes, in a worker's own transcript when `tab` is set. */
+  readonly undo: (row: Panels.Row | undefined, tab: string | undefined) => void
+  readonly workerAction: (tab: Tab, action: Tabs.ActionId) => void
+  readonly scroll: (direction: number) => void
+  readonly navigate: (update: (current: Panels.Navigation) => Panels.Navigation) => void
+  /** An agent-written prompt, sent as text. */
+  readonly send: (prompt: string) => void
+  readonly perform: (action: Extension.Action) => void
+}) => {
+  const { surface, navigation } = state
+  key.preventDefault()
+  if (key.name === "escape") return act.close()
+  if (key.name === "i") return act.release()
+  if (key.name === "r" && surface.startsWith("flow:")) return act.retryRun(surface.slice(5))
+  if (key.name === "x" && surface.startsWith("flow:")) return act.cancelRun(surface.slice(5))
+  if (key.name === "a" && surface.startsWith("flow:")) return act.fillRun(surface.slice(5))
+  if (key.name === "u" && (surface === "summary" || surface.startsWith("tab:"))) {
+    return act.undo(panel.rows[Math.min(navigation.selected, panel.rows.length - 1)], surface.startsWith("tab:") ? surface.slice(4) : undefined)
+  }
+  if (state.worker !== undefined) {
+    const binding = Keys.bindingFor(key, "panel")
+    const action = binding === undefined ? undefined : Tabs.actionFor(binding.id, state.worker)
+    if (action !== undefined) return act.workerAction(state.worker, action.id)
+    if (key.name === "pageup" || key.name === "pagedown") return act.scroll(key.name === "pageup" ? -1 : 1)
+    // j/k pick the transcript row `u` undoes.
+    if (["j", "k", "up", "down"].includes(key.name)) return act.navigate((current) => Panels.navigate(current, key.name, panel.rows))
+    return
+  }
+  if (key.name === "a") {
+    const action = panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action
+    if (action === undefined) return
+    // An agent wrote this prompt: it goes to the agent as text, never through `!` or `/` parsing.
+    if ("prompt" in action) {
+      if (action.prompt.trim() === "") return
+      act.release()
+      return act.send(action.prompt.trim())
+    }
+    return act.perform(action.action)
+  }
+  if (key.name === "pageup" || key.name === "pagedown") return act.scroll(key.name === "pageup" ? -1 : 1)
+  act.navigate((current) => Panels.navigate(current, key.name, panel.rows))
+}
+
+/** The composer's own keys, once no dialog, menu or panel took the key. */
+export const composerKey = (key: KeyEvent, state: {
+  readonly text: string
+  readonly steering: boolean
+  readonly turn: { readonly stop: () => void } | undefined
+  readonly shell: { readonly cancel: () => void } | undefined
+  readonly history: Editor.History
+  readonly scroll: ScrollBoxRenderable | null
+}, act: {
+  /** Back to the steered worker's tab. */
+  readonly stopSteering: () => void
+  readonly setText: (text: string) => void
+  readonly quit: () => void
+  readonly submit: (followUp: boolean) => void
+  readonly restoreQueued: () => void
+  readonly nextThinking: () => void
+  readonly pickModel: () => void
+  readonly cycleModel: (step: number) => void
+  readonly toggleExpanded: () => void
+  readonly externalEditor: () => void
+}) => {
+  const { text, history, scroll } = state
+  if (key.name === "escape") {
+    if (state.steering) return act.stopSteering()
+    if (state.turn !== undefined) return state.turn.stop()
+    if (state.shell !== undefined) return state.shell.cancel()
+    if (text.startsWith("!")) return act.setText("")
+    return
+  }
+  if (key.ctrl && key.name === "d") {
+    if (text === "") {
+      key.preventDefault()
+      act.quit()
+    }
+    return
+  }
+  if ((key.meta || key.option) && (key.name === "return" || key.name === "enter")) {
+    key.preventDefault()
+    return act.submit(true)
+  }
+  if ((key.meta || key.option) && key.name === "up") {
+    key.preventDefault()
+    return act.restoreQueued()
+  }
+  if (key.name === "tab" && key.shift) {
+    key.preventDefault()
+    return act.nextThinking()
+  }
+  if (key.ctrl && key.name === "l") return act.pickModel()
+  if (key.ctrl && key.name === "p") return act.cycleModel(key.shift ? -1 : 1)
+  if (key.ctrl && key.name === "o") return act.toggleExpanded()
+  if (key.ctrl && key.name === "g") return act.externalEditor()
+  if (key.shift && (key.name === "up" || key.name === "down")) {
+    key.preventDefault()
+    return scroll?.scrollBy(key.name === "up" ? -1 : 1)
+  }
+  if (key.name === "pageup") return scroll?.scrollBy(-0.5, "viewport")
+  if (key.name === "pagedown") return scroll?.scrollBy(0.5, "viewport")
+  // History only from an empty editor or while already browsing (pi's rule).
+  if (key.name === "up" && !key.ctrl && (text === "" || history.browsing)) {
+    const older = history.up(text)
+    if (older !== undefined) {
+      key.preventDefault()
+      act.setText(older)
+    }
+    return
+  }
+  if (key.name === "down" && !key.ctrl && history.browsing) {
+    const newer = history.down()
+    if (newer !== undefined) {
+      key.preventDefault()
+      act.setText(newer)
+    }
+  }
+}
