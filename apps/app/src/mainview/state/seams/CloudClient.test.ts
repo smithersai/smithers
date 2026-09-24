@@ -132,3 +132,29 @@ describe("cloud transport", () => {
     expect(await empty.send("DELETE", "/repos/1")).toMatchObject({ body: null, status: 204 })
   })
 })
+
+
+for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+  test(`${method} cancels its pending transport with the caller signal`, async () => {
+    const started = Promise.withResolvers<void>()
+    const controller = new AbortController()
+    let aborted = false
+    const client = createCloudClient({ baseUrl: "", http: (_path, init) => {
+      started.resolve()
+      return new Promise<Response>((resolve, reject) => {
+        const timeout = setTimeout(() => resolve(Response.json({ saved: true })), 100)
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true
+          clearTimeout(timeout)
+          reject(init.signal?.reason)
+        }, { once: true })
+      })
+    } })
+    const pending = client.send(method, "/repos/will/flows", method === "DELETE" ? undefined : { name: "test" }, undefined, controller.signal)
+    await started.promise
+    controller.abort(new DOMException("Cancelled", "AbortError"))
+    const result = await pending
+    expect(aborted).toBe(true)
+    expect(result).toMatchObject({ refusal: { fault: "infra" } })
+  })
+}

@@ -78,6 +78,7 @@ export const createCloudClient = (ctx: Pick<SeamContext, "http" | "baseUrl">) =>
         url(path),
         method === "GET" ? (signal === undefined ? undefined : { signal }) : {
           method,
+          ...(signal === undefined ? {} : { signal }),
           ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
         }
       )
