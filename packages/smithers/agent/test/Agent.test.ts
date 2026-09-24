@@ -11,6 +11,7 @@ import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
+import * as DurableClock from "@smthrs/flow/DurableClock"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Cell from "@smthrs/harness/Cell"
 import type * as CellCalls from "@smthrs/harness/CellCalls"
@@ -53,7 +54,7 @@ import {
 } from "effect"
 import type * as Crypto from "effect/Crypto"
 import * as TestClock from "effect/testing/TestClock"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as Budget from "../src/Budget.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
@@ -764,6 +765,85 @@ describe("capacity seat chain", () => {
     const parks = events.filter((event) => event._tag === "model-parked")
     expect(parks).toHaveLength(2)
     expect(parks[1]!.wakeAt - parks[0]!.wakeAt).toBeGreaterThan(60_000)
+  })
+
+  it("waits twice when two parks use the same wake time", async () => {
+    const names: string[] = []
+    const originalSleep = DurableClock.sleep
+    const sleep = vi.spyOn(DurableClock, "sleep").mockImplementation((options) => {
+      names.push(options.name)
+      return originalSleep(options)
+    })
+    try {
+      const events: AgentEvent.AgentEvent[] = []
+      const firstPark = Deferred.makeUnsafe<void>()
+      const secondPark = Deferred.makeUnsafe<void>()
+      const settled = Deferred.makeUnsafe<Outcome>()
+      const completed = recordedCells([], ["ctx.done('done')"])
+      let calls = 0
+      let parksSeen = 0
+      const model = Model.make({
+        stream: (request) =>
+          Stream.unwrap(Effect.gen(function*() {
+            if (++calls === 3) return completed.stream(request)
+            yield* TestClock.setTime(1_000)
+            return Stream.fail(
+              new ModelError({
+                code: "rate_limited",
+                message: "same reset",
+                resetAtEpochMillis: 1_001,
+                httpStatus: 429
+              })
+            )
+          }))
+      })
+      const outcome = await Effect.gen(function*() {
+        const engine = yield* FlowRuntime.FlowRuntime
+        const scope = yield* Effect.scope
+        yield* TestClock.setTime(1_000)
+        yield* engine.register(driveFlow, () =>
+          Effect.onExit(
+            collect({
+              model,
+              registry: registryOf([]),
+              sink: events,
+              observe: (event) =>
+                event._tag === "model-parked"
+                  ? Effect.sync(() => ++parksSeen).pipe(
+                    Effect.flatMap((count) => Deferred.succeed(count === 1 ? firstPark : secondPark, undefined))
+                  )
+                  : Effect.void
+            }),
+            (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+          ).pipe(Scope.provide(scope)))
+        yield* Effect.forkScoped(engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true }))
+        yield* Deferred.await(firstPark)
+        yield* TestClock.adjust("1 millis")
+        yield* Deferred.await(secondPark)
+        yield* Effect.yieldNow
+        expect(events.filter((event) => event._tag === "model-unparked")).toHaveLength(1)
+        yield* TestClock.adjust("1 millis")
+        return yield* Deferred.await(settled)
+      }).pipe(
+        Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.scoped,
+        Effect.runPromise
+      )
+      expect(outcome._tag).toBe("completed")
+      expect(calls).toBe(3)
+      expect(events.filter((event) => event._tag === "model-parked").map((event) => event.wakeAt)).toEqual([
+        1_001,
+        1_001
+      ])
+      expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
+        .toEqual(["model-parked", "model-unparked", "model-parked", "model-unparked"])
+      expect(names).toHaveLength(2)
+      expect(new Set(names).size).toBe(2)
+    } finally {
+      sleep.mockRestore()
+    }
   })
 })
 
