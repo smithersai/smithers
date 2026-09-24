@@ -1,6 +1,6 @@
 import { scenario } from "./coverage/types"
 import { authenticatedTest } from "./auth-permissions/profile"
-import { awaitBoot, expect, productUrl, realApi } from "./support/test"
+import { awaitBoot, expect, productUrl, realApi, reloadApp } from "./support/test"
 import { finishFirstVisit } from "./support/first-visit"
 import { runSlash } from "./issues/local"
 import { withOwnedRepository, pushLocalFixture } from "./portable/owned-repository"
@@ -65,7 +65,7 @@ authenticatedTest("an owned issue remains after a reload of the same product win
     await finishFirstVisit(page)
     await runSlash(page, `/issues.view ${issue.number} ${repo.fullName}`)
     await expect(page.getByRole("heading", { name: `${title} #${issue.number}` })).toBeVisible()
-    await page.reload({ waitUntil: "domcontentloaded" })
+    await reloadApp(page)
     await runSlash(page, `/issues.view ${issue.number} ${repo.fullName}`)
     await expect(page.getByRole("heading", { name: `${title} #${issue.number}` })).toBeVisible()
     const read = await realApi(page, request, "GET", `${repo.path}/issues/${issue.number}`)
