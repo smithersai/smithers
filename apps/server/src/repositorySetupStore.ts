@@ -6,7 +6,8 @@ import { DurableStorage, namespaceCall, type NativeNamespace } from "./DurableSt
 import { readBoundedJson, readJsonOrUndefined } from "./Http"
 import { refuse } from "./Responses"
 
-export class SetupStoreError extends Data.TaggedError("SetupStoreError")<{ readonly message: string; readonly status?: number; readonly code?: WorkerFailureCode }> {}
+/** `cause` is the storage or body failure behind a generic answer, for the log line only. */
+export class SetupStoreError extends Data.TaggedError("SetupStoreError")<{ readonly message: string; readonly status?: number; readonly code?: WorkerFailureCode; readonly cause?: unknown }> {}
 export const SetupPlanSchema = z.object({ planId: z.string().min(1), flowId: z.literal("repository/setup"), digest: z.string().min(1),
   executionDigest: z.string().min(1), envelope: z.object({ capabilities: z.array(z.string()), flows: z.array(z.string()),
     budget: z.object({ tokens: z.number().int().positive().max(200_000), milliseconds: z.number().int().positive().max(7_200_000) }), host: z.string().optional() }) })
@@ -217,7 +218,7 @@ export const setupRequestsLayer = (namespace: NativeNamespace): Layer.Layer<Setu
         message: typeof (body as { message?: unknown })?.message === "string" ? (body as { message: string }).message : "Setup storage is unavailable" }))
     }
     return body
-  }).pipe(Effect.catch(error => Effect.fail(error instanceof SetupStoreError ? error : new SetupStoreError({ message: "Setup storage is unavailable" }))))
+  }).pipe(Effect.catch(error => Effect.fail(error instanceof SetupStoreError ? error : new SetupStoreError({ message: "Setup storage is unavailable", cause: error }))))
   const recordCall = (login: string, command: Command) => call(login, command).pipe(Effect.flatMap(body => Effect.gen(function* () {
     if ((body as { record?: unknown })?.record == null) return undefined
     const parsed = SetupRecordSchema.safeParse((body as { record: unknown }).record)

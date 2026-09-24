@@ -4,6 +4,7 @@ import { callGateway, cloudTokenRefusalMessage, ensureGateway, fetchCloudToken, 
 import { decodeGatewayResponse, encodeGatewayRequest, GATEWAY_PROCEDURE_MOUNTS, NON_REPLAYABLE_GATEWAY_PROCEDURES } from "./gatewayRpc"
 import { discardBody, fetchWithDeadline, readBoundedJson, readBoundedText, type Transport } from "./Http"
 import { ServerConfig } from "./Config"
+import { logSeamFailure } from "./RefusalLog"
 import { SetupPlanSchema, SetupRequests, type SetupInstant, type SetupRecord } from "./repositorySetupStore"
 
 class SetupExecutionError extends Data.TaggedError("SetupExecutionError")<{ readonly message: string; readonly settles?: boolean }> {}
@@ -218,7 +219,7 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
   const receipt: SetupReceipt = { ...record.receipt, phase: "failed", updatedAt: Date.now(), error: message }
   yield* requests.update(login, record, { ...record, observationError: undefined, receipt,
     result: { requestId, revision: record.input.revision, digest: record.input.digest, receipt } })
-}).pipe(Effect.catch(() => Effect.void))))
+}).pipe(Effect.catch(unrecorded => Effect.sync(() => logSeamFailure("repository setup observation", unrecorded))))))
 
 /** Normal admission alone may provision, plan, approve and start its durable request. */
 export const advanceRepositorySetup = (login: string, requestId: string) => executeRepositorySetup(login, requestId, false)

@@ -11,6 +11,7 @@ import type {
 import { DurableStorage } from "./DurableStorage"
 import type { DurableStorageShape } from "./DurableStorage"
 import { StorageFailure } from "./Failures"
+import { logSeamFailure } from "./RefusalLog"
 import { readBody } from "./Responses"
 import { sha256Hex } from "./turnLimit"
 
@@ -297,7 +298,11 @@ export const turnJournalRequest = (request: Request, audit?: TurnJournalAudit): 
     const parsed = AgentTurnJournalCommandSchema.safeParse(body)
     if (!parsed.success) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
     return Response.json(yield* executeTurnJournal(parsed.data, audit))
-  }).pipe(Effect.catch(failure => Effect.succeed(Response.json(
-    { status: "error", code: failure._tag === "JournalRefusal" ? failure.reason : "storage_failed" },
-    { status: failure._tag !== "JournalRefusal" ? 503 : failure.reason === "forbidden" ? 403 : failure.reason === "not-found" ? 404 : failure.reason === "retired" ? 410 : failure.reason === "corrupt" ? 500 : 409 }
-  ))))
+  }).pipe(Effect.catch(failure => Effect.sync(() => {
+    // A caller's refusal is the caller's; storage and corruption are this object's.
+    if (failure._tag !== "JournalRefusal" || failure.reason === "corrupt") logSeamFailure("turn journal object", failure)
+    return Response.json(
+      { status: "error", code: failure._tag === "JournalRefusal" ? failure.reason : "storage_failed" },
+      { status: failure._tag !== "JournalRefusal" ? 503 : failure.reason === "forbidden" ? 403 : failure.reason === "not-found" ? 404 : failure.reason === "retired" ? 410 : failure.reason === "corrupt" ? 500 : 409 }
+    )
+  })))

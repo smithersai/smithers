@@ -17,6 +17,7 @@ import { BodyUnreadable } from "./Failures"
 import type { UpstreamFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readJsonOrUndefined, readText, TransportLive } from "./Http"
 import type { Transport } from "./Http"
+import { logSeamFailure } from "./RefusalLog"
 import { upstreamProse } from "./Responses"
 import { pendingSetupRequests, repositorySetupStorageRequest, setupRequestsLayer, SetupStorageMutex, setupStorageMutexLayer } from "./repositorySetupStore"
 import { advanceRepositorySetup } from "./repositorySetupExecution"
@@ -271,8 +272,8 @@ const resolveRecord = (
       provisionAndStore(login, repo, workspaceId, force, requiredCapability).pipe(
         // A detached leader must complete the join even when malformed
         // upstream data or configuration causes an unexpected defect.
-        Effect.catchCause(() => Effect.sync(() => {
-          console.error("gateway resolution failed: UnexpectedFailure")
+        Effect.catchCause((cause) => Effect.sync(() => {
+          logSeamFailure("gateway resolution", cause)
           return { status: "unavailable", detail: "The gateway resolution failed. Try again." } as const
         })),
         // Cleared only once the record write inside the task has settled, so

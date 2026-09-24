@@ -13,6 +13,7 @@ import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
 import { requireTurnSession } from "./identity"
+import { logSeamFailure } from "./RefusalLog"
 import { json, refuse } from "./Responses"
 
 /** Cloud pins accept only canonical public HTTPS DNS origins, on port 443. */
@@ -60,11 +61,22 @@ const publicResult = (result: unknown): Response => {
   response.headers.set("cache-control", "no-store")
   return response
 }
-class VaultFailure extends Data.TaggedError("VaultFailure")<{}> {}
-const unavailable = () => new VaultFailure()
-// Never let a cause carrying a platform exception escape to Boundary's logger.
+/**
+ * Every vault failure. `reason` is fixed words or an inner failure's tag and
+ * nothing else: it is what the logs read, and a platform exception's message
+ * or a request body could carry a credential.
+ */
+class VaultFailure extends Data.TaggedError("VaultFailure")<{ readonly reason: string }> {}
+const unavailable = (reason: string) => new VaultFailure({ reason })
+// Never let a cause carrying a platform exception escape to a logger: keep its tag only.
 const safe = <A, E, R>(work: Effect.Effect<A, E, R>): Effect.Effect<A, VaultFailure, R> => work.pipe(
-  Effect.catchCause(cause => Cause.hasInterruptsOnly(cause) ? Effect.interrupt : Effect.fail(unavailable()))
+  Effect.catchCause(cause => {
+    if (Cause.hasInterruptsOnly(cause)) return Effect.interrupt
+    const failure = Cause.squash(cause)
+    if (failure instanceof VaultFailure) return Effect.fail(failure)
+    const tag = typeof failure === "object" && failure !== null && "_tag" in failure && typeof failure._tag === "string" ? failure._tag : "Defect"
+    return Effect.fail(unavailable(tag))
+  })
 )
 const pinAllowed = (name: string, origin: string) => cloudCredentialOrigin(origin) === origin &&
   (MODEL_CREDENTIALS.find(row => row.name === name)?.origins as readonly string[] | undefined)?.includes(origin) !== false
@@ -85,7 +97,7 @@ const vaultRequest = (request: Request, mutex: Semaphore.Semaphore): Effect.Effe
   return yield* mutex.withPermit(Effect.gen(function* () {
     const raw = yield* storage.get("model-vault:v1")
     const document = raw === undefined ? empty(command.login) : decodeDocument(raw, command.login)
-    if (!document) return yield* Effect.fail(unavailable())
+    if (!document) return yield* Effect.fail(unavailable("document undecodable"))
     if (command.op === "read") return publicResult(document)
     const recorded = document.receipts.find(row => row.id === command.id)
     if (recorded) return publicResult(recorded.name === command.name && recorded.action === command.action &&
@@ -101,11 +113,14 @@ const vaultRequest = (request: Request, mutex: Semaphore.Semaphore): Effect.Effe
     const next: VaultDocument = { ...document, entries: [...document.entries.filter(row => row.name !== command.name), entry],
       receipts: [...document.receipts, { id: command.id, name: command.name, action: command.action,
         ...(command.action === "enroll" ? { origin: command.origin } : {}), result }].slice(-128) }
-    if (next.entries.length > 62 || new TextEncoder().encode(JSON.stringify(next)).length > 120_000) return yield* Effect.fail(unavailable())
+    if (next.entries.length > 62 || new TextEncoder().encode(JSON.stringify(next)).length > 120_000) return yield* Effect.fail(unavailable("document over its limit"))
     yield* storage.put("model-vault:v1", next)
     return publicResult(result)
   }))
-})).pipe(Effect.catch(() => Effect.succeed(new Response(null, { status: 503 }))))
+})).pipe(Effect.catch(failure => Effect.sync(() => {
+  logSeamFailure("model vault object", failure)
+  return new Response(null, { status: 503 })
+})))
 
 export class AccountModelVault {
   private readonly mutex = Semaphore.makeUnsafe(1)
@@ -121,11 +136,11 @@ interface VaultStore {
 export class ModelVault extends Context.Service<ModelVault, VaultStore>()("smithers-server/ModelVault") {}
 export const modelVaultLayer = (namespace: NativeNamespace | undefined): Layer.Layer<ModelVault> => Layer.succeed(ModelVault, {
   available: namespace !== undefined,
-  call: command => namespace === undefined ? Effect.fail(unavailable()) : safe(Effect.gen(function* () {
+  call: command => namespace === undefined ? Effect.fail(unavailable("vault not bound")) : safe(Effect.gen(function* () {
     const response = yield* namespaceCall("model vault", namespace, command.login, new Request("https://model-vault.internal/vault", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command)
     }))
-    if (!response.ok) return yield* Effect.fail(unavailable())
+    if (!response.ok) return yield* Effect.fail(unavailable(`the vault object answered ${response.status}`))
     return yield* readBoundedJson(response, 128 * 1024)
   }))
 })
@@ -139,18 +154,18 @@ const encryptionKey = (config: ServerConfigShape): Effect.Effect<CryptoKey | und
   if (!/^[A-Za-z0-9+/]{43}=$/.test(value)) return undefined
   const material = yield* Effect.try(() => bytes(value))
   if (material.length !== 32) return undefined
-  return yield* Effect.tryPromise({ try: () => crypto.subtle.importKey("raw", material, "AES-GCM", false, ["encrypt", "decrypt"]), catch: unavailable })
+  return yield* Effect.tryPromise({ try: () => crypto.subtle.importKey("raw", material, "AES-GCM", false, ["encrypt", "decrypt"]), catch: () => unavailable("key import") })
 })).pipe(Effect.catch(() => Effect.succeed(undefined)))
 const seal = (key: CryptoKey, login: string, name: string, origin: string, value: Redacted.Redacted<string>) => safe(Effect.gen(function* () {
   const nonce = crypto.getRandomValues(new Uint8Array(12))
   const ciphertext = yield* Effect.tryPromise({ try: () => crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData: aad(login, name, origin), tagLength: 128 }, key,
-    new TextEncoder().encode(Redacted.value(value))), catch: unavailable })
+    new TextEncoder().encode(Redacted.value(value))), catch: () => unavailable("seal") })
   return { nonce: encoded(nonce), ciphertext: encoded(ciphertext) }
 }))
 const unseal = (key: CryptoKey, login: string, entry: Entry) => safe(Effect.gen(function* () {
-  if (!entry.sealed) return yield* Effect.fail(unavailable())
+  if (!entry.sealed) return yield* Effect.fail(unavailable("sealed value missing"))
   const { nonce, ciphertext } = entry.sealed
-  const value = yield* Effect.tryPromise({ try: () => crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(nonce), additionalData: aad(login, entry.name, entry.origin), tagLength: 128 }, key, bytes(ciphertext)), catch: unavailable })
+  const value = yield* Effect.tryPromise({ try: () => crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes(nonce), additionalData: aad(login, entry.name, entry.origin), tagLength: 128 }, key, bytes(ciphertext)), catch: () => unavailable("unseal") })
   return Redacted.make(new TextDecoder("utf-8", { fatal: true }).decode(value))
 }))
 
@@ -189,7 +204,7 @@ export const handleModelCredential = (request: Request, login: string, receiptId
   if (!key || !store.available) return publicResult(receiptId === undefined ? failedModelCredential({ code: "vault_unavailable" }, "infra") : { state: "unknown" })
   if (!loginSchema.safeParse(login).success) return refuse("sign_in_required", "Sign in to use this credential.")
   const document = decodeDocument(yield* store.call({ op: "read", login }), login)
-  if (!document) return yield* Effect.fail(unavailable())
+  if (!document) return yield* Effect.fail(unavailable("document undecodable"))
   if (receiptId !== undefined) {
     const refusal = yield* sameModelAccount(request, login)
     if (refusal) return refusal
@@ -223,7 +238,7 @@ export const handleModelCredential = (request: Request, login: string, receiptId
   const refusal = yield* sameModelAccount(request, login)
   if (refusal) return refusal
   const result = ModelCredentialResultSchema.safeParse(yield* store.call({ op: "write", login, id: command.requestId, name: command.name, action: command.action, origin, sealed }))
-  if (!result.success) return yield* Effect.fail(unavailable())
+  if (!result.success) return yield* Effect.fail(unavailable("write result invalid"))
   const stale = yield* sameModelAccount(request, login)
   return stale ?? publicResult(result.data)
 })).pipe(Effect.catch(() => Effect.succeed(publicResult(failedModelCredential({ code: "storage_unavailable" })))))

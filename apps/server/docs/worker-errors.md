@@ -20,6 +20,17 @@ the fiber's exit with `responseFromExit` in `src/Boundary.ts`.
 This boundary covers response creation; errors after a streaming response
 has been returned remain the stream handler's responsibility.
 
+## Seam failure log
+
+A failure that answers no request writes one JSON line,
+`{ "event": "worker_seam_failure", "seam": …, "cause": … }`
+(`logSeamFailure` in `src/RefusalLog.ts`), and Workers Logs
+(`wrangler.jsonc` `observability`) keeps it: a detached gateway resolution,
+a background repository-setup write, and a turn journal or model vault
+Durable Object's own storage failure. `cause` holds the failure's tag, its
+operation, seam or reason, and its cause's message, cut at 500 characters;
+the model vault's causes are fixed words or a tag and never a message.
+
 `UPSTREAM_TIMEOUT_MS` bounds upstream response headers, defaulting to 20,000
 milliseconds when unset or invalid. The model turn and stream routes, admin
 forwards and health reads, identity and billing proxies, and gateway calls

@@ -291,19 +291,23 @@ describe("account credential vault through the Worker router", () => {
     expect(answer.text).not.toContain(JSON.stringify(value).slice(1, -1))
   })
 
-  test("a corrupt vault and storage exceptions are typed, silent failures, never success or deployment fallback", async () => {
+  test("a corrupt vault and storage exceptions are typed failures logged by class, never by value or as success", async () => {
     const f = fixture(), logged: unknown[][] = []
     const spies = ["log", "warn", "error"].map(method => spyOn(console, method as "error").mockImplementation((...args) => { logged.push(args) }))
+    const seamLines = () => logged.map(([line]) => JSON.parse(String(line)))
     try {
       await f.mutate("enroll")
       const store = f.stores.get("alice")!, key = [...store.data.keys()][0]!
       store.data.set(key, { value: VALUE })
       expect((await f.mutate("rotate")).body.failure.code).toBe("storage_unavailable")
+      expect(seamLines()).toEqual([{ event: "worker_seam_failure", seam: "model vault object", cause: "VaultFailure(document undecodable)" }])
       expect((await f.request("/api/model/test", "alice", { model })).body.failure).toEqual({ code: "credential_missing", credential: "PERSONAL" })
+      logged.length = 0
       const broken = new AccountModelVault({ storage: { ...memoryStorage(), get: async () => { throw new Error(VALUE) } } })
       const response = await broken.fetch(new Request("https://model-vault.internal/vault", { method: "POST", body: JSON.stringify({ op: "read", login: "alice" }) }))
       expect(response.status).toBe(503)
       expect(await response.text()).not.toContain(VALUE)
+      expect(seamLines()).toEqual([{ event: "worker_seam_failure", seam: "model vault object", cause: "VaultFailure(StorageFailure)" }])
       expect((await broken.fetch(new Request("https://model-vault.internal/debug"))).status).toBe(404)
       expect(JSON.stringify([logged, f.responses])).not.toContain(VALUE)
       expect(f.calls).toHaveLength(0)

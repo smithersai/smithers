@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { initialSetup, setupCandidate, type SetupHostInput, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import worker from "./index"
 import { setupPointerKey, type SetupRecord } from "./repositorySetupStore"
+import type { NativeNamespace } from "./DurableStorage"
 import { memoryDurableObjects } from "./memoryDurableObjects"
 
 const originalFetch = globalThis.fetch
@@ -197,6 +198,58 @@ test("a non-JSON or oversized workspace answer is a visible selection error, not
   expect(stored().observationError).toBe("Cloud returned an unreadable repository workspace")
   expect(stored().workspaceId).toBeUndefined()
   expect(t.launched.size).toBe(0)
+})
+
+const captureJsonLines = () => {
+  const originals = { warn: console.warn, error: console.error }
+  const lines: Array<Record<string, unknown>> = []
+  const capture = (original: (...args: unknown[]) => void) => (...args: unknown[]) => {
+    const parsed = typeof args[0] === "string" && args[0].startsWith("{") ? JSON.parse(args[0]) as Record<string, unknown> : undefined
+    if (parsed === undefined) original(...args)
+    else lines.push(parsed)
+  }
+  console.warn = capture(originals.warn)
+  console.error = capture(originals.error)
+  return {
+    of: (event: string) => lines.filter(line => line.event === event),
+    clear: () => { lines.length = 0 },
+    restore: () => { console.warn = originals.warn; console.error = originals.error }
+  }
+}
+
+/**
+ * The setup store's Durable Object, failing each command `fail` selects. It is
+ * installed before the first request: the Worker keeps its bindings per env.
+ */
+const failingSetupStore = (t: Awaited<ReturnType<typeof fixture>>) => {
+  const inner: NativeNamespace = t.env.GATEWAY_SESSIONS
+  const state: { fail: (action: string) => Error | undefined } = { fail: () => undefined }
+  t.env.GATEWAY_SESSIONS = {
+    idFromName: name => inner.idFromName(name),
+    get: id => ({ fetch: async request => {
+      const failure = new URL(request.url).pathname === "/repository-setup"
+        ? state.fail((await request.clone().json() as { action: string }).action) : undefined
+      return failure === undefined ? inner.get(id).fetch(request) : Promise.reject(failure)
+    } })
+  }
+  return state
+}
+
+test("an observation failure whose record write also fails is logged, never swallowed", async () => {
+  const t = await fixture()
+  const store = failingSetupStore(t)
+  await t.send("POST", "evaluate", "alice", t.input); await t.settle()
+  store.fail = action => action === "update" ? new Error("SQLITE_FULL") : undefined
+  t.options.readError = true
+  const lines = captureJsonLines()
+  try {
+    await t.read(); await t.settle()
+    expect(lines.of("worker_seam_failure")).toContainEqual({
+      event: "worker_seam_failure", seam: "repository setup observation",
+      cause: "SetupStoreError: StorageFailure(repository-setup): Error: SQLITE_FULL"
+    })
+    expect(JSON.stringify(lines.of("worker_seam_failure"))).not.toContain("synthetic-alice")
+  } finally { lines.restore() }
 })
 
 test("a cached old gateway cannot admit setup before live capability proof or move the pinned workspace", async () => {

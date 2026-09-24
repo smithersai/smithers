@@ -16,7 +16,7 @@
  * unless a test binds a Durable Object double. The route layer above this
  * seam (`/api/workflow/*`) is proven beside the router.
  */
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -616,14 +616,21 @@ describe("wave 11 — provision-or-resume (§5)", () => {
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(2)
   })
 
-  test("an unexpected provisioning defect settles the resolution instead of stranding its waiters", async () => {
+  test("an unexpected provisioning defect settles the resolution and logs its cause instead of stranding its waiters", async () => {
     const { calls, fetch } = relay()
-    const outcome = await run(ensureGateway("will", "will/mvp").pipe(
-      Effect.timeoutOrElse({ duration: "250 millis", orElse: () => Effect.succeed("timed out" as const) }),
-      Effect.provide(seam(fetch, { config: { cloudApiBaseUrl: "invalid origin" } }))
-    ))
-    expect(outcome).toEqual({ status: "unavailable", detail: "The gateway resolution failed. Try again." })
-    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+    const logged: Array<unknown> = []
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => { logged.push(line) })
+    try {
+      const outcome = await run(ensureGateway("will", "will/mvp").pipe(
+        Effect.timeoutOrElse({ duration: "250 millis", orElse: () => Effect.succeed("timed out" as const) }),
+        Effect.provide(seam(fetch, { config: { cloudApiBaseUrl: "invalid origin" } }))
+      ))
+      expect(outcome).toEqual({ status: "unavailable", detail: "The gateway resolution failed. Try again." })
+      expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
+      expect(logged.map((line) => JSON.parse(String(line)))).toEqual([{
+        event: "worker_seam_failure", seam: "gateway resolution", cause: expect.stringMatching(/^TypeError: .*URL/)
+      }])
+    } finally { spy.mockRestore() }
   })
 
   test("callGateway sets the bearer the browser cannot, and joins the relay's PATH base", async () => {

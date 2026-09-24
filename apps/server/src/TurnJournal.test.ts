@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import type { AgentTurnCursor, AgentTurnJournalHead } from "@smthrs/rpc/AgentTurnJournal"
 import { memoryStorage, storageLayer } from "./DurableStorage"
@@ -184,6 +184,23 @@ describe("durable turn output", () => {
     // Missing/corrupt output must remain erasable through the authenticated head.
     expect((await call(reopened, { operation: "retire", ...auth })).body.status).toBe("retired")
     expect([...storage.data.keys()]).toEqual([TURN_JOURNAL_HEAD_KEY])
+  })
+
+  test("a storage exception answers 503 and logs its operation and cause; a caller's refusal logs nothing", async () => {
+    const logged: string[] = []
+    const spy = spyOn(console, "error").mockImplementation((line: unknown) => { logged.push(String(line)) })
+    try {
+      const broken = new TurnCancelRegistry({ storage: { ...memoryStorage(), get: async () => { throw new Error("SQLITE_FULL") } } })
+      expect((await read(broken)).status).toBe(503)
+      expect(logged.map(line => JSON.parse(line))).toEqual([{
+        event: "worker_seam_failure", seam: "turn journal object",
+        cause: `StorageFailure(storage.get ${TURN_JOURNAL_HEAD_KEY}): Error: SQLITE_FULL`
+      }])
+      logged.length = 0
+      const { object } = await create()
+      expect((await call(object, { ...acceptance, ownerHash: "5".repeat(64) })).status).toBe(403)
+      expect(logged).toEqual([])
+    } finally { spy.mockRestore() }
   })
 
   test("acceptance schedules retention before its first write; the alarm deletes every batch page, then the head", async () => {
