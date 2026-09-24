@@ -13,11 +13,47 @@ import { Effect, Fiber, Layer } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
+import { afterAll, beforeAll } from "vitest"
 import * as ProcessTable from "../../../../testing/src/ProcessTable.ts"
 import * as NodeHost from "../src/NodeHost.ts"
+
+// Windows needs a real executable; the SEA runs each adjacent fixture in
+// the invocation's process, preserving cancellation and descendant ownership.
+let launcherDirectory: string | undefined
+let launcher: string | undefined
+beforeAll(() => {
+  if (process.platform !== "win32") return
+  launcherDirectory = mkdtempSync(join(tmpdir(), "flows-jj-launcher-"))
+  const main = join(launcherDirectory, "main.cjs")
+  const config = join(launcherDirectory, "sea.json")
+  launcher = join(launcherDirectory, "jj.exe")
+  writeFileSync(main, "const file=process.execPath+'.cjs';require('node:module').createRequire(file)(file)")
+  writeFileSync(
+    config,
+    JSON.stringify({ main, output: launcher, disableExperimentalSEAWarning: true, execArgvExtension: "none" })
+  )
+  execFileSync(process.execPath, ["--build-sea", config], { timeout: 60_000 })
+}, 60_000)
+afterAll(() => {
+  if (launcherDirectory !== undefined) rmSync(launcherDirectory, { recursive: true, force: true })
+})
+const quote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
+const writeJj = (directory: string, body: string): string => {
+  const executable = join(directory, process.platform === "win32" ? "jj.exe" : "jj")
+  const script = `${executable}.cjs`
+  writeFileSync(script, `if(process.argv.includes('--version')){process.stdout.write('jj 0.39.0\\n')}else{${body}}`)
+  if (launcher !== undefined) copyFileSync(launcher, executable)
+  else {
+    writeFileSync(executable, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(script)} "$@"\n`)
+    chmodSync(executable, 0o755)
+  }
+  return executable
+}
+const groupOf = (pid: number) => process.platform === "win32" ? null : pid
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
@@ -68,14 +104,10 @@ const waitForFile = async (path: string): Promise<string> => {
 describe("NodeHost.layerContained", () => {
   it.live("binds ordinary jj operations to the requested repository root", () =>
     Effect.gen(function*() {
-      const directory = mkdtempSync(join(tmpdir(), "flows-node-host-bound-jj-"))
-      writeFileSync(
-        join(directory, "jj"),
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"jj 0.39.0\"; exit 0; fi\npwd\n"
-      )
-      chmodSync(join(directory, "jj"), 0o755)
+      const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "flows-node-host-bound-jj-")))
+      writeJj(directory, "process.stdout.write(process.cwd())")
       const previousPath = process.env["PATH"]
-      process.env["PATH"] = `${directory}:${previousPath ?? ""}`
+      process.env["PATH"] = `${directory}${delimiter}${previousPath ?? ""}`
 
       try {
         const status = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(
@@ -83,7 +115,7 @@ describe("NodeHost.layerContained", () => {
           Effect.scoped
         )
 
-        expect(status.trim()).toBe(realpathSync(directory))
+        expect(status.trim()).toBe(realpathSync.native(directory))
       } finally {
         process.env["PATH"] = previousPath
         rmSync(directory, { recursive: true, force: true })
@@ -101,12 +133,12 @@ describe("NodeHost.layerContained", () => {
         const spawner = yield* ChildProcessSpawner
         // Every other host service still comes out of the same layer.
         yield* FileSystem.FileSystem
-        const handle = yield* spawner.spawn(ChildProcess.make("sleep", ["30"]))
+        const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, ["-e", "setInterval(()=>{},1000)"]))
         return { pid: handle.pid as number, live: yield* ledger.live }
       }).pipe(Effect.provide(host), Effect.scoped)
 
       expect(observed.live).toEqual([
-        expect.objectContaining({ pid: observed.pid, pgid: observed.pid, commandDigest: "sleep" })
+        expect.objectContaining({ pid: observed.pid, pgid: groupOf(observed.pid), commandDigest: process.execPath })
       ])
       // The scope closed with the fiber, so the process is gone and the
       // ledger no longer claims it.
@@ -125,7 +157,10 @@ describe("NodeHost.layerContained", () => {
    */
   it.live("records the real process group even when a caller claims another platform", () =>
     Effect.gen(function*() {
-      const spoofed = { graceMs: 300, platform: "win32" } as NodeHost.ContainedOptions
+      const spoofed = {
+        graceMs: 300,
+        platform: process.platform === "win32" ? "linux" : "win32"
+      } as NodeHost.ContainedOptions
       for (
         const build of [
           () => NodeHost.layerContained(spoofed),
@@ -136,12 +171,12 @@ describe("NodeHost.layerContained", () => {
         const host = build().pipe(Layer.provide(Layer.succeed(ProcessLedger.ProcessLedger)(ledger)))
         const observed = yield* Effect.gen(function*() {
           const spawner = yield* ChildProcessSpawner
-          const handle = yield* spawner.spawn(ChildProcess.make("sleep", ["30"]))
+          const handle = yield* spawner.spawn(ChildProcess.make(process.execPath, ["-e", "setInterval(()=>{},1000)"]))
           return { pid: handle.pid as number, live: yield* ledger.live }
         }).pipe(Effect.provide(host), Effect.scoped)
 
         expect(observed.live).toEqual([
-          expect.objectContaining({ pid: observed.pid, pgid: observed.pid })
+          expect.objectContaining({ pid: observed.pid, pgid: groupOf(observed.pid) })
         ])
         expect(yield* Effect.promise(() => waitForExit(observed.pid, 2_000))).toBe(true)
       }
@@ -154,12 +189,8 @@ describe("NodeHost.layerContained", () => {
       // Under containment the host builds jj over its OWN spawner, and this is
       // the observable difference: the invocation shows up in the ledger like
       // any other child.
-      const directory = mkdtempSync(join(tmpdir(), "flows-contained-jj-"))
-      writeFileSync(
-        join(directory, "jj"),
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo \"jj 0.39.0\"; exit 0; fi\npwd\n"
-      )
-      chmodSync(join(directory, "jj"), 0o755)
+      const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "flows-contained-jj-")))
+      const executable = writeJj(directory, "process.stdout.write(process.cwd())")
       const previousPath = process.env["PATH"]
       process.env["PATH"] = directory
 
@@ -178,10 +209,10 @@ describe("NodeHost.layerContained", () => {
 
         const status = yield* Effect.flatMap(Jj, (jj) => jj.status()).pipe(Effect.provide(host), Effect.scoped)
 
-        expect(status.trim()).toBe(realpathSync(directory))
+        expect(status.trim()).toBe(realpathSync.native(directory))
         // Both the startup version probe and status use the pinned binary and
         // contained spawner; neither may escape the ledger.
-        expect(recorded).toEqual([join(directory, "jj"), join(directory, "jj")])
+        expect(recorded).toEqual([executable, executable])
         // The invocation finished, so the record was retired with it.
         expect(yield* ledger.live).toEqual([])
       } finally {
@@ -197,19 +228,22 @@ describe("NodeHost.layerContained", () => {
       // `SIGTERM`, or that left something running behind it, is contained by
       // the host's policy like any other child instead of being a process
       // nothing on the machine can account for.
-      const directory = mkdtempSync(join(tmpdir(), "flows-contained-jj-cancel-"))
+      const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "flows-contained-jj-cancel-")))
       const marker = join(directory, "flows-jj-cancel-shim")
       const pidFile = join(directory, "background.pid")
-      writeFileSync(marker, "#!/bin/sh\nwhile true; do sleep 0.2; done\n")
-      chmodSync(marker, 0o755)
-      writeFileSync(
-        join(directory, "jj"),
-        `#!/bin/sh\nif [ "$1" = "--version" ]; then echo "jj 0.39.0"; exit 0; fi\ntrap "" TERM\n${marker} & echo $! > ${pidFile}\nwait\n`
+      writeFileSync(marker, "process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000)")
+      writeJj(
+        directory,
+        `
+        process.on('SIGTERM',()=>{});
+        const child=require('node:child_process').spawn(${JSON.stringify(process.execPath)},[${JSON.stringify(marker)}],
+          {stdio:['ignore','ignore','ignore','ipc']});
+        child.once('message',()=>require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid)));
+        setInterval(()=>{},1000);`
       )
-      chmodSync(join(directory, "jj"), 0o755)
       const previousPath = process.env["PATH"]
       // Prepended, not replaced: the survivor scan runs `ps`.
-      process.env["PATH"] = `${directory}:${previousPath ?? ""}`
+      process.env["PATH"] = `${directory}${delimiter}${previousPath ?? ""}`
 
       try {
         const graceMs = 400
@@ -231,7 +265,9 @@ describe("NodeHost.layerContained", () => {
         // The background process is the one nothing held a handle for, and
         // `trap "" TERM` means only the escalation could have ended it.
         expect(yield* Effect.promise(() => waitForNoSurvivor(marker, graceMs + 1_000))).toEqual([])
-        expect(Date.now() - before).toBeGreaterThanOrEqual(graceMs)
+        // Windows terminates SIGTERM targets unconditionally. POSIX must
+        // preserve the requested grace before escalating stubborn children.
+        if (process.platform !== "win32") expect(Date.now() - before).toBeGreaterThanOrEqual(graceMs)
         expect(yield* ledger.live).toEqual([])
       } finally {
         process.env["PATH"] = previousPath
