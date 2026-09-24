@@ -1645,7 +1645,7 @@ func TestReceivePackFailsWhenImportRefsFails(t *testing.T) {
 		t.Fatalf("mkdir git dir: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("push-data"))
+	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("0000"))
 	req.Header.Set("Authorization", validAuth())
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
 	req.Header.Set("Accept", "application/x-git-receive-pack-result")
@@ -1705,7 +1705,7 @@ func TestReceivePackPushHooksUseAcceptedRefDiff(t *testing.T) {
 		t.Fatalf("mkdir git dir: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("push-data"))
+	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("0000"))
 	req.Header.Set("Authorization", validAuth())
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
 	req.Header.Set("Accept", "application/x-git-receive-pack-result")

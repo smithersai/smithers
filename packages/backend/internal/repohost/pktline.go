@@ -80,17 +80,9 @@ func PeekReceivePackRequest(r io.Reader) (ReceivePackRequest, io.Reader, error) 
 			return ReceivePackRequest{}, io.MultiReader(&buf, r), fmt.Errorf("read pkt-line length: %w", err)
 		}
 
-		pktLen := 0
-		for _, b := range pktLenBuf {
-			pktLen <<= 4
-			switch {
-			case b >= '0' && b <= '9':
-				pktLen |= int(b - '0')
-			case b >= 'a' && b <= 'f':
-				pktLen |= int(b-'a') + 10
-			default:
-				return ReceivePackRequest{}, io.MultiReader(&buf, r), fmt.Errorf("invalid pkt-line hex: %q", pktLenBuf)
-			}
+		pktLen, ok := parsePktLen(pktLenBuf)
+		if !ok {
+			return ReceivePackRequest{}, io.MultiReader(&buf, r), fmt.Errorf("invalid pkt-line hex: %q", pktLenBuf)
 		}
 
 		if pktLen == 0 {
@@ -173,20 +165,7 @@ func PeekReceivePackUpdate(r io.Reader) (ReceivePackUpdate, io.Reader, error) {
 			return ReceivePackUpdate{}, io.MultiReader(&buf, r), nil
 		}
 
-		pktLen := 0
-		valid := true
-		for _, b := range pktLenBuf {
-			pktLen <<= 4
-			switch {
-			case b >= '0' && b <= '9':
-				pktLen |= int(b - '0')
-			case b >= 'a' && b <= 'f':
-				pktLen |= int(b-'a') + 10
-			default:
-				valid = false
-			}
-		}
-
+		pktLen, valid := parsePktLen(pktLenBuf)
 		if !valid {
 			// Not a valid pkt-line; preserve stream and return empty.
 			return ReceivePackUpdate{}, io.MultiReader(&buf, r), fmt.Errorf("invalid pkt-line hex: %q", pktLenBuf)
@@ -227,4 +206,25 @@ func PeekReceivePackUpdate(r io.Reader) (ReceivePackUpdate, io.Reader, error) {
 		// Non-flush packet but doesn't match expected format.
 		return ReceivePackUpdate{}, io.MultiReader(&buf, r), nil
 	}
+}
+
+// parsePktLen decodes a 4-byte pkt-line length. It accepts upper- and
+// lower-case hex like git's hexval: a stream git applies must parse here too,
+// or the policy peek would forward it unchecked.
+func parsePktLen(hex []byte) (int, bool) {
+	n := 0
+	for _, b := range hex {
+		n <<= 4
+		switch {
+		case b >= '0' && b <= '9':
+			n |= int(b - '0')
+		case b >= 'a' && b <= 'f':
+			n |= int(b-'a') + 10
+		case b >= 'A' && b <= 'F':
+			n |= int(b-'A') + 10
+		default:
+			return 0, false
+		}
+	}
+	return n, true
 }

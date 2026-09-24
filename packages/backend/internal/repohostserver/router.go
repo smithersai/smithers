@@ -433,8 +433,9 @@ type forkRepoRequest struct {
 }
 
 // forkRepo copies a source repository's on-disk data to a new destination path.
-// It acquires a read-lock on the source (no writes during copy) and creates the
-// destination directory hierarchy before performing a recursive file copy.
+// It write-locks both the source and the destination for the whole copy, so
+// clones and ref advertisements of the source wait until the fork finishes.
+// It creates the destination directory hierarchy before the recursive copy.
 func (s *Server) forkRepo(w http.ResponseWriter, r *http.Request) error {
 	done := s.metrics.StartOperation("ForkRepo")
 	defer done()
@@ -822,27 +823,27 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	// workspace's head ref; every other write under the prefix is refused
 	// before git sees the pack. This is the last line behind the API and
 	// SSH checks, so a bypassed proxy still cannot forge a workspace head.
-	// The API and SSH front doors fail closed on a malformed command list;
-	// here a stream that does not parse carries no ref update git could
-	// apply either, so it is forwarded verbatim for git to reject.
-	commands, peeked, peekErr := repohost.PeekReceivePackCommands(requestBody)
-	if peekErr == nil {
-		if msg := repohost.ReservedRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id")); msg != "" {
-			return forbidden(msg)
-		}
-	}
-	requestBody = readCloserWithBody(peeked, requestBody)
-	// Arm an idle read deadline while streaming the push body into git: a
+	// Like those front doors it fails closed: a command list the peek cannot
+	// read (over the size cap, or malformed) may still be one git applies.
+	//
+	// Arm an idle read deadline for the whole push body, the peek included: a
 	// stalled caller must not hold the repository write lock and a git
 	// subprocess until the TCP connection dies. The deadline is cleared before
 	// the response is written so it cannot leak into connection reuse.
 	rc := http.NewResponseController(w)
 	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
+	commands, peeked, peekErr := repohost.PeekReceivePackCommands(&idleDeadlineBody{rc: rc, r: requestBody})
+	if peekErr != nil {
+		return badRequest("malformed receive-pack command list")
+	}
+	if msg := repohost.ReservedRefViolation(commands, r.Header.Get("X-Smithers-Workspace-Id")); msg != "" {
+		return forbidden(msg)
+	}
 	// receive-pack responses are small (sideband status lines only), so we
 	// buffer them here. We must hold the full response in memory until after
 	// jj ref import and push hooks so we can still return an HTTP error if the
 	// git subprocess itself fails before any bytes are written to the client.
-	body, err := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", &idleDeadlineBody{rc: rc, r: requestBody})
+	body, err := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", readCloserWithBody(peeked, requestBody))
 	gitErr := err
 
 	// git has applied the ref updates. A path-restricted push is authorized
@@ -878,22 +879,13 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	s.warmGitRefs(repoPath)
 
 	if shouldDispatchPushHooks {
-		if afterRefs == nil {
-			afterRefs, err = listGitRefs(r.Context(), gitDir)
-		}
-		if err != nil {
-			if s.logger != nil {
-				s.logger.Warn("failed to snapshot git refs after receive-pack", "owner", owner, "repo", repo, "error", err)
-			}
-		} else {
-			payloads := pushHookPayloadsFromRefDiff(beforeRefs, afterRefs, owner, repo, pushHookSenderFromHeaders(r.Header))
-			if len(payloads) > 0 {
-				s.background.Add(1)
-				go func(payloads []PushHookPayload) {
-					defer s.background.Done()
-					deliverPushHooks(s.httpClient, s.config, s.logger, payloads)
-				}(payloads)
-			}
+		payloads := pushHookPayloadsFromRefDiff(beforeRefs, afterRefs, owner, repo, pushHookSenderFromHeaders(r.Header))
+		if len(payloads) > 0 {
+			s.background.Add(1)
+			go func(payloads []PushHookPayload) {
+				defer s.background.Done()
+				deliverPushHooks(s.httpClient, s.config, s.logger, payloads)
+			}(payloads)
 		}
 	}
 

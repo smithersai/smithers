@@ -859,39 +859,12 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 	if _, taskScoped := middleware.RunnerTaskTokenFromContext(ctx); taskScoped {
 		return pkgerrors.Forbidden("task-scoped credentials cannot complete tasks")
 	}
-	if middleware.WorkflowRunFromContext(ctx) != nil && !middleware.IsSharedAgentToken(ctx) {
+	// Only the shared runner token may complete a task. It carries no workflow
+	// run, so ownership is the runner id: MarkWorkflowTaskDone settles only a
+	// task assigned to input.RunnerID.
+	if middleware.WorkflowRunFromContext(ctx) != nil {
 		return pkgerrors.Forbidden("workflow credentials cannot complete tasks")
 	}
-	if err := requireRunnerTaskCredential(ctx, input.TaskID, input.RunnerID); err != nil {
-		return err
-	}
-	releaseRunnerLease := true
-
-	// Enforce callback token scope: verify the task belongs to the workflow run
-	// bound to the agent token before marking it done. This prevents a runner
-	// authenticated for run A from completing a task owned by run B.
-	if run := middleware.WorkflowRunFromContext(ctx); run != nil {
-		task, err := s.queries.GetWorkflowTaskForRunner(ctx, input.TaskID)
-		if err != nil {
-			if stdErrors.Is(err, pgx.ErrNoRows) {
-				workflowRunID, terminalErr := getTerminalRunnerTaskRunID(ctx, s.queries, input)
-				if stdErrors.Is(terminalErr, pgx.ErrNoRows) {
-					return pkgerrors.Conflict("task not running or not assigned to this runner")
-				}
-				if terminalErr != nil {
-					return pkgerrors.Internal("failed to fetch task")
-				}
-				if workflowRunID != run.ID {
-					return pkgerrors.Forbidden("task does not belong to the authorized workflow run")
-				}
-			} else {
-				return pkgerrors.Internal("failed to fetch task")
-			}
-		} else if task.WorkflowRunID != run.ID {
-			return pkgerrors.Forbidden("task does not belong to the authorized workflow run")
-		}
-	}
-
 	if s.requireTransactions {
 		if _, ok := s.queries.(interface {
 			BeginTx(context.Context) (pgx.Tx, error)
@@ -904,7 +877,7 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 		if txErr != nil {
 			return pkgerrors.Internal("failed to begin task completion transaction")
 		}
-		return s.completeTaskWithTransaction(ctx, tx, txQueries, input, status, releaseRunnerLease)
+		return s.completeTaskWithTransaction(ctx, tx, txQueries, input, status)
 	}
 
 	workflowRunID, err := s.queries.MarkWorkflowTaskDone(ctx, db.MarkWorkflowTaskDoneParams{
@@ -918,15 +891,13 @@ func (s *runnerService) CompleteTask(ctx context.Context, input RunnerCompleteTa
 	})
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return acknowledgeTerminalRunnerTask(ctx, s.queries, input, releaseRunnerLease)
+			return acknowledgeTerminalRunnerTask(ctx, s.queries, input)
 		}
 		return pkgerrors.Internal("failed to complete task")
 	}
 	finalizeTaskStep(ctx, s.queries, workflowRunID, input.TaskID, status)
-	if releaseRunnerLease {
-		if err := clearTerminalRunnerOwnershipAndRelease(ctx, s.queries, input); err != nil {
-			return err
-		}
+	if err := clearTerminalRunnerOwnershipAndRelease(ctx, s.queries, input); err != nil {
+		return err
 	}
 
 	run, runErr := s.queries.GetWorkflowRunByRunID(ctx, workflowRunID)
@@ -1033,15 +1004,12 @@ func clearTerminalRunnerOwnershipAndRelease(ctx context.Context, queries RunnerQ
 	return nil
 }
 
-func acknowledgeTerminalRunnerTask(ctx context.Context, queries RunnerQuerier, input RunnerCompleteTaskInput, releaseRunnerLease bool) error {
+func acknowledgeTerminalRunnerTask(ctx context.Context, queries RunnerQuerier, input RunnerCompleteTaskInput) error {
 	if _, err := getTerminalRunnerTaskRunID(ctx, queries, input); err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
 			return pkgerrors.Conflict("task not running or not assigned to this runner")
 		}
 		return pkgerrors.Internal("failed to fetch task")
-	}
-	if !releaseRunnerLease {
-		return nil
 	}
 	return clearTerminalRunnerOwnershipAndRelease(ctx, queries, input)
 }
@@ -1052,14 +1020,13 @@ func (s *runnerService) completeTaskWithTransaction(
 	queries *deploymentdb.Queries,
 	input RunnerCompleteTaskInput,
 	status string,
-	releaseRunnerLease bool,
 ) error {
 	defer func() { _ = tx.Rollback(context.Background()) }()
 
 	task, err := queries.GetWorkflowTaskForRunner(ctx, input.TaskID)
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input, releaseRunnerLease)
+			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input)
 		}
 		return pkgerrors.Internal("failed to fetch task")
 	}
@@ -1084,15 +1051,13 @@ func (s *runnerService) completeTaskWithTransaction(
 	})
 	if err != nil {
 		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input, releaseRunnerLease)
+			return acknowledgeTerminalRunnerTaskWithTransaction(ctx, tx, queries, input)
 		}
 		return pkgerrors.Internal("failed to complete task")
 	}
 	finalizeTaskStep(ctx, queries, workflowRunID, input.TaskID, status)
-	if releaseRunnerLease {
-		if err := clearTerminalRunnerOwnershipAndRelease(ctx, queries, input); err != nil {
-			return err
-		}
+	if err := clearTerminalRunnerOwnershipAndRelease(ctx, queries, input); err != nil {
+		return err
 	}
 	if err := s.progressDependenciesWith(ctx, queries, workflowRunID); err != nil {
 		return pkgerrors.Internal("failed to progress dependencies")
@@ -1157,7 +1122,6 @@ func acknowledgeTerminalRunnerTaskWithTransaction(
 	tx pgx.Tx,
 	queries *deploymentdb.Queries,
 	input RunnerCompleteTaskInput,
-	releaseRunnerLease bool,
 ) error {
 	workflowRunID, err := queries.GetTerminalWorkflowTaskForRunner(ctx, terminalRunnerTaskParams(input))
 	if err != nil {
@@ -1182,10 +1146,8 @@ func acknowledgeTerminalRunnerTaskWithTransaction(
 		}
 		return pkgerrors.Internal("failed to fetch task")
 	}
-	if releaseRunnerLease {
-		if err := clearTerminalRunnerOwnershipAndRelease(ctx, queries, input); err != nil {
-			return err
-		}
+	if err := clearTerminalRunnerOwnershipAndRelease(ctx, queries, input); err != nil {
+		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return pkgerrors.Internal("failed to commit task completion transaction")

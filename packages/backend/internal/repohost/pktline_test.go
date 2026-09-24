@@ -242,3 +242,54 @@ func TestPeekReceivePackUpdate_WithFlushBeforeData_SkipsFlush(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, flushPkt+dataPkt, string(rebuiltBytes))
 }
+
+// git's hexval accepts upper-case pkt-line lengths, so the policy peek must
+// parse them too: a stream the peek refuses still reaches git and applies.
+func TestPeekReceivePackCommands_UppercaseLengthParses(t *testing.T) {
+	t.Parallel()
+	const zero = "0000000000000000000000000000000000000000"
+	const oid = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	ref := "refs/smithers/workspaces/evil"
+	line := ""
+	for {
+		line = zero + " " + oid + " " + ref + "\x00report-status\n"
+		if strings.ContainsAny(fmt.Sprintf("%04X", len(line)+4), "ABCDEF") {
+			break
+		}
+		ref += "x"
+	}
+	stream := fmt.Sprintf("%04X%s0000PACK", len(line)+4, line)
+
+	commands, rebuilt, err := PeekReceivePackCommands(strings.NewReader(stream))
+	require.NoError(t, err)
+	require.Len(t, commands, 1)
+	assert.Equal(t, ref, commands[0].RefName)
+	replayed, err := io.ReadAll(rebuilt)
+	require.NoError(t, err)
+	assert.Equal(t, stream, string(replayed))
+}
+
+// The metadata peek must read the same upper-case lengths git accepts.
+func TestPeekReceivePackUpdate_UppercaseLengthParses(t *testing.T) {
+	t.Parallel()
+	const zero = "0000000000000000000000000000000000000000"
+	const oid = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+	ref := "refs/heads/main"
+	line := ""
+	for {
+		line = zero + " " + oid + " " + ref + "\x00report-status\n"
+		if strings.ContainsAny(fmt.Sprintf("%04X", len(line)+4), "ABCDEF") {
+			break
+		}
+		ref += "x"
+	}
+	stream := fmt.Sprintf("%04X%s0000PACK", len(line)+4, line)
+
+	update, rebuilt, err := PeekReceivePackUpdate(strings.NewReader(stream))
+	require.NoError(t, err)
+	assert.Equal(t, ref, update.RefName)
+	assert.Equal(t, oid, update.NewOID)
+	replayed, err := io.ReadAll(rebuilt)
+	require.NoError(t, err)
+	assert.Equal(t, stream, string(replayed))
+}

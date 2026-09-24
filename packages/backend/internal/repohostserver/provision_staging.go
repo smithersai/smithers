@@ -527,11 +527,19 @@ func (s *Server) stagedProvisionReceivePack(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		return err
 	}
-	commands, peeked, _ := repohost.PeekReceivePackCommands(requestBody)
-	requestBody = readCloserWithBody(peeked, requestBody)
 	rc := http.NewResponseController(w)
 	defer func() { _ = rc.SetReadDeadline(time.Time{}) }()
-	body, gitErr := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", &idleDeadlineBody{rc: rc, r: requestBody})
+	// An import mirrors a user-controlled source, so it gets the same
+	// reserved-ref policy as any push with no workspace attribution:
+	// refs/smithers/ is written only by the control plane.
+	commands, peeked, peekErr := repohost.PeekReceivePackCommands(&idleDeadlineBody{rc: rc, r: requestBody})
+	if peekErr != nil {
+		return badRequest("malformed receive-pack command list")
+	}
+	if msg := repohost.ReservedRefViolation(commands, ""); msg != "" {
+		return forbidden(msg)
+	}
+	body, gitErr := runGitRPCBuffered(r.Context(), gitDir, "receive-pack", readCloserWithBody(peeked, requestBody))
 	reconcileCtx, cancelReconcile := detachedPushContext(r.Context())
 	defer cancelReconcile()
 	afterRefs, err := listGitRefs(reconcileCtx, gitDir)

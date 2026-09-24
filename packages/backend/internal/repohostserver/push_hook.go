@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -70,7 +71,8 @@ func sendPushHook(ctx context.Context, client *http.Client, cfg Config, payload 
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode == http.StatusNotFound {
+	if resp.StatusCode == http.StatusNotFound && repositoryNotFound(resp) {
+		// The repository was deleted after the push; nothing to dispatch.
 		return nil
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
@@ -78,6 +80,19 @@ func sendPushHook(ctx context.Context, client *http.Client, cfg Config, payload 
 	}
 
 	return nil
+}
+
+// repositoryNotFound reports whether a 404 carries the API's typed not_found
+// code. Any other 404 (a wrong callback path, or an API that did not register
+// the push-hook route) is a failed delivery, not a deleted repository.
+func repositoryNotFound(resp *http.Response) bool {
+	var body struct {
+		Code string `json:"code"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&body); err != nil {
+		return false
+	}
+	return body.Code == "not_found"
 }
 
 func mustMarshalJSON(v any) []byte {

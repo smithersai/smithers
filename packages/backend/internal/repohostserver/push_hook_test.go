@@ -135,15 +135,37 @@ func TestDeliverPushHooksContinuesAfterCallbackFailure(t *testing.T) {
 	}
 }
 
-func TestSendPushHookTreatsNotFoundAsNonFatal(t *testing.T) {
+// The API answers a push for a repository it no longer knows with a typed
+// not_found body. That is the only 404 a delivery may ignore.
+func TestSendPushHookIgnoresTypedRepositoryNotFound(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"code":"not_found","fault":"user","message":"Repository not found"}`))
 	}))
 	defer srv.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := sendPushHook(ctx, srv.Client(), Config{PushHookCallbackURL: srv.URL, PushHookCallbackToken: "callback-token"}, PushHookPayload{}); err != nil {
-		t.Fatalf("expected 404 callback to be ignored, got %v", err)
+		t.Fatalf("expected typed repository-not-found callback to be ignored, got %v", err)
+	}
+}
+
+// A callback URL that names no route (a wrong path, or an API that did not
+// register the push-hook handler) must fail every delivery, not succeed.
+func TestSendPushHookFailsOnUnroutedCallback(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/internal/repo-host/push-events", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := sendPushHook(ctx, srv.Client(), Config{PushHookCallbackURL: srv.URL + "/internal/repo-host/push-event", PushHookCallbackToken: "callback-token"}, PushHookPayload{})
+	if err == nil {
+		t.Fatal("expected an unrouted callback to fail")
 	}
 }

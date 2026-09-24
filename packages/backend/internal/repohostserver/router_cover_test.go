@@ -467,17 +467,17 @@ func TestRouter_Cov_ReceivePackAdditionalBranches(t *testing.T) {
 
 	t.Run("missing_git_dir", func(t *testing.T) {
 		srv := newTestServer(t)
-		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("push"))
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
 		routerCovRequireStatus(t, rec, http.StatusNotFound)
 	})
 
 	t.Run("gzip_request_body", func(t *testing.T) {
-		installGitStub(t, "#!/bin/sh\nif [ \"$1\" = \"--git-dir\" ]; then exit 0; fi\nif [ \"$1\" = \"receive-pack\" ]; then body=$(cat); if [ \"$body\" != \"push-data\" ]; then echo bad-body:$body >&2; exit 3; fi; printf receive-ok; exit 0; fi\nexit 1\n")
+		installGitStub(t, "#!/bin/sh\nif [ \"$1\" = \"--git-dir\" ]; then exit 0; fi\nif [ \"$1\" = \"receive-pack\" ]; then body=$(cat); if [ \"$body\" != \"0000\" ]; then echo bad-body:$body >&2; exit 3; fi; printf receive-ok; exit 0; fi\nexit 1\n")
 		srv := newTestServer(t)
 		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
 			t.Fatalf("mkdir git dir: %v", err)
 		}
-		rec := routerCovServeWithHeaders(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", routerCovGzipBody(t, "push-data"), map[string]string{
+		rec := routerCovServeWithHeaders(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", routerCovGzipBody(t, "0000"), map[string]string{
 			"Content-Encoding": "gzip",
 		})
 		routerCovRequireStatus(t, rec, http.StatusOK)
@@ -506,7 +506,7 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
 			t.Fatalf("mkdir git dir: %v", err)
 		}
-		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("push"))
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
 		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
 	})
 
@@ -517,7 +517,7 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
 			t.Fatalf("mkdir git dir: %v", err)
 		}
-		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("push"))
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
 		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
 	})
 
@@ -529,7 +529,7 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
 			t.Fatalf("mkdir git dir: %v", err)
 		}
-		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("push"))
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
 		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
 	})
 
@@ -553,7 +553,7 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
 			t.Fatalf("mkdir git dir: %v", err)
 		}
-		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("push"))
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
 		routerCovRequireStatus(t, rec, http.StatusOK)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

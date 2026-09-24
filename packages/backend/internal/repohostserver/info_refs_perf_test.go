@@ -181,13 +181,36 @@ func TestInfoRefsServesLargeRepoFromGitBackend(t *testing.T) {
 // tasks clone the same repository at once. They must run concurrently off the
 // git backend, not queue behind a per-request jj export holding the repository
 // write lock.
+//
+// Concurrency is asserted directly rather than with a wall-clock budget: every
+// advertise-refs call waits at a barrier until a second one is in flight. If
+// advertisements serialize, the first never sees a peer and fails.
 func TestInfoRefsParallelClonesDoNotSerialize(t *testing.T) {
 	const clones = 39
 	f := newAdvertisementFixture(t, advertisementBenchCommits, advertisementBenchBookmarks, syntheticExportCost)
 	f.advertise(t) // warm: one export syncs the git backend
 
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatalf("look up git: %v", err)
+	}
+	barrier := t.TempDir()
+	installGitStub(t, fmt.Sprintf(`#!/bin/sh
+case " $* " in
+*" --advertise-refs "*)
+  : > %[1]q/$$
+  tries=0
+  while [ "$(ls %[1]q | wc -l)" -lt 2 ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 600 ]; then echo "advertisement never overlapped another" >&2; exit 1; fi
+    sleep 0.05
+  done
+  ;;
+esac
+PATH=%[3]q exec %[2]q "$@"
+`, barrier, realGit, os.Getenv("PATH")))
+
 	var wg sync.WaitGroup
-	start := time.Now()
 	for i := 0; i < clones; i++ {
 		wg.Add(1)
 		go func() {
@@ -196,10 +219,13 @@ func TestInfoRefsParallelClonesDoNotSerialize(t *testing.T) {
 		}()
 	}
 	wg.Wait()
-	total := time.Since(start)
 
-	if total > advertisementBudget {
-		t.Fatalf("%d parallel advertisements took %s, budget is %s", clones, total, advertisementBudget)
+	entries, err := os.ReadDir(barrier)
+	if err != nil {
+		t.Fatalf("read barrier: %v", err)
+	}
+	if len(entries) != clones {
+		t.Fatalf("expected %d advertise-refs calls, got %d", clones, len(entries))
 	}
 	if got := f.exports.Load(); got != 1 {
 		t.Fatalf("parallel advertisements re-exported refs: %d exports", got)

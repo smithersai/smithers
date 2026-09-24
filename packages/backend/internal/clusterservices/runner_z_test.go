@@ -359,19 +359,8 @@ func TestRunner_Z_CompleteTaskBranches(t *testing.T) {
 	scoped := middleware.ContextWithWorkflowRun(context.Background(), &db.WorkflowRun{ID: 20})
 	scoped = middleware.ContextWithSharedAgentToken(scoped)
 
-	err := NewRunnerService(&mockRunnerQuerier{
-		getWorkflowTaskFn: func(context.Context, int64) (db.GetWorkflowTaskForRunnerRow, error) {
-			return db.GetWorkflowTaskForRunnerRow{}, pgx.ErrNoRows
-		},
-	}).CompleteTask(scoped, RunnerCompleteTaskInput{TaskID: 1, RunnerID: 1, Status: "done"})
-	require.Equal(t, 409, runnerAPIStatus(t, err))
-
-	err = NewRunnerService(&mockRunnerQuerier{
-		getWorkflowTaskFn: func(context.Context, int64) (db.GetWorkflowTaskForRunnerRow, error) {
-			return db.GetWorkflowTaskForRunnerRow{}, boom
-		},
-	}).CompleteTask(scoped, RunnerCompleteTaskInput{TaskID: 1, RunnerID: 1, Status: "done"})
-	require.Equal(t, 500, runnerAPIStatus(t, err))
+	err := NewRunnerService(&mockRunnerQuerier{}).CompleteTask(scoped, RunnerCompleteTaskInput{TaskID: 1, RunnerID: 1, Status: "done"})
+	require.Equal(t, 403, runnerAPIStatus(t, err), "a run-scoped context never completes a task")
 
 	err = NewRunnerService(&mockRunnerQuerier{
 		markWorkflowTaskDoneFn: func(context.Context, db.MarkWorkflowTaskDoneParams) (int64, error) {

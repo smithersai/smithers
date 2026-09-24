@@ -2835,3 +2835,29 @@ func TestRunnerService_CompleteTask_UsesTransactionWhenSupported(t *testing.T) {
 	assert.Equal(t, 1, mock.beginTxCalls)
 	assert.False(t, taskMarked, "the task must not be marked done outside the transaction")
 }
+
+// The shared runner token carries no workflow run, so a completion is bound to
+// its runner id: MarkWorkflowTaskDone settles only a task assigned to it.
+func TestRunnerService_CompleteTask_SharedTokenIsBoundByRunnerID(t *testing.T) {
+	t.Parallel()
+
+	var marked db.MarkWorkflowTaskDoneParams
+	queries := &mockRunnerQuerier{
+		markWorkflowTaskDoneFn: func(_ context.Context, arg db.MarkWorkflowTaskDoneParams) (int64, error) {
+			marked = arg
+			return 0, pgx.ErrNoRows
+		},
+		getTerminalWorkflowTaskFn: func(_ context.Context, arg db.GetTerminalWorkflowTaskForRunnerParams) (int64, error) {
+			assert.Equal(t, pgtype.Int8{Int64: 5, Valid: true}, arg.RunnerID)
+			return 0, pgx.ErrNoRows
+		},
+	}
+
+	err := NewRunnerService(queries).CompleteTask(
+		middleware.ContextWithSharedAgentToken(context.Background()),
+		RunnerCompleteTaskInput{TaskID: 12, RunnerID: 5, Status: "done"},
+	)
+	assert.Equal(t, 409, runnerAPIStatus(t, err), "a task not assigned to this runner is not settled")
+	assert.Equal(t, int64(12), marked.ID)
+	assert.Equal(t, pgtype.Int8{Int64: 5, Valid: true}, marked.RunnerID)
+}

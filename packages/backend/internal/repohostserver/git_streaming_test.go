@@ -176,7 +176,7 @@ exit 1
 		t.Fatalf("mkdir git dir: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("push-data"))
+	req := httptest.NewRequest(http.MethodPost, "/repos/alice/demo/git/receive-pack", bytes.NewBufferString("0000"))
 	req.Header.Set("Authorization", validAuth())
 	req.Header.Set("Content-Type", "application/x-git-receive-pack-request")
 	w := httptest.NewRecorder()
@@ -331,7 +331,7 @@ exit 1
 	t.Cleanup(func() { _ = pw.Close() })
 	go func() {
 		// Send a partial body, then stall without closing.
-		_, _ = pw.Write([]byte("partial-push-data"))
+		_, _ = pw.Write([]byte("00"))
 	}()
 
 	req, err := http.NewRequest(http.MethodPost, ts.URL+"/repos/alice/demo/git/receive-pack", pr)
@@ -379,7 +379,10 @@ func TestLocalReceivePackStalledBodyIdleTimeout(t *testing.T) {
 	client := repohost.NewLocalClient(srv.Handler(), testAuthToken)
 	pr, pw := io.Pipe()
 	defer pw.Close()
-	go func() { _, _ = pw.Write([]byte("partial-push-data")) }()
+	// One whole command and no flush: the client's metadata peek completes,
+	// then the server's command-list peek waits for bytes that never come.
+	line := "0000000000000000000000000000000000000000 deadbeefdeadbeefdeadbeefdeadbeefdeadbeef refs/heads/main\x00report-status\n"
+	go func() { _, _ = fmt.Fprintf(pw, "%04x%s", len(line)+4, line) }()
 	done := make(chan error, 1)
 	go func() { done <- client.ProxyReceivePack(context.Background(), "alice", "demo", pr, io.Discard) }()
 	select {
