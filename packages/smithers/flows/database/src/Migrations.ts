@@ -64,10 +64,18 @@ export interface MigrationSet {
   readonly namespace: string
   readonly idOffset: number
   readonly migrations: Readonly<Record<string, Effect.Effect<void, unknown, SqlClient.SqlClient>>>
+  /**
+   * Exact former names of semantically equivalent migrations, keyed by the
+   * current migration key. Names omit the namespace prefix. Use only when the
+   * owning package has verified the historical schema; changed behavior needs
+   * a new migration id. Existing ledger rows are preserved, never renamed.
+   */
+  readonly previousNames?: Readonly<Record<string, ReadonlyArray<string>>>
 }
 
 /** A caller-owned migration set copied into an execution-stable plan. */
 interface PlannedMigrationSet {
+  readonly previousNames: ReadonlyArray<readonly [key: string, names: ReadonlyArray<string>]>
   readonly namespace: string
   readonly idOffset: number
   readonly migrations: ReadonlyArray<
@@ -80,7 +88,8 @@ const snapshotMigrationSets = (sets: ReadonlyArray<MigrationSet>): ReadonlyArray
   Array.from(sets, (set) => ({
     idOffset: set.idOffset,
     migrations: Object.entries(set.migrations),
-    namespace: set.namespace
+    namespace: set.namespace,
+    previousNames: Object.entries(set.previousNames ?? {}).map(([key, names]) => [key, [...names]] as const)
   }))
 
 /**
@@ -224,13 +233,15 @@ const rejectSkipped = (
 const finish = (
   resolved: ReadonlyArray<PendingMigration>,
   zero: ZeroMigration | undefined,
+  previousNames: ReadonlyMap<number, ReadonlySet<string>>,
   onLoaderApplied: (entry: readonly [id: number, name: string]) => Effect.Effect<void>
 ) =>
   Effect.gen(function*() {
     const recorded = yield* appliedIds
     const applied = new Set(recorded.keys())
     for (const [id, name] of resolved) {
-      if (recorded.has(id) && recorded.get(id) !== name) {
+      const recordedName = recorded.get(id)
+      if (recordedName !== undefined && recordedName !== name && !previousNames.get(id)?.has(recordedName)) {
         return yield* Effect.fail(
           fail(`Migration ${id} was recorded as ${recorded.get(id)}, but this package declares ${name}`)
         )
@@ -291,6 +302,7 @@ const loaderFromPlan = (
     const offsets = new Set<number>()
     const ids = new Map<number, string>()
     const resolved: Array<PendingMigration> = []
+    const previousNames = new Map<number, ReadonlySet<string>>()
     let zero: ZeroMigration | undefined
 
     for (const set of sets) {
@@ -325,6 +337,13 @@ const loaderFromPlan = (
       }
       offsets.add(set.idOffset)
 
+      const migrationKeys = new Set(set.migrations.map(([key]) => key))
+      for (const [key, names] of set.previousNames) {
+        if (!migrationKeys.has(key) || names.some((name) => name.trim() === "" || name !== name.trim())) {
+          return Effect.fail(fail(`Invalid previous migration names for "${key}" in namespace ${set.namespace}`))
+        }
+      }
+      const namesByKey = new Map(set.previousNames)
       for (const [key, migration] of set.migrations) {
         const match = key.match(/^(\d+)_(.+)$/)
         if (match === null) {
@@ -357,6 +376,10 @@ const loaderFromPlan = (
           return Effect.fail(fail(`Migration id ${id} is claimed twice: ${owner} and ${claimant}`))
         }
         ids.set(id, claimant)
+        const oldNames = namesByKey.get(key)
+        if (oldNames !== undefined) {
+          previousNames.set(id, new Set(oldNames.map((name) => `${set.namespace}_${name}`)))
+        }
         if (id === 0) {
           zero = { migration, name: `${set.namespace}_${match[2]}` }
         }
@@ -364,7 +387,7 @@ const loaderFromPlan = (
       }
     }
 
-    return finish(resolved.sort(migrationOrder), zero, onLoaderApplied)
+    return finish(resolved.sort(migrationOrder), zero, previousNames, onLoaderApplied)
   })
 
 /** @private */

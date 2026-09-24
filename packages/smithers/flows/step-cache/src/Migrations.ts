@@ -27,6 +27,9 @@ import { createdAtIndex } from "./migrations/0002_created_at_index.ts"
 export const set: DatabaseMigrations.MigrationSet = {
   namespace: "step-cache",
   idOffset: DatabaseMigrations.idBlock * 2,
+  // The earlier RC created the same two single-column age indexes under
+  // *_created_at_idx names. Preserve its recorded identity and cached receipts.
+  previousNames: { "0002_created_at_index": ["sweep_indexes"] },
   migrations: {
     "0001_initial": initial,
     "0002_created_at_index": createdAtIndex

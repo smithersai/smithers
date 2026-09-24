@@ -118,3 +118,14 @@ applying anything twice.
 
 A migration plan is snapshotted when `run`, `layer`, or `loader` is called, so
 mutating the record afterwards cannot change a pass already under way.
+
+## A verified historical name
+
+Migration names are persisted identities. Changing SQL requires a new id. If
+an earlier release used another name for the same schema, the owning package
+can declare `previousNames: { "0002_current": ["earlier_name"] }` on its
+`MigrationSet`, after verifying that historical implementation. Names omit the
+namespace; acceptance is scoped to that package and the exact numeric id.
+Unknown names still fail. Existing ledger names and data remain unchanged,
+the migration is not rerun, and fresh databases record the current name.
+Alias keys and arrays are captured with the migration plan.

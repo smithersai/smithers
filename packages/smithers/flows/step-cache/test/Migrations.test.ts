@@ -4,6 +4,7 @@
  * https://smithers.sh/concepts/journal.
  */
 import { describe, expect, it } from "@effect/vitest"
+import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -22,6 +23,42 @@ const migrated = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   effect.pipe(Effect.provide(Migrations.layer), Effect.provide(TestDatabase.layer))
 
 describe("step-cache migrations", () => {
+  it.effect("opens the earlier RC sweep-index history without changing cache or run receipts", () =>
+    Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* DatabaseMigrations.run([{
+        namespace: "step-cache",
+        idOffset: 2000,
+        migrations: {
+          "0001_initial": Initial.initial,
+          "0002_sweep_indexes": Effect.gen(function*() {
+            yield* sql`CREATE INDEX flows_step_cache_created_at_idx ON flows_step_cache (created_at_ms)`
+            yield* sql`CREATE INDEX flows_step_cache_recorded_created_at_idx
+              ON flows_step_cache_recorded (created_at_ms)`
+          })
+        }
+      }, {
+        namespace: "later",
+        idOffset: 3000,
+        migrations: { "0001_initial": Effect.void }
+      }])
+      for (const table of ["flows_step_cache", "flows_step_cache_recorded"]) {
+        yield* sql`INSERT INTO ${sql(table)} VALUES ('key', '{"answer":42}', '{}', 123, 'run-existing', 7)`
+      }
+      const before = yield* sql`SELECT migration_id, name FROM flows_migrations ORDER BY migration_id`
+      expect(yield* Migrations.run).toEqual([])
+      expect(yield* Migrations.run).toEqual([])
+      expect(yield* sql`SELECT migration_id, name FROM flows_migrations ORDER BY migration_id`).toEqual(before)
+      for (const table of ["flows_step_cache", "flows_step_cache_recorded"]) {
+        expect(yield* sql`SELECT result_json, recorded_run_id, recorded_event_seq FROM ${sql(table)}`).toEqual([
+          { result_json: "{\"answer\":42}", recorded_run_id: "run-existing", recorded_event_seq: 7 }
+        ])
+        const plan = yield* sql<{ readonly detail: string }>`
+          EXPLAIN QUERY PLAN DELETE FROM ${sql(table)} WHERE created_at_ms < ${10}`
+        expect(plan.map((row) => row.detail).join("\n")).toContain(`${table}_created_at_idx`)
+      }
+    }).pipe(Effect.provide(TestDatabase.layer)))
+
   // The CommonJS build converts every module with esbuild under `"type":
   // "module"`, where a default import of a sibling resolves to the sibling's
   // whole exports object rather than the Effect it exported. A migration

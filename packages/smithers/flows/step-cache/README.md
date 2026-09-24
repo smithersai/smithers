@@ -154,3 +154,10 @@ local `put` outcome. Both increment `flows_step_cache_remote_failures` with an
 ## License
 
 MIT. See [LICENSE](./LICENSE).
+
+The earlier 1.0 RC recorded migration 2002 as `step-cache_sweep_indexes` and
+created the same age indexes under `*_created_at_idx` names. The current package
+accepts that exact historical identity without rewriting the ledger or deleting
+cached results and provenance. Fresh databases use `step-cache_created_at_index`;
+unrecognized migration identities still fail. Do not delete a runtime database
+to repair this upgrade.
