@@ -1,7 +1,6 @@
 import { createModelTurnHandler, environmentModelResolver, MODEL_HOST_PROTOCOL } from "@smthrs/model-host"
-import { createModelProbe } from "../../app/src/bun/ModelProbe.ts"
-import { MODEL_TEST_BODY_MAX_BYTES, ModelTestRequestSchema } from "@smthrs/rpc/ConfiguredModel"
 import { createServer } from "node:http"
+import type { IncomingMessage, ServerResponse } from "node:http"
 import { parseArgs } from "node:util"
 
 const parsed = parseArgs({
@@ -45,49 +44,54 @@ const handle = createModelTurnHandler({
   callbackBaseUrl,
   resolve: environmentModelResolver({ binding, env: process.env, maxTokens: requestedMaxTokens })
 })
-const modelProbe = createModelProbe({ env: process.env, egress: true })
-const testModel = async (request: Request): Promise<Response> => {
-  if (request.headers.get("authorization") !== `Bearer ${authorization}`) {
-    return Response.json({ code: "unauthorized" }, { status: 401 })
-  }
-  const bytes = await request.arrayBuffer()
-  if (bytes.byteLength > MODEL_TEST_BODY_MAX_BYTES) return Response.json({ code: "request_invalid" }, { status: 400 })
-  let body: unknown
-  try { body = JSON.parse(new TextDecoder().decode(bytes)) } catch { return Response.json({ code: "request_invalid" }, { status: 400 }) }
-  const parsed = ModelTestRequestSchema.safeParse(body)
-  if (!parsed.success) return Response.json({ code: "request_invalid" }, { status: 400 })
-  return Response.json(await modelProbe.test(parsed.data.model, parsed.data.input))
+const MAX_BODY_BYTES = 2 * 1024 * 1024
+const refuse = (outgoing: ServerResponse, status: number, code: string): void => {
+  if (!outgoing.headersSent) outgoing.writeHead(status, { "content-type": "application/json", connection: "close" })
+  outgoing.end(`${JSON.stringify({ status: "error", code })}\n`)
 }
+/** Buffers the request body, or resolves `undefined` once it exceeds the limit
+ * without destroying the socket, so the caller still receives the refusal. */
+const readBody = (incoming: IncomingMessage): Promise<Buffer<ArrayBuffer> | undefined> =>
+  new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    let size = 0
+    const collect = (chunk: Buffer): void => {
+      size += chunk.byteLength
+      if (size <= MAX_BODY_BYTES) {
+        chunks.push(chunk)
+        return
+      }
+      incoming.off("data", collect)
+      resolve(undefined)
+    }
+    incoming.on("data", collect)
+    incoming.once("end", () => resolve(Buffer.concat(chunks)))
+    incoming.once("error", reject)
+  })
 const server = createServer(async (incoming, outgoing) => {
   const abort = new AbortController()
   outgoing.on("close", () => {
     if (!outgoing.writableEnded) abort.abort()
   })
   try {
-    const chunks: Buffer[] = []
-    let size = 0
-    for await (const raw of incoming) {
-      const chunk = Buffer.isBuffer(raw) ? raw : Buffer.from(raw)
-      size += chunk.byteLength
-      if (size > 2 * 1024 * 1024) throw new Error("request too large")
-      chunks.push(chunk)
+    const declared = Number(incoming.headers["content-length"] ?? "0")
+    const bytes = declared > MAX_BODY_BYTES ? undefined : await readBody(incoming)
+    if (bytes === undefined) {
+      refuse(outgoing, 413, "request_invalid")
+      return
     }
     const method = incoming.method ?? "GET"
-    const body = method === "GET" || method === "HEAD" ? undefined : Buffer.concat(chunks)
     const request = new Request(`http://${incoming.headers.host ?? "127.0.0.1"}${incoming.url ?? "/"}`, {
       method,
       headers: incoming.headers as HeadersInit,
-      ...(body === undefined ? {} : { body }),
+      ...(method === "GET" || method === "HEAD" ? {} : { body: bytes }),
       signal: abort.signal
     })
-    const response = new URL(request.url).pathname === "/v1/model/test" && method === "POST"
-      ? await testModel(request)
-      : await handle(request)
+    const response = await handle(request)
     outgoing.writeHead(response.status, Object.fromEntries(response.headers.entries()))
     outgoing.end(Buffer.from(await response.arrayBuffer()))
   } catch {
-    if (!outgoing.headersSent) outgoing.writeHead(500, { "content-type": "application/json" })
-    outgoing.end("{\"status\":\"error\",\"code\":\"turn_failed\"}\n")
+    refuse(outgoing, 500, "turn_failed")
   }
 })
 server.listen(port, parsed.values.host, () => {
