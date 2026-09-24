@@ -49,11 +49,8 @@ const stubAgent = Bun.env.SMITHERS_CHAT_STUB === "1"
   ? (await import("../../e2e/support/ChatStub")).createChatStub
   : undefined
 
-if (stubAgent === undefined && (Bun.env.SMITHERS_WEB_ROOT?.trim() ?? "") === "") {
-  Bun.env.SMITHERS_WEB_ROOT = defaultDistDir(import.meta.dir)
-}
 const backendProcess = stubAgent === undefined
-  ? await startNativeBackend({ stateDir })
+  ? await startNativeBackend({ stateDir, webRoot: defaultDistDir(import.meta.dir) })
   : undefined
 const rendererServer = backendProcess !== undefined
   ? startNativeRendererServer(defaultDistDir(import.meta.dir), backendProcess.mode === "own"

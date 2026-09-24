@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -6,6 +6,7 @@ import { delimiter, join } from "node:path"
 import { nativeBackendMode, startNativeBackend } from "./NativeBackendProcess"
 
 const roots: Array<string> = []
+const webRoot = "/packaged/views/mainview"
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -66,11 +67,39 @@ const packagedRuntime = (): { backend: string; postgresBin: string; root: string
   return { backend, postgresBin, root, state: join(packageRoot, "state") }
 }
 
+/** Launches owned mode from `launcher` and returns the environment the backend child received. */
+const ownedEnvironment = async (
+  runtime: ReturnType<typeof packagedRuntime>,
+  launcher: Readonly<Record<string, string>>
+): Promise<Record<string, string>> => {
+  let env: Record<string, string> = {}
+  let resolveExit!: (code: number) => void
+  const exited = new Promise<number>((resolve) => { resolveExit = resolve })
+  const instance = await startNativeBackend({
+    stateDir: runtime.state,
+    webRoot,
+    env: {
+      ...launcher,
+      SMITHERS_BACKEND_MODE: "own",
+      SMITHERS_BACKEND_BINARY: runtime.backend,
+      SMITHERS_POSTGRES_BUNDLE_DIR: join(runtime.postgresBin, "..")
+    },
+    spawn: (_, options) => {
+      env = options.env
+      return { exited, kill: () => resolveExit(0) }
+    },
+    fetch: async () => new Response(null, { status: 200 })
+  })
+  await instance.stop()
+  return env
+}
+
 describe("native backend ownership", () => {
   test("plue starts neither process", async () => {
     let spawned = false
     const backend = await startNativeBackend({
       stateDir: "/unused",
+      webRoot,
       env: { SMITHERS_BACKEND_MODE: "plue" },
       spawn: () => {
         spawned = true
@@ -93,12 +122,13 @@ describe("native backend ownership", () => {
     const signals: Array<string> = []
     const instance = await startNativeBackend({
       stateDir: runtime.state,
+      webRoot,
       env: {
         SMITHERS_BACKEND_MODE: "own",
         SMITHERS_BACKEND_BINARY: runtime.backend,
-        SMITHERS_POSTGRES_BUNDLE_DIR: join(runtime.postgresBin, ".."),
-        SMITHERS_AUTH_BOOTSTRAP_TOKEN: "native-bootstrap"
+        SMITHERS_POSTGRES_BUNDLE_DIR: join(runtime.postgresBin, "..")
       },
+      bootstrapToken: "native-bootstrap",
       spawn: (_, options) => {
         env = options.env
         return {
@@ -145,6 +175,7 @@ describe("native backend ownership", () => {
     const exited = new Promise<number>((resolve) => { resolveExit = resolve })
     const instance = await startNativeBackend({
       stateDir: runtime.state,
+      webRoot,
       env: {
         SMITHERS_BACKEND_MODE: "own",
         SMITHERS_BACKEND_BINARY: runtime.backend,
@@ -167,6 +198,7 @@ describe("native backend ownership", () => {
     const signals: Array<string> = []
     const launch = startNativeBackend({
       stateDir: runtime.state,
+      webRoot,
       env: {
         SMITHERS_BACKEND_MODE: "own",
         SMITHERS_BACKEND_BINARY: runtime.backend,
@@ -186,6 +218,105 @@ describe("native backend ownership", () => {
     expect(signals).toEqual(["SIGTERM"])
   })
 
+  test("the owned backend receives only its environment contract", async () => {
+    const runtime = packagedRuntime()
+    const launcher = {
+      HOME: "/Users/owner",
+      PATH: "/usr/bin:/bin",
+      TMPDIR: "/tmp/owner",
+      HTTPS_PROXY: "http://proxy.internal:3128",
+      no_proxy: "localhost",
+      ANTHROPIC_API_KEY: "canary",
+      OPENAI_API_KEY: "canary",
+      AI_GATEWAY_API_KEY: "canary",
+      SMITHERS_CLOUD_TOKEN: "canary",
+      SMITHERS_API_TOKEN: "canary",
+      GITHUB_TOKEN: "canary",
+      SMITHERS_GITHUB_TOKEN: "canary",
+      SMITHERS_AUTH_BOOTSTRAP_TOKEN: "canary",
+      SMITHERS_AUTH_SESSION_SECRET: "canary",
+      SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY: "canary",
+      SMITHERS_ENABLE_E2E_TEST_ROUTES: "canary",
+      SMITHERS_WEB_ROOT: "canary",
+      NODE_OPTIONS: "canary",
+      GIT_SSH_COMMAND: "canary",
+      GIT_CONFIG_PARAMETERS: "canary",
+      PGPASSWORD: "canary"
+    }
+    const env = await ownedEnvironment(runtime, launcher)
+    expect(Object.keys(env).sort()).toEqual([
+      "GIT_CONFIG_GLOBAL",
+      "GIT_CONFIG_NOSYSTEM",
+      "GIT_EXEC_PATH",
+      "GIT_TEMPLATE_DIR",
+      "HOME",
+      "HTTPS_PROXY",
+      "PATH",
+      "SMITHERS_AUTH_BOOTSTRAP_TOKEN",
+      "SMITHERS_AUTH_MODE",
+      "SMITHERS_CODING_LOCAL_OWNER",
+      "SMITHERS_DATA_ROOT",
+      "SMITHERS_FFI_LIBRARY_PATH",
+      "SMITHERS_FLOW_HOST_MANIFEST",
+      "SMITHERS_JJ_PATH",
+      "SMITHERS_MODEL_HOST_BUNDLE",
+      "SMITHERS_NATIVE_POSTGRES_BIN",
+      "SMITHERS_NATIVE_POSTGRES_MAJOR",
+      "SMITHERS_NATIVE_STATE_DIR",
+      "SMITHERS_NODE_BINARY",
+      "SMITHERS_PUBLIC_URL",
+      "SMITHERS_SERVER_ADDR",
+      "SMITHERS_WEB_ROOT",
+      "SMITHERS_WORKSPACE_CODING_HOST_BINARY",
+      "SMITHERS_WORKSPACE_CODING_HOST_SHA256",
+      "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
+      "SMITHERS_WORKSPACE_LIBRARIAN_HOST_BINARY",
+      "SMITHERS_WORKSPACE_LIBRARIAN_HOST_SHA256",
+      "TMPDIR",
+      "no_proxy"
+    ])
+    expect(Object.values(env)).not.toContain("canary")
+    expect(env.HOME).toBe("/Users/owner")
+    expect(env.HTTPS_PROXY).toBe("http://proxy.internal:3128")
+    expect(env.PATH).toBe(`${runtime.root}${delimiter}/usr/bin:/bin`)
+    expect(env.SMITHERS_WEB_ROOT).toBe(webRoot)
+    expect(env.GIT_CONFIG_NOSYSTEM).toBe("1")
+    expect(env.GIT_CONFIG_GLOBAL).toBe("/dev/null")
+  })
+
+  test("a launcher without PATH still gives the backend the system tools", async () => {
+    const runtime = packagedRuntime()
+    const env = await ownedEnvironment(runtime, {})
+    expect(env.PATH).toBe([runtime.root, "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter))
+  })
+
+  test("the first-owner token comes from the owned state, never the launcher", async () => {
+    const runtime = packagedRuntime()
+    mkdirSync(join(runtime.state, "config"), { recursive: true })
+    writeFileSync(
+      join(runtime.state, "config", "secrets.json"),
+      JSON.stringify({ version: 1, values: { SMITHERS_AUTH_BOOTSTRAP_TOKEN: "persisted-owner-token" } }),
+      { mode: 0o600 }
+    )
+    const env = await ownedEnvironment(runtime, { SMITHERS_AUTH_BOOTSTRAP_TOKEN: "shell-export" })
+    expect(env.SMITHERS_AUTH_BOOTSTRAP_TOKEN).toBe("persisted-owner-token")
+    const fresh = await ownedEnvironment(packagedRuntime(), { SMITHERS_AUTH_BOOTSTRAP_TOKEN: "shell-export" })
+    expect(fresh.SMITHERS_AUTH_BOOTSTRAP_TOKEN).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  test("the spawn log names the backend environment without its values", async () => {
+    const lines: Array<string> = []
+    const log = spyOn(console, "error").mockImplementation((line: unknown) => { lines.push(String(line)) })
+    try {
+      const env = await ownedEnvironment(packagedRuntime(), { HOME: "/Users/owner" })
+      expect(lines).toEqual([`owned backend env: ${Object.keys(env).sort().join(" ")}`])
+      expect(lines[0]).not.toContain("/Users/owner")
+      expect(lines[0]).not.toContain(env.SMITHERS_AUTH_BOOTSTRAP_TOKEN)
+    } finally {
+      log.mockRestore()
+    }
+  })
+
   test("unknown mode is refused", () => {
     expect(() => nativeBackendMode({ SMITHERS_BACKEND_MODE: "unknown" })).toThrow(
       "own or plue"
@@ -197,6 +328,7 @@ describe("native backend ownership", () => {
     writeFileSync(join(runtime.root, "smithers-coding-host"), "modified", { mode: 0o755 })
     await expect(startNativeBackend({
       stateDir: runtime.state,
+      webRoot,
       env: {
         SMITHERS_BACKEND_MODE: "own",
         SMITHERS_BACKEND_BINARY: runtime.backend,

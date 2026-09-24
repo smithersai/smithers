@@ -6,10 +6,7 @@ import { defaultDistDir } from "./server"
 const stateDir = Bun.env.SMITHERS_LOCAL_STATE_DIR?.trim()
   ? resolve(Bun.env.SMITHERS_LOCAL_STATE_DIR)
   : join(nativeStateDirectory(), "headless")
-if ((Bun.env.SMITHERS_WEB_ROOT?.trim() ?? "") === "") {
-  Bun.env.SMITHERS_WEB_ROOT = defaultDistDir(import.meta.dir)
-}
-const backend = await startNativeBackend({ stateDir })
+const backend = await startNativeBackend({ stateDir, webRoot: defaultDistDir(import.meta.dir) })
 const origin = backend.mode === "own" ? backend.origin : Bun.env.SMITHERS_API_ORIGIN?.trim()
 if (origin === undefined || origin === "") {
   await backend.stop()

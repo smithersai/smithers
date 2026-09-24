@@ -44,8 +44,9 @@ export const nativeBackendConfig = (
       ? apiOrigin
       : origin("SMITHERS_RENDERER_ORIGIN", env.SMITHERS_RENDERER_ORIGIN))
   const external = apiOrigin !== rendererOrigin
-  const token = env.SMITHERS_API_TOKEN?.trim() || null
-  const auth = token === null ? "session" : backend.mode === "plue" ? "bearer" : "token"
+  // The bearer is a Plue credential; the owned backend authenticates its owner by session.
+  const token = backend.mode === "plue" ? env.SMITHERS_API_TOKEN?.trim() || null : null
+  const auth = token === null ? "session" : "bearer"
   const document: ApplicationTargetDocument = {
     apiVersion: 1,
     mode: backend.mode === "own" ? "native-own" : "native-plue",

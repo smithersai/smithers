@@ -25,6 +25,14 @@ describe("native backend handshake", () => {
       })
   })
 
+  test("own never adopts a Plue bearer exported in the launcher shell", () => {
+    const config = nativeBackendConfig({ SMITHERS_API_TOKEN: "plue-pat" }, {
+      mode: "own", origin: "http://127.0.0.1:4400", bootstrapToken: "setup", failure: undefined, stop: async () => {}
+    })
+    expect(config.token).toBeNull()
+    expect(config.target.auth).toEqual({ kind: "session" })
+  })
+
   test("owned backend uses the packaged renderer proxy for its API", () => {
     const config = nativeBackendConfig({}, {
       mode: "own", origin: "http://127.0.0.1:4400", bootstrapToken: "setup", failure: undefined, stop: async () => {}

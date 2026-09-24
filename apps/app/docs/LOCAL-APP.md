@@ -59,6 +59,26 @@ is an explicit development/test override and does not replace the saved port. Th
 headless server prints `SMITHERS_LOCAL_ORIGIN=http://127.0.0.1:<port>` when it
 is ready.
 
+## Owned backend environment
+
+The owned backend never inherits the launcher's environment. A terminal launch
+and a Dock launch give it the same configuration, and provider keys, cloud
+tokens and `SMITHERS_*` exports in the shell never reach it.
+
+| Source | Names |
+| --- | --- |
+| Launcher session, copied by name | `HOME` `USER` `LOGNAME` `TMPDIR` `TZ` `LANG` `LC_ALL` `LC_CTYPE` `XDG_CONFIG_HOME` `XDG_DATA_HOME` `XDG_CACHE_HOME` `XDG_STATE_HOME` |
+| Launcher network policy, copied by name | `HTTP_PROXY` `HTTPS_PROXY` `NO_PROXY` `ALL_PROXY` (and lowercase) `SSL_CERT_FILE` `SSL_CERT_DIR` |
+| `PATH` | the packaged `bin` directory, then the launcher's `PATH` or the system directories |
+| Git | `GIT_EXEC_PATH` `GIT_TEMPLATE_DIR` (packaged), `GIT_CONFIG_NOSYSTEM=1` `GIT_CONFIG_GLOBAL=/dev/null` |
+| Set by the app | `SMITHERS_AUTH_MODE` `SMITHERS_AUTH_BOOTSTRAP_TOKEN` `SMITHERS_NATIVE_POSTGRES_*` `SMITHERS_NATIVE_STATE_DIR` `SMITHERS_DATA_ROOT` `SMITHERS_SERVER_ADDR` `SMITHERS_PUBLIC_URL` `SMITHERS_WEB_ROOT` `SMITHERS_FLOW_HOST_MANIFEST` `SMITHERS_WORKSPACE_*` `SMITHERS_MODEL_HOST_BUNDLE` `SMITHERS_NODE_BINARY` `SMITHERS_CODING_LOCAL_OWNER` `SMITHERS_JJ_PATH` `SMITHERS_FFI_LIBRARY_PATH` |
+
+The first-owner token comes from `config/secrets.json` in the state directory,
+or is generated on first launch. Model credentials come from the owner
+credential store. At spawn the app logs `owned backend env: <names>` to stderr,
+with names only. An owned target always authenticates by session and ignores
+`SMITHERS_API_TOKEN`.
+
 ## Local-origin security
 
 Each launch creates a fresh 256-bit token. The token is placed in the

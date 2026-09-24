@@ -20,7 +20,11 @@ export interface NativeBackend {
 
 export interface NativeBackendOptions {
   readonly stateDir: string
+  /** The built SPA the owned backend serves at its public origin. */
+  readonly webRoot: string
   readonly env?: Readonly<Record<string, string | undefined>>
+  /** Replaces the persisted or generated first-owner token; tests only. */
+  readonly bootstrapToken?: string
   readonly fromDir?: string
   readonly spawn?: (
     argv: ReadonlyArray<string>,
@@ -50,6 +54,22 @@ export const nativeBackendMode = (
   if (mode === "own" || mode === "plue") return mode
   throw new Error("SMITHERS_BACKEND_MODE must be own or plue.")
 }
+
+/**
+ * The only launcher variables the owned backend inherits: this machine's
+ * session and network policy. Everything else it runs on is set below, so a
+ * shell's provider keys, cloud tokens and SMITHERS_* overrides never reach it.
+ */
+const LAUNCHER_PASSTHROUGH = [
+  "HOME", "USER", "LOGNAME", "TMPDIR", "TZ", "LANG", "LC_ALL", "LC_CTYPE",
+  "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME",
+  "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+  "http_proxy", "https_proxy", "no_proxy", "all_proxy",
+  "SSL_CERT_FILE", "SSL_CERT_DIR"
+] as const
+
+/** A Dock launch can arrive without PATH; the backend still needs the system tools. */
+const SYSTEM_PATH = ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter)
 
 const localOrigin = (value: string): string => {
   let origin: URL
@@ -232,12 +252,7 @@ const checksummedExecutable = (path: string, label: string): string => {
   return path
 }
 
-const nativeBootstrapToken = (
-  stateDir: string,
-  env: Readonly<Record<string, string | undefined>>
-): string => {
-  const configured = setting(env, "SMITHERS_AUTH_BOOTSTRAP_TOKEN")
-  if (configured !== undefined) return configured
+const nativeBootstrapToken = (stateDir: string): string => {
   const path = resolve(stateDir, "config", "secrets.json")
   if (!existsSync(path)) return randomBytes(32).toString("hex")
   const info = statSync(path)
@@ -326,13 +341,19 @@ export const startNativeBackend = async (
   const origin = localOrigin(
     setting(env, "SMITHERS_OWNED_BACKEND_ORIGIN") ?? "http://127.0.0.1:4000"
   )
+  const bootstrapToken = options.bootstrapToken ?? nativeBootstrapToken(options.stateDir)
+  const launcherPath = setting(env, "PATH") ?? SYSTEM_PATH
   const environment: Record<string, string> = Object.fromEntries(
-    Object.entries(env).flatMap(([name, value]) => value === undefined ? [] : [[name, value]])
+    LAUNCHER_PASSTHROUGH.flatMap((name) => {
+      const value = env[name]
+      return value === undefined || value === "" ? [] : [[name, value]]
+    })
   )
-  const bootstrapToken = nativeBootstrapToken(options.stateDir, env)
-  environment.PATH = environment.PATH === undefined || environment.PATH === ""
-    ? binaryRoot
-    : `${binaryRoot}${delimiter}${environment.PATH}`
+  environment.PATH = `${binaryRoot}${delimiter}${launcherPath}`
+  environment.SMITHERS_WEB_ROOT = options.webRoot
+  // The backend's git is plumbing over owned repositories; the user's git config never applies.
+  environment.GIT_CONFIG_NOSYSTEM = "1"
+  environment.GIT_CONFIG_GLOBAL = "/dev/null"
   environment.SMITHERS_AUTH_MODE = "selfhost"
   environment.SMITHERS_AUTH_BOOTSTRAP_TOKEN = bootstrapToken
   environment.SMITHERS_NATIVE_POSTGRES_BIN = postgres
@@ -358,6 +379,8 @@ export const startNativeBackend = async (
   environment.GIT_TEMPLATE_DIR = gitTemplateDir
   environment.SMITHERS_FFI_LIBRARY_PATH = ffi
 
+  // Names only: the triage line for a backend that differs between terminal and Dock launches.
+  console.error(`owned backend env: ${Object.keys(environment).sort().join(" ")}`)
   const spawn = options.spawn ?? ((argv, childOptions) => Bun.spawn([...argv], childOptions))
   const child = spawn([backend], {
     env: environment,
