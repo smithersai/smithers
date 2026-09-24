@@ -182,9 +182,9 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
  * authenticate anyone, so the gate fails closed with deployment_not_configured
  * and the deployment's keys stay unspent.
  *
- * The one exception is decided by the router, not here: a signed-out turn
- * about a public catalog repository runs under the anonymous per-address
- * ceiling. Every other route keeps this refusal.
+ * The one exception is decided by the router, not here: a turn from a
+ * visitor (isVisitorRefusal) about a public catalog repository runs under the
+ * anonymous per-address ceiling. Every other route keeps this refusal.
  */
 export const requireTurnSession = (
   request: Request
@@ -203,6 +203,15 @@ export const requireTurnSession = (
     }
     return session
   })
+
+/**
+ * A turn-gate refusal that leaves the caller on the visitor's surface: signed
+ * out (401) or signed in without admission (403). Neither vouches an account,
+ * so both get exactly what a signed-out visitor gets and nothing more. An
+ * identity outage (5xx) is never one of them.
+ */
+export const isVisitorRefusal = (gate: Response | ValidatedIdentity): gate is Response =>
+  gate instanceof Response && (gate.status === 401 || gate.status === 403)
 
 /* ------------------------------------------------------------------------ */
 /* The OAuth navigations                                                     */

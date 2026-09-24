@@ -44,7 +44,7 @@ import type { NativeExecutionContext, RequestServices, WorkerEnv } from "./Envir
 import { discardBody, readJsonOrUndefined } from "./Http"
 import { GatewaySessionRegistry } from "./gateway"
 import { AccountModelVault, accountModelCredentials, handleModelCredential } from "./modelVault"
-import { handleAuthNavigation, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
+import { handleAuthNavigation, isVisitorRefusal, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
 import {
   CLIENT_ERRORS_PATH,
   handleBrowserFetch,
@@ -211,8 +211,9 @@ const serveAppDocument = (request: Request, url: URL, document: string): Effect.
 /*
  * Anonymous exploring (PUBLIC-REPOSITORIES.md): a visitor at
  * smithers.sh/smithersai/smithers talks to Smithers about that repository
- * without an account. The turn names its repository in the runtime context
- * the client derives each turn (`context.activeRepository`); only a catalog
+ * without an admitted account (signed out, or signed in but not yet
+ * allowlisted: isVisitorRefusal). The turn names its repository in the
+ * runtime context the client derives each turn (`context.activeRepository`); only a catalog
  * repository opens the door, and it opens onto the anonymous ceilings, never
  * onto a user's budget or billing account: the turn carries no login, so the
  * chat upstream meters it to the deployment. Two buckets are spent, and
@@ -375,16 +376,16 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       const gate = yield* requireTurnSession(request)
       // A capability protects an anonymous leg. An owned leg additionally
       // requires its currently validated account on every bounded read.
-      if (gate instanceof Response && gate.status !== 401) return gate
+      if (gate instanceof Response && !isVisitorRefusal(gate)) return gate
       return yield* handleTurnJournalAccess(request, gate instanceof Response ? undefined : gate, url.pathname === TURN_RETIRE_PATH)
     }
     if (url.pathname === CANCEL_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       const refusal = yield* requireTurnSession(request)
-      // A signed-out caller may kill its own anonymous turn: the registry
-      // refuses an owned registration to anyone but its owner, and cancelling
-      // spends nothing.
-      if (refusal instanceof Response && refusal.status !== 401) return refusal
+      // A visitor may kill its own anonymous turn: the registry refuses an
+      // owned registration to anyone but its owner, and cancelling spends
+      // nothing.
+      if (refusal instanceof Response && !isVisitorRefusal(refusal)) return refusal
       return yield* handleCancel(request, refusal instanceof Response ? undefined : refusal)
     }
     // The routes that spend a model credential: the turn, the model stream
@@ -396,7 +397,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === TURN_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
-      if (gate instanceof Response) return gate.status === 401 ? yield* anonymousCatalogTurn(request, gate) : gate
+      if (gate instanceof Response) return isVisitorRefusal(gate) ? yield* anonymousCatalogTurn(request, gate) : gate
       // A fresh durable leg spends capacity before its acceptance is written;
       // a repeated POST only observes existing acceptance and spends nothing.
       return yield* handleTurn(request, gate, undefined, loginBudget(gate.login))

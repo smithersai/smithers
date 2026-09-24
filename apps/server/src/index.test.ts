@@ -1456,6 +1456,35 @@ describe("anonymous exploring of a public catalog repository", () => {
     expect(seen?.get("x-smithers-service-token")).toBeNull()
   })
 
+  test("a signed-in account not yet on the allowlist gets the visitor's catalog turn and cancel, nothing more", async () => {
+    let seen: Headers | undefined
+    let upstreamCalls = 0
+    await withMockedFetch(
+      (request) => {
+        if (new URL(request.url).hostname === "identity.test") return Response.json({ login: "stranger", allowlisted: false })
+        upstreamCalls += 1
+        seen = request.headers
+        return ndjsonUpstream([{ type: "delta", kind: "text", text: "It is a monorepo." }, { type: "done" }])
+      },
+      async () => {
+        const catalog = await worker.fetch(post("/api/agent/turn", exploring("smithersai/smithers", "explore-waitlisted"), SESSION), identityEnv)
+        expect(catalog.status).toBe(200)
+        expect(await catalog.text()).toContain("It is a monorepo.")
+        const cancel = await worker.fetch(post("/api/agent/turn/cancel", { runId: "run-nobody" }, SESSION), identityEnv)
+        expect(cancel.status).toBe(200)
+        expect(((await cancel.json()) as { status: string }).status).toBe("not-found")
+        const other = await worker.fetch(post("/api/agent/turn", exploring("someone/private", "explore-waitlisted-private"), SESSION), identityEnv)
+        expect(other.status).toBe(403)
+        expect(((await other.json()) as { code: string }).code).toBe("account_not_allowlisted")
+      }
+    )
+    expect(upstreamCalls).toBe(1)
+    // The turn runs unattributed under the anonymous ceilings, exactly as a
+    // visitor's: the session names a login, but no spend is vouched for it.
+    expect(seen?.get("x-user-login")).toBeNull()
+    expect(seen?.get("x-smithers-service-token")).toBeNull()
+  })
+
   test("a signed-out catalog turn is a 503 and spends no credential when the turn limiter cannot answer", async () => {
     let upstreamCalls = 0
     const env: WorkerEnv = {

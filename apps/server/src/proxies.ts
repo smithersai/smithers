@@ -18,7 +18,7 @@ import type { DeploymentBindings, ExecutionContext } from "./Environment"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
-import { requireTurnSession } from "./identity"
+import { isVisitorRefusal, requireTurnSession } from "./identity"
 import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
 import { json, notFound, readBody, refuse, upstreamProse, upstreamUnreachable, withIsolationHeaders } from "./Responses"
 import { anonymousBucketAddress } from "./turnLimit"
@@ -158,9 +158,7 @@ export const handlePlatformProxy = (
     const unreadableCookie = !request.headers.has("cookie") || config.identityUpstreamUrl === undefined
     if (publicRead && unreadableCookie) return withIsolationHeaders(yield* publicAnswer(url))
     const gate = yield* requireTurnSession(request)
-    if (publicRead && gate instanceof Response && (gate.status === 401 || gate.status === 403)) {
-      return withIsolationHeaders(yield* publicAnswer(url))
-    }
+    if (publicRead && isVisitorRefusal(gate)) return withIsolationHeaders(yield* publicAnswer(url))
     if (gate instanceof Response) return gate
     if (CHECKOUT_PATHS.includes(url.pathname) && !config.billingCheckoutEnabled) {
       return refuse(

@@ -106,9 +106,10 @@ sign-in requirements are independent of this API policy.
 
 A signed-out visitor at `https://smithers.sh/smithersai/smithers` talks to
 Smithers about that repository without an account. `POST /api/agent/turn`
-admits a request with no valid session only when the turn's runtime context
-names a catalog repository (`context.activeRepository`, the selection the
-`/owner/name` path made); any other signed-out turn keeps the `401` sign-in
+admits a request with no valid session, or with a session not yet on the
+allowlist, only when the turn's runtime context names a catalog repository
+(`context.activeRepository`, the selection the `/owner/name` path made); any
+other such turn keeps its `401` sign-in or `403 account_not_allowlisted`
 refusal. The turn carries no login, so the chat upstream meters it to the
 deployment and it never reaches a user's billing account.
 
@@ -121,8 +122,8 @@ one visitor's allocation is one bucket) with a ceiling of
 `anonymous:all` bucket with a ceiling of `ANONYMOUS_ALL_TURN_MAX` turns per
 day (`turnLimit.ts`), which caps what exploring can cost when a caller
 rotates addresses. The refusal is the existing `429 turn_rate_limited`
-response, worded to name sign-in as the way to keep going. `POST /api/agent/turn/cancel` answers a signed-out
-caller too, because cancelling spends nothing and an owned turn refuses
+response, worded to name sign-in as the way to keep going. `POST /api/agent/turn/cancel` answers the same
+callers too, because cancelling spends nothing and an owned turn refuses
 anyone but its owner.
 
 The model's tool calls run in the browser, against this Worker. What a
