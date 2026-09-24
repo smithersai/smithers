@@ -163,7 +163,7 @@ describe("default atomic helper resolution", () => {
   it("names the build and configuration fix when no helper exists", async () => {
     const { packageRoot, root } = await fixture()
     expect(() => resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent")))
-      .toThrow(/cargo build.*SMITHERS_WORKSPACE_JJ_EXPORT_BINARY/)
+      .toThrow(/cargo \+1\.98\.0 build --locked.*SMITHERS_WORKSPACE_JJ_EXPORT_BINARY/)
   })
 
   it("rejects a fallback helper inside the confined project", async () => {
