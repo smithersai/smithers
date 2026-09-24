@@ -1,5 +1,5 @@
 //! Immutable engine snapshots through the same packaged helper on every host.
-use std::os::fd::AsRawFd;
+use std::fs::TryLockError;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -167,16 +167,21 @@ impl CodingLock {
         }
         let file = std::fs::OpenOptions::new()
             .create(true)
+            .read(true)
             .append(true)
             .open(repo_dir.join("smithers-coding.lock"))
             .map_err(|_| Failure::new("workspace_busy", "cannot open native coding lock"))?;
         let until = Instant::now() + Duration::from_secs(15);
         loop {
-            // SAFETY: flock receives this live file descriptor; the guard
-            // keeps it open until the operation finishes.
-            let outcome = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
-            if outcome == 0 {
-                return Ok(Self(file));
+            match file.try_lock() {
+                Ok(()) => return Ok(Self(file)),
+                Err(TryLockError::WouldBlock) => {}
+                Err(TryLockError::Error(error)) => {
+                    return Err(Failure::new(
+                        "workspace_busy",
+                        format!("cannot acquire native coding lock: {error}"),
+                    ));
+                }
             }
             if Instant::now() >= until {
                 return Err(Failure::new(
@@ -191,10 +196,7 @@ impl CodingLock {
 
 impl Drop for CodingLock {
     fn drop(&mut self) {
-        // SAFETY: the file descriptor remains open during Drop.
-        unsafe {
-            libc::flock(self.0.as_raw_fd(), libc::LOCK_UN);
-        }
+        let _ = self.0.unlock();
     }
 }
 
@@ -341,6 +343,26 @@ mod tests {
             .unwrap()
             .extend(fields.as_object().unwrap().clone());
         run(serde_json::to_string(&request).unwrap().as_bytes())
+    }
+
+    #[test]
+    fn coding_lock_excludes_other_handles_until_dropped() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join(".jj/repo")).unwrap();
+        let guard = CodingLock::acquire(dir.path()).unwrap();
+        let contender = fs::OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(dir.path().join(".jj/repo/smithers-coding.lock"))
+            .unwrap();
+        assert!(matches!(
+            contender.try_lock(),
+            Err(TryLockError::WouldBlock)
+        ));
+        drop(guard);
+        contender.try_lock().unwrap();
+        contender.unlock().unwrap();
+        CodingLock::acquire(dir.path()).unwrap();
     }
 
     #[test]

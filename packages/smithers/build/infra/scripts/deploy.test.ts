@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process"
+import { ChildProcess, spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -358,12 +358,14 @@ describe("deploy wrapper", () => {
     }
   })
 
-  it("signals the child itself when its process group can no longer be signalled", async () => {
+  it("retries through the child handle when the first signal delivery is refused", async () => {
     const marker = NodePath.join(directory, "group-gone")
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
-    const kill = vi.spyOn(process, "kill").mockImplementationOnce(() => {
-      throw Object.assign(new Error("no such process group"), { code: "ESRCH" })
-    })
+    const childKill = vi.spyOn(ChildProcess.prototype, "kill")
+    const refuse = () => { throw Object.assign(new Error("signal delivery refused"), { code: "ESRCH" }) }
+    const groupKill = vi.spyOn(process, "kill")
+    if (process.platform === "win32") childKill.mockImplementationOnce(refuse)
+    else groupKill.mockImplementationOnce(refuse)
     try {
       const code = await withIsolatedSignals(async () => {
         const running = deploy([marker], {
@@ -378,13 +380,14 @@ describe("deploy wrapper", () => {
         return await running
       })
 
-      // The group kill was refused, yet the child still saw the SIGTERM: it
-      // arrived through the child's own handle.
-      expect(kill.mock.calls[0]?.[1]).toBe("SIGTERM")
-      expect(existsSync(`${marker}.sigterm`)).toBe(true)
+      expect(childKill).toHaveBeenCalledWith("SIGTERM")
+      // Windows terminates the process without running its signal handler.
+      expect(existsSync(`${marker}.sigterm`)).toBe(process.platform !== "win32")
+      expect(childKill.mock.contexts[0]).toMatchObject({ signalCode: expect.any(String) })
       expect(code).toBe(143)
     } finally {
-      kill.mockRestore()
+      childKill.mockRestore()
+      groupKill.mockRestore()
       stdout.mockRestore()
     }
   }, 30_000)
@@ -394,6 +397,7 @@ describe("deploy wrapper", () => {
     const platform = Object.getOwnPropertyDescriptor(process, "platform")
     if (platform === undefined) throw new Error("process.platform is not an own property")
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    const childKill = vi.spyOn(ChildProcess.prototype, "kill")
     // Windows has no process groups to signal, so the wrapper signals the
     // child directly; the branch is real, the platform is not.
     Object.defineProperty(process, "platform", { ...platform, value: "win32" })
@@ -411,10 +415,13 @@ describe("deploy wrapper", () => {
         return await running
       })
 
-      expect(existsSync(`${marker}.sigterm`)).toBe(true)
+      expect(childKill).toHaveBeenCalledWith("SIGTERM")
+      expect(childKill.mock.contexts[0]).toMatchObject({ signalCode: expect.any(String) })
+      expect(existsSync(`${marker}.sigterm`)).toBe(platform.value !== "win32")
       expect(code).toBe(143)
     } finally {
       Object.defineProperty(process, "platform", platform)
+      childKill.mockRestore()
       stdout.mockRestore()
     }
   }, 30_000)
@@ -589,6 +596,16 @@ describe("deploy wrapper", () => {
   it("escalates to SIGKILL when the command ignores the forwarded signal", async () => {
     const marker = NodePath.join(directory, "escalation")
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    const realKill = ChildProcess.prototype.kill
+    const childKill = vi.spyOn(ChildProcess.prototype, "kill")
+    if (process.platform === "win32") {
+      // Windows cannot ignore an OS SIGTERM. Model that first delivery being
+      // ineffective, then let the escalation terminate the real child.
+      childKill.mockImplementation(function(this: ChildProcess, signal) {
+        return signal === "SIGTERM" ? true : realKill.call(this, signal)
+      })
+    }
+    const groupKill = vi.spyOn(process, "kill")
     let redactions = 0
     try {
       const started = Date.now()
@@ -610,7 +627,13 @@ describe("deploy wrapper", () => {
 
       // The child recorded the forwarded SIGTERM and stayed alive, so the only
       // thing that could have ended it is the SIGKILL escalation.
-      expect(existsSync(`${marker}.sigterm`)).toBe(true)
+      expect(existsSync(`${marker}.sigterm`)).toBe(process.platform !== "win32")
+      if (process.platform === "win32") {
+        expect(childKill).toHaveBeenCalledWith("SIGKILL")
+        expect(childKill.mock.contexts[0]).toMatchObject({ signalCode: "SIGKILL" })
+      } else {
+        expect(groupKill.mock.calls.some(([, signal]) => signal === "SIGKILL")).toBe(true)
+      }
       expect(Date.now() - started).toBeGreaterThanOrEqual(300)
       // 143 is the conventional 128 + SIGTERM, reported even though the
       // command itself died to the escalation.
@@ -618,6 +641,8 @@ describe("deploy wrapper", () => {
       expect(redactions).toBe(1)
       expect(process.listenerCount("SIGTERM")).toBe(0)
     } finally {
+      childKill.mockRestore()
+      groupKill.mockRestore()
       stdout.mockRestore()
     }
   }, 30_000)
@@ -625,6 +650,7 @@ describe("deploy wrapper", () => {
   it("maps SIGINT to its conventional exit code", async () => {
     const marker = NodePath.join(directory, "interrupt")
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    const childKill = vi.spyOn(ChildProcess.prototype, "kill")
     try {
       const code = await withIsolatedSignals(async () => {
         const running = deploy([marker], {
@@ -639,9 +665,14 @@ describe("deploy wrapper", () => {
         return await running
       })
 
-      expect(existsSync(`${marker}.sigint`)).toBe(true)
+      expect(existsSync(`${marker}.sigint`)).toBe(process.platform !== "win32")
+      if (process.platform === "win32") {
+        expect(childKill).toHaveBeenCalledWith("SIGINT")
+        expect(childKill.mock.contexts[0]).toMatchObject({ signalCode: "SIGINT" })
+      }
       expect(code).toBe(130)
     } finally {
+      childKill.mockRestore()
       stdout.mockRestore()
     }
   }, 30_000)

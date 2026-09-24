@@ -928,7 +928,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       // Only an absent root means an empty deployment; any other failure to
       // resolve it is reported.
       await expect(redactAlchemyState({ directory: NodePath.join(file, "child"), bearerToken: "token" })).rejects
-        .toThrow(/ENOTDIR/)
+        .toThrow(/ENOTDIR|Alchemy state root is not a directory/)
     })
   })
 

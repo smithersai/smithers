@@ -562,7 +562,14 @@ const resolveStateRoot = async (directory: string): Promise<string | null> => {
   try {
     root = await Fs.realpath(requestedRoot)
   } catch (error) {
-    if (errorCode(error) === "ENOENT") return null
+    if (errorCode(error) === "ENOENT") {
+      // Windows also reports ENOENT for file/child. Validate the existing
+      // ancestors before treating this as a deployment with no state.
+      const parent = NodePath.dirname(requestedRoot)
+      if (parent === requestedRoot) throw error
+      await resolveStateRoot(parent)
+      return null
+    }
     throw error
   }
   if (root !== requestedRoot) {

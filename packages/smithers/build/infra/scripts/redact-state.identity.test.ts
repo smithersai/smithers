@@ -438,6 +438,34 @@ describe("Alchemy state file identity", () => {
    * code, or one that is not even an object, is not a reason to report
    * success over state that was never inspected.
    */
+  it("refuses Windows ENOENT beneath an existing file", async () => {
+    await withFixture(async (root) => {
+      const file = NodePath.join(root, "state.json")
+      await RealFs.writeFile(file, "{}")
+      const directory = NodePath.join(file, "child")
+      fault.realpath.target = directory
+      fault.realpath.failOn = 1
+      fault.realpath.rejection = Object.assign(new Error("missing path"), { code: "ENOENT" })
+      await expect(redactAlchemyState({ directory })).rejects.toThrow("Alchemy state root is not a directory")
+      expect(await RealFs.readFile(file, "utf8")).toBe("{}")
+    })
+  })
+
+  it("accepts multiple missing state directories beneath a real directory", async () => {
+    await withFixture(async (root) => {
+      expect(await redactAlchemyState({ directory: NodePath.join(root, "missing", "state") })).toBe(0)
+    })
+  })
+
+  it("does not treat an unavailable filesystem root as an empty deployment", async () => {
+    const directory = NodePath.parse(Os.tmpdir()).root
+    const rejection = Object.assign(new Error("missing filesystem"), { code: "ENOENT" })
+    fault.realpath.target = directory
+    fault.realpath.failOn = 1
+    fault.realpath.rejection = rejection
+    await expect(redactAlchemyState({ directory })).rejects.toBe(rejection)
+  })
+
   it.each([
     ["a failure that is not an object", "not an error"],
     [
