@@ -7,6 +7,7 @@ const steps = [
   ["run", "test:e2e:probes"],
   ["run", "test:e2e:graph-lifecycle"],
   ["exec", "playwright", "test"],
+  ["exec", "playwright", "test", "--config", "playwright.site.config.ts"],
   ["exec", "playwright", "test", "--config", "playwright.graph.config.ts"]
 ]
 

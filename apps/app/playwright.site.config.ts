@@ -14,7 +14,8 @@ export default defineConfig({
     command: "pnpm --filter @smithers/site run build && pnpm --filter @smithers/site run preview --host 127.0.0.1 --port 47312",
     url: "http://127.0.0.1:47312",
     reuseExistingServer: false,
-    timeout: 240_000,
+    // The full Astro build with Pagefind measured 5.5 minutes on a loaded workstation; 240 s timed out.
+    timeout: 600_000,
     // Astro otherwise detaches automatically in an agent environment.
     env: { ASTRO_PREVIEW_BACKGROUND: "1" },
   },

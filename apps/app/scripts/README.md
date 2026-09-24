@@ -19,6 +19,7 @@ E2E and live-check scripts. Unless a section says otherwise, run them from
 | `pnpm test` | Tests under `src/` and `scripts/` | Bun |
 | `pnpm run test:e2e` | Specs under `e2e/playwright/` | Playwright Chromium and the local app server |
 | `pnpm run test:e2e:auth` | `e2e/native/CloudAuthFragment.test.ts` | Playwright Chromium; starts isolated loopback OAuth fixtures |
+| `pnpm run test:e2e:site` | Specs under `e2e/site/` | Playwright Chromium; builds and previews `apps/site` |
 | `pnpm run test:e2e:probes` | Tests under `e2e/probes/` | Playwright Chromium; no server and no deployed host |
 | `pnpm run test:e2e:packaged` | Bridge, fixture lease and packaged-app tests named by `e2e/packaged/run.ts` | Packaged Electrobun app |
 
@@ -29,7 +30,9 @@ target uses the same discovery as `pnpm test`; its inputs include scripts,
 E2E harnesses, configs and RPC fixtures. It depends on the RPC, gateway and
 shared UI typechecks so the inspected package sources contribute their keys.
 The `browserE2e` target invokes `run-pr-e2e.mjs`, which installs Chromium, runs
-`test:e2e:auth` and `test:e2e:probes`, then runs the offline Playwright suite.
+`test:e2e:auth`, `test:e2e:probes` and `test:e2e:graph-lifecycle`, then the
+offline Playwright, site and flow-graph suites. TestInventory admits a CI
+browser tier only from that runner's argv, never from a `package.json` alias.
 Any failed command stops the wrapper with a nonzero exit code.
 
 ## Launch checklist (`launch-checklist.ts`)

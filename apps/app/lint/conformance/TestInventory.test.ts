@@ -70,27 +70,28 @@ const invokesRealPlaywright = (source: string): boolean => {
 const realRunner = invokesRealPlaywright(read("scripts/run-real-e2e.ts"))
 
 /*
- * The flow-graph tier is a step of the PR browser runner rather than a
- * package.json alias, and the flow builder's build-time flag makes it two
- * steps. Admit only an actual argv array, never a comment or a config mention,
- * for the reason the real lane gives above.
+ * The required PR browser tiers are steps of scripts/run-pr-e2e.mjs, the
+ * browserE2e target CI executes. A package.json alias or a comment runs
+ * nothing, so admit only the runner's literal argv arrays, matched exactly:
+ * an extra argument such as --grep would narrow the tier.
  */
-const invokesGraphPlaywright = (source: string): boolean => {
+const ciSteps = (source: string): string[][] => {
   const parsed = ts.createSourceFile("run-pr-e2e.mjs", source, ts.ScriptTarget.Latest, true)
-  const wanted = ["exec", "playwright", "test", "--config", "playwright.graph.config.ts"]
-  let found = false
+  const steps: string[][] = []
   const visit = (node: ts.Node) => {
-    if (ts.isArrayLiteralExpression(node)) {
-      const args = node.elements
-      found ||= wanted.every((value, index) =>
-        args[index] !== undefined && ts.isStringLiteral(args[index]) && args[index].text === value)
-    }
+    if (ts.isArrayLiteralExpression(node) && node.elements.length > 0 && node.elements.every(ts.isStringLiteral))
+      steps.push(node.elements.map((element) => (element as ts.StringLiteral).text))
     ts.forEachChild(node, visit)
   }
   visit(parsed)
-  return found
+  return steps
 }
-const graphRunner = invokesGraphPlaywright(read("scripts/run-pr-e2e.mjs"))
+const runsStep = (steps: readonly string[][], argv: readonly string[]): boolean =>
+  steps.some((step) => step.length === argv.length && step.every((value, index) => value === argv[index]))
+const prSteps = ciSteps(read("scripts/run-pr-e2e.mjs"))
+const playwrightStep = ["exec", "playwright", "test"]
+const siteStep = [...playwrightStep, "--config", "playwright.site.config.ts"]
+const graphStep = [...playwrightStep, "--config", "playwright.graph.config.ts"]
 const matches = (path: string, patterns: string | RegExp | readonly (string | RegExp)[]): boolean =>
   (Array.isArray(patterns) ? patterns : [patterns]).some((pattern) =>
     typeof pattern === "string" ? new Bun.Glob(pattern).match(path) : pattern.test(path))
@@ -107,11 +108,11 @@ const owners = (path: string): string[] => {
   if (selected(path, bunPaths(scripts["test:e2e:auth"]))) result.push("browser OAuth")
   if (selected(path, bunPaths(scripts["test:e2e:probes"]))) result.push("probe helpers")
   if (selected(path, bunPaths(scripts["test:e2e:graph-lifecycle"]))) result.push("graph lifecycle")
-  if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
-  if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
+  if (runsStep(prSteps, playwrightStep) && playwrightOwns(path, playwright)) result.push("Playwright")
+  if (runsStep(prSteps, siteStep) && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
   if (realRunner && playwrightOwns(path, playwrightReal)) result.push("Playwright real")
-  if (graphRunner && playwrightOwns(path, playwrightGraph)) result.push("Playwright graph")
+  if (runsStep(prSteps, graphStep) && playwrightOwns(path, playwrightGraph)) result.push("Playwright graph")
   return result
 }
 
@@ -158,6 +159,16 @@ test("real runner ownership comes from executable argv, not prose or a different
   expect(invokesRealPlaywright('// run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts"])')).toBe(false)
   expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.site.config.ts"])')).toBe(false)
   expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...args])')).toBe(true)
+})
+
+test("CI browser ownership comes from the PR runner's argv, not an alias or prose", () => {
+  expect(runsStep(prSteps, playwrightStep)).toBe(true)
+  expect(runsStep(prSteps, siteStep)).toBe(true)
+  expect(runsStep(prSteps, graphStep)).toBe(true)
+  expect(runsStep(ciSteps('// ["exec", "playwright", "test", "--config", "playwright.site.config.ts"]'), siteStep)).toBe(false)
+  expect(runsStep(ciSteps('const steps = [["run", "test:e2e:site"]]'), siteStep)).toBe(false)
+  expect(runsStep(ciSteps('const steps = [["exec", "playwright", "test", "--config", "playwright.site.config.ts", "--grep", "x"]]'), siteStep)).toBe(false)
+  expect(runsStep(ciSteps('const steps = [["exec", "playwright", "test", "--config", "playwright.site.config.ts"]]'), siteStep)).toBe(true)
 })
 
 test("the target unit gate matches package discovery and CI executes the browser OAuth, probe and graph lifecycle lanes", () => {

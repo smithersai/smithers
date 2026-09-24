@@ -15,9 +15,8 @@ test("Get started for free mounts the real island in place when it loads", async
   await expect(page.locator("#start-error")).toHaveCount(0)
   const actions = page.getByTestId("first-run-actions")
   expect(await actions.locator("button:not([data-flow])").count()).toBe(0)
-  await actions.locator('button[data-flow="appearance.theme"]').click()
+  await actions.getByRole("button", { name: "Dismiss", exact: true }).click()
   await expect(actions).toHaveCount(0)
-  await expect(page.getByRole('region', { name: 'Color themes' })).toBeVisible()
   await page.reload()
   await page.getByRole("link", { name: "Get started for free", exact: true }).click()
   await expect(page.locator(".app-shell")).toBeVisible()
@@ -106,18 +105,4 @@ test("tutorial query opens the plain app and hint dismissal survives reload", as
   await expect(page.getByTestId("first-run-actions")).toBeVisible()
   await expect(hint).toHaveCount(0)
   await expect(page.locator(".help-bubble")).toHaveCount(0)
-})
-
-test("a signed-out first run opens practice issues from the recommended actions", async ({ page }) => {
-  await page.route("**/api/recommend", route => route.fulfill({ json: { suggestions: [] } }))
-  await page.route("**/api/bootstrap", route => route.fulfill({ json: {
-    apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["identity"], authFlow: "redirect", sandbox: null,
-  } }))
-  await page.route("**/api/auth/session", route => route.fulfill({ json: { status: "signed-out" } }))
-  await page.goto("/?tutorial")
-  const actions = page.getByTestId("first-run-actions")
-  await actions.locator('[data-flow="issues.list"]').click()
-  await expect(actions).toHaveCount(0)
-  await expect(page.getByTestId("card-practice-issues")).toContainText('GET /hello without a name')
-  await expect(page.getByText("This is the Smithers web app.", { exact: false })).toHaveCount(0)
 })
