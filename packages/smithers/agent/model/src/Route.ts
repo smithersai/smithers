@@ -22,6 +22,7 @@ import * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
 import * as OpenAIResponses from "./OpenAIResponses.ts"
 import type * as Protocol from "./Protocol.ts"
 import * as RequestExecutor from "./RequestExecutor.ts"
+import * as WireTrace from "./internal/WireTrace.ts"
 
 /**
  * The credential-free representation used to construct a sealed model step.
@@ -220,6 +221,7 @@ const stream = <Body, Frame, Event, State>(
     Stream.unwrap(
       Effect.fn("flows/model/Route.stream")(function*() {
         const { prepared, request: snapshot } = yield* compile(route, request)
+        WireTrace.record(prepared)
         const attempt = Effect.gen(function*() {
           const signedHeaders = yield* route.auth.sign({ ...prepared.publicHeaders })
           const httpRequest = HttpClientRequest.post(prepared.url, { headers: signedHeaders }).pipe(

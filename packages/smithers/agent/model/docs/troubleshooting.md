@@ -127,3 +127,23 @@ fiber cancellation or a dead transport mid-body (the latter also raises
 into a message with `stopReason: "aborted"`, and the next built-in request
 omits that turn automatically. Partial tool-call argument text in such a
 message is audit data; never execute it.
+
+## Prompt cache
+
+**Cached input stops growing across a conversation.** Set
+`SMITHERS_WIRE_TRACE` to a file path and rerun. Each outgoing request
+appends one JSON line with the route, the `prompt_cache_key` body field, the
+`session-id` header, a short hash of the instructions, a hash and kind for
+each input item, and `commonPrefixItems`: how many leading input items match
+the previous request on the same cache key. The line never contains the
+signed credential or item content. Compare it with the usage the stream
+reports:
+
+- `cacheKey` or `sessionIdHeader` is `null`: the request named no cache
+  identity, and the provider may spread the conversation across machines.
+- `commonPrefixItems` stays low while the input grows: the request is not
+  append-only, so the provider has no earlier prefix to read back.
+- Both are sound, and cached tokens still stop at the same count every call:
+  the loss is on the provider side of the wire. Compare the stall point with
+  the first item of a kind the provider treats differently, such as a
+  replayed `reasoning` item.
