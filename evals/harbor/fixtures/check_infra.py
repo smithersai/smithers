@@ -602,6 +602,82 @@ def check_auth_denial_waits() -> None:
                 os.environ.pop(name, None)
 
 
+def check_ledger_bins_and_retry() -> None:
+    """The 2026-09-24 00:00 stall. (1) A trial retried in-process reuses its
+    ledger key; it found the last attempt's handover entry, took it as held,
+    and the entry expired 180 s later: a running 4-vCPU VM the ledger no
+    longer counted. (2) A flat slot count granted three 4-vCPU guests on two
+    7-vCPU hosts; only first-fit bins say what can be placed."""
+    with tempfile.TemporaryDirectory() as directory:
+        ledger = plue_env.SlotLedger(Path(directory) / "l.json", capacity=6, hosts=2, host_cpus=7)
+        ledger.enqueue("t1__env", 2, cpus=4)
+        assert ledger.try_grant("t1__env")
+        ledger.release("t1__env", heir="t1__verifier__")  # attempt 1 ends
+        ledger.enqueue("t1__env", 2, cpus=4)                # attempt 2, same key
+        assert ledger.try_grant("t1__env")
+        state = json.loads((Path(directory) / "l.json").read_text())
+        assert "until" not in state["holders"]["t1__env"] and "heir" not in state["holders"]["t1__env"], \
+            "a re-reserved key is held again, not left to expire"
+
+        ledger.enqueue("t2__env", 2, cpus=4)
+        assert ledger.try_grant("t2__env"), "second host"
+        ledger.enqueue("t3__env", 2, cpus=4)
+        assert not ledger.try_grant("t3__env"), "a third 4-vCPU guest fits no 7-vCPU host"
+        ledger.release("t3__env")
+        ledger.enqueue("t4__env", 1, cpus=2)
+        assert ledger.try_grant("t4__env"), "2 vCPU fits beside a 4"
+        ledger.enqueue("t5__env", 1, cpus=2)
+        assert ledger.try_grant("t5__env")
+        ledger.enqueue("t6__env", 1, cpus=2)
+        assert not ledger.try_grant("t6__env"), "4+2 on each host leaves 1 vCPU"
+
+        # A handover to a verifier must fit the bins too.
+        ledger.release("t1__env", heir="t1__verifier__")
+        ledger.enqueue("t1__verifier__trial", 2, cpus=4)
+        assert ledger.try_grant("t1__verifier__trial"), "the verifier takes the agent's 4 vCPU"
+
+        flat = plue_env.SlotLedger(Path(directory) / "f.json", capacity=6)
+        for k in ("a", "b", "c"):
+            flat.enqueue(k, 2, cpus=4)
+            assert flat.try_grant(k), "no hosts configured: the plain slot count"
+
+    os.environ.update(PLUE_SLOTS="6", PLUE_HOSTS="2", PLUE_HOST_CPUS="7",
+                      PLUE_SLOT_LEDGER=str(Path(tempfile.gettempdir()) / "l2.json"))
+    try:
+        l = plue_env.SlotLedger.from_environment()
+        assert (l.hosts, l.host_cpus) == (2, 7)
+    finally:
+        for name in ("PLUE_SLOTS", "PLUE_HOSTS", "PLUE_HOST_CPUS", "PLUE_SLOT_LEDGER"):
+            os.environ.pop(name, None)
+
+
+def check_janitor() -> None:
+    """Trial workspaces are created with --idle-timeout 0, so a failed or
+    suspended one is dead and still holds host CPU and disk (three from
+    killed trials held both hosts on 2026-09-24). The janitor deletes those,
+    only trial-named ones, and never a running one."""
+    import requeue
+    with tempfile.TemporaryDirectory() as directory:
+        calls = Path(directory) / "calls"
+        cli = Path(directory) / "smithers"
+        rows = [{"id": "a", "name": "photonic-waveguide-routing-e4vsrxa-env", "status": "suspended"},
+                {"id": "b", "name": "mp-x-verifier-trial", "status": "failed"},
+                {"id": "c", "name": "layout-y-env", "status": "running"},
+                {"id": "d", "name": "drain-proof-20260923", "status": "suspended"}]
+        cli.write_text("#!/bin/sh\n"
+                       f"echo \"$*\" >> {calls}\n"
+                       f"case \"$*\" in *list*) printf '%s' '{json.dumps(rows)}';; *) printf '{{}}';; esac\n")
+        cli.chmod(0o755)
+        os.environ.update(SMITHERS_CLI=str(cli), PLUE_REPO="acme/bench")
+        try:
+            assert sorted(requeue.reap_dead()) == ["mp-x-verifier-trial", "photonic-waveguide-routing-e4vsrxa-env"]
+        finally:
+            for name in ("SMITHERS_CLI", "PLUE_REPO"):
+                os.environ.pop(name, None)
+        deletes = [l for l in calls.read_text().splitlines() if "delete" in l]
+        assert len(deletes) == 2 and all(" c " not in l and " d " not in l for l in deletes), deletes
+
+
 def check_requeue_and_health() -> None:
     import health
     import requeue
@@ -780,6 +856,8 @@ if __name__ == "__main__":
     check_retried_attempts_are_kept()
     check_guest_restart_watchdog()
     check_auth_denial_waits()
+    check_ledger_bins_and_retry()
+    check_janitor()
     check_requeue_and_health()
     harbor_note = check_with_harbor()
     print(f"check_infra.py: classification, ledger cap and verifier handover, SSH transport, image /tmp, sidecars, "

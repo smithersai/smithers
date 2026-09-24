@@ -20,6 +20,10 @@ Configuration (environment variables of the harness host):
                      task holds 2. Grants are first come, first served across
                      processes, so two arms launched with the same -n share
                      the cluster evenly. Unset: no ledger.
+    PLUE_HOSTS, PLUE_HOST_CPUS  the sandbox hosts and each one's vCPU: a
+                     guest is granted only when all held guests plus it pack
+                     first-fit into those bins (two 4-vCPU guests never share
+                     a 7-vCPU host). Unset: the plain slot count.
     PLUE_MAX_WORKSPACES  running workspaces the ledger allows at once: the
                      account plan's concurrent-sandbox cap (a create over it
                      is refused with 402). Unset or 0: no count cap.
@@ -243,10 +247,15 @@ class SlotLedger:
     handovers are dropped on every update.
     """
 
-    def __init__(self, path: Path | str, capacity: int, max_holders: int = 0):
+    def __init__(self, path: Path | str, capacity: int, max_holders: int = 0,
+                 hosts: int = 0, host_cpus: float = 0):
         self.path = Path(path)
         self.capacity = capacity
         self.max_holders = max_holders
+        # Sandbox hosts as bins: a guest is granted only when every holder
+        # plus it packs first-fit into `hosts` bins of `host_cpus` vCPU.
+        self.hosts = hosts
+        self.host_cpus = host_cpus
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _update(self, change):
@@ -269,6 +278,24 @@ class SlotLedger:
             tmp.replace(self.path)
             return result
 
+    def _fits(self, cpus: list[float]) -> bool:
+        """First-fit decreasing of the guests' vCPU into the host bins."""
+        if not self.hosts or not self.host_cpus:
+            return True
+        free = [float(self.host_cpus)] * self.hosts
+        for need in sorted(cpus, reverse=True):
+            for i, room in enumerate(free):
+                if need <= room + 1e-9:
+                    free[i] -= need
+                    break
+            else:
+                return False
+        return True
+
+    @staticmethod
+    def _cpus(entry) -> float:
+        return float(entry.get("cpus") or int(entry.get("slots", 1)) * _SLOT_VCPUS)
+
     @staticmethod
     def _handover(state, key: str) -> str | None:
         for holder, entry in state["holders"].items():
@@ -276,13 +303,22 @@ class SlotLedger:
                 return holder
         return None
 
-    def enqueue(self, key: str, slots: int, pid: int | None = None) -> None:
+    def enqueue(self, key: str, slots: int, pid: int | None = None, cpus: float | None = None) -> None:
         pid = pid or os.getpid()
 
         def change(state):
+            held = state["holders"].get(key)
+            if held is not None and "until" in held:
+                # A retried trial reuses its key: the last attempt's handover
+                # entry is this attempt's slot again, held, never left to expire.
+                held.pop("until", None)
+                held.pop("heir", None)
+                held.update(pid=pid, since=time.time())
+                return
             if key in state["holders"] or any(w["key"] == key for w in state["waiters"]):
                 return
-            entry = {"key": key, "slots": slots, "pid": pid, "since": time.time()}
+            entry = {"key": key, "slots": slots, "pid": pid, "since": time.time(),
+                     "cpus": float(cpus if cpus is not None else slots * _SLOT_VCPUS)}
             if self._handover(state, key):
                 heirs = sum(1 for w in state["waiters"] if w.get("heir"))
                 state["waiters"].insert(heirs, {**entry, "heir": True})
@@ -301,10 +337,13 @@ class SlotLedger:
             previous = self._handover(state, key)
             if previous is not None:
                 others = used - int(state["holders"][previous]["slots"])
-                if others + int(waiter["slots"]) <= self.capacity or len(state["holders"]) == 1:
+                rest = [self._cpus(v) for k, v in state["holders"].items() if k != previous]
+                if (others + int(waiter["slots"]) <= self.capacity and self._fits(rest + [self._cpus(waiter)])) \
+                        or len(state["holders"]) == 1:
                     state["holders"].pop(previous)
                     state["waiters"].remove(waiter)
-                    state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"], "since": time.time()}
+                    state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"],
+                                             "cpus": self._cpus(waiter), "since": time.time()}
                     return True
             if state["waiters"][0]["key"] != key:
                 return False
@@ -313,8 +352,11 @@ class SlotLedger:
                     return False
                 if self.max_holders and len(state["holders"]) >= self.max_holders:
                     return False
+                if not self._fits([self._cpus(v) for v in state["holders"].values()] + [self._cpus(waiter)]):
+                    return False
             state["waiters"].pop(0)
-            state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"], "since": time.time()}
+            state["holders"][key] = {"pid": waiter["pid"], "slots": waiter["slots"],
+                                     "cpus": self._cpus(waiter), "since": time.time()}
             return True
         return self._update(change)
 
@@ -333,7 +375,8 @@ class SlotLedger:
         if capacity <= 0:
             return None
         path = os.environ.get("PLUE_SLOT_LEDGER") or str(Path.home() / ".cache" / "plue-slots.json")
-        return cls(path, capacity, int(os.environ.get("PLUE_MAX_WORKSPACES", "0") or 0))
+        return cls(path, capacity, int(os.environ.get("PLUE_MAX_WORKSPACES", "0") or 0),
+                   int(os.environ.get("PLUE_HOSTS", "0") or 0), float(os.environ.get("PLUE_HOST_CPUS", "0") or 0))
 
 
 def install_untimed_reserve(trial_cls) -> None:
@@ -705,7 +748,7 @@ class _PlueOps:
         if ledger is not None:
             key = f"{os.getpid()}:{self.session_id}"
             slots = slots_for(cpus)
-            await asyncio.to_thread(ledger.enqueue, key, slots)
+            await asyncio.to_thread(ledger.enqueue, key, slots, None, float(cpus))
             self._plue_ledger_key = key
             try:
                 while not await asyncio.to_thread(ledger.try_grant, key):

@@ -82,7 +82,35 @@ def reap(trials: list[str]) -> list[str]:
     return deleted
 
 
+def reap_dead() -> list[str]:
+    """Delete trial workspaces (`…-env`, `…-verifier-<key>`) that are failed or
+    suspended: trials create them with --idle-timeout 0, so either state means
+    a dead VM that still holds host CPU and disk."""
+    cli, repo = os.environ.get("SMITHERS_CLI", "smithers"), os.environ.get("PLUE_REPO", "")
+    if "/" not in repo:
+        return []
+    listing = subprocess.run([cli, "workspace", "list", "--repo", repo, "--format", "json"],
+                             capture_output=True, text=True, timeout=120)
+    text = listing.stdout
+    try:
+        rows = json.loads(text[text.find("["):]) if "[" in text else []
+    except ValueError:
+        return []
+    deleted = []
+    for row in rows:
+        name, ident, status = str(row.get("name") or ""), row.get("id"), row.get("status")
+        trial_named = name.endswith("-env") or re.search(r"-verifier-[a-z0-9-]+$", name) is not None
+        if ident and trial_named and status in ("failed", "suspended"):
+            subprocess.run([cli, "workspace", "delete", ident, "--repo", repo, "--format", "json"],
+                           capture_output=True, text=True, timeout=300)
+            deleted.append(name)
+    return deleted
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--reap-dead"]:
+        print(f"deleted {len(reap_dead())} dead trial workspaces")
+        sys.exit(0)
     names = requeue(Path(sys.argv[1]))
     print(f"requeued {len(names)}: {' '.join(names)}")
     reaped = reap(names)
