@@ -10,6 +10,7 @@ import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Effect, Fiber, FileSystem, Layer, Option } from "effect"
 import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
 import {
   chmod,
   glob,
@@ -25,6 +26,7 @@ import {
   utimes,
   writeFile
 } from "node:fs/promises"
+import { createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, relative } from "node:path"
 import { promisify } from "node:util"
@@ -1395,6 +1397,54 @@ describe("Node atomic filesystem", () => {
         const flags: ReadonlyArray<FileSystem.OpenFlag> = ["w", "a", "r+", "w+", "a+"]
         const root = yield* Effect.promise(() => temporaryDirectory())
         const pipe = join(root, "pipe")
+        if (process.platform === "win32") {
+          // Windows pipes live in the device namespace. Plant a workspace
+          // symlink to a real listening pipe and prove no operation connects.
+          const address = `\\\\.\\pipe\\smithers-atomic-${randomUUID()}`
+          let connections = 0
+          const server = createServer((socket) => {
+            connections++
+            socket.destroy()
+          })
+          yield* Effect.acquireUseRelease(
+            Effect.promise(() =>
+              new Promise<void>((resolve, reject) => {
+                server.once("error", reject)
+                server.listen(address, resolve)
+              })
+            ),
+            () =>
+              Effect.gen(function*() {
+                yield* Effect.promise(() => symlink(address, pipe, "file"))
+                yield* run(
+                  root,
+                  Effect.gen(function*() {
+                    const fs = yield* FileSystem.FileSystem
+                    const probes: ReadonlyArray<Effect.Effect<unknown, unknown>> = [
+                      fs.exists(pipe),
+                      fs.stat(pipe),
+                      fs.readFile(pipe)
+                    ]
+                    for (const operation of probes) {
+                      expect((yield* Effect.exit(operation))._tag).toBe("Failure")
+                    }
+                    for (const flag of [...flags, "wx"] as const) {
+                      expect((yield* Effect.exit(fs.writeFileString(pipe, "escaped", { flag })))._tag).toBe("Failure")
+                    }
+                  })
+                )
+                expect(connections).toBe(0)
+                expect((yield* Effect.promise(() => lstat(pipe))).isSymbolicLink()).toBe(true)
+              }),
+            () =>
+              Effect.promise(() =>
+                new Promise<void>((resolve, reject) => {
+                  server.close((error) => error === undefined ? resolve() : reject(error))
+                })
+              )
+          )
+          return
+        }
         yield* Effect.promise(() => promisify(execFile)("mkfifo", [pipe]))
 
         const outcome = yield* run(
