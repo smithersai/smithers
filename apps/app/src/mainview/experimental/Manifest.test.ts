@@ -90,3 +90,14 @@ describe("the manifest and the pane files declare the same panes", () => {
     expect(attempts).toBe(2)
   })
 })
+
+/* Mock data ships in the bundle: an address in a pane is published to every visitor. */
+describe("pane mock data", () => {
+  test("names no email address outside the reserved example.com domain", () => {
+    const addresses = readdirSync(panes).filter(file => file.endsWith(".tsx")).flatMap(file =>
+      [...readFileSync(`${panes}${file}`, "utf8").matchAll(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g)]
+        .map(match => `${file}: ${match[0]}`)
+        .filter(hit => !hit.endsWith("@example.com")))
+    expect(addresses).toEqual([])
+  })
+})

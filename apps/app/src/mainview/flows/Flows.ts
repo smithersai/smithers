@@ -28,7 +28,7 @@ import { accountFlows } from "./entries/account"
 import { adminOperatorFlows, adminResetFlows, adminToolFlows } from "./entries/admin"
 import { agentFlows, tutorialChangeFlows } from "./entries/agent"
 import { agentSessionFlows } from "./entries/agentSession"
-import { appFlows } from "./entries/app"
+import { appExperimentalFlows, appFlows } from "./entries/app"
 import { signupFlows } from "./entries/signup"
 import { appearanceFlows } from "./entries/appearance"
 import { approvalFlows } from "./entries/approval"
@@ -203,5 +203,6 @@ export const adminFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   ...adminResetFlows(actions),
   ...adminToolFlows(actions),
   ...debugFlows(actions),
-  ...adminOperatorFlows(actions)
+  ...adminOperatorFlows(actions),
+  ...appExperimentalFlows(actions)
 ]

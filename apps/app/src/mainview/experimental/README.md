@@ -3,9 +3,11 @@
 Hidden mocks of Smithers abstractions that ship in `packages/` and have no UI.
 One pane per abstraction, one flow per pane, one card kind for all of them.
 
-Use `/app.experimental on` or the **Experimental** switch in the account card.
-The setting persists with your session and works on smithers.sh. Use
-`/app.experimental off` to disable it; bare `/app.experimental` toggles it.
+The panes carry invented data, so only an operator reaches them. In an admin
+session (or a Vite dev build) use `/app.experimental on`; the setting persists
+with your session. Use `/app.experimental off` to disable it; bare
+`/app.experimental` toggles it. Every other session has no switch, and a stored
+setting enables nothing there.
 
 For a build that should boot with it on, keep using
 `VITE_SMITHERS_EXPERIMENTAL=true`. The build flag and an explicit host feature
@@ -40,7 +42,8 @@ the two copies to each other in both directions.
 - Mock data is inline at module scope. A pane reads no collection, calls no
   seam and dispatches no transition.
 - Use the abstraction's real vocabulary — real table names, real field names,
-  real verdicts. Invent values, never fields.
+  real verdicts. Invent values, never fields. A value never names a real
+  person: addresses use `example.com` (`Manifest.test.ts` checks).
 - Selection lives in the card's `payload.props`, with the pane's default
   used when absent. Change it through the context's `set(key, value)`, which
   runs `experimental.set` through the registry for both cards and agents.

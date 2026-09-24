@@ -790,7 +790,19 @@ export const createAppController = (
   if ((!features.pluginLibrary && store.session().surface === "plugins") || (!features.wiki && store.session().surface === "world")) {
     store.dispatch({ type: "surface.changed", actor: "system", surface: "chat" })
   }
-  const experimentalEnabled = (): boolean => features.experimental || store.session().experimental === true
+  /*
+   * A Vite dev build unlocks the admin plugin (devtools, debug reads) without
+   * a session: dev has no identity seam to grant admin, and the machinery
+   * panel is exactly what dev needs. Vite serves DEV as the boolean true;
+   * production builds and bun tests see undefined/"" (tsc types the field
+   * string, hence the cast).
+   */
+  const adminSession = (): boolean => {
+    const identity = store.collections.identitySessions.get("identity")
+    return (identity?.state === "signed-in" && identity.admin) || (import.meta.env?.DEV as boolean | string | undefined) === true
+  }
+  /* The panes are mocks with invented data: the session switch counts only for an operator. */
+  const experimentalEnabled = (): boolean => features.experimental || (adminSession() && store.session().experimental === true)
   const reconcileUnavailableCards = (): void => {
     const restored = store.session()
     const restoredCardAvailable = (kind: string): boolean =>
@@ -1966,13 +1978,7 @@ export const createAppController = (
         // Sign-in IS the GitHub connector (§2a′): a valid session means
         // work IS connected, so "connect" stops leading the next actions.
         hasConnectors: signedIn || [...store.collections.connectors.values()].length > 0,
-        // A Vite dev build unlocks the admin plugin (devtools, debug reads)
-        // without a session — dev has no identity seam to grant admin, and
-        // the machinery panel is exactly what dev needs. Vite serves DEV as
-        // the boolean true; production builds and bun tests see
-        // undefined/"" (tsc types the field string, hence the cast).
-        admin: (signedIn && identity.admin) ||
-          (import.meta.env?.DEV as boolean | string | undefined) === true,
+        admin: adminSession(),
         signedOut: identity?.state === "signed-out",
         // The Worker's spending routes sit behind its own identity seam; the
         // local host spends the operator's key and asks nobody.

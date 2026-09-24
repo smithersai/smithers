@@ -4,9 +4,10 @@
  * A pane is one hidden mock of an abstraction this repository already ships
  * but cannot show: `@smthrs/plan`'s keyed graph, `@smthrs/capability`'s rule
  * ladder, the harness cell loop's call ledger. The whole namespace exists
- * behind VITE_SMITHERS_EXPERIMENTAL, so nothing here reaches a person who did
- * not ask for it, and NO INVENTION does not bind a mock the way it binds a
- * shipped surface: a mock is a proposal, and its copy is the proposal.
+ * behind VITE_SMITHERS_EXPERIMENTAL or an admin session's `app.experimental`
+ * switch, so nothing here reaches a user, and NO INVENTION does not bind a
+ * mock the way it binds a shipped surface: a mock is a proposal, and its copy
+ * is the proposal.
  *
  * A pane carries its own mock data. It reads no collection, calls no seam and
  * dispatches no transition directly. Selections live in the card payload and

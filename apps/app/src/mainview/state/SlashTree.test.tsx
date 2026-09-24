@@ -137,6 +137,8 @@ describe("the slash menu is a tree", () => {
 describe("the slash menu follows the experimental switch", () => {
   test("a toggle with no keystroke adds and removes the branch's rows", async () => {
     const view = await mount()
+    await view.controller.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+      login: "operator", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
     await view.act(() => view.controller.changeDraft("/experimental."))
     expect(rows(view.host)).toEqual([])
     await view.controller.commands.run("app.experimental", "on")

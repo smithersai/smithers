@@ -84,69 +84,36 @@ describe("experimental card rendering", () => {
     } finally { loader.mockRestore() }
   })
 
-  test("the mounted card and account switch follow the live setting", async () => {
+  test("the mounted card follows the live operator setting", async () => {
     const { controller, store } = await boot(false)
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+      login: "operator", allowlisted: true, admin: true, scopesPlain: null }).isPersisted.promise
     await store.dispatch({ type: "card.upsert", actor: "system", card: savedCard }).isPersisted.promise
-    const account: CardOf<"account"> = {
-      id: "account-test", kind: "account", title: "Account", status: "active", createdAt: 1, ordinal: 2,
-      payload: { login: "will", allowlisted: true, accessRequested: false, scopes: [], boxes: [] }
-    }
-    const pending: Promise<CommandOutcome>[] = []
-    const actions = { ...cardActions(controller), worldDocuments: [],
-      onRunCommand: (name: string, args?: string) => { pending.push(controller.commands.run(name, args)) } }
-    const view = await mount(<><CardView card={savedCard} maximized={false} {...actions} />
-      <CardView card={account} maximized={false} {...actions} /></>)
-    const toggle = view.host.querySelector<HTMLButtonElement>('[role="switch"]')!
-    expect(toggle.getAttribute("aria-label")).toBe("Experimental")
-    expect(toggle.getAttribute("aria-checked")).toBe("false")
+    const actions = { ...cardActions(controller), worldDocuments: [] }
+    const view = await mount(<CardView card={savedCard} maximized={false} {...actions} />)
     expect(view.host.querySelector(".experimental-missing")?.textContent).toBe("Experimental panes are disabled.")
-    toggle.focus()
-    expect(document.activeElement).toBe(toggle)
-    await act(async () => { toggle.click(); await Promise.all(pending) })
-    expect(toggle.getAttribute("aria-checked")).toBe("true")
+    await act(async () => { await controller.commands.run("app.experimental", "on") })
     expect(view.host.querySelector('.experimental-pane[data-pane="plan"]')).not.toBeNull()
     await act(async () => { await controller.commands.run("card.maximize", savedCard.id) })
     expect(store.session().maximizedCardId).toBe(savedCard.id)
-    await act(async () => { toggle.click(); await Promise.all(pending) })
-    expect(toggle.getAttribute("aria-checked")).toBe("false")
+    await act(async () => { await controller.commands.run("app.experimental", "off") })
     expect(view.host.querySelector(".experimental-pane")).toBeNull()
     expect(view.host.querySelector(".experimental-missing")?.textContent).toBe("Experimental panes are disabled.")
     expect(store.session().maximizedCardId).toBeNull()
   })
 
-  /*
-   * Keyboard-only access (apps/app/AGENTS.md). The switch is a native button,
-   * so Enter and Space ARE its activation — but happy-dom performs no default
-   * action, so the proof is in two halves: the element is the one the browser
-   * activates and nothing intercepts either key, and that activation runs the
-   * flow. A div with an onClick passes every other test in this file.
-   */
-  test("the account switch is a native button and neither Enter nor Space is intercepted", async () => {
-    const { controller, store } = await boot(false)
+  /* The account card is every person's; the operator switch is a flow, never a row there. */
+  test("the account card carries no experimental switch", async () => {
+    const { controller } = await boot(false)
     const account: CardOf<"account"> = {
-      id: "account-keys", kind: "account", title: "Account", status: "active", createdAt: 1, ordinal: 1,
+      id: "account-test", kind: "account", title: "Account", status: "active", createdAt: 1, ordinal: 1,
       payload: { login: "will", allowlisted: true, accessRequested: false, scopes: [], boxes: [] }
     }
-    const pending: Promise<CommandOutcome>[] = []
-    const actions = { ...cardActions(controller), worldDocuments: [],
-      onRunCommand: (name: string, args?: string) => { pending.push(controller.commands.run(name, args)) } }
-    const view = await mount(<CardView card={account} maximized={false} {...actions} />)
-    const toggle = view.host.querySelector<HTMLButtonElement>('[role="switch"]')!
-    expect(toggle.tagName).toBe("BUTTON")
-    expect(toggle.type).toBe("button")
-    expect(toggle.disabled).toBe(false)
-    toggle.focus()
-    expect(document.activeElement).toBe(toggle)
-    for (const key of ["Enter", " "]) {
-      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })
-      await act(async () => { toggle.dispatchEvent(event) })
-      expect(event.defaultPrevented).toBe(false)
-    }
-    for (const checked of [true, false]) {
-      await act(async () => { toggle.click(); await Promise.all(pending) })
-      expect(store.session().experimental).toBe(checked)
-      expect(toggle.getAttribute("aria-checked")).toBe(String(checked))
-    }
+    const view = await mount(<CardView card={account} maximized={false} {...cardActions(controller)} worldDocuments={[]} />)
+    expect(view.host.querySelector('[role="switch"]')).toBeNull()
+    expect(view.host.querySelector('[data-flow="app.experimental"]')).toBeNull()
+    expect(view.host.textContent).not.toContain("Experimental")
+    expect(view.host.querySelector('[data-testid="account-login"]')?.textContent).toBe("GitHubConnected as @will")
   })
 
   test("a card selection runs the typed flow, keeps its id, and renders again after remount", async () => {

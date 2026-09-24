@@ -353,9 +353,10 @@ export const createCommandRegistry = (actions: CommandActions, agentActions: Com
      * registered live off the session setting, so a name it declares is
      * absent because the switch is off — never because no such flow exists.
      * A mid-turn toggle-off left a model that had just been given the name
-     * reading "no command has that name".
+     * reading "no command has that name". Only an operator has the switch;
+     * for everyone else a pane name resolves exactly like a typo.
      */
-    if (!actions.snapshot().experimental && experimental.some((entry) => nameOf(entry) === name)) {
+    if (actions.snapshot().admin && !actions.snapshot().experimental && experimental.some((entry) => nameOf(entry) === name)) {
       return { door: "experimental", reason: absentReason(name, "experimental") }
     }
     const bootstrap = actions.bootstrap

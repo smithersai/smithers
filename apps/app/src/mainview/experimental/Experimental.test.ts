@@ -19,13 +19,41 @@ const boot = async (experimental: boolean, storage = memoryStorage()) => {
   return { controller, store, storage }
 }
 
+/** The operator session the `app.experimental` switch belongs to; every other session has no switch. */
+const signIn = async (store: AppStore, admin: boolean) => {
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
+    login: admin ? "operator" : "user", allowlisted: true, admin, scopesPlain: null }).isPersisted.promise
+}
+
 const cards = (store: AppStore) => [...store.collections.cards.values()].filter(card => card.kind === "experimental")
 const names = (items: ReadonlyArray<{ readonly name: string }>) => items.map(item => item.name).filter(name => name.startsWith("experimental.")).sort()
 const allNames = [...EXPERIMENTAL_MANIFEST.map(entry => `experimental.${entry.id}`), "experimental.set"].sort()
 
 describe("experimental flows share the flag and all three doors", () => {
-  test("the session switch changes all doors on the same controller", async () => {
+  /*
+   * The panes are mocks with invented data. A person who is not an operator
+   * must never reach them: no switch to find, no setting that counts, and a
+   * pane name resolves exactly like a typo.
+   */
+  test("a non-admin session has no switch and a stored on setting enables nothing", async () => {
     const { controller, store } = await boot(false)
+    await signIn(store, false)
+    expect(controller.commands.all().some(item => item.name === "app.experimental")).toBe(false)
+    expect(controller.commands.disclosed().some(item => item.name === "app.experimental")).toBe(false)
+    expect((await controller.commands.run("app.experimental", "on")).status).toBe("unknown-command")
+    expect((await controller.commands.runAsAgent("app.experimental", "on")).status).toBe("unknown-command")
+    store.dispatch({ type: "experimental.toggled", actor: "user", on: true })
+    await settled()
+    expect(controller.commands.state().experimental).toBe(false)
+    expect(names(controller.commands.all())).toEqual([])
+    expect(controller.commands.explainAbsent("experimental.plan")).toBeUndefined()
+    expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unknown-command")
+    expect(cards(store)).toEqual([])
+  })
+
+  test("the operator's session switch changes all doors on the same controller", async () => {
+    const { controller, store } = await boot(false)
+    await signIn(store, true)
     expect(controller.commands.all().some(item => item.name === "app.experimental")).toBe(true)
     expect(names(controller.commands.all())).toEqual([])
     expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unavailable")
@@ -60,6 +88,7 @@ describe("experimental flows share the flag and all three doors", () => {
   for (const presentation of ["maximized", "tab"] as const) {
     test(`session setting persists with a ${presentation} card and off reconciles it live`, async () => {
       const { controller, store, storage } = await boot(false)
+      await signIn(store, true)
       await controller.commands.run("app.experimental", "on")
       await controller.commands.run("experimental.plan")
       const id = cards(store)[0]!.id
@@ -82,10 +111,10 @@ describe("experimental flows share the flag and all three doors", () => {
     try {
       expect(names(controller.commands.all())).toEqual([])
       expect(names(controller.commands.disclosed())).toEqual([])
-      expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unavailable")
+      expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("unknown-command")
       expect((await controller.commands.runAsAgent("experimental.set", flowArgs("experimental.set", {
         cardId: "experimental:plan", key: "nodeId", value: "test"
-      }))).status).toBe("unavailable")
+      }))).status).toBe("unknown-command")
       expect(dispatch.mock.calls.filter(([event]) => event.type === "card.upsert")).toEqual([])
       expect(cards(store)).toEqual([])
     } finally { dispatch.mockRestore() }
@@ -220,7 +249,8 @@ describe("experimental flows share the flag and all three doors", () => {
    * the model looking for a different flow instead of re-listing.
    */
   test("a name the switch hides refuses as not currently available, never as no such name", async () => {
-    const { controller } = await boot(false)
+    const { controller, store } = await boot(false)
+    await signIn(store, true)
     const reason = "/experimental.plan is not currently available — /app.experimental turns experimental panes on."
     expect(controller.commands.explainAbsent("experimental.plan")).toEqual({ door: "experimental", reason })
     expect(await controller.commands.run("experimental.plan")).toEqual({
@@ -244,21 +274,22 @@ describe("experimental flows share the flag and all three doors", () => {
    */
   test("the setting survives a sign-out, like verbose and the palette", async () => {
     const { controller, store } = await boot(false)
+    await signIn(store, true)
     await controller.commands.run("app.experimental", "on")
     store.dispatch({ type: "verbose.toggled", actor: "user", on: true })
     store.dispatch({ type: "palette.changed", actor: "user", palette: PALETTES[1]! })
-    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in",
-      login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     await store.dispatch({ type: "message.appended", actor: "system", text: "Private work" }).isPersisted.promise
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out",
       login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
     await settled()
     // The scrub ran...
     expect([...store.collections.messages.values()].some(row => row.text?.includes("Private work"))).toBe(false)
-    // ...and left every preference, and the flows the switch registers, alone.
+    // ...and left every preference alone, while the signed-out session reaches no pane.
     expect(store.session().experimental).toBe(true)
     expect(store.session().verbose).toBe(true)
     expect(store.session().palette).toBe(PALETTES[1]!)
+    expect(names(controller.commands.all())).toEqual([])
+    await signIn(store, true)
     expect(names(controller.commands.all())).toEqual(allNames)
   })
 
