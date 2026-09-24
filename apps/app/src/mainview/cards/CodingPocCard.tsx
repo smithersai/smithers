@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 import { runSourceCommand } from "../flows/RunCommand"
 import type { Card } from "../state/AppState"
@@ -20,7 +21,7 @@ export const CodingPocBody = ({ card, onRunCommand: sendRunCommand }: {
       <p>Drafted and discarded. No build or tests ran.</p>
       <p>{first.length <= 240 ? first : `${first.slice(0, 240)}…`}</p>
       <button type="button" className="run-trace-filter" 
-        {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${poc.spanId}`)}>
+        {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId: card.payload.runId, nodeId: poc.spanId }))}>
         Inspect prototype execution
       </button>
       {card.payload.kind !== "prototype" && ["launching", "running", "waiting-approval", "reconnecting"].includes(card.payload.phase) ? (

@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 import type { Card } from "../state/AppState"
 import { runSourceCommand } from "../flows/RunCommand"
@@ -22,7 +23,7 @@ export const CodingVibeBody = ({ card, onRunCommand: send }: {
     <p>{wording[0]} {progress.sourceCommitId === undefined ? null : <code>{progress.sourceCommitId.slice(0, 12)}</code>}</p>
     {progress.summary === undefined ? null : <p>{progress.summary.length <= 240 ? progress.summary : `${progress.summary.slice(0, 240)}…`}</p>}
     <button type="button" className="run-trace-filter" 
-      {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${progress.spanId}`)}>
+      {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId: card.payload.runId, nodeId: progress.spanId }))}>
       {wording[1]}
     </button>
   </section>

@@ -237,7 +237,7 @@ export const IssueCardBody = ({
               <Button
                 variant="outline"
                 size="sm"
-                {...flowAction(onRunCommand, toggleCommand, `${number} ${repo}`)}
+                {...flowAction(onRunCommand, toggleCommand, flowArgs(toggleCommand, { number, repo }))}
               >
                 <span className={state === "open" ? "ghc-tone-done" : "ghc-tone-open"}>
                   <Octicon name={state === "open" ? "issue-closed" : "issue-opened"} />

@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 /**
  * The run reads as current status, goals and journal rows. A persisted row
@@ -287,7 +288,7 @@ export const RunTraceBody = ({
                 type="button"
                 className="run-trace-filter run-trace-view"
                 aria-pressed={false}
-                {...flowAction(onRunCommand, "runs.trace.view", `${runId} timeline`)}
+                {...flowAction(onRunCommand, "runs.trace.view", flowArgs("runs.trace.view", { runId, view: "timeline" }))}
               >
                 Details
               </button>
@@ -296,7 +297,7 @@ export const RunTraceBody = ({
                   type="button"
                   className="run-trace-filter run-trace-view"
                   aria-pressed={false}
-                  {...flowAction(onRunCommand, "runs.trace.view", `${runId} graph`)}
+                  {...flowAction(onRunCommand, "runs.trace.view", flowArgs("runs.trace.view", { runId, view: "graph" }))}
                 >
                   Graph
                 </button>
@@ -320,7 +321,7 @@ export const RunTraceBody = ({
                       aria-pressed={open}
                       aria-expanded={open}
                       aria-controls={open ? detailId : undefined}
-                      {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
+                      {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: span.id }))}
                     >
                       <span className="run-turn-number"><span className="run-trace-dot" data-status={span.status} aria-hidden /></span>
                       <span className="run-turn-body">
@@ -347,7 +348,7 @@ export const RunTraceBody = ({
               type="button"
               className="run-trace-filter run-trace-view"
               aria-pressed={false}
-              {...flowAction(onRunCommand, "runs.trace.view", `${runId} turns`)}
+              {...flowAction(onRunCommand, "runs.trace.view", flowArgs("runs.trace.view", { runId, view: "turns" }))}
             >
               Timeline
             </button>
@@ -360,7 +361,7 @@ export const RunTraceBody = ({
                 data-filter={id}
                 data-on={filter === id}
                 aria-pressed={filter === id}
-                {...flowAction(onRunCommand, "runs.trace.filter", `${runId} ${id}`)}
+                {...flowAction(onRunCommand, "runs.trace.filter", flowArgs("runs.trace.filter", { runId, filter: id }))}
               >
                 {label}
               </button>
@@ -414,7 +415,7 @@ export const RunTraceBody = ({
                               aria-pressed={selected.id === span.id}
                               title={summary}
                               style={{ left: `${bar.left}%`, width: `${bar.width}%` }}
-                              {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
+                              {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: span.id }))}
                             />
                           </span>
                         </li>
@@ -447,7 +448,7 @@ const PathCrumbs = ({ path, selected, runId, onRunCommand }: {
         <button
           type="button"
           aria-current={ancestor.id === selected.id ? "location" : undefined}
-          {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${ancestor.id}`)}
+          {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: ancestor.id }))}
         >
           {ancestor.label}
         </button>
@@ -500,7 +501,7 @@ const FrameLines = ({ model, selected, runId, onRunCommand, openFrame, detail, c
             aria-pressed={selected.id === line.spanId}
             aria-expanded={openFrame === line.spanId}
             aria-controls={openFrame === line.spanId ? `${cardId}-${line.spanId}` : undefined}
-            {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${openFrame === line.spanId ? model.root.id : line.spanId}`)}
+            {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: openFrame === line.spanId ? model.root.id : line.spanId }))}
           >
             <span className="run-line-number">{line.frame}</span>
             <span className="run-line-body">
@@ -544,7 +545,7 @@ const CallTree = ({ rows, selected, model, runId, onRunCommand }: {
           data-depth={span.depth}
           aria-pressed={selected.id === span.id}
           style={{ paddingLeft: `${0.5 + span.depth * 0.875}rem` }}
-          {...flowAction(onRunCommand, "runs.trace.select", `${runId} ${span.id}`)}
+          {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId, nodeId: span.id }))}
         >
           <span className="run-trace-dot" data-status={span.status} aria-hidden />
           <span className="run-trace-label">{span.label}</span>
@@ -577,7 +578,7 @@ const ChildRunDoor = ({ span, repo, onRunCommand }: { readonly span: TraceSpan; 
       <button
         type="button"
         className="run-trace-filter"
-        {...flowAction(onRunCommand, "runs.open", `${span.detail.childRunId} ${repo}`)}
+        {...flowAction(onRunCommand, "runs.open", flowArgs("runs.open", { runId: span.detail.childRunId, repo }))}
       >
         Inspect child run
       </button>

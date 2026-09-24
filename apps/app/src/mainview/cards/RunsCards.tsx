@@ -137,7 +137,7 @@ export const RunListCardBody = ({
               size="sm"
               variant="outline"
               data-testid="run-list-stop-all"
-              {...flowAction(onRunCommand, "flow.run.stop-all", `sourceCard=${card.id} ${repo}`)}
+              {...flowAction(onRunCommand, "flow.run.stop-all", flowArgs("flow.run.stop-all", { sourceCard: card.id, repo }))}
             >
               Stop all {liveCount}
             </Button>

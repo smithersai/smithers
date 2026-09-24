@@ -270,9 +270,7 @@ const WorkspaceDesktopBody = ({
               size="sm"
               variant="outline"
               aria-label="Open a new desktop box with the current image"
-              {...flowAction(onRunCommand, "workspace.open", `${
-                    payload.targetBookmark === null ? payload.repo : `${payload.targetBookmark} ${payload.repo}`
-                  } --kind desktop`)}
+              {...flowAction(onRunCommand, "workspace.open", flowArgs("workspace.open", { bookmark: payload.targetBookmark ?? undefined, repo: payload.repo, kind: "desktop" }))}
             >
               <Play size={12} aria-hidden="true" /> Open a new box
             </Button>
@@ -424,7 +422,7 @@ const WorkspaceFacetBody = ({
             <Button
               size="sm"
               variant="outline"
-              {...flowAction(onRunCommand, "workspace.egress", `${payload.workspaceId} ${payload.egressCursor ?? ""}`)}
+              {...flowAction(onRunCommand, "workspace.egress", flowArgs("workspace.egress", { workspaceId: payload.workspaceId, cursor: payload.egressCursor ?? undefined }))}
             >
               Load older
             </Button>
@@ -496,7 +494,7 @@ const WorkspaceFacetBody = ({
                   size="sm"
                   variant="outline"
                   aria-label={`Destroy session ${session.id}`}
-                  {...flowAction(onRunCommand, "workspace.session.destroy", `${session.id} ${payload.workspaceId}`)}
+                  {...flowAction(onRunCommand, "workspace.session.destroy", flowArgs("workspace.session.destroy", { sessionId: session.id, workspaceId: payload.workspaceId }))}
                 >
                   Destroy
                 </Button>
@@ -604,9 +602,7 @@ export const WorkspaceCardBody = ({
                 size="sm"
                 variant="outline"
                 aria-label={`Open a ${kind} workspace`}
-                {...flowAction(onRunCommand, "workspace.open", `${
-                      payload.targetBookmark === null ? payload.repo : `${payload.targetBookmark} ${payload.repo}`
-                    } --kind ${kind}`)}
+                {...flowAction(onRunCommand, "workspace.open", flowArgs("workspace.open", { bookmark: payload.targetBookmark ?? undefined, repo: payload.repo, kind: kind }))}
               >
                 {kind} — {says}
               </Button>
@@ -632,7 +628,7 @@ export const WorkspaceCardBody = ({
             onClick={() =>
               name === "desktop"
                 ? onRunCommand("workspace.desktop", payload.workspaceId)
-                : onRunCommand("workspace.facet", `${payload.workspaceId} ${name}`)}
+                : onRunCommand("workspace.facet", flowArgs("workspace.facet", { workspaceId: payload.workspaceId, facet: name }))}
           >
             {name[0]!.toUpperCase()}{name.slice(1)}
           </Button>
@@ -686,7 +682,7 @@ export const WorkspaceCardBody = ({
               size="sm"
               variant="outline"
               disabled={deleteDraft !== payload.name}
-              {...flowAction(onRunCommand, "workspace.delete", `${payload.workspaceId} ${deleteDraft}`)}
+              {...flowAction(onRunCommand, "workspace.delete", flowArgs("workspace.delete", { workspaceId: payload.workspaceId, confirmName: deleteDraft }))}
             >
               Delete permanently
             </Button>

@@ -24,7 +24,6 @@ import { settledPill } from "./CardFamily"
 import { timeLabel, durationLabel } from "../Timestamps"
 import { shortId } from "../state/ids"
 import { flowArgs } from "../flows/FlowArgs"
-import type { FlowName } from "../flows/FlowName"
 
 export interface ChangeCardActions {
   readonly onRunCommand: RunCommand
@@ -304,7 +303,7 @@ const ChangeDiffFacet = ({ card, onRunCommand }: { readonly card: ChangeCard } &
                       size="sm"
                       variant="outline"
                       aria-label={`Split ${file.path} into a new change`}
-                      {...flowAction(onRunCommand, "change.split", `${payload.changeId} ${file.path}`)}
+                      {...flowAction(onRunCommand, "change.split", flowArgs("change.split", { changeId: payload.changeId, paths: [file.path] }))}
                     >
                       <Split size={12} aria-hidden="true" /> Split
                     </Button>
@@ -343,7 +342,7 @@ const ChangeChecksFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
               aria-label="Checks at revision"
               {...flowProps("change.checks")}
               value={at === null ? "" : String(at)}
-              onChange={(event) => onRunCommand("change.checks", `${payload.changeId} ${event.target.value}`)}
+              onChange={(event) => onRunCommand("change.checks", flowArgs("change.checks", { changeId: payload.changeId, seq: Number(event.target.value) }))}
             >
               {payload.revisions.map((candidate) => <option key={candidate.seq} value={String(candidate.seq)}>rev {candidate.seq}</option>)}
             </select>
@@ -427,7 +426,7 @@ const ChangeFindingsFacet = ({ card, onRunCommand }: { readonly card: ChangeCard
                           size="sm"
                           variant="outline"
                           aria-label={`Dispatch the agent on finding ${finding.id}`}
-                          {...flowAction(onRunCommand, "findings.please-fix", `${payload.changeId} ${finding.id}`)}
+                          {...flowAction(onRunCommand, "findings.please-fix", flowArgs("findings.please-fix", { changeId: payload.changeId, findingId: finding.id }))}
                         >
                           Please fix
                         </Button>
@@ -436,7 +435,7 @@ const ChangeFindingsFacet = ({ card, onRunCommand }: { readonly card: ChangeCard
                             size="sm"
                             variant="ghost"
                             aria-label={`Mark finding ${finding.id} not useful`}
-                            {...flowAction(onRunCommand, "findings.not-useful", `${payload.changeId} ${finding.id}`)}
+                            {...flowAction(onRunCommand, "findings.not-useful", flowArgs("findings.not-useful", { changeId: payload.changeId, findingId: finding.id }))}
                           >
                             Not useful
                           </Button>
@@ -489,7 +488,7 @@ const RequestReviewPicker = ({
                 size="sm"
                 variant="outline"
                 aria-label={`Dismiss review request ${request.id}`}
-                {...flowAction(onRunCommand, "review.unrequest", `${payload.changeId} ${request.id}`)}
+                {...flowAction(onRunCommand, "review.unrequest", flowArgs("review.unrequest", { changeId: payload.changeId, requestId: request.id }))}
               >
                 Unrequest
               </Button>
@@ -516,7 +515,7 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
   const owners = ownersLine(payload)
   const suggested = suggestedReviewers(payload)
   const since = payload.diff?.sinceReview ?? null
-  const threadActs = (thread: ChangeThread): ReadonlyArray<readonly [FlowName, string, string]> => {
+  const threadActs = (thread: ChangeThread): ReadonlyArray<readonly ["review.done" | "review.ack" | "review.reopen", string, string]> => {
     if (thread.id === null || thread.id === undefined || thread.state === null || thread.state === undefined) return []
     if (thread.state === "open") return [["review.done", "Done", `Mark thread ${thread.id} done`]]
     if (thread.state === "done") {
@@ -595,7 +594,7 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                   size="sm"
                   variant="outline"
                   aria-label={aria}
-                  {...flowAction(onRunCommand, flow, `${payload.changeId} ${thread.id}`)}
+                  {...flowAction(onRunCommand, flow, flowArgs(flow, { changeId: payload.changeId, threadId: thread.id! }))}
                 >
                   {label}
                 </Button>
@@ -615,7 +614,7 @@ const ChangeReviewFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                 size="sm"
                 variant="ghost"
                 aria-label={`Request review from ${login}`}
-                {...flowAction(onRunCommand, "review.request", `${payload.changeId} ${login}`)}
+                {...flowAction(onRunCommand, "review.request", flowArgs("review.request", { changeId: payload.changeId, reviewer: login }))}
               >
                 {login}
               </Button>
@@ -719,7 +718,7 @@ const ChangeOwnersFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
                         size="sm"
                         variant="outline"
                         aria-label={`Request review of ${touched.path} from ${candidate}`}
-                        {...flowAction(onRunCommand, "review.request", `${card.payload.changeId} ${candidate}`)}
+                        {...flowAction(onRunCommand, "review.request", flowArgs("review.request", { changeId: card.payload.changeId, reviewer: candidate }))}
                       >
                         {candidate}
                       </Button>
@@ -741,7 +740,7 @@ const ChangeOwnersFacet = ({ card, onRunCommand }: { readonly card: ChangeCard }
               size="sm"
               variant="ghost"
               aria-label={`Request review from ${login}`}
-              {...flowAction(onRunCommand, "review.request", `${card.payload.changeId} ${login}`)}
+              {...flowAction(onRunCommand, "review.request", flowArgs("review.request", { changeId: card.payload.changeId, reviewer: login }))}
             >
               {login}
             </Button>
@@ -1022,7 +1021,7 @@ export const ChangeCardBody = ({
             variant={name === facet ? "default" : "outline"}
             role="tab"
             aria-selected={name === facet}
-            {...flowAction(onRunCommand, "change.facet", `${payload.changeId} ${name}`)}
+            {...flowAction(onRunCommand, "change.facet", flowArgs("change.facet", { changeId: payload.changeId, facet: name }))}
           >
             {label}
           </Button>

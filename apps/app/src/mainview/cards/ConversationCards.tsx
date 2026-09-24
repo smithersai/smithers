@@ -88,7 +88,7 @@ export const WorldCardBody = ({
   const controller = useContext(ControllerContext)
   if (card.payload.documents.length === 0) {
     return <div className="world-card-empty"><p>{card.payload.index && card.payload.index.page > 1 ? "No Wiki pages in this view." : "No Wiki yet."}</p>{card.payload.index !== undefined && card.payload.index.page > 1 ?
-      <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button> :
+      <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud", flowArgs("wiki.cloud", { repo: card.payload.index!.repo, page: card.payload.index!.page - 1 }))}>Previous page</Button> :
       <Button size="sm"  {...flowAction(onRunCommand, "wiki.create", card.payload.index?.repo ?? (controller ? activeRepositoryId(controller.store) ?? undefined : undefined))}>Create Wiki</Button>}</div>
   }
   const documents = card.payload.documents.map((entry) => ({ entry, document: worldDocuments.find((document) =>
@@ -107,12 +107,12 @@ export const WorldCardBody = ({
           selected={treePath(selected)}
           onSelect={(path) => {
             const row = documents.find((candidate) => treePath(candidate) === path)
-            if (row !== undefined) onRunCommand("wiki.card.select", `${card.id} ${row.document?.id ?? row.entry.id ?? row.entry.path}`)
+            if (row !== undefined) onRunCommand("wiki.card.select", flowArgs("wiki.card.select", { cardId: card.id, documentId: row.document?.id ?? row.entry.id ?? row.entry.path }))
           }}
         />
         {card.payload.index === undefined ? null : <div className="wiki-card-pages">
-          {card.payload.index.page <= 1 ? null : <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page - 1}`)}>Previous page</Button>}
-          {card.payload.index.hasNext ? <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", `${card.payload.index!.repo} ${card.payload.index!.page + 1}`)}>Next page</Button> : null}
+          {card.payload.index.page <= 1 ? null : <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", flowArgs("wiki.cloud", { repo: card.payload.index!.repo, page: card.payload.index!.page - 1 }))}>Previous page</Button>}
+          {card.payload.index.hasNext ? <Button size="sm" variant="ghost"  {...flowAction(onRunCommand, "wiki.cloud", flowArgs("wiki.cloud", { repo: card.payload.index!.repo, page: card.payload.index!.page + 1 }))}>Next page</Button> : null}
         </div>}
       </aside>
       <div className="world-card-doc">
@@ -121,14 +121,14 @@ export const WorldCardBody = ({
           <div className="wiki-card-views" aria-label="Wiki view">
             {(["outline", "document"] as const).map((mode) => <Button key={mode} size="sm" variant="ghost"
               aria-pressed={view === mode} 
-              {...flowAction(onRunCommand, "wiki.card.view", `${card.id} ${mode}`)}>
+              {...flowAction(onRunCommand, "wiki.card.view", flowArgs("wiki.card.view", { cardId: card.id, view: mode }))}>
               {mode === "outline" ? "Outline" : "Document"}
             </Button>)}
           </div>
         </div>
         {document === undefined ? entry.cloud === undefined ? <p className="world-card-empty">This note is no longer available in {WIKI_DISPLAY_NAME}.</p> :
           <div className="wiki-card-outline"><h3>{entry.title}</h3><p>Page revision {entry.cloud.revision}</p>
-            <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud.open", `${entry.cloud!.slug} ${entry.cloud!.repo}`)}>Open page</Button>
+            <Button size="sm"  {...flowAction(onRunCommand, "wiki.cloud.open", flowArgs("wiki.cloud.open", { slug: entry.cloud!.slug, repo: entry.cloud!.repo }))}>Open page</Button>
           </div> : <>
           {cloud === undefined ? null : <div className="wiki-card-source">
             <span>Page revision {cloud.remoteRevision} · {cloud.remoteAuthor}</span>

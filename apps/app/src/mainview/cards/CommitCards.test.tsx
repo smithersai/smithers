@@ -81,7 +81,7 @@ describe("commit card", () => {
         repo: "will/flows",
         commit: row("aaaaaaa1111", "c3", "Third", "2026-09-10T15:00:00Z", { status: "pending" }),
         message: "Third\n\nThe body line.",
-        parents: [{ changeId: "c2", commitId: "bbbbbbb2222" }],
+        parents: [{ changeId: "c2", commitId: "bbbbbbb2222" }, { changeId: null, commitId: null }],
         files: [
           { path: "logo.png", changeType: "added", isBinary: true, additions: 0, deletions: 0 },
           { path: "src/a.ts", changeType: "modified", isBinary: false, additions: 1, deletions: 1 }
@@ -90,7 +90,8 @@ describe("commit card", () => {
     }
     const html = renderToStaticMarkup(<CommitDetailBody card={card} onRunCommand={() => {}} />)
     expect(html).toContain("The body line.")
-    expect(html).toContain("1 parent")
+    expect(html).toContain("2 parents")
+    expect(html.match(/data-flow="commits.read"/g)).toHaveLength(1)
     expect(html).toContain("<code>bbbbbbb</code>")
     expect(html).toContain('data-slot="commit"')
     expect(html).toContain("logo.png is binary")

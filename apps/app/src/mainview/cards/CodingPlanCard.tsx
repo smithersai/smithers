@@ -63,7 +63,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
           <button
             type="button"
             className="run-trace-filter"
-            {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${reviewFeedback.spanId}`)}
+            {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId: card.payload.runId, nodeId: reviewFeedback.spanId }))}
           >
             Inspect review feedback
           </button>
@@ -92,7 +92,7 @@ export const CodingPlanBody = ({ card, onRunCommand: sendRunCommand, workflowCat
             <button
               type="button"
               className="run-trace-filter"
-              {...flowAction(onRunCommand, "runs.trace.select", `${card.payload.runId} ${blockedSpanId}`)}
+              {...flowAction(onRunCommand, "runs.trace.select", flowArgs("runs.trace.select", { runId: card.payload.runId, nodeId: blockedSpanId }))}
             >
               Inspect failed execution
             </button>

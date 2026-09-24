@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { DiffSurface } from "../ViewModules"
 import { flowAction } from "../flows/FlowAction"
 /*
@@ -136,7 +137,7 @@ export const CommitListBody = ({ card, onRunCommand }: { readonly card: CommitLi
                       type="button"
                       className="commit-row-open"
                       data-row-open
-                      {...flowAction(onRunCommand, "commits.read", `${refOf(commit)} ${repo}`)}
+                      {...flowAction(onRunCommand, "commits.read", flowArgs("commits.read", { ref: refOf(commit), repo }))}
                     >
                       {commit.title}
                     </button>
@@ -192,17 +193,19 @@ export const CommitDetailBody = ({ card, onRunCommand }: { readonly card: Commit
           )}
           <span className="commit-parents">
             {parents.length === 0 ? "no parents" : parents.length === 1 ? "1 parent" : `${parents.length} parents`}
-            {parents.map((parent) => (
-              <button
-                key={parent.changeId ?? parent.commitId}
+            {parents.map((parent) => {
+              const ref = parent.changeId ?? parent.commitId
+              if (ref === null) return null
+              return <button
+                key={ref}
                 type="button"
                 className="commit-sha"
                 data-row-open
-                {...flowAction(onRunCommand, "commits.read", `${parent.changeId ?? parent.commitId} ${repo}`)}
+                {...flowAction(onRunCommand, "commits.read", flowArgs("commits.read", { ref, repo }))}
               >
                 <code>{(parent.commitId ?? parent.changeId ?? "").slice(0, 7)}</code>
               </button>
-            ))}
+            })}
           </span>
         </CommitMetadata>
         {files.length > 0 ?

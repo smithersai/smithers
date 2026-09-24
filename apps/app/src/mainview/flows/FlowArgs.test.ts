@@ -236,3 +236,55 @@ test("the Pause button's values are what triggers.pause's own grammar reads back
   expect(payloadFor("triggers.pause", "nightly will/flows", entry?.metadata.grammar))
     .toEqual({ error: "triggers.pause takes the values its button carries" })
 })
+
+test("split preserves each file path through the real slash parser", () => {
+  const input = { changeId: "change-1", paths: ["docs/My Notes.md", 'src/a "quote".ts', "src/back\\slash.ts"] }
+  expect(payloadFor("change.split", flowArgs("change.split", input))).toEqual({ payload: input })
+})
+
+test("card configuration args round-trip through their production grammars", () => {
+  const cases = [
+    ["runs.seat", { runId: "r1", seat: "code" }],
+    ["runs.tools", { runId: "r1", toolNames: "read,write" }],
+    ["runs.thinking", { runId: "r1", thinking: "high" }],
+    ["change.checks", { changeId: "c1", seq: 3 }],
+    ["issues.close", { number: 3, repo: "owner/repo" }],
+    ["issues.reopen", { number: 3, repo: "owner/repo" }],
+    ["commits.list", { branch: "feature/topic", repo: "owner/repo" }],
+    ["workspace.facet", { workspaceId: "w1", facet: "files" }],
+    ["workspace.open", { repo: "owner/repo", kind: "desktop" }],
+    ["workspace.delete", { workspaceId: "w1", confirmName: "My workspace" }],
+    ["workspace.egress", { workspaceId: "w1", cursor: "next" }],
+    ["workspace.session.destroy", { workspaceId: "w1", sessionId: "s1" }],
+    ["review.request", { changeId: "c1", reviewer: "alice" }],
+    ["review.unrequest", { changeId: "c1", requestId: 7 }],
+    ["review.done", { changeId: "c1", threadId: 7 }],
+    ["review.ack", { changeId: "c1", threadId: 7 }],
+    ["review.reopen", { changeId: "c1", threadId: 7 }],
+    ["findings.please-fix", { changeId: "c1", findingId: 7 }],
+    ["findings.not-useful", { changeId: "c1", findingId: 7 }],
+    ["flow.run.stop-all", { sourceCard: "card1", repo: "owner/repo" }]
+  ] as const
+  for (const [name, input] of cases) expect(payloadFor(name, flowArgs(name, input))).toEqual({ payload: input })
+})
+
+
+test("wiki selection preserves paths with spaces and signup preserves typed whitespace", () => {
+  const selection = { cardId: "wiki-1", documentId: 'docs/My "Notes".md' }
+  expect(payloadFor("wiki.card.select", flowArgs("wiki.card.select", selection))).toEqual({ payload: selection })
+  const signup = { field: "account", value: "  Ada Lovelace \n" }
+  expect(payloadFor("signup.set", flowArgs("signup.set", signup))).toEqual({ payload: signup })
+})
+
+test("structured commit, trace, wiki and landing actions match their grammars", () => {
+  roundTrip("commits.read", { ref: "abc123", repo: "team/project" }, "abc123 team/project", { ref: "abc123", repo: "team/project" })
+  roundTrip("change.open", { repo: "team/project", commits: ["abc123", "def456"] }, "team/project abc123 def456", { repo: "team/project", commits: ["abc123", "def456"] })
+  roundTrip("runs.trace.view", { runId: "run-1", view: "timeline" }, "run-1 timeline", { runId: "run-1", view: "timeline" })
+  roundTrip("runs.graph.follow", { runId: "run-1", follow: false }, "run-1 off", { runId: "run-1", follow: "off" })
+  roundTrip("runs.coding.select", { runId: "run-1", changeId: "change-1" }, "run-1 change-1", { runId: "run-1", changeId: "change-1" })
+  roundTrip("wiki.cloud", { repo: "team/project", page: 2 }, "team/project 2", { repo: "team/project", page: 2 })
+  roundTrip("wiki.card.view", { cardId: "wiki-1", view: "list" }, "wiki-1 list", { cardId: "wiki-1", view: "list" })
+  roundTrip("wiki.cloud.open", { slug: "my-page", repo: "team/project" }, "my-page team/project", { slug: "my-page", repo: "team/project" })
+  roundTrip("prs.land", { number: 42, repo: "team/project" }, "42 team/project", { number: 42, repo: "team/project" })
+  roundTrip("prs.review", { number: 42, verdict: "request-changes", repo: "team/project" }, "42 request-changes team/project", { number: 42, verdict: "request_changes", text: "", repo: "team/project" })
+})

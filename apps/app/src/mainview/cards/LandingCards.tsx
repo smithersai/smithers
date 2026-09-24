@@ -77,7 +77,7 @@ const LandingListRow = ({ repo, landing, onRunCommand }: { readonly repo: string
         type="button"
         className="ghc-row-btn"
         aria-label={`Open pull request #${landing.number}: ${landing.title}`}
-        {...flowAction(onRunCommand, "prs.view", `${landing.number} ${repo}`)}
+        {...flowAction(onRunCommand, "prs.view", flowArgs("prs.view", { number: landing.number, repo }))}
       >
         <StateIcon display={prDisplay(landing.state, extra.draft)} />
         <span className="ghc-row-main">
@@ -362,21 +362,21 @@ export const LandingCardBody = ({
                 {actionable && <footer className="ghc-merge-foot">
                   {canLand && <Button
                     size="sm"
-                    {...flowAction(onRunCommand, "prs.land", `${number} ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.land", flowArgs("prs.land", { number, repo }))}
                   >
                     <Octicon name="git-merge" /> Land (queue merge)
                   </Button>}
                   <Button
                     size="sm"
                     variant="outline"
-                    {...flowAction(onRunCommand, "prs.review", `${number} approve ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.review", flowArgs("prs.review", { number, verdict: "approve", repo }))}
                   >
                     Approve
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    {...flowAction(onRunCommand, "prs.review", `${number} request-changes ${repo}`)}
+                    {...flowAction(onRunCommand, "prs.review", flowArgs("prs.review", { number, verdict: "request-changes", repo }))}
                   >
                     Request changes
                   </Button>

@@ -265,13 +265,13 @@ const RunSteerRow = ({
   const sendSeat = (): void => {
     const value = seat.trim()
     if (value === "") return
-    onRunCommand("runs.seat", `${runId} ${value}`)
+    onRunCommand("runs.seat", flowArgs("runs.seat", { runId, seat: value }))
     setSeat("")
   }
   const sendTools = (): void => {
     const value = tools.trim()
     if (value === "") return
-    onRunCommand("runs.tools", `${runId} ${value}`)
+    onRunCommand("runs.tools", flowArgs("runs.tools", { runId, toolNames: value }))
     setTools("")
   }
   const onEnter = (submit: () => void) => (event: KeyboardEvent<HTMLInputElement>) => {
@@ -321,7 +321,7 @@ const RunSteerRow = ({
           value=""
           onChange={(event) => {
             const level = event.currentTarget.value
-            if (level !== "") onRunCommand("runs.thinking", `${runId} ${level}`)
+            if (level !== "") onRunCommand("runs.thinking", flowArgs("runs.thinking", { runId, thinking: level }))
           }}
         >
           <option value="" disabled>

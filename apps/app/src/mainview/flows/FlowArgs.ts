@@ -1,3 +1,4 @@
+import { fileArgs } from "./FileArgs"
 /*
  * The button door's one serialisation: a flow's typed input as the single
  * slash line its grammar parses.
@@ -19,6 +20,43 @@ import type { SetupManualRequest } from "@smthrs/rpc/RepositorySetup"
 
 /** The typed input of every flow a card raises with structured values. */
 export interface FlowInput {
+  readonly "commits.read": { readonly ref: string; readonly repo: string }
+  readonly "change.open": { readonly repo: string; readonly commits: ReadonlyArray<string> }
+  readonly "runs.trace.view": { readonly runId: string; readonly view: "turns" | "timeline" | "graph" }
+  readonly "runs.trace.filter": { readonly runId: string; readonly filter: string }
+  readonly "runs.graph.follow": { readonly runId: string; readonly follow: boolean }
+  readonly "runs.coding.select": { readonly runId: string; readonly changeId: string }
+  readonly "signup.set": { readonly field: string; readonly value: string }
+  readonly "wiki.cloud": { readonly repo: string; readonly page: number }
+  readonly "wiki.cloud.open": { readonly slug: string; readonly repo: string }
+  readonly "wiki.card.select": { readonly cardId: string; readonly documentId: string }
+  readonly "wiki.card.view": { readonly cardId: string; readonly view: string }
+  readonly "prs.land": { readonly number: number; readonly repo: string }
+  readonly "prs.review": { readonly number: number; readonly verdict: "approve" | "request-changes" | "comment"; readonly repo: string }
+
+  readonly "workspace.open": { readonly bookmark?: string; readonly repo: string; readonly kind: "container" | "vm" | "desktop" }
+  readonly "workspace.egress": { readonly workspaceId: string; readonly cursor?: string }
+  readonly "workspace.session.destroy": { readonly sessionId: string; readonly workspaceId: string }
+  readonly "workspace.delete": { readonly workspaceId: string; readonly confirmName: string }
+
+  readonly "change.split": { readonly changeId: string; readonly paths: ReadonlyArray<string> }
+  readonly "change.checks": { readonly changeId: string; readonly seq: number }
+  readonly "runs.seat": { readonly runId: string; readonly seat: string }
+  readonly "runs.tools": { readonly runId: string; readonly toolNames: string }
+  readonly "runs.thinking": { readonly runId: string; readonly thinking: string }
+  readonly "flow.run.stop-all": { readonly sourceCard: string; readonly repo: string }
+  readonly "commits.list": { readonly branch: string; readonly repo: string }
+  readonly "workspace.facet": { readonly workspaceId: string; readonly facet: string }
+  readonly "issues.close": { readonly number: number; readonly repo: string }
+  readonly "issues.reopen": { readonly number: number; readonly repo: string }
+  readonly "findings.please-fix": { readonly changeId: string; readonly findingId: number }
+  readonly "findings.not-useful": { readonly changeId: string; readonly findingId: number }
+  readonly "review.unrequest": { readonly changeId: string; readonly requestId: number }
+  readonly "review.request": { readonly changeId: string; readonly reviewer: string }
+  readonly "review.done": { readonly changeId: string; readonly threadId: number }
+  readonly "review.ack": { readonly changeId: string; readonly threadId: number }
+  readonly "review.reopen": { readonly changeId: string; readonly threadId: number }
+
   readonly "app.experimental": { readonly on: boolean }
   readonly "experimental.set": { readonly cardId: string; readonly key: string; readonly value: string }
   readonly "runs.graph.select": { readonly runId: string; readonly nodeId?: string }
@@ -137,6 +175,43 @@ const graphLine = (payload: Payload, target: string, value: string): string => {
  * of the line.
  */
 const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } = {
+  "commits.read": payload => line(token(payload, "ref"), token(payload, "repo")),
+  "change.open": payload => line(token(payload, "repo"), ...(payload.commits as ReadonlyArray<string>)),
+  "runs.trace.view": payload => line(token(payload, "runId"), token(payload, "view")),
+  "runs.trace.filter": payload => line(token(payload, "runId"), token(payload, "filter")),
+  "runs.graph.follow": payload => line(token(payload, "runId"), payload.follow ? "on" : "off"),
+  "runs.coding.select": payload => line(token(payload, "runId"), token(payload, "changeId")),
+  "signup.set": payload => `${payload.field} ${payload.value}`,
+  "wiki.cloud": payload => line(token(payload, "repo"), token(payload, "page")),
+  "wiki.cloud.open": payload => line(token(payload, "slug"), token(payload, "repo")),
+  "wiki.card.select": payload => fileArgs(String(payload.cardId), String(payload.documentId)),
+  "wiki.card.view": payload => line(token(payload, "cardId"), token(payload, "view")),
+  "prs.land": payload => line(token(payload, "number"), token(payload, "repo")),
+  "prs.review": payload => line(token(payload, "number"), token(payload, "verdict"), token(payload, "repo")),
+
+  "workspace.open": payload => line(token(payload, "bookmark"), token(payload, "repo"), "--kind", token(payload, "kind")),
+  "workspace.egress": payload => line(token(payload, "workspaceId"), token(payload, "cursor")),
+  "workspace.session.destroy": payload => line(token(payload, "sessionId"), token(payload, "workspaceId")),
+  "workspace.delete": payload => line(token(payload, "workspaceId"), token(payload, "confirmName")),
+
+  "change.split": payload => fileArgs(String(payload.changeId), ...(payload.paths as ReadonlyArray<string>)),
+  "change.checks": payload => line(token(payload, "changeId"), token(payload, "seq")),
+  "runs.seat": payload => line(token(payload, "runId"), token(payload, "seat")),
+  "runs.tools": payload => line(token(payload, "runId"), token(payload, "toolNames")),
+  "runs.thinking": payload => line(token(payload, "runId"), token(payload, "thinking")),
+  "flow.run.stop-all": payload => line(keyed(payload, "sourceCard"), token(payload, "repo")),
+  "commits.list": payload => line(token(payload, "branch"), token(payload, "repo")),
+  "workspace.facet": payload => line(token(payload, "workspaceId"), token(payload, "facet")),
+  "issues.close": payload => line(token(payload, "number"), token(payload, "repo")),
+  "issues.reopen": payload => line(token(payload, "number"), token(payload, "repo")),
+  "findings.please-fix": payload => line(token(payload, "changeId"), token(payload, "findingId")),
+  "findings.not-useful": payload => line(token(payload, "changeId"), token(payload, "findingId")),
+  "review.unrequest": payload => line(token(payload, "changeId"), token(payload, "requestId")),
+  "review.request": payload => line(token(payload, "changeId"), token(payload, "reviewer")),
+  "review.done": payload => line(token(payload, "changeId"), token(payload, "threadId")),
+  "review.ack": payload => line(token(payload, "changeId"), token(payload, "threadId")),
+  "review.reopen": payload => line(token(payload, "changeId"), token(payload, "threadId")),
+
   "app.experimental": payload => payload.on ? "on" : "off",
   "experimental.set": payload => JSON.stringify(payload),
   "runs.graph.select": payload => graphLine(payload, "runId", "nodeId"),

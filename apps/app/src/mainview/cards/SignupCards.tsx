@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 /*
  * The signup onboarding, rendered in the chat log (state/Signup.ts). One
  * live projection of the session's signup row: the current stage is the
@@ -32,7 +33,7 @@ const signupEditor = (value: string, field: string, onRunCommand: RunCommand) =>
   onInput: (event: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => {
     const typed = event.currentTarget.value
     pendingSignupValues.set(event.currentTarget, typed)
-    onRunCommand("signup.set", `${field} ${typed}`)
+    onRunCommand("signup.set", flowArgs("signup.set", { field, value: typed }))
   },
   ref: (node: HTMLInputElement | HTMLTextAreaElement | null) => {
     if (node === null) return

@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction } from "../flows/FlowAction"
 /*
  * The branches (bookmarks) card: bookmark name plus the short head commit.
@@ -30,7 +31,7 @@ export const BranchesCardBody = ({
                 className="branches-row-open"
                 data-row-open
                 aria-label={`Commits on ${bookmark.name}`}
-                {...flowAction(onRunCommand, "commits.list", `${bookmark.name} ${card.payload.repo}`)}
+                {...flowAction(onRunCommand, "commits.list", flowArgs("commits.list", { branch: bookmark.name, repo: card.payload.repo }))}
               >
                 <GitBranch size={14} aria-hidden="true" />
                 <span className="world-card-title">{bookmark.name}</span>

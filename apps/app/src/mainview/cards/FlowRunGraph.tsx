@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 /*
  * The run's graph, on the run card's third view.
  *
@@ -277,7 +278,7 @@ export const FlowRunGraph = ({
           type="button"
           className="run-trace-filter run-trace-view"
           aria-pressed={false}
-          {...flowAction(onRunCommand, "runs.trace.view", `${runId} turns`)}
+          {...flowAction(onRunCommand, "runs.trace.view", flowArgs("runs.trace.view", { runId, view: "turns" }))}
         >
           Turns
         </button>
@@ -287,7 +288,7 @@ export const FlowRunGraph = ({
           className="run-trace-filter"
           data-on={follow}
           aria-pressed={follow}
-          {...flowAction(onRunCommand, "runs.graph.follow", `${runId} ${follow ? "off" : "on"}`)}
+          {...flowAction(onRunCommand, "runs.graph.follow", flowArgs("runs.graph.follow", { runId, follow: !follow }))}
         >
           Follow
         </button>

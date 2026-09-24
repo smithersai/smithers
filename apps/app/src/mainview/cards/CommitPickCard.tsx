@@ -1,3 +1,4 @@
+import { flowArgs } from "../flows/FlowArgs"
 import { flowAction, flowProps } from "../flows/FlowAction"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
@@ -49,7 +50,7 @@ export const CommitPickBody = ({ card, onRunCommand }: { readonly card: CommitPi
         variant="solid"
         className="commit-pick-open"
         disabled={chosen.length === 0}
-        {...flowAction(onRunCommand, "change.open", `${repo} ${chosen.map((row) => row.commitId).join(" ")}`)}
+        {...flowAction(onRunCommand, "change.open", flowArgs("change.open", { repo, commits: chosen.map(row => row.commitId) }))}
       >
         Make the Change with {chosen.length} {chosen.length === 1 ? "commit" : "commits"}
       </Button>

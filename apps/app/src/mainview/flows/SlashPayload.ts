@@ -611,7 +611,9 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "wiki.sync": (args) => required("documentId", args, "wiki.sync needs the document id"),
   "wiki.card.select": (args) => {
-    const [cardId, documentId] = tokensOf(args)
+    const parsed = parseFileArgs(args)
+    if ("error" in parsed) return parsed
+    const [cardId, documentId] = parsed.tokens
     return cardId === undefined || documentId === undefined ? no("Choose a Wiki card and page.") : ok({ cardId, documentId })
   },
   "wiki.card.view": (args) => {
@@ -965,7 +967,9 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "change.split-ready": (args) => required("changeId", args, "change.split-ready needs a change id"),
   /* plue#489 splits by PATH, and refuses an empty list — so at least one path is the grammar. */
   "change.split": (args) => {
-    const [changeId, ...paths] = tokensOf(args)
+    const parsed = parseFileArgs(args)
+    if ("error" in parsed) return parsed
+    const [changeId, ...paths] = parsed.tokens
     if (changeId === undefined || paths.length === 0) {
       return no("change.split takes a change id and at least one path to move")
     }
