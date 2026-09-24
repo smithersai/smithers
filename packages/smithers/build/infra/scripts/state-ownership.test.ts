@@ -102,8 +102,19 @@ describe("acquireStateOwnership", () => {
 
   it("treats an owner it may not signal as alive", async () => {
     await withFixture(async (root, lock) => {
-      await RealFs.writeFile(lock, "1\n")
-      await expect(acquireStateOwnership(root)).rejects.toThrow(/owned by another deployment \(pid 1\)/)
+      await RealFs.writeFile(lock, `${process.pid}\n`)
+      // PID 1 is not a live protected process on every host (notably Windows).
+      // Refuse only the liveness probe; the ownership file remains real.
+      const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+        throw Object.assign(new Error("process probe denied"), { code: "EPERM" })
+      })
+      try {
+        await expect(acquireStateOwnership(root)).rejects.toThrow(`owned by another deployment (pid ${process.pid})`)
+        expect(kill).toHaveBeenCalledWith(process.pid, 0)
+        expect(await RealFs.readFile(lock, "utf8")).toBe(`${process.pid}\n`)
+      } finally {
+        kill.mockRestore()
+      }
     })
   })
 

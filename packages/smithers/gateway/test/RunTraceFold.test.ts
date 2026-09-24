@@ -12,12 +12,12 @@ import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
 import {
   type JournalRecord,
-  type TraceModel,
   traceFold,
   traceFoldModel,
   traceFoldStep,
   traceFoldSync,
-  traceFromJournal
+  traceFromJournal,
+  type TraceModel
 } from "../src/RunTrace.js"
 import { moduleRunJournal } from "./fixtures/module-run-journal.ts"
 
@@ -122,7 +122,12 @@ const agentPayloads: ReadonlyArray<(n: number) => readonly [string, Record<strin
   (n) => ["control.agent.steering-drained", { messages: n % 2 === 0 ? [] : [{ text: "go" }] }],
   (n) => ["control.agent.claim-demanded", { demanded: n % 2 === 0, refused: n % 3 === 0, complete: 1, overclaims: 2 }],
   (n) => ["control.agent.sufficiency-observed", { flow: "bash", nextFrame: n, failed: "a", passed: "b" }],
-  (n) => ["control.agent.turn-closed", { step: n % 2 === 0 ? "x" : undefined, outcome: ["suspended", "aborted", "ok"][n % 3] }],
+  (
+    n
+  ) => ["control.agent.turn-closed", {
+    step: n % 2 === 0 ? "x" : undefined,
+    outcome: ["suspended", "aborted", "ok"][n % 3]
+  }],
   (n) => ["control.approval.requested", { requestId: `r${n % 2}`, question: "ok?" }],
   (n) => [n % 2 === 0 ? "control.approval.approved" : "control.approval.denied", { requestId: `r${n % 2}` }],
   (n) => ["control.agent.checkpoint-minted", { ref: `ref${n}` }],
@@ -205,6 +210,40 @@ const replay = (journal: ReadonlyArray<JournalRecord>, status: string): Readonly
 }
 
 describe("traceFoldStep", () => {
+  it("keeps replayed call events from creating or settling a second call", () => {
+    const started: JournalRecord = {
+      sequence: 1,
+      kind: "control.agent.cell-call-started",
+      payload: { callId: "write-1", flowName: "write" }
+    }
+    const settled: JournalRecord = {
+      sequence: 3,
+      kind: "control.agent.cell-call-settled",
+      payload: { callId: "write-1", flowName: "write", outcome: "success", value: "saved" }
+    }
+    const model = replay([started, { ...started, sequence: 2 }, settled, { ...settled, sequence: 4 }], "completed")
+      .at(-1)!
+    const calls = model.rows.filter((row) => row.kind === "call")
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ status: "completed", detail: { output: "saved" } })
+  })
+
+  it.each(["success", "failure"] as const)(
+    "settles an open cell and frame after a %s call when the run ends",
+    (outcome) => {
+      const journal: ReadonlyArray<JournalRecord> = [
+        { sequence: 1, kind: "control.agent.turn-opened", payload: {} },
+        { sequence: 2, kind: "control.agent.cell-produced", payload: { text: "await write()" } },
+        { sequence: 3, kind: "control.agent.cell-call-started", payload: { callId: "write-1", flowName: "write" } },
+        { sequence: 4, kind: "control.agent.cell-call-settled", payload: { callId: "write-1", outcome } }
+      ]
+      const status = outcome === "failure" ? "failed" : "completed"
+      const model = replay(journal, status).at(-1)!
+      expect(model.rows.find((row) => row.kind === "cell")?.status).toBe(status)
+      expect(model.rows.find((row) => row.kind === "frame")?.status).toBe(status)
+    }
+  )
+
   it("equals a refold of every prefix of any journal", () => {
     FastCheck.assert(
       FastCheck.property(

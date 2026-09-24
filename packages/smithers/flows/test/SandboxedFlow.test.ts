@@ -350,6 +350,7 @@ const limitedGuest = (options: {
   readonly native?: boolean
   readonly resultStatFailure?: boolean
   readonly readbackFailure?: boolean
+  readonly omitMtime?: boolean
 } = {}) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem.pipe(Effect.provide(NodeFileSystem.layer))
@@ -428,6 +429,7 @@ const limitedGuest = (options: {
                 })),
                 Effect.map((info) => ({
                   ...info,
+                  mtime: options.omitMtime === true ? Option.none() : info.mtime,
                   size: ByteSize.bytes(
                     path.endsWith("result.json")
                       ? options.resultSize ?? Number(info.size)
@@ -539,6 +541,20 @@ describe("sandbox limit boundaries", () => {
       }
     }
   }
+
+  it.live("collects changed file bytes from a provider without timestamps", () =>
+    Effect.gen(function*() {
+      const guest = yield* limitedGuest({ files: ["changed"], omitMtime: true })
+      const result = yield* SandboxedFlow.execute(pureEntry.Constant, { value: "ok" }, {
+        provider: guest.provider,
+        session: "snapshot-without-mtime",
+        entry: pure,
+        collectDiff: true
+      })
+      expect(result.diff.map((file) => ({ path: file.path, text: new TextDecoder().decode(file.bytes) }))).toEqual([
+        { path: "file-0", text: "changed" }
+      ])
+    }), 60_000)
 
   it.live("walks the workspace with bounded stat concurrency, not one file at a time", () =>
     Effect.gen(function*() {

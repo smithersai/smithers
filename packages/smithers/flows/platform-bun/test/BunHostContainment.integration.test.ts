@@ -294,7 +294,7 @@ describe.skipIf(process.platform === "win32")("BunHost.layerContained", () => {
         }).pipe(Effect.provide(host), Effect.scoped)
 
         expect(status.trim()).toBe(realpathSync(directory))
-        expect(invocations()).toEqual(["--version", "status --config snapshot.max-new-file-size=0"])
+        expect(invocations()).toEqual(["--version", "status --color=never --config snapshot.max-new-file-size=0"])
         expect(recorded).toEqual([binary, binary])
         // The invocation finished, so the record was retired with it.
         expect(yield* ledger.live).toEqual([])

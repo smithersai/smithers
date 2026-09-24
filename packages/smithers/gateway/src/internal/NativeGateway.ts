@@ -277,7 +277,8 @@ export const makeLayer = (
             runtimeBridge: {
               ...options.runtimeBridge,
               authenticate: ControlRpcs.bearerAuthenticator({
-                token: options.credential ?? "",
+                // listenOptions rejects a runtime bridge without a credential.
+                token: options.credential!,
                 principal: bearerPrincipal
               }).authenticate
             }

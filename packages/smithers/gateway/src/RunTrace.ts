@@ -18,9 +18,9 @@
  */
 import { CallPresentation, FlowActivity, type FlowDescriptor } from "@smthrs/registry/Descriptor"
 import { Schema } from "effect"
-import { callEventKey, callScope, openCallIndex } from "./Diagnosis.js"
-import { type CallEventFilter, callEventFilter, uniqueCallEvents } from "./internal/callEvents.js"
+import { callScope, openCallIndex } from "./Diagnosis.js"
 import { engineTraceFromJournal } from "./EngineTrace.js"
+import { type CallEventFilter, callEventFilter, uniqueCallEvents } from "./internal/callEvents.js"
 
 /** One control journal record, as the run card stores it (the run-events projection's row shape).
  *
@@ -1221,8 +1221,6 @@ interface FoldState {
   readonly openCalls: Array<{ readonly flowName: string; readonly callId?: string | undefined; readonly span: Builder }>
   readonly approvals: Map<string, Builder>
   readonly discipline: DisciplineState
-  /** Call-event keys already stepped: the fold's own `uniqueCallEvents` pass. */
-  readonly seen: Set<string>
   /** The native rows of this fold's own input, in order. */
   readonly engine: Array<JournalRecord>
   /** {@link engineTraceFromJournal} of `engine`, until another row arrives. */
@@ -1257,7 +1255,6 @@ const foldInit = (run: TraceIdentity): FoldState => ({
   openCalls: [],
   approvals: new Map(),
   discipline: disciplineInit(run.runId),
-  seen: new Set(),
   engine: [],
   engineTrace: undefined,
   frozen: new WeakMap(),
@@ -1284,20 +1281,15 @@ const foldStep = (state: FoldState, record: JournalRecord): void => {
     state.engine.push(record)
     state.engineTrace = undefined
   }
-  // The input is already normalized, so this pass only drops repeats.
-  const key = callEventKey(record)
-  if (key !== undefined) {
-    if (state.seen.has(key)) return
-    state.seen.add(key)
-  }
+  // route receives only the records kept by the shared call-event filter.
   const { root, openCalls, approvals, dirty, topOf } = state
   let { frame, cell, frames, calls, seat } = state
   const top = frame ?? cell
   if (top !== undefined) dirty.add(top)
   /** Marks the run's child that `span` sits under as changed. */
   const touch = (span: Builder): void => {
-    const owner = topOf.get(span)
-    if (owner !== undefined) dirty.add(owner)
+    // Both callers retrieve spans registered in topOf when they were opened.
+    dirty.add(topOf.get(span)!)
   }
   /** Where a new span attaches: the open cell, else the open frame, else the run. */
   const parent = (): Builder => cell ?? frame ?? root
@@ -1711,8 +1703,9 @@ const reseed = (state: FoldTop, arrived: Array<JournalRecord>): void => {
  * @since 1.0.0
  */
 export const traceFold = (run: Omit<TraceRun, "status">, records: ReadonlyArray<JournalRecord> = []): TraceFold => {
-  const state = { run: { runId: run.runId, flowId: run.flowId, ...(run.kind === undefined ? {} : { kind: run.kind }) } } as
-    FoldTop
+  const state = {
+    run: { runId: run.runId, flowId: run.flowId, ...(run.kind === undefined ? {} : { kind: run.kind }) }
+  } as FoldTop
   state.source = undefined
   reseed(state, [...records])
   return state

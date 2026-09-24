@@ -832,7 +832,8 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     newest?: number
   ): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> => {
     const singleRun = filters.runId !== undefined
-    const ceiling = singleRun ? 1 : newest ?? maxWorkspaceRuns
+    // Only runOf omits the bound: it reads one identified run.
+    const ceiling = newest ?? 1
     const page = (
       accumulated: ReadonlyArray<ControlSchema.RunSummary>,
       seen: Set<string>,

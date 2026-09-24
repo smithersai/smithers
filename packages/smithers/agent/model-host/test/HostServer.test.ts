@@ -5,7 +5,13 @@ import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
 import { Effect, Metric, Stream } from "effect"
 import { createHash } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
-import { createModelTurnHandler, MODEL_HOST_PROTOCOL, MODEL_HOST_STREAM_PATH, turnFailures } from "../src/HostServer.ts"
+import {
+  createModelTurnHandler,
+  MODEL_HOST_PROTOCOL,
+  MODEL_HOST_STREAM_PATH,
+  type ModelTurnResolver,
+  turnFailures
+} from "../src/HostServer.ts"
 import { ResolveFailed } from "../src/ModelHostError.ts"
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
@@ -138,6 +144,64 @@ const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
     headers: { authorization: "Bearer host-token", ...headers },
     body
   })
+
+const streamPost = (body: unknown) =>
+  new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`, {
+    method: "POST",
+    headers: { authorization: "Bearer host-token", "content-type": "application/json" },
+    body: JSON.stringify(body)
+  })
+
+test("the model stream rejects non-POST requests before resolving a model", async () => {
+  const resolve = vi.fn(options.resolve)
+  const response = await createModelTurnHandler({ ...options, resolve })(
+    new Request(`http://host.test${MODEL_HOST_STREAM_PATH}`)
+  )
+  expect(response.status).toBe(405)
+  expect(resolve).not.toHaveBeenCalled()
+})
+
+test.each([
+  null,
+  "invalid",
+  {},
+  { runId: 42, messages: [] },
+  { runId: "run", messages: {} },
+  { runId: "run", messages: [], tools: {} }
+])("the model stream refuses malformed input before selecting an owner model %#", async (body) => {
+  const resolve = vi.fn(options.resolve)
+  const response = await createModelTurnHandler({ ...options, resolve })(streamPost(body))
+  expect(response.status).toBe(400)
+  expect(await response.json()).toEqual({ status: "error", code: "request_invalid" })
+  expect(resolve).not.toHaveBeenCalled()
+})
+
+test.each([undefined, 1.5])(
+  "the model stream normalizes optional metadata for the default owner (%s)",
+  async (ownerId) => {
+    const resolve = vi.fn<ModelTurnResolver>((accepted) => {
+      expect(accepted.ownerId).toBe(0)
+      expect(accepted.request.instructions).toBe("")
+      expect(accepted.request.tools).toEqual([])
+      return Effect.succeed({
+        model: Model.make({ stream: () => Stream.make({ type: "settle", stopReason: "stop" }) }),
+        options: { modelId: "fixture" }
+      })
+    })
+    const response = await createModelTurnHandler({ ...options, resolve })(
+      streamPost({ runId: "run", ownerId, messages: [], tools: [] })
+    )
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe(`${JSON.stringify({ runId: "run", type: "done", reason: "stop" })}\n`)
+    expect(resolve).toHaveBeenCalledOnce()
+  }
+)
+
+test("the model stream hides resolver diagnostics on failure", async () => {
+  const response = await createModelTurnHandler(options)(streamPost({ runId: "run", messages: [] }))
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({ status: "error", code: "stream_failed" })
+})
 
 test.each([
   "ftp://callback.test",

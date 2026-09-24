@@ -2548,8 +2548,9 @@ export const layer = (
        * flush caller or a live stream, and a telemetry producer usually has
        * neither, so the loss is also logged and counted here.
        */
+      // Callers supply one refused entry or a batch taken with a minimum of one.
       const observeLoss = (cause: JournalError, batch: ReadonlyArray<QueuedEntry>): Effect.Effect<void> =>
-        batch.length === 0 ? Effect.void : Effect.andThen(
+        Effect.andThen(
           Metric.update(JournalMetrics.lost(cause.code), batch.length),
           Effect.logWarning(
             `journal lost ${batch.length} lossy entries (${cause.code}) for runs ${

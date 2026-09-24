@@ -69,6 +69,10 @@ const decision = (
 }
 
 describe("recorded engine evidence in the run trace", () => {
+  test("leaves unrelated journal records out of engine evidence", () => {
+    expect(engineTraceFromJournal([{ sequence: 1, kind: "control.agent.turn-opened", payload: {} }])).toEqual([])
+  })
+
   test("only the matching recorded projection generation settles observation", () => {
     const marker = (sequence: number, kind: string, generation: number) => ({
       sequence,

@@ -47,7 +47,7 @@ describe("atomic replacement", () => {
           yield* handler.run(path)
           const after = yield* fs.stat(path)
           expect(new Uint8Array(yield* fs.readFile(path))).toEqual(new TextEncoder().encode(replacement))
-          expect(after.mode & 0o7777).toBe(0o4750)
+          expect(after.mode & 0o7777).toBe(before.mode & 0o7777)
           expect(after.uid).toEqual(before.uid)
           expect(after.gid).toEqual(before.gid)
           expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
@@ -91,6 +91,7 @@ describe("atomic replacement", () => {
           const path = `${dir}/target.txt`
           yield* fs.writeFileString(path, original)
           yield* fs.chmod(path, 0o640)
+          const before = yield* fs.stat(path)
           const faulty = {
             ...fs,
             writeFileString: (target: string, value: string, options?: Parameters<typeof fs.writeFileString>[2]) =>
@@ -108,7 +109,7 @@ describe("atomic replacement", () => {
           const exit = yield* Effect.exit(handler.run(path).pipe(Effect.provideService(FileSystem.FileSystem, faulty)))
           expect(Exit.isFailure(exit)).toBe(true)
           expect(yield* fs.readFileString(path)).toBe(original)
-          expect((yield* fs.stat(path)).mode & 0o7777).toBe(0o640)
+          expect((yield* fs.stat(path)).mode & 0o7777).toBe(before.mode & 0o7777)
           expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
         })).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(Path.layer))
       )
@@ -124,8 +125,9 @@ describe("atomic replacement", () => {
         const link = `${dir}/link.txt`
         yield* fs.writeFileString(target, original)
         yield* fs.symlink(target, link)
+        const before = yield* fs.readLink(link)
         yield* Preserve.writeFileString(fs, link, replacement)
-        expect(yield* fs.readLink(link)).toBe(target)
+        expect(yield* fs.readLink(link)).toBe(before)
         expect(yield* fs.readFileString(target)).toBe(replacement)
         expect(yield* fs.readDirectory(`${dir}/nested`)).toEqual(["target.txt"])
       })).pipe(Effect.provide(NodeFileSystem.layer))
@@ -211,7 +213,7 @@ describe("atomic replacement", () => {
         expect(chowns).toHaveLength(1)
         expect(yield* fs.readFileString(path)).toBe(replacement)
         expect(after.ino).toEqual(before.ino)
-        expect(after.mode & 0o7777).toBe(0o664)
+        expect(after.mode & 0o7777).toBe(before.mode & 0o7777)
         expect(yield* fs.readDirectory(dir)).toEqual(["target.txt"])
       })).pipe(Effect.provide(NodeFileSystem.layer))
     )

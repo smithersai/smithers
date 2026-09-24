@@ -844,7 +844,7 @@ describe("Projections subscriptions", () => {
           },
           watch: (filter) =>
             filter.follow === true
-              ? Stream.fromIterable([acceptedOf(older.runId), acceptedOf(extra.runId)])
+              ? Stream.fromIterable([acceptedOf("missing-run"), acceptedOf(older.runId), acceptedOf(extra.runId)])
               : filter.runId === extra.runId
               ? Stream.fromIterable([acceptedOf(extra.runId)])
               : filter.runId === older.runId
@@ -865,6 +865,7 @@ describe("Projections subscriptions", () => {
       expect(ids).toHaveLength(Projections.maxWorkspaceRuns)
       expect(ids).toContain(extra.runId)
       expect(ids).not.toContain(older.runId)
+      expect(ids).not.toContain("missing-run")
       expect(ids).not.toContain("run-2")
     }))
 

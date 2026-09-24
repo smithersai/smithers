@@ -5,7 +5,7 @@ import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import type * as CacheStore from "../../../../flows/step-cache/src/CacheStore.ts"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeActionCache, readTouchDays } from "../D1ActionCache.ts"
-import { pruneStaleEntries, retentionDays } from "../RetentionSweep.ts"
+import { pruneStaleEntries, retentionBudgetMs, retentionDays } from "../RetentionSweep.ts"
 import { type ActionCache, type ActionCachePublication, type ContentStore, createHandler } from "../protocol.ts"
 import { makeTestDatabase, type TestDatabase } from "./d1.ts"
 
@@ -433,6 +433,39 @@ describe("action-cache retention", () => {
     })
 
     expect(survivors()).toEqual(["warm"])
+  })
+
+  it("reports a scheduled retention backlog and drains it on the next invocation", async () => {
+    const worker = (await import("../CacheWorker.ts")).default
+    seedCold(501)
+    const now = Date.parse("2026-09-01T00:00:00.000Z")
+    const clock = vi.spyOn(Date, "now")
+      .mockReturnValueOnce(now)
+      .mockReturnValueOnce(now)
+      .mockReturnValue(now + retentionBudgetMs)
+    const logs = vi.spyOn(console, "log").mockImplementation(() => undefined)
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const env = {
+      CACHE_DATABASE: d1.database,
+      CACHE_REQUEST_METRICS: { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
+    }
+    try {
+      await worker.scheduled({} as ScheduledController, env as never)
+      expect(survivors()).toHaveLength(1)
+      expect(JSON.parse(String(logs.mock.calls[0]?.[0]))).toMatchObject({ removed: 500, backlog: true })
+      expect(points[0]).toEqual({
+        indexes: ["retention"],
+        blobs: ["retention", "SCHEDULED", "ok"],
+        doubles: [retentionBudgetMs, 500, 1]
+      })
+      await worker.scheduled({} as ScheduledController, env as never)
+      expect(survivors()).toEqual([])
+      expect(JSON.parse(String(logs.mock.calls[1]?.[0]))).toMatchObject({ removed: 1, backlog: false })
+      expect(points[1]?.doubles).toEqual([0, 1, 0])
+    } finally {
+      clock.mockRestore()
+      logs.mockRestore()
+    }
   })
 
   it("prunes from the scheduled handler at the documented retention window", async () => {

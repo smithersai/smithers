@@ -58,6 +58,7 @@ const repository = (): string => {
   )
   writeFileSync(join(root, "mod.py"), "x = 1\n")
   git(root, ["init", "-q"])
+  git(root, ["config", "core.autocrlf", "false"])
   git(root, ["config", "user.email", "rig@localhost"])
   git(root, ["config", "user.name", "rig"])
   git(root, ["add", "-A"])
