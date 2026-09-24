@@ -377,14 +377,15 @@ describe("ContainedSpawner", () => {
     expect(ContainedSpawner.groupOf(ChildProcess.pipeTo(shared, detached), 91)).toBe(91)
   })
 
-  it("records no process group on win32, where a command that says nothing is not detached", () => {
-    const unset = ChildProcess.make("agent", ["--run"])
-    // Effect detaches by default everywhere but win32, so a win32 record
-    // claiming `pgid = pid` would name a group the child does not lead.
-    expect(ContainedSpawner.groupOf(unset, 91, "win32")).toBeNull()
-    expect(ContainedSpawner.groupOf(unset, 91, "darwin")).toBe(91)
-    // A command that asked for detachment gets its group on every platform.
-    expect(ContainedSpawner.groupOf(ChildProcess.make("agent", [], { detached: true }), 91, "win32")).toBe(91)
+  it("records no POSIX process group on win32, including detached pipeline legs", () => {
+    for (const detached of [undefined, false, true]) {
+      const command = ChildProcess.make("agent", ["--run"], { detached })
+      const peer = ChildProcess.make("agent", ["--peer"], { detached: true })
+      expect(ContainedSpawner.groupOf(command, 91, "win32")).toBeNull()
+      expect(ContainedSpawner.groupOf(ChildProcess.pipeTo(peer, command), 91, "win32")).toBeNull()
+      expect(ContainedSpawner.groupOf(ChildProcess.pipeTo(command, peer), 91, "win32")).toBeNull()
+      expect(ContainedSpawner.groupOf(command, 91, "darwin")).toBe(detached === false ? null : 91)
+    }
   })
 
   it.effect("records a spawn against the ledger and retires it on scope close", () =>

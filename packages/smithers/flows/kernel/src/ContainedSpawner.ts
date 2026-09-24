@@ -62,11 +62,9 @@ export interface Options {
   readonly graceMs?: number | undefined
   /**
    * The platform the host spawner runs on, as `process.platform` spells it.
-   * It decides only one thing: whether a command that names no `detached`
-   * option gets a process group of its own. Default `"linux"`, which is the
-   * detaching branch, because every host bundle in this repository passes its
-   * real platform and a caller that supplies a spawner of its own is
-   * describing a POSIX-shaped one.
+   * Windows records no POSIX process group, including for detached children.
+   * On POSIX, detachment determines whether the child leads its own group.
+   * Default `"linux"`; host bundles pass their actual platform.
    */
   readonly platform?: string | undefined
 }
@@ -151,24 +149,20 @@ export const withContainment = (
 
 /**
  * The process group a started child leads, or `null` when it shares the
- * host's.
+ * host's or the platform has no POSIX process groups.
  *
- * Effect's Node spawner detaches a child that names no `detached` option
- * everywhere EXCEPT win32 (`detached = options.detached ?? platform !==
- * "win32"`), and a detached child leads a group whose id is its own pid. A
- * child that shares the host's group has no group of its own to signal:
- * signalling that group would signal the host. The ledger records the absence
- * rather than a number a reaper could misread, which is why the platform has
- * to reach this function. A win32 record claiming `pgid = pid` would name a
- * group the child does not lead.
+ * A detached POSIX child leads a group whose id is its own pid. A child in
+ * the host's group must not record that group as its own cleanup target.
+ * Windows detachment creates an independent console, not a POSIX group;
+ * Windows records therefore always carry `null`.
  *
  * @category constructors
  * @since 1.0.0-rc.0
  */
 export const groupOf = (command: ChildProcess.Command, pid: number, platform?: string): number | null => {
+  if (platform === "win32") return null
   const options = command._tag === "PipedCommand" ? rightmost(command).options : command.options
-  const detached = options.detached ?? (platform ?? "linux") !== "win32"
-  return detached ? pid : null
+  return (options.detached ?? true) ? pid : null
 }
 
 const rightmost = (command: ChildProcess.Command): ChildProcess.StandardCommand =>
