@@ -632,9 +632,18 @@ def check_requeue_and_health() -> None:
         assert sorted(t.name for t in job.iterdir()) == ["agent__b", "gpu__e", "graded__a"]
         assert (Path(directory) / "tb4-X.infra" / "ssh__c" / "result.json").is_file(), "evidence is kept"
         assert health.main([directory, str(out), "tb4-X"]) == 3, "infra moved aside still counts for its hour"
+        # A CancelledError is the harness process being stopped (a pause, a
+        # restart, a crash the liveness check sees): retried, but it does not
+        # feed the rate, or a pause would trip the next pause.
+        for name in ("c1__a", "c2__b", "c3__c"):
+            (job / name).mkdir()
+            (job / name / "config.json").write_text("{}")
+            (job / name / "result.json").write_text(json.dumps({**result("CancelledError"), "finished_at": recent}))
+        rows = health.trial_rows(job)
+        assert sum(r["kind"] == "infra" for r in rows) >= 3
         import shutil as _shutil
         _shutil.rmtree(Path(directory) / "tb4-X.infra")
-        assert health.main([directory, str(out), "tb4-X"]) == 0, "graded, agent and unplaceable never trip"
+        assert health.main([directory, str(out), "tb4-X"]) == 0, "graded, agent, unplaceable and cancellations never trip"
     assert requeue.workspace_name("ks-solver-cpp__VA7miqc__verifier__trial") == "ks-solver-cpp-va7miqc-verifier-trial"
     assert requeue.workspace_name("ks-solver-cpp__VA7miqc__env") == plue_env._sanitize_name("ks-solver-cpp__VA7miqc__env")
 

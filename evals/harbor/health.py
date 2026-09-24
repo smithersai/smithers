@@ -6,7 +6,8 @@
 Writes the report and exits 3 when a job trips:
 
 - infrastructure outcomes (anything but graded or a whitelisted agent
-  outcome; see outcome.classify) are more than 20% of that job's trials that
+  outcome; see outcome.classify; CancelledError excluded, since it is the
+  harness being stopped) are more than 20% of that job's trials that
   finished in the last hour, with at least 2 of them; or
 - more than one scored trial looks broken: reward 0 in under 60 s of agent
   time, or graded with zero successful container commands.
@@ -86,7 +87,11 @@ def main(argv: list[str]) -> int:
         scored = [r for r in rows if outcome.is_healthy(r["kind"])]
         solved = [r for r in scored if r["reward"] == 1.0]
         recent = [r for r in rows + retried if r["finished_at"] and r["finished_at"].timestamp() >= horizon]
-        recent_infra = [r for r in recent if r["kind"] == "infra"]
+        # CancelledError means the harness process was stopped (a pause, a
+        # restart, a crash the liveness check catches). It is retried like any
+        # infra outcome but left out of the rate: counting it lets one pause
+        # trip the next.
+        recent_infra = [r for r in recent if r["kind"] == "infra" and r["exception"] != "CancelledError"]
         rate = len(recent_infra) / len(recent) if recent else 0.0
         if len(recent_infra) >= 2 and rate > INFRA_RATE:
             trips.append(f"{name}: {len(recent_infra)} of {len(recent)} trials finished in the last hour were infra ({rate:.0%})")
