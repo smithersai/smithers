@@ -1,7 +1,10 @@
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Effect, FileSystem } from "effect"
+import { Effect, FileSystem, Option, Stream } from "effect"
+import { EventEmitter } from "node:events"
+import NativeMutableFs from "node:fs"
 import * as NativeFs from "node:fs/promises"
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -34,6 +37,44 @@ const refused = (options: AtomicFileSystem.Options, input = request) =>
   Effect.runPromise(Effect.flip(execute(options, input)))
 
 describe("atomic helper configuration admission", () => {
+  it("watches the expanded Windows path and preserves relative event paths", async () => {
+    const root = await temporary()
+    const short = join(root, "SHORT~1")
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    const closed = vi.fn()
+    const watcher: import("node:fs").FSWatcher = Object.assign(new EventEmitter(), {
+      close: closed,
+      ref: () => watcher,
+      unref: () => watcher
+    })
+    const watched = vi.spyOn(NativeMutableFs, "watch").mockImplementation(
+      ((path: string, options: unknown, listener: (event: string, file: string) => void) => {
+        expect(path).toBe(root)
+        expect(options).toEqual({ recursive: true })
+        queueMicrotask(() => listener("change", "changed.txt"))
+        return watcher
+      }) as typeof NativeMutableFs.watch
+    )
+    syncBuiltinESMExports()
+    vi.spyOn(NativeFs, "realpath").mockResolvedValueOnce(root)
+    Object.defineProperty(process, "platform", { ...platform, value: "win32" })
+    try {
+      const event = await Effect.runPromise(
+        Effect.flatMap(FileSystem.FileSystem, (fs) => Stream.runHead(fs.watch(short, { recursive: true }))).pipe(
+          Effect.provide(AtomicFileSystem.layerWith({}))
+        )
+      )
+      expect(Option.getOrThrow(event)).toMatchObject({ _tag: "Update", path: "changed.txt" })
+      expect(NativeFs.realpath).toHaveBeenCalledWith(short)
+      expect(watched).toHaveBeenCalledTimes(1)
+      expect(closed).toHaveBeenCalledTimes(1)
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+      watched.mockRestore()
+      syncBuiltinESMExports()
+    }
+  })
+
   it("uses native canonical root spelling and preserves root resolution failures", async () => {
     const root = await temporary()
     const resolveRoot = (path: string) =>

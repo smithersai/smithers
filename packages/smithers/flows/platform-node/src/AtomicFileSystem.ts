@@ -6,7 +6,7 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Effect, FileSystem, Layer, PlatformError, Semaphore } from "effect"
+import { Effect, FileSystem, Layer, PlatformError, Semaphore, Stream } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import { packageRoot, resolveDefaultExecutable, stagePackaged } from "./internal/AtomicFileSystemExecutable.ts"
@@ -286,6 +286,18 @@ const execute = (
     framed(request) as Effect.Effect<KernelFileSystem.AtomicResult<R>, PlatformError.PlatformError>
 }
 
+const nativeRealPath = (path: string) =>
+  Effect.tryPromise({
+    try: () => realpath(path),
+    catch: (cause) =>
+      Protocol.failure({ operation: "realPath", path }, cause, {
+        ok: false,
+        code: (cause as NodeJS.ErrnoException).code ?? null,
+        message: (cause as NodeJS.ErrnoException).message,
+        syscall: "realpath"
+      })
+  })
+
 /**
  * A Node filesystem layer carrying the kernel's atomic host extension, built
  * against an explicitly configured helper, byte limits, process ceiling,
@@ -320,19 +332,14 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
       (fileSystem) =>
         KernelFileSystem.withAtomicFileSystem({
           ...fileSystem,
-          // Use the OS spelling at composition time, including expanded DOS
-          // names. No operation resolves a descendant through this surface.
-          realPath: (path) =>
-            Effect.tryPromise({
-              try: () => realpath(path),
-              catch: (cause) =>
-                Protocol.failure({ operation: "realPath", path }, cause, {
-                  ok: false,
-                  code: (cause as NodeJS.ErrnoException).code ?? null,
-                  message: (cause as NodeJS.ErrnoException).message,
-                  syscall: "realpath"
-                })
-            })
+          // Expand DOS names before pinning roots or opening native watchers.
+          realPath: nativeRealPath,
+          watch: (path, options) =>
+            process.platform !== "win32"
+              ? fileSystem.watch(path, options)
+              : Stream.unwrap(
+                nativeRealPath(path).pipe(Effect.map((canonical) => fileSystem.watch(canonical, options)))
+              )
         }, {
           noFollowAuthorization: true,
           execute: execute(options, settings),
