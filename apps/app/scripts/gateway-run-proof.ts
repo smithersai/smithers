@@ -70,11 +70,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import {
-  decodeGatewayResponse,
-  encodeGatewayRequest,
-  GATEWAY_PROCEDURE_MOUNTS
-} from "smithers-server/gatewayRpc"
+import { relayRpc, writeResponse } from "./workerRelay"
 import { createGatewaySeam } from "../src/mainview/state/controller/gateway"
 
 const CREDENTIAL = "proof-bearer-credential"
@@ -196,23 +192,8 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => voi
             const url = new URL(request.url ?? "/", "http://relay.local")
             if (url.pathname === "/api/workflow/provision") return answer(200, { status: "ready", repo: REPO })
             if (url.pathname !== "/api/workflow/rpc") return answer(404, { status: "error", message: "no route" })
-            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-              repo: string
-              procedure: string
-              payload?: unknown
-            }
-            const mount = GATEWAY_PROCEDURE_MOUNTS[body.procedure]
-            if (mount === undefined) {
-              return answer(400, { status: "error", message: `The workflow seam does not relay ${body.procedure}.` })
-            }
-            relayed.push(body.procedure)
-            const upstream = await fetch(`${gatewayUrl}${mount}`, {
-              method: "POST",
-              // The credential the browser can never hold.
-              headers: { authorization: `Bearer ${CREDENTIAL}`, "content-type": "application/json" },
-              body: encodeGatewayRequest(body.procedure, body.payload)
-            })
-            answer(200, decodeGatewayResponse(await upstream.text()))
+            await writeResponse(await relayRpc(new Request(url, { method: "POST", body: Buffer.concat(chunks).toString("utf8") }),
+              gatewayUrl, CREDENTIAL, procedure => relayed.push(procedure)), response)
           } catch (error) {
             answer(502, { status: "error", message: String(error) })
           }

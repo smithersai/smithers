@@ -61,12 +61,8 @@ import { randomUUID } from "node:crypto"
 import { readdir, readFile, stat } from "node:fs/promises"
 import { createServer } from "node:http"
 import { resolve } from "node:path"
-import {
-  decodeGatewayResponse,
-  encodeGatewayRequest,
-  GATEWAY_PROCEDURE_MOUNTS,
-  type GatewayRpcFrame
-} from "smithers-server/gatewayRpc"
+import type { GatewayRpcFrame } from "smithers-server/gatewayRpc"
+import { relayRpc, writeResponse } from "./workerRelay"
 import { TRIGGER_REGISTRATIONS_PATH } from "smithers-server/repositoryTriggers"
 import { LIST_TRIGGERS_PAYLOAD, workflowTriggersFromFrame } from "smithers-server/workflowTriggers"
 import { execFileSync } from "node:child_process"
@@ -246,23 +242,12 @@ const contents = async (repo: string, path: string, ref?: string): Promise<{ sta
  * The product Worker's relay: the Worker's own procedure allowlist, its own
  * frame adapter, and the credential the browser cannot hold.
  *
- * Lifted from `gateway-run-proof.ts`. A procedure outside
- * `GATEWAY_PROCEDURE_MOUNTS` is refused here exactly as the Worker refuses it,
+ * Shared with `gateway-run-proof.ts`. An unregistered procedure
+ * is refused by the Worker's own handler,
  * so a spec cannot reach a procedure production would not relay.
  */
 const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Promise<void> }> =>
   new Promise((listening) => {
-    /** One allowlisted procedure, called with the credential the browser cannot hold. */
-    const call = async (procedure: string, payload: unknown): Promise<GatewayRpcFrame> => {
-      const mount = GATEWAY_PROCEDURE_MOUNTS[procedure]
-      if (mount === undefined) return { ok: false, error: { message: `The workflow seam does not relay ${procedure}.` } }
-      const upstream = await fetch(`${gatewayUrl}${mount}`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${CREDENTIAL}`, "content-type": "application/json" },
-        body: encodeGatewayRequest(procedure, payload)
-      })
-      return decodeGatewayResponse(await upstream.text())
-    }
     const server = createServer((request, response) => {
       const chunks: Array<Buffer> = []
       request.on("data", (chunk: Buffer) => chunks.push(chunk))
@@ -293,7 +278,8 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Pro
             // row a card draws is a row the trigger store holds.
             if (url.pathname === WORKFLOW_TRIGGERS_PATH) {
               const repo = url.searchParams.get("repo") ?? REPO
-              return json(response, 200, workflowTriggersFromFrame(repo, await call("List", LIST_TRIGGERS_PAYLOAD)))
+              return json(response, 200, workflowTriggersFromFrame(repo, await (await relayRpc(new Request(url, { method: "POST",
+                body: JSON.stringify({ repo, procedure: "List", payload: LIST_TRIGGERS_PAYLOAD }) }), gatewayUrl, CREDENTIAL)).json() as GatewayRpcFrame))
             }
             const addressed = CONTENTS.exec(url.pathname)
             if (addressed !== null) {
@@ -308,16 +294,7 @@ const startRelay = (gatewayUrl: string): Promise<{ url: string; close: () => Pro
             if (url.pathname !== "/api/workflow/rpc") {
               return json(response, 404, { status: "error", message: `The relay has no route for ${url.pathname}.` })
             }
-            const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-              repo: string
-              procedure: string
-              payload?: unknown
-            }
-            const frame = await call(body.procedure, body.payload)
-            if (!frame.ok && frame.error.message.startsWith("The workflow seam does not relay ")) {
-              return json(response, 400, { status: "error", message: frame.error.message })
-            }
-            json(response, 200, frame)
+            await writeResponse(await relayRpc(new Request(url, { method: "POST", body: Buffer.concat(chunks).toString("utf8") }), gatewayUrl, CREDENTIAL), response)
           } catch (error) {
             json(response, 502, { status: "error", message: String(error) })
           }

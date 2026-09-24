@@ -60,8 +60,11 @@ test("the gateway answers a malformed relay call and removes its SQLite director
     // rejection that takes the process down and leaves the host in front of a
     // dead relay.
     const refused = await request(`${address.relayUrl}/api/workflow/rpc`, { method: "POST", body: "{not json" })
-    expect(refused.status).toBe(502)
-    expect(await refused.json()).toMatchObject({ status: "error" })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toMatchObject({ status: "error", code: "request_body_not_json" })
+    const inherited = await request(`${address.relayUrl}/api/workflow/rpc`, { method: "POST", body: JSON.stringify({ repo: address.repo, procedure: "constructor" }) })
+    expect(inherited.status).toBe(400)
+    expect(await inherited.json()).toMatchObject({ code: "procedure_not_relayed" })
     const alive = await request(`${address.relayUrl}/api/workflow/provision`, { method: "POST", body: "{}" })
     expect(alive.status).toBe(200)
     // The Bun origin must not retain a Node relay socket that can expire

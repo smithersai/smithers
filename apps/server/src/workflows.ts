@@ -199,6 +199,37 @@ export const handleWorkflowProvision = (request: Request): Effect.Effect<Respons
     }
   })
 
+/** The same validation and frame are used by the Worker and local relay harnesses. */
+export const relayCall = (body: unknown) => {
+  const candidate = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : undefined
+  const repo = parseWorkflowRepo(candidate?.repo)
+  const procedure = typeof candidate?.procedure === "string" ? candidate.procedure : ""
+  if (repo === undefined || procedure === "") {
+    return refuse("request_invalid", "Body must be { repo, procedure, payload? }.")
+  }
+  const workspaceId = candidate?.workspaceId
+  if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
+    return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
+  }
+  const mount = Object.hasOwn(GATEWAY_PROCEDURE_MOUNTS, procedure) ? GATEWAY_PROCEDURE_MOUNTS[procedure] : undefined
+  if (mount === undefined) {
+    return refuse("procedure_not_relayed", `The flow seam does not relay ${procedure}.`)
+  }
+  return { repo, procedure, mount, workspaceId, text: encodeGatewayRequest(procedure, candidate?.payload),
+    replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure) }
+}
+
+/** Preserve the Worker's response and bounded-body policy at every relay. */
+export const relayGatewayResponse = (response: Response): Effect.Effect<Response> => Effect.gen(function* () {
+  if (response.status !== 200) {
+    yield* discardBody(response)
+    return json(200, { ok: false, error: { message: `The workspace answered HTTP ${response.status}.` } })
+  }
+  const read = yield* Effect.result(readBoundedText(response, GATEWAY_ANSWER_MAX_BYTES))
+  if (Result.isFailure(read)) return gatewayAnswerRefusal(read.failure)
+  return json(200, decodeGatewayResponse(read.success))
+})
+
 /**
  * Relay one call to the caller's own workspace gateway.
  *
@@ -214,36 +245,16 @@ export const handleWorkflowRpc = (request: Request): Effect.Effect<Response, nev
     if (session instanceof Response) return session
     const body = yield* readBody(request)
     if (body instanceof Response) return body
-    const candidate = typeof body === "object" && body !== null ? (body as Record<string, unknown>) : undefined
-    const repo = parseWorkflowRepo(candidate?.repo)
-    const procedure = typeof candidate?.procedure === "string" ? candidate.procedure : ""
-    if (repo === undefined || procedure === "") {
-      return refuse("request_invalid", "Body must be { repo, procedure, payload? }.")
-    }
-    const workspaceId = candidate?.workspaceId
-    if (workspaceId !== undefined && !isGatewayWorkspaceId(workspaceId)) {
-      return refuse("request_invalid", "workspaceId must be a canonical workspace UUID.")
-    }
-    const mount = Object.hasOwn(GATEWAY_PROCEDURE_MOUNTS, procedure) ? GATEWAY_PROCEDURE_MOUNTS[procedure] : undefined
-    if (mount === undefined) {
-      return refuse("procedure_not_relayed", `The workflow seam does not relay ${procedure}.`)
-    }
-    const call = yield* callGateway(session.login, repo, mount, {
+    const selected = relayCall(body)
+    if (selected instanceof Response) return selected
+    const call = yield* callGateway(session.login, selected.repo, selected.mount, {
       method: "POST",
-      ...(workspaceId === undefined ? {} : { workspaceId }),
-      text: encodeGatewayRequest(procedure, candidate?.payload),
-      replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)
+      ...(selected.workspaceId === undefined ? {} : { workspaceId: selected.workspaceId }),
+      text: selected.text,
+      replayable: selected.replayable
     })
     if (call.status !== "ok") return gatewayCallResponse(call)
-    // A gateway that answered at the HTTP level but not with a frame is still a
-    // refusal the client can render, never a 500 from this Worker.
-    if (call.response.status !== 200) {
-      yield* discardBody(call.response)
-      return json(200, { ok: false, error: { message: `The workspace answered HTTP ${call.response.status}.` } })
-    }
-    const read = yield* Effect.result(readBoundedText(call.response, GATEWAY_ANSWER_MAX_BYTES))
-    if (Result.isFailure(read)) return gatewayAnswerRefusal(read.failure)
-    return json(200, decodeGatewayResponse(read.success))
+    return yield* relayGatewayResponse(call.response)
   })
 
 /**
