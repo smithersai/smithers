@@ -39,7 +39,8 @@ const LoggingFlow = Flow.make("DispatchLogFields/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "dispatch-log-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "dispatch-log-snapshot" as never, changeId: "dispatch-log-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -54,7 +54,7 @@ const Parent = Flow.make("engine-cancel/parent", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "engine-cancel" as never }),
+  snapshot: () => Effect.succeed({ commitId: "engine-cancel" as never, changeId: "engine-cancel" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

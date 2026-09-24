@@ -101,7 +101,7 @@ describe("additive typed engine contracts", () => {
         Layer.succeed(
           Jj.Jj,
           Jj.make({
-            snapshot: () => Effect.succeed({ changeId: "snapshot" as never }),
+            snapshot: () => Effect.succeed({ commitId: "snapshot" as never, changeId: "snapshot" as never }),
             restore: () => Effect.void,
             diff: () => Effect.succeed(""),
             workspaceAdd: () => Effect.void,

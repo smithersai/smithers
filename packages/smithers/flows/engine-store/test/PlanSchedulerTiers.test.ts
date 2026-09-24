@@ -52,7 +52,7 @@ const jjLayer = (events: Array<string>) =>
       snapshot: () =>
         Effect.sync(() => {
           events.push("snapshot")
-          return { changeId: "tier-snapshot" as never }
+          return { commitId: "tier-snapshot" as never, changeId: "tier-snapshot" as never }
         }),
       restore: (id) =>
         Effect.sync(() => {
@@ -89,7 +89,7 @@ describe("authored tiers through compilation and durable scheduling", () => {
           snapshot: () =>
             Effect.sync(() => {
               snapshots++
-              return { changeId: "tier-snapshot" as never }
+              return { commitId: "tier-snapshot" as never, changeId: "tier-snapshot" as never }
             }),
           restore: () => Effect.void,
           diff: () => Effect.succeed(""),

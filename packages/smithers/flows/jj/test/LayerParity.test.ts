@@ -74,14 +74,16 @@ describe.skipIf(!jjInstalled || wasmBytes === undefined)("Jj layer parity", () =
         for (const message of ["-leading", "--help", "", "a \"quoted\" $message\nwith café"]) {
           const saved = yield* node.snapshot(message)
           const browserSaved = yield* browser.snapshot(message)
-          expect(saved.changeId).not.toBe("")
-          expect(browserSaved.changeId).not.toBe("")
-          expect(execFileSync("jj", ["log", "-r", saved.changeId, "--no-graph", "-T", "description"], {
+          expect(saved.commitId).toMatch(/^[0-9a-f]{40}$/)
+          expect(browserSaved.commitId).toMatch(/^[0-9a-f]{128}$/)
+          expect(saved.changeId).toMatch(/^[k-z]{12}$/)
+          expect(browserSaved.changeId).toMatch(/^[k-z]{12}$/)
+          expect(execFileSync("jj", ["log", "-r", saved.commitId, "--no-graph", "-T", "description"], {
             cwd: repository,
             encoding: "utf8"
           })).toBe(message === "" ? "" : `${message}\n`)
-          yield* node.restore(saved.changeId)
-          yield* browser.restore(browserSaved.changeId)
+          yield* node.restore(saved.commitId)
+          yield* browser.restore(browserSaved.commitId)
         }
       } finally {
         fsModule.rmSync(repository, { recursive: true, force: true })

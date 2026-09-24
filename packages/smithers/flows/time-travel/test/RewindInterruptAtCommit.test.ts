@@ -134,7 +134,7 @@ describe("Rewind archive commit boundary", () => {
           Effect.provideService(
             Jj.Jj,
             Jj.makeNoop({
-              snapshot: () => Effect.succeed({ changeId: pointer }),
+              snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
               restore: (changeId) =>
                 Effect.sync(() => {
                   pointer = changeId

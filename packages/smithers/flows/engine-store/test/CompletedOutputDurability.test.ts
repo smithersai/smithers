@@ -39,7 +39,7 @@ const OutputFlow = Flow.make("CompletedOutputDurability/Flow", {
 })
 
 const noopJj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "output-durability" as never }),
+  snapshot: () => Effect.succeed({ commitId: "output-durability" as never, changeId: "output-durability" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

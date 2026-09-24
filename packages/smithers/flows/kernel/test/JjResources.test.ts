@@ -61,14 +61,14 @@ describe("Jj capability resources", () => {
       snapshot: (message) =>
         Effect.sync(() => {
           messages.push(message)
-          return { changeId: "change" as HostJj.ChangeId }
+          return { commitId: "commit", changeId: "change" as HostJj.ChangeId }
         })
     })
 
     return provide(
       Effect.gen(function*() {
         const jj = yield* HostJj.Jj
-        expect(yield* jj.snapshot()).toEqual({ changeId: "change" })
+        expect(yield* jj.snapshot()).toEqual({ commitId: "commit", changeId: "change" })
         expect(checks).toEqual([{ action: "jj:snapshot", resource: "" }])
         // The absent message is forwarded as-is; only the resource is defaulted.
         expect(messages).toEqual([undefined])

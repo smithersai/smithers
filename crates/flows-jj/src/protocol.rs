@@ -70,12 +70,15 @@ impl Request {
 }
 
 /// The `ok` payload of a response. Serialized untagged: `snapshot` returns
-/// `{"changeId":"..."}`, `diff` returns `{"diff":"..."}`, `status` returns
+/// `{"commitId":"...","changeId":"..."}` (restore by `commitId`; `changeId`
+/// is display only), `diff` returns `{"diff":"..."}`, `status` returns
 /// `{"status":"..."}`, everything else returns `{}`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum OkPayload {
     Snapshot {
+        #[serde(rename = "commitId")]
+        commit_id: String,
         #[serde(rename = "changeId")]
         change_id: String,
     },

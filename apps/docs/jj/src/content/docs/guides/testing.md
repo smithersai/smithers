@@ -17,7 +17,7 @@ import { layerNoop } from "@smthrs/jj"
 import * as Effect from "effect/Effect"
 
 const layer = layerNoop({
-  snapshot: () => Effect.succeed({ changeId: "test-snapshot" })
+  snapshot: () => Effect.succeed({ commitId: "test-snapshot", changeId: "test-snapshot" })
 })
 ```
 
@@ -54,7 +54,7 @@ import * as Layer from "effect/Layer"
 const stubJj = Layer.succeed(
   Jj,
   make({
-    snapshot: () => Effect.succeed({ changeId: "stub-snapshot" }),
+    snapshot: () => Effect.succeed({ commitId: "stub-snapshot", changeId: "stub-snapshot" }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

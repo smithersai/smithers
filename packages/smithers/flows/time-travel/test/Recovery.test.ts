@@ -391,7 +391,7 @@ describe("Recovery", () => {
       const runs = makeRuns()
       const registry = EffectHandlerRegistry.makeNoop()
       const jj = Jj.makeNoop({
-        snapshot: () => Effect.succeed({ changeId: "current" }),
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
         restore: () => Effect.void
       })
 
@@ -456,7 +456,7 @@ describe("Recovery", () => {
       )
       let pointer = "target"
       const jj = Jj.makeNoop({
-        snapshot: () => Effect.succeed({ changeId: pointer }),
+        snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
         restore: (changeId) =>
           Effect.sync(() => {
             pointer = changeId
@@ -564,7 +564,7 @@ describe("Recovery", () => {
         }])
       )
       const jj = Jj.makeNoop({
-        snapshot: () => Effect.succeed({ changeId: "target" }),
+        snapshot: () => Effect.succeed({ commitId: "target", changeId: "target" }),
         restore: () => Effect.void
       })
 

@@ -95,7 +95,7 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj over flows_jj.wasm", () => {
   it.effect("restores working-copy files from a snapshot", () =>
     Effect.gen(function*() {
       write("keep.txt", "keep\n")
-      const { changeId } = yield* (jj.snapshot("before mutation"))
+      const { commitId: changeId } = yield* (jj.snapshot("before mutation"))
       write("keep.txt", "mutated\n")
       yield* (jj.restore(changeId))
       expect(read("keep.txt")).toBe("keep\n")
@@ -114,7 +114,7 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj over flows_jj.wasm", () => {
       // second call. Reading the lane's own file back is what proves the pin
       // landed, mirroring the NodeJj real-binary case.
       write("pinned.txt", "first\n")
-      const { changeId } = yield* (jj.snapshot("pinned base"))
+      const { commitId: changeId } = yield* (jj.snapshot("pinned base"))
       write("pinned.txt", "second\n")
       yield* (jj.snapshot("after base"))
 
@@ -159,7 +159,7 @@ describe.skipIf(wasmBytes === undefined)("BrowserJj over flows_jj.wasm", () => {
     () =>
       Effect.gen(function*() {
         write("durable.txt", "persisted\n")
-        const { changeId } = yield* (jj.snapshot("durable state"))
+        const { commitId: changeId } = yield* (jj.snapshot("durable state"))
 
         // a second, independent instantiation — the browser-refresh case
         const reloaded = yield* (Effect.provide(Jj, layer()))

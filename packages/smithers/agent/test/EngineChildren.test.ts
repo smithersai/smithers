@@ -50,7 +50,8 @@ import * as ChildFlows from "../src/ChildFlows.ts"
 import * as EngineChildren from "../src/EngineChildren.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "engine-children-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "engine-children-snapshot" as never, changeId: "engine-children-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

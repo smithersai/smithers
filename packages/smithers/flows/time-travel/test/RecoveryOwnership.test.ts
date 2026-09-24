@@ -146,7 +146,7 @@ const runRecovery = (
 ) => {
   const store = options.store ?? seeded(options.audit)
   const jj = options.jj ?? Jj.makeNoop({
-    snapshot: () => Effect.succeed({ changeId: "current" }),
+    snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
     restore: () => Effect.void
   })
   return Effect.map(

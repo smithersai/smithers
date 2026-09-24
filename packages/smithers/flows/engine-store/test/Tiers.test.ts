@@ -32,7 +32,8 @@ const jjLayer = (snapshots: Array<string>, restores: Array<string>) =>
         Effect.sync(() => {
           const changeId = `snapshot-${snapshots.length}`
           snapshots.push(changeId)
-          return { changeId: changeId as never }
+          // A distinct change id: the engine must journal the commit id.
+          return { commitId: changeId as never, changeId: `moving-${changeId}` as never }
         }),
       restore: (changeId) =>
         Effect.sync(() => {
@@ -139,7 +140,7 @@ describe("engine-store action tiers", () => {
             snapshot: () =>
               Effect.sync(() => {
                 engineSnapshots.push("engine")
-                return { changeId: "engine-snapshot" as never }
+                return { commitId: "engine-snapshot" as never, changeId: "engine-snapshot" as never }
               }),
             restore: () => Effect.void,
             diff: () => Effect.succeed(""),

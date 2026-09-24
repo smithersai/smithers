@@ -63,22 +63,24 @@ a hand-written test double may leave them out.
 
 | Member                                | Signature                                                                                       |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `snapshot(message?)`                  | `(message?: string) => Effect<{ readonly changeId: ChangeId }, JjFailure>`                      |
-| `restore(changeId)`                   | `(changeId: ChangeId) => Effect<void, JjFailure>`                                               |
-| `diff(from, to)`                      | `(from: ChangeId, to: ChangeId) => Effect<string, JjFailure>`                                   |
-| `workspaceAdd(name, path, revision?)` | `(name: string, path: string, revision?: ChangeId) => Effect<void, JjFailure \| PlatformError>` |
+| `snapshot(message?)`                  | `(message?: string) => Effect<Snapshot, JjFailure>`                                             |
+| `restore(revision)`                   | `(revision: Revision) => Effect<void, JjFailure>`                                               |
+| `diff(from, to)`                      | `(from: Revision, to: Revision) => Effect<string, JjFailure>`                                   |
+| `workspaceAdd(name, path, revision?)` | `(name: string, path: string, revision?: Revision) => Effect<void, JjFailure \| PlatformError>` |
 | `workspaceForget(name)`               | `(name: string) => Effect<void, JjFailure>`                                                     |
 | `status()`                            | `() => Effect<string, JjFailure>`                                                               |
 | `root(from)` (optional)               | `(from: string) => Effect<string, JjFailure \| PlatformError>`                                  |
-| `revert(changeId)` (optional)         | `(changeId: ChangeId) => Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>`       |
+| `revert(revision)` (optional)         | `(revision: Revision) => Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>`       |
 
-`snapshot` commits the working copy and returns the change id to restore to
-later: it closes the current change and opens a fresh one. Node and Bun only
+`snapshot` commits the working copy and returns `{ commitId, changeId }` for the
+change it closes, then opens a fresh one. Restore to `commitId`: it is content
+addressed, and jj resolves it even after the commit is hidden. `changeId` is
+for display; a later rewrite such as `jj squash` moves it to a different tree. Node and Bun only
 label a closed change that has no existing description.
 With no message there is no `describe` at all, because `jj describe` without
 `-m` starts `$JJ_EDITOR` and waits for it.
 
-`restore` puts the working copy back to `changeId`, replacing the tree rather
+`restore` puts the working copy back to `revision`, replacing the tree rather
 than merging into it. `diff` is a git-format unified diff between two
 revisions. `workspaceAdd` adds a named workspace rooted at `path`, one lane per
 parallel agent, pinned at `revision` when one is given. `workspaceForget` drops

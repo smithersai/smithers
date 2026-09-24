@@ -81,7 +81,8 @@ const recorded = (cells: ReadonlyArray<string>): Model.Model => {
 }
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "durable-wait-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "durable-wait-snapshot" as never, changeId: "durable-wait-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

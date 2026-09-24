@@ -43,7 +43,7 @@ const deferred = DurableDeferred.make("answer", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "durable-wait-child" as never }),
+  snapshot: () => Effect.succeed({ commitId: "durable-wait-child" as never, changeId: "durable-wait-child" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

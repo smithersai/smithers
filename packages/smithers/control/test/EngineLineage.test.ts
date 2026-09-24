@@ -98,7 +98,7 @@ const Counter: CounterFlow = Flow.make("engine-lineage/counter", {
 self = Counter
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "engine-lineage" as never }),
+  snapshot: () => Effect.succeed({ commitId: "engine-lineage" as never, changeId: "engine-lineage" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

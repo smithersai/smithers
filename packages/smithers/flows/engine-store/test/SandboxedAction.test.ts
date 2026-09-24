@@ -50,7 +50,7 @@ const encoder = new TextEncoder()
 const jjLayer = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "sandbox-snapshot" as never }),
+    snapshot: () => Effect.succeed({ commitId: "sandbox-snapshot" as never, changeId: "sandbox-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

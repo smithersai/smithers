@@ -20,14 +20,14 @@ step reversible, and nothing that merely happens to be a jj subcommand:
 
 | Operation                        | What it does                                                            |
 | -------------------------------- | ----------------------------------------------------------------------- |
-| `snapshot(message?)`             | Commits the working copy and returns the change id to restore to later. |
-| `restore(changeId)`              | Puts the working copy back to that change.                              |
+| `snapshot(message?)`             | Commits the working copy and returns the commit id to restore to later. |
+| `restore(revision)`              | Puts the working copy back to that revision.                            |
 | `diff(from, to)`                 | Git-format unified diff between two revisions.                          |
 | `workspaceAdd(name, path, rev?)` | Adds a named workspace rooted at `path`, one lane per parallel agent.   |
 | `workspaceForget(name)`          | Drops a named workspace without touching the commits made in it.        |
 | `status()`                       | The working copy's status, as jj prints it.                             |
 | `root(from)`                     | The repository root that contains a path.                               |
-| `revert(changeId)`               | Applies the reverse of one change and reports the paths that changed.   |
+| `revert(revision)`               | Applies the reverse of one change and reports the paths that changed.   |
 
 There is no `commit`, no `push`, no `log`. Adding one would mean every backend
 owes an answer for it, including the WebAssembly build in a browser tab, so the

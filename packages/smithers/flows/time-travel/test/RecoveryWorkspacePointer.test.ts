@@ -93,7 +93,7 @@ for (const boundary of ["before-restore", "after-restore"] as const) {
       return yield* Effect.fail(error("unknown", "stop after capturing crash image"))
     })
     const jj = Jj.makeNoop({
-      snapshot: () => Effect.succeed({ changeId: pointer }),
+      snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
       restore: (id) =>
         boundary === "before-restore" && id === "target-workspace"
           ? capture.pipe(Effect.mapError(() => Jj.jjError({ code: "unknown", method: "restore" })))

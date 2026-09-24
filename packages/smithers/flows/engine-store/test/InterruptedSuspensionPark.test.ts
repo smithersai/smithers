@@ -43,7 +43,8 @@ const TestFlow = Flow.make("InterruptedSuspensionPark/Test", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "interrupted-park-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "interrupted-park-snapshot" as never, changeId: "interrupted-park-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -156,7 +156,7 @@ const seatFor = (host: string): SeatResolver.Service["resolve"] => (id) =>
   )
 
 const jj = Jj.layerNoop({
-  snapshot: () => Effect.succeed({ changeId: "budget-across-processes" }),
+  snapshot: () => Effect.succeed({ commitId: "budget-across-processes", changeId: "budget-across-processes" }),
   restore: () => Effect.void,
   diff: () => Effect.succeed("")
 })

@@ -132,7 +132,7 @@ fi
       Effect.gen(function*() {
         yield* Effect.promise(() => rm(join(root, ".jj"), { recursive: true }))
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
-        expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+        expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
       })
     ))
 
@@ -140,7 +140,7 @@ fi
     fixture((root) =>
       Effect.gen(function*() {
         const jj = yield* Effect.provide(Jj, NodeJj.layerAt(join(root, "nested")))
-        expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+        expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
         expect(existsSync(join(root, ".jj", "smithers.lock"))).toBe(false)
       })
     ))
@@ -166,7 +166,7 @@ fi
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
           vi.mocked(rename).mockRejectedValueOnce(errno(code))
           vi.mocked(readdir).mockRejectedValueOnce(errno("ENOENT"))
-          expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+          expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
         })
       ))
   }
@@ -199,7 +199,7 @@ fi
           await actualFs.rmdir(path)
           throw errno("ENOENT")
         })
-        expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+        expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
       })
     ))
 
@@ -233,7 +233,7 @@ fi
         Effect.gen(function*() {
           const jj = yield* Effect.provide(Jj, NodeJj.layerAt(root))
           vi.mocked(operation).mockRejectedValueOnce(errno("EACCES"))
-          expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+          expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
         })
       ))
   }
@@ -293,7 +293,7 @@ fi
         yield* Fiber.interrupt(pending)
         expect(existsSync(join(root, ".jj", "smithers.lock"))).toBe(false)
         yield* Effect.promise(() => rm(join(root, "hold")))
-        expect((yield* jj.snapshot()).changeId).toBe("snapshotid")
+        expect((yield* jj.snapshot()).commitId).toBe("snapshotid")
       })
     ))
 

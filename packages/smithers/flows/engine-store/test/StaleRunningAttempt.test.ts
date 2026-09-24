@@ -27,7 +27,7 @@ const owner: Ownership.OwnerId = { hostId: "stale-host", pid: 21, nonce: "reclai
 const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "stale-snapshot" as never }),
+    snapshot: () => Effect.succeed({ commitId: "stale-snapshot" as never, changeId: "stale-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

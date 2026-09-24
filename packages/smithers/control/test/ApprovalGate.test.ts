@@ -49,7 +49,7 @@ const stack = (filename: string, reads: Array<string>, after: () => string) => {
     Layer.provide(Layer.succeed(
       Jj.Jj,
       Jj.make({
-        snapshot: () => Effect.succeed({ changeId: "approval-gate" as never }),
+        snapshot: () => Effect.succeed({ commitId: "approval-gate" as never, changeId: "approval-gate" as never }),
         restore: () => Effect.void,
         diff: () => Effect.succeed(""),
         workspaceAdd: () => Effect.void,

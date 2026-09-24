@@ -1,8 +1,9 @@
 /**
  * Case 21 — the pointers a snapshot hands back address the tree it captured.
  *
- * A change id is the only thing an engine keeps when it snapshots a workspace,
- * so it has to be enough to get the tree back. This case takes real snapshots
+ * A commit id is the only thing an engine keeps when it snapshots a workspace,
+ * so it has to be enough to get the tree back, even after the step that ran
+ * next rewrote or abandoned the snapshot's change. This case takes real snapshots
  * of a real Jujutsu repository through `NodeJj`, edits the working copy in
  * between, and restores by id: the file contents that come back are the fact
  * being checked, not the fact that a call returned.
@@ -57,33 +58,77 @@ describe.skipIf(!jjInstalled)("case21 jj pointer integrity", () => {
     rmSync(repository, { recursive: true, force: true })
   })
 
+  const jjText = (args: ReadonlyArray<string>) =>
+    execFileSync("jj", ["--color=never", ...args], {
+      cwd: repository,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    })
+
   const run = <A, E>(effect: Effect.Effect<A, E, Jj>): Promise<A> =>
     Effect.runPromise(Effect.provide(effect, NodeJj.layer) as Effect.Effect<A, E>)
 
-  it("restores the tree a change id addresses, not the one on disk", async () => {
+  it("restores the tree a commit id addresses, not the one on disk", async () => {
     const file = join(repository, "ledger.txt")
     writeFileSync(file, "one\n")
     const first = await run(Effect.flatMap(Jj, (jj) => jj.snapshot("smithers e2e first")))
-    expect(first.changeId).toMatch(/^[a-z]+$/)
+    expect(first.commitId).toMatch(/^[0-9a-f]{40}$/)
+    expect(first.changeId).toMatch(/^[k-z]{12}$/)
 
     writeFileSync(file, "two\n")
     const second = await run(Effect.flatMap(Jj, (jj) => jj.snapshot("smithers e2e second")))
-    expect(second.changeId).not.toBe(first.changeId)
+    expect(second.commitId).not.toBe(first.commitId)
+
+    // The labeled commit is the one returned: the describe rewrote the closed
+    // commit, so a pointer read before the label would already be hidden.
+    expect(jjText(["log", "-r", first.commitId, "--no-graph", "-T", "description"]).trim()).toBe(
+      "smithers e2e first"
+    )
 
     // The two pointers really do address different trees.
-    const diff = await run(Effect.flatMap(Jj, (jj) => jj.diff(first.changeId, second.changeId)))
+    const diff = await run(Effect.flatMap(Jj, (jj) => jj.diff(first.commitId, second.commitId)))
     expect(diff).toContain("ledger.txt")
 
     // Restoring by the first id brings that tree back, over a working copy that
     // currently holds the second.
     expect(readFileSync(file, "utf8")).toBe("two\n")
-    await run(Effect.flatMap(Jj, (jj) => jj.restore(first.changeId)))
+    await run(Effect.flatMap(Jj, (jj) => jj.restore(first.commitId)))
     expect(readFileSync(file, "utf8")).toBe("one\n")
 
     // And the second pointer still addresses its own tree afterwards: a restore
     // is not a rewrite of history.
-    await run(Effect.flatMap(Jj, (jj) => jj.restore(second.changeId)))
+    await run(Effect.flatMap(Jj, (jj) => jj.restore(second.commitId)))
     expect(readFileSync(file, "utf8")).toBe("two\n")
+  }, 120_000)
+
+  it("restores the pre-image after the step squashes its edits into the snapshot", async () => {
+    const file = join(repository, "squashed.txt")
+    writeFileSync(file, "a")
+    const before = await run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
+
+    // The agent inside the step edits, then folds @ into @-: the snapshot's
+    // change now holds the step's edit under the same change id.
+    writeFileSync(file, "b")
+    jjText(["squash"])
+
+    // The falsifier: the change id follows the rewrite and restores the edit.
+    await run(Effect.flatMap(Jj, (jj) => jj.restore(before.changeId)))
+    expect(readFileSync(file, "utf8")).toBe("b")
+
+    // The commit id still names the tree the snapshot captured.
+    await run(Effect.flatMap(Jj, (jj) => jj.restore(before.commitId)))
+    expect(readFileSync(file, "utf8")).toBe("a")
+  }, 120_000)
+
+  it("restores the pre-image after the step abandons the snapshot's change", async () => {
+    const file = join(repository, "abandoned.txt")
+    writeFileSync(file, "kept")
+    const before = await run(Effect.flatMap(Jj, (jj) => jj.snapshot()))
+    writeFileSync(file, "edited")
+    jjText(["abandon", before.commitId])
+
+    await run(Effect.flatMap(Jj, (jj) => jj.restore(before.commitId)))
+    expect(readFileSync(file, "utf8")).toBe("kept")
   }, 120_000)
 
   it("refuses a change id no snapshot ever minted", async () => {

@@ -171,14 +171,28 @@ fn generated_hostile_abi_campaign() {
             let first =
                 call(json!({"op":"snapshot","root":root,"message":format!("generated {index}")}));
             assert_eq!(first.as_object().unwrap().len(), 1);
-            assert_eq!(first["ok"].as_object().unwrap().len(), 1);
+            assert_eq!(first["ok"].as_object().unwrap().len(), 2);
+            assert!(
+                first["ok"]["commitId"]
+                    .as_str()
+                    .unwrap()
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit())
+            );
             let id = first["ok"]["changeId"].as_str().unwrap();
             assert_eq!(id.len(), 12);
             assert!(id.bytes().all(|byte| (b'k'..=b'z').contains(&byte)));
             fs::write(root.join("generated.txt"), format!("{before}changed\n")).unwrap();
             let second = call(json!({"op":"snapshot","root":root}));
             assert_eq!(second.as_object().unwrap().len(), 1);
-            assert_eq!(second["ok"].as_object().unwrap().len(), 1);
+            assert_eq!(second["ok"].as_object().unwrap().len(), 2);
+            assert!(
+                second["ok"]["commitId"]
+                    .as_str()
+                    .unwrap()
+                    .bytes()
+                    .all(|byte| byte.is_ascii_hexdigit())
+            );
             let other = second["ok"]["changeId"].as_str().unwrap();
             assert_eq!(other.len(), 12);
             assert!(other.bytes().all(|byte| (b'k'..=b'z').contains(&byte)));

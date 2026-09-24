@@ -53,7 +53,8 @@ const Gated = Flow.make("agent/test/ports/gated", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "agent-session-ports" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "agent-session-ports" as never, changeId: "agent-session-ports" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

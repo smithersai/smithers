@@ -74,7 +74,10 @@ const provide = <A, E, R>(
     Effect.provide(
       Layer.succeed(
         Jj.Jj,
-        Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }), restore: () => Effect.void })
+        Jj.makeNoop({
+          snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
+          restore: () => Effect.void
+        })
       )
     ),
     Effect.provide(

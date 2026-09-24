@@ -31,7 +31,8 @@ const jjLayer = (restores: Array<string>, snapshots: Array<string>) =>
         Effect.sync(() => {
           const changeId = `snapshot-${snapshots.length}`
           snapshots.push(changeId)
-          return { changeId: changeId as never }
+          // A distinct change id: the engine must journal the commit id.
+          return { commitId: changeId as never, changeId: `moving-${changeId}` as never }
         }),
       restore: (changeId) =>
         Effect.sync(() => {

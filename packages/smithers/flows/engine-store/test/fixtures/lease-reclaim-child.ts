@@ -34,7 +34,8 @@ if (filename === undefined || executionId === undefined) {
 }
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "lease-reclaim-child" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "lease-reclaim-child" as never, changeId: "lease-reclaim-child" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

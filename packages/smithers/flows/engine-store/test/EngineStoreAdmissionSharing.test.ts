@@ -37,7 +37,7 @@ const AdmissionFlow = Flow.make("EngineStoreAdmission/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "admission-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "admission-snapshot" as never, changeId: "admission-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

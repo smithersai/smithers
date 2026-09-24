@@ -45,7 +45,8 @@ const flip = (
 ) => Effect.provide(Effect.map(Effect.flip(Effect.flatMap(Jj, effect)), jjError), BrowserJj.layer(options))
 
 /** Every string field any operation extracts, so one module serves all six. */
-const OK_ALL = "{\"ok\":{\"changeId\":\"qpvuntsm\",\"diff\":\"diff --git\",\"status\":\"clean\"}}"
+const OK_ALL =
+  "{\"ok\":{\"commitId\":\"0a1b2c\",\"changeId\":\"qpvuntsm\",\"diff\":\"diff --git\",\"status\":\"clean\"}}"
 
 describe("BrowserJj over the fake ABI module", () => {
   it.effect("instantiates lazily, runs _initialize once, and reuses the instance", () =>
@@ -77,8 +78,8 @@ describe("BrowserJj over the fake ABI module", () => {
         onStderr: (text) => stderr.push(text)
       }
       const jj = yield* (Effect.provide(Jj, BrowserJj.layer(options)))
-      expect(yield* (jj.snapshot("checkpoint"))).toEqual({ changeId: "qpvuntsm" })
-      expect(yield* (jj.snapshot())).toEqual({ changeId: "qpvuntsm" })
+      expect(yield* (jj.snapshot("checkpoint"))).toEqual({ commitId: "0a1b2c", changeId: "qpvuntsm" })
+      expect(yield* (jj.snapshot())).toEqual({ commitId: "0a1b2c", changeId: "qpvuntsm" })
       yield* (jj.restore("qpvuntsm"))
       expect(yield* (jj.diff("qpvuntsm", "zzzzzzzz"))).toBe("diff --git")
       yield* (jj.workspaceAdd("lane", "/lane1"))
@@ -253,7 +254,7 @@ describe("BrowserJj over the fake ABI module", () => {
     Effect.gen(function*() {
       const empty = fakeFlowsJjWasm({ response: "{\"ok\":{}}" })
       const cases: Array<readonly [(jj: Jj) => Effect.Effect<unknown, JjFailure>, string]> = [
-        [(jj) => jj.snapshot(), "changeId"],
+        [(jj) => jj.snapshot(), "commitId"],
         [(jj) => jj.diff("a", "b"), "diff"],
         [(jj) => jj.status(), "status"]
       ]

@@ -97,7 +97,7 @@ const effect = (
 const makeJj = (initial: string) => {
   let pointer = initial
   const service = Jj.makeNoop({
-    snapshot: () => Effect.succeed({ changeId: pointer }),
+    snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
     restore: (changeId) =>
       Effect.sync(() => {
         pointer = changeId

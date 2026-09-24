@@ -31,7 +31,7 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }))
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "source-revision" as never }),
+    snapshot: () => Effect.succeed({ commitId: "source-revision" as never, changeId: "source-revision" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

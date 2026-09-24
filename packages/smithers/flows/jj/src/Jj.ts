@@ -191,7 +191,13 @@ export const isJjError = (error: unknown): error is JjError =>
   typeof error === "object" && error !== null && "_tag" in error && error._tag === "@smthrs/jj/JjError"
 
 /**
- * A jj change id: the durable handle a run uses to name workspace state.
+ * A jj change id: the human identity of a change, in jj's reverse-hex form.
+ *
+ * A change id is a moving pointer. Any rewrite of the change, such as an agent
+ * running `jj squash` or `jj describe` inside a step, moves it to the new
+ * commit, and an `abandon` makes it stop resolving. Use it for display. Name a
+ * recorded tree with a {@link Revision}, which is what {@link Jj.snapshot}
+ * returns as `commitId`.
  *
  * It is a bare string alias rather than a branded type because it crosses the
  * journal and the process boundary as one, and the value jj prints is the
@@ -201,6 +207,35 @@ export const isJjError = (error: unknown): error is JjError =>
  * @since 0.1.0
  */
 export type ChangeId = string
+
+/**
+ * A revision `restore`, `diff`, `workspaceAdd`, and `revert` accept.
+ *
+ * Journals store the commit id {@link Jj.snapshot} returns: a hex, content
+ * addressed pointer that no rewrite can change and that jj still resolves once
+ * the commit is hidden. Rows written before 1.0.0-rc.2 hold a reverse-hex
+ * change id instead. The two alphabets are disjoint (`0-9a-f` and `k-z`), so
+ * both forms resolve unchanged and need no migration; the older rows keep the
+ * weaker change-id semantics.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Revision = string
+
+/**
+ * What {@link Jj.snapshot} recorded: the closed commit.
+ *
+ * `commitId` is the pointer to journal and restore. `changeId` names the same
+ * change for people and moves with rewrites.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Snapshot {
+  readonly commitId: Revision
+  readonly changeId: ChangeId
+}
 
 /**
  * Everything a `Jj` operation can fail with.
@@ -233,12 +268,15 @@ export type JjFailure = JjError | Permission.PermissionError
  * @since 0.1.0
  */
 export interface Jj {
-  /** Commits the working copy and returns the change id to restore to later. */
-  readonly snapshot: (message?: string) => Effect.Effect<{ readonly changeId: ChangeId }, JjFailure>
-  /** Puts the working copy back to `changeId`. */
-  readonly restore: (changeId: ChangeId) => Effect.Effect<void, JjFailure>
+  /**
+   * Commits the working copy and returns the closed commit. Restore to its
+   * `commitId`; the `changeId` moves if anything later rewrites the change.
+   */
+  readonly snapshot: (message?: string) => Effect.Effect<Snapshot, JjFailure>
+  /** Puts the working copy back to `revision`. */
+  readonly restore: (revision: Revision) => Effect.Effect<void, JjFailure>
   /** Unified diff between two revisions. */
-  readonly diff: (from: ChangeId, to: ChangeId) => Effect.Effect<string, JjFailure>
+  readonly diff: (from: Revision, to: Revision) => Effect.Effect<string, JjFailure>
   /**
    * Adds a named workspace rooted at `path` — one lane per parallel agent.
    *
@@ -254,7 +292,7 @@ export interface Jj {
   readonly workspaceAdd: (
     name: string,
     path: string,
-    revision?: ChangeId
+    revision?: Revision
   ) => Effect.Effect<void, JjFailure | PlatformError>
   /** Drops a named workspace, without touching the commits made in it. */
   readonly workspaceForget: (name: string) => Effect.Effect<void, JjFailure>
@@ -276,7 +314,7 @@ export interface Jj {
    */
   readonly root?: ((from: string) => Effect.Effect<string, JjFailure | PlatformError>) | undefined
   /**
-   * Applies the reverse of `changeId` to the working copy, and reports the
+   * Applies the reverse of `revision` to the working copy, and reports the
    * paths that changed.
    *
    * `restore` moves the working copy back to a recorded point, which also
@@ -286,7 +324,7 @@ export interface Jj {
    * undone.
    */
   readonly revert?:
-    | ((changeId: ChangeId) => Effect.Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>)
+    | ((revision: Revision) => Effect.Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>)
     | undefined
 }
 

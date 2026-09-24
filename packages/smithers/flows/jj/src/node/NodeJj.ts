@@ -583,7 +583,15 @@ const operations = (run: Run, repositoryRoot?: string) => {
   const repositoryCritical = <A, E, R>(method: string, effect: Effect.Effect<A, E, R>) =>
     Effect.suspend(() => withRepositoryLock(method, repositoryRoot ?? process.cwd(), effect))
 
-  /** Close the current change before labeling it, and preserve any operator description. */
+  /**
+   * Close the current change before labeling it, and preserve any operator
+   * description.
+   *
+   * The restore pointer is the closed commit's full commit id, read AFTER the
+   * label lands: a describe rewrites the commit, and a change id would follow
+   * any later rewrite too, such as an agent's `jj squash` folding the step's
+   * edits into it. A commit id names one tree forever, hidden or not.
+   */
   const snapshot = (message?: string) =>
     repositoryCritical(
       "snapshot",
@@ -594,23 +602,33 @@ const operations = (run: Run, repositoryRoot?: string) => {
           "@",
           "--no-graph",
           "-T",
-          "change_id.short() ++ \"\\n\" ++ description"
+          "commit_id ++ \"\\n\" ++ change_id.short() ++ \"\\n\" ++ description"
         ])
-        const [changeId, ...description] = output.split("\n")
+        const [closedCommitId = "", changeLine = "", ...description] = output.split("\n")
+        const changeId = changeLine.trim()
+        let commitId = closedCommitId.trim()
         yield* inRepository("snapshot", ["new", "--quiet"])
         // Describing @ would overwrite the operator's active work. Only add an
         // engine label to an unnamed, closed change; never erase existing notes.
         if (message !== undefined && description.join("\n") === "") {
-          yield* inRepository("snapshot", ["describe", "-r", changeId!, `-m=${message}`, "--quiet"])
+          yield* inRepository("snapshot", ["describe", "-r", commitId, `-m=${message}`, "--quiet"])
+          commitId = (yield* inRepository("snapshot", [
+            "log",
+            "-r",
+            "@-",
+            "--no-graph",
+            "-T",
+            "commit_id"
+          ])).trim()
         }
-        return { changeId: changeId!.trim() }
+        return { commitId, changeId }
       })
     )
 
-  const restore = (changeId: string) =>
+  const restore = (revision: string) =>
     Effect.asVoid(
       Effect.flatMap(
-        requireRevision("restore", "jj restore", changeId),
+        requireRevision("restore", "jj restore", revision),
         (revision) => repositoryCritical("restore", inRepository("restore", ["restore", "--from", revision]))
       )
     )

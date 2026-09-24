@@ -79,7 +79,8 @@ const recordingJj = (calls: Array<string>) =>
       snapshot: (message) =>
         Effect.sync(() => {
           calls.push(`snapshot:${message}`)
-          return { changeId: `change-${calls.length}` as never }
+          // A distinct change id: the engine must journal the commit id.
+          return { commitId: `change-${calls.length}` as never, changeId: `moving-${calls.length}` as never }
         }),
       restore: (changeId) => Effect.sync(() => void calls.push(`restore:${changeId}`)),
       diff: () => Effect.succeed(""),

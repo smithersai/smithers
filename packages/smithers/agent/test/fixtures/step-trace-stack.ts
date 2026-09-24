@@ -85,7 +85,7 @@ export const stores = (filename: string) =>
     Layer.succeed(
       Jj.Jj,
       Jj.make({
-        snapshot: () => Effect.succeed({ changeId: "trace-snapshot" as never }),
+        snapshot: () => Effect.succeed({ commitId: "trace-snapshot" as never, changeId: "trace-snapshot" as never }),
         restore: () => Effect.void,
         diff: () => Effect.succeed(""),
         workspaceAdd: () => Effect.void,

@@ -34,7 +34,8 @@ import * as StepBoundary from "../src/StepBoundary.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "trampoline-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "trampoline-snapshot" as never, changeId: "trampoline-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

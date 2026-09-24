@@ -35,7 +35,8 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "nested-wait-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "nested-wait-snapshot" as never, changeId: "nested-wait-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

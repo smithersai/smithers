@@ -46,9 +46,9 @@ const program = Effect.gen(function*() {
   const jj = yield* Jj
 
   // The state to come back to. `snapshot` describes the current change, reads
-  // its id, and opens a fresh one, so the id names the change just closed.
+  // its commit id, and opens a fresh one, so the id names the tree just closed.
   writeFileSync(note, "first\n")
-  const { changeId } = yield* jj.snapshot("first note")
+  const { commitId } = yield* jj.snapshot("first note")
 
   // Do the work a step would do.
   writeFileSync(note, "second\n")
@@ -56,11 +56,11 @@ const program = Effect.gen(function*() {
 
   // `@-` is the parent of the working copy: the change the second snapshot
   // just closed.
-  const diff = yield* jj.diff(changeId, "@-")
+  const diff = yield* jj.diff(commitId, "@-")
   console.log(diff)
 
   // Undo it. `restore` replaces the working copy with the recorded tree.
-  yield* jj.restore(changeId)
+  yield* jj.restore(commitId)
   console.log(`note.txt is now: ${readFileSync(note, "utf8").trim()}`)
 }).pipe(Effect.provide(NodeJj.layerAt(repository)))
 
@@ -90,17 +90,18 @@ note.txt is now: first
 ## What just happened
 
 `snapshot("first note")` set the description on the working-copy change, read
-back its short change id, and opened a new empty change on top. That id is a
-durable handle: it survives a process restart, and Smithers stores it in the
-journal so a resumed run can still reach the tree.
+back its commit id and short change id, and opened a new empty change on top.
+The commit id is the durable handle: it names one tree forever, survives a
+process restart, and is what Smithers stores in the journal. The change id is
+a display name that follows later rewrites of the change.
 
 `diff(from, to)` asked jj for a git-format unified diff between two revisions.
-Both arguments go through jj's revision language, so `@`, `@-`, and a change id
-are all accepted, and an unresolvable one fails with `invalid_ref` rather than
+Both arguments go through jj's revision language, so `@`, `@-`, a commit id, and a
+change id are all accepted, and an unresolvable one fails with `invalid_ref` rather than
 producing an empty diff.
 
-`restore(changeId)` replaced the working copy with the tree recorded at that
-change. It is a replacement, not a merge: uncommitted edits are overwritten and
+`restore(commitId)` replaced the working copy with the tree recorded at that
+commit. It is a replacement, not a merge: uncommitted edits are overwritten and
 files created after the snapshot are removed. That is the property that makes a
 step reversible, and the reason to reach for `revert` instead when you mean
 "undo that one attempt and keep the rest".

@@ -118,7 +118,11 @@ const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(Ch
 let nextChange = 0
 const layerJjSupported: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
   JjService.makeNoop({
-    snapshot: () => Effect.succeed({ changeId: `change-${++nextChange}` }),
+    snapshot: () =>
+      Effect.sync(() => {
+        const id = `change-${++nextChange}`
+        return { commitId: id, changeId: id }
+      }),
     restore: () => Effect.void,
     diff: () => Effect.succeed("diff"),
     workspaceAdd: () => Effect.void,
@@ -131,7 +135,11 @@ const layerJjSupported: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
 
 const layerJjPartial: Layer.Layer<Jj> = Layer.succeed(JjService.Jj)(
   JjService.makeNoop({
-    snapshot: () => Effect.succeed({ changeId: `partial-${++nextChange}` }),
+    snapshot: () =>
+      Effect.sync(() => {
+        const id = `partial-${++nextChange}`
+        return { commitId: id, changeId: id }
+      }),
     restore: () => Effect.void,
     diff: () => Effect.succeed("diff"),
     workspaceAdd: () => Effect.void,

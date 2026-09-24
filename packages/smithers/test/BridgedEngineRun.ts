@@ -474,7 +474,7 @@ const durableFlow: DurableFlow = {
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "graph-fixture" as never }),
+    snapshot: () => Effect.succeed({ commitId: "graph-fixture" as never, changeId: "graph-fixture" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

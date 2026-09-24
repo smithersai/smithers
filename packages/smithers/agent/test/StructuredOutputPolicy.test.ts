@@ -425,7 +425,11 @@ describe("the repair step", () => {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "structured-output-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({
+      commitId: "structured-output-snapshot" as never,
+      changeId: "structured-output-snapshot" as never
+    }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

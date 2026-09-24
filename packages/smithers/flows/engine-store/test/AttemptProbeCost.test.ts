@@ -35,7 +35,8 @@ const ProbeFlow = Flow.make("AttemptProbeCost/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "probe-cost-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "probe-cost-snapshot" as never, changeId: "probe-cost-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -46,7 +46,7 @@ const runState = JSON.stringify({ version: 1, flowName: "Retention/Test", payloa
 const flowName = "Retention/Test"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "retention-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "retention-snapshot" as never, changeId: "retention-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

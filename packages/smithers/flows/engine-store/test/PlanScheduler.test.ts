@@ -38,7 +38,8 @@ const owner: Ownership.OwnerId = { hostId: "scheduler-host", pid: 91, nonce: "sc
 const jjLayer = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "scheduler-snapshot" as never }),
+    snapshot: () =>
+      Effect.succeed({ commitId: "scheduler-snapshot" as never, changeId: "scheduler-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

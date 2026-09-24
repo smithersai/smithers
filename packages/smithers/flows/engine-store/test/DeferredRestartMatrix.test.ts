@@ -20,7 +20,7 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "test-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "test-snapshot" as never, changeId: "test-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

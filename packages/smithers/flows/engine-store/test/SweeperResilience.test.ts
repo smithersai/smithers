@@ -60,7 +60,11 @@ import * as EngineStore from "../src/EngineStore.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "sweeper-resilience-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({
+      commitId: "sweeper-resilience-snapshot" as never,
+      changeId: "sweeper-resilience-snapshot" as never
+    }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

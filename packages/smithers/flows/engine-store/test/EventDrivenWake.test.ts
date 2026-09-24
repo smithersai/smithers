@@ -27,7 +27,7 @@ import * as WakeBus from "../src/WakeBus.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "wake-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "wake-snapshot" as never, changeId: "wake-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

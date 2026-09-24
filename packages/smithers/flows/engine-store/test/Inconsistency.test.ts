@@ -24,7 +24,8 @@ const boundary: ActionPersistence.BoundaryMetadata = {
 const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "inconsistency-snapshot" as never }),
+    snapshot: () =>
+      Effect.succeed({ commitId: "inconsistency-snapshot" as never, changeId: "inconsistency-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

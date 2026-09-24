@@ -492,7 +492,7 @@ describe("a budget under a model-backed step", () => {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "budget-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "budget-snapshot" as never, changeId: "budget-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

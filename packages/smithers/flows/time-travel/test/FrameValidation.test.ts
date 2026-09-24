@@ -128,7 +128,7 @@ const makeHarness = () => {
     Layer.succeed(Jj.Jj)(Jj.makeNoop({
       workspaceAdd: () => Effect.sync(() => void (workspaces += 1)),
       workspaceForget: () => Effect.void,
-      snapshot: () => Effect.succeed({ changeId: "current" })
+      snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" })
     })),
     CacheStore.layerNoop()
   )
@@ -312,7 +312,9 @@ const bareHarness = (journal: Journal.Service) => {
         Layer.succeed(TimeTravelStore)(store),
         Layer.succeed(RunStore.RunStore)(runs),
         Layer.succeed(Journal.Journal)(journal),
-        Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+        Layer.succeed(Jj.Jj)(
+          Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+        ),
         CacheStore.layerNoop()
       )
     )
@@ -428,7 +430,7 @@ const sqlLayer = () => {
     RunStore.layer,
     CacheStore.layer,
     SqlTimeTravelStore.layer,
-    Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) }))
+    Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) }))
   ).pipe(
     Layer.provideMerge(Layer.provideMerge(Migrations.layer, TestDatabase.layer))
   )

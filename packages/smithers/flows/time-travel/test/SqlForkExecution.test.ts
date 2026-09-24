@@ -38,7 +38,7 @@ const ForkFlow = Flow.make("TimeTravel/ExecutableFork", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "fork-execution" as never }),
+  snapshot: () => Effect.succeed({ commitId: "fork-execution" as never, changeId: "fork-execution" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

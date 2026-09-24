@@ -141,7 +141,7 @@ describe("Rewind concurrency", () => {
           }))
       })
       const jj = Jj.makeNoop({
-        snapshot: () => Effect.succeed({ changeId: "current" }),
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
         restore: () => Effect.void
       })
       const registry = Effect.runSync(EffectHandlerRegistry.make())
@@ -229,7 +229,7 @@ describe("Rewind concurrency", () => {
       const restores: Array<string> = []
       const evictions: Array<string> = []
       const jj = Jj.makeNoop({
-        snapshot: () => Effect.succeed({ changeId: "current" }),
+        snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
         restore: (changeId) =>
           Effect.sync(() => {
             restores.push(changeId)

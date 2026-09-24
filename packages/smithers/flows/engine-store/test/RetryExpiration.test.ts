@@ -27,7 +27,8 @@ import * as TestStores from "../src/test/TestStores.ts"
 import { invocationKey, runSync, sha256, withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "retry-expiration-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "retry-expiration-snapshot" as never, changeId: "retry-expiration-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

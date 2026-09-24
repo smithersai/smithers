@@ -526,10 +526,16 @@ const create = (options: BrowserJjOptions): {
   const jj = Jj.of({
     snapshot: (message) =>
       invoke("snapshot", "jj snapshot", { op: "snapshot", root, ...(message === undefined ? {} : { message }) }).pipe(
-        Effect.flatMap((ok) => stringField("snapshot", "jj snapshot", ok, "changeId")),
-        Effect.map((changeId) => ({ changeId }))
+        Effect.flatMap((ok) =>
+          Effect.all({
+            commitId: stringField("snapshot", "jj snapshot", ok, "commitId"),
+            changeId: stringField("snapshot", "jj snapshot", ok, "changeId")
+          })
+        )
       ),
-    restore: (changeId) => Effect.asVoid(invoke("restore", "jj restore", { op: "restore", root, changeId })),
+    // The frozen ABI names the restore target `changeId`; it takes any
+    // revision, and the engine passes the snapshot's commit id.
+    restore: (revision) => Effect.asVoid(invoke("restore", "jj restore", { op: "restore", root, changeId: revision })),
     diff: (from, to) =>
       Effect.flatMap(
         invoke("diff", "jj diff", { op: "diff", root, from, to }),

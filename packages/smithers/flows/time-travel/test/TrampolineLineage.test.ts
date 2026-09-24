@@ -71,7 +71,7 @@ const Counter: CounterFlow = Flow.make("trampoline-lineage/counter", {
 self = Counter
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "trampoline-lineage" as never }),
+  snapshot: () => Effect.succeed({ commitId: "trampoline-lineage" as never, changeId: "trampoline-lineage" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

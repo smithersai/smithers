@@ -73,7 +73,8 @@ const missingArtifact = Effect.fail(
 const jjLayer = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "remote-cache-snapshot" as never }),
+    snapshot: () =>
+      Effect.succeed({ commitId: "remote-cache-snapshot" as never, changeId: "remote-cache-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

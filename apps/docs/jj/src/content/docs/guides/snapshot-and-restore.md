@@ -1,6 +1,6 @@
 ---
 title: "Snapshot a working copy and put it back"
-description: "Take a change id you can return to, choose between restore and revert, and know what each one does to uncommitted edits and to later work."
+description: "Take a commit id you can return to, choose between restore and revert, and know what each one does to uncommitted edits and to later work."
 sidebar:
   order: 1
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/jj/docs/guides/snapshot-and-restore.md"
@@ -17,24 +17,34 @@ import * as Effect from "effect/Effect"
 
 const before = Effect.gen(function*() {
   const jj = yield* Jj
-  const { changeId } = yield* jj.snapshot("before the review step")
-  return changeId
+  const { commitId } = yield* jj.snapshot("before the review step")
+  return commitId
 })
 ```
 
-`snapshot` describes the current change with your message, reads back its short
-change id, and opens a fresh empty change on top. The id names the change that
-was just closed, which is the state a later `restore` goes back to. Keep it:
-it is a durable handle, and Smithers journals it so a resumed run can still
-reach the tree.
+`snapshot` describes the current change with your message, reads back the
+closed commit, and opens a fresh empty change on top. It returns two ids:
+
+- `commitId` names the tree that was just closed. It is content addressed, so
+  nothing done later can change what it names, and jj still resolves it after
+  the commit is hidden. Keep it: Smithers journals it so a retry, a resumed
+  run, or a rewind returns to exactly that tree.
+- `changeId` is the change's short human name. A rewrite moves it: if the step
+  that runs next folds its edits into the closed change with `jj squash`, the
+  change id names the step's edits, and an `abandon` makes it stop resolving.
+  Show it to people; never restore to it.
+
+Journal rows written before 1.0.0-rc.2 hold a change id. Change ids are reverse
+hex (`k-z`) and commit ids are hex (`0-9a-f`), so both still resolve unchanged
+and no migration is needed; the older rows keep the weaker change-id meaning.
 
 ### Snapshot without a message
 
 ```ts
 const unnamed = Effect.gen(function*() {
   const jj = yield* Jj
-  const { changeId } = yield* jj.snapshot()
-  return changeId
+  const { commitId } = yield* jj.snapshot()
+  return commitId
 })
 ```
 
@@ -47,16 +57,16 @@ matter:
   about and no cancel deadline covers.
 - `-m ""` would erase a description the caller never asked to change.
 
-The change id still comes back, because every jj command snapshots the working
-copy first, so the `log` that reads the id is itself the snapshot.
+The ids still come back, because every jj command snapshots the working copy
+first, so the `log` that reads them is itself the snapshot.
 
 ## Undo the whole point: restore
 
 ```ts
-const rewind = (changeId: string) =>
+const rewind = (commitId: string) =>
   Effect.gen(function*() {
     const jj = yield* Jj
-    yield* jj.restore(changeId)
+    yield* jj.restore(commitId)
   })
 ```
 

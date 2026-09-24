@@ -40,7 +40,7 @@ const hostCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(
 )
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "authoring-errors" as never }),
+  snapshot: () => Effect.succeed({ commitId: "authoring-errors" as never, changeId: "authoring-errors" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -72,7 +72,7 @@ const Twice = Flow.make("engine-waits/twice", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "engine-waits" as never }),
+  snapshot: () => Effect.succeed({ commitId: "engine-waits" as never, changeId: "engine-waits" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

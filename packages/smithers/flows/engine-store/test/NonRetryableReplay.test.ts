@@ -41,7 +41,8 @@ const ReplayFlow = Flow.make("NonRetryableReplay/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "non-retryable-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "non-retryable-snapshot" as never, changeId: "non-retryable-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

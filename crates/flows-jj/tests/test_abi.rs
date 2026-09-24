@@ -75,7 +75,7 @@ fn full_roundtrip_through_the_abi() {
     let value = call(&json!({"op": "init", "root": root_str}));
     assert_eq!(value, json!({"ok": {}}));
 
-    // snapshot → {"ok":{"changeId":"..."}}
+    // snapshot → {"ok":{"commitId":"...","changeId":"..."}}
     fs::write(root.join("a.txt"), "alpha\n").unwrap();
     let value = call(&json!({"op": "snapshot", "root": root_str, "message": "first"}));
     let change_id = value["ok"]["changeId"]
@@ -83,7 +83,14 @@ fn full_roundtrip_through_the_abi() {
         .expect("changeId")
         .to_owned();
     assert_eq!(change_id.len(), 12);
-    assert_eq!(value["ok"].as_object().unwrap().len(), 1);
+    let commit_id = value["ok"]["commitId"]
+        .as_str()
+        .expect("commitId")
+        .to_owned();
+    // SimpleBackend commit ids are BLAKE2b-512: 128 hex characters.
+    assert_eq!(commit_id.len(), 128);
+    assert!(commit_id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert_eq!(value["ok"].as_object().unwrap().len(), 2);
 
     // snapshot without message is valid (optional field).
     fs::write(root.join("a.txt"), "alpha two\n").unwrap();
@@ -106,8 +113,8 @@ fn full_roundtrip_through_the_abi() {
     let status = value["ok"]["status"].as_str().expect("status");
     assert!(status.contains("Working copy  (@) : "), "{status}");
 
-    // restore → {"ok":{}}
-    let value = call(&json!({"op": "restore", "root": root_str, "changeId": change_id}));
+    // restore → {"ok":{}}, by the immutable commit id
+    let value = call(&json!({"op": "restore", "root": root_str, "changeId": commit_id}));
     assert_eq!(value, json!({"ok": {}}));
     assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "alpha\n");
 

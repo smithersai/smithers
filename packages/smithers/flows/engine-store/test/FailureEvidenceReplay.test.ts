@@ -28,7 +28,8 @@ const FailFlow = Flow.make("FailureEvidence/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "failure-evidence-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "failure-evidence-snapshot" as never, changeId: "failure-evidence-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

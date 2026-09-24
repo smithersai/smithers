@@ -49,7 +49,7 @@ const host = (execute: Execute) =>
     Layer.succeed(
       Jj.Jj,
       Jj.make({
-        snapshot: () => Effect.succeed({ changeId: "test" }),
+        snapshot: () => Effect.succeed({ commitId: "test", changeId: "test" }),
         restore: () => Effect.void,
         diff: () => Effect.succeed(""),
         workspaceAdd: () => Effect.void,

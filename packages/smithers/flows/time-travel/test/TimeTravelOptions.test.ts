@@ -99,7 +99,9 @@ describe("TimeTravel rewind options", () => {
               Layer.succeed(TimeTravelStore)(store),
               Layer.succeed(RunStore.RunStore)(runs),
               Layer.succeed(Journal.Journal)(journal),
-              Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+              Layer.succeed(Jj.Jj)(
+                Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+              ),
               CacheStore.layerNoop()
             )
           )
@@ -252,7 +254,9 @@ describe("TimeTravel recovery liveness", () => {
             Layer.succeed(Journal.Journal)(
               Journal.makeNoop({ entries: () => Effect.succeed({ entries: [], hasMore: false }) })
             ),
-            Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+            Layer.succeed(Jj.Jj)(
+              Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+            ),
             CacheStore.layerNoop()
           )
         )
@@ -377,7 +381,9 @@ describe("TimeTravel rewind history cap", () => {
             Layer.succeed(TimeTravelStore)(store),
             Layer.succeed(RunStore.RunStore)(runs),
             Layer.succeed(Journal.Journal)(journal),
-            Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+            Layer.succeed(Jj.Jj)(
+              Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+            ),
             CacheStore.layerNoop()
           )
         )
@@ -461,7 +467,9 @@ describe("TimeTravel rewind rate limiter", () => {
                 })
             })
           ),
-          Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+          Layer.succeed(Jj.Jj)(
+            Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+          ),
           CacheStore.layerNoop()
         )
       )

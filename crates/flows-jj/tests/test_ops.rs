@@ -98,6 +98,17 @@ fn current_change_id(root: &Path) -> String {
 }
 
 #[track_caller]
+fn assert_commit_id(id: &str) {
+    // SimpleBackend commit ids are BLAKE2b-512: 128 hex characters.
+    assert_eq!(id.len(), 128, "commit id {id:?} should be 128 chars");
+    assert!(
+        id.chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "commit id {id:?} should be lowercase hex"
+    );
+}
+
+#[track_caller]
 fn assert_change_id(id: &str) {
     assert_eq!(id.len(), 12, "change id {id:?} should be 12 chars");
     assert!(
@@ -124,7 +135,9 @@ fn snapshot_returns_change_id_and_opens_fresh_change() {
     ops::init(&root).unwrap();
     // Repository creation is explicit.
     write(&root, "a.txt", "alpha\n");
-    let id1 = ops::snapshot(&root, Some("first")).unwrap();
+    let first = ops::snapshot(&root, Some("first")).unwrap();
+    assert_commit_id(&first.commit_id);
+    let id1 = first.change_id;
     assert_change_id(&id1);
 
     // The closed change keeps the files; the fresh change on top is empty.
@@ -138,7 +151,7 @@ fn snapshot_returns_change_id_and_opens_fresh_change() {
     assert_ne!(current_id, id1, "snapshot must open a fresh change");
 
     // Snapshotting again (no edits) closes the fresh change and opens another.
-    let id2 = ops::snapshot(&root, None).unwrap();
+    let id2 = ops::snapshot(&root, None).unwrap().change_id;
     assert_change_id(&id2);
     assert_ne!(id2, id1);
     assert_eq!(
@@ -153,12 +166,12 @@ fn restore_roundtrip_across_add_modify_delete() {
     ops::init(&root).unwrap();
     write(&root, "a.txt", "alpha\n");
     write(&root, "b.txt", "bravo\n");
-    let s1 = ops::snapshot(&root, Some("s1")).unwrap();
+    let s1 = ops::snapshot(&root, Some("s1")).unwrap().commit_id;
 
     write(&root, "a.txt", "alpha two\n");
     fs::remove_file(root.join("b.txt")).unwrap();
     write(&root, "c.txt", "charlie\n");
-    let s2 = ops::snapshot(&root, Some("s2")).unwrap();
+    let s2 = ops::snapshot(&root, Some("s2")).unwrap().commit_id;
 
     ops::restore(&root, &s1).unwrap();
     assert_eq!(read(&root, "a.txt"), "alpha\n");
@@ -176,7 +189,7 @@ fn restore_to_current_state_is_a_no_op() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "a.txt", "alpha\n");
-    let s1 = ops::snapshot(&root, None).unwrap();
+    let s1 = ops::snapshot(&root, None).unwrap().commit_id;
     ops::restore(&root, &s1).unwrap();
     assert_eq!(read(&root, "a.txt"), "alpha\n");
 }
@@ -208,12 +221,12 @@ fn diff_between_ids_and_identity() {
     ops::init(&root).unwrap();
     write(&root, "greeting.txt", "hello\nworld\n");
     write(&root, "gone.txt", "bye\n");
-    let s1 = ops::snapshot(&root, Some("s1")).unwrap();
+    let s1 = ops::snapshot(&root, Some("s1")).unwrap().commit_id;
 
     write(&root, "greeting.txt", "hello\nthere\nworld\n");
     fs::remove_file(root.join("gone.txt")).unwrap();
     write(&root, "fresh.txt", "fresh\n");
-    let s2 = ops::snapshot(&root, Some("s2")).unwrap();
+    let s2 = ops::snapshot(&root, Some("s2")).unwrap().commit_id;
 
     // Identity: no output at all.
     assert_eq!(ops::diff(&root, &s1, &s1).unwrap(), "");
@@ -297,13 +310,13 @@ fn diff_multi_hunk_output_is_exact() {
     ops::init(&root).unwrap();
     let before: String = (1..=20).map(|i| format!("line {i}\n")).collect();
     write(&root, "long.txt", &before);
-    let s1 = ops::snapshot(&root, None).unwrap();
+    let s1 = ops::snapshot(&root, None).unwrap().commit_id;
 
     let after = before
         .replace("line 2\n", "line two\n")
         .replace("line 18\n", "line eighteen\n");
     write(&root, "long.txt", &after);
-    let s2 = ops::snapshot(&root, None).unwrap();
+    let s2 = ops::snapshot(&root, None).unwrap().commit_id;
 
     let diff = ops::diff(&root, &s1, &s2).unwrap();
     let expected = "\
@@ -335,9 +348,9 @@ fn diff_binary_files() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "blob.bin", b"\x00\x01\x02");
-    let s1 = ops::snapshot(&root, None).unwrap();
+    let s1 = ops::snapshot(&root, None).unwrap().commit_id;
     write(&root, "blob.bin", b"\x00\xff\xfe");
-    let s2 = ops::snapshot(&root, None).unwrap();
+    let s2 = ops::snapshot(&root, None).unwrap().commit_id;
 
     let diff = ops::diff(&root, &s1, &s2).unwrap();
     assert!(
@@ -355,9 +368,9 @@ fn diff_new_binary_file_uses_dev_null() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "keep.txt", "keep\n");
-    let s1 = ops::snapshot(&root, None).unwrap();
+    let s1 = ops::snapshot(&root, None).unwrap().commit_id;
     write(&root, "blob.bin", b"\x00\x01");
-    let s2 = ops::snapshot(&root, None).unwrap();
+    let s2 = ops::snapshot(&root, None).unwrap().commit_id;
 
     let diff = ops::diff(&root, &s1, &s2).unwrap();
     assert!(
@@ -371,9 +384,9 @@ fn diff_rename_shows_as_delete_plus_add() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "old.txt", "same content\n");
-    let s1 = ops::snapshot(&root, None).unwrap();
+    let s1 = ops::snapshot(&root, None).unwrap().commit_id;
     fs::rename(root.join("old.txt"), root.join("new.txt")).unwrap();
-    let s2 = ops::snapshot(&root, None).unwrap();
+    let s2 = ops::snapshot(&root, None).unwrap().commit_id;
 
     let diff = ops::diff(&root, &s1, &s2).unwrap();
     assert!(diff.contains("diff --git a/new.txt b/new.txt"), "{diff}");
@@ -426,7 +439,7 @@ fn workspace_add_and_forget() {
 
     // The lane is a fully usable working copy: snapshot works in it.
     write(&lane, "lane.txt", "from lane\n");
-    let lane_id = ops::snapshot(&lane, Some("lane work")).unwrap();
+    let lane_id = ops::snapshot(&lane, Some("lane work")).unwrap().change_id;
     assert_change_id(&lane_id);
 
     // Its snapshot is visible from the main workspace's repo.
@@ -452,7 +465,7 @@ fn snapshot_sets_description_on_closed_change() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "a.txt", "alpha\n");
-    let s1 = ops::snapshot(&root, Some("the message")).unwrap();
+    let s1 = ops::snapshot(&root, Some("the message")).unwrap().change_id;
     assert_eq!(description(&root, &s1), "the message");
 
     // The message lands on the change that closed, not on the fresh one
@@ -472,17 +485,86 @@ fn snapshot_describes_only_the_change_it_closes() {
     let (_temp, root) = temp_root();
     ops::init(&root).unwrap();
     write(&root, "a.txt", "alpha\n");
-    let described = ops::snapshot(&root, Some("the message")).unwrap();
+    let described = ops::snapshot(&root, Some("the message")).unwrap().change_id;
 
     // `None` describes nothing and leaves earlier descriptions alone.
     write(&root, "b.txt", "beta\n");
-    let undescribed = ops::snapshot(&root, None).unwrap();
+    let undescribed = ops::snapshot(&root, None).unwrap().change_id;
     assert_eq!(description(&root, &undescribed), "");
     assert_eq!(description(&root, &described), "the message");
 
     // An empty message is still a message: it sets an empty description.
     write(&root, "c.txt", "gamma\n");
-    let emptied = ops::snapshot(&root, Some("")).unwrap();
+    let emptied = ops::snapshot(&root, Some("")).unwrap().change_id;
     assert_eq!(description(&root, &emptied), "");
     assert_eq!(description(&root, &described), "the message");
+}
+
+/// Folds the working copy into `snapshot`'s closed commit, the way an agent's
+/// `jj squash` inside a step does: the closed change keeps its change id but
+/// now points at a new commit holding the step's edits.
+fn squash_working_copy_into(root: &Path, closed_commit: &str) {
+    let mut config = StackedConfig::with_defaults();
+    config.add_layer(ConfigLayer::parse(ConfigSource::User, USER_CONFIG).unwrap());
+    let settings = UserSettings::from_config(config).unwrap();
+    // Record the edits on @ first, through the contract.
+    ops::status(root).unwrap();
+    let workspace = Workspace::load(
+        &settings,
+        root,
+        &default_backend_factories(),
+        &default_working_copy_factories(),
+    )
+    .unwrap();
+    let repo = workspace
+        .repo_loader()
+        .clone()
+        .load_at_head()
+        .block_on()
+        .unwrap();
+    let wc_id = repo
+        .view()
+        .get_wc_commit_id(workspace.workspace_name())
+        .unwrap()
+        .clone();
+    let wc = repo.store().get_commit(&wc_id).unwrap();
+    let prefix = HexPrefix::try_from_hex(closed_commit).unwrap();
+    let PrefixResolution::SingleMatch(closed_id) =
+        repo.index().resolve_commit_id_prefix(&prefix).unwrap()
+    else {
+        panic!("commit {closed_commit:?} does not resolve");
+    };
+    let closed = repo.store().get_commit(&closed_id).unwrap();
+    let mut tx = repo.start_transaction();
+    tx.repo_mut()
+        .rewrite_commit(&closed)
+        .set_tree(wc.tree())
+        .write()
+        .block_on()
+        .unwrap();
+    tx.repo_mut().rebase_descendants().block_on().unwrap();
+    tx.commit("squash into the snapshot").block_on().unwrap();
+}
+
+#[test]
+fn restore_by_commit_id_survives_a_rewrite_of_the_snapshot_change() {
+    let (_temp, root) = temp_root();
+    ops::init(&root).unwrap();
+    write(&root, "f", "a");
+    let snapshot = ops::snapshot(&root, None).unwrap();
+
+    write(&root, "f", "b");
+    squash_working_copy_into(&root, &snapshot.commit_id);
+
+    // The change id now names the rewritten commit that holds the step's edit.
+    ops::restore(&root, &snapshot.change_id).unwrap();
+    assert_eq!(read(&root, "f"), "b");
+
+    // The commit id still names the pre-image, although it is now hidden.
+    ops::restore(&root, &snapshot.commit_id).unwrap();
+    assert_eq!(read(&root, "f"), "a");
+    assert_eq!(
+        ops::diff(&root, &snapshot.commit_id, &snapshot.commit_id).unwrap(),
+        ""
+    );
 }

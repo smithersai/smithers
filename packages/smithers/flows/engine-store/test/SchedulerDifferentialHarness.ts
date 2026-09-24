@@ -68,7 +68,7 @@ export const runtime = (executor: PlanScheduler.Executor) =>
     Layer.succeed(
       Jj.Jj,
       Jj.make({
-        snapshot: () => Effect.succeed({ changeId: "differential" as never }),
+        snapshot: () => Effect.succeed({ commitId: "differential" as never, changeId: "differential" as never }),
         restore: () => Effect.void,
         diff: () => Effect.succeed(""),
         workspaceAdd: () => Effect.void,

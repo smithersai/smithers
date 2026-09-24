@@ -90,7 +90,7 @@ const durableFlow: DurableFlow = {
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "gateway-suite" as never }),
+    snapshot: () => Effect.succeed({ commitId: "gateway-suite" as never, changeId: "gateway-suite" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

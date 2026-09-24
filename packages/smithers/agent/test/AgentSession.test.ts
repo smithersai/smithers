@@ -325,7 +325,11 @@ const stack = (options: StackOptions) => {
   )
   let snapshot = 0
   const jj = Jj.layerNoop({
-    snapshot: () => Effect.succeed({ changeId: `snapshot-${snapshot++}` }),
+    snapshot: () =>
+      Effect.sync(() => {
+        const id = `snapshot-${snapshot++}`
+        return { commitId: id, changeId: id }
+      }),
     restore: () => Effect.void,
     diff: () => Effect.succeed("")
   })

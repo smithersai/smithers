@@ -64,7 +64,7 @@ const Blocked = Flow.make("cancel-convergence/blocked", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "cancel-convergence" as never }),
+  snapshot: () => Effect.succeed({ commitId: "cancel-convergence" as never, changeId: "cancel-convergence" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

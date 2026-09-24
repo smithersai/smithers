@@ -24,7 +24,8 @@ import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "cancel-parked-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "cancel-parked-snapshot" as never, changeId: "cancel-parked-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

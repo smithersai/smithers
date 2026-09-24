@@ -131,7 +131,11 @@ const inputDependentRunLayer = Run.toLayer((payload) =>
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "registry-executable-snapshot" as never }),
+    snapshot: () =>
+      Effect.succeed({
+        commitId: "registry-executable-snapshot" as never,
+        changeId: "registry-executable-snapshot" as never
+      }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

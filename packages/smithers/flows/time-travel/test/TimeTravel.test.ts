@@ -103,7 +103,7 @@ const harness = (options: {
         Layer.succeed(Journal.Journal)(journalOf(options.store)),
         Layer.succeed(Jj.Jj)(
           Jj.makeNoop({
-            snapshot: () => Effect.succeed({ changeId: "current" }),
+            snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
             workspaceAdd: (name, path) =>
               Effect.sync(() => {
                 options.workspaces?.push(`${name}@${path}`)
@@ -363,7 +363,9 @@ describe("TimeTravel wiring", () => {
         Layer.succeed(TimeTravelStore)(store),
         Layer.succeed(RunStore.RunStore)(runs),
         Layer.succeed(Journal.Journal)(blockingJournal),
-        Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+        Layer.succeed(Jj.Jj)(
+          Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+        ),
         CacheStore.layerNoop()
       )
       const serviceLayer = TimeTravel.layer.pipe(Layer.provide(dependencies))
@@ -547,7 +549,7 @@ describe("TimeTravel replay and history caps", () => {
       Layer.succeed(Journal.Journal)(journalOf(store)),
       Layer.succeed(Jj.Jj)(
         Jj.makeNoop({
-          snapshot: () => Effect.succeed({ changeId: "current" }),
+          snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
           workspaceAdd: (name) => Effect.sync(() => void workspaces?.push(name)),
           workspaceForget: () => Effect.void
         })
@@ -791,7 +793,9 @@ describe("TimeTravel compensation descriptors", () => {
                   Layer.succeed(TimeTravelStore)(store),
                   Layer.succeed(RunStore.RunStore)(makeRuns()),
                   Layer.succeed(Journal.Journal)(journalOf(store)),
-                  Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+                  Layer.succeed(Jj.Jj)(
+                    Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+                  ),
                   CacheStore.layerNoop({ get: () => Effect.succeed(Option.none()) })
                 )
               )

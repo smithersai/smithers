@@ -26,7 +26,7 @@ export const activate = (runId: string, parentRunId?: string) =>
 export const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "policy-snapshot" as never }),
+    snapshot: () => Effect.succeed({ commitId: "policy-snapshot" as never, changeId: "policy-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

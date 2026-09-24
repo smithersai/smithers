@@ -19,7 +19,7 @@ const CancelFlow = Flow.make("SnapshotAcknowledgement", {
   body: opaqueHandlerBody
 })
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "acknowledgement" as never }),
+  snapshot: () => Effect.succeed({ commitId: "acknowledgement" as never, changeId: "acknowledgement" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

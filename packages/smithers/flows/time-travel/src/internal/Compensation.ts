@@ -378,7 +378,7 @@ export const prepareWorkspace = (
         }
 
         const workspace: WorkspaceReceipt = {
-          currentChangeId: currentExit.value.changeId,
+          currentChangeId: currentExit.value.commitId,
           targetChangeId: plan.targetChangeId!
         }
         return { handlerReceipts, workspace }

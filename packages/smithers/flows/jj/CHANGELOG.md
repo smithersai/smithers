@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **CONTRACT:** `Jj.snapshot` returns `{ commitId, changeId }`. Restore, diff,
+  fork, and revert by `commitId`, the full hex commit id: no later rewrite of
+  the change (an agent's `jj squash`, `describe`, or `abandon`) changes the tree
+  it names. A change id moves with such a rewrite, so journaling it restored
+  the step's edits instead of the pre-image. `changeId` is display only.
+  Journal rows written earlier hold a reverse-hex change id; the alphabets are
+  disjoint, so both forms still resolve and no migration runs.
+
 ## 1.0.0-rc.0
 
 ### Changed

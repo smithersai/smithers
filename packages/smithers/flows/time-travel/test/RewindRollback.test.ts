@@ -144,7 +144,7 @@ const edge: LineageEdge = {
 const makeJj = () => {
   let pointer = "current"
   const service = Jj.makeNoop({
-    snapshot: () => Effect.succeed({ changeId: pointer }),
+    snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
     restore: (changeId) =>
       Effect.sync(() => {
         pointer = changeId
@@ -329,7 +329,7 @@ describe("Rewind protocol fault matrix", () => {
           {
             name: "restore",
             jj: Jj.makeNoop({
-              snapshot: () => Effect.succeed({ changeId: "current" }),
+              snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
               restore: () => Effect.fail(new Jj.JjError({ code: "unknown", message: "restore refused" }))
             })
           }

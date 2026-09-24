@@ -156,7 +156,7 @@ const seatFor = (engineHost: string): SeatResolver.Service["resolve"] => (id) =>
   )
 
 const jj = Jj.layerNoop({
-  snapshot: () => Effect.succeed({ changeId: "completed-persist" }),
+  snapshot: () => Effect.succeed({ commitId: "completed-persist", changeId: "completed-persist" }),
   restore: () => Effect.void,
   diff: () => Effect.succeed("")
 })

@@ -504,7 +504,10 @@ const layerBase = (
           Effect.annotateCurrentSpan({ stepKey: key, attempt }).pipe(
             Effect.andThen(jj.snapshot(`smithers action ${key} attempt ${attempt}`)),
             Effect.orDie,
-            Effect.map((snapshot) => snapshot.changeId)
+            // The commit id, never the change id: an agent's `jj squash` in the
+            // step rewrites the change, and a change id would then name the
+            // step's edits instead of the pre-image.
+            Effect.map((snapshot) => snapshot.commitId)
           )
         ),
         restore: Effect.fn("SnapshotBoundary.restore")((snapshot) =>
@@ -517,7 +520,7 @@ const layerBase = (
           Effect.annotateCurrentSpan({ stepKey: key, attempt }).pipe(
             Effect.andThen(jj.snapshot(`smithers action ${key} attempt ${attempt} settled`)),
             Effect.orDie,
-            Effect.flatMap((current) => jj.diff(snapshot as never, current.changeId).pipe(Effect.orDie))
+            Effect.flatMap((current) => jj.diff(snapshot as never, current.commitId).pipe(Effect.orDie))
           )
         )
       }))

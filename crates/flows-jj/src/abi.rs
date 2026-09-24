@@ -85,8 +85,14 @@ fn dispatch(request: &Request) -> Result<OkPayload, OpError> {
             Ok(OkPayload::Unit {})
         }
         Request::Snapshot { root, message } => {
-            let change_id = ops::snapshot(Path::new(root), message.as_deref())?;
-            Ok(OkPayload::Snapshot { change_id })
+            let ops::Snapshot {
+                commit_id,
+                change_id,
+            } = ops::snapshot(Path::new(root), message.as_deref())?;
+            Ok(OkPayload::Snapshot {
+                commit_id,
+                change_id,
+            })
         }
         Request::Restore { root, change_id } => {
             ops::restore(Path::new(root), change_id)?;

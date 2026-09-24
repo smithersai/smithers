@@ -2073,7 +2073,10 @@ export const make = (deps: Dependencies) => {
                 }
               }
               const snapshot = yield* jj.snapshot(`smithers action ${stepKeyDigest} attempt ${input.attempt}`)
-              snapshotId = snapshot.changeId
+              // The immutable commit id: a retry or an adoption restores this
+              // pointer, and a change id would follow an agent's rewrite of the
+              // pre-image change (`jj squash`) and restore the step's edits.
+              snapshotId = snapshot.commitId
               // Persist the pre-image into the running row before announcing it
               // (issue #87): a SIGKILL mid-attempt must not lose the only
               // reference to the clean tree, or adoption re-executes on top of

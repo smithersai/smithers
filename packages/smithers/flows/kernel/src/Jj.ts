@@ -15,7 +15,7 @@
  */
 import type { Action } from "@smthrs/capability/Capability"
 import { permissionDenied } from "@smthrs/capability/Permission"
-import { type ChangeId, Jj } from "@smthrs/jj"
+import { Jj, type Revision } from "@smthrs/jj"
 import { Effect, FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
 import { canonicalResource } from "./FileSystem.ts"
 import { GrantStore } from "./GrantStore.ts"
@@ -96,8 +96,8 @@ export const layer: Layer.Layer<
       snapshot: Effect.fn("Jj.snapshot")((message) =>
         check("jj:snapshot", message ?? "").pipe(Effect.andThen(jj.snapshot(message)))
       ),
-      restore: Effect.fn("Jj.restore")((changeId) =>
-        check("jj:restore", changeId).pipe(Effect.andThen(jj.restore(changeId)))
+      restore: Effect.fn("Jj.restore")((revision) =>
+        check("jj:restore", revision).pipe(Effect.andThen(jj.restore(revision)))
       ),
       workspaceAdd: Effect.fn("Jj.workspaceAdd")((name, destination, revision) =>
         canonicalResource(fileSystem, path, workspace.root, destination).pipe(
@@ -143,8 +143,8 @@ export const layer: Layer.Layer<
         )
       },
       ...jjRevert === undefined ? {} : {
-        revert: Effect.fn("Jj.revert")((changeId: ChangeId) =>
-          check("jj:revert", changeId).pipe(Effect.andThen(jjRevert(changeId)))
+        revert: Effect.fn("Jj.revert")((revision: Revision) =>
+          check("jj:revert", revision).pipe(Effect.andThen(jjRevert(revision)))
         )
       }
     })

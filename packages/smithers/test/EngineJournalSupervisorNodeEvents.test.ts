@@ -62,7 +62,7 @@ const Wide = Flow.make("agent/run", {
 const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "supervised" }),
+    snapshot: () => Effect.succeed({ commitId: "supervised", changeId: "supervised" }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

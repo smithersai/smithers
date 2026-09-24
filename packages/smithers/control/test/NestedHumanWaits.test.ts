@@ -68,7 +68,7 @@ const Request = Flow.make("nested/Request", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "nested-human-waits" as never }),
+  snapshot: () => Effect.succeed({ commitId: "nested-human-waits" as never, changeId: "nested-human-waits" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

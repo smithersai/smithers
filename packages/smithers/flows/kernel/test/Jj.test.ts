@@ -44,7 +44,7 @@ describe("Jj", () => {
             snapshot: () =>
               Effect.sync(() => {
                 invoked = true
-                return { changeId: "change" }
+                return { commitId: "commit", changeId: "change" }
               })
           })
         ),
@@ -79,7 +79,7 @@ describe("Jj", () => {
       snapshot: () =>
         Effect.sync(() => {
           calls.push("snapshot")
-          return { changeId: "change" }
+          return { commitId: "commit", changeId: "change" }
         }),
       restore: () =>
         Effect.sync(() => {
@@ -99,7 +99,7 @@ describe("Jj", () => {
       const jj = yield* Jj.Jj
       expect(yield* jj.status()).toBe("status")
       expect(yield* jj.diff("from", "to")).toBe("diff")
-      expect(yield* jj.snapshot("message")).toEqual({ changeId: "change" })
+      expect(yield* jj.snapshot("message")).toEqual({ commitId: "commit", changeId: "change" })
       yield* jj.restore("change")
       yield* jj.workspaceAdd("lane", "/work/lane")
       yield* jj.workspaceForget("lane")
@@ -272,7 +272,7 @@ describe("Jj", () => {
     const host = HostJj.make({
       status: () => Effect.succeed("status"),
       diff: () => Effect.succeed("diff"),
-      snapshot: () => Effect.succeed({ changeId: "change" }),
+      snapshot: () => Effect.succeed({ commitId: "change", changeId: "change" }),
       restore: () => Effect.void,
       workspaceAdd: () => Effect.void,
       workspaceForget: () => Effect.void

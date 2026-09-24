@@ -34,7 +34,7 @@ import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "unresolved-action" as never }),
+  snapshot: () => Effect.succeed({ commitId: "unresolved-action" as never, changeId: "unresolved-action" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

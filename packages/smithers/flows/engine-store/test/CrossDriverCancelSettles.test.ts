@@ -48,7 +48,8 @@ const CancelFlow = Flow.make("CrossDriverCancel/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "cross-driver-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "cross-driver-snapshot" as never, changeId: "cross-driver-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

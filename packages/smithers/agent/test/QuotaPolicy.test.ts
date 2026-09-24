@@ -196,7 +196,7 @@ const ReviewFlow = Flow.make("agent/test/quota/ReviewFlow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "quota-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "quota-snapshot" as never, changeId: "quota-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

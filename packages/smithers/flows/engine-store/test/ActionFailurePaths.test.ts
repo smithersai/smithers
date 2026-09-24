@@ -44,7 +44,7 @@ const hardBoundary: ActionPersistence.BoundaryMetadata = {
 const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "failure-snapshot" as never }),
+    snapshot: () => Effect.succeed({ commitId: "failure-snapshot" as never, changeId: "failure-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

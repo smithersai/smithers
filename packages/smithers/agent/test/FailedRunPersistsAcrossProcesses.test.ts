@@ -139,7 +139,7 @@ const seatFor = (host: string): SeatResolver.Service["resolve"] => (id) =>
   )
 
 const jj = Jj.layerNoop({
-  snapshot: () => Effect.succeed({ changeId: "failed-persist" }),
+  snapshot: () => Effect.succeed({ commitId: "failed-persist", changeId: "failed-persist" }),
   restore: () => Effect.void,
   diff: () => Effect.succeed("")
 })

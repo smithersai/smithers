@@ -35,7 +35,8 @@ const OriginFlow = Flow.make("RetryOrigin/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "retry-origin-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "retry-origin-snapshot" as never, changeId: "retry-origin-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

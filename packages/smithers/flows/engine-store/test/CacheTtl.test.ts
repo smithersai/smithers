@@ -64,7 +64,8 @@ const boundaryLayer = Layer.succeed(
 const jjLayer = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "cache-ttl-snapshot" as never }),
+    snapshot: () =>
+      Effect.succeed({ commitId: "cache-ttl-snapshot" as never, changeId: "cache-ttl-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

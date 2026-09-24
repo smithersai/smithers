@@ -34,7 +34,7 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "raced-park-resume" as never }),
+  snapshot: () => Effect.succeed({ commitId: "raced-park-resume" as never, changeId: "raced-park-resume" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

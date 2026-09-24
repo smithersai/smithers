@@ -143,7 +143,7 @@ describe("Jj facade", () => {
           const snapshot = yield* jj.snapshot()
           const failed = yield* Effect.flip(jj.status())
           return { snapshot, failed }
-        }).pipe(Effect.provide(Jj.layerNoop({ snapshot: () => Effect.succeed({ changeId: "zzz" }) })))
+        }).pipe(Effect.provide(Jj.layerNoop({ snapshot: () => Effect.succeed({ commitId: "zzz", changeId: "zzz" }) })))
       )
 
       expect(result.snapshot.changeId).toBe("zzz")

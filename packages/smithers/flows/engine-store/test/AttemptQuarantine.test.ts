@@ -37,7 +37,8 @@ const QuarantineFlow = Flow.make("AttemptQuarantine/Flow", {
 })
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "quarantine-snapshot" as never }),
+  snapshot: () =>
+    Effect.succeed({ commitId: "quarantine-snapshot" as never, changeId: "quarantine-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -74,7 +74,7 @@ const Parking = Flow.make("node-journal/parking", {
 const jj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "test" }),
+    snapshot: () => Effect.succeed({ commitId: "test", changeId: "test" }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

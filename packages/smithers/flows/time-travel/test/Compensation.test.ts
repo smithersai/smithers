@@ -414,7 +414,7 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
               snapshot: () =>
                 Effect.sync(() => {
                   snapshots += 1
-                  return { changeId: "current" }
+                  return { commitId: "current", changeId: "current" }
                 })
             })
           )
@@ -435,7 +435,7 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
           Effect.provide(registryOf([])),
           Effect.provide(
             jjOf({
-              snapshot: () => Effect.succeed({ changeId: pointer }),
+              snapshot: () => Effect.succeed({ commitId: pointer, changeId: pointer }),
               restore: (changeId: string) =>
                 Effect.sync(() => {
                   pointer = changeId
@@ -551,7 +551,7 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
             Effect.provide(registry),
             Effect.provide(
               jjOf({
-                snapshot: () => Effect.succeed({ changeId: "current" }),
+                snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
                 restore: (changeId: string) =>
                   Effect.gen(function*() {
                     restores.push(changeId)
@@ -603,7 +603,7 @@ describe("Compensation.prepareWorkspace then restorePreparedWorkspace", () => {
               Effect.provide(registry),
               Effect.provide(
                 jjOf({
-                  snapshot: () => Effect.succeed({ changeId: "current" }),
+                  snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }),
                   restore: (changeId: string) =>
                     changeId === "target" || faults.workspaceRollback
                       ? Effect.fail(jjError({ code: "conflict", method: "restore" }))
@@ -748,7 +748,8 @@ describe("Compensation.compensate then the workspace restore", () => {
           Effect.provide(layer),
           Effect.provide(
             jjOf({
-              snapshot: () => Effect.succeed({ changeId: "current" }),
+              // A distinct change id: the pre-restore pointer is the commit id.
+              snapshot: () => Effect.succeed({ commitId: "current", changeId: "moving" }),
               restore: (changeId: string) =>
                 Effect.sync(() => {
                   order.push(`jj:${changeId}`)
@@ -913,8 +914,8 @@ describe("Compensation deadlines", () => {
             Effect.provide(jjOf({
               snapshot: () =>
                 operation === "snapshot"
-                  ? hang.pipe(Effect.as({ changeId: "current" }))
-                  : Effect.succeed({ changeId: "current" }),
+                  ? hang.pipe(Effect.as({ commitId: "current", changeId: "current" }))
+                  : Effect.succeed({ commitId: "current", changeId: "current" }),
               restore: (id) => operation === "restore" && id === "target" ? hang : Effect.void
             }))
           ),

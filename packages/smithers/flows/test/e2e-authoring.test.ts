@@ -84,7 +84,7 @@ const roundId = (lineageId: string, ordinal: number): string =>
   sha256(JSON.stringify(["flow-round/v2", lineageId, ordinal]))
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "e2e-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "e2e-snapshot" as never, changeId: "e2e-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

@@ -48,7 +48,8 @@ const scriptedJj = (calls: Array<{ readonly op: string; readonly id?: string }>)
       snapshot: () =>
         Effect.sync(() => {
           calls.push({ op: "snapshot" })
-          return { changeId: `fresh-${calls.length}` as never }
+          // A distinct change id: adoption and retry must restore the commit id.
+          return { commitId: `fresh-${calls.length}` as never, changeId: `moving-${calls.length}` as never }
         }),
       restore: (id) =>
         Effect.sync(() => {

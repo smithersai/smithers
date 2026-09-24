@@ -36,10 +36,10 @@ because nothing here reaches a shell.
 ## Pin the lane at a recorded revision
 
 ```ts
-const forkAt = (name: string, path: string, changeId: string) =>
+const forkAt = (name: string, path: string, commitId: string) =>
   Effect.gen(function*() {
     const jj = yield* Jj
-    yield* jj.workspaceAdd(name, path, changeId)
+    yield* jj.workspaceAdd(name, path, commitId)
   })
 ```
 
@@ -47,6 +47,11 @@ With a third argument the new workspace opens at that revision instead of the
 lane default. That is how a fork lands the child on the frame's recorded
 pointer without touching the parent's working copy: the parent keeps editing
 where it was, and the child starts from the tree the run recorded.
+
+The recorded pointer is a commit id. When a step later rewrote that change, for
+example with `jj squash`, the commit is hidden, and pinning a lane at it brings
+it back as a divergent sibling of the rewritten change. That sibling holds the
+tree the run recorded, which is the one a fork needs.
 
 An empty revision string fails `invalid_ref` before jj is spawned, and no lane
 directory is created.

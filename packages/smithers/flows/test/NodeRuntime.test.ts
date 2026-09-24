@@ -87,7 +87,7 @@ const filename = join(directory, "state", "gate.sqlite")
 const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "node-runtime-gate" as never }),
+    snapshot: () => Effect.succeed({ commitId: "node-runtime-gate" as never, changeId: "node-runtime-gate" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

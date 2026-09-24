@@ -25,7 +25,7 @@ import * as TestStores from "../src/test/TestStores.ts"
 import { withCrypto } from "./Sha256.ts"
 
 const jj = Jj.make({
-  snapshot: () => Effect.succeed({ changeId: "annotated-snapshot" as never }),
+  snapshot: () => Effect.succeed({ commitId: "annotated-snapshot" as never, changeId: "annotated-snapshot" as never }),
   restore: () => Effect.void,
   diff: () => Effect.succeed(""),
   workspaceAdd: () => Effect.void,

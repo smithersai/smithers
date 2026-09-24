@@ -227,11 +227,24 @@ pub fn init(root: &Path) -> Result<(), OpError> {
     Ok(())
 }
 
+/// The CLOSED change a [`snapshot`] recorded.
+///
+/// `commit_id` is the restore pointer: a full hex commit id is content
+/// addressed, so no later rewrite (a `squash` into it, a `describe`, an
+/// `abandon`) can change the tree it names, and jj still resolves it once the
+/// commit is hidden. `change_id` is the change's human identity; a rewrite
+/// moves it to the new commit, so it is display metadata only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Snapshot {
+    pub commit_id: String,
+    pub change_id: String,
+}
+
 /// `snapshot`: describe the current change (setting `message` when given),
-/// remember its short change id, then open a fresh empty change on top —
-/// `jj describe [-m message] --quiet && jj new --quiet`. Returns the CLOSED
-/// change's id: the state callers later `restore` to.
-pub fn snapshot(root: &Path, message: Option<&str>) -> Result<String, OpError> {
+/// remember its commit id and short change id, then open a fresh empty change
+/// on top — `jj describe [-m message] --quiet && jj new --quiet`. Returns the
+/// CLOSED commit: the state callers later `restore` to.
+pub fn snapshot(root: &Path, message: Option<&str>) -> Result<Snapshot, OpError> {
     let settings = user_settings()?;
     let (mut workspace, mut repo) = load(&settings, root)?;
     let name = workspace.workspace_name().to_owned();
@@ -254,7 +267,10 @@ pub fn snapshot(root: &Path, message: Option<&str>) -> Result<String, OpError> {
         commit = wc_commit(&repo, &name)?;
     }
 
-    let closed_change_id = short_change_id(&commit);
+    let closed = Snapshot {
+        commit_id: commit.id().hex(),
+        change_id: short_change_id(&commit),
+    };
 
     let mut tx = repo.start_transaction();
     let mut_repo = tx.repo_mut();
@@ -272,7 +288,7 @@ pub fn snapshot(root: &Path, message: Option<&str>) -> Result<String, OpError> {
         .check_out(repo.op_id().clone(), Some(&old_tree), &new_commit)
         .block_on()?;
 
-    Ok(closed_change_id)
+    Ok(closed)
 }
 
 /// `restore`: put the working-copy files back to `change_id`'s tree —

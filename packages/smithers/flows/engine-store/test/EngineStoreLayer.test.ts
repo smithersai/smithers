@@ -46,7 +46,8 @@ const recordingJj = (
     snapshot: (message) =>
       Effect.sync(() => {
         calls.push({ op: "snapshot", argument: message ?? "" })
-        return { changeId: `change-${calls.length}` as never }
+        // A distinct change id: the boundary must hand out the commit id.
+        return { commitId: `change-${calls.length}` as never, changeId: `moving-${calls.length}` as never }
       }),
     restore: (changeId) =>
       Effect.sync(() => {

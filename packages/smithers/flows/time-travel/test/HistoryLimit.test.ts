@@ -112,7 +112,9 @@ describe("Rewind.rewind under the cap", () => {
               Layer.succeed(TimeTravelStore)(store),
               Layer.succeed(RunStore.RunStore)(runs),
               Layer.succeed(Journal.Journal)(journalOf([entry(0), entry(1), entry(2)])),
-              Layer.succeed(Jj.Jj)(Jj.makeNoop({ snapshot: () => Effect.succeed({ changeId: "current" }) })),
+              Layer.succeed(Jj.Jj)(
+                Jj.makeNoop({ snapshot: () => Effect.succeed({ commitId: "current", changeId: "current" }) })
+              ),
               CacheStore.layerNoop(),
               EffectHandlerRegistry.layerNoop
             )
