@@ -1,5 +1,31 @@
 # Permanent product interaction rules
 
+## Maintainer workflow (Will, 2026-09-24)
+
+- Keep communication brief; take ownership and ask only necessary questions.
+  Persist durable decisions in instructions and track actionable work in issues.
+- Prioritize the smallest reliable features that unblock Smithers developing
+  itself on Smithers Cloud. Local agent work is transitional bootstrap/repair.
+- Run the coding factory, CI/CD, and change automation on Smithers Cloud; keep
+  GitHub synchronized with essential checks and issue updates. Do not build a
+  parallel GitHub Actions factory.
+- Land and push work on `main`. Temporary worktrees are for one change and are
+  removed after landing; no permanent integration branches or history-rewrite lanes.
+- Reuse or create a GitHub issue for every actionable TODO, bug, blocker, or
+  deferred requirement. Reconcile stale issues against evidence; never close an
+  issue merely because code exists or a launch request was accepted.
+- Keep the repository wiki current through the existing app wiki workflows.
+  Refresh on source changes, retain review/source receipts, and surface failures
+  or staleness. Keep code, issues, and wiki aligned through the factory.
+- Keep reusable product code, public docs, reproducible benchmark evidence, and
+  self-hosting in this repository. Hosted deployment/IaC, private operations, and
+  marketing planning/assets belong in the private deployment repository. Public
+  builds and self-hosting must not depend on private files or services.
+- Ship small, tested MVPs of the 1.0.0 rewrite, npm packages, UI, TUI, Cloud, and
+  self-hosting incrementally. Require actual release evidence; defer unreliable
+  or undifferentiated features. Publish benchmark claims only with reproducible
+  methods, artifacts, and limitations.
+
 ## Instant chat; slow work runs in the background (Will, 2026-09-15)
 
 Chat responses acknowledge an action immediately. Repository setup, research,

@@ -1,25 +1,31 @@
 # factory/
 
-The software factory: everything that turns queued prompts into landed,
-documented commits. The process design lives in the spec vault, a separate
-repository: the "Software Factory" spec (process), the "Clean History" spec
-(the `vibe`/`main` branch model), and the "Colocated Docs" spec (documentation
-planes).
+Smithers' own coding factory. Target workflow:
 
-## Contents
+```text
+GitHub issue -> Smithers Cloud run -> checks/review -> main -> GitHub sync
+                                                        -> wiki refresh
+                                                        -> issue receipt
+```
 
-- `queue/` — the intake. One markdown file per requested change; presence is
-  registration. See `queue/README.md`.
-- `flows/` — factory production lines: flows that run on the Smithers library
-  itself (`harness.ts` holds the `AgentTask`/`ShellTask` atoms). Launch with
-  `bun factory/flows/<name>.ts`.
-- `reports/` — created at run time by `flows/harness.ts` (`REPORTS_DIR`) and
-  not tracked: a summary markdown per flow plus tailable per-task logs.
+This is the operating target, not a claim that the Cloud loop is qualified.
+Prioritize blockers to completing this loop before adding features. Local
+Codex/Claude work is transitional bootstrap or repair; record each blocker in
+an issue. GitHub remains synchronized; Cloud owns the coding and CI/CD work.
 
-## Planned
+- `queue/` — legacy intake needing reconciliation with GitHub issues. Files do
+  not prove that a job is registered or running. See [queue/README.md](queue/README.md).
+- `flows/` — existing local factory tooling, not evidence of Cloud deployment.
+  Canonical file flows use `flows/<name>/flow.ts` and the root AGENTS.md contract.
+- `coding/project.ts` — repository coding checks and host configuration.
+- `wiki/` — source catalog and engineering wiki recipe; reuse the existing app
+  wiki workflows and preserve their source/review receipts.
+- `reports/` — runtime reports and logs, not tracked.
 
-Factory tooling consolidates here over time. `bun factory/flows/<name>.ts` is
-the only operator path. The `queue-driver` workflow that once consumed the
-queue is retired with the `smithers workflow` verb; the factory flow that
-replaces it (queue item `0003-factory-flow`) lands under `flows/` when it
-becomes tracked code.
+Land and push on `main`; remove temporary worktrees after landing. Old `vibe`
+integration branches and retelling `main` are not supported operating paths.
+Close issues and refresh documentation from real completion evidence.
+
+Tracking: [Cloud issue automation](https://github.com/smithersai/smithers/issues/1695),
+[wiki refresh](https://github.com/smithersai/smithers/issues/1651), and
+[backlog reconciliation](https://github.com/smithersai/smithers/issues/1708).
