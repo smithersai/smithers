@@ -15,7 +15,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Mode: Vim' })).toBeVisible()
 })
 
-test('edit a Vim buffer and navigate back to the workspace without closing its draft', async ({ page }) => {
+test('edit a Vim buffer and navigate back to the workspace without closing its draft', async ({ page }, testInfo) => {
   await page.keyboard.press('Meta+k')
   const input = page.getByTestId('composer-input')
   await expect(input).toBeFocused()
@@ -48,7 +48,8 @@ test('edit a Vim buffer and navigate back to the workspace without closing its d
   await expect(input).toHaveValue('alpha beta gamma')
   await page.keyboard.press('Control+b')
   await page.keyboard.press('q')
-  await page.screenshot({ path: '/tmp/smithers-keyboard-panes.png' })
+  await page.screenshot({ path: testInfo.outputPath('smithers-keyboard-panes.png') })
+  await testInfo.attach('smithers-keyboard-panes.png', { path: testInfo.outputPath('smithers-keyboard-panes.png'), contentType: 'image/png' })
 })
 
 test('pane selection enters search results and Escape cancels the prefix without editing', async ({ page }) => {
