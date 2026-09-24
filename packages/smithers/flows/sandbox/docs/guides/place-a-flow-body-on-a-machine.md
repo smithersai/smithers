@@ -120,10 +120,8 @@ use POSIX `sh` probes. The derived filesystem has these limits:
   as `rename(2)` does. A directory may replace an empty directory or name
   itself; the replacement runs through `mv -T`, so a machine whose `mv` lacks
   `-T` (BSD) refuses it with `BadResource` and changes nothing.
-- Directory listings are line framed, so a filename containing a newline is
-  misread. The listing probe is `ls -1A` and never a bare `ls -A`, because
-  POSIX `ls` columnizes when its output is a terminal and one provider's
-  transport is a pseudo-terminal.
+- Directory listings are NUL framed through `find -print0`, so a filename
+  may hold a newline, and no pseudo-terminal transport can columnize them.
 - Operations with no meaningful remote form (a watch, an open file handle, a
   temporary directory) answer with the platform's own refusal rather than a
   plausible lie.

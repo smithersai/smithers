@@ -115,7 +115,9 @@ keyring fails there rather than at the first request. A malformed keyring
 fails with `invalid_request`:
 
 - an `activeKid` that names no key in the ring;
-- a `kid` listed twice.
+- a `kid` listed twice;
+- a secret holding an unpaired surrogate, which UTF-8 would fold into the
+  same key bytes as a different secret.
 
 A secret Web Crypto refuses to import fails with `unknown` instead, because
 the refusal is the platform's rather than the request's. The error's `cause`

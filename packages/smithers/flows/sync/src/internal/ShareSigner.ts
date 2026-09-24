@@ -80,16 +80,29 @@ export const constantTimeEquals = (left: string, right: string): boolean => {
 
 /**
  * Imports a raw secret as a non-extractable Web Crypto HMAC-SHA-256 signing
- * key. Fails with a `SyncError` carrying the rejection as `cause` when Web
- * Crypto refuses the import.
+ * key. Fails with `invalid_request` when the secret does not survive UTF-8
+ * (an unpaired surrogate), and with a `SyncError` carrying the rejection as
+ * `cause` when Web Crypto refuses the import.
  *
  * @category crypto
  * @since 0.1.0
  */
-export const importHmacKey = (secret: string): Effect.Effect<CryptoKey, SyncError> =>
-  Effect.tryPromise({
+export const importHmacKey = (secret: string): Effect.Effect<CryptoKey, SyncError> => {
+  // An unpaired surrogate encodes to U+FFFD's bytes, so two distinct
+  // secrets would import the same key and rotating between them revokes
+  // nothing. Refused here, as `signHmac` refuses such claims.
+  const bytes = encoder.encode(secret)
+  if (!utf8RoundTrips(secret, bytes)) {
+    return Effect.fail(
+      new SyncError({
+        code: "invalid_request",
+        message: "The HMAC signing secret carries an unpaired surrogate"
+      })
+    )
+  }
+  return Effect.tryPromise({
     try: () =>
-      crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+      crypto.subtle.importKey("raw", bytes, { name: "HMAC", hash: "SHA-256" }, false, [
         "sign"
       ]),
     catch: (cause) =>
@@ -99,6 +112,7 @@ export const importHmacKey = (secret: string): Effect.Effect<CryptoKey, SyncErro
         cause: causeText(cause)
       })
   })
+}
 
 /**
  * Signs a canonical claim encoding, returning the signature as lowercase hex.

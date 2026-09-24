@@ -64,6 +64,24 @@ describe("share claim encoding", () => {
       expect(verifyFailure.code).toBe("invalid_request")
     }))
 
+  // `TextEncoder` folds an unpaired surrogate in a SECRET to U+FFFD too, so
+  // two differently configured secrets would import the same HMAC key and a
+  // capability signed under one would verify under the other. Construction
+  // refuses such a secret for both authorities.
+  it.effect("refuses a signing secret carrying an unpaired surrogate", () =>
+    Effect.gen(function*() {
+      const keyring = { activeKid: "primary", keys: [{ kid: "primary", secret: Redacted.make("key-\uD800") }] }
+      const branchFailure = yield* Effect.flip(BranchShare.makeHmac(keyring))
+      const workspaceFailure = yield* Effect.flip(WorkspaceShare.makeHmac(keyring))
+      expect(branchFailure.code).toBe("invalid_request")
+      expect(workspaceFailure.code).toBe("invalid_request")
+      // The replacement character itself is a well-formed secret.
+      yield* BranchShare.makeHmac({
+        activeKid: "primary",
+        keys: [{ kid: "primary", secret: Redacted.make("key-\uFFFD") }]
+      })
+    }))
+
   // A well-formed astral id round-trips through UTF-8 and is signed normally,
   // so the refusal above is about non-round-trippable input and not about
   // anything outside the basic multilingual plane.

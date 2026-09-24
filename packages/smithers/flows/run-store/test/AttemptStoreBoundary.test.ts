@@ -91,6 +91,84 @@ describe("AttemptStore inert input boundary", () => {
       })
     ))
 
+  it.effect("refuses a malformed owner on every owner-bearing write without reading accessors", () =>
+    withStore((store) =>
+      Effect.gen(function*() {
+        let calls = 0
+        const accessor = Object.defineProperty({ ...owner }, "nonce", {
+          enumerable: true,
+          get: () => {
+            calls++
+            return owner.nonce
+          }
+        })
+        const inherited = Object.create(owner) as OwnerId
+        class Owner {
+          readonly hostId = owner.hostId
+          readonly pid = owner.pid
+          readonly nonce = owner.nonce
+        }
+        const badOwners: ReadonlyArray<unknown> = [
+          null,
+          undefined,
+          "owner",
+          accessor,
+          inherited,
+          new Owner(),
+          { ...owner, extra: true },
+          { ...owner, pid: -1 },
+          { ...owner, pid: 1.5 },
+          { ...owner, hostId: "" },
+          { hostId: owner.hostId, pid: owner.pid }
+        ]
+        const id = { runId: "boundary-run", stepKeyDigest: "step-0", attempt: 0 }
+        for (const bad of badOwners) {
+          expect(yield* failureCode(store.put(valid(), bad as never))).toBe("invalid_attempt")
+          expect(yield* failureCode(store.heartbeat("boundary-run", "step-0", 0, bad as never, 2))).toBe(
+            "invalid_attempt"
+          )
+          expect(
+            yield* failureCode(store.finish({ ...id, state: "completed", finishedAtMs: 2 }, bad as never))
+          ).toBe("invalid_attempt")
+          expect(yield* failureCode(store.patch(id, { meta: {} }, bad as never))).toBe("invalid_attempt")
+        }
+        expect(calls).toBe(0)
+        expect(yield* store.get(id)).toEqual(Option.none())
+      })
+    ))
+
+  it.effect("reads the owner once, so a shifting proxy cannot split the fence", () =>
+    withStore((store) =>
+      Effect.gen(function*() {
+        // A proxy whose `get` answers a different host on every read: the
+        // span, the SQL predicate, and the fence comparison must all see the
+        // one owner captured at the boundary.
+        let reads = 0
+        const shifting = new Proxy({ ...owner }, {
+          get: (target, key) => {
+            reads++
+            return key === "hostId" && reads % 2 === 0 ? "other-host" : Reflect.get(target, key)
+          }
+        })
+        expect(yield* store.put(valid(), shifting)).toEqual({ _tag: "Inserted" })
+        expect(yield* store.heartbeat("boundary-run", "step-0", 0, shifting, 2)).toEqual({ _tag: "Updated" })
+        expect(
+          yield* store.patch({ runId: "boundary-run", stepKeyDigest: "step-0", attempt: 0 }, { meta: {} }, shifting)
+        )
+          .toEqual({ _tag: "Patched" })
+        expect(
+          yield* store.finish({
+            runId: "boundary-run",
+            stepKeyDigest: "step-0",
+            attempt: 0,
+            state: "completed",
+            finishedAtMs: 3
+          }, shifting)
+        ).toEqual({ _tag: "Finished" })
+        expect(reads).toBe(0)
+      })
+    ))
+
   it.effect("validates every optional JSON field before a write", () =>
     withStore((store) =>
       Effect.gen(function*() {

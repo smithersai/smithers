@@ -151,9 +151,7 @@ probe rather than natively. The probe reports exact file size, and the portable
 shell cannot name mode, times, or ownership.
 
 **What to change.** Use size, or have the provider serve `stat` natively
-through `Session.files`. Related probe limits: a directory entry whose name
-contains a newline is misread, because probe output is line framed, and
-operations with no meaningful remote form (a watch, an open handle, a temporary
+through `Session.files`. A related probe limit: operations with no meaningful remote form (a watch, an open handle, a temporary
 directory) answer with the platform's own refusal.
 
 ## `isRunning` turned false too early, or `extendEnv` did nothing

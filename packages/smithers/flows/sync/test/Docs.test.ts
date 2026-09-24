@@ -69,7 +69,7 @@ describe("keyring failure codes", () => {
   it("names the code importHmacKey uses for a rejected secret", () => {
     const signer = read("src/internal/ShareSigner.ts")
     const importer = signer.slice(signer.indexOf("export const importHmacKey"))
-    const importCode = /code: "(\w+)"/.exec(importer)![1]!
+    const importCode = /catch: \(cause\) =>\s+new SyncError\(\{\s+code: "(\w+)"/.exec(importer)![1]!
     expect(importCode).toBe("unknown")
     const cryptoFailure = keyringParagraphs.find((paragraph) =>
       /Web Crypto/.test(paragraph) && /fails? with/.test(paragraph)

@@ -223,8 +223,9 @@ const unsupportedExit = 13
  * the transfer seam cannot guarantee atomic append, exclusive creation, or
  * creation permissions. Native write overrides receive the options unchanged.
  * Everything else is derived through portable `sh` probes over
- * `Session.spawn`: POSIX `test`, `wc -c`, `ls -1A`, `find`, `mkdir`, `rm`,
- * `mv`, and `dirname`, plus `readlink`/`readlink -f` and `find -mindepth`,
+ * `Session.spawn`: POSIX `test`, `wc -c`, `find`, `mkdir`, `rm`, `mv`, and
+ * `dirname`, plus `readlink`/`readlink -f` and `find -mindepth`/`-maxdepth`/
+ * `-print0`,
  * which POSIX omits but GNU, busybox, and the BSDs all ship — so any session
  * whose machine has a mainstream `sh` userland serves the whole surface with
  * no adapter work. An adapter that can do better supplies `Session.files`,
@@ -255,9 +256,7 @@ const unsupportedExit = 13
  * owner (the portable shell cannot name them; its `size` is exact, from the
  * machine's `stat` where it has one and a byte count otherwise, and a size the
  * probe cannot read fails rather than reading as zero); `rename` replaces an
- * empty directory with a directory only where `mv` knows `-T`; a
- * directory entry whose name contains a newline is misread, because probe
- * output is line-framed. `stat` follows links the way the platform
+ * empty directory with a directory only where `mv` knows `-T`. `stat` follows links the way the platform
  * implementations do, and reports `SymbolicLink` only for a dangling link.
  *
  * @category constructors
@@ -390,19 +389,22 @@ export const fileSystem = (session: Session): FileSystem.FileSystem => {
       const path = resolve(raw)
       const target = quote(path)
       const recursive = options?.recursive === true
+      // `find` names every entry by the path it was given, so the listed
+      // directory is handed over without trailing slashes and stripped back
+      // off each entry below. The root keeps its one slash.
+      const base = path.replace(/\/+$/, "") || "/"
+      const prefix = base === "/" ? "/" : `${base}/`
       // A present non-directory is the `ENOTDIR` the platform reports as
       // `BadResource`; only true absence is `NotFound` (a dangling symlink
       // is absent to `readdir`, which follows it, so `-e` is the question).
-      const script = recursive
-        ? `if [ -d ${target} ]; then find ${target} -mindepth 1; ` +
-          `elif [ -e ${target} ]; then exit ${badResourceExit}; else exit ${absentExit}; fi`
-        // `ls -1A`, never a bare `ls -A`: POSIX `ls` writes one entry per line
-        // only when its output is not a terminal, and a transport whose channel
-        // IS a pseudo-terminal (ECS Exec's Session Manager channel is one)
-        // would hand back space-padded columns that this line-framed parse
-        // reads as one bogus entry. `-1` forces the framing on every transport.
-        : `if [ -d ${target} ]; then ls -1A ${target}; ` +
-          `elif [ -e ${target} ]; then exit ${badResourceExit}; else exit ${absentExit}; fi`
+      // Entries are NUL-framed with `-print0`, never line-framed: a newline
+      // is a legal filename byte, and `ls` output split on lines read `a\nb`
+      // as two entries. `find` also never columnizes on a pseudo-terminal
+      // (ECS Exec's Session Manager channel is one), which a bare `ls` does.
+      // `-H` follows a symlinked directory the way `readdir` does.
+      const script = `if [ -d ${target} ]; then find -H ${quote(base)} -mindepth 1 ` +
+        `${recursive ? "" : "-maxdepth 1 "}-print0; ` +
+        `elif [ -e ${target} ]; then exit ${badResourceExit}; else exit ${absentExit}; fi`
       const result = yield* probe(session, "readDirectory", path, script)
       if (result.code === absentExit) return yield* Effect.fail(notFound("readDirectory", path))
       if (result.code === badResourceExit) {
@@ -411,11 +413,12 @@ export const fileSystem = (session: Session): FileSystem.FileSystem => {
         )
       }
       if (result.code !== 0) return yield* Effect.fail(probeFailed("readDirectory", path)(result))
-      // Sorted for determinism: `ls` and `find` order differ by platform.
-      const lines = result.stdout.split("\n").filter((line) => line !== "")
-      if (!recursive) return lines.sort()
-      const prefix = `${path.replace(/\/+$/, "")}/`
-      return lines.map((line) => line.startsWith(prefix) ? line.slice(prefix.length) : line).sort()
+      // Sorted for determinism: `find` order differs by platform.
+      return result.stdout
+        .split("\0")
+        .filter((entry) => entry !== "")
+        .map((entry) => entry.startsWith(prefix) ? entry.slice(prefix.length) : entry)
+        .sort()
     }),
     remove: Effect.fn("Sandbox.fileSystem.remove")(function*(raw, options) {
       const path = resolve(raw)

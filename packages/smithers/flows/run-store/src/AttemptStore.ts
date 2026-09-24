@@ -486,6 +486,28 @@ const inspectRecord = (
   return output
 }
 
+/**
+ * Captures the fencing owner once, as a frozen inert record. Every span, SQL
+ * predicate, and fence comparison reads this copy, so an accessor, a proxy, or
+ * a mutation during an await cannot put two different owners into one write.
+ */
+const snapshotOwner = (method: AttemptStoreMethod, input: OwnerId): Effect.Effect<OwnerId, AttemptStoreError> =>
+  Effect.suspend(() => {
+    try {
+      const values = inspectRecord(input, ["hostId", "pid", "nonce"], [], "owner")
+      const owner = Object.freeze({ hostId: values.hostId, pid: values.pid, nonce: values.nonce })
+      if (
+        Boundary.isDurableText(owner.hostId) && Boundary.isDurableText(owner.nonce) &&
+        Number.isSafeInteger(owner.pid) && (owner.pid as number) >= 0
+      ) {
+        return Effect.succeed(owner as OwnerId)
+      }
+    } catch {
+      // Falls through to the one refusal below.
+    }
+    return Effect.fail(error(method, "invalid_attempt", "owner must be an inert, valid owner identity"))
+  })
+
 const snapshotJson = (
   method: AttemptStoreMethod,
   value: unknown,
@@ -801,8 +823,9 @@ export const makeWith = (
     const patchEncodeCheckpoint = encodeCheckpointWith("patch", maxCheckpointBytes)
     const inProgress = sql.in("state", [...inProgressStates])
 
-    const put: Service["put"] = Effect.fn("AttemptStore.put")((input, owner) =>
+    const put: Service["put"] = Effect.fn("AttemptStore.put")((input, ownerInput) =>
       Effect.gen(function*() {
+        const owner = yield* snapshotOwner("put", ownerInput)
         const attempt = yield* snapshotAttempt("put", input)
         yield* Effect.annotateCurrentSpan({
           runId: attempt.runId,
@@ -925,11 +948,12 @@ export const makeWith = (
       runId,
       stepKeyDigest,
       attempt,
-      owner,
+      ownerInput,
       nowMs,
       checkpointValue
     ) =>
       Effect.gen(function*() {
+        const owner = yield* snapshotOwner("heartbeat", ownerInput)
         yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
         yield* validateId("heartbeat", { runId, stepKeyDigest, attempt })
         if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
@@ -982,8 +1006,9 @@ export const makeWith = (
       }).pipe(observeOutcome<HeartbeatResult>())
     )
 
-    const finish: Service["finish"] = Effect.fn("AttemptStore.finish")((input, owner) =>
+    const finish: Service["finish"] = Effect.fn("AttemptStore.finish")((input, ownerInput) =>
       Effect.gen(function*() {
+        const owner = yield* snapshotOwner("finish", ownerInput)
         const attempt = yield* snapshotFinish("finish", input)
         yield* Effect.annotateCurrentSpan({
           runId: attempt.runId,
@@ -1051,8 +1076,9 @@ export const makeWith = (
       }).pipe(observeOutcome<FinishResult>())
     )
 
-    const patch: Service["patch"] = Effect.fn("AttemptStore.patch")((idInput, patchInput, owner) =>
+    const patch: Service["patch"] = Effect.fn("AttemptStore.patch")((idInput, patchInput, ownerInput) =>
       Effect.gen(function*() {
+        const owner = yield* snapshotOwner("patch", ownerInput)
         const id = yield* snapshotId("patch", idInput)
         const fields = yield* snapshotPatch("patch", patchInput)
         yield* Effect.annotateCurrentSpan({

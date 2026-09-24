@@ -483,6 +483,24 @@ describe("Sandbox.fileSystem probes against the reference filesystem", () => {
   )
 
   it.effect(
+    "lists an entry whose name holds a newline as one entry, flat and recursive",
+    () =>
+      withProbes("readdir-newline", ({ fs, probed, workdir }) =>
+        Effect.gen(function*() {
+          yield* fs.makeDirectory(`${workdir}/a\nb`)
+          yield* fs.writeFileString(`${workdir}/a\nb/c\nd.txt`, "x")
+          expect(yield* probed.readDirectory(workdir)).toEqual(
+            [...(yield* fs.readDirectory(workdir))].sort()
+          )
+          expect(yield* probed.readDirectory(workdir, { recursive: true })).toEqual(
+            [...(yield* fs.readDirectory(workdir, { recursive: true }))].sort()
+          )
+          expect(yield* probed.readDirectory(workdir, { recursive: true })).toContain("a\nb/c\nd.txt")
+        })),
+    budget
+  )
+
+  it.effect(
     "reports a readDirectory of a regular file as BadResource",
     () =>
       withProbes("readdir-of-file", ({ fs, probed, workdir }) =>

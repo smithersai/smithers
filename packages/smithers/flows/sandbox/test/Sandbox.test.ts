@@ -411,12 +411,16 @@ describe("Sandbox.fileSystem", () => {
       expect(outcome.broken).toBe("Unknown")
     }))
 
-  it.effect("lists directories flat and recursively, tolerating outlier lines", () =>
+  it.effect("lists directories flat and recursively, tolerating outlier entries", () =>
     Effect.gen(function*() {
       const provider = Sandbox.TestSession.make({
         script: (command) =>
           command.startsWith("if [ -d /tree/ ]")
-            ? { stdout: command.includes("find") ? "/tree/a\n/tree/a/b.txt\n/elsewhere/x\n" : "a\nz.txt\n" }
+            ? {
+              stdout: command.includes("-maxdepth 1")
+                ? "/tree/a\0/tree/z.txt\0"
+                : "/tree/a\0/tree/a/b.txt\0/elsewhere/x\0"
+            }
             : command.includes(" /gone ")
             ? { exitCode: 9 }
             : command.includes(" /plain ")
@@ -443,10 +447,10 @@ describe("Sandbox.fileSystem", () => {
       expect(outcome.plain).toBe("BadResource")
       expect(outcome.broken).toBe("Unknown")
       expect(provider.state.commands[0]).toBe(
-        "if [ -d /tree/ ]; then ls -1A /tree/; elif [ -e /tree/ ]; then exit 11; else exit 9; fi"
+        "if [ -d /tree/ ]; then find -H /tree -mindepth 1 -maxdepth 1 -print0; elif [ -e /tree/ ]; then exit 11; else exit 9; fi"
       )
       expect(provider.state.commands[1]).toBe(
-        "if [ -d /tree/ ]; then find /tree/ -mindepth 1; elif [ -e /tree/ ]; then exit 11; else exit 9; fi"
+        "if [ -d /tree/ ]; then find -H /tree -mindepth 1 -print0; elif [ -e /tree/ ]; then exit 11; else exit 9; fi"
       )
     }))
 
@@ -614,19 +618,28 @@ describe("Sandbox.fileSystem", () => {
       )
     }))
 
-  it.effect("asks for one entry per line, so a pseudo-terminal cannot columnize the listing", () =>
+  it.effect("lists the filesystem root by its one slash", () =>
     Effect.gen(function*() {
-      // POSIX `ls` writes one entry per line only when its output is not a
-      // terminal; on a terminal it columnizes. `AwsSandbox` runs every command
-      // through a Session Manager pseudo-terminal, so a bare `ls -A` came back
-      // as one space-padded line that parsed into a single bogus name. This
-      // session is that terminal: it columnizes any listing that did not ask
-      // for one entry per line.
+      const provider = Sandbox.TestSession.make({ script: () => ({ stdout: "/etc\0/tmp\0" }) })
+      const listed = yield* Effect.scoped(
+        Effect.flatMap(probeSession(provider), (files) => files.readDirectory("//"))
+      )
+      expect(listed).toEqual(["etc", "tmp"])
+      expect(provider.state.commands[0]).toContain("find -H / -mindepth 1 -maxdepth 1 -print0")
+    }))
+
+  it.effect("frames the listing with NUL, so a pseudo-terminal cannot columnize it", () =>
+    Effect.gen(function*() {
+      // POSIX `ls` columnizes when its output is a terminal, and `AwsSandbox`
+      // runs every command through a Session Manager pseudo-terminal: a bare
+      // `ls -A` came back as one space-padded line. The listing is `find
+      // -print0`, which no terminal reframes; this session is that terminal
+      // and columnizes any `ls` it is asked for.
       const pty = Sandbox.TestSession.make({
         script: (command) =>
-          command.includes("ls -1A")
-            ? { stdout: "a.txt\nb.txt\nc.txt\n" }
-            : command.includes("ls -A")
+          command.includes("-print0")
+            ? { stdout: "/tree/a.txt\0/tree/b.txt\0/tree/c.txt\0" }
+            : command.includes("ls")
             ? { stdout: "a.txt      b.txt      c.txt\n" }
             : { exitCode: 0 }
       })
