@@ -18,8 +18,8 @@ export interface TutorialRepositoryPorts {
 
 export function createTutorialRepositoryController(ctx: ControllerContext, ports: TutorialRepositoryPorts): TutorialRepositoryActions {
   const identity = () => ctx.store.collections.identitySessions.get("identity")
-  const scope = () => ({ playthrough: 0, account: identity()?.login, epoch: ctx.accountEpoch })
-  const current = (before: ReturnType<typeof scope>) => before.playthrough === (0) && before.account === identity()?.login && before.epoch === ctx.accountEpoch
+  const scope = () => ({ account: identity()?.login, epoch: ctx.accountEpoch })
+  const current = (before: ReturnType<typeof scope>) => before.account === identity()?.login && before.epoch === ctx.accountEpoch
   return {
     chooseTutorialRepository: async (repo) => {
       const before = scope()
@@ -28,7 +28,7 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
         cutoff: new Date(Date.now() - 90 * 86400000).toISOString(), repositories: [], partial: true,
         error: "Sign in to list GitHub repositories."
       }
-      if (!current(before)) return "The account or tutorial changed; choose the repository again."
+      if (!current(before)) return "The account changed; choose the repository again."
       if (repo === undefined) {
         await ports.publish({ ...ranking, selected: ranking.repositories[0]?.fullName ?? null, created: null })
         return
@@ -47,7 +47,7 @@ export function createTutorialRepositoryController(ctx: ControllerContext, ports
       const before = scope()
       const created = await ports.createRepository(name)
       if (typeof created === "string") return created
-      if (!current(before)) return "The account or tutorial changed; create the repository again."
+      if (!current(before)) return "The account changed; create the repository again."
       await ctx.store.dispatch({ type: "repo.selected", actor: ctx.commandActor, id: created.fullName }).isPersisted.promise
       await ports.publish({
         cutoff: new Date(Date.now() - 90 * 86400000).toISOString(),

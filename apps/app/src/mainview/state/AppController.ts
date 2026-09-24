@@ -869,7 +869,7 @@ export const createAppController = (
   const tutorialRepository = actors.pair(ctx, (context) => createTutorialRepositoryController(context, {
     createRepository: repositoriesSeam.createRepository,
     publish: async (payload) => {
-      const id = `tutorial-repository-${0}`
+      const id = "repository-choice"
       const existing = context.store.collections.cards.get(id)
       await context.store.dispatch({ type: "card.upsert", actor: context.commandActor, card: {
         id, kind: "repository-choice", title: "Repository", status: "active",

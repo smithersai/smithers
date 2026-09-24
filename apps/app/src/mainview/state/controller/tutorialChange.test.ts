@@ -57,10 +57,10 @@ test("a saved plan still starts after same-owner re-reads", async () => {
   const [card] = t.plans()
   await t.controller.loadSession()
   await t.controller.loadSession()
-  expect(await t.controller.startTutorialChange(card!.id)).not.toBe("The repository or tutorial changed; request a new plan.")
+  expect(await t.controller.startTutorialChange(card!.id)).not.toBe("The repository or account changed; request a new plan.")
   expect(t.posts).toContain("/api/tutorial/change/preflight")
   const saved = t.store.collections.cards.get(card!.id)
-  expect(saved?.kind === "run-trace" && saved.payload.input?.tutorialScope).toEqual({ repoKey: null, playthrough: 0, accountLogin: "owner" })
+  expect(saved?.kind === "run-trace" && saved.payload.input?.tutorialScope).toEqual({ repoKey: null, accountLogin: "owner" })
 })
 
 test("a plan saved by another owner is refused after the account changes", async () => {
@@ -71,6 +71,6 @@ test("a plan saved by another owner is refused after the account changes", async
   await t.controller.loadSession()
   // The owner change erased the plan; a copy that survived elsewhere comes back.
   await t.store.dispatch({ type: "card.upsert", actor: "system", card: card! }).isPersisted.promise
-  expect(await t.controller.startTutorialChange(card!.id)).toBe("The repository or tutorial changed; request a new plan.")
+  expect(await t.controller.startTutorialChange(card!.id)).toBe("The repository or account changed; request a new plan.")
   expect(t.posts).not.toContain("/api/tutorial/change/preflight")
 })
