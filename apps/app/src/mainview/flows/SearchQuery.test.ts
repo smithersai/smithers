@@ -32,11 +32,11 @@ describe("§1 prefixes: the first token decides the mode", () => {
     expect(parseQuery("redact")).toMatchObject({ mode: "all", prefix: "", query: "redact" })
     expect(parseQuery("src/Redaction")).toMatchObject({ mode: "path", prefix: "", query: "src/Redaction" })
     expect(parseQuery("Composer.tsx")).toMatchObject({ mode: "path", query: "Composer.tsx" })
-    expect(parseQuery("@redact")).toMatchObject({ mode: "symbols", prefix: "@", scope: "file", query: "redact" })
-    expect(parseQuery("@@redact")).toMatchObject({ mode: "symbols", prefix: "@@", scope: "repo", query: "redact" })
+    expect(parseQuery("@redact")).toMatchObject({ mode: "all", prefix: "", query: "@redact" })
+    expect(parseQuery("@@redact")).toMatchObject({ mode: "all", prefix: "", query: "@@redact" })
     expect(parseQuery(":120")).toMatchObject({ mode: "line", line: { line: 120 } })
     expect(parseQuery(":120:8")).toMatchObject({ mode: "line", line: { line: 120, column: 8 } })
-    expect(parseQuery("text:useEffect")).toMatchObject({ mode: "text", prefix: "text:", query: "useEffect" })
+    expect(parseQuery("text:useEffect")).toMatchObject({ mode: "all", prefix: "", query: "text:useEffect" })
     expect(parseQuery("/flows")).toMatchObject({ mode: "flows", prefix: "/", query: "flows" })
     expect(parseQuery("//apps/app:test")).toMatchObject({ mode: "targets", prefix: "//", query: "apps/app:test" })
     expect(parseQuery("wiki: redaction")).toMatchObject({ mode: "wiki", prefix: "wiki:", query: "redaction" })
@@ -47,12 +47,12 @@ describe("§1 prefixes: the first token decides the mode", () => {
     expect(parseQuery("#412")).toMatchObject({ mode: "issues", prefix: "#", query: "412" })
     expect(parseQuery("box:main")).toMatchObject({ mode: "boxes", query: "main" })
     expect(parseQuery("secret:NPM")).toMatchObject({ mode: "secrets", query: "NPM" })
-    expect(parseQuery("user:will")).toMatchObject({ mode: "people", query: "will" })
+    expect(parseQuery("user:will")).toMatchObject({ mode: "all", query: "user:will" })
     expect(parseQuery("?")).toMatchObject({ mode: "help", prefix: "?" })
   })
 
   test("qualifiers come out of the query in any mode; an unknown word: stays text", () => {
-    const parsed = parseQuery("text:useEffect path:apps/app -path:*.test.*")
+    const parsed = parseQuery("useEffect path:apps/app -path:*.test.*")
     expect(parsed.query).toBe("useEffect")
     expect(parsed.qualifiers).toEqual([
       { key: "path", value: "apps/app", negated: false },
@@ -63,16 +63,15 @@ describe("§1 prefixes: the first token decides the mode", () => {
     expect(parseQuery("note: about x")).toMatchObject({ mode: "all", query: "note: about x", qualifiers: [] })
   })
 
-  test("text:/re/ is a regex; a prefix mid-line is not a mode switch", () => {
-    expect(parseQuery("text:/use(Effect|State)/")).toMatchObject({ mode: "text", regex: "use(Effect|State)" })
+  test("a prefix mid-line is not a mode switch", () => {
     expect(parseQuery("find wiki:redaction")).toMatchObject({ mode: "all", query: "find wiki:redaction" })
   })
 
   test("the prefix table lists every §1 row once, with the signed-in ones marked", () => {
     expect(PREFIXES.map((row) => row.label)).toEqual([
-      "(none)", "path", "@", ":", "text:", "/", "//", "wiki:", "history:", "ask:", "run:", "change:", "#", "box:", "secret:", "user:", "?"
+      "(none)", "path", ":", "/", "//", "wiki:", "history:", "ask:", "run:", "change:", "#", "box:", "secret:", "?"
     ])
-    expect(PREFIXES.filter((row) => row.signedIn).map((row) => row.mode)).toEqual(["boxes", "secrets", "people"])
+    expect(PREFIXES.filter((row) => row.signedIn).map((row) => row.mode)).toEqual(["boxes", "secrets"])
   })
 })
 

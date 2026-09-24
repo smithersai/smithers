@@ -16,8 +16,7 @@
  * overlay shows or the flow answers, because `palette` runs on every
  * keystroke while the overlay is open.
  *
- * NO INVENTION: a mode whose index does not exist yet (symbols, text, people,
- * the Librarian's ask) refuses with the exact reason, never with rows.
+ * The proposed Librarian ask mode refuses in place; it has no registered flow.
  */
 import type { SearchAction, SearchItem } from "@smthrs/rpc/Cards"
 import type { SearchArgs } from "../../flows/entries/search"
@@ -73,9 +72,6 @@ export const PALETTE_GROUP_CAP = 8
 /** Items a flow answers when the call names no limit. */
 export const SEARCH_DEFAULT_LIMIT = 50
 
-export const NO_SYMBOL_INDEX = "No symbol index exists yet: the language server answers one position at a time (code.definition, code.hover), and nothing lists a file's symbols."
-export const NO_TEXT_INDEX = "No text index exists yet: the mirror has no trigram index and no box grep is reachable from this app, so text: searches nothing."
-export const NO_PEOPLE_SEAM = "No people seam exists yet: this app reads no user directory, so user: searches nothing."
 export const ASK_PROPOSED = "ask: is proposed with the Librarian and not built; wiki: and history: search the same indexes."
 export const NO_FOCUSED_FILE = "No file card is open to jump into; read one with files.read first."
 
@@ -84,7 +80,7 @@ const joinPath = (directory: string, name: string): string => (directory === "" 
 const firstLine = (text: string): string => text.split("\n")[0]?.trim() ?? ""
 
 /** Signed out, a mode §4 hides answers nothing at all: no rows, no badge, and Enter still runs the flow, which defers through sign-in. */
-const HIDDEN_SIGNED_OUT: ReadonlySet<PaletteMode> = new Set(["boxes", "secrets", "people"])
+const HIDDEN_SIGNED_OUT: ReadonlySet<PaletteMode> = new Set(["boxes", "secrets"])
 
 /** The flow behind a mode, when the registry has it. */
 const flowOf = (mode: PaletteMode): string | null => prefixRow(mode).flow
@@ -369,12 +365,6 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
         return boxItems()
       case "secrets":
         return secretItems(secrets)
-      case "symbols":
-        return NO_SYMBOL_INDEX
-      case "text":
-        return NO_TEXT_INDEX
-      case "people":
-        return NO_PEOPLE_SEAM
       case "ask":
         return ASK_PROPOSED
       case "line":
@@ -385,7 +375,7 @@ export const createSearchSeam = (ctx: SeamContext, deps: SearchSeamDeps): Search
 
   /** The kinds §4 hides from a signed-out visitor, cut from a bare answer. */
   const scoped = (items: ReadonlyArray<Fact>, signedOut: boolean): ReadonlyArray<Fact> =>
-    signedOut ? items.filter((item) => item.kind !== "box" && item.kind !== "secret-name" && item.kind !== "person") : items
+    signedOut ? items.filter((item) => item.kind !== "box" && item.kind !== "secret-name") : items
 
   const rank = (items: ReadonlyArray<Fact>, query: string): ReadonlyArray<ResultGroup<Fact>> => {
     const session = ctx.store.session()

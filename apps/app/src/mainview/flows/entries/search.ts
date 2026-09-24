@@ -3,9 +3,8 @@
  * flow per palette prefix, each with its three doors. The palette is the
  * button door and reads the same seam synchronously; the slash and agent
  * doors run these handlers, which answer the items as data and, for a human,
- * embed the `search-results` card. A mode whose index does not exist yet is
- * registered and refuses with the exact reason (state/seams/SearchSeam.ts):
- * no door ever answers with rows it did not read. Qualifiers (`section:`,
+ * embed the `search-results` card. Only indexed modes are registered.
+ * Qualifiers (`section:`,
  * `status:`, `is:`, `path:`) ride inside the query, as §1 writes them.
  */
 import { Schema } from "effect"
@@ -66,8 +65,6 @@ export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
       })
   }),
   search(actions, "search.files", "path", "Find files by fuzzy path among the directories the app has listed", "<query> [path:… -path:…]"),
-  search(actions, "search.symbols", "symbols", "Find symbols in a file or the repository (no symbol index exists yet; refuses honestly)", "<query> [file:… kind:…]"),
-  search(actions, "search.text", "text", "Find text in files (no text index exists yet; refuses honestly)", "<query|/re/> [path:… -path:… lang:…]"),
   search(actions, "search.flows", "flows", "The slash tree as data: every flow this session may run", "<query>"),
   search(actions, "search.targets", "targets", "Find targets by label, and the flows the factory projection declares", "<query>"),
   search(actions, "search.wiki", "wiki", "Find wiki pages and notes by title", "<query>"),
@@ -77,5 +74,4 @@ export const searchFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =
   search(actions, "search.issues", "issues", "Find issues by number or title", "<query> [is:open|closed]"),
   search(actions, "search.boxes", "boxes", "Find boxes by name, repository or state", "<query>", { requires: ["signed-in"], runtime: ["cloud"] }),
   search(actions, "search.secrets", "secrets", "Find secret names and the hosts they bind to; values never exist on the wire", "<query>", { requires: ["signed-in"], runtime: ["cloud"] }),
-  search(actions, "search.people", "people", "Find people and accounts (no people seam exists yet; refuses honestly)", "<query>", { requires: ["signed-in"] })
 ].filter(entry => knowledgeFlowAvailable(entry.binding.descriptor.name, actions.snapshot?.()))

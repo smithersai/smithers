@@ -32,20 +32,12 @@ test("the real palette filters flow rows and keyboard selection runs the same se
   await expect(card.getByTestId("search-item-flow-chat")).toContainText("chat")
 })
 
-test("real search refuses unindexed modes and preserves an honest empty result", scenario("search.unindexed-refusal-real", {
+test("real search preserves an honest empty result", scenario("search.empty-result-real", {
   capabilities: [],
-  coverage: ["action:search.symbols", "action:search.text", "host:local", "host:production", "path:error", "door:slash", "dimension:unindexed-search", "dimension:empty-result", "evidence:refusal-and-empty-card"],
-  description: "The local host answers unsupported symbol and text indexes honestly, while a valid flow search returns an actual empty card rather than fabricated rows."
+  coverage: ["action:search.flows", "host:local", "host:production", "path:success", "door:slash", "dimension:empty-result", "evidence:empty-card"],
+  description: "A flow search with no matches returns an empty card."
 }), async ({ page }) => {
   await boot(page)
-  await command(page, "/search.symbols Composer")
-  await closeComposer(page)
-  await expect(page.getByText(/No symbol index exists yet/i).last()).toBeVisible()
-  await expect(page.locator('.smithers-card[data-kind="search-results"]')).toHaveCount(0)
-  await command(page, "/search.text a-query-that-cannot-exist-in-this-real-session")
-  await closeComposer(page)
-  await expect(page.getByText(/No text index exists yet/i).last()).toBeVisible()
-  await expect(page.locator('.smithers-card[data-kind="search-results"]')).toHaveCount(0)
   await command(page, "/search.flows query-that-is-not-a-flow-9f2f")
   await closeComposer(page)
   const empty = page.locator('.smithers-card[data-kind="search-results"]').last()

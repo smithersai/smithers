@@ -15,7 +15,7 @@ import type { AppServices } from "../AppController"
 import { createAppController } from "../AppController"
 import type { AppStore } from "../AppStore"
 import { createAppStore } from "../AppStore"
-import { ASK_PROPOSED,NO_FOCUSED_FILE,NO_PEOPLE_SEAM,NO_SYMBOL_INDEX,NO_TEXT_INDEX } from "./SearchSeam"
+import { ASK_PROPOSED,NO_FOCUSED_FILE } from "./SearchSeam"
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -251,16 +251,18 @@ describe("the palette's rows (the button door) come from what the store holds", 
     expect(answer.groups[0]?.items[0]?.item.actions[0]).toEqual({ flow: "files.read", args: "src/index.ts:120:8 smithers", label: "Read a file from a repository", role: "open" })
   })
 
-  test("a mode with no index refuses in place with its reason, never with rows", async () => {
+  test("unindexed prefixes remain ordinary queries", async () => {
     const { controller } = await ready()
-    expect(controller.searchPalette("@redact")).toMatchObject({ groups: [], refusal: NO_SYMBOL_INDEX })
-    expect(controller.searchPalette("text:useEffect")).toMatchObject({ groups: [], refusal: NO_TEXT_INDEX })
+    for (const query of ["@redact", "@@redact", "text:useEffect", "user:will"]) {
+      expect(controller.searchPalette(query)).toMatchObject({ parsed: { mode: "all" }, groups: [] })
+      expect(controller.searchPalette(query).refusal).toBeUndefined()
+    }
     expect(controller.searchPalette("ask:where")).toMatchObject({ groups: [], refusal: ASK_PROPOSED })
   })
 })
 
 describe("§4 signed-out scope", () => {
-  test("box:, secret: and user: are hidden signed out (no rows, no refusal, no badge), and a bare query never leaks them", async () => {
+  test("box: and secret: are hidden signed out (no rows, no refusal, no badge), and a bare query never leaks them", async () => {
     const { store, controller } = await ready()
     await seed(store)
     expect(controller.searchPalette("box:main")).toMatchObject({ groups: [] })
@@ -440,12 +442,11 @@ describe("§6 the flow doors", () => {
     expect(resultsCard(store, "search.history").payload.items.map((item) => item.ref)).toEqual(["def5678"])
   })
 
-  test("the modes with no index refuse through every door with the exact reason", async () => {
+  test("unindexed search flows are absent from the real registry", async () => {
     const { controller } = await ready(backend({}), "signed-in")
-    expect(await controller.commands.run("search.symbols", "redact")).toEqual({ status: "failed", error: NO_SYMBOL_INDEX })
-    expect(await controller.commands.run("search.text", "useEffect")).toEqual({ status: "failed", error: NO_TEXT_INDEX })
-    expect(await controller.commands.run("search.people", "will")).toEqual({ status: "failed", error: NO_PEOPLE_SEAM })
-    expect(await controller.commands.runForAgent("search.text", "x")).toEqual({ status: "failed", error: NO_TEXT_INDEX })
+    for (const name of ["search.symbols", "search.text", "search.people"]) {
+      expect(controller.commands.find(name)).toBeUndefined()
+    }
   })
 
   test("a search flow without its query renders the form (THE FORM LAW), and palette.open refuses the agent by naming search.*", async () => {

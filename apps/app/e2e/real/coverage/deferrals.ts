@@ -49,7 +49,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "plugins.list", "plugins.remove", "prs", "repo.choose", "repo.overview", "repo.tree", "repo.update",
     "repos.import.retry", "review.ack", "review.done", "review.reopen", "review.setup", "review.since-mine",
     "review.unrequest", "runs.seat", "runs.signal", "search.boxes", "search.changes", "search.files",
-    "search.history", "search.issues", "search.open", "search.people", "search.runs", "search.secrets",
+    "search.history", "search.issues", "search.open", "search.runs", "search.secrets",
     "search.targets", "search.wiki", "setup.ask", "setup.discard", "setup.discard.confirm", "setup.guide",
     "setup.retry", "setup.work", "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.run",
     "workspace.desktop", "workspace.desktop.open", "workspace.desktop.rotate", "workspace.desktop.stop",

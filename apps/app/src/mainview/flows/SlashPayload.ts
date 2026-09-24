@@ -773,8 +773,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
     return ok({ ...(query === "" ? {} : { query }), ...(kinds === undefined ? {} : { kinds }) })
   },
   "search.files": (args) => required("query", args, "search.files needs a query"),
-  "search.symbols": (args) => required("query", args, "search.symbols needs a query"),
-  "search.text": (args) => required("query", args, "search.text needs a query"),
   "search.flows": (args) => required("query", args, "search.flows needs a query"),
   "search.targets": (args) => required("query", args, "search.targets needs a query"),
   "search.wiki": (args) => required("query", args, "search.wiki needs a query"),
@@ -784,7 +782,6 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   "search.issues": (args) => required("query", args, "search.issues needs a query"),
   "search.boxes": (args) => required("query", args, "search.boxes needs a query"),
   "search.secrets": (args) => required("query", args, "search.secrets needs a query"),
-  "search.people": (args) => required("query", args, "search.people needs a query"),
   "tutorial.live.inspect": (args) => { const [cardId, eventId] = tokensOf(args); return ok({ ...(cardId ? { cardId } : {}), ...(eventId ? { eventId } : {}) }) },
   "tutorial.live.retry": (args) => required("cardId", args, "Choose a live tutorial run"),
   "app.first-run.dismiss": () => NONE,

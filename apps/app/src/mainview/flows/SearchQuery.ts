@@ -15,9 +15,7 @@ import { nameOf, namespaceOf } from "./registry"
 export type PaletteMode =
   | "all"
   | "path"
-  | "symbols"
   | "line"
-  | "text"
   | "flows"
   | "targets"
   | "wiki"
@@ -28,7 +26,6 @@ export type PaletteMode =
   | "issues"
   | "boxes"
   | "secrets"
-  | "people"
   | "help"
 
 /** One row of the `?` listing: the prefix, what it searches, the flow behind it, and whether it needs a session. */
@@ -49,9 +46,7 @@ export interface PrefixRow {
 export const PREFIXES: ReadonlyArray<PrefixRow> = [
   { prefix: "", label: "(none)", mode: "all", searches: "Everything by name, grouped", flow: "search.open", signedIn: false },
   { prefix: "", label: "path", mode: "path", searches: "Files by path, fuzzy per segment", flow: "search.files", signedIn: false },
-  { prefix: "@", label: "@", mode: "symbols", searches: "Symbols in the focused file card; @@ across the repository", flow: "search.symbols", signedIn: false },
   { prefix: ":", label: ":", mode: "line", searches: "Line :120 or :120:8 in the focused file card", flow: null, signedIn: false },
-  { prefix: "text:", label: "text:", mode: "text", searches: "Text in files; literal, /re/ for regex; path: -path: lang: qualifiers", flow: "search.text", signedIn: false },
   { prefix: "/", label: "/", mode: "flows", searches: "Flows: the slash tree", flow: "search.flows", signedIn: false },
   { prefix: "//", label: "//", mode: "targets", searches: "Targets, //apps/app:test", flow: "search.targets", signedIn: false },
   { prefix: "wiki:", label: "wiki:", mode: "wiki", searches: "Generated wiki pages; signed in, your notes join the list", flow: "search.wiki", signedIn: false },
@@ -62,7 +57,6 @@ export const PREFIXES: ReadonlyArray<PrefixRow> = [
   { prefix: "#", label: "#", mode: "issues", searches: "Issues, #412 or #label:bug", flow: "search.issues", signedIn: false },
   { prefix: "box:", label: "box:", mode: "boxes", searches: "Boxes by branch, owner, state", flow: "search.boxes", signedIn: true },
   { prefix: "secret:", label: "secret:", mode: "secrets", searches: "Secret names and grants; values never index", flow: "search.secrets", signedIn: true },
-  { prefix: "user:", label: "user:", mode: "people", searches: "People and accounts", flow: "search.people", signedIn: true },
   { prefix: "?", label: "?", mode: "help", searches: "The prefix list", flow: null, signedIn: false }
 ]
 
@@ -98,16 +92,12 @@ export interface Qualifier {
 /** A composer draft read as a palette query (§1). */
 export interface ParsedQuery {
   readonly mode: PaletteMode
-  /** The prefix as typed (`wiki:`, `@@`, `#`); empty in the bare and path readings. */
+  /** The prefix as typed (`wiki:`, `#`); empty in the bare and path readings. */
   readonly prefix: string
   /** The query with the prefix and the qualifiers removed. */
   readonly query: string
-  /** `@` searches the focused file card, `@@` the repository. */
-  readonly scope?: "file" | "repo"
   /** `:120` or `:120:8`. */
   readonly line?: { readonly line: number; readonly column?: number }
-  /** `text:/re/`: the pattern between the slashes. */
-  readonly regex?: string
   readonly qualifiers: ReadonlyArray<Qualifier>
 }
 
@@ -130,7 +120,7 @@ const splitQualifiers = (rest: string): { readonly query: string; readonly quali
 
 /**
  * The first token decides the mode (§3: "Mode switches when the prefix is
- * the first token"). `//` beats `/`, `@@` beats `@`, a lone `?` is the
+ * the first token"). `//` beats `/`, a lone `?` is the
  * prefix list, `:N` is a line, a known `word:` is its mode, `#` is issues,
  * and a single unprefixed token is a path when it carries a `/` or a `.`.
  */
@@ -139,8 +129,6 @@ export const parseQuery = (text: string): ParsedQuery => {
   if (raw.trim() === "?") return { mode: "help", prefix: "?", query: "", qualifiers: [] }
   if (raw.startsWith("//")) return { mode: "targets", prefix: "//", ...splitQualifiers(raw.slice(2)) }
   if (raw.startsWith("/")) return { mode: "flows", prefix: "/", query: raw.slice(1).trim(), qualifiers: [] }
-  if (raw.startsWith("@@")) return { mode: "symbols", prefix: "@@", scope: "repo", ...splitQualifiers(raw.slice(2)) }
-  if (raw.startsWith("@")) return { mode: "symbols", prefix: "@", scope: "file", ...splitQualifiers(raw.slice(1)) }
   const line = /^:(\d+)(?::(\d+))?\s*$/.exec(raw)
   if (line !== null) {
     const column = line[2] === undefined ? undefined : Number(line[2])
@@ -156,8 +144,7 @@ export const parseQuery = (text: string): ParsedQuery => {
   const mode = word === null ? undefined : WORD_PREFIXES.get(word[1] ?? "")
   if (word !== null && mode !== undefined) {
     const split = splitQualifiers(raw.slice(word[0].length))
-    const regex = mode === "text" ? /^\/(.+)\/$/.exec(split.query)?.[1] : undefined
-    return { mode, prefix: word[0], ...split, ...(regex === undefined ? {} : { regex }) }
+    return { mode, prefix: word[0], ...split }
   }
   if (raw.startsWith("#")) return { mode: "issues", prefix: "#", ...splitQualifiers(raw.slice(1)) }
   const split = splitQualifiers(raw)
