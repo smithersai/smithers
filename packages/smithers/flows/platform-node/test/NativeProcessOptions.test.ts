@@ -38,8 +38,8 @@ const withNativePipes = async (
 ) => {
   const pipes = modes.map((mode, fd) => {
     if (mode !== "pipe" && mode !== "overlapped") return null
-    // Native extra pipes have independent directions: ending the parent's
-    // unused writable half must not end the child's readable output half.
+    // Model independent stream directions. The platform-specific test below
+    // verifies Windows never requests named-pipe shutdown before output ends.
     return fd < 3 ? new PassThrough() : new Duplex({
       read() {},
       write(_chunk, _encoding, callback) {
@@ -75,6 +75,27 @@ const withNativePipes = async (
 }
 
 describe("native public process I/O options", () => {
+  it.each(["linux", "win32"])("keeps the extra output reader alive on %s", async (platform) => {
+    const original = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { ...original, value: platform })
+    try {
+      await withNativePipes(["pipe", "pipe", "pipe", "pipe"], async (child, pipes) => {
+        await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+          const handle = yield* spawn([], { additionalFds: { fd3: { type: "output" } } })
+          expect(pipes[3]!.writableEnded).toBe(platform !== "win32")
+          expect(pipes[3]!.destroyed).toBe(false)
+          pipes[3]!.push(bytes("retained output"))
+          pipes[3]!.push(null)
+          child.emit("exit", 0, null)
+          expect(yield* output(handle.getOutputFd(3))).toBe("retained output")
+          expect(yield* handle.exitCode).toBe(0)
+        })))
+      })
+    } finally {
+      Object.defineProperty(process, "platform", original)
+    }
+  })
+
   it("automatically feeds a direct stdin Stream and closes it at the actual EOF", async () => {
     const value = "literal input é🙂\nsecond line"
     const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {

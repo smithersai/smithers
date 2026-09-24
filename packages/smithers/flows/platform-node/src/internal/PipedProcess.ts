@@ -182,11 +182,13 @@ export const spawn = (
           ) {
             const pipe = child.stdio[fd]
             pipe?.on("readable", () => {})
-            // Extra pipes are native duplex sockets, but an output descriptor
-            // exposes only its readable half. Close the unused parent writer:
-            // Bun otherwise resets the socket on child exit even with unread
-            // bytes buffered. Keep input descriptors open for their callers.
-            if (fd > 2 && pipe !== null && pipe !== undefined && "end" in pipe) pipe.end()
+            // POSIX sockets can close the unused writer independently. Bun
+            // needs this to retain buffered output after child exit. Windows
+            // named-pipe shutdown instead starts libuv's EOF timer, which can
+            // close both directions before the child writes. Leave it open.
+            if (process.platform !== "win32" && fd > 2 && pipe !== null && pipe !== undefined && "end" in pipe) {
+              pipe.end()
+            }
           }
           return state
         },
