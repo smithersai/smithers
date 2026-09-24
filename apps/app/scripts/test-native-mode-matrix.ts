@@ -10,7 +10,7 @@ const cdpEndpoint = process.env.SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT?.trim()
 if (!executable || !revision || !cdpEndpoint) {
   throw new Error("test-native-mode-matrix requires a packaged launcher, SMITHERS_BUILD_SHA, and SMITHERS_MODE_MATRIX_NATIVE_CDP_ENDPOINT")
 }
-const outputDir = resolve(process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? "apps/app/test-results/mode-matrix")
+const outputDir = resolve(import.meta.dir, "..", process.env.SMITHERS_MODE_MATRIX_OUTPUT_DIR ?? "test-results/mode-matrix")
 mkdirSync(outputDir, { recursive: true })
 const session = await startNativeOwn(revision, outputDir, executable, cdpEndpoint)
 try {
