@@ -75,11 +75,10 @@ const selectWorkspace = (login: string, record: SetupRecord) => Effect.gen(funct
 })
 
 /** Credentials stay in the existing gateway relay; the fixed caller chooses the procedure. */
-const rpc = (login: string, record: SetupRecord, procedure: string, payload: unknown, observeOnly = false) => Effect.gen(function* () {
+const rpc = (login: string, record: SetupRecord, procedure: string, payload: unknown) => Effect.gen(function* () {
   const outcome = yield* callGateway(login, record.input.repo, GATEWAY_PROCEDURE_MOUNTS[procedure]!, {
     method: "POST", workspaceId: record.binding?.workspaceId ?? record.input.workspaceId, text: encodeGatewayRequest(procedure, payload),
     requiredCapability: "repository-jobs/v1",
-    provision: !observeOnly,
     // A later durable retry retains the persisted key; this relay never
     // repeats a consequential Run within one attempt after losing its answer.
     replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)

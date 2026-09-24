@@ -22,8 +22,8 @@ import type { Transport } from "./Http"
  * path, the `ai-evaluation-model-specification-version` and `ai-model-id`
  * headers, and the request and response bodies). Vercel may change that
  * protocol without notice. A refused request surfaces here as an `http`
- * failure and a changed response body as `empty`, and every caller already
- * treats both as "ask the fallback".
+ * failure and a changed response body as `empty`, and every caller reports
+ * both as Jev's typed failure: nothing is asked in Jev's place.
  *
  * The client is built exactly like `cerebrasChat` in recommend.ts: one
  * deadline over the whole call, a refused response's body cancelled here, and

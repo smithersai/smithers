@@ -142,13 +142,12 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     expect(storage.data.get("window")).toEqual({ start: opened + 1000, count: 1 })
   })
 
-  test("peek reports the state without spending anything", async () => {
-    const limiter = new TurnRateLimiter({ storage: memoryStorage() })
+  test("spend is the object's only route: a read-only peek is 404 and leaves the window alone", async () => {
+    const storage = memoryStorage()
+    const limiter = new TurnRateLimiter({ storage })
     await spend(limiter)
-    const peek = async (): Promise<TurnBudget> =>
-      (await (await limiter.fetch(new Request("https://turn-limit.internal/peek"))).json()) as TurnBudget
-    expect((await peek()).remaining).toBe(TURN_WINDOW_MAX - 1)
-    expect((await peek()).remaining).toBe(TURN_WINDOW_MAX - 1)
+    expect((await limiter.fetch(new Request("https://turn-limit.internal/peek"))).status).toBe(404)
+    expect(storage.data.get("window")).toMatchObject({ count: 1 })
   })
 
   test("concurrent spends never admit past the ceiling", async () => {

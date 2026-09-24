@@ -203,8 +203,6 @@ export const handleCloudRoleTurn = (
             `The ${role.label} did not answer within ${Math.round(CLOUD_ROLE_TIMEOUT_MS / 1000)}s.`,
             headers
           )
-        case "aborted":
-          return refusal("client_disconnected", "The client disconnected.", headers)
         case "unreachable":
           return refusal(
             "upstream_unreachable",

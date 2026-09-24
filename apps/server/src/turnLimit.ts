@@ -173,7 +173,7 @@ const answer = (body: TurnBudget): Response =>
 
 /**
  * One bucket's request: `POST /spend?max=&windowMs=` admits or refuses a
- * turn, `GET /peek` reports without spending. The caller names the ceiling
+ * turn. The caller names the ceiling
  * with each request; the login ceiling is the default so an unadorned call
  * keeps its old meaning. One bucket only ever sees one ceiling, because the
  * key already says whose it is. A storage failure is the object's own 500.
@@ -183,31 +183,19 @@ export const turnRateLimiterRequest = (request: Request): Effect.Effect<Response
     const storage = yield* DurableStorage
     const now = yield* Clock.currentTimeMillis
     const url = new URL(request.url)
+    if (url.pathname !== "/spend") return new Response("not found", { status: 404 })
     const max = ceilingParam(url, "max", TURN_WINDOW_MAX)
     const windowMs = ceilingParam(url, "windowMs", TURN_WINDOW_MS)
     const stored = yield* storage.get<TurnLimitWindow>(WINDOW_KEY)
     const open = stored !== undefined && now - stored.start < windowMs ? stored : { start: now, count: 0 }
-
-    switch (url.pathname) {
-      case "/spend": {
-        if (open.count >= max) {
-          // Refused turns do not extend the window: a client that keeps
-          // hammering cannot push its own reset further away.
-          return answer({ allowed: false, remaining: 0, retryAt: open.start + windowMs })
-        }
-        const next = { start: open.start, count: open.count + 1 }
-        yield* storage.put(WINDOW_KEY, next)
-        return answer({ allowed: true, remaining: max - next.count })
-      }
-      case "/peek":
-        return answer({
-          allowed: open.count < max,
-          remaining: Math.max(0, max - open.count),
-          ...(open.count >= max ? { retryAt: open.start + windowMs } : {})
-        })
-      default:
-        return new Response("not found", { status: 404 })
+    if (open.count >= max) {
+      // Refused turns do not extend the window: a client that keeps
+      // hammering cannot push its own reset further away.
+      return answer({ allowed: false, remaining: 0, retryAt: open.start + windowMs })
     }
+    const next = { start: open.start, count: open.count + 1 }
+    yield* storage.put(WINDOW_KEY, next)
+    return answer({ allowed: true, remaining: max - next.count })
   }).pipe(
     Effect.catchTag(
       "StorageFailure",
@@ -241,8 +229,6 @@ export class TurnRateLimiter {
 export interface TurnLimitsShape {
   /** Spend one turn from `key`'s budget under `ceiling` (the login ceiling by default). */
   readonly spend: (key: string, ceiling?: TurnCeiling) => Effect.Effect<TurnBudget>
-  /** Report `key`'s budget under `ceiling` without spending. */
-  readonly peek: (key: string, ceiling?: TurnCeiling) => Effect.Effect<TurnBudget>
 }
 
 export class TurnLimits extends Context.Service<TurnLimits, TurnLimitsShape>()("smithers-server/TurnLimits") {}
@@ -272,32 +258,29 @@ const COST_CEILINGS: ReadonlySet<TurnCeiling["kind"]> = new Set(["anonymous", "a
 const UNAVAILABLE: TurnBudget = { allowed: false, remaining: 0, unavailable: true }
 
 export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<TurnLimits> => {
-  const call = (path: "spend" | "peek") =>
-    Effect.fn(`TurnLimits.${path}`)(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
-      const open: TurnBudget = { allowed: true, remaining: ceiling.max }
-      if (namespace === undefined) return open
-      const budget = yield* namespaceCall(
-        `turnLimits.${path}`,
-        namespace,
-        key,
-        new Request(`https://turn-limit.internal/${path}?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, {
-          method: path === "spend" ? "POST" : "GET"
-        })
-      ).pipe(
-        Effect.flatMap((response) => answeredJson(`turnLimits.${path}`, "The turn limiter", response)),
-        Effect.catch((failure) =>
-          Effect.sync(() => {
-            // A rejected fetch, a refusal, or an unreadable answer is an
-            // infrastructure fault, not a signal about this user: log the
-            // cause (a refusal names its status and body).
-            console.error(`turn-limit ${path} failed:`, failure.cause)
-            return undefined
-          }))
-      )
-      if (isBudget(budget)) return budget
-      return COST_CEILINGS.has(ceiling.kind) ? UNAVAILABLE : open
-    })
-  return Layer.succeed(TurnLimits, { spend: call("spend"), peek: call("peek") })
+  const spend = Effect.fn("TurnLimits.spend")(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
+    const open: TurnBudget = { allowed: true, remaining: ceiling.max }
+    if (namespace === undefined) return open
+    const budget = yield* namespaceCall(
+      "turnLimits.spend",
+      namespace,
+      key,
+      new Request(`https://turn-limit.internal/spend?max=${ceiling.max}&windowMs=${ceiling.windowMs}`, { method: "POST" })
+    ).pipe(
+      Effect.flatMap((response) => answeredJson("turnLimits.spend", "The turn limiter", response)),
+      Effect.catch((failure) =>
+        Effect.sync(() => {
+          // A rejected fetch, a refusal, or an unreadable answer is an
+          // infrastructure fault, not a signal about this user: log the
+          // cause (a refusal names its status and body).
+          console.error("turn-limit spend failed:", failure.cause)
+          return undefined
+        }))
+    )
+    if (isBudget(budget)) return budget
+    return COST_CEILINGS.has(ceiling.kind) ? UNAVAILABLE : open
+  })
+  return Layer.succeed(TurnLimits, { spend })
 }
 
 /* ------------------------------------------------------------------------ */

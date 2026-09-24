@@ -670,17 +670,15 @@ export interface CerebrasChatRequest {
 /**
  * What one completion answered. `http` carries the provider's status so a
  * caller can retry a 400 differently from a 429; `empty` is a 200 whose
- * first choice carried no text; `timeout` is this call's own deadline.
- * `aborted` is kept for callers that name it: the client going away is now
- * the fiber's interruption, which ends the call without an answer, so this
- * client never produces it.
+ * first choice carried no text; `timeout` is this call's own deadline. The
+ * client going away is the fiber's interruption, which ends the call without
+ * an answer.
  */
 export type CerebrasChatAnswer =
   | { readonly ok: true; readonly content: string; readonly model: string }
   | { readonly ok: false; readonly reason: "http"; readonly status: number }
   | { readonly ok: false; readonly reason: "empty" }
   | { readonly ok: false; readonly reason: "timeout" }
-  | { readonly ok: false; readonly reason: "aborted" }
   | { readonly ok: false; readonly reason: "unreachable"; readonly message: string }
 
 const CEREBRAS_SEAM = "cerebras"

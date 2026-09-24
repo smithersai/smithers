@@ -155,8 +155,6 @@ export const handleConfiguredModelTurn = (
           return refusal("model_no_answer", "The configured model's service sent no answer.", headers)
         case "timeout":
           return modelRefusal({ code: "timeout", deadlineMs }, headers)
-        case "aborted":
-          return refusal("client_disconnected", "The client disconnected.", headers)
         case "unreachable":
           return modelRefusal({ code: "unreachable" }, headers)
       }
