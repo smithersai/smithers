@@ -162,7 +162,7 @@ const endpoint = "https://bug.smithers.sh/api/demo-requests"
         : "Something went wrong sending that. Try again, or email will@smithers.sh."
       status.classList.add("error")
     } finally {
-      button.disabled = form.hidden
+      button.disabled = false
       label.textContent = "Continue"
     }
   })
