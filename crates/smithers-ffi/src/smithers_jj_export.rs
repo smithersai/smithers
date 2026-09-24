@@ -2,6 +2,8 @@ use std::io::Read as _;
 use std::path::Path;
 
 mod atomic_fs;
+mod atomic_glob;
+mod atomic_protocol;
 mod file_eligibility;
 mod source_create;
 mod source_import;
