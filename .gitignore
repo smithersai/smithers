@@ -93,7 +93,6 @@ worktrees/
 # Infrastructure-as-code and edge local state
 .alchemy/
 .wrangler/
-apps/observability/data/
 
 # flows engine state (artifact CAS under .flows/objects, fork lanes under
 # .flows/forks) — derived and engine-owned. jj must not snapshot it: a restore
@@ -149,9 +148,6 @@ apps/reports/launch-checklist/*-dry-run/
 # lock reaches the index.
 .commit-lock
 .commit-lock-pass/
-
-# Grafana runtime state written by the local observability stack
-apps/observability/data/
 
 # apps/app agent-lane evidence: reports, screenshots, handoffs and A/B
 # harness configs, kept on disk, never committed

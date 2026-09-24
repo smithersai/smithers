@@ -13,7 +13,6 @@ import * as Bash from "@smthrs/std/Bash"
 import * as Read from "@smthrs/std/Read"
 import * as TestRun from "@smthrs/std/TestRun"
 import { Option } from "effect"
-import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -35,21 +34,6 @@ afterEach(() => {
 })
 
 describe("the ignore rule", () => {
-  it("keeps repository Grafana state out of git without hiding its configuration", () => {
-    const root = directory()
-    const initialized = spawnSync("git", ["init", "--quiet"], { cwd: root, encoding: "utf8" })
-    expect(initialized.status, initialized.stderr).toBe(0)
-    writeFileSync(join(root, ".gitignore"), readFileSync(new URL("../../../.gitignore", import.meta.url)))
-    const state = ["apps/observability/data/grafana.db", "apps/observability/data/plugins/cache.json"]
-    const result = spawnSync("git", ["check-ignore", "--no-index", "--stdin"], {
-      cwd: root,
-      input: [...state, "apps/observability/docker-compose.yml"].join("\n"),
-      encoding: "utf8"
-    })
-    expect(result.status, result.stderr).toBe(0)
-    expect(result.stdout.trim().split("\n")).toEqual(state)
-  })
-
   it("creates a .gitignore holding .flows/ in a repository without one", () => {
     const root = directory(".git")
 
