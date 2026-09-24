@@ -33,8 +33,12 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
     FILE_TRAVERSE, FILE_TYPE_DISK, SYNCHRONIZE,
 };
+use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
+use windows_sys::Win32::System::SystemServices::{
+    IO_REPARSE_TAG_MOUNT_POINT, IO_REPARSE_TAG_SYMLINK,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
+use windows_sys::Win32::System::IO::{DeviceIoControl, IO_STATUS_BLOCK};
 
 /// LocalAlloc outputs from the security APIs must be released with LocalFree.
 struct LocalAllocation(*mut std::ffi::c_void);
@@ -333,6 +337,64 @@ fn regular_file(file: &File) -> io::Result<()> {
     Ok(())
 }
 
+/// Decode the counted link payload without treating it as a C string or
+/// following its destination. Offsets are relative to the variant's PathBuffer.
+fn reparse_target(bytes: &[u8]) -> io::Result<OsString> {
+    let invalid = || io::Error::from(io::ErrorKind::InvalidData);
+    if bytes.len() < 8 {
+        return Err(invalid());
+    }
+    let tag = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+    let data_len = u16::from_le_bytes(bytes[4..6].try_into().unwrap()) as usize;
+    let data = bytes.get(8..8 + data_len).ok_or_else(invalid)?;
+    let header = match tag {
+        IO_REPARSE_TAG_SYMLINK => 12,
+        IO_REPARSE_TAG_MOUNT_POINT => 8,
+        _ => return Err(io::Error::from(io::ErrorKind::Unsupported)),
+    };
+    if data.len() < header {
+        return Err(invalid());
+    }
+    let offset = u16::from_le_bytes(data[0..2].try_into().unwrap()) as usize;
+    let length = u16::from_le_bytes(data[2..4].try_into().unwrap()) as usize;
+    if !offset.is_multiple_of(2) || !length.is_multiple_of(2) || length == 0 {
+        return Err(invalid());
+    }
+    let path = data
+        .get(header + offset..header + offset + length)
+        .ok_or_else(invalid)?;
+    let mut units: Vec<_> = path
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|pair| u16::from_le_bytes(*pair))
+        .collect();
+    if units.contains(&0) {
+        return Err(invalid());
+    }
+    let namespace: Vec<_> = r"\??\".encode_utf16().collect();
+    let drive = units.starts_with(&namespace)
+        && units.len() >= 6
+        && ((b'A' as u16..=b'Z' as u16).contains(&units[4])
+            || (b'a' as u16..=b'z' as u16).contains(&units[4]))
+        && units[5] == b':' as u16
+        && (units.len() == 6 || units[6] == b'\\' as u16);
+    if tag == IO_REPARSE_TAG_MOUNT_POINT && !drive {
+        return Err(io::Error::from(io::ErrorKind::Unsupported));
+    }
+    if drive {
+        units.drain(..4);
+    } else if units.starts_with(&namespace)
+        && units.len() >= 8
+        && String::from_utf16_lossy(&units[4..8]).eq_ignore_ascii_case(r"UNC\")
+    {
+        // NT UNC becomes an ordinary Win32 UNC path, like Node's readlink.
+        units.drain(..6);
+        units[0] = b'\\' as u16;
+    }
+    Ok(OsString::from_wide(&units))
+}
+
 pub(super) struct Directory(File);
 
 impl Directory {
@@ -455,6 +517,34 @@ impl Directory {
         )?;
         regular_file(&file)?;
         Ok(file)
+    }
+
+    pub(super) fn read_link(&self, name: &OsStr) -> io::Result<OsString> {
+        let file = open(Some(&self.0), name_units(name)?, 0, false, true)?;
+        let mut buffer = vec![0u64; 2048];
+        let mut used = 0;
+        // SAFETY: the live handle was opened with OPEN_REPARSE_POINT. The
+        // aligned 16 KiB output buffer and byte count stay valid for the call.
+        if unsafe {
+            DeviceIoControl(
+                file.as_raw_handle(),
+                FSCTL_GET_REPARSE_POINT,
+                ptr::null(),
+                0,
+                buffer.as_mut_ptr().cast(),
+                (buffer.len() * 8) as u32,
+                &mut used,
+                ptr::null_mut(),
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        if used as usize > buffer.len() * 8 {
+            return Err(io::Error::from(io::ErrorKind::InvalidData));
+        }
+        // SAFETY: only the returned initialized bytes are passed to the parser.
+        reparse_target(unsafe { std::slice::from_raw_parts(buffer.as_ptr().cast(), used as usize) })
     }
 
     pub(super) fn entries(&self, limit: usize) -> io::Result<Vec<OsString>> {
@@ -829,6 +919,87 @@ mod tests {
         }
         assert_eq!(fs::read(&secret).unwrap(), b"outside");
         assert!(!outside.path().join("missing").exists());
+    }
+
+    #[test]
+    fn reads_link_payloads_without_resolving_the_destination() {
+        let temp = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let absolute = outside.path().join("absent");
+        symlink_file(&absolute, temp.path().join("absolute")).unwrap();
+        symlink_file("missing", temp.path().join("relative")).unwrap();
+        fs::write(temp.path().join("regular"), b"regular").unwrap();
+        let root = Directory::root(temp.path()).unwrap();
+        assert_eq!(
+            root.read_link(OsStr::new("absolute")).unwrap(),
+            absolute.as_os_str()
+        );
+        assert_eq!(root.read_link(OsStr::new("relative")).unwrap(), "missing");
+        assert!(root.read_link(OsStr::new("regular")).is_err());
+        assert!(!absolute.exists());
+        assert!(!temp.path().join("missing").exists());
+        // A junction is an entry whose payload can be inspected, never a
+        // directory through which the confined filesystem may descend.
+        let junction = temp.path().join("junction");
+        let output = std::process::Command::new("cmd.exe")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&junction)
+            .arg(outside.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            root.read_link(OsStr::new("junction")).unwrap(),
+            outside.path().as_os_str()
+        );
+        assert!(root.child(OsStr::new("junction")).is_err());
+        // Remove only the junction, never its destination.
+        fs::remove_dir(&junction).unwrap();
+        assert!(outside.path().exists());
+    }
+
+    #[test]
+    fn rejects_malformed_reparse_payloads_and_preserves_namespaces() {
+        fn payload(tag: u32, name: &str) -> Vec<u8> {
+            let header = if tag == IO_REPARSE_TAG_SYMLINK { 12 } else { 8 };
+            let path: Vec<u8> = name.encode_utf16().flat_map(u16::to_le_bytes).collect();
+            let mut buffer = vec![0; 8 + header];
+            buffer[0..4].copy_from_slice(&tag.to_le_bytes());
+            buffer[4..6].copy_from_slice(&((header + path.len()) as u16).to_le_bytes());
+            buffer[10..12].copy_from_slice(&(path.len() as u16).to_le_bytes());
+            buffer.extend(path);
+            buffer
+        }
+        for (name, expected) in [
+            (r"\??\C:\target", r"C:\target"),
+            (r"\??\UNC\server\share\target", r"\\server\share\target"),
+            (r"\\?\C:\target", r"\\?\C:\target"),
+            (r"..\relative", r"..\relative"),
+        ] {
+            assert_eq!(
+                reparse_target(&payload(IO_REPARSE_TAG_SYMLINK, name)).unwrap(),
+                expected
+            );
+        }
+        let valid = payload(IO_REPARSE_TAG_SYMLINK, "target");
+        for length in 0..valid.len() {
+            assert!(reparse_target(&valid[..length]).is_err());
+        }
+        let mut odd = valid.clone();
+        odd[8] = 1;
+        assert!(reparse_target(&odd).is_err());
+        let mut overflow = valid.clone();
+        overflow[10..12].copy_from_slice(&u16::MAX.to_le_bytes());
+        assert!(reparse_target(&overflow).is_err());
+        assert!(reparse_target(&payload(IO_REPARSE_TAG_SYMLINK, "a\0b")).is_err());
+        assert!(
+            reparse_target(&payload(IO_REPARSE_TAG_MOUNT_POINT, r"\??\Volume{unknown}")).is_err()
+        );
+        assert!(reparse_target(&payload(0, "unknown")).is_err());
     }
 
     #[test]
