@@ -85,20 +85,37 @@ describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone
   )
 })
 
-describe.skipIf(process.platform === "win32")("ProcessReaper.groupVacant", () => {
-  it("answers true only after the kernel reports the group has no process", async () => {
-    const leader = spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" })
-    const pgid = leader.pid!
-    try {
-      expect(ProcessReaper.groupVacant(pgid)).toBe(false)
-    } finally {
-      leader.kill("SIGKILL")
+describe("ProcessReaper.groupVacant", () => {
+  it.skipIf(process.platform === "win32")(
+    "answers true only after the kernel reports the group has no process",
+    async () => {
+      const leader = spawn("/bin/sleep", ["30"], { detached: true, stdio: "ignore" })
+      const pgid = leader.pid!
+      try {
+        expect(ProcessReaper.groupVacant(pgid)).toBe(false)
+      } finally {
+        leader.kill("SIGKILL")
+      }
+      await new Promise((resolve) => leader.once("exit", resolve))
+      // Node reaps on exit; poll briefly for the kernel to drop the group.
+      const deadline = Date.now() + 5000
+      while (!ProcessReaper.groupVacant(pgid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
+      expect(ProcessReaper.groupVacant(pgid)).toBe(true)
     }
-    await new Promise((resolve) => leader.once("exit", resolve))
-    // Node reaps on exit; poll briefly for the kernel to drop the group.
-    const deadline = Date.now() + 5000
-    while (!ProcessReaper.groupVacant(pgid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10))
-    expect(ProcessReaper.groupVacant(pgid)).toBe(true)
+  )
+
+  it("distinguishes a populated group from ESRCH without native signals", () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
+    try {
+      expect(ProcessReaper.groupVacant(4242)).toBe(false)
+      kill.mockImplementation(() => {
+        throw Object.assign(new Error("gone"), { code: "ESRCH" })
+      })
+      expect(ProcessReaper.groupVacant(4242)).toBe(true)
+      expect(kill).toHaveBeenCalledWith(-4242, 0)
+    } finally {
+      kill.mockRestore()
+    }
   })
 
   it("never addresses the caller's group or every process", () => {
@@ -259,6 +276,52 @@ describe("Windows native process identity", () => {
       })
       expect(query).not.toHaveBeenCalled()
     } finally {
+      query.mockRestore()
+      syncBuiltinESMExports()
+    }
+  })
+})
+
+describe("POSIX signal results through the native seam", () => {
+  it("preserves unknown liveness and failed group signals", () => {
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
+    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
+      pid: 100,
+      output: [],
+      stdout: "77",
+      stderr: "",
+      status: 0,
+      signal: null
+    })
+    syncBuiltinESMExports()
+    try {
+      const system = ProcessReaper.posixSystemWith({ ownerPid: 900002 })
+      const record: ProcessLedger.ProcessRecord = {
+        pid: 900001,
+        pgid: 900001,
+        hostId: "probe",
+        ownerPid: 900003,
+        startedAtMs: 1,
+        commandDigest: "probe"
+      }
+      expect(system.isAlive(record.pid)).toBe("alive")
+      expect(system.killTree(record)).toBe("signalled")
+      expect(kill).toHaveBeenLastCalledWith(-record.pid, "SIGKILL")
+      for (
+        const [code, alive, outcome] of [
+          ["ESRCH", "dead", "already-gone"],
+          ["EPERM", "unknown", "failed"],
+          ["EINVAL", "unknown", "failed"]
+        ] as const
+      ) {
+        kill.mockImplementation(() => {
+          throw Object.assign(new Error(code), { code })
+        })
+        expect(system.isAlive(record.pid)).toBe(alive)
+        expect(system.killTree(record)).toBe(outcome)
+      }
+    } finally {
+      kill.mockRestore()
       query.mockRestore()
       syncBuiltinESMExports()
     }

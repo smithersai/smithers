@@ -28,6 +28,8 @@ const info = {
 
 describe("atomic helper response validation", () => {
   it.each([
+    ["other/1 2\n{}", "unknown protocol tag"],
+    ["flows-atomic/1 2 extra\n{}", "unknown protocol tag"],
     ["flows-atomic/1 NaN\n{}", "non-decimal"],
     ["flows-atomic/1 99999999999999999\n{}", "out-of-range"],
     ["flows-atomic/1 3\n{}", "declared 3 response bytes and wrote 2"]

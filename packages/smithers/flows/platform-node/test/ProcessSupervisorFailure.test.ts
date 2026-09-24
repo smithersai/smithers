@@ -299,6 +299,29 @@ const run = async (
 }
 
 describe("failed process preparation", () => {
+  it("exposes running state and additional pipes while preserving window visibility", async () => {
+    const host = fixture()
+    try {
+      const result = await run(host, (handle) =>
+        Effect.gen(function*() {
+          expect(yield* handle.isRunning).toBe(true)
+          yield* Stream.make(new Uint8Array([1])).pipe(Stream.run(handle.getInputFd(3)))
+          expect(yield* handle.getOutputFd(4).pipe(Stream.runCollect)).toEqual([])
+          host.exitTarget()
+          expect(yield* handle.exitCode).toBe(0)
+          expect(yield* handle.isRunning).toBe(false)
+        }), { windowsHide: false, additionalFds: { fd3: { type: "input" }, fd4: { type: "output" } } })
+      expect(Exit.isSuccess(result.outcome)).toBe(true)
+      expect(host.requests.find((request) => request.type === "configure")).toMatchObject({
+        windowsHide: false,
+        userFds: [3, 4]
+      })
+      expect(result.live).toEqual([])
+    } finally {
+      host.dispose()
+    }
+  })
+
   it("refuses an unavailable Node SEA module before allocating or spawning an owner", async () => {
     const cause = new Error("the Node SEA module could not load")
     const bun = Object.getOwnPropertyDescriptor(process.versions, "bun")

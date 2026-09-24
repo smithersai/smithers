@@ -44,7 +44,7 @@ const answer = (stdout: string, extra: Record<string, unknown> = {}) =>
  */
 const snapshot = ProcessReaper.groupSnapshotFor("darwin")
 
-describe.skipIf(process.platform === "win32")("live process identity probe", () => {
+describe("live process identity probe", () => {
   it("wires the `ps` reader everywhere but Linux, which reads the kernel instead", () => {
     expect(captured.system!.snapshot === snapshot).toBe(process.platform !== "linux")
   })

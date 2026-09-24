@@ -110,6 +110,14 @@ describe("atomic helper transport event ordering", () => {
     expect(error.cause).toMatchObject({ code: "ENOENT", cause: { message: "atomic helper rejected the operation" } })
   })
 
+  it("preserves a short diagnostic without claiming truncation", async () => {
+    const error = await invoke((child) => {
+      child.stderr.emit("data", Buffer.from("denied"))
+      child.emit("close", 7)
+    })
+    expect(error.cause).toMatchObject({ message: "atomic helper exited 7: denied" })
+  })
+
   it("caps diagnostic retention and reports truncation", async () => {
     const error = await invoke((child) => {
       child.stderr.emit("data", Buffer.from("123456789ignored"))

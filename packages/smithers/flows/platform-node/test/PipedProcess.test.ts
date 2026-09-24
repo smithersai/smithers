@@ -68,6 +68,23 @@ const fakeChild = () =>
   })
 
 describe("native pipe adapter", () => {
+  it("rereferencing a native handle restores finalizer ownership", async () => {
+    await withNativeFailure(async (child) => {
+      child.kill.mockImplementation(() => {
+        queueMicrotask(() => child.emit("exit", 0, null))
+        return true
+      })
+      await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const handle = yield* PipedProcess.spawn(ChildProcess.make("fixture"), undefined)
+        const reref = yield* handle.unref
+        expect(child.unref).toHaveBeenCalledOnce()
+        yield* reref
+        expect(child.ref).toHaveBeenCalledOnce()
+      })))
+      expect(child.kill).toHaveBeenCalledWith("SIGKILL")
+    })
+  })
+
   it.each(["running", "exited", "signalled"] as const)(
     "observes a returned native handle after its spawn event was emitted early (%s)",
     async (state) => {
