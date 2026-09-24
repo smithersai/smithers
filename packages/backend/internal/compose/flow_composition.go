@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/admission"
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowhost"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
@@ -29,7 +30,7 @@ type flowComposition struct {
 	stopper    flowhost.RetirementStopper
 }
 
-func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService) (*flowComposition, error) {
+func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy) (*flowComposition, error) {
 	if options.FlowHostRegistry == nil {
 		return nil, nil
 	}
@@ -73,6 +74,11 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
 	}
+	admitted, err := newAdmittedFlowLauncher(launcher, db.New(pool), policy)
+	if err != nil {
+		return nil, err
+	}
+	launcher = admitted
 	stopper, ok := launcher.(flowhost.RetirementStopper)
 	if !ok {
 		return nil, errors.New("Flow workspace launcher cannot stop retired hosts")

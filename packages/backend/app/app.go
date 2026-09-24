@@ -13,6 +13,8 @@ import (
 
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/smithersai/smithers/packages/backend/admission"
+	"github.com/smithersai/smithers/packages/backend/commerce"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/compose"
 	"github.com/smithersai/smithers/packages/backend/ports"
@@ -23,9 +25,13 @@ import (
 // routes, services, jobs, and database are assembled by the common
 // implementation. A deployment can pass its configuration file using Args.
 type Config struct {
-	Args   []string
-	Stdout io.Writer
-	Stderr io.Writer
+	// Admission is the complete quota authority. Multitenant deployments must
+	// supply it; Commerce is optional and supplied only to HTTP processes.
+	Admission admission.Policy
+	Commerce  commerce.Service
+	Args      []string
+	Stdout    io.Writer
+	Stderr    io.Writer
 	// Duties selects which halves of the product this process runs. The zero
 	// value serves HTTP and runs the background workers together; a deployment
 	// that scales them separately starts one process per duty.
@@ -155,6 +161,7 @@ func Run(ctx context.Context, cfg Config) error {
 // a new field cannot reach one entry point and miss the other.
 func (cfg Config) options() compose.Options {
 	return compose.Options{
+		Admission: cfg.Admission, Commerce: cfg.Commerce,
 		Duties:                compose.Duties(cfg.Duties),
 		TraceExporter:         cfg.TraceExporter,
 		Blobs:                 cfg.Blobs,

@@ -30,7 +30,7 @@ func validStartupConfig() *Config {
 		},
 		Sandbox: SandboxConfig{AgentIdleTimeoutSecs: 300, WorkspaceMemoryMB: 4096, WorkspaceVCPUCount: 2},
 		Auth: AuthConfig{
-			Mode:             AuthModeMultitenant,
+			Mode:             AuthModeSelfHosted,
 			SessionSecret:    "super-secret",
 			LFSSigningSecret: "lfs-signing-secret",
 		},
@@ -40,12 +40,12 @@ func validStartupConfig() *Config {
 	}
 }
 
-func TestValidateServerStartup_BillingIsUnlimitedOnly(t *testing.T) {
+func TestValidateServerStartup_BillingAuthorityIsExplicit(t *testing.T) {
 	t.Parallel()
 
 	cfg := validStartupConfig()
 	cfg.Billing.Mode = "invalid"
-	require.ErrorContains(t, ValidateServerStartup(cfg), "billing.mode must be unlimited")
+	require.ErrorContains(t, ValidateServerStartup(cfg), "billing.mode must be unlimited or metered")
 
 	cfg = validStartupConfig()
 	cfg.Billing.StripeSecretKey = "sk_test_configured"
@@ -407,4 +407,19 @@ func TestValidateServerStartup_WorkspaceSandboxResourceBounds(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestValidateServerStartup_MeteredAdmissionNeedsNoPaymentKeys(t *testing.T) {
+	cfg := validStartupConfig()
+	cfg.Auth.Mode = AuthModeMultitenant
+	require.ErrorContains(t, ValidateServerStartup(cfg), "unlimited requires single-owner")
+	cfg.Billing.Mode = "metered"
+	require.ErrorContains(t, ValidateServerStartup(cfg), "metered requires injected admission")
+	require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{MeteredAdmission: true}))
+	cfg.Billing.StripeSecretKey = "private-key"
+	require.ErrorContains(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{MeteredAdmission: true}), "payment credentials belong to the deployment")
+	cfg.Auth.Mode = AuthModeSelfHosted
+	cfg.Billing.Mode = "unlimited"
+	cfg.Billing.StripeSecretKey = ""
+	require.ErrorContains(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{MeteredAdmission: true}), "injected admission requires billing.mode=metered")
 }

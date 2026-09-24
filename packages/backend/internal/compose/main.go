@@ -20,6 +20,8 @@ import (
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/smithersai/smithers/packages/backend/admission"
+	"github.com/smithersai/smithers/packages/backend/commerce"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
@@ -98,6 +100,8 @@ func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writ
 
 // Options are the only deployment seams in the common product assembly.
 type Options struct {
+	Admission admission.Policy
+	Commerce  commerce.Service
 	// Duties selects which halves of the product this process runs. The zero
 	// value serves HTTP and runs the background workers in one process.
 	Duties                Duties
@@ -196,9 +200,16 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if !options.topology.hosted() && cfg.FeatureFlags.Workflows {
 		return errors.New("legacy workflow triggers are unavailable in single-owner mode; use canonical Flow hosts")
 	}
+	if options.Commerce != nil && options.Admission == nil {
+		return errors.New("commerce requires injected metered admission")
+	}
+	if options.Commerce != nil && !options.topology.servesHTTP() {
+		return errors.New("worker duties do not accept commerce authority")
+	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: !options.topology.hosted() && options.Repository != nil,
 		WorkspaceRuntime:    options.Workspace != nil,
+		MeteredAdmission:    options.Admission != nil,
 	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
 		return err
@@ -423,40 +434,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		From:    emailFrom,
 	})
 
-	billingQueries := services.BillingBaseQuerier(queries)
-	if options.topology.hosted() {
-		// Hosted admission includes deployment storage reservations and retained
-		// deletion bytes; local mode uses only the product schema.
-		billingQueries = hostedQueries
+	billingPolicy := options.Admission
+	if billingPolicy == nil {
+		// Startup validation permits this only for the single trusted owner.
+		billingPolicy = services.NewUnlimitedBillingPolicy()
 	}
-	billingComposition, err := services.NewBillingComposition(billingQueries, services.BillingCompositionConfig{
-		Mode:            services.BillingMode(cfg.Billing.Mode),
-		StripeSecretKey: cfg.Billing.StripeSecretKey,
-		Service: services.BillingServiceConfig{
-			BaseURL:                  publicBaseURL,
-			PortalReturnURL:          cfg.Billing.PortalReturnURL,
-			CheckoutSuccessURL:       cfg.Billing.CheckoutSuccessURL,
-			CheckoutCancelURL:        cfg.Billing.CheckoutCancelURL,
-			StripeWebhookSecret:      cfg.Billing.StripeWebhookSecret,
-			PersonalMonthlyPriceID:   cfg.Billing.PersonalMonthlyPriceID,
-			PersonalAnnualPriceID:    cfg.Billing.PersonalAnnualPriceID,
-			ProMonthlyPriceID:        cfg.Billing.ProMonthlyPriceID,
-			ProAnnualPriceID:         cfg.Billing.ProAnnualPriceID,
-			MaxMonthlyPriceID:        cfg.Billing.MaxMonthlyPriceID,
-			MaxAnnualPriceID:         cfg.Billing.MaxAnnualPriceID,
-			TeamMonthlyPriceID:       cfg.Billing.TeamMonthlyPriceID,
-			TeamAnnualPriceID:        cfg.Billing.TeamAnnualPriceID,
-			EnterpriseMonthlyPriceID: cfg.Billing.EnterpriseMonthlyPriceID,
-			EnterpriseAnnualPriceID:  cfg.Billing.EnterpriseAnnualPriceID,
-		},
-	}, services.WithBillingEmailSender(emailService))
-	if err != nil {
-		return fmt.Errorf("compose billing: %w", err)
+	billingCommerce := options.Commerce
+	if !options.topology.servesHTTP() {
+		billingCommerce = nil
 	}
-	billingPolicy := billingComposition.Policy
-	if billingComposition.Service != nil {
-		// Hosted Stripe quantities follow organization membership changes.
-		orgService.SetSeatReconciler(billingComposition.Service.ReconcileOrgSeats)
+	billingCapabilities := commerce.Capabilities{}
+	if billingCommerce != nil {
+		billingCommerce.SetFallbackEmailSender(emailService)
+		billingCapabilities = billingCommerce.Capabilities()
+		orgService.SetSeatReconciler(billingCommerce.ReconcileOrgSeats)
 	}
 	repoOptions := []services.RepoServiceOption{
 		services.WithRepoWebhookDispatcher(webhookDispatcher),
@@ -1098,8 +1089,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service: variableService,
 	}
 	var billingHandler *routes.BillingHandler
-	if billingComposition.Service != nil {
-		billingHandler = &routes.BillingHandler{Service: billingComposition.Service}
+	if billingCommerce != nil {
+		billingHandler = &routes.BillingHandler{Service: billingCommerce}
 	}
 	protectedBookmarkHandler := &routes.ProtectedBookmarkHandler{
 		Service: services.NewProtectedBookmarkService(queries),
@@ -1193,7 +1184,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
 	repositoryJobService := services.NewRepositoryJobService(queries, repoGatewayService, pool)
-	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService)
+	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy)
 	if err != nil {
 		return err
 	}
@@ -1500,7 +1491,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		gitHubWebhookHandler,
 		smithersMetrics,
 		alertRemediationWorker != nil,
-		routerExtras{Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
+		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
 	)
 	if flow != nil && options.topology.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
@@ -1545,7 +1536,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		recommend:        recommendationHandler != nil && options.topology.servesHTTP(),
 		workspace:        options.Workspace != nil && options.topology.servesHTTP(),
 		terminal:         options.Workspace != nil && options.topology.servesHTTP(),
-		billingCheckout:  billingComposition.Service != nil,
+		billingCheckout:  billingCapabilities.Checkout,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
 	}), apiCORSOptions(cfg))

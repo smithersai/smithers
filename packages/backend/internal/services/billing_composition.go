@@ -191,3 +191,8 @@ func runUnlimitedCommit(ctx context.Context, commit func(context.Context) error)
 	}
 	return commit(ctx)
 }
+
+// Unlimited counted resume keeps the explicit single-owner policy complete.
+func (*UnlimitedBillingPolicy) AuthorizeCountedSandboxResume(context.Context, int64, string, string) error {
+	return nil
+}

@@ -30,9 +30,11 @@ import (
 )
 
 type routerExtras struct {
-	Recommender *routes.RecommendationHandler
-	ModelStream *routes.ModelStreamHandler
-	Catalog     *routes.PublicRepositoryCatalogHandler
+	Admission           services.BillingPolicy
+	BillingCapabilities services.BillingCapabilities
+	Recommender         *routes.RecommendationHandler
+	ModelStream         *routes.ModelStreamHandler
+	Catalog             *routes.PublicRepositoryCatalogHandler
 }
 
 func buildRouter(
@@ -175,13 +177,10 @@ func buildRouter(
 	userConnectedReposQuota := middleware.PerUserConnectedRepos(quotaCounters, 10)
 	userWorkflowRunsQuota := middleware.PerUserConcurrentWorkflowRuns(quotaCounters, 5)
 	var sandboxPlanCheck func(context.Context, int64) error
-	if billingHandler != nil {
-		if checker, ok := billingHandler.Service.(interface {
-			AuthorizeSandboxStart(context.Context, int64) error
-		}); ok {
-			sandboxPlanCheck = checker.AuthorizeSandboxStart
-		}
+	if extras.Admission != nil {
+		sandboxPlanCheck = extras.Admission.AuthorizeSandboxStart
 	}
+
 	userSandboxesQuota := middleware.PerUserConcurrentSandboxes(quotaCounters, perUserConcurrentSandboxCap, sandboxPlanCheck)
 	workflowRunCountHandler := &routes.WorkflowRunCountHandler{Counter: quotaCounters}
 	// Server startup validation requires this secret. Keep construction
@@ -673,7 +672,7 @@ func buildRouter(
 	if extras.Catalog != nil {
 		r.Get("/api/public/repos", extras.Catalog.ServeHTTP)
 	}
-	if billingHandler != nil {
+	if billingHandler != nil && extras.BillingCapabilities.Webhook {
 		r.With(
 			middleware.JSONTimeout(30*time.Second),
 			cors.Handler(apiCORS),
@@ -1112,16 +1111,36 @@ func buildRouter(
 		r.Get("/users/{username}/repos", userHandler.GetUserReposByUsername)
 
 		if billingHandler != nil {
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/balance", billingHandler.GetUserBalance)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing", billingHandler.GetUserBilling)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/plans", billingHandler.GetUserPlans)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/checkout", billingHandler.PostUserCheckout)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/portal", billingHandler.PostUserPortal)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/refresh", billingHandler.PostUserRefresh)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/billing", billingHandler.GetOrgBilling)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/checkout", billingHandler.PostOrgCheckout)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/portal", billingHandler.PostOrgPortal)
-			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/refresh", billingHandler.PostOrgRefresh)
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/balance", billingHandler.GetUserBalance)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing", billingHandler.GetUserBilling)
+			}
+			if extras.BillingCapabilities.Plans {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadUser)).Get("/billing/plans", billingHandler.GetUserPlans)
+			}
+			if extras.BillingCapabilities.Checkout {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/checkout", billingHandler.PostUserCheckout)
+			}
+			if extras.BillingCapabilities.Portal {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/portal", billingHandler.PostUserPortal)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteUser)).Post("/billing/refresh", billingHandler.PostUserRefresh)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeReadOrganization)).Get("/orgs/{org}/billing", billingHandler.GetOrgBilling)
+			}
+			if extras.BillingCapabilities.Checkout {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/checkout", billingHandler.PostOrgCheckout)
+			}
+			if extras.BillingCapabilities.Portal {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/portal", billingHandler.PostOrgPortal)
+			}
+			if extras.BillingCapabilities.Overview {
+				r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs/{org}/billing/refresh", billingHandler.PostOrgRefresh)
+			}
 		}
 
 		if linearHandler != nil {

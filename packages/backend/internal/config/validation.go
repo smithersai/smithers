@@ -19,6 +19,7 @@ func ValidateServerStartup(cfg *Config) error {
 type StartupDependencies struct {
 	InProcessRepository bool
 	WorkspaceRuntime    bool
+	MeteredAdmission    bool
 }
 
 func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDependencies) error {
@@ -57,6 +58,7 @@ func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDepe
 	if err := normalizeAgentAvailability(cfg); err != nil {
 		errs = append(errs, err.Error())
 	}
+	validateBilling(cfg, dependencies, &errs)
 	validateOptionalProviders(cfg, &errs)
 
 	if len(errs) > 0 {
@@ -65,23 +67,33 @@ func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDepe
 	return nil
 }
 
-func validateOptionalProviders(cfg *Config, errs *[]string) {
-	billingMode := strings.ToLower(strings.TrimSpace(cfg.Billing.Mode))
-	if billingMode == "" {
-		billingMode = "unlimited"
-	}
-	switch billingMode {
+func validateBilling(cfg *Config, dependencies StartupDependencies, errs *[]string) {
+	switch strings.ToLower(strings.TrimSpace(cfg.Billing.Mode)) {
 	case "unlimited":
+		if !IsSingleOwner(cfg.Auth) {
+			*errs = append(*errs, "billing.mode=unlimited requires single-owner authentication")
+		}
+		if dependencies.MeteredAdmission {
+			*errs = append(*errs, "injected admission requires billing.mode=metered")
+		}
 		if billingStripeConfigured(cfg.Billing) {
 			*errs = append(*errs, "billing Stripe settings are unavailable in the public backend")
 		}
+	case "metered":
+		if !dependencies.MeteredAdmission {
+			*errs = append(*errs, "billing.mode=metered requires injected admission")
+		}
+		if strings.TrimSpace(cfg.Billing.StripeSecretKey) != "" || strings.TrimSpace(cfg.Billing.StripeWebhookSecret) != "" {
+			*errs = append(*errs, "billing payment credentials belong to the deployment commerce adapter")
+		}
 	case "stripe":
-		// The public backend ships no payment client; a hosted deployment that
-		// sells plans supplies its own billing composition.
 		*errs = append(*errs, "billing.mode=stripe is unavailable in the public backend")
 	default:
-		*errs = append(*errs, "billing.mode must be unlimited")
+		*errs = append(*errs, "billing.mode must be unlimited or metered")
 	}
+}
+
+func validateOptionalProviders(cfg *Config, errs *[]string) {
 
 	linearID := strings.TrimSpace(cfg.Auth.LinearClientID)
 	linearSecret := strings.TrimSpace(cfg.Auth.LinearClientSecret)

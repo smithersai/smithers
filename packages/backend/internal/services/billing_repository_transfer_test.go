@@ -420,8 +420,8 @@ func (q *rollbackFailingBillingQuerier) BeginTx(ctx context.Context) (pgx.Tx, er
 	return &rollbackFailingBillingTx{Tx: tx, calls: q.rollbackCalls}, nil
 }
 
-func (*rollbackFailingBillingQuerier) WithTx(tx pgx.Tx) *db.Queries {
-	return db.New(tx)
+func (*rollbackFailingBillingQuerier) RebindBillingQueries(conn db.DBTX) (BillingBaseQuerier, error) {
+	return db.New(conn), nil
 }
 
 type rollbackFailingBillingTx struct {

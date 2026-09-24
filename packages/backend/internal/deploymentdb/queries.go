@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5"
-
+	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
@@ -21,6 +21,14 @@ type Queries struct {
 func New(conn db.DBTX) *Queries                                { return &Queries{db.New(conn), clusterdb.New(conn)} }
 func (q *Queries) WithTx(tx pgx.Tx) *Queries                   { return New(tx) }
 func (q *Queries) BeginTx(ctx context.Context) (pgx.Tx, error) { return q.ProductQueries.BeginTx(ctx) }
+
+// RebindBillingQueries retains private reservations and retained-byte usage
+// when billing takes its quota lock or uses a caller-owned transaction.
+func (q *Queries) RebindBillingQueries(conn db.DBTX) (billingstore.Querier, error) {
+	return New(conn), nil
+}
+
+var _ billingstore.Rebinder = (*Queries)(nil)
 
 // BeginTx binds both query surfaces to the same transaction.
 func BeginTx(ctx context.Context, queries any) (pgx.Tx, *Queries, bool, error) {

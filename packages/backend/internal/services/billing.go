@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/billingstore"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -85,42 +86,9 @@ type BillingQuerier interface {
 	CountActiveAgentSessionVMsForUser(ctx context.Context, userID int64) (int64, error)
 }
 
-// BillingBaseQuerier keeps this lane buildable before the metering methods land.
+// BillingBaseQuerier is the canonical product ledger and usage contract.
 // Sandbox operations require BillingQuerier and fail closed when it is absent.
-type BillingBaseQuerier interface {
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
-	GetOrgByLowerName(ctx context.Context, lowerName string) (db.Organization, error)
-	GetOrgMember(ctx context.Context, arg db.GetOrgMemberParams) (db.OrgMember, error)
-	CountOrgMembers(ctx context.Context, orgID int64) (int64, error)
-	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
-
-	GetBillingAccountByOwner(ctx context.Context, arg db.GetBillingAccountByOwnerParams) (db.BillingAccount, error)
-	GetBillingAccountByStripeCustomerID(ctx context.Context, stripeCustomerID string) (db.BillingAccount, error)
-	UpsertBillingAccount(ctx context.Context, arg db.UpsertBillingAccountParams) (db.BillingAccount, error)
-	GetLatestBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
-	GetLatestLiveBillingSubscriptionByAccount(ctx context.Context, billingAccountID int64) (db.BillingSubscription, error)
-	ListBillingSubscriptionsByAccount(ctx context.Context, billingAccountID int64) ([]db.BillingSubscription, error)
-	UpsertBillingSubscription(ctx context.Context, arg db.UpsertBillingSubscriptionParams) (db.BillingSubscription, error)
-	DeactivateBillingEntitlementsByAccount(ctx context.Context, billingAccountID int64) error
-	UpsertBillingEntitlement(ctx context.Context, arg db.UpsertBillingEntitlementParams) (db.BillingEntitlement, error)
-	ListBillingEntitlementsByAccount(ctx context.Context, billingAccountID int64) ([]db.BillingEntitlement, error)
-	UpsertBillingUsageCounter(ctx context.Context, arg db.UpsertBillingUsageCounterParams) (db.BillingUsageCounter, error)
-	ListBillingUsageCountersByOwnerAndPeriod(ctx context.Context, arg db.ListBillingUsageCountersByOwnerAndPeriodParams) ([]db.BillingUsageCounter, error)
-
-	CountPrivateReposByOwner(ctx context.Context, arg db.CountPrivateReposByOwnerParams) (int64, error)
-	SumStorageBytesByOwner(ctx context.Context, arg db.SumStorageBytesByOwnerParams) (int64, error)
-	SumStorageBytesByRepository(ctx context.Context, repositoryID int64) (int64, error)
-	SumWorkflowMinutesByOwner(ctx context.Context, arg db.SumWorkflowMinutesByOwnerParams) (int64, error)
-	CountAgentRunsByOwner(ctx context.Context, arg db.CountAgentRunsByOwnerParams) (int64, error)
-
-	ClaimStripeProcessedEvent(ctx context.Context, arg db.ClaimStripeProcessedEventParams) (string, error)
-	DeleteStripeProcessedEvent(ctx context.Context, eventID string) error
-	GetCreditBalance(ctx context.Context, billingAccountID int64) (db.BillingCreditBalance, error)
-	UpsertCreditBalance(ctx context.Context, arg db.UpsertCreditBalanceParams) (db.BillingCreditBalance, error)
-	InsertCreditLedgerEntry(ctx context.Context, arg db.InsertCreditLedgerEntryParams) (db.BillingCreditLedger, error)
-	GetCreditLedgerByIdempotencyKey(ctx context.Context, arg db.GetCreditLedgerByIdempotencyKeyParams) (db.BillingCreditLedger, error)
-}
+type BillingBaseQuerier = billingstore.Querier
 
 type StripeBillingClient interface {
 	CreateCustomer(ctx context.Context, input StripeCreateCustomerInput) (string, error)
@@ -703,15 +671,40 @@ func (s *BillingService) HandleStripeWebhook(ctx context.Context, payload []byte
 	return nil
 }
 
-// billingTxQuerier is satisfied by *db.Queries. It lets webhook processing
-// claim the event and apply its DB side effects in one transaction, so a crash
+// billingTxQuerier deliberately does not require a concrete WithTx result.
+// A deployment query wrapper must retain its metering overrides when rebound.
+// Webhook processing can claim the event and apply its DB side effects in one transaction, so a crash
 // mid-processing rolls the claim back and Stripe's retry is not swallowed as
 // an already-processed duplicate (an orphaned claim row would otherwise mark
 // the event done with none of its side effects persisted).
 type billingTxQuerier interface {
 	BillingBaseQuerier
 	BeginTx(ctx context.Context) (pgx.Tx, error)
-	WithTx(tx pgx.Tx) *db.Queries
+}
+
+// BillingQueryRebinder preserves a deployment's complete metering contract on
+// the exact supplied database handle, including caller-owned transactions.
+// Implementations must not open another connection or drop usage overrides.
+type BillingQueryRebinder = billingstore.Rebinder
+
+func (s *BillingService) inTransaction(conn db.DBTX) (*BillingService, error) {
+	var rebound BillingBaseQuerier
+	var err error
+	if binder, ok := s.queries.(BillingQueryRebinder); ok {
+		rebound, err = binder.RebindBillingQueries(conn)
+	} else if _, ok := s.queries.(*db.Queries); ok {
+		rebound = db.New(conn)
+
+	}
+	if err != nil {
+		return nil, fmt.Errorf("billing: bind transaction queries: %w", err)
+	}
+	if rebound == nil {
+		return nil, pkgerrors.Internal("billing transaction queries unavailable")
+	}
+	txService := *s
+	txService.queries = rebound
+	return &txService, nil
 }
 
 // processStripeEventTx claims the event and runs its side effects inside a
@@ -725,8 +718,10 @@ func (s *BillingService) processStripeEventTx(ctx context.Context, txq billingTx
 		return pkgerrors.Internal("failed to begin stripe webhook transaction")
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	txService := *s
-	txService.queries = txq.WithTx(tx)
+	txService, err := s.inTransaction(tx)
+	if err != nil {
+		return err
+	}
 	claimed, err := txService.claimStripeProcessedEvent(ctx, eventID, eventType)
 	if err != nil {
 		return err
@@ -850,8 +845,10 @@ func (s *BillingService) AuthorizePrivateRepoCommitted(
 		return pkgerrors.Internal("failed to lock private repository usage")
 	}
 
-	txService := *s
-	txService.queries = txq.WithTx(tx)
+	txService, err := s.inTransaction(tx)
+	if err != nil {
+		return err
+	}
 	owner := billingOwnerRef{OwnerType: ownerType, OwnerID: ownerID}
 	plan, usage, _, _, err := txService.resolveLocalState(ctx, owner)
 	if err != nil {
@@ -1058,8 +1055,10 @@ func (s *BillingService) AuthorizeStorageIncreaseCommittedDynamic(
 	if _, err := tx.Exec(ctx, repoOwnershipSharedLockSQL, repositoryID); err != nil {
 		return pkgerrors.Internal("failed to lock repository ownership")
 	}
-	txService := *s
-	txService.queries = txq.WithTx(tx)
+	txService, err := s.inTransaction(tx)
+	if err != nil {
+		return err
+	}
 	owner, _, err := txService.resolveRepoOwner(ctx, repositoryID)
 	if err != nil {
 		return err
@@ -1136,8 +1135,10 @@ func (s *BillingService) AuthorizeRepositoryTransferCommitted(
 		return pkgerrors.Internal("failed to lock target owner storage usage")
 	}
 
-	txService := *s
-	txService.queries = txq.WithTx(tx)
+	txService, err := s.inTransaction(tx)
+	if err != nil {
+		return err
+	}
 	if err := txService.authorizeRepositoryTransferUsage(ctx, repositoryID, target, privateRepository); err != nil {
 		return err
 	}
@@ -1174,8 +1175,10 @@ func (s *BillingService) AuthorizeRepositoryTransferCommittedInTransaction(
 		return pkgerrors.Internal("failed to lock target owner storage usage")
 	}
 
-	txService := *s
-	txService.queries = db.New(tx)
+	txService, err := s.inTransaction(tx)
+	if err != nil {
+		return err
+	}
 	if err := txService.authorizeRepositoryTransferUsage(ctx, repositoryID, target, privateRepository); err != nil {
 		return err
 	}
