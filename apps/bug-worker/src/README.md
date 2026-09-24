@@ -7,7 +7,7 @@ deploy instructions live in `../README.md`).
   `POST /api/bugs` with a 256KB body cap, and admin-only `GET /api/bugs/:id`.
   `createBugWorker(deps)` exists so tests can inject a clock; the default
   export uses `Date.now`.
-- `repoRequests.ts`, `repoClaims.ts`, `onboardingAnswers.ts` — route handlers.
+- `repoRequests.ts`, `repoClaims.ts` — route handlers.
   Only `worker.ts` imports them; they import the leaf modules below and never
   `worker.ts` or each other. `tests/moduleGraph.test.ts` pins this.
 - `repoForks.ts` — forks a newly nominated repository into the community

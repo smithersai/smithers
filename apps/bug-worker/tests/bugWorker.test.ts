@@ -398,6 +398,16 @@ describe("bug worker", () => {
     expect(await res.json()).toEqual({ error: "not found" });
   });
 
+  test("onboarding answers are not an intake: the signup poll saves them to the account profile", async () => {
+    const worker = createBugWorker();
+    const env = makeEnv();
+    const url = "https://bug.smithers.sh/api/onboarding-answers";
+    const posted = await worker.fetch(new Request(url, { method: "POST", body: JSON.stringify({ id: crypto.randomUUID(), heard: "friend", project: "" }) }), env);
+    const listed = await worker.fetch(new Request(url, { headers: { "x-bug-admin": ADMIN } }), env);
+    expect([posted.status, listed.status]).toEqual([404, 404]);
+    expect([...env.BUGS.dump().keys()]).toEqual([]);
+  });
+
   test("OPTIONS preflight allows POST from anywhere", async () => {
     const worker = createBugWorker();
     const res = await worker.fetch(new Request("https://bug.smithers.sh/api/bugs", { method: "OPTIONS" }), makeEnv());
