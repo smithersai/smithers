@@ -870,26 +870,19 @@ describe("runtime views", () => {
     expect(readFileSync(join(cwd, "math.js"), "utf8")).toContain("a + b")
   }, 60_000)
 
-  it("/new waits for a running undo, which settles in its own session", async () => {
+  it("undo refuses a FIFO and leaves chat usable", async () => {
     const { tui, cwd } = await editRow()
-    // A FIFO holds the undo's read of math.js open: a deliberately unresolved undo.
     rmSync(join(cwd, "math.js"))
     if (spawnSync("mkfifo", [join(cwd, "math.js")]).status !== 0) throw new Error("mkfifo failed")
     await tui.type("u")
     await tui.until((screen) => screen.includes("Undo math.js?"), 5_000, "confirm")
     await tui.press(key.enter)
-    await tui.until((screen) => !screen.includes("Undo math.js?"), 5_000, "undo started")
+    await tui.until((screen) => screen.includes("changed since: math.js"), 5_000, "undo settled")
     await tui.press(key.escape)
     await tui.type("/new")
     await tui.press(key.enter)
-    await tui.until((screen) => screen.includes("Stop running work first"), 5_000, "refusal")
-    const release = Bun.spawn(["sh", "-c", "printf x > math.js"], { cwd })
-    await tui.until((screen) => screen.includes("changed since: math.js"), 10_000, "undo settled")
-    await release.exited
-    await tui.type("/new")
-    await tui.press(key.enter)
     await tui.until((screen) => screen.includes("New session started"), 5_000, "new session")
-  }, 180_000)
+  }, 60_000)
 
   it("renders agent-authored UI from a real cell and restores it after restart", async () => {
     const cwd = repository()

@@ -6,8 +6,8 @@ import * as Bash from "@smthrs/std/Bash"
 import { createTwoFilesPatch } from "diff"
 import { Effect, Schema } from "effect"
 import { createHash } from "node:crypto"
-import { createReadStream } from "node:fs"
-import { readFile, stat } from "node:fs/promises"
+import { constants } from "node:fs"
+import { open, stat } from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
@@ -26,10 +26,16 @@ const maxBytes = 512_000
 /** A text file's content; `null` when absent, `undefined` when unreadable, binary or large. */
 export const read = async (path: string): Promise<string | null | undefined> => {
   try {
-    if ((await stat(path)).size > maxBytes) return undefined
-    const bytes = await readFile(path)
-    if (bytes.includes(0)) return undefined
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+    try {
+      const info = await file.stat()
+      if (!info.isFile() || info.size > maxBytes) return undefined
+      const bytes = await file.readFile()
+      if (bytes.includes(0)) return undefined
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    } finally {
+      await file.close()
+    }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     return code === "ENOENT" || code === "ENOTDIR" ? null : undefined
@@ -51,21 +57,27 @@ interface FileState {
 /** Read a candidate before or after the call; a digest covers binary and large files too. */
 const fileState = async (path: string): Promise<FileState> => {
   try {
-    const info = await stat(path)
-    const hash = createHash("sha256")
-    let text: string | null | undefined
-    if (info.size <= maxBytes) {
-      const bytes = await readFile(path)
-      hash.update(bytes)
-      try {
-        text = bytes.includes(0) ? undefined : new TextDecoder("utf-8", { fatal: true }).decode(bytes)
-      } catch {
-        text = undefined
+    const file = await open(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0))
+    try {
+      const info = await file.stat()
+      if (!info.isFile()) return { digest: undefined, text: undefined, mode: undefined }
+      const hash = createHash("sha256")
+      let text: string | null | undefined
+      if (info.size <= maxBytes) {
+        const bytes = await file.readFile()
+        hash.update(bytes)
+        try {
+          text = bytes.includes(0) ? undefined : new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+        } catch {
+          text = undefined
+        }
+      } else {
+        for await (const chunk of file.createReadStream({ autoClose: false })) hash.update(chunk)
       }
-    } else {
-      for await (const chunk of createReadStream(path)) hash.update(chunk)
+      return { digest: hash.digest("hex"), text, mode: info.mode & 0o777 }
+    } finally {
+      await file.close()
     }
-    return { digest: hash.digest("hex"), text, mode: info.mode & 0o777 }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     return code === "ENOENT" || code === "ENOTDIR"
