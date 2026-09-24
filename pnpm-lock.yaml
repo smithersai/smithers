@@ -5882,6 +5882,9 @@ importers:
       '@smthrs/notifications':
         specifier: 1.0.0-rc.1
         version: link:../notifications
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.1
+        version: link:../flows/platform-node
       '@smthrs/run-store':
         specifier: 1.0.0-rc.1
         version: link:../flows/run-store

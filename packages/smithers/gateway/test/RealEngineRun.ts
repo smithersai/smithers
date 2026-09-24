@@ -36,7 +36,6 @@
  * reason `GatewayProjection` folds control records only.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import type * as ControlError from "@smthrs/control/ControlError"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
@@ -50,6 +49,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { Jj } from "@smthrs/kernel"
 import { NotificationQueue } from "@smthrs/notifications"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Registry } from "@smthrs/registry"
 import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
@@ -134,7 +134,7 @@ const engineLayer = (filename: string, implementation: (path: string) => Effect.
       Write.toLayer(({ path }: { readonly path: string }) => implementation(path)),
       Interpreter.layer(RealRun)
     ).pipe(Layer.provideMerge(Action.layerImplementations))
-  ).pipe(Layer.provide([stubJj, NodeCrypto.layer, NodeFileSystem.layer]))
+  ).pipe(Layer.provide([stubJj, NodeCrypto.layer, AtomicFileSystem.layer]))
 
 const layerEngineRun = (filename: string, implementation: (path: string) => Effect.Effect<string>) =>
   Layer.effect(EngineRun)(
