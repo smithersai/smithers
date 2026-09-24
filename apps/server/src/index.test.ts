@@ -5219,14 +5219,50 @@ describe("the client-error route", () => {
     const env = adminEnv(logs)
     const quiet = spyOn(console, "error").mockImplementation(() => {})
     try {
-      expect((await worker.fetch(report({ message: "mine" }, { cookie: "smithers_session=abc" }), env)).status).toBe(202)
       await asAdmin(async () => {
+        expect((await worker.fetch(report({ message: "mine" }, { cookie: "smithers_session=abc" }), env)).status).toBe(202)
         const page = (await (await readAdmin(env)).json()) as Page
         expect(page.reports[0]?.signedIn).toBe(true)
       })
     } finally {
       quiet.mockRestore()
     }
+  })
+
+  test("a forged cookie cannot promote an error report; anonymous reports skip identity", async () => {
+    const logs = memoryLog()
+    const env = adminEnv(logs)
+    let validates = 0
+    const quiet = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await withMockedFetch(request => {
+        if (new URL(request.url).hostname === "identity.test") { validates++; return new Response("", { status: 401 }) }
+        return undefined
+      }, async () => {
+        expect((await worker.fetch(report({ message: "anonymous" }), env)).status).toBe(202)
+        expect(validates).toBe(0)
+        expect((await worker.fetch(report({ message: "forged" }, { cookie: "smithers_session=forged" }), env)).status).toBe(202)
+        expect(validates).toBe(1)
+      })
+      await asAdmin(async () => {
+        const page = await (await readAdmin(env)).json() as Page
+        expect(page.reports).toHaveLength(2)
+        expect(page.reports.every(row => row.signedIn !== true)).toBe(true)
+      })
+    } finally { quiet.mockRestore() }
+  })
+
+  test("a validated account cannot bypass its report cap by rotating addresses", async () => {
+    const env = adminEnv(memoryLog())
+    const quiet = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await asAdmin(async () => {
+        for (let i = 0; i < CLIENT_ERROR_SOURCE_WINDOW_MAX; i++) {
+          expect((await worker.fetch(report({ message: "same account" }, { cookie: "smithers_session=abc", "cf-connecting-ip": `198.51.100.${i + 1}` }), env)).status).toBe(202)
+        }
+        expect((await worker.fetch(report({ message: "over cap" }, { cookie: "smithers_session=abc", "cf-connecting-ip": "203.0.113.9" }), env)).status).toBe(429)
+      })
+    } finally { quiet.mockRestore() }
   })
 
   test("an oversize report is 413 and never stored; a declared oversize body is refused before it is read", async () => {
@@ -5312,7 +5348,9 @@ describe("the client-error route", () => {
       const logs = memoryLog(frozen())
       const env = adminEnv(logs)
       await quietly(async () => {
-        expect((await worker.fetch(signedIn("the real crash"), env)).status).toBe(202)
+        await asAdmin(async () => {
+          expect((await worker.fetch(signedIn("the real crash"), env)).status).toBe(202)
+        })
         for (let index = 0; index < 40; index += 1) {
           expect((await worker.fetch(anonymous(index), env)).status).toBe(202)
         }

@@ -39,7 +39,7 @@ import { discardBody, readJsonOrUndefined } from "./Http"
  * make room for one that did not.
  */
 
-/** Reports kept. At the window ceiling of 120/minute this is a couple of minutes of a storm. */
+/** Reports kept. Bounded independently of the per-tier admission windows. */
 export const CLIENT_ERROR_LOG_LIMIT = 200
 
 /** The throttle window, and the most reports it admits from everyone together. */
@@ -89,11 +89,7 @@ export interface ClientErrorRecord {
   /** The page that reported, when the request carried a referer. */
   readonly page?: string
   readonly userAgent?: string
-  /**
-   * The request carried a session cookie. Not validated (that would cost the
-   * identity round-trip this route refuses to pay), but an anonymous flood
-   * carries none, and that is enough to keep it from evicting these.
-   */
+  /** The Worker validated this report's session through identity. */
   readonly signedIn?: boolean
   /** Exactly what the client posted, parsed when it was JSON and raw text when it was not. */
   readonly report: unknown
@@ -202,11 +198,12 @@ export const bounded = (records: ReadonlyArray<ClientErrorRecord>): Array<Client
 /** One throttle window: when it opened, what it admitted, and from whom. */
 export interface ClientErrorWindow {
   readonly start: number
-  readonly count: number
+  readonly anonymous: number
+  readonly signedIn: number
   readonly sources: ReadonlyMap<string, number>
 }
 
-const CLOSED_WINDOW: ClientErrorWindow = { start: 0, count: 0, sources: new Map() }
+const CLOSED_WINDOW: ClientErrorWindow = { start: 0, anonymous: 0, signedIn: 0, sources: new Map() }
 
 /**
  * The window is Durable Object memory, not storage: a flood keeps the object
@@ -222,16 +219,17 @@ export const makeClientErrorThrottle = (): Ref.Ref<ClientErrorWindow> => Ref.mak
 export const clientErrorThrottleLayer = (throttle: Ref.Ref<ClientErrorWindow>): Layer.Layer<ClientErrorThrottle> =>
   Layer.succeed(ClientErrorThrottle, throttle)
 
-/** Count one report from `source` at `now`: admitted, or refused by the global or the per-source ceiling. */
-const admit = (throttle: Ref.Ref<ClientErrorWindow>, source: string, now: number): Effect.Effect<boolean> =>
+/** Count one report from `source` at `now`: admitted, or refused by its tier or the per-source ceiling. */
+const admit = (throttle: Ref.Ref<ClientErrorWindow>, source: string, now: number, signedIn: boolean): Effect.Effect<boolean> =>
   Ref.modify(throttle, (current) => {
-    const window = now - current.start > CLIENT_ERROR_WINDOW_MS ? { start: now, count: 0, sources: new Map<string, number>() } : current
-    if (window.count >= CLIENT_ERROR_WINDOW_MAX) return [false, window]
+    const window = now - current.start > CLIENT_ERROR_WINDOW_MS ? { start: now, anonymous: 0, signedIn: 0, sources: new Map<string, number>() } : current
     const fromSource = window.sources.get(source) ?? 0
     if (fromSource >= CLIENT_ERROR_SOURCE_WINDOW_MAX) return [false, window]
+    const tier = signedIn ? "signedIn" : "anonymous"
+    if (window[tier] >= CLIENT_ERROR_WINDOW_MAX) return [false, window]
     const sources = new Map(window.sources)
     sources.set(source, fromSource + 1)
-    return [true, { start: window.start, count: window.count + 1, sources }]
+    return [true, { ...window, [tier]: window[tier] + 1, sources }]
   })
 
 /** Every deployment shares one log; the name is fixed so any request finds it. */
@@ -267,7 +265,7 @@ export const clientErrorLogRequest = (
         const throttle = yield* ClientErrorThrottle
         const now = yield* Clock.currentTimeMillis
         const source = request.headers.get(CLIENT_ERROR_SOURCE_HEADER) ?? CLIENT_ERROR_UNKNOWN_SOURCE
-        if (!(yield* admit(throttle, source, now))) {
+        if (!(yield* admit(throttle, source, now, record.signedIn === true))) {
           return new Response(JSON.stringify({ status: "throttled" }), {
             status: 429,
             headers: { "content-type": "application/json" }

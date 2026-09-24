@@ -18,7 +18,7 @@ import type { DeploymentBindings, ExecutionContext } from "./Environment"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
 import { discardBody, fetchWithDeadline, readBoundedBytes, readRefusalDetail } from "./Http"
 import type { Transport } from "./Http"
-import { isVisitorRefusal, requireTurnSession } from "./identity"
+import { isVisitorRefusal, requireTurnSession, validateSession } from "./identity"
 import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
 import { json, notFound, readBody, refuse, upstreamProse, upstreamUnreachable, withIsolationHeaders } from "./Responses"
 import { anonymousBucketAddress } from "./turnLimit"
@@ -331,7 +331,7 @@ const clientErrorSource = (request: Request): string => {
 /** The session cookie the identity worker sets. Its value is never read here, only its presence. */
 const SESSION_COOKIE = "smithers_session"
 
-/** The request carried a session cookie. Presence only: the log's eviction order needs no more. */
+/** Avoid an identity request when no session cookie was supplied. */
 const carriesSessionCookie = (request: Request): boolean =>
   (request.headers.get("cookie") ?? "").split(";").some((part) => part.trim().startsWith(`${SESSION_COOKIE}=`))
 
@@ -351,12 +351,13 @@ export const handleClientError = (request: Request): Effect.Effect<Response, nev
     const referer = request.headers.get("referer")
     const userAgent = request.headers.get("user-agent")
     const errors = yield* ClientErrors
+    const session = carriesSessionCookie(request) ? yield* validateSession(request) : undefined
     const outcome = yield* errors.append(
       {
         at: new Date().toISOString(),
         ...(referer === null ? {} : { page: referer }),
         ...(userAgent === null ? {} : { userAgent }),
-        ...(carriesSessionCookie(request) ? { signedIn: true } : {}),
+        ...(session?.status === "valid" ? { signedIn: true } : {}),
         report: ((): unknown => {
           try {
             return JSON.parse(text)
@@ -365,7 +366,7 @@ export const handleClientError = (request: Request): Effect.Effect<Response, nev
           }
         })()
       },
-      clientErrorSource(request)
+      session?.status === "valid" ? `login:${session.identity.login.toLowerCase()}` : clientErrorSource(request)
     )
     if (outcome === "throttled") {
       return refuse("error_reports_throttled", "Too many error reports.")

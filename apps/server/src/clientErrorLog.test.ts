@@ -464,14 +464,14 @@ describe("the client-error throttle is the log's, not the isolate's", () => {
     expect(CLIENT_ERROR_SOURCE_HEADER).toBe("x-client-error-source")
   })
 
-  test("the window ceiling is global across sources, and a new window opens it again", async () => {
+  test("each tier has its own window ceiling across sources, reset by a new window", async () => {
     let now = 1_700_000_000_000
     const logs = memoryLog(() => now)
     for (let index = 0; index < CLIENT_ERROR_WINDOW_MAX; index += 1) {
       expect(await appendClientError(logs, anonymous(index, 10), `203.0.113.${index % 250}`)).toBe("stored")
     }
     expect(await appendClientError(logs, anonymous(251, 10), "203.0.113.251")).toBe("throttled")
-    expect(await appendClientError(logs, signedIn("also refused: the ceiling is the ceiling"), "198.51.100.9")).toBe("throttled")
+    expect(await appendClientError(logs, signedIn("the authenticated tier remains open"), "198.51.100.9")).toBe("stored")
     now += CLIENT_ERROR_WINDOW_MS + 1
     expect(await appendClientError(logs, anonymous(251, 10), "203.0.113.251")).toBe("stored")
   })
@@ -506,4 +506,16 @@ describe("the client-error throttle is the log's, not the isolate's", () => {
     expect(capped.page).toStartWith("https://smithers.sh/#ppp")
     expect(capped.report).toEqual({ message: "boom" })
   })
+})
+
+
+test("anonymous reports cannot spend the authenticated tier's window", async () => {
+  const logs = memoryLog(() => 100000)
+  for (let i = 0; i < CLIENT_ERROR_WINDOW_MAX; i++) {
+    expect(await appendClientError(logs, { at: "now", report: i }, `source-${i}`)).toBe("stored")
+  }
+  expect(await appendClientError(logs, { at: "now", report: "overflow" }, "fresh-anonymous")).toBe("throttled")
+  expect(await appendClientError(logs, { at: "now", report: "signed-in", signedIn: true }, "fresh-signed-in")).toBe("stored")
+  const page = await readClientErrors(logs)
+  expect(page.reports.some(row => row.report === "signed-in")).toBe(true)
 })
