@@ -32,7 +32,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "plan": "alchemy deploy --dry-run --stage prod",
     "deploy": "alchemy deploy --stage prod",
-    "destroy": "alchemy destroy --stage prod"
+    "destroy": "alchemy destroy --stage prod",
+    "test:live": "SMITHERS_REVIEW_E2E=1 bun test tests/reviewPullRequest.e2e.test.ts tests/action/liveWorkflow.e2e.test.ts"
   },
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.115",

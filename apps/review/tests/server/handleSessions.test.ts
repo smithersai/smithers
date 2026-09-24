@@ -24,12 +24,13 @@ function baseClaims(repo: string, pr: number, exp: number) {
 }
 
 let keypair: RsaTestKeypair;
+let attacker: RsaTestKeypair;
 let jwks: ServedJwks;
 
 beforeAll(async () => {
-  keypair = await rsaKeypair("test-kid-1");
+  [keypair, attacker] = await Promise.all([rsaKeypair("test-kid-1"), rsaKeypair("attacker-kid")]);
   jwks = serveJwks([keypair.publicJwk]);
-});
+}, 30_000);
 
 afterAll(() => {
   jwks.stop();
@@ -290,7 +291,7 @@ describe("POST /api/sessions (OIDC)", () => {
   test("rejects a token with an unknown kid", async () => {
     const env = await buildTestEnv();
     await registerRepo(env, REPO);
-    const wrong = await rsaKeypair("attacker-kid");
+    const wrong = attacker;
     const worker = makeWorker(jwks.url);
     const token = await signTestJwt(wrong, baseClaims(REPO, 7, Math.floor(Date.now() / 1000) + 600));
     const res = await worker.fetch(
@@ -314,7 +315,7 @@ describe("POST /api/sessions (OIDC)", () => {
       const tampered = Buffer.from(JSON.stringify(claims)).toString("base64url");
       const token =
         kind === "forged"
-          ? await signTestJwt(await rsaKeypair("attacker-kid"), claims, { kid: keypair.kid })
+          ? await signTestJwt(attacker, claims, { kid: keypair.kid })
           : kind === "tampered"
             ? `${header}.${tampered}.${signature}`
             : `${header}.${payload}.!`;
@@ -330,6 +331,7 @@ describe("POST /api/sessions (OIDC)", () => {
       expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>()).toEqual({ c: 0 });
       expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM reviewed_prs").first<{ c: number }>()).toEqual({ c: 0 });
     },
+    15_000,
   );
 
   test("returns 503 for a stalled JWKS body and retries after cooldown", async () => {

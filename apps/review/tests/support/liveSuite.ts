@@ -28,15 +28,16 @@ export function liveSuiteGate(args: {
 
 /** What to tell a reader whose environment cannot reach GitHub. */
 export const GH_CREDENTIAL_REASON =
-  "live GitHub credentials absent: install the gh CLI and set GITHUB_TOKEN (or run `gh auth login`)";
+  "set SMITHERS_REVIEW_E2E=1 to opt in; live GitHub credentials required: install the gh CLI and set GITHUB_TOKEN (or run `gh auth login`)";
 
 /**
- * Whether the gh CLI is installed and carries a credential.
+ * Whether live tests are explicitly enabled and gh carries a credential.
  *
  * A token in the environment counts without a round trip; otherwise `gh auth
  * status` decides, which covers a keyring login.
  */
 export function ghCredentialsAvailable(): boolean {
+  if (process.env.SMITHERS_REVIEW_E2E !== "1") return false;
   const bin = ghBin();
   const which = spawnSync(process.platform === "win32" ? "where" : "which", [bin], { encoding: "utf8" });
   if (which.status !== 0) return false;

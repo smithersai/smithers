@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ghBin } from "../src/github/runGh.ts";
-import { liveSuiteGate } from "./support/liveSuite.ts";
+import { ghCredentialsAvailable, liveSuiteGate } from "./support/liveSuite.ts";
 
 /**
  * Two conventions that a reader cannot check by running the suite, because
@@ -31,6 +31,24 @@ function sourceFiles(): string[] {
 }
 
 describe("a live suite that skips says why", () => {
+  test("credentials alone never enable a live GitHub suite", () => {
+    const names = ["GITHUB_TOKEN", "SMITHERS_GH_BIN", "SMITHERS_REVIEW_E2E"] as const;
+    const saved = names.map((name) => process.env[name]);
+    try {
+      process.env.GITHUB_TOKEN = "fixture-token";
+      process.env.SMITHERS_GH_BIN = join(appDir, "tests/action/fixtures/fake-gh");
+      delete process.env.SMITHERS_REVIEW_E2E;
+      expect(ghCredentialsAvailable()).toBe(false);
+      process.env.SMITHERS_REVIEW_E2E = "1";
+      expect(ghCredentialsAvailable()).toBe(true);
+    } finally {
+      names.forEach((name, index) => {
+        if (saved[index] === undefined) delete process.env[name];
+        else process.env[name] = saved[index];
+      });
+    }
+  });
+
   test("the gate returns the flag and stays quiet when the suite runs", () => {
     const lines: string[] = [];
     expect(liveSuiteGate({ tag: "t", enabled: true, reason: "unused", log: (l) => lines.push(l) })).toBe(true);

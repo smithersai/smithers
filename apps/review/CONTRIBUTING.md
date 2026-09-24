@@ -261,3 +261,6 @@ Suites that need a real backend go through `tests/support/liveSuite.ts`, which
 prints one line naming what a skip did not prove. `tests/workflow/` covers the
 flow on scripted seats; `tests/workflow/reviewLayerNode.test.ts` spawns Node
 because the durable composition does not build under Bun.
+
+Live GitHub checks are opt-in: run `pnpm -C apps/review test:live` with GitHub
+credentials. Ordinary unit tests skip them even when `gh` is signed in.

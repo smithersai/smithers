@@ -8,10 +8,8 @@
  * redefine `process.env` in a way the workspace packages' own signatures
  * refuse, so it is checked separately with `bun-types` on top.
  *
- * The suite includes one live test. `tests/reviewPullRequest.e2e.test.ts`
- * reviews a real pull request through the `gh` CLI and skips with a named
- * reason when no GitHub credential is present, so a runner without one still
- * goes green and says what it did not prove.
+ * Live GitHub suites require SMITHERS_REVIEW_E2E=1. Run `pnpm test:live`
+ * separately with credentials; ordinary unit tests never contact GitHub.
  *
  * @since 1.0.0
  */
@@ -64,7 +62,7 @@ const checkTests = Smithers.Typecheck({
 })
 
 /**
- * The unit suite plus the live pull-request review.
+ * The offline unit suite; live cases require explicit opt-in.
  *
  * @since 1.0.0
  * @category test
