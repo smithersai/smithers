@@ -4,7 +4,7 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Cause, Effect, Exit, Fiber, Layer, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
-import { once } from "node:events"
+import { EventEmitter, once } from "node:events"
 import * as Fs from "node:fs"
 import * as Net from "node:net"
 import { parse } from "node:path"
@@ -21,11 +21,16 @@ vi.mock(
 
 vi.mock("node:fs", async (original) => {
   const actual = await original<typeof import("node:fs")>()
-  return { ...actual, mkdtempSync: vi.fn(actual.mkdtempSync), chmodSync: vi.fn(actual.chmodSync) }
+  return {
+    ...actual,
+    mkdtempSync: vi.fn(actual.mkdtempSync),
+    chmodSync: vi.fn(actual.chmodSync),
+    rmSync: vi.fn(actual.rmSync)
+  }
 })
 vi.mock("node:net", async (original) => {
   const actual = await original<typeof import("node:net")>()
-  return { ...actual, createServer: vi.fn(actual.createServer) }
+  return { ...actual, createServer: vi.fn(actual.createServer), createConnection: vi.fn(actual.createConnection) }
 })
 
 vi.mock("node:tls", async (original) => {
@@ -302,6 +307,59 @@ const run = async (
 }
 
 describe("failed process preparation", () => {
+  it("uses private filesystem sockets on POSIX and preserves request write failures", async () => {
+    // No OS resources are allocated: exercise the POSIX transport contract on
+    // every host, including Windows, whose real transport is authenticated TLS.
+    const platform = Object.getOwnPropertyDescriptor(process, "platform")!
+    const servers = Array.from({ length: 2 }, () => {
+      const server = new EventEmitter()
+      return Object.assign(server, {
+        listen: vi.fn((_path: string, ready: () => void) => ready()),
+        close: vi.fn(),
+        unref: vi.fn()
+      })
+    })
+    const socket = new Net.Socket()
+    const cause = new Error("request write refused")
+    const write = vi.spyOn(socket, "write").mockImplementation((_data, callback: unknown) => {
+      if (typeof callback !== "function") throw new Error("Missing write callback")
+      callback(cause)
+      return false
+    })
+    vi.mocked(Fs.mkdtempSync).mockReturnValueOnce("/tmp/sm-p-contract")
+    vi.mocked(Fs.chmodSync).mockImplementationOnce(() => {})
+    vi.mocked(Fs.rmSync).mockImplementationOnce(() => {})
+    for (const server of servers) {
+      vi.mocked(Net.createServer).mockReturnValueOnce(server as unknown as Net.Server)
+    }
+    vi.mocked(Net.createConnection).mockReturnValueOnce(socket).mockReturnValueOnce(socket)
+    let control: Supervisor.Control | undefined
+    try {
+      Object.defineProperty(process, "platform", { value: "darwin", configurable: true })
+      control = new Supervisor.Control()
+      await control.listening
+      expect(Fs.mkdtempSync).toHaveBeenLastCalledWith("/tmp/sm-p-")
+      expect(Fs.chmodSync).toHaveBeenLastCalledWith(control.directory, 0o700)
+      expect(servers[0]!.listen).toHaveBeenCalledWith(control.path, expect.any(Function))
+      expect(servers[1]!.listen).toHaveBeenCalledWith(control.requestPath, expect.any(Function))
+      expect(control.environment()).toEqual({})
+      expect(control.connect()).toBe(socket)
+      expect(Net.createConnection).toHaveBeenLastCalledWith(control.path)
+      expect(control.connect(true)).toBe(socket)
+      expect(Net.createConnection).toHaveBeenLastCalledWith(control.requestPath)
+      control.requestSocket = socket
+      await expect(control.write({ type: "stop" })).rejects.toBe(cause)
+      expect(write).toHaveBeenCalledWith("{\"type\":\"stop\"}\n", expect.any(Function))
+    } finally {
+      Object.defineProperty(process, "platform", platform)
+      control?.dispose()
+      socket.destroy()
+      write.mockRestore()
+    }
+    expect(servers.every((server) => server.close.mock.calls.length === 1)).toBe(true)
+    expect(Fs.rmSync).toHaveBeenLastCalledWith("/tmp/sm-p-contract", { recursive: true, force: true })
+  })
+
   it.each([false, true])("preserves explicit environment values with extendEnv=%s", async (extendEnv) => {
     const host = fixture()
     const name = "SMITHERS_SUPERVISOR_TEST_INHERITED"
