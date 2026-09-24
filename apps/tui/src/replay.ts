@@ -14,6 +14,7 @@ import type * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as Seat from "@smthrs/agent/Seat"
 import * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import { ModelError, type ModelErrorCode } from "@smthrs/model/ModelError"
 import type * as Route from "@smthrs/model/Route"
 import { Duration, Effect, Stream } from "effect"
 import { readFileSync } from "node:fs"
@@ -21,6 +22,7 @@ import { readFileSync } from "node:fs"
 interface Timed {
   readonly after: number
   readonly delta: ModelEvent.ModelEvent
+  readonly failure?: ModelError
 }
 
 /** One recorded reply per model call, each delta with its delay from the previous one. */
@@ -31,7 +33,7 @@ export const replies = (recorded: string): ReadonlyArray<ReadonlyArray<Timed>> =
     if (line.trim() === "") continue
     const { at, event } = JSON.parse(line) as {
       at: number
-      event: { _tag: string; delta?: ModelEvent.ModelEvent; message?: { stopReason?: string } }
+      event: { _tag: string; delta?: ModelEvent.ModelEvent; message?: { stopReason?: string } | string; code?: string }
     }
     if (event._tag === "model-requested") {
       out.push([])
@@ -41,11 +43,18 @@ export const replies = (recorded: string): ReadonlyArray<ReadonlyArray<Timed>> =
       out.at(-1)!.push({ after: Math.max(0, at - last), delta: event.delta })
       last = at
     }
+    if (event._tag === "replay-failure" && out.length > 0) {
+      out.at(-1)!.push({ after: Math.max(0, at - last), delta: { type: "settle", stopReason: "error" } as ModelEvent.ModelEvent, failure: new ModelError({
+        code: (event.code ?? "unknown") as ModelErrorCode,
+        message: typeof event.message === "string" ? event.message : "Recorded model failure"
+      }) })
+      last = at
+    }
     // The harness journals the reply's end as `model-settled`, not as a delta.
     if (event._tag === "model-settled" && out.length > 0) {
       out.at(-1)!.push({
         after: Math.max(0, at - last),
-        delta: { type: "settle", stopReason: event.message?.stopReason ?? "stop" } as ModelEvent.ModelEvent
+        delta: { type: "settle", stopReason: typeof event.message === "object" ? event.message?.stopReason ?? "stop" : "stop" } as ModelEvent.ModelEvent
       })
       last = at
     }
@@ -75,7 +84,8 @@ export const seat = (options: { readonly file: string; readonly holdMs?: number;
         const reply = recorded[Math.min(call++, recorded.length - 1)] ?? []
         const hold = Stream.fromEffect(Effect.sleep(Duration.millis(options.holdMs ?? 0))).pipe(Stream.drain)
         const paced = Stream.fromIterable(reply).pipe(
-          Stream.mapEffect(({ after, delta }) => Effect.as(Effect.sleep(Duration.millis(after / speed)), delta))
+          Stream.mapEffect(({ after, delta, failure }) => Effect.sleep(Duration.millis(after / speed)).pipe(
+            Effect.flatMap(() => failure === undefined ? Effect.succeed(delta) : Effect.fail(failure))))
         )
         return Stream.concat(hold, paced)
       })

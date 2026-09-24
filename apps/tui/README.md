@@ -107,10 +107,11 @@ The bottom timeline shows recorded phases, edits, stalls, and verification
 receipts. It follows running workers while chat stays usable. Inspection reads
 the journal up to the selected event, so later results do not appear early.
 Restoring a session reconstructs the same timeline from its saved events.
-Worker tabs show `queued`, `requested`, `running`, `waiting` for children,
-`parked` (⏸ with a reset time), `done`, `failed`, or `cancelled`. A running or
-parked worker resumes from its recorded
-steps when the TUI restarts. A failed worker shows a short failure card; Ctrl+O
+Worker tabs show `queued` (waiting for a pool seat), `requested`, `running`,
+`waiting` for children, `parked` (⏸ with a reset time), `done`, `failed`, or
+`cancelled`. Running, waiting, and parked workers auto-relaunch from their
+recorded steps when the TUI restarts. Queued workers keep the chat context
+captured with their request. A failed worker shows a short failure card; Ctrl+O
 reveals the raw error and stack.
 
 ## Context and sessions
@@ -178,8 +179,8 @@ The chat coordinator has `ui.publish`, `agent.delegate`, `tab.read`,
 depth 4 returns `AgentDepthExceeded`. Waiting releases the worker's pool slot.
 Delegation takes `{id, title, prompt}`, persists before launch, and returns a
 `requested` receipt immediately. Reusing the id deduplicates the request.
-A tab's one-line description comes from the worker's own seat. A retry
-reruns the task on the model it was requested with.
+A tab's one-line description comes from the worker's own seat. `r` or `/retry`
+resumes a failed, stopped, or parked tab on its requested model.
 Up to six workers can run at once (`SMITHERS_TUI_WORKERS` overrides the pool);
 later requests queue FIFO. They share the working directory, so
 independent tasks should name disjoint files. Worker transcripts persist in
@@ -192,9 +193,9 @@ while workers run. Progress uses the shared toast stack,
 with a 300 ms delay and real completion/failure as its end. A `tree:<rootId>`
 tab appears when a worker gains children; its rows update from tab state.
 
-Workers run locally. Restarting the TUI restores their transcripts and marks
-unfinished workers interrupted, with an explicit retry; it does not claim to
-reconnect to a process that no longer exists. `/new`, `/resume`, and `/fork`
+Workers run locally. Restarting the TUI restores their transcripts and
+auto-relaunches running and waiting workers; parked workers relaunch at reset.
+`/new`, `/resume`, and `/fork`
 require running work to finish or be stopped first.
 
 ## Flows

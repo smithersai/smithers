@@ -23,7 +23,8 @@ import * as NodeControl from "@smthrs/cli/NodeControl"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import type * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as Steering from "@smthrs/harness/Steering"
 import * as GrantStore from "@smthrs/kernel/GrantStore"
 import * as KernelHttpClient from "@smthrs/kernel/HttpClient"
@@ -78,7 +79,8 @@ export interface TurnInput {
   readonly thinking?: ModelRequest.ReasoningEffort
   /** A custom agent's prompt, flows, envelope and effort, applied to a worker turn. */
   readonly agent?: Agents.Profile
-  readonly onEvent: (event: AgentEvent.AgentEvent) => void
+  /** Async listeners can backpressure an unparked worker until a pool seat opens. */
+  readonly onEvent: (event: AgentEvent.AgentEvent) => unknown
 }
 
 export interface Turn {
@@ -155,6 +157,8 @@ export const make = (options: {
   readonly environment: Readonly<Record<string, string | undefined>>
   /** How consequential flow calls are approved; see `approvals.ts`. Default `ask`. */
   readonly approvals?: Approvals.Mode
+  /** Test seam for the ordinary flow-call ceiling. */
+  readonly callMs?: number
 }): Host => {
   const approvalMode = options.approvals ?? "ask"
   const env = options.environment
@@ -243,6 +247,7 @@ export const make = (options: {
 
   const run = (input: TurnInput): Turn => {
     const index = ++turns
+    const callMs = options.callMs ?? Sandbox.defaultLimits.callMs
     const program = Effect.gen(function*() {
       const seat = input.seat.startsWith("replay:")
         ? Replay.seat({
@@ -284,7 +289,7 @@ export const make = (options: {
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
-        ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true } } : {}),
+        ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true } } : { capacity: { park: false } }),
         prompt: input.prompt,
         system: turn.system,
         ...(turn.reasoningEffort === undefined
@@ -292,13 +297,15 @@ export const make = (options: {
           : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: turn.reasoningEffort }) }),
         registry,
         plugins: Runtime.plugins(input.runtime),
-        flows: turn.flows,
+        flows: turn.flows.map((source) => boundedCalls(source, callMs)),
         capabilityEnvelope: turn.capabilityEnvelope,
         ...(approvalMode === "all"
           ? {}
           : { authorize: Approvals.authorize(grants, { cwd: options.cwd, source: input.source ?? "chat" }) }),
         // The same explicit cell budget `smithers run` uses; never unlimited.
-        limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000 },
+        limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000,
+          callMs: input.role === "worker" ? 2_147_000_000 : callMs,
+          ...(input.role === "worker" ? { totalMs: 2_147_000_000 } : {}) },
         // A person reads every answer here, so without a gateway key the one
         // brake that needs Jev is disarmed instead of failing every turn.
         ...(input.role === "coordinator"
@@ -310,12 +317,12 @@ export const make = (options: {
       }).pipe(
         Stream.provideService(Steering.Source, input.steering ?? Steering.makeNoop()),
         Stream.runForEach((journaled) =>
-          Effect.sync(() => {
+          Effect.gen(function*() {
             const event = receipts(journaled)
             if (event._tag === "resolved") answer = text(event.message.content)
             if (event._tag === "model-requested") reply = ""
             if (event._tag === "model-delta" && event.delta.type === "text-delta") reply += event.delta.text
-            input.onEvent(event)
+            yield* Effect.promise(() => Promise.resolve(input.onEvent(event)))
             if (event._tag === "cell-produced") input.onCaption?.(Transcript.split(reply).prose)
           })
         ),
@@ -371,6 +378,20 @@ export const make = (options: {
     dispose: () => runtime.dispose()
   }
 }
+
+/** Keeps ordinary calls bounded while a worker can wait for children across resets. */
+const boundedCalls = (source: FlowBinding.Source, callMs: number): FlowBinding.Source => ({
+  ...source,
+  bindings: () => source.bindings().pipe(Effect.map((bindings) => bindings.map((binding) =>
+    binding.descriptor.name === "agent.wait" ? binding : {
+      ...binding,
+      run: (call) => binding.run(call).pipe(Effect.timeoutOrElse({
+        duration: callMs,
+        orElse: () => Effect.succeed(Sandbox.callTimedOut(call.flowName, callMs))
+      }))
+    }
+  )))
+})
 
 /**
  * The parts of a turn its input decides: the system prompt, the flows, the

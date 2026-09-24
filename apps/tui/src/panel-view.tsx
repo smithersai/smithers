@@ -10,7 +10,7 @@ import { bar } from "./view.tsx"
 export function FailureCard({ tab, transcript, details }: { tab: Workspace.Tab; transcript: Transcript.Transcript; details: boolean }) {
   const failure = tab.failure
   if (failure === undefined) return null
-  const fault = failure.fault === "wait" && /limit|quota/.test(failure.headline)
+  const fault = failure.fault === "wait"
     ? "not your fault · provider"
     : failure.fault === "infra" ? "not your fault · infra" : failure.fault
   return <box style={{ flexShrink: 0, paddingLeft: 1, marginBottom: 1 }}>

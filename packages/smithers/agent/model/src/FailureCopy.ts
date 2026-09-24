@@ -126,6 +126,14 @@ const harness: Record<string, readonly [string, Fault, string]> = {
  * @since 1.0.0-rc.1
  */
 export const describe = (error: unknown, seat?: string): Description => {
+  if (typeof error === "string" && /\b(?:usage limit|rate limit|quota (?:exceeded|exhausted))\b/i.test(error)) {
+    return {
+      headline: `${provider(seat)} usage limit reached`,
+      fault: "wait",
+      line: "Wait for the provider reset.",
+      actions: ["resume", "switch-model", "wait", "details"]
+    }
+  }
   let current: unknown = error
   let found: ErrorRecord | undefined
   const seen = new Set<unknown>()

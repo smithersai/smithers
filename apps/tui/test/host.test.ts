@@ -5,6 +5,7 @@ import { join } from "node:path"
 import * as Capability from "@smthrs/capability/Capability"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { Effect } from "effect"
+import * as FailureCopy from "@smthrs/model/FailureCopy"
 import type * as Agents from "../src/agents.ts"
 import * as Approvals from "../src/approvals.ts"
 import * as Host from "../src/host.ts"
@@ -116,6 +117,46 @@ describe("Host.run Smithers plugin", () => {
     )
     expect(outcome).toEqual({ _tag: "done", answer: "packages,cli,authoring" })
   })
+})
+
+test("Host.run lets agent.wait settle after the ordinary flow call ceiling", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-wait-"))
+  roots.push(cwd)
+  const host = Host.make({ cwd, environment: {}, callMs: 20 })
+  let contacted = 0
+  try {
+    const result = await host.run({
+      prompt: "wait for child", role: "worker", seat: `replay:${doneReplay(cwd,
+        'const children = await ctx.call("agent.wait", { ids: ["child"] }); ctx.done(children[0].answer)')}`,
+      history: [], runtime: { publish: () => {}, delegate: () => ({ id: "child", status: "requested" }),
+        read: () => ({}), list: () => [], wait: async () => {
+        contacted++
+        await new Promise((resolve) => setTimeout(resolve, 80))
+        return [{ id: "child", status: "done", answer: "late answer" }]
+      } }, onEvent: () => {}
+    }).done
+    expect(contacted).toBeGreaterThan(0)
+    expect(result).toEqual({ _tag: "done", answer: "late answer" })
+  } finally { await host.dispose() }
+})
+
+test("Host.run exposes non-parked usage-limit copy for a failure card", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-limit-"))
+  roots.push(cwd)
+  const file = join(cwd, "limited.jsonl")
+  writeFileSync(file, [
+    JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
+    JSON.stringify({ at: 0, event: { _tag: "replay-failure", code: "rate_limited", message: "The usage limit has been reached" } })
+  ].join("\n"))
+  const host = Host.make({ cwd, environment: {} })
+  try {
+    const outcome = await host.run({ prompt: "review", role: "coordinator", seat: `replay:${file}`,
+      history: [], onEvent: () => {} }).done
+    expect(outcome._tag).toBe("failed")
+    const copy = FailureCopy.describe(outcome._tag === "failed" ? outcome.error : undefined, "openai:gpt-6-sol")
+    expect(copy.headline).toBe("ChatGPT usage limit reached")
+    expect(copy.line).not.toContain("usage limit has been reached")
+  } finally { await host.dispose() }
 })
 
 /** A recorded model whose every reply delegates and prints, never calling `ctx.done`. */

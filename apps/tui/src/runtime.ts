@@ -14,7 +14,7 @@ import type * as Monitors from "./monitors.ts"
 export interface Ports {
   readonly publish: (panel: Panels.Panel) => void
   readonly delegate?: (request: { id: string; title: string; prompt: string; model?: DelegateModel; agent?: string }) => unknown
-  readonly wait?: (ids: ReadonlyArray<string>) => Promise<unknown>
+  readonly wait?: (ids: ReadonlyArray<string>, signal?: AbortSignal) => Promise<unknown>
   readonly read?: (id: string) => unknown
   readonly list?: () => unknown
   readonly retry?: (id: string) => unknown
@@ -40,9 +40,10 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
   name: string,
   description: string,
   input: I,
-  handle: (input: I["Type"]) => unknown,
+  handle: (input: I["Type"], signal?: AbortSignal) => unknown,
   /** Consequential capabilities the approval gate asks for; see `Approvals.requests`. */
-  capabilities: ReadonlyArray<string> = []
+  capabilities: ReadonlyArray<string> = [],
+  interruptible = false
 ): FlowBinding.Binding => {
   const flow = Flow.make(name, {
     description,
@@ -69,6 +70,7 @@ const bind = <I extends Flow.AnyStructSchema & Schema.ConstraintDecoder<unknown,
           : new Error("Runtime request failed")
       // Optional fields arrive as `undefined`, which a cell result cannot carry.
       const clean = (value: unknown) => JSON.parse(JSON.stringify(value ?? null)) as unknown
+      if (interruptible) return Effect.tryPromise({ try: async (signal) => clean(await handle(input, signal)), catch: caught })
       return Effect.flatMap(Effect.try({ try: () => handle(input), catch: caught }), (value) =>
         value instanceof Promise
           ? Effect.tryPromise({ try: async () => clean(await value), catch: caught })
@@ -169,12 +171,13 @@ export const source = (ports: Ports): FlowBinding.Source =>
         "agent.wait",
         "Wait for child tabs to settle. Pass child request ids; returns each id, status, answer or message. Waiting releases this worker's pool slot.",
         Schema.Struct({ ids: Schema.Array(short).check(Schema.isMinLength(1)) }),
-        (input) => ports.wait!(input.ids)
+        (input, signal) => ports.wait!(input.ids, signal),
+        [], true
       )])
     ])
   ])
 export const coordinatorTeaching =
-  `You are the fast coordinator. For long-running or multi-agent work, delegate one root worker with agent.delegate, then publish one ui.publish panel with placement:"main" and bind:{tree:rootId}. Keep rows only for information you will update; the bound tree updates itself. End the same cell with ctx.done and a brief honest acknowledgement. Never wait for a worker; completions arrive in a later turn. Use distinct ids for distinct tasks and repeat an id only to deduplicate. Workers share the repository, so include constraints in the prompt. Use smithers.run for a user's matching flow. When one of the Agents in your context fits the task, delegate with agent.delegate and its agent name. Available worker seat: `
+  `You are the fast conversational coordinator. Your final answer is normally ONE short sentence, for example "Requested the investigation." Do not narrate flow names, ids, JSON, or the absence of code changes. When one of the user's flows (smithers.flows) does the task, request it with smithers.run instead of a worker. Keep chat instant: request research, planning, implementation and tests with agent.delegate, then resolve this turn with a brief honest acknowledgement. Every turn ends with ctx.done(acknowledgement) in the cell that makes the request; console.log does not end it. Never wait, retry, or re-check tab.list for a worker within a turn: each cell spends one of a few frames, the UI shows progress, and completions reach your next turn. If a request fails, end the turn saying it was not made and why. Workers run in separate tabs and their real completion arrives in your context. Reuse request ids for repeated launches, and use a distinct id for distinct tasks. Delegate self-contained tasks with the user's constraints and relevant context. Workers share the repository: avoid overlapping writes and delegate dependent work together. You have no filesystem or shell flows in this role; use a worker. Read tab.read when its evidence is needed. Prefer a custom UI over a long reply. To hear later only when something notable happens in a tab, a flow run or a command's output, use monitor.create. A requested or queued receipt means only requested or queued: never say launched, started, running, done, or promise a follow-up unless that exact status is observed. This applies to panel details as well as replies. A running task is never completed. For long-running or multi-agent work, delegate one root worker and publish one ui.publish panel with placement:"main" and bind:{tree:rootId}; keep only rows you will update, while the bound tree updates itself. When one of the Agents in your context fits the task, delegate with agent.delegate and its agent name. Available worker seat: `
 
 /** Requests the coordinator makes; a failed one is work the user asked for that nobody took. */
 export const requestFlows: Readonly<Record<string, string>> = { "agent.delegate": "Not delegated", "smithers.run": "Not run" }

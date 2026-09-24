@@ -192,6 +192,24 @@ it("accepts only named models in the delegate flow", async () => {
   expect(requests).toHaveLength(Object.keys(Models.delegateModels).length + 1)
 })
 
+it("teaches the coordinator honest receipts and the panel block contract", () => {
+  for (const rule of [
+    "final answer is normally ONE short sentence",
+    "Do not narrate flow names, ids, JSON",
+    "console.log does not end it",
+    "Never wait, retry, or re-check tab.list",
+    "If a request fails, end the turn saying it was not made and why",
+    "You have no filesystem or shell flows in this role",
+    "monitor.create",
+    "A requested or queued receipt means only requested or queued",
+    "This applies to panel details as well as replies",
+    "A running task is never completed",
+    "placement:\"main\" and bind:{tree:rootId}"
+  ]) expect(Runtime.coordinatorTeaching).toContain(rule)
+  for (const rule of ["kind:\"code\"", "kind:\"table\"", "Never invent actions the user did not request"])
+    expect(Panels.teaching).toContain(rule)
+})
+
 it("lets the agent retry a tab and reports why a retry is refused", async () => {
   const bindings = await Effect.runPromise(Runtime.source({
     publish: () => {},

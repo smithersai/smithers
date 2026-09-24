@@ -29,7 +29,7 @@ export const panel = (
     const done = children.filter((child) => child.status === "done").length
     const caption = transcript(tab.id).items.filter((item) => item.kind === "cell").at(-1)
     const current = caption?.kind === "cell" ? caption.prose.replace(/\s+/g, " ").slice(0, 48) : ""
-    const seat = tab.seat.split(":").at(-1) ?? tab.seat
+    const seat = (tab.activeSeat ?? tab.seat).split(":").at(-1) ?? tab.seat
     rows.push({
       id: `tree:${tab.id}`,
       label: `${"  ".repeat(level)}${children.length ? "▾ " : "  "}${glyph[tab.status] ?? "○"} ${tab.title}  ${seat}  ${elapsed(tab, now)}${current ? `  ${current}` : ""}${children.length ? `  ${done}/${children.length} children` : ""}`.slice(0, 240),

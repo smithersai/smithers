@@ -27,6 +27,16 @@ describe("FailureCopy.describe", () => {
     })
   })
 
+  it("maps legacy string-only provider limits without exposing their text", () => {
+    expect(FailureCopy.describe("The usage limit has been reached", "openai:gpt-6-sol")).toMatchObject({
+      headline: "ChatGPT usage limit reached",
+      fault: "wait",
+      line: "Wait for the provider reset."
+    })
+    expect(FailureCopy.describe("An unrelated failure", "openai:gpt-6-sol").headline)
+      .toBe("Worker stopped unexpectedly")
+  })
+
   it("classifies a wrapped harness engine failure", () => {
     expect(FailureCopy.describe({ cause: { _tag: "/harness/HarnessError", code: "engine_failed", message: "raw" } }))
       .toMatchObject({

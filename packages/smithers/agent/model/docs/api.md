@@ -183,6 +183,9 @@ values are `user`, `wait`, `infra`, `dependency`, and `bug`; actions are
 `resume`, `switch-model`, `wait`, and `details`. A model seat supplies the
 provider name for a limit. Unknown errors have a generic bug headline. Raw
 messages and stacks belong in technical details, never in the headline.
+For legacy persisted failures that contain only a provider limit message,
+`describe` maps recognized usage, rate, and quota limit text to the provider
+limit headline without displaying the raw message.
 
 ## `Route`
 

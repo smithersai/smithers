@@ -42,6 +42,7 @@ it("lets a worker delegate twice, wait for both, and projects their live tree", 
   const waiting = Effect.runPromise(wait.run({ input: { ids: ["a", "b"] } } as never))
   await tick()
   expect(workspace.snapshot().tabs[0]?.status).toBe("waiting")
+  expect(workspace.busy).toBe(true)
   controls.get("root/a")!({ _tag: "done", answer: "A" })
   controls.get("root/b")!({ _tag: "done", answer: "B" })
   expect(await waiting).toMatchObject({ outcome: "success", value: [
@@ -86,4 +87,56 @@ it("refuses depth four with a typed error and queues the seventh worker", async 
   const delegate = bindings.find((binding) => binding.descriptor.name === "agent.delegate")!
   expect(await Effect.runPromise(delegate.run({ input: { id: "too-deep", title: "No", prompt: "No" } } as never)))
     .toMatchObject({ outcome: "failure", message: expect.stringContaining("AgentDepthExceeded") })
+})
+
+it("cancels descendants and removes queued children when a parent stops", async () => {
+  const launched: string[] = []
+  const controls = new Map<string, (outcome: Host.Outcome) => void>()
+  const host: Host.Host = {
+    cwd: mkdtempSync(join(tmpdir(), "tui-cascade-")), judged: false,
+    compaction: async () => undefined, dispose: async () => {},
+    run: (input) => {
+      launched.push(input.source!)
+      return { done: new Promise((resolve) => controls.set(input.source!, resolve)),
+        cancel: () => controls.get(input.source!)?.({ _tag: "cancelled" }) }
+    }
+  }
+  const workspace = new Workspace({ host, workerSeat: "worker:test", history: () => [], persist: () => {} })
+  for (let index = 0; index < 6; index++) workspace.request({ id: `root${index}`, title: "Root", prompt: "Task" })
+  await tick()
+  const root = workspace.snapshot().tabs[0]!
+  workspace.requestChild(root, { id: "child", title: "Child", prompt: "Child task" })
+  const child = workspace.snapshot().tabs.at(-1)!
+  workspace.requestChild(child, { id: "grandchild", title: "Grandchild", prompt: "Grandchild task" })
+  expect(workspace.snapshot().tabs.filter((tab) => tab.parent !== undefined).map((tab) => tab.status)).toEqual(["queued", "queued"])
+  workspace.cancel(root.id)
+  await tick()
+  expect(workspace.snapshot().tabs.filter((tab) => tab.id === root.id || tab.parent !== undefined).map((tab) => tab.status))
+    .toEqual(["cancelled", "cancelled", "cancelled"])
+  controls.get("root1")!({ _tag: "done", answer: "done" })
+  await tick()
+  expect(launched).not.toContain(child.id)
+})
+
+it("releases a waiting parent and its subscription when the wait exits", async () => {
+  const controls = new Map<string, (outcome: Host.Outcome) => void>()
+  const host: Host.Host = {
+    cwd: mkdtempSync(join(tmpdir(), "tui-wait-exit-")), judged: false,
+    compaction: async () => undefined, dispose: async () => {},
+    run: (input) => ({ done: new Promise((resolve) => controls.set(input.source!, resolve)), cancel: () => {} })
+  }
+  const workspace = new Workspace({ host, workerSeat: "worker:test", history: () => [], persist: () => {} })
+  workspace.request({ id: "root", title: "Root", prompt: "Task" })
+  await tick()
+  workspace.requestChild(workspace.snapshot().tabs[0]!, { id: "child", title: "Child", prompt: "Task" })
+  await tick()
+  const abort = new AbortController()
+  const waiting = workspace.wait("root", ["child"], abort.signal)
+  expect(workspace.snapshot().tabs[0]?.status).toBe("waiting")
+  abort.abort()
+  await expect(waiting).rejects.toThrow("Wait stopped")
+  expect(workspace.snapshot().tabs[0]?.status).toBe("running")
+  controls.get("root/child")!({ _tag: "done", answer: "answer" })
+  await tick()
+  expect(workspace.snapshot().tabs[0]?.status).toBe("running")
 })

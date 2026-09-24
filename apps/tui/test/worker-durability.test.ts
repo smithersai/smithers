@@ -12,11 +12,12 @@ import { Workspace } from "../src/workspace.ts"
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
 const request = { id: "review", title: "Review", prompt: "Review the files.", model: "sol" as const }
 
-const fixture = (run: Host.Host["run"], restored?: ConstructorParameters<typeof Workspace>[0]["restored"]) => {
+const fixture = (run: Host.Host["run"], restored?: ConstructorParameters<typeof Workspace>[0]["restored"],
+  history: () => ReadonlyArray<import("../src/context.ts").Entry> = () => []) => {
   const records: Session.Record[] = []
   const host = { cwd: mkdtempSync(join(tmpdir(), "tui-durable-")), judged: false, compaction: async () => undefined,
     dispose: async () => {}, run } satisfies Host.Host
-  return { records, workspace: new Workspace({ host, workerSeat: "openai:gpt-6-astra", history: () => [],
+  return { records, workspace: new Workspace({ host, workerSeat: "openai:gpt-6-astra", history,
     persist: (record) => records.push(record), restored }) }
 }
 
@@ -47,6 +48,7 @@ describe("worker durability", () => {
     input!.onEvent(new AgentEvent.SeatFailedOver({ eventType: "flows.harness.seat-failed-over.v1", from: "openai:gpt-6-sol", to: "anthropic:claude", code: "rate_limited" }))
     expect(f.workspace.transcript("review").items.some((item) => item.kind === "note" && item.text.includes("↪ switched to anthropic:claude · ChatGPT limit"))).toBe(true)
     expect(f.workspace.snapshot().tabs[0]?.activeSeat).toBe("anthropic:claude")
+    expect(f.workspace.tree("review").rows[0]?.label).toContain("claude")
   })
 
   it("keeps an interrupted in-memory park and relaunches at wake", async () => {
@@ -177,5 +179,146 @@ describe("worker durability", () => {
     expect(inputs).toHaveLength(2)
     expect(inputs[1]?.seat).toBe("openai:gpt-6-sol")
     expect(f.workspace.snapshot().tabs[0]?.status).toBe("running")
+  })
+
+  it("restarts a retried worker after its old failed outcome", async () => {
+    const launches: Host.TurnInput[] = []
+    const first = fixture((input) => {
+      launches.push(input)
+      return { done: launches.length === 1
+        ? Promise.resolve({ _tag: "failed", message: "usage limit", detail: "stack" })
+        : new Promise(() => {}), cancel: () => {} }
+    })
+    first.workspace.request(request)
+    await tick()
+    first.workspace.retry(request.id)
+    await tick()
+    expect(launches).toHaveLength(2)
+    const restored = fixture((input) => {
+      launches.push(input)
+      return { done: new Promise(() => {}), cancel: () => {} }
+    }, Session.restore(first.records).workspace)
+    await tick()
+    expect(launches).toHaveLength(3)
+    expect(restored.workspace.snapshot().tabs[0]?.status).toBe("running")
+  })
+
+  it("restarts a reset relaunch after its old failed outcome", async () => {
+    const launches: Host.TurnInput[] = []
+    const first = fixture((input) => {
+      launches.push(input)
+      return { done: launches.length === 1
+        ? Promise.resolve({ _tag: "failed", message: "usage limit", detail: "stack",
+          error: new ModelError({ code: "rate_limited", message: "usage limit", resetAtEpochMillis: Date.now() + 10 }) })
+        : new Promise(() => {}), cancel: () => {} }
+    })
+    first.workspace.request(request)
+    await tick()
+    first.workspace.waitForReset(request.id)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(launches).toHaveLength(2)
+    const restored = fixture((input) => {
+      launches.push(input)
+      return { done: new Promise(() => {}), cancel: () => {} }
+    }, Session.restore(first.records).workspace)
+    await tick()
+    expect(launches).toHaveLength(3)
+    expect(restored.workspace.snapshot().tabs[0]?.status).toBe("running")
+  })
+
+  it("maps a restored legacy provider limit string to the failure headline", async () => {
+    const first = fixture(() => ({ done: new Promise(() => {}), cancel: () => {} }))
+    first.workspace.request(request)
+    await tick()
+    const tab = first.workspace.snapshot().tabs[0]!
+    Session.reopen(tab.file).append({ type: "outcome", at: Date.now(), prompt: tab.prompt,
+      outcome: { _tag: "failed", message: "The usage limit has been reached" } })
+    const restored = fixture(() => ({ done: new Promise(() => {}), cancel: () => {} }),
+      Session.restore(first.records).workspace)
+    expect(restored.workspace.snapshot().tabs[0]?.failure?.headline).toBe("ChatGPT usage limit reached")
+  })
+
+  it("retries a parked tab immediately and cancels its parked host turn", async () => {
+    const inputs: Host.TurnInput[] = []
+    let cancelled = 0
+    const f = fixture((input) => {
+      inputs.push(input)
+      return { done: new Promise(() => {}), cancel: () => { cancelled++ } }
+    })
+    f.workspace.request(request)
+    await tick()
+    inputs[0]!.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1", seat: "openai:gpt-6-sol",
+      wakeAt: Date.now() + 60_000, source: "reset", code: "rate_limited" }))
+    f.workspace.retry(request.id)
+    await tick()
+    expect(cancelled).toBe(1)
+    expect(inputs).toHaveLength(2)
+    expect(f.workspace.snapshot().tabs[0]?.status).toBe("running")
+  })
+
+  it("restores a queued request with the chat history captured when requested", async () => {
+    const oldHistory = [{ kind: "exchange" as const, user: "Original question", answer: "Original reply" }]
+    const first = fixture(() => ({ done: new Promise(() => {}), cancel: () => {} }), undefined, () => oldHistory)
+    for (let index = 0; index < 7; index++) first.workspace.request({ ...request, id: `worker-${index}` })
+    const queued = first.workspace.snapshot().tabs[6]!
+    expect(queued.status).toBe("queued")
+    expect(queued.history).toEqual(oldHistory)
+    const launches: Host.TurnInput[] = []
+    const controls = new Map<string, (outcome: Host.Outcome) => void>()
+    const restored = fixture((input) => {
+      launches.push(input)
+      return { done: new Promise((resolve) => controls.set(input.source!, resolve)), cancel: () => {} }
+    }, Session.restore(first.records).workspace, () => [{ kind: "exchange", user: "Later question", answer: "Later reply" }])
+    await tick()
+    controls.get("worker-0")!({ _tag: "done", answer: "done" })
+    await tick()
+    expect(launches.find((input) => input.source === "worker-6")?.history).toEqual(oldHistory)
+    expect(restored.workspace.snapshot().tabs.find((tab) => tab.id === "worker-6")?.status).toBe("running")
+  })
+
+  it("queues a model-unparked worker until the pool has a free seat", async () => {
+    const inputs = new Map<string, Host.TurnInput>()
+    const controls = new Map<string, (outcome: Host.Outcome) => void>()
+    const f = fixture((input) => {
+      inputs.set(input.source!, input)
+      return { done: new Promise((resolve) => controls.set(input.source!, resolve)), cancel: () => {} }
+    })
+    for (let index = 0; index < 7; index++) f.workspace.request({ ...request, id: `worker-${index}` })
+    await tick()
+    inputs.get("worker-0")!.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1",
+      seat: "openai:gpt-6-sol", wakeAt: Date.now() + 1, source: "reset", code: "rate_limited" }))
+    await tick()
+    expect(f.workspace.snapshot().tabs.find((tab) => tab.id === "worker-6")?.status).toBe("running")
+    const resumed = inputs.get("worker-0")!.onEvent(new AgentEvent.ModelUnparked({ eventType: "flows.harness.model-unparked.v1",
+      seat: "openai:gpt-6-sol", at: Date.now() }))
+    expect(f.workspace.snapshot().tabs.find((tab) => tab.id === "worker-0")?.status).toBe("queued")
+    controls.get("worker-1")!({ _tag: "done", answer: "done" })
+    await resumed
+    expect(f.workspace.snapshot().tabs.find((tab) => tab.id === "worker-0")?.status).toBe("running")
+    expect(f.workspace.snapshot().tabs.filter((tab) => tab.status === "running")).toHaveLength(6)
+  })
+
+  it("marks truncated continuation and keeps printed output plus recent cells", async () => {
+    const inputs: Host.TurnInput[] = []
+    const f = fixture((input) => {
+      inputs.push(input)
+      return { done: inputs.length === 1
+        ? Promise.resolve({ _tag: "failed", message: "old error", detail: "stack" })
+        : new Promise<Host.Outcome>(() => {}), cancel: () => {} }
+    })
+    f.workspace.request(request)
+    await tick()
+    const file = f.workspace.snapshot().tabs[0]!.file
+    const writer = Session.reopen(file)
+    writer.append({ type: "event", at: Date.now(), event: { _tag: "cell-produced", cell: { text: "x".repeat(30_000) } } as never })
+    writer.append({ type: "event", at: Date.now(), event: { _tag: "cell-printed", text: "IMPORTANT PRINTED RESULT" } as never })
+    writer.append({ type: "event", at: Date.now(), event: { _tag: "cell-produced", cell: { text: "inspect final file" } } as never })
+    f.workspace.retry(request.id)
+    await tick()
+    const answer = inputs[1]!.history.find((entry) => entry.kind === "exchange" && entry.user === request.prompt)
+    expect(answer?.kind === "exchange" ? answer.answer : "").toContain("IMPORTANT PRINTED RESULT")
+    expect(answer?.kind === "exchange" ? answer.answer : "").toContain("inspect final file")
+    expect(answer?.kind === "exchange" ? answer.answer : "").toContain("truncated")
+    expect(answer?.kind === "exchange" ? answer.answer.length : 0).toBeLessThanOrEqual(24_000)
   })
 })

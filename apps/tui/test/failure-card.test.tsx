@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { testRender } from "@opentui/react/test-utils"
 import { FailureCard } from "../src/panel-view.tsx"
+import * as FailureCopy from "@smthrs/model/FailureCopy"
+import { ModelError } from "@smthrs/model/ModelError"
 import * as Transcript from "../src/transcript.ts"
 import type * as Workspace from "../src/workspace.ts"
 
@@ -43,5 +45,15 @@ describe("worker failure card", () => {
     const frame = setup.captureCharFrame()
     expect(frame).toContain("1 of ~40 steps done")
     expect(frame).toContain("Files changed")
+  })
+
+  it("renders a timeout with a human fault label", async () => {
+    setup = await testRender(<FailureCard tab={{ ...tab, failure: FailureCopy.describe(
+      new ModelError({ code: "call_timeout", message: "request timed out" }), tab.seat
+    ) }} transcript={Transcript.empty} details={false} />, { width: 100, height: 8 })
+    await setup.renderOnce()
+    const frame = setup.captureCharFrame()
+    expect(frame).toContain("Model call timed out")
+    expect(frame).not.toContain("·  wait")
   })
 })
