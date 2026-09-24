@@ -190,10 +190,12 @@ func (h *RepoGatewayHandler) Relay(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	relayToPreviewGateway(w, r, h.RelayServiceURL, previewRelayTarget{
-		Domain:    target.Domain,
-		Prefix:    "/api/gateways/" + gatewayID,
-		Token:     h.RelayToken,
-		Principal: revocation.Principal{GatewayID: gatewayID, UserID: target.UserID, RepositoryID: target.RepositoryID, WorkspaceID: target.WorkspaceID, SandboxID: target.SandboxID},
+		Domain: target.Domain,
+		Prefix: "/api/gateways/" + gatewayID,
+		Token:  h.RelayToken,
+		// The gateway VM validates its operator token itself.
+		ForwardAuthorization: true,
+		Principal:            revocation.Principal{GatewayID: gatewayID, UserID: target.UserID, RepositoryID: target.RepositoryID, WorkspaceID: target.WorkspaceID, SandboxID: target.SandboxID},
 	})
 }
 
@@ -206,6 +208,10 @@ type previewRelayTarget struct {
 	// Token is the preview gateway's relay credential. The client never
 	// supplies it: whatever it sent under that header is replaced.
 	Token string
+	// ForwardAuthorization keeps the client's Authorization header. Set it
+	// only when the guest itself validates that credential (the repo gateway
+	// operator token); every other API-origin credential is always stripped.
+	ForwardAuthorization bool
 	// Principal tracks upstream connections for revocation.
 	Principal revocation.Principal
 	// ResponseHeaders are added to every relayed response.
@@ -235,13 +241,15 @@ func relayToPreviewGateway(w http.ResponseWriter, r *http.Request, relayServiceU
 	// (previewgateway.RoutePrefix); the bare path 404s on every request.
 	r.URL.Path = previewgateway.RoutePrefix + target.Domain + stripped
 	proxy := httputil.NewSingleHostReverseProxy(upstream)
-	if len(target.ResponseHeaders) > 0 {
-		proxy.ModifyResponse = func(response *http.Response) error {
-			for key, value := range target.ResponseHeaders {
-				response.Header.Set(key, value)
-			}
-			return nil
+	proxy.ModifyResponse = func(response *http.Response) error {
+		// The relay answers on the API origin: a guest cookie would land in
+		// the API's cookie jar, where it could shadow the session or CSRF
+		// cookie.
+		response.Header.Del("Set-Cookie")
+		for key, value := range target.ResponseHeaders {
+			response.Header.Set(key, value)
 		}
+		return nil
 	}
 	proxy.ErrorHandler = func(writer http.ResponseWriter, _ *http.Request, proxyErr error) {
 		writeRouteError(writer, r, pkgerrors.Internal("gateway relay unavailable: "+proxyErr.Error()))
@@ -270,9 +278,30 @@ func relayToPreviewGateway(w http.ResponseWriter, r *http.Request, relayServiceU
 	request := r.Clone(r.Context())
 	request.Host = target.Domain
 	request.Header.Set("Host", target.Domain)
-	request.Header.Del(previewgateway.RelayTokenHeader)
+	stripAPICredentials(request.Header, target.ForwardAuthorization)
 	if token := strings.TrimSpace(target.Token); token != "" {
 		request.Header.Set(previewgateway.RelayTokenHeader, token)
 	}
 	proxy.ServeHTTP(w, request)
+}
+
+// stripAPICredentials removes what a browser or an auth proxy attaches to a
+// request on the API origin: the session and CSRF cookies, proxy and
+// identity-provider headers (workspacePreviewCredentialHeaders) and the relay
+// token, which only the relay sets. The relay has already authorized on the
+// path token or the bearer token; the guest behind it is user-controlled and
+// must see none of them. Authorization survives only for a guest that
+// validates that credential itself.
+func stripAPICredentials(header http.Header, forwardAuthorization bool) {
+	var authorization []string
+	if forwardAuthorization {
+		authorization = header.Values("Authorization")
+	}
+	for _, name := range workspacePreviewCredentialHeaders {
+		header.Del(name)
+	}
+	header.Del(previewgateway.RelayTokenHeader)
+	if len(authorization) > 0 {
+		header["Authorization"] = authorization
+	}
 }

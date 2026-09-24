@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -190,4 +191,60 @@ func TestProxyWorkspacePreview_ZeroPaddedPortMatchesTarget(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	assert.Equal(t, target.Port(), strconv.FormatUint(uint64(svc.port), 10))
+}
+
+// The hosted gateway and the local proxy serve the same preview: whatever
+// the client asked for under the preview root (nested paths, escaped
+// segments, a trailing slash, the query) must reach the guest either way,
+// and a hosted base path stays in front of it.
+func TestProxyWorkspacePreview_HostedAndLocalPreservePathAndQuery(t *testing.T) {
+	t.Parallel()
+
+	for _, suffix := range []string{"", "assets/app.js?version=7", "dir/a%2Fb%20c/%E4%B8%96?x=%2F&x=2", "deep/link/"} {
+		for _, base := range []string{"", "/prefix%20name"} {
+			t.Run(base+"/"+suffix, func(t *testing.T) {
+				for _, local := range []bool{false, true} {
+					if local && base != "" {
+						continue
+					}
+					received := make(chan string, 1)
+					guest := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { received <- r.URL.RequestURI() }))
+					defer guest.Close()
+					guestURL, err := url.Parse(guest.URL)
+					require.NoError(t, err)
+					target := "https://preview.example" + base + "/"
+					if local {
+						target = guest.URL
+					}
+					h := &WorkspaceHandler{Service: &previewRouteService{access: services.WorkspacePreviewAccess{URL: target, Proxy: local}}}
+					// A real router: chi matches on RawPath when the request
+					// has one, and the handler must cope with that wildcard.
+					router := chi.NewRouter()
+					router.Get("/api/repos/alice/demo/workspaces/{id}/preview/{port}/*", func(w http.ResponseWriter, r *http.Request) {
+						h.ProxyWorkspacePreview(w, withWorkspaceRepoCtx(withAuth(r, 1, "alice"), "alice", "demo"))
+					})
+					rec := httptest.NewRecorder()
+					router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/workspaces/ws1/preview/"+guestURL.Port()+"/"+suffix, nil))
+					if local {
+						require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+						assert.Equal(t, "/"+suffix, <-received)
+					} else {
+						require.Equal(t, http.StatusTemporaryRedirect, rec.Code, rec.Body.String())
+						assert.Equal(t, target+suffix, rec.Header().Get("Location"))
+					}
+				}
+			})
+		}
+	}
+}
+
+// A hosted preview URL the adapter returns must be an absolute http(s) URL:
+// the redirect cannot be built from anything else.
+func TestProxyWorkspacePreview_HostedRelativeURLIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	h := &WorkspaceHandler{Service: &previewRouteService{access: services.WorkspacePreviewAccess{URL: "/relative", Proxy: false}}}
+	rec := httptest.NewRecorder()
+	h.ProxyWorkspacePreview(rec, previewRequest(t, "4317", "assets/app.js"))
+	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
 }

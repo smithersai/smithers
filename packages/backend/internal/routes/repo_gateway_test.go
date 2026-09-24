@@ -140,6 +140,9 @@ func TestRepoGatewayHandler_RelayAuthenticatesAndRewrites(t *testing.T) {
 		// a bare forwarded path 404s there.
 		assert.Equal(t, "/__preview/gw-vm.preview.jjhub.tech/v1/rpc/listWorkflows", r.URL.Path)
 		assert.Equal(t, "Bearer relay-token", r.Header.Get("Authorization"))
+		// The gateway VM validates that operator token itself; the API-origin
+		// session cookie is no business of the guest.
+		assert.Empty(t, r.Header.Values("Cookie"))
 		// The gateway refuses smithers-gw-* without the relay credential, and
 		// the client's own value for that header is never forwarded.
 		assert.Equal(t, "relay-secret", r.Header.Get(previewgateway.RelayTokenHeader))
@@ -161,6 +164,7 @@ func TestRepoGatewayHandler_RelayAuthenticatesAndRewrites(t *testing.T) {
 	router.Handle("/api/gateways/{gatewayID}/*", http.HandlerFunc(h.Relay))
 	req := httptest.NewRequest(http.MethodPost, "/api/gateways/gateway-1/v1/rpc/listWorkflows", nil)
 	req.Header.Set("Authorization", "Bearer relay-token")
+	req.Header.Set("Cookie", "smithers_session=session-secret")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)

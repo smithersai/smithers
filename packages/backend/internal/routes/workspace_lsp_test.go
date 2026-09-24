@@ -9,11 +9,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
@@ -757,4 +759,159 @@ func TestLSPFragments_SplitOnRuneBoundariesAndReassemble(t *testing.T) {
 	kind, _, err := lspClassifyFrame([]byte(`{"jsonrpc":"2.0","id":1,"method":"x"}`))
 	require.NoError(t, err)
 	assert.Equal(t, lspFrameMessage, kind, "a message with jsonrpc is never a fragment")
+}
+
+// The server binary is resolved from the workspace's own node_modules, so its
+// stdout is hostile input: a header line that never ends, or headers that
+// never stop, must fail at a small bound instead of growing in the API heap.
+// The sources are finite, so an unbounded read would still return; the
+// consumed count is what proves the bound.
+func TestLSPFrameReader_BoundsHeaderReads(t *testing.T) {
+	for name, input := range map[string]string{
+		"long line":    "X: " + strings.Repeat("a", 2<<20) + "\r\nContent-Length: 2\r\n\r\n{}",
+		"unterminated": strings.Repeat("a", 2<<20),
+		"aggregate":    strings.Repeat("X: a\r\n", 10000) + "Content-Length: 2\r\n\r\n{}",
+		"blank lines":  strings.Repeat("\r\n", 20000),
+	} {
+		t.Run(name, func(t *testing.T) {
+			source := strings.NewReader(input)
+			_, err := newLSPFrameReader(bufio.NewReaderSize(source, 64), 16).Next()
+			require.ErrorIs(t, err, errLSPHeaderTooLarge)
+			assert.LessOrEqual(t, len(input)-source.Len(), lspMaxHeaderBytes+64, "must reject before consuming the hostile stream")
+		})
+	}
+}
+
+// handshakeOnlySession serves a fixed stdout: what a launch script prints
+// before (or instead of) the ready line.
+type handshakeOnlySession struct {
+	*fakeLSPSSHSession
+	stdout io.Reader
+}
+
+func (s *handshakeOnlySession) StdoutPipe() (io.Reader, error) { return s.stdout, nil }
+
+func TestLSPSessionManager_StartBoundsReadyLine(t *testing.T) {
+	input := strings.Repeat("x", 2<<20)
+	source := strings.NewReader(input)
+	fake := newFakeLSPSSHSession()
+	defer fake.Close()
+	client := &fakeLSPSSHClient{}
+	m := NewLSPSessionManager(func(context.Context, services.WorkspaceSSHConnectionInfo) (lspSSHClient, lspSSHSession, error) {
+		return client, &handshakeOnlySession{fake, source}, nil
+	})
+	m.exitWait = time.Millisecond
+	// The guest exits once the relay closes its stdin, like a real server.
+	go func() { _, _ = io.Copy(io.Discard, fake.stdinR); fake.exit(1) }()
+
+	_, err := m.start(context.Background(), "s", services.WorkspaceSSHConnectionInfo{}, services.LanguageServerLaunch{})
+	require.ErrorIs(t, err, errLSPHeaderTooLarge)
+	// One bufio fill at most: the 64 KiB reader, never the 2 MiB line.
+	assert.LessOrEqual(t, len(input)-source.Len(), 64<<10)
+	assert.True(t, client.closed.Load(), "the SSH connection is closed with the launch")
+}
+
+// Two tabs, or a reconnect racing the attach it replaces, start the same
+// session id while neither launch has finished. Exactly one server may be
+// tracked afterwards and the other must be killed: an untracked server is
+// out of reach of Destroy, Close and revocation. The dial deliberately
+// ignores its context so the superseded launch completes late.
+func TestLSPSessionManager_OverlappingStartsKeepOneLiveServer(t *testing.T) {
+	for _, end := range []string{"replace", "destroy", "close"} {
+		t.Run(end, func(t *testing.T) {
+			entered := make(chan chan struct{}, 2)
+			clients := make(chan *fakeLSPSSHClient, 2)
+			m := NewLSPSessionManager(func(context.Context, services.WorkspaceSSHConnectionInfo) (lspSSHClient, lspSSHSession, error) {
+				release := make(chan struct{})
+				entered <- release
+				<-release
+				fake := newFakeLSPSSHSession()
+				go (&fakeLanguageServer{sess: fake}).serve(t)
+				client := &fakeLSPSSHClient{}
+				clients <- client
+				return client, fake, nil
+			})
+			m.exitWait = time.Millisecond
+			defer m.Close()
+			type result struct {
+				sess *lspSession
+				err  error
+			}
+			results := make(chan result, 2)
+			start := func() {
+				s, e := m.start(context.Background(), "same", services.WorkspaceSSHConnectionInfo{}, services.LanguageServerLaunch{})
+				results <- result{s, e}
+			}
+			go start()
+			first := <-entered
+			go start()
+			second := <-entered
+
+			close(second)
+			winner := <-results
+			winnerClient := <-clients
+			require.NoError(t, winner.err)
+			switch end {
+			case "destroy":
+				m.Destroy("same", "test")
+			case "close":
+				m.Close()
+			}
+
+			close(first)
+			older := <-results
+			olderClient := <-clients
+			require.Error(t, older.err, "a superseded launch must not publish")
+			assert.Nil(t, older.sess)
+			require.Eventually(t, olderClient.closed.Load, time.Second, time.Millisecond, "the superseded server is killed")
+
+			tracked := func() *lspSession {
+				m.mu.Lock()
+				defer m.mu.Unlock()
+				return m.sessions["same"]
+			}
+			if end == "replace" {
+				assert.Same(t, winner.sess, tracked())
+				assert.False(t, winner.sess.isDead())
+			} else {
+				assert.True(t, winner.sess.isDead())
+				// Teardown forgets the session once its kill completes.
+				require.Eventually(t, func() bool { return tracked() == nil }, time.Second, time.Millisecond)
+			}
+			m.Destroy("same", "test")
+			require.Eventually(t, winnerClient.closed.Load, time.Second, time.Millisecond)
+		})
+	}
+}
+
+// json.Marshal escapes `<`, `>`, `&`, U+2028/9 and control bytes to six
+// bytes: a hover or diagnostic full of JSX must still fragment under the
+// advertised 1 MiB frame, or a client enforcing that limit drops the relay.
+func TestLSPFragments_StayUnderFrameLimitWhenEscaped(t *testing.T) {
+	for _, value := range []string{"<>&", `\"`, "é世界😀\u2028", "\x01\t"} {
+		t.Run(strconv.Quote(value), func(t *testing.T) {
+			// Valid JSON that carries the raw characters, not their escapes.
+			quoted, err := json.Marshal(strings.Repeat(value, 400000))
+			require.NoError(t, err)
+			for from, to := range map[string]string{`\u003c`: "<", `\u003e`: ">", `\u0026`: "&", `\u2028`: "\u2028"} {
+				quoted = []byte(strings.ReplaceAll(string(quoted), from, to))
+			}
+			msg := append(append([]byte(`{"result":`), quoted...), '}')
+			require.True(t, json.Valid(msg))
+			require.Greater(t, len(msg), lspMaxMessageBytes)
+
+			var joined strings.Builder
+			frames := lspSplitFragments(msg, lspFragmentDataBytes)
+			for i, frame := range frames {
+				require.LessOrEqual(t, len(frame), lspMaxMessageBytes, "fragment %d", i+1)
+				var fragment lspFragment
+				require.NoError(t, json.Unmarshal(frame, &fragment))
+				assert.Equal(t, i+1, fragment.Seq)
+				assert.Equal(t, i+1 == len(frames), fragment.Last)
+				require.True(t, utf8.ValidString(fragment.Data))
+				joined.WriteString(fragment.Data)
+			}
+			assert.Equal(t, string(msg), joined.String())
+		})
+	}
 }

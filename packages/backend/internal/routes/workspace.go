@@ -240,38 +240,85 @@ func (h *WorkspaceHandler) ProxyWorkspacePreview(w http.ResponseWriter, r *http.
 		writeRouteError(w, r, resolveErr)
 		return
 	}
-	if !access.Proxy {
-		http.Redirect(w, r, access.URL, http.StatusTemporaryRedirect)
+	resource := previewResourceURL(r)
+	target, parseTargetErr := url.Parse(access.URL)
+	if parseTargetErr != nil || target.Host == "" || target.User != nil || target.Fragment != "" ||
+		(target.Scheme != "http" && target.Scheme != "https") {
+		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
 		return
 	}
-	target, parseTargetErr := url.Parse(access.URL)
-	if parseTargetErr != nil || target.Scheme != "http" || !previewLoopbackHost(target.Hostname()) ||
-		target.User != nil || target.Port() != strconv.FormatUint(parsedPort, 10) || (target.Path != "" && target.Path != "/") ||
-		target.RawQuery != "" || target.Fragment != "" {
+	if !access.Proxy {
+		// The hosted gateway serves the whole preview: the asset, deep link
+		// or query the client asked for goes with it, under the routed base.
+		http.Redirect(w, r, previewRedirectURL(target, resource, r.URL).String(), http.StatusTemporaryRedirect)
+		return
+	}
+	if target.Scheme != "http" || !previewLoopbackHost(target.Hostname()) ||
+		target.Port() != strconv.FormatUint(parsedPort, 10) || (target.Path != "" && target.Path != "/") ||
+		target.RawQuery != "" {
 		pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	previewPath := strings.TrimPrefix(chi.URLParam(r, "*"), "/")
-	externalPrefix := strings.TrimSuffix(r.URL.Path, "/"+previewPath)
-	if previewPath == "" {
+	externalPrefix := strings.TrimSuffix(r.URL.Path, resource.Path)
+	if resource.Path == "/" {
 		externalPrefix = strings.TrimSuffix(r.URL.Path, "/")
 	}
 	proxy := newWorkspacePreviewProxy(target, externalPrefix)
-	r.URL.Path = "/" + previewPath
-	r.URL.RawPath = ""
+	r.URL.Path = resource.Path
+	r.URL.RawPath = resource.RawPath
 	proxy.ErrorHandler = func(response http.ResponseWriter, _ *http.Request, _ error) {
 		pkgerrors.WriteError(response, pkgerrors.New(pkgerrors.CodePreviewUnavailable, "workspace preview unavailable"))
 	}
 	proxy.ServeHTTP(w, r)
 }
 
+// workspacePreviewCredentialHeaders are the API-origin credentials and
+// identity assertions no user-controlled guest may see: what the browser
+// attaches (cookies, the CSRF token), what an auth proxy in front of the API
+// asserts, and the Authorization header. The local preview proxy and the
+// preview-gateway relays (stripAPICredentials) both strip them.
+// previewResourceURL is the path under the preview root the client asked
+// for, "/" at the root. chi matches on RawPath when the request has one, so
+// the wildcard is then still escaped: an encoded slash stays one segment
+// instead of becoming a separator.
+func previewResourceURL(r *http.Request) *url.URL {
+	previewPath := "/" + strings.TrimPrefix(chi.URLParam(r, "*"), "/")
+	if r.URL.RawPath != "" {
+		if resource, err := url.Parse(previewPath); err == nil && resource.Path != "" {
+			return &url.URL{Path: resource.Path, RawPath: resource.RawPath}
+		}
+	}
+	return &url.URL{Path: previewPath}
+}
+
+// previewRedirectURL joins the hosted preview's base URL with the requested
+// resource and query: the base keeps any path prefix and query of its own.
+func previewRedirectURL(base *url.URL, resource *url.URL, requested *url.URL) *url.URL {
+	target := *base
+	if resource.Path != "/" {
+		target.RawPath = strings.TrimSuffix(base.EscapedPath(), "/") + resource.EscapedPath()
+		target.Path = strings.TrimSuffix(base.Path, "/") + resource.Path
+	}
+	if requested.RawQuery != "" {
+		if target.RawQuery != "" {
+			target.RawQuery += "&"
+		}
+		target.RawQuery += requested.RawQuery
+	}
+	target.ForceQuery = target.ForceQuery || requested.ForceQuery
+	return &target
+}
+
 var workspacePreviewCredentialHeaders = []string{
 	"Authorization",
 	"Cookie",
 	"Proxy-Authorization",
+	"X-CSRF-Token",
 	"Cf-Access-Jwt-Assertion",
 	"X-Forwarded-Access-Token",
+	"X-Forwarded-Email",
+	"X-Forwarded-User",
 	"X-Goog-Authenticated-User-Email",
 	"X-Goog-Authenticated-User-Id",
 }

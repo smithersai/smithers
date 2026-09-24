@@ -70,6 +70,13 @@ var errLanguageServerMissing = errors.New("language server missing in guest")
 // guest's shell did not resolve (NixOS before activation).
 var errLanguageServerGuestNotReady = errors.New("language server guest not ready")
 
+// errLanguageServerReplaced is a launch that a newer start, Destroy or Close
+// superseded before it published: its server is killed, never tracked.
+var errLanguageServerReplaced = errors.New("language server replaced by a newer client")
+
+// errLSPManagerClosed refuses starts after Close: the server is shutting down.
+var errLSPManagerClosed = errors.New("lsp session manager is closed")
+
 // lspStartError is a launch that ended before the ready line for any other
 // reason; the exit status and stderr tail go to the log, not the client.
 type lspStartError struct {
@@ -89,8 +96,15 @@ func (e *lspStartError) Error() string {
 // session (a newer attach replaces the older one), to revoke, and to close
 // on shutdown.
 type LSPSessionManager struct {
-	mu                sync.Mutex
-	sessions          map[string]*lspSession
+	mu       sync.Mutex
+	sessions map[string]*lspSession
+	// starting holds the launch in flight for each session id. A newer start
+	// for the same id cancels it, and a launch publishes only while it is
+	// still the one registered here, so two overlapping starts never leave
+	// an untracked server alive (the terminal manager has no such window
+	// because its process outlives the socket).
+	starting          map[string]*lspStartup
+	closed            bool
 	dial              lspDialer
 	idleTimeout       time.Duration
 	startTimeout      time.Duration
@@ -98,9 +112,13 @@ type LSPSessionManager struct {
 	startupRetryDelay time.Duration
 }
 
+// lspStartup is one launch that has not published yet.
+type lspStartup struct{ cancel context.CancelFunc }
+
 func NewLSPSessionManager(dial lspDialer) *LSPSessionManager {
 	return &LSPSessionManager{
 		sessions:          make(map[string]*lspSession),
+		starting:          make(map[string]*lspStartup),
 		dial:              dial,
 		idleTimeout:       defaultLSPIdleTimeout,
 		startTimeout:      defaultLSPStartTimeout,
@@ -111,18 +129,43 @@ func NewLSPSessionManager(dial lspDialer) *LSPSessionManager {
 
 // start launches the language server for sessionID over SSH and waits for
 // its ready line. A previous live relay for the same session is closed
-// first (1000, replaced by a newer client). The returned session is not yet
-// attached to a WebSocket; the caller attaches after the upgrade.
+// first (1000, replaced by a newer client), and so is a launch still in
+// flight for it: the newest start wins, an older one that completes later
+// kills its server and reports errLanguageServerReplaced. The returned
+// session is not yet attached to a WebSocket; the caller attaches after the
+// upgrade.
 func (m *LSPSessionManager) start(ctx context.Context, sessionID string, info services.WorkspaceSSHConnectionInfo, launch services.LanguageServerLaunch) (*lspSession, error) {
 	if m.dial == nil {
 		return nil, errors.New("lsp session manager dialer is nil")
 	}
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return nil, errLSPManagerClosed
+	}
 	if m.sessions == nil {
 		m.sessions = make(map[string]*lspSession)
 	}
+	if m.starting == nil {
+		m.starting = make(map[string]*lspStartup)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	startup := &lspStartup{cancel: cancel}
+	if pending := m.starting[sessionID]; pending != nil {
+		pending.cancel()
+	}
+	m.starting[sessionID] = startup
 	previous := m.sessions[sessionID]
+	delete(m.sessions, sessionID)
 	m.mu.Unlock()
+	defer func() {
+		cancel()
+		m.mu.Lock()
+		if m.starting[sessionID] == startup {
+			delete(m.starting, sessionID)
+		}
+		m.mu.Unlock()
+	}()
 	if previous != nil {
 		previous.destroy(websocket.StatusNormalClosure, lspCloseReasonReplaced)
 	}
@@ -146,7 +189,15 @@ func (m *LSPSessionManager) start(ctx context.Context, sessionID string, info se
 			return nil, err
 		}
 		m.mu.Lock()
+		if m.closed || m.starting[sessionID] != startup {
+			// Superseded while dialing: whoever displaced this launch owns
+			// the id now, so this server dies instead of being orphaned.
+			m.mu.Unlock()
+			sess.destroy(websocket.StatusNormalClosure, lspCloseReasonReplaced)
+			return nil, errLanguageServerReplaced
+		}
 		m.sessions[sessionID] = sess
+		delete(m.starting, sessionID)
 		m.mu.Unlock()
 		return sess, nil
 	}
@@ -202,7 +253,9 @@ func (m *LSPSessionManager) open(ctx context.Context, sessionID string, info ser
 
 	handshake := make(chan handshakeResult, 1)
 	go func() {
-		line, err := sess.br.ReadString('\n')
+		// Bounded: the guest chooses what it prints, the API does not
+		// buffer an endless line waiting for its newline.
+		line, err := readLSPLine(sess.br, lspMaxHeaderLineBytes)
 		handshake <- handshakeResult{line: strings.TrimRight(line, "\r\n"), err: err}
 	}()
 
@@ -242,6 +295,9 @@ func (m *LSPSessionManager) open(ctx context.Context, sessionID string, info ser
 	case <-sess.exited:
 	case <-time.After(m.exitWait):
 	}
+	if errors.Is(res.err, errLSPHeaderTooLarge) {
+		return nil, fmt.Errorf("language server ready line: %w", res.err)
+	}
 	return nil, classifyLSPStart(res.line, sess.exitCode(), sess.stderr.String())
 }
 
@@ -271,19 +327,31 @@ func (m *LSPSessionManager) removeSession(sessionID string, sess *lspSession) {
 	}
 }
 
-// Destroy ends the live relay for sessionID, if any.
+// Destroy ends the live relay for sessionID, if any, and cancels a launch
+// still in flight for it.
 func (m *LSPSessionManager) Destroy(sessionID string, reason string) {
 	m.mu.Lock()
 	sess := m.sessions[sessionID]
+	delete(m.sessions, sessionID)
+	if pending := m.starting[sessionID]; pending != nil {
+		pending.cancel()
+		delete(m.starting, sessionID)
+	}
 	m.mu.Unlock()
 	if sess != nil {
 		sess.destroy(websocket.StatusNormalClosure, reason)
 	}
 }
 
-// Close ends every live relay (server shutdown).
+// Close ends every live relay and every launch in flight (server shutdown);
+// later starts are refused.
 func (m *LSPSessionManager) Close() {
 	m.mu.Lock()
+	m.closed = true
+	for id, pending := range m.starting {
+		pending.cancel()
+		delete(m.starting, id)
+	}
 	sessions := make([]*lspSession, 0, len(m.sessions))
 	for _, sess := range m.sessions {
 		sessions = append(sessions, sess)

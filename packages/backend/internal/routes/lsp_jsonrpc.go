@@ -30,11 +30,20 @@ const (
 	// lspMaxAssembledBytes caps one reassembled message (all fragments).
 	lspMaxAssembledBytes = 16 << 20
 	// lspFragmentDataBytes is the raw byte budget per fragment. JSON string
-	// escaping can double it, which still fits under lspMaxMessageBytes.
-	lspFragmentDataBytes = 384 * 1024
+	// escaping expands one byte to at most six (`<` becomes `\u003c`, a
+	// control byte `\u0000`); 64 bytes cover the fragment envelope. Every
+	// encoded frame therefore stays under lspMaxMessageBytes.
+	lspFragmentDataBytes = (lspMaxMessageBytes - 64) / 6
+	// lspMaxHeaderLineBytes bounds one header line and the launch script's
+	// ready line; lspMaxHeaderBytes bounds one message's whole header block.
+	// The server binary comes from the workspace, so its stdout is hostile
+	// input: a line that never ends must not grow in the API's heap.
+	lspMaxHeaderLineBytes = 8 << 10
+	lspMaxHeaderBytes     = 16 << 10
 )
 
 var (
+	errLSPHeaderTooLarge       = errors.New("lsp: header exceeds the size cap")
 	errLSPMissingContentLength = errors.New("lsp: message without a Content-Length header")
 	errLSPMessageTooLarge      = errors.New("lsp: message exceeds the size cap")
 	errLSPNotAnObject          = errors.New("lsp: frame is not a JSON object")
@@ -58,8 +67,10 @@ func newLSPFrameReader(br *bufio.Reader, max int) *lspFrameReader {
 func (r *lspFrameReader) Next() ([]byte, error) {
 	length := -1
 	sawHeader := false
+	headerBytes := 0
 	for {
-		line, err := r.br.ReadString('\n')
+		line, err := readLSPLine(r.br, min(lspMaxHeaderLineBytes, lspMaxHeaderBytes-headerBytes))
+		headerBytes += len(line)
 		if err != nil {
 			if err == io.EOF && !sawHeader && line == "" {
 				return nil, io.EOF
@@ -100,6 +111,23 @@ func (r *lspFrameReader) Next() ([]byte, error) {
 	return body, nil
 }
 
+// readLSPLine reads through the next '\n', like bufio.Reader.ReadString,
+// but gives up with errLSPHeaderTooLarge once the line passes max bytes: the
+// bytes read so far are the only allocation, never the rest of the stream.
+func readLSPLine(br *bufio.Reader, max int) (string, error) {
+	var line []byte
+	for {
+		part, err := br.ReadSlice('\n')
+		if len(line)+len(part) > max {
+			return string(line), errLSPHeaderTooLarge
+		}
+		line = append(line, part...)
+		if err != bufio.ErrBufferFull {
+			return string(line), err
+		}
+	}
+}
+
 // lspEncodeMessage frames body for a server's stdin.
 func lspEncodeMessage(body []byte) []byte {
 	header := "Content-Length: " + strconv.Itoa(len(body)) + "\r\n\r\n"
@@ -117,9 +145,10 @@ type lspFragment struct {
 
 // lspSplitFragments encodes msg as ordered fragment frames of at most
 // dataBytes raw bytes each, cut on UTF-8 rune boundaries so every fragment
-// is a valid JSON string.
+// is a valid JSON string. dataBytes is clamped to lspFragmentDataBytes so no
+// escaping can push a frame over lspMaxMessageBytes.
 func lspSplitFragments(msg []byte, dataBytes int) [][]byte {
-	if dataBytes <= 0 {
+	if dataBytes <= 0 || dataBytes > lspFragmentDataBytes {
 		dataBytes = lspFragmentDataBytes
 	}
 	var frames [][]byte

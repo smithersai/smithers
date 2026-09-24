@@ -2,10 +2,14 @@ package routes
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -202,4 +206,80 @@ func (s *stubDesktopService) ObserveDesktop(context.Context, string, int64, int6
 
 func (s *stubDesktopService) InputDesktop(context.Context, string, int64, int64, services.DesktopInputRequest) (services.DesktopInputResponse, error) {
 	return services.DesktopInputResponse{}, pkgerrors.Internal("unused")
+}
+
+// loopbackPortDialer stands in for the preview gateway's sandbox dialer: every
+// preview domain resolves to one local guest server.
+type loopbackPortDialer string
+
+func (d loopbackPortDialer) Dial(ctx context.Context, _ string) (net.Conn, error) {
+	return (&net.Dialer{}).DialContext(ctx, "tcp", string(d))
+}
+
+// The desktop relay answers on the API origin, so the browser attaches the
+// product session and CSRF cookies to vnc.html and to the websockify upgrade;
+// an auth proxy in front of the API may add identity headers. The guest is
+// user-controlled: none of that may cross either proxy hop, and a cookie the
+// guest sets must not land in the API's cookie jar.
+func TestWorkspaceDesktopRelayStripsAPICredentialsAcrossBothHops(t *testing.T) {
+	received := make(chan http.Header, 2)
+	guest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Clone()
+		if r.URL.Path == "/websockify" {
+			ws, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer ws.CloseNow()
+			_, _, _ = ws.Read(r.Context())
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "smithers_session", Value: "forged"})
+		_, _ = w.Write([]byte("<html>novnc</html>"))
+	}))
+	defer guest.Close()
+	gateway := previewgateway.NewHandler(loopbackPortDialer(strings.TrimPrefix(guest.URL, "http://")), []string{".preview.jjhub.tech"}, nil)
+	gateway.SetRelayToken("relay-secret")
+	hop := httptest.NewServer(gateway)
+	defer hop.Close()
+	svc := &stubDesktopService{token: "desktop-token", target: services.WorkspaceDesktopRelayTarget{WorkspaceID: "ws1", Domain: "smithers-desk-vm.preview.jjhub.tech"}}
+	api := httptest.NewServer(newDesktopRelayRouter(&WorkspaceDesktopHandler{Service: svc, RelayServiceURL: hop.URL, RelayToken: "relay-secret"}))
+	defer api.Close()
+
+	headers := http.Header{}
+	for _, key := range workspacePreviewCredentialHeaders {
+		headers.Set(key, "platform-secret")
+	}
+	headers.Set("Cookie", "smithers_session=session-secret; smithers_csrf=csrf-secret")
+	headers.Set(previewgateway.RelayTokenHeader, "forged")
+
+	for _, path := range []string{"vnc.html", "websockify"} {
+		t.Run(path, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			endpoint := api.URL + "/api/workspaces/ws1/desktop/desktop-token/" + path
+			if path == "websockify" {
+				ws, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: headers.Clone()})
+				require.NoError(t, err)
+				defer ws.CloseNow()
+			} else {
+				req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+				require.NoError(t, err)
+				req.Header = headers.Clone()
+				res, err := http.DefaultClient.Do(req)
+				require.NoError(t, err)
+				res.Body.Close()
+				require.Equal(t, http.StatusOK, res.StatusCode)
+				assert.Empty(t, res.Header.Values("Set-Cookie"), "a guest cookie must not reach the API origin")
+			}
+			select {
+			case got := <-received:
+				for key := range headers {
+					assert.Empty(t, got.Values(key), key)
+				}
+			case <-ctx.Done():
+				t.Fatal("guest never saw the relayed request")
+			}
+		})
+	}
 }
