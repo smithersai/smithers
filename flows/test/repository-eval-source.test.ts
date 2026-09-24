@@ -70,7 +70,7 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
   // Immutable capture never snapshots, so every other jj method fails by default.
   const snapshots: string[] = []
   const owned = Layer.merge(Layer.succeed(NativeCoding, native), Jj.layerNoop({ snapshot: message =>
-    Effect.sync(() => { snapshots.push(message ?? ""); return { changeId: commit(root) } }) }))
+    Effect.sync(() => { snapshots.push(message ?? ""); const current = revision(); return { commitId: current.commitId, changeId: current.changeId } }) }))
     .pipe(Layer.provideMerge(NodeServices.layer))
   return { root, pinned, stranger, options, owned, snapshots, mode,
     unanswerable: { ...options, environment: { ...options.environment, PATH: blind } } }

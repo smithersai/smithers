@@ -258,6 +258,11 @@ func consumeOAuth2PendingAuthorizeCookie(w http.ResponseWriter, r *http.Request,
 // GitHub sign-in path). It generates an oauth state verifier, stashes it in a
 // cookie, and redirects to GitHub's authorize endpoint.
 func (h *AuthHandler) GetGitHubOAuthStart(w http.ResponseWriter, r *http.Request) {
+	returnTo := r.URL.Query().Get("return_to")
+	if returnTo != "" && !validBrowserReturn(returnTo) {
+		writeRouteError(w, r, errors.BadRequest("return_to must be a local path"))
+		return
+	}
 	stateVerifier, err := randomHex(16)
 	if err != nil {
 		writeRouteError(w, r, errors.Internal("failed to generate oauth state").WithCause(err))
@@ -270,6 +275,7 @@ func (h *AuthHandler) GetGitHubOAuthStart(w http.ResponseWriter, r *http.Request
 	}
 
 	setOAuthStateCookie(w, stateVerifier, time.Now().UTC().Add(10*time.Minute), h.AuthConfig.CookieSecure)
+	setBrowserReturnCookie(w, r, returnTo, stateVerifier, h.AuthConfig.CookieSecure)
 	// A browser login must never complete as a CLI flow: drop any stale CLI
 	// callback cookie left behind by an earlier (abandoned) CLI login so the
 	// upcoming callback cannot mint a broad CLI token and bounce the browser
@@ -340,6 +346,7 @@ func (h *AuthHandler) GetGitHubOAuthCLIStart(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	returnTo := consumeBrowserReturnCookie(w, r, h.AuthConfig.CookieSecure)
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 	if strings.TrimSpace(code) == "" || strings.TrimSpace(state) == "" {
@@ -410,7 +417,10 @@ func (h *AuthHandler) GetGitHubOAuthCallback(w http.ResponseWriter, r *http.Requ
 
 	redirectURL := result.RedirectURL
 	if redirectURL == "" || redirectURL == "/" {
-		redirectURL = strings.TrimRight(strings.TrimSpace(h.PublicOrigin), "/") + "/"
+		redirectURL = h.githubBrowserOrigin() + "/"
+	}
+	if returnTo != "" {
+		redirectURL = returnTo
 	}
 
 	// If the user was mid-way through an OAuth2 authorize flow (ticket 0106),

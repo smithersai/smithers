@@ -76,6 +76,7 @@ RUN npm install --global pnpm@11.25.0 --ignore-scripts --no-audit --no-fund \
   && node --version && pnpm --version && bun --version \
   && pnpm install --frozen-lockfile
 RUN pnpm --dir apps/app run build:web
+RUN pnpm --dir flows run typecheck
 RUN node flows/coding/build.mjs /out/flow-hosts/smithers-coding-host \
   && node flows/librarian/build.mjs /out/flow-hosts/smithers-librarian-host \
   && node apps/model-host/build.mjs /out/flow-hosts/smithers-model-host \

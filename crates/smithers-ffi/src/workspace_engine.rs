@@ -131,7 +131,7 @@ fn checked_input(raw: &[u8]) -> Result<Value> {
     let operation = field(&input, "operation")?;
     let expected: &[&str] = match operation {
         "snapshot" => &["operation", "repositoryPath"],
-        "restore" => &["operation", "repositoryPath", "changeId"],
+        "restore" => &["operation", "repositoryPath", "commitId"],
         "diff" => &["operation", "repositoryPath", "from", "to"],
         "eligible" => &["operation", "repositoryPath", "path", "byteLength"],
         _ => return Err(invalid("unsupported engine operation")),
@@ -143,7 +143,7 @@ fn checked_input(raw: &[u8]) -> Result<Value> {
     if !Path::new(repo).is_absolute() {
         return Err(invalid("repository path must be absolute"));
     }
-    for name in ["changeId", "from", "to"] {
+    for name in ["commitId", "from", "to"] {
         if let Some(value) = input.get(name) {
             exact_commit(value.as_str().ok_or_else(|| invalid("invalid commit ID"))?)?;
         }
@@ -248,7 +248,7 @@ pub fn run(raw: &[u8]) -> Result<Value> {
         "snapshot" | "restore" => {
             let restoring = field(&input, "operation")? == "restore";
             let source = if restoring {
-                Some(commit(repo, field(&input, "changeId")?)?)
+                Some(commit(repo, field(&input, "commitId")?)?)
             } else {
                 None
             };
@@ -307,9 +307,9 @@ pub fn run(raw: &[u8]) -> Result<Value> {
                         "restored tree differs from the immutable snapshot",
                     ));
                 }
-                Ok(json!({"changeId":id(&restored)?}))
+                Ok(json!({"commitId":id(&restored)?, "changeId":owner(&restored)?.0}))
             } else {
-                Ok(json!({"changeId":id(&current)?}))
+                Ok(json!({"commitId":id(&current)?, "changeId":owner(&current)?.0}))
             }
         }
         _ => Err(invalid("unsupported engine operation")),
@@ -372,14 +372,24 @@ mod tests {
         let first = call(dir.path(), "snapshot", json!({})).unwrap();
         fs::write(dir.path().join("file.txt"), "after\n").unwrap();
         let second = call(dir.path(), "snapshot", json!({})).unwrap();
+        assert_ne!(first["commitId"], second["commitId"]);
+        assert_eq!(first["changeId"], second["changeId"]);
+        assert_eq!(
+            second["commitId"],
+            id(&commit(dir.path(), "@").unwrap()).unwrap()
+        );
+        assert_eq!(
+            second["changeId"],
+            owner(&commit(dir.path(), "@").unwrap()).unwrap().0
+        );
         let diff = call(
             dir.path(),
             "diff",
-            json!({"from":first["changeId"], "to":second["changeId"]}),
+            json!({"from":first["commitId"], "to":second["commitId"]}),
         )
         .unwrap();
         assert!(diff["diff"].as_str().unwrap().contains("+after"));
-        call(dir.path(), "restore", json!({"changeId":first["changeId"]})).unwrap();
+        call(dir.path(), "restore", json!({"commitId":first["commitId"]})).unwrap();
         assert_eq!(
             fs::read_to_string(dir.path().join("file.txt")).unwrap(),
             "before\n"
@@ -390,7 +400,7 @@ mod tests {
     fn rejects_mutable_refs_and_extra_fields() {
         let dir = repo();
         assert_eq!(
-            call(dir.path(), "restore", json!({"changeId":"@"}))
+            call(dir.path(), "restore", json!({"commitId":"@"}))
                 .unwrap_err()
                 .code,
             "invalid_ref"

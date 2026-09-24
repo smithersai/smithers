@@ -44,7 +44,7 @@ for (const mode of ["valid", "missing-change", "missing-fast", "missing-slow", "
     if (mode === "unhandled-finding") Object.assign(changes[1]!.receipts[1]!, { findings: [{ owner: "first", sourceCommitId: implementations[1]!.head.commitId, message: "Unresolved review" }] })
     let snapshots = 0, reads = 0
     const leaf = FenceVibeSource.toLayer(fenceVibeSource).pipe(Layer.provide([
-      Jj.layerNoop({ snapshot: () => Effect.sync(() => { snapshots++; return { changeId: "fixture" } }) }),
+      Jj.layerNoop({ snapshot: () => Effect.sync(() => { snapshots++; return { commitId: "a".repeat(40), changeId: "k".repeat(32) } }) }),
       Layer.succeed(NativeCoding, { sourcePublication: "local-only", publishOriginalSource: () => Effect.die("Admission fixture has no cloud publication capability"), read: () => Effect.sync(() => { reads++; return { status: "read" as const, operationId: "new-operation",
         head: { ...implementations[1]!.head, kind: "resolved" as const, operationId: "new-operation", ...(mode === "source-moved" ? { treeId: "changed" } : {}) }, revisions: [] } }),
         apply: () => Effect.die("Admission must not rewrite or land") })
@@ -75,7 +75,7 @@ for (const mode of ["cloud", "local-only", "publication-unavailable", "original-
     const leaves = Layer.mergeAll(publicationLayers,
       ReadVibeRequest.toLayer(() => Effect.sync(() => { events.push("evidence"); return input })),
       FenceVibeSource.toLayer(fenceVibeSource)).pipe(Layer.provide([
-      Jj.layerNoop({ snapshot: () => Effect.sync(() => { events.push("snapshot"); return { changeId: "fixture" } }) }),
+      Jj.layerNoop({ snapshot: () => Effect.sync(() => { events.push("snapshot"); return { commitId: "a".repeat(40), changeId: "k".repeat(32) } }) }),
       Layer.succeed(NativeCoding, {
         sourcePublication: mode === "local-only" ? "local-only" : "cloud",
         publishOriginalSource: request => Effect.gen(function*() {

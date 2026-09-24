@@ -9,7 +9,7 @@ import type { NativeOptions } from "./native.ts"
 import { helperPath } from "./helper.ts"
 
 const CommitId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}$/))
-const Snapshot = Schema.Struct({ changeId: CommitId })
+const Snapshot = Schema.Struct({ commitId: CommitId, changeId: Schema.String.check(Schema.isPattern(/^[k-z]{32}$/)) })
 const Diff = Schema.Struct({ diff: Schema.String })
 const NativeError = Schema.Struct({ code: Schema.String, message: Schema.String })
 type Method = "snapshot" | "restore" | "diff"
@@ -75,9 +75,8 @@ const capture = <E>(method: Method, stream: Stream.Stream<Uint8Array, E>, limit:
 /** Supply the host's existing contained spawner. This same layer runs on Node
  * and Bun; neither it nor the helper owns an execution database.
  *
- * The opaque `snapshot().changeId` is a full immutable commit ID here. It is
- * deliberately distinct from the JJ change ID used by a planned atomic change.
- * Keeping the latter unchanged is the reason for this private configuration.
+ * The `snapshot().commitId` is the immutable preimage; `changeId` is the
+ * unchanged planned JJ change. Both match the shared Jj.Snapshot contract.
  */
 export const layerAt = (options: NativeOptions) => Layer.effect(Jj.Jj)(Effect.gen(function*() {
   const base = yield* Jj.Jj
@@ -134,7 +133,7 @@ export const layerAt = (options: NativeOptions) => Layer.effect(Jj.Jj)(Effect.ge
       Effect.mapError(error => Jj.isJjError(error) ? error : failure("snapshot", "unknown", "Native snapshot returned an invalid immutable reference", error))
     ),
     restore: reference => exact("restore", reference).pipe(
-      Effect.flatMap(changeId => invoke("restore", { changeId })),
+      Effect.flatMap(commitId => invoke("restore", { commitId })),
       Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)), Effect.asVoid,
       Effect.mapError(error => Jj.isJjError(error) ? error : failure("restore", "unknown", "Native restore returned an invalid immutable reference", error))
     ),

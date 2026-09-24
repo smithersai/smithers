@@ -31,6 +31,32 @@ cleanup() {
   status=$?
   trap - EXIT INT TERM
   if [ "$status" -ne 0 ]; then
+    if container_exists "$postgres"; then
+      docker exec "$postgres" psql -U "$database_user" -d "$database_name" -x -c \
+        'SELECT id, workflow_run_id, status, last_error FROM workflow_tasks ORDER BY id' >&2 || true
+    fi
+    if container_exists "$app"; then
+      docker exec -i "$app" /opt/smithers/bin/node --input-type=module >&2 <<'NODE' || true
+import { readdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+async function inspect(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory() && !['.git', '.jj'].includes(entry.name)) await inspect(path);
+    else if (entry.isFile() && entry.name === 'engine.db') {
+      const database = new DatabaseSync(path, { readOnly: true });
+      try {
+        for (const row of database.prepare("SELECT run_id, state_json FROM flows_runs WHERE status = 'failed'").all()) {
+          console.error(JSON.stringify({ run: row.run_id, result: JSON.parse(row.state_json).result }));
+        }
+      } finally { database.close(); }
+    }
+  }
+}
+await inspect('/var/lib/smithers/workspaces');
+NODE
+    fi
     for container in "$app" "$restored_app" "$refusal_app" "$provider" "$postgres" "$restored_postgres"; do
       if container_exists "$container"; then
         printf '\n--- %s logs ---\n' "$container" >&2

@@ -248,6 +248,9 @@ func buildRouter(
 	// Recovery must complete inside the metrics recorder so a panic's 500 is
 	// counted alongside ordinary responses.
 	r.Use(middleware.JSONRecoverer)
+	if strings.TrimSpace(cfg.Auth.GitHubClientID) != "" {
+		r.Use(middleware.CanonicalBrowserAuthOrigin(cfg.Auth.GitHubRedirectURL))
+	}
 
 	healthzHandler := routes.NewHealthzHandler(pool, cfg.RepoHost.URL)
 	readyzHandler := routes.NewReadyzHandler(pool, cfg.RepoHost.URL)

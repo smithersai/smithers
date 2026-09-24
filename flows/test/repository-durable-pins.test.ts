@@ -48,7 +48,7 @@ async function fixture(t: TestContext) {
     apply: () => Effect.die("editing mutations are forbidden"), publishOriginalSource: () => Effect.die("unexpected publication"),
     createSource: () => Effect.die("unexpected source creation") }
   const owned = Layer.merge(Layer.succeed(NativeCoding, native),
-    Jj.layerNoop({ snapshot: () => Effect.sync(() => { jj(root, "status"); return { changeId: revision().changeId } }) }))
+    Jj.layerNoop({ snapshot: () => Effect.sync(() => { jj(root, "status"); const current = revision(); return { commitId: current.commitId, changeId: current.changeId } }) }))
     .pipe(Layer.provideMerge(NodeServices.layer))
   /** What the replacement workspace's own repository can resolve. */
   const resolvesOnFreshClone = (commitId: string) =>

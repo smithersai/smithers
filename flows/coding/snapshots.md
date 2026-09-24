@@ -1,13 +1,13 @@
 # Native engine snapshots
 
 The configured coding host supplies the existing `Jj` Effect service through
-[`layerAt`](./snapshots.ts). It uses the Plue guest adapter's private `--engine`
+[`layerAt`](./snapshots.ts). It uses the shared Rust helper's `--engine`
 mode and the host's injected process spawner. Node and Bun use this same recipe;
 there is no sidecar, new snapshot database, or second identity service.
 
-The engine's `snapshot().changeId` is an opaque preimage reference. In this
-configuration it contains a **full immutable JJ commit ID**, while a planned
-atom continues to own its existing native JJ change ID. The guest captures with
+The engine's `snapshot().commitId` is a **full immutable JJ commit ID**.
+`snapshot().changeId` retains the stable identity of the planned atom.
+The helper captures with
 `jj status`, never `jj new` or `jj describe`. Action labels and attempt metadata
 stay in the existing flow journal. Both compensable action preimages and the
 engine's settled diff snapshots therefore preserve the planned atom.

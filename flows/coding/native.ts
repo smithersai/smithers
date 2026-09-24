@@ -31,7 +31,6 @@ export interface NativeOptions {
   /** Must exactly match the path bound by Plue provisioning. */
   readonly repositoryPath: string
   /** Host-selected executable location; never part of a flow input. */
-  readonly adapterPath?: string
   readonly helperPath?: string
   /** Explicit development capability. Local requests may run but cannot
    * produce cloud retention or become eligible for Vibe publication. */
