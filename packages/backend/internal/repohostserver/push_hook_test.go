@@ -3,8 +3,6 @@ package repohostserver
 import (
 	"context"
 	"encoding/json"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -45,6 +43,7 @@ func TestPushHookPayloadsFromRefDiff(t *testing.T) {
 			Owner:       "alice",
 			Repo:        "demo",
 			RefName:     "refs/heads/dev",
+			BeforeSHA:   "",
 			CommitSHA:   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 			PusherID:    42,
 			PusherLogin: "alice",
@@ -53,6 +52,7 @@ func TestPushHookPayloadsFromRefDiff(t *testing.T) {
 			Owner:       "alice",
 			Repo:        "demo",
 			RefName:     "refs/heads/main",
+			BeforeSHA:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			CommitSHA:   "cccccccccccccccccccccccccccccccccccccccc",
 			PusherID:    42,
 			PusherLogin: "alice",
@@ -61,6 +61,7 @@ func TestPushHookPayloadsFromRefDiff(t *testing.T) {
 			Owner:       "alice",
 			Repo:        "demo",
 			RefName:     "refs/tags/v1.0",
+			BeforeSHA:   "dddddddddddddddddddddddddddddddddddddddd",
 			CommitSHA:   "",
 			PusherID:    42,
 			PusherLogin: "alice",
@@ -101,37 +102,6 @@ func TestSendPushHookPostsJSONAndBearerToken(t *testing.T) {
 	}
 	if gotPayload != want {
 		t.Fatalf("unexpected payload %#v", gotPayload)
-	}
-}
-
-func TestDeliverPushHooksContinuesAfterCallbackFailure(t *testing.T) {
-	var gotRefs []string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload PushHookPayload
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode push hook request: %v", err)
-		}
-		gotRefs = append(gotRefs, payload.RefName)
-		if payload.RefName == "refs/heads/a" {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer srv.Close()
-
-	cfg := Config{PushHookCallbackURL: srv.URL, PushHookCallbackToken: "secret"}
-	payloads := []PushHookPayload{
-		{RefName: "refs/heads/a"},
-		{RefName: "refs/heads/b"},
-		{RefName: "refs/heads/c"},
-	}
-
-	deliverPushHooks(srv.Client(), cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), payloads)
-
-	want := []string{"refs/heads/a", "refs/heads/b", "refs/heads/c"}
-	if !reflect.DeepEqual(gotRefs, want) {
-		t.Fatalf("a failed callback must not skip sibling refs: got %v, want %v", gotRefs, want)
 	}
 }
 

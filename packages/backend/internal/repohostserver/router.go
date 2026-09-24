@@ -53,6 +53,8 @@ type Server struct {
 	logger     *slog.Logger
 	httpClient *http.Client
 	background sync.WaitGroup
+	pushOutbox *pushHookOutbox
+	stopReplay context.CancelFunc
 }
 
 type loadableFFIClient interface {
@@ -115,7 +117,27 @@ func New(cfg Config) (*Server, error) {
 	if err := ffi.Load(); err != nil {
 		return nil, err
 	}
-	return NewWithFFI(cfg, ffi)
+	server, err := NewWithFFI(cfg, ffi)
+	if err != nil {
+		return nil, err
+	}
+	server.startPushHookReplay(pushHookReplayInterval)
+	return server, nil
+}
+
+// startPushHookReplay delivers push events a previous process persisted but
+// never delivered, then keeps retrying failed deliveries until Shutdown.
+func (s *Server) startPushHookReplay(interval time.Duration) {
+	if s.config.PushHookCallbackURL == "" || s.stopReplay != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.stopReplay = cancel
+	s.background.Add(1)
+	go func() {
+		defer s.background.Done()
+		s.pushOutbox.runReplay(ctx, interval)
+	}()
 }
 
 // NewWithFFI creates a Server with the given FFI client implementation.
@@ -130,7 +152,7 @@ func NewWithFFI(cfg Config, ffi FFIClient) (*Server, error) {
 	}
 
 	logger := slog.New(jjmiddleware.NewGCPJSONHandler(os.Stdout, slog.LevelInfo))
-	return &Server{
+	server := &Server{
 		config:     cfg,
 		ffi:        ffi,
 		metrics:    metrics,
@@ -138,7 +160,9 @@ func NewWithFFI(cfg Config, ffi FFIClient) (*Server, error) {
 		refExports: newRefExportCache(),
 		logger:     logger,
 		httpClient: pushHookClient(),
-	}, nil
+	}
+	server.pushOutbox = newPushHookOutbox(server)
+	return server, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -238,6 +262,9 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.stopReplay != nil {
+		s.stopReplay()
+	}
 	done := make(chan struct{})
 	go func() {
 		s.background.Wait()
@@ -866,10 +893,26 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
+	// Persist the push events before jj imports the refs and before git's
+	// response: once the client sees success, the events survive a crash and
+	// the outbox replay delivers them. A push whose events cannot be persisted
+	// is rolled back rather than published without them.
+	var outboxPaths []string
+	if shouldDispatchPushHooks {
+		payloads := pushHookPayloadsFromRefDiff(beforeRefs, afterRefs, owner, repo, pushHookSenderFromHeaders(r.Header))
+		if len(payloads) > 0 {
+			outboxPaths, err = s.pushOutbox.persist(payloads)
+			if err != nil {
+				return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, err)
+			}
+		}
+	}
+
 	if err := s.ffi.ImportGitRefs(repoPath); err != nil {
 		if s.logger != nil {
 			s.logger.Warn("git receive-pack succeeded but jj ref import failed", "owner", owner, "repo", repo, "error", err)
 		}
+		s.pushOutbox.discard(outboxPaths)
 		return rollBackPublishedPush(enforceCtx, gitDir, beforeRefs, afterRefs, fmt.Errorf("import git refs after receive-pack: %w", err))
 	}
 
@@ -878,15 +921,12 @@ func (s *Server) receivePack(w http.ResponseWriter, r *http.Request) error {
 	// clones from dozens of tasks at the same moment.
 	s.warmGitRefs(repoPath)
 
-	if shouldDispatchPushHooks {
-		payloads := pushHookPayloadsFromRefDiff(beforeRefs, afterRefs, owner, repo, pushHookSenderFromHeaders(r.Header))
-		if len(payloads) > 0 {
-			s.background.Add(1)
-			go func(payloads []PushHookPayload) {
-				defer s.background.Done()
-				deliverPushHooks(s.httpClient, s.config, s.logger, payloads)
-			}(payloads)
-		}
+	if len(outboxPaths) > 0 {
+		s.background.Add(1)
+		go func(paths []string) {
+			defer s.background.Done()
+			s.pushOutbox.deliverPaths(context.Background(), paths)
+		}(outboxPaths)
 	}
 
 	w.Header().Set("Content-Type", "application/x-git-receive-pack-result")

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -20,24 +19,14 @@ import (
 // deadline partway through and silently drop the remaining refs.
 const pushHookDeliveryTimeout = 10 * time.Second
 
-// deliverPushHooks sends one callback per changed ref. Deliveries are
-// independent: a failure for one ref is logged and never skips the remaining
-// refs, since each ref's webhook/config-sync/workflow dispatch stands alone.
-func deliverPushHooks(client *http.Client, cfg Config, logger *slog.Logger, payloads []PushHookPayload) {
-	for _, payload := range payloads {
-		ctx, cancel := context.WithTimeout(context.Background(), pushHookDeliveryTimeout)
-		err := sendPushHook(ctx, client, cfg, payload)
-		cancel()
-		if err != nil && logger != nil {
-			logger.Warn("push hook callback failed", "ref_name", payload.RefName, "error", err)
-		}
-	}
-}
-
+// PushHookPayload is one ref update sent to the API. DeliveryID is stable
+// across retries of the same event so the API can drop redeliveries.
 type PushHookPayload struct {
+	DeliveryID  string `json:"delivery_id"`
 	Owner       string `json:"owner"`
 	Repo        string `json:"repo"`
 	RefName     string `json:"ref_name"`
+	BeforeSHA   string `json:"before_sha"`
 	CommitSHA   string `json:"commit_sha"`
 	PusherID    int64  `json:"pusher_id"`
 	PusherLogin string `json:"pusher_login"`
@@ -49,37 +38,45 @@ type PushHookSender struct {
 }
 
 func sendPushHook(ctx context.Context, client *http.Client, cfg Config, payload PushHookPayload) error {
+	_, err := sendPushHookResult(ctx, client, cfg, payload)
+	return err
+}
+
+// sendPushHookResult posts one payload and reports whether the API accepted
+// it (ok) or no longer knows the repository (not_found). Any other outcome is
+// an error the caller must retry.
+func sendPushHookResult(ctx context.Context, client *http.Client, cfg Config, payload PushHookPayload) (string, error) {
 	if cfg.PushHookCallbackURL == "" {
-		return nil
+		return pushHookResultOK, nil
 	}
 	if cfg.PushHookCallbackToken == "" {
-		return fmt.Errorf("push hook callback token is not configured")
+		return "", fmt.Errorf("push hook callback token is not configured")
 	}
 
 	body := mustMarshalJSON(payload)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.PushHookCallbackURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("create push hook request: %w", err)
+		return "", fmt.Errorf("create push hook request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+cfg.PushHookCallbackToken)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send push hook callback request: %w", err)
+		return "", fmt.Errorf("send push hook callback request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound && repositoryNotFound(resp) {
 		// The repository was deleted after the push; nothing to dispatch.
-		return nil
+		return pushHookResultNotFound, nil
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return fmt.Errorf("push hook callback returned status %d", resp.StatusCode)
+		return "", fmt.Errorf("push hook callback returned status %d", resp.StatusCode)
 	}
 
-	return nil
+	return pushHookResultOK, nil
 }
 
 // repositoryNotFound reports whether a 404 carries the API's typed not_found
@@ -151,6 +148,7 @@ func pushHookPayloadsFromRefDiff(beforeRefs, afterRefs map[string]string, owner,
 			Owner:       owner,
 			Repo:        repo,
 			RefName:     refName,
+			BeforeSHA:   beforeSHA,
 			CommitSHA:   afterSHA,
 			PusherID:    sender.PusherID,
 			PusherLogin: sender.PusherLogin,

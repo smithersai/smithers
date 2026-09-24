@@ -1363,11 +1363,15 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		ConfigSync:     configSyncService,
 		SearchIndex:    services.NewSearchIndexer(queries, repoHostClient, pool),
 		ChangeRecorder: changeService,
+		Events:         queries,
 	}
 	if cfg.FeatureFlags.Workflows {
 		pushHookHandler.WorkflowSync = workflowSyncService
 		pushHookHandler.WorkflowRun = workflowRunService
 	}
+	// The push callback only records the event; this worker runs its
+	// webhooks, change sync, workflow runs and indexing with retries.
+	repoPushEventWorker := services.NewRepoPushEventWorker(queries, pushHookHandler)
 	canaryReportHandler := &routes.CanaryReportHandler{
 		Store: hostedQueries,
 	}
@@ -1634,6 +1638,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if options.topology.workers() {
 		launchWorker(func() { webhookWorker.Start(workerCtx) })
+		launchWorker(func() { repoPushEventWorker.Start(workerCtx) })
 	}
 	// R3: the reconciliation backstop for the synced GitHub metadata store —
 	// webhooks are hints; this sweep (oldest staleness first, adaptive

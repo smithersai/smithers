@@ -25,7 +25,7 @@ func TestPushHook_H_RemainingPostAndWorkflowBranches(t *testing.T) {
 		}
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
 		rec := httptest.NewRecorder()
-		handler.PostPushEvent(rec, req)
+		postAndProcess(t, handler, rec, req)
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
 
 		handler = &InternalPushHookHandler{
@@ -35,7 +35,7 @@ func TestPushHook_H_RemainingPostAndWorkflowBranches(t *testing.T) {
 		}
 		req = httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo","commit_sha":"abc","pusher_id":7}`))
 		rec = httptest.NewRecorder()
-		handler.PostPushEvent(rec, req)
+		postAndProcess(t, handler, rec, req)
 		require.Equal(t, http.StatusNoContent, rec.Code)
 	})
 
@@ -48,10 +48,11 @@ func TestPushHook_H_RemainingPostAndWorkflowBranches(t *testing.T) {
 			WorkflowRun:  &pushHookHWorkflowRun{err: errors.New("dispatch failed")},
 			ConfigSync:   &pushHookHConfigSync{err: errors.New("sync failed")},
 		}
-		handler.handleWorkflowsForPush(101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 7, PusherLogin: "alice"})
+		err := handler.handleWorkflowsForPush(context.Background(), 101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 7, PusherLogin: "alice"})
+		require.ErrorContains(t, err, "workflow dispatch", "only a dispatch failure fails the step")
 
 		handler.WorkflowSync = &pushHookHWorkflowSync{persistErr: errors.New("persist failed")}
-		handler.handleWorkflowsForPush(101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 7, PusherLogin: "alice"})
+		handler.handleWorkflowsForPush(context.Background(), 101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 7, PusherLogin: "alice"})
 	})
 
 	t.Run("permission helpers fail closed", func(t *testing.T) {
@@ -74,7 +75,7 @@ func TestPushHook_H_RemainingPostAndWorkflowBranches(t *testing.T) {
 			RepoResolver: &pushHookHRepoResolver{repo: db.Repository{ID: 101, DefaultBookmark: "main"}},
 			ConfigSync:   &pushHookHConfigSync{},
 		}
-		handler.handleWorkflowsForPush(101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 0})
+		handler.handleWorkflowsForPush(context.Background(), 101, PushHookEventRequest{Ref: "refs/heads/main", CommitSHA: "abc", PusherID: 0})
 	})
 }
 

@@ -1744,6 +1744,7 @@ func TestReceivePackPushHooksUseAcceptedRefDiff(t *testing.T) {
 				Owner:       "alice",
 				Repo:        "demo",
 				RefName:     "refs/heads/main",
+				BeforeSHA:   "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 				CommitSHA:   "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
 				PusherID:    42,
 				PusherLogin: "alice",
@@ -1761,8 +1762,17 @@ func TestReceivePackPushHooksUseAcceptedRefDiff(t *testing.T) {
 			},
 		},
 	}
+	for i := range gotCallbacks {
+		if gotCallbacks[i].Payload.DeliveryID == "" {
+			t.Fatalf("callback %d has no delivery id", i)
+		}
+		gotCallbacks[i].Payload.DeliveryID = ""
+	}
 	if !reflect.DeepEqual(gotCallbacks, want) {
 		t.Fatalf("unexpected callbacks: %#v", gotCallbacks)
+	}
+	if files := outboxFiles(t, srv.pushOutbox.root()); len(files) != 0 {
+		t.Fatalf("acknowledged push events must leave the outbox: %v", files)
 	}
 }
 

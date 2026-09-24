@@ -129,7 +129,7 @@ func TestInternalPushHookHandler_PostPushEvent_DispatchesPushEvent(t *testing.T)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, webhooks.EventTypePush, dispatcher.dispatchedType)
@@ -159,7 +159,7 @@ func TestInternalPushHookHandler_PostPushEvent_RecordsChangeRevisions(t *testing
 	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	select {
@@ -184,17 +184,19 @@ func TestInternalPushHookHandler_PostPushEvent_RevisionFailureDoesNotStopDispatc
 	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewBufferString(`{"owner":"alice","repo":"demo"}`))
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	assert.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, webhooks.EventTypePush, dispatcher.dispatchedType)
 }
 
-func TestInternalPushHookHandler_PostPushEvent_SlowHistoryDoesNotBlockWorkflow(t *testing.T) {
+// Steps of one push event run concurrently: an hour-long history import
+// must not hold back workflow dispatch, and the history step gets its own
+// deadline.
+func TestInternalPushHookHandler_ProcessRepoPushEvent_SlowHistoryDoesNotBlockWorkflow(t *testing.T) {
 	t.Parallel()
 
 	release := make(chan struct{})
-	defer close(release)
 	started := make(chan context.Context, 1)
 	recorder := &mockPushHookChangeRecorder{
 		recordFn: func(ctx context.Context) error {
@@ -208,22 +210,10 @@ func TestInternalPushHookHandler_PostPushEvent_SlowHistoryDoesNotBlockWorkflow(t
 		RepoResolver: &mockPushHookRepoResolver{}, Dispatcher: &mockPushHookDispatcher{},
 		ChangeRecorder: recorder, WorkflowRun: runner,
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewBufferString(`{"owner":"alice","repo":"demo","ref_name":"refs/heads/main","commit_sha":"abc","pusher_id":42}`)).WithContext(ctx)
-	rec := httptest.NewRecorder()
-	returned := make(chan struct{})
-	go func() {
-		handler.PostPushEvent(rec, req)
-		close(returned)
-	}()
-	select {
-	case <-returned:
-	case <-time.After(5 * time.Second):
-		t.Fatal("push callback blocked on history recording")
-	}
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	cancel() // The transport completing must not cancel the background import.
+	event := db.RepoPushEvent{ID: 1, RepositoryID: 101, Owner: "alice", Repo: "demo", RefName: "refs/heads/main", CommitSha: "abc", PusherID: 42}
+	processed := make(chan error, 1)
+	go func() { processed <- handler.ProcessRepoPushEvent(context.Background(), event, nil) }()
+
 	select {
 	case recordCtx := <-started:
 		require.NoError(t, recordCtx.Err())
@@ -238,6 +228,13 @@ func TestInternalPushHookHandler_PostPushEvent_SlowHistoryDoesNotBlockWorkflow(t
 		assert.Equal(t, int64(42), call.userID)
 	case <-time.After(5 * time.Second):
 		t.Fatal("workflow dispatch blocked on history recording")
+	}
+	close(release)
+	select {
+	case err := <-processed:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("processing did not finish after history completed")
 	}
 }
 
@@ -266,7 +263,7 @@ func TestInternalPushHookHandler_PostPushEvent_RepoNotFound_Returns404(t *testin
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNotFound, rec.Code)
 	assert.Empty(t, dispatcher.dispatchedType, "should not dispatch if repo not found")
@@ -297,7 +294,7 @@ func TestInternalPushHookHandler_PostPushEvent_WebhookEnqueueFailureStillRunsPus
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	select {
@@ -317,7 +314,7 @@ func TestInternalPushHookHandler_PostPushEvent_InvalidBody_Returns400(t *testing
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
@@ -416,11 +413,14 @@ func (m *mockPushHookConfigSyncer) SyncFromCommit(ctx context.Context, input con
 
 type mockPushHookSearchIndexer struct {
 	calls chan services.SearchIndexPushInput
+	err   error
 }
 
 func (m *mockPushHookSearchIndexer) IndexPush(_ context.Context, input services.SearchIndexPushInput) error {
-	m.calls <- input
-	return nil
+	if m.calls != nil {
+		m.calls <- input
+	}
+	return m.err
 }
 
 func TestInternalPushHookHandler_PostPushEvent_StartsCodeSearchIndexing(t *testing.T) {
@@ -443,7 +443,7 @@ func TestInternalPushHookHandler_PostPushEvent_StartsCodeSearchIndexing(t *testi
 	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
 	select {
@@ -500,7 +500,7 @@ func TestInternalPushHookHandler_PostPushEvent_LoadsPersistsAndDispatchesDefault
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
@@ -596,7 +596,7 @@ func TestInternalPushHookHandler_PostPushEvent_NonAdminPusherSkipsConfigSync(t *
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
@@ -669,7 +669,7 @@ func TestInternalPushHookHandler_PostPushEvent_NonDefaultBookmarkSkipsPersistenc
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 
@@ -736,7 +736,7 @@ func TestInternalPushHookHandler_PostPushEvent_LoadFailureFallsBackToPersistedDe
 	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	// Handler returns 204 regardless of workflow errors.
 	require.Equal(t, http.StatusNoContent, rec.Code)
@@ -781,7 +781,7 @@ func TestInternalPushHookHandler_PostPushEvent_NilWorkflowServices_NoError(t *te
 	req := httptest.NewRequest(http.MethodPost, "/internal/repo-host/push-events", bytes.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
@@ -824,7 +824,7 @@ func TestInternalPushHookHandler_PostPushEvent_WorkflowSyncContextHasDeadline(t 
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
-	handler.PostPushEvent(rec, req)
+	postAndProcess(t, handler, rec, req)
 
 	require.Equal(t, http.StatusNoContent, rec.Code)
 

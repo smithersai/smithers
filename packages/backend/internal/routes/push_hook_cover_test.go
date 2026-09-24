@@ -119,7 +119,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 		assert.Contains(t, rec.Body.String(), "Invalid JSON payload")
@@ -132,7 +132,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
 	})
@@ -147,7 +147,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
@@ -162,7 +162,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo","ref_name":"refs/heads/main","pusher_id":7,"pusher_login":"alice"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusNoContent, rec.Code)
 	})
@@ -177,7 +177,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
@@ -192,7 +192,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
 		assert.NotContains(t, rec.Body.String(), "pool exhausted")
@@ -209,7 +209,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo","ref_name":"refs/heads/main","pusher_id":7,"pusher_login":"alice"}`))
 		rec := httptest.NewRecorder()
 
-		h.PostPushEvent(rec, req)
+		postAndProcess(t, h, rec, req)
 
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		assert.Equal(t, int64(101), dispatcher.repoID)
@@ -243,7 +243,7 @@ func TestPushHook_Cov_WorkflowAndPermissionHelpers(t *testing.T) {
 			ConfigSync:   configSync,
 		}
 
-		h.handleWorkflowsForPush(101, PushHookEventRequest{
+		h.handleWorkflowsForPush(context.Background(), 101, PushHookEventRequest{
 			Ref:         "refs/heads/main",
 			CommitSHA:   "abc123",
 			PusherID:    7,

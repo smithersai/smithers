@@ -533,7 +533,49 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
 	})
 
-	t.Run("push_hook_callback_failure_stops_background_dispatch", func(t *testing.T) {
+	t.Run("unpersistable_push_event_rolls_back_push", func(t *testing.T) {
+		t.Setenv("GIT_STUB_STATE_FILE", filepath.Join(t.TempDir(), "state"))
+		updateLog := filepath.Join(t.TempDir(), "update-ref")
+		t.Setenv("GIT_STUB_UPDATE_LOG", updateLog)
+		installGitStub(t, "#!/bin/sh\nif [ \"$1\" = \"--git-dir\" ] && [ \"$3\" = \"update-ref\" ]; then echo \"$@\" >> \"$GIT_STUB_UPDATE_LOG\"; exit 0; fi\nif [ \"$1\" = \"--git-dir\" ]; then\n  if [ -f \"$GIT_STUB_STATE_FILE\" ]; then printf 'refs/heads/main\\000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\n'; else printf 'refs/heads/main\\000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; fi\n  exit 0\nfi\nif [ \"$1\" = \"receive-pack\" ]; then cat >/dev/null; : > \"$GIT_STUB_STATE_FILE\"; printf ok; exit 0; fi\nexit 1\n")
+		imported := false
+		srv := newTestServerWithMock(t, &mockFFI{importGitRefsFn: func(string) error { imported = true; return nil }})
+		srv.config.PushHookCallbackURL = "https://example.test/hook"
+		// A regular file where the outbox directory belongs makes every
+		// persist fail.
+		if err := os.WriteFile(filepath.Join(srv.config.StoragePath, pushHookOutboxDirName), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
+			t.Fatalf("mkdir git dir: %v", err)
+		}
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
+		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
+		if imported {
+			t.Fatal("jj must not import refs whose push events were not persisted")
+		}
+		log, err := os.ReadFile(updateLog)
+		if err != nil || !strings.Contains(string(log), "refs/heads/main aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+			t.Fatalf("push was not rolled back to its previous ref: %q (%v)", log, err)
+		}
+	})
+
+	t.Run("jj_import_failure_discards_persisted_push_events", func(t *testing.T) {
+		t.Setenv("GIT_STUB_STATE_FILE", filepath.Join(t.TempDir(), "state"))
+		installGitStub(t, "#!/bin/sh\nif [ \"$1\" = \"--git-dir\" ] && [ \"$3\" = \"update-ref\" ]; then exit 0; fi\nif [ \"$1\" = \"--git-dir\" ]; then\n  if [ -f \"$GIT_STUB_STATE_FILE\" ]; then printf 'refs/heads/main\\000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\n'; else printf 'refs/heads/main\\000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; fi\n  exit 0\nfi\nif [ \"$1\" = \"receive-pack\" ]; then cat >/dev/null; : > \"$GIT_STUB_STATE_FILE\"; printf ok; exit 0; fi\nexit 1\n")
+		srv := newTestServerWithMock(t, &mockFFI{importGitRefsFn: func(string) error { return errors.New("import failed") }})
+		srv.config.PushHookCallbackURL = "https://example.test/hook"
+		if err := os.MkdirAll(srv.config.GitBackendPath("alice", "demo"), 0o755); err != nil {
+			t.Fatalf("mkdir git dir: %v", err)
+		}
+		rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/alice/demo/git/receive-pack", strings.NewReader("0000"))
+		routerCovRequireStatus(t, rec, http.StatusInternalServerError)
+		if files := outboxFiles(t, srv.pushOutbox.root()); len(files) != 0 {
+			t.Fatalf("a rolled-back push must not leave push events behind: %v", files)
+		}
+	})
+
+	t.Run("push_hook_callback_failure_keeps_event_for_replay", func(t *testing.T) {
 		t.Setenv("GIT_STUB_STATE_FILE", filepath.Join(t.TempDir(), "state"))
 		installGitStub(t, "#!/bin/sh\nif [ \"$1\" = \"--git-dir\" ]; then\n  if [ -f \"$GIT_STUB_STATE_FILE\" ]; then printf 'refs/heads/main\\000bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\\n'; else printf 'refs/heads/main\\000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; fi\n  exit 0\nfi\nif [ \"$1\" = \"receive-pack\" ]; then cat >/dev/null; : > \"$GIT_STUB_STATE_FILE\"; printf ok; exit 0; fi\nexit 1\n")
 		callbacks := make(chan PushHookPayload, 1)
@@ -567,6 +609,21 @@ func TestRouter_Cov_ReceivePackSnapshotAndCallbackErrors(t *testing.T) {
 			}
 		default:
 			t.Fatal("expected push hook callback")
+		}
+		files := outboxFiles(t, srv.pushOutbox.root())
+		if len(files) != 1 {
+			t.Fatalf("a failed callback must leave its event in the outbox: %v", files)
+		}
+		var entry pushHookOutboxEntry
+		content, err := os.ReadFile(files[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(content, &entry); err != nil {
+			t.Fatal(err)
+		}
+		if entry.Attempts != 1 || entry.Payload.CommitSHA != "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
+			t.Fatalf("unexpected outbox entry: %+v", entry)
 		}
 	})
 }

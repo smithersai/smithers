@@ -45,6 +45,8 @@ type Metrics struct {
 	operationDuration *prometheus.HistogramVec
 	serviceUp         prometheus.Gauge
 	serviceHealth     prometheus.Gauge
+	pushHookDelivery  *prometheus.CounterVec
+	pushHookPending   prometheus.Gauge
 }
 
 func NewMetrics() (*Metrics, error) {
@@ -68,8 +70,20 @@ func newMetrics(registry *prometheus.Registry) (*Metrics, error) {
 		Help: "Latest repo-host health status (1 = healthy).",
 	})
 
+	pushHookDelivery := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "smithers_repo_host_push_hook_deliveries_total",
+		Help: "Push-hook delivery attempts by result (ok, not_found, retry, expired).",
+	}, []string{"result"})
+	pushHookPending := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "smithers_repo_host_push_hook_outbox_pending",
+		Help: "Push events persisted in the outbox and not yet acknowledged by the API.",
+	})
+
 	for _, label := range operationLabels {
 		operationDuration.WithLabelValues(label)
+	}
+	for _, result := range []string{pushHookResultOK, pushHookResultNotFound, pushHookResultRetry, pushHookResultExpired} {
+		pushHookDelivery.WithLabelValues(result)
 	}
 
 	if err := registry.Register(operationDuration); err != nil {
@@ -81,6 +95,12 @@ func newMetrics(registry *prometheus.Registry) (*Metrics, error) {
 	if err := registry.Register(serviceHealth); err != nil {
 		return nil, err
 	}
+	if err := registry.Register(pushHookDelivery); err != nil {
+		return nil, err
+	}
+	if err := registry.Register(pushHookPending); err != nil {
+		return nil, err
+	}
 
 	serviceUp.Set(1)
 
@@ -89,6 +109,8 @@ func newMetrics(registry *prometheus.Registry) (*Metrics, error) {
 		operationDuration: operationDuration,
 		serviceUp:         serviceUp,
 		serviceHealth:     serviceHealth,
+		pushHookDelivery:  pushHookDelivery,
+		pushHookPending:   pushHookPending,
 	}, nil
 }
 
@@ -109,4 +131,14 @@ func (m *Metrics) SetServiceHealth(healthy bool) {
 		return
 	}
 	m.serviceHealth.Set(0)
+}
+
+// RecordPushHookDelivery counts one push-hook delivery attempt by result.
+func (m *Metrics) RecordPushHookDelivery(result string) {
+	m.pushHookDelivery.WithLabelValues(result).Inc()
+}
+
+// SetPushHookOutboxPending reports how many push events await delivery.
+func (m *Metrics) SetPushHookOutboxPending(count int) {
+	m.pushHookPending.Set(float64(count))
 }

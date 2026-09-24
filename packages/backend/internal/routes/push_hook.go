@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/configsync"
@@ -72,6 +75,16 @@ type PushHookChangeRecorder interface {
 	RecordPush(ctx context.Context, repositoryID int64, owner, repo string) error
 }
 
+// PushEventStore records push events before the callback is acknowledged.
+// InsertRepoPushEvent returns 0 rows for a delivery_id it already holds.
+type PushEventStore interface {
+	InsertRepoPushEvent(ctx context.Context, arg db.InsertRepoPushEventParams) (int64, error)
+}
+
+// InternalPushHookHandler accepts repo-host push callbacks and runs the
+// side effects of a stored push event. PostPushEvent only records the event;
+// services.RepoPushEventWorker claims it and calls ProcessRepoPushEvent, so an
+// API restart or a failing step retries instead of dropping the push.
 type InternalPushHookHandler struct {
 	RepoResolver   PushHookRepoResolver
 	Dispatcher     webhooks.Dispatcher
@@ -80,16 +93,28 @@ type InternalPushHookHandler struct {
 	ConfigSync     PushHookConfigSyncer
 	SearchIndex    PushHookSearchIndexer
 	ChangeRecorder PushHookChangeRecorder
+	Events         PushEventStore
 }
 
 type PushHookEventRequest struct {
+	DeliveryID  string `json:"delivery_id"`
 	Owner       string `json:"owner"`
 	Repo        string `json:"repo"`
 	Ref         string `json:"ref_name"`
+	BeforeSHA   string `json:"before_sha"`
 	CommitSHA   string `json:"commit_sha"`
 	PusherID    int64  `json:"pusher_id"`
 	PusherLogin string `json:"pusher_login"`
 }
+
+// Push event side effects. Each one that succeeds is recorded on the event
+// row, so a retry after a partial failure runs only the steps that failed.
+const (
+	PushStepWebhooks    = "webhooks"
+	PushStepChanges     = "changes"
+	PushStepWorkflows   = "workflows"
+	PushStepSearchIndex = "search_index"
+)
 
 func (h *InternalPushHookHandler) PostPushEvent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -99,7 +124,7 @@ func (h *InternalPushHookHandler) PostPushEvent(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if h.RepoResolver == nil || h.Dispatcher == nil {
+	if h.RepoResolver == nil || h.Events == nil {
 		pkgerrors.WriteError(w, pkgerrors.Internal("push hook handler not configured"))
 		return
 	}
@@ -116,67 +141,160 @@ func (h *InternalPushHookHandler) PostPushEvent(w http.ResponseWriter, r *http.R
 		writeRouteError(w, r, fmt.Errorf("resolve push hook repository %s/%s: %w", req.Owner, req.Repo, err))
 		return
 	}
+
+	deliveryID := strings.TrimSpace(req.DeliveryID)
+	if deliveryID == "" {
+		// A repo-host older than the outbox sends no id. Accept the event
+		// without redelivery deduplication rather than drop it.
+		deliveryID = "legacy-" + uuid.NewString()
+		middleware.LoggerFromContext(ctx).Warn("push event without delivery_id; redeliveries will not deduplicate",
+			"repo_id", repo.ID, "ref", req.Ref)
+	}
+	inserted, err := h.Events.InsertRepoPushEvent(ctx, db.InsertRepoPushEventParams{
+		DeliveryID:   deliveryID,
+		RepositoryID: repo.ID,
+		Owner:        req.Owner,
+		Repo:         repo.Name,
+		RefName:      req.Ref,
+		BeforeSha:    req.BeforeSHA,
+		CommitSha:    req.CommitSHA,
+		PusherID:     req.PusherID,
+		PusherLogin:  req.PusherLogin,
+	})
+	if err != nil {
+		// A non-2xx answer keeps the event in repo-host's outbox for replay.
+		writeRouteError(w, r, fmt.Errorf("record push event %s: %w", deliveryID, err))
+		return
+	}
+	if inserted == 0 {
+		middleware.LoggerFromContext(ctx).Info("duplicate push event ignored",
+			"delivery_id", deliveryID, "repo_id", repo.ID, "ref", req.Ref)
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ProcessRepoPushEvent runs every side effect of a stored push event not
+// already in event.StepsDone. The steps run concurrently so a slow history
+// import cannot delay workflow dispatch. markStep is called after each step
+// succeeds; the returned error joins the failures of the remaining steps.
+func (h *InternalPushHookHandler) ProcessRepoPushEvent(ctx context.Context, event db.RepoPushEvent, markStep func(context.Context, string) error) error {
+	req := PushHookEventRequest{
+		DeliveryID:  event.DeliveryID,
+		Owner:       event.Owner,
+		Repo:        event.Repo,
+		Ref:         event.RefName,
+		BeforeSHA:   event.BeforeSha,
+		CommitSHA:   event.CommitSha,
+		PusherID:    event.PusherID,
+		PusherLogin: event.PusherLogin,
+	}
+	repoID := event.RepositoryID
+	steps := map[string]func(context.Context) error{}
+	if h.Dispatcher != nil {
+		steps[PushStepWebhooks] = func(ctx context.Context) error { return h.dispatchPushWebhooks(ctx, repoID, req) }
+	}
+	if h.ChangeRecorder != nil {
+		steps[PushStepChanges] = func(ctx context.Context) error { return h.handleChangesForPush(ctx, repoID, req.Owner, req.Repo) }
+	}
+	if h.WorkflowSync != nil || h.WorkflowRun != nil || h.ConfigSync != nil {
+		steps[PushStepWorkflows] = func(ctx context.Context) error { return h.handleWorkflowsForPush(ctx, repoID, req) }
+	}
+	if h.SearchIndex != nil {
+		steps[PushStepSearchIndex] = func(ctx context.Context) error { return h.handleSearchIndexForPush(ctx, repoID, req) }
+	}
+
+	var (
+		wg   sync.WaitGroup
+		mu   sync.Mutex
+		errs []error
+	)
+	for name, run := range steps {
+		if slices.Contains(event.StepsDone, name) {
+			continue
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := runPushStep(ctx, name, run)
+			if err == nil && markStep != nil {
+				err = markStep(ctx, name)
+			}
+			if err != nil {
+				mu.Lock()
+				errs = append(errs, fmt.Errorf("%s: %w", name, err))
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
+	return stdErrors.Join(errs...)
+}
+
+func runPushStep(ctx context.Context, name string, run func(context.Context) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("push event step panic", "step", name, "panic", r)
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+	return run(ctx)
+}
+
+func (h *InternalPushHookHandler) dispatchPushWebhooks(ctx context.Context, repoID int64, req PushHookEventRequest) error {
 	payload := webhooks.PushEventPayload{
 		Ref: req.Ref,
 		Repository: webhooks.RepositoryPayload{
-			ID:       repo.ID,
-			Name:     repo.Name,
-			FullName: req.Owner + "/" + repo.Name,
+			ID:       repoID,
+			Name:     req.Repo,
+			FullName: req.Owner + "/" + req.Repo,
 		},
 		Sender: webhooks.UserPayload{
 			ID:    req.PusherID,
 			Login: req.PusherLogin,
 		},
 	}
-
-	// User webhooks are one independent side effect of a push. repo-host never
-	// retries this callback, so an enqueue failure must not skip change sync,
-	// workflow dispatch or search indexing.
-	if err := h.Dispatcher.DispatchEvent(ctx, repo.ID, webhooks.EventTypePush, payload); err != nil {
-		middleware.LoggerFromContext(ctx).Error("push webhook enqueue failed",
-			"repo_id", repo.ID, "ref", req.Ref, "error", err)
+	if err := h.Dispatcher.DispatchEvent(ctx, repoID, webhooks.EventTypePush, payload); err != nil {
+		return fmt.Errorf("enqueue push webhooks: %w", err)
 	}
-	if h.ChangeRecorder != nil {
-		repoID, repoName := repo.ID, repo.Name
-		services.SafeGo("push-change-sync", func() { h.handleChangesForPush(repoID, req.Owner, repoName) })
-	}
-
-	// Async: sync workflow definitions then dispatch workflow runs for the push event.
-	if h.WorkflowSync != nil || h.WorkflowRun != nil || h.ConfigSync != nil {
-		repoID := repo.ID
-		services.SafeGo("push-workflow-sync", func() { h.handleWorkflowsForPush(repoID, req) })
-	}
-	if h.SearchIndex != nil {
-		repoID := repo.ID
-		services.SafeGo("push-search-index", func() { h.handleSearchIndexForPush(repoID, req) })
-	}
-
-	w.WriteHeader(http.StatusNoContent)
+	return nil
 }
 
-func (h *InternalPushHookHandler) handleChangesForPush(repoID int64, owner, repo string) {
-	ctx, cancel := context.WithTimeout(context.Background(), pushChangeSyncTimeout)
-	defer cancel()
+// acquirePushSlot waits for a concurrency slot or ctx, whichever comes first.
+func acquirePushSlot(ctx context.Context, slots chan struct{}) (func(), error) {
 	select {
-	case pushChangeSyncSlots <- struct{}{}:
-		defer func() { <-pushChangeSyncSlots }()
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
 	case <-ctx.Done():
-		slog.Error("change revision sync timed out waiting for a slot", "repo_id", repoID)
-		return
-	}
-	if err := h.ChangeRecorder.RecordPush(ctx, repoID, owner, repo); err != nil {
-		slog.Error("change revision sync failed after push", "repo_id", repoID, "error", err)
+		return nil, fmt.Errorf("wait for push work slot: %w", ctx.Err())
 	}
 }
 
-func (h *InternalPushHookHandler) handleSearchIndexForPush(repoID int64, req PushHookEventRequest) {
-	pushSearchIndexSlots <- struct{}{}
-	defer func() { <-pushSearchIndexSlots }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), pushSearchIndexTimeout)
+func (h *InternalPushHookHandler) handleChangesForPush(ctx context.Context, repoID int64, owner, repo string) error {
+	ctx, cancel := context.WithTimeout(ctx, pushChangeSyncTimeout)
 	defer cancel()
+	release, err := acquirePushSlot(ctx, pushChangeSyncSlots)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := h.ChangeRecorder.RecordPush(ctx, repoID, owner, repo); err != nil {
+		return fmt.Errorf("change revision sync: %w", err)
+	}
+	return nil
+}
 
-	err := h.SearchIndex.IndexPush(ctx, services.SearchIndexPushInput{
+func (h *InternalPushHookHandler) handleSearchIndexForPush(ctx context.Context, repoID int64, req PushHookEventRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, pushSearchIndexTimeout)
+	defer cancel()
+	release, err := acquirePushSlot(ctx, pushSearchIndexSlots)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	err = h.SearchIndex.IndexPush(ctx, services.SearchIndexPushInput{
 		RepositoryID:   repoID,
 		Owner:          req.Owner,
 		RepositoryName: req.Repo,
@@ -184,21 +302,23 @@ func (h *InternalPushHookHandler) handleSearchIndexForPush(repoID int64, req Pus
 		CommitSHA:      req.CommitSHA,
 	})
 	if err != nil {
-		slog.Error("code search indexing failed after push",
-			"repo_id", repoID,
-			"ref", req.Ref,
-			"commit_sha", req.CommitSHA,
-			"error", err,
-		)
+		return fmt.Errorf("code search indexing: %w", err)
 	}
+	return nil
 }
 
-func (h *InternalPushHookHandler) handleWorkflowsForPush(repoID int64, req PushHookEventRequest) {
-	pushWorkflowSyncSlots <- struct{}{}
-	defer func() { <-pushWorkflowSyncSlots }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), pushWorkflowSyncTimeout)
+// handleWorkflowsForPush syncs workflow definitions and config, then
+// dispatches runs. Only a dispatch failure fails the step: a load or
+// persistence failure falls back to persisted definitions as before, and
+// retrying the whole step after a successful dispatch would duplicate runs.
+func (h *InternalPushHookHandler) handleWorkflowsForPush(ctx context.Context, repoID int64, req PushHookEventRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, pushWorkflowSyncTimeout)
 	defer cancel()
+	release, err := acquirePushSlot(ctx, pushWorkflowSyncSlots)
+	if err != nil {
+		return err
+	}
+	defer release()
 
 	var loadResult services.WorkflowLoadResult
 	loadAttempted := false
@@ -262,11 +382,11 @@ func (h *InternalPushHookHandler) handleWorkflowsForPush(repoID int64, req PushH
 		} else if loadAttempted {
 			slog.Info("workflow dispatch falling back to persisted definitions", "repo_id", repoID, "commit_sha", req.CommitSHA)
 		}
-		_, err := h.WorkflowRun.DispatchForEvent(ctx, input)
-		if err != nil {
-			slog.Error("workflow dispatch failed after push", "repo_id", repoID, "error", err)
+		if _, err := h.WorkflowRun.DispatchForEvent(ctx, input); err != nil {
+			return fmt.Errorf("workflow dispatch: %w", err)
 		}
 	}
+	return nil
 }
 
 // pusherCanAdmin reports whether the pushing user has admin (or owner) access to
