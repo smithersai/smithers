@@ -116,13 +116,24 @@ async function workspaceDiffText(repoDir: string) {
   return pieces.filter(Boolean).join("\n\n");
 }
 
+/** The app's own state dir: never part of the change set it reviews. */
+const STATE_DIR = ".smithers-review";
+
+function isOwnPath(path: string, own: ReadonlyArray<string>) {
+  return [STATE_DIR, ...own].some((ownPath) => path === ownPath || path.startsWith(`${ownPath}/`));
+}
+
 /**
  * Reads the change set from git and parses it into one record per file.
+ *
+ * `own` names the repo-relative paths this run writes (see `reviewOwnPaths`);
+ * they and the `.smithers-review` state dir are left out, so a repository
+ * that does not ignore them never has the tool's output reviewed.
  *
  * @since 1.0.0
  * @category constructors
  */
-export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput) {
+export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput, own: ReadonlyArray<string> = []) {
   const mode = reviewMode(input);
   let diffText = "";
   if (mode === "range") {
@@ -150,5 +161,8 @@ export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput) {
   }
 
   const gitignorePatterns = loadGitignorePatterns(repoDir);
-  return parseGitDiff(diffText).filter((diff) => !isProviderExcluded(effectivePath(diff), gitignorePatterns));
+  return parseGitDiff(diffText).filter((diff) => {
+    const path = effectivePath(diff);
+    return !isOwnPath(path, own) && !isProviderExcluded(path, gitignorePatterns);
+  });
 }

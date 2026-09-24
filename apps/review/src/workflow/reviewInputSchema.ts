@@ -17,6 +17,7 @@ import { OpenCodeReviewInput } from "./openCodeReviewInputSchema.ts";
 export const ReviewInput = Schema.Struct({
   ...OpenCodeReviewInput.fields,
   out: withDefault(Schema.String, ""),
+  db: withDefault(Schema.String, ""),
   narrate: withDefault(Schema.Boolean, true),
   title: withDefault(Schema.String, ""),
   split: withDefault(Schema.Boolean, false),

@@ -186,6 +186,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
     timeout: args.timeout,
     runReview: args.review,
     out: args.out,
+    db: dbPath,
     narrate: args.narrate,
     title: args.title,
     split: args.split,

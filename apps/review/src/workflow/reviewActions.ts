@@ -11,7 +11,6 @@
 import { Action } from "@smthrs/flow";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { isAbsolute, join, resolve } from "node:path";
 import { assessChangeImpact } from "../quiz/assessChangeImpact.ts";
 import { normalizeQuiz } from "../quiz/normalizeQuiz.ts";
 import { Quiz } from "../quiz/quizSchema.ts";
@@ -20,6 +19,7 @@ import { changesFromDiffs } from "../walkthrough/changesFromDiffs.ts";
 import { Changes } from "../walkthrough/changesSchema.ts";
 import { normalizeStory } from "../walkthrough/normalizeStory.ts";
 import { renderWalkthroughHtml } from "../walkthrough/renderWalkthroughHtml.ts";
+import { walkthroughPath } from "../walkthrough/walkthroughPath.ts";
 import { writeWalkthroughArtifact } from "../walkthrough/writeWalkthroughArtifact.ts";
 import { Story } from "../walkthrough/storySchema.ts";
 import { applyFindingVerdicts } from "./applyFindingVerdicts.ts";
@@ -76,7 +76,7 @@ export const prepareReviewLayer = PrepareReview.toLayer(({ input }) =>
   Effect.promise(async () => {
     // Without review seats the per-file steps never run, so the finalizer must
     // see `runReview: false` and report "skipped" rather than "failed".
-    const snapshot = await loadReviewSnapshot(input);
+    const snapshot = await loadReviewSnapshot(input, { out: input.out, db: input.db });
     const preview = previewFromSnapshot(snapshot);
     const changes = changesFromDiffs(snapshot.diffs, preview);
     const prompt = nativeReviewPromptFromSnapshot(snapshot, preview);
@@ -278,10 +278,7 @@ export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
         quiz,
         impact: { level: impact.level, reasons: impact.reasons },
       });
-      const requested = input.out.trim();
-      const outPath = requested
-        ? isAbsolute(requested) ? requested : resolve(target.repoDir, requested)
-        : join(target.repoDir, ".smithers-review", "walkthrough.html");
+      const outPath = walkthroughPath(target.repoDir, input.out);
       const artifactPath = writeWalkthroughArtifact(outPath, html);
       return {
         walkthrough: {

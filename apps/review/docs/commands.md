@@ -39,6 +39,10 @@ The JSON summary exposes it as `walkthroughArtifactPath`. Retain these files
 while a run may resume or publish; remove them manually when no longer needed.
 Older recorded results without an artifact path must be rerun before publishing.
 
+A review leaves its own files out of the change set it reviews: `.smithers-review/`,
+the `--out` file, its `.smithers-review-artifacts/` directory, and the `--db` file
+with its SQLite sidecars.
+
 `--execution-id <id>` selects a durable review in `--db <file>` (default:
 `<repo>/.smithers-review/review.db`). An unused ID starts a review. Without this
 option, every invocation generates a fresh ID. The CLI prints the ID at startup
@@ -52,7 +56,7 @@ smithers-review /path/to/repo --db /path/to/review.db --execution-id review-reco
 ```
 
 The engine rejects an existing ID if the decoded review input differs,
-including the repository, target, background, output, and review switches.
+including the repository, target, background, output, database, and review switches.
 Keep the original seat configuration for unfinished model work. A settled
 preparation preserves the original diff even when the working tree changes.
 Settled file batches reuse their findings without another provider call;

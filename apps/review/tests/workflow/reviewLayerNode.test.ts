@@ -45,7 +45,7 @@ afterEach(() => {
 });
 
 /** A repository whose working tree changes `count` files against its first commit. */
-function tempRepo(count = 1): string {
+function tempRepo(count = 1, ignoreState = true): string {
   const dir = mkdtempSync(join(tmpdir(), "review-layer-node-"));
   tempDirs.push(dir);
   const run = (args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
@@ -57,7 +57,7 @@ function tempRepo(count = 1): string {
   for (let index = 0; index < count; index++) {
     writeFileSync(join(dir, `src/file${index}.ts`), `export const value${index} = ${index};\n`);
   }
-  writeFileSync(join(dir, ".gitignore"), ".smithers-review/\n");
+  if (ignoreState) writeFileSync(join(dir, ".gitignore"), ".smithers-review/\n");
   run(["add", "."]);
   run(["commit", "-m", "base"]);
   for (let index = 0; index < count; index++) {
@@ -191,4 +191,26 @@ test("CLI resumes its printed execution ID and refuses changed input in the same
   expect(conflict.status).toBe(1);
   expect(conflict.stderr).toContain(`run ${executionId} failed`);
   expect(conflict.stderr).toContain("payload identity");
+}, 600_000);
+
+test("CLI in a repository that ignores nothing leaves its own outputs out of the next review", () => {
+  const repo = tempRepo(1, false);
+  const summary = join(tmpdir(), `review-own-outputs-${Date.now()}.json`);
+  tempDirs.push(summary);
+  const bin = fileURLToPath(new URL("../../bin/smithers-review.mjs", import.meta.url));
+  const run = (extra: string[]) => {
+    const result = spawnSync("node", [bin, repo, "--no-review", "--no-narrate", "--quiz", "off", ...extra], {
+      encoding: "utf8", timeout: 180_000,
+      env: { ...hostEnv, SMITHERS_REVIEW_SUMMARY_PATH: summary },
+    });
+    expect(result.status, result.stderr).toBe(0);
+    return JSON.parse(readFileSync(summary, "utf8")) as { files: number };
+  };
+  const custom = ["--out", "docs/walk.html", "--db", join(repo, "state", "r.db")];
+  // Each first run leaves a walkthrough, an artifact and a database behind in
+  // the working tree; the second run must still see only the one source edit.
+  expect(run([]).files).toBe(1);
+  expect(run([]).files).toBe(1);
+  expect(run(custom).files).toBe(1);
+  expect(run(custom).files).toBe(1);
 }, 600_000);

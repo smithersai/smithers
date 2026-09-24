@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { effectivePath } from "../../src/git/effectivePath.ts";
 import { loadDiffs } from "../../src/git/loadDiffs.ts";
+import { reviewOwnPaths } from "../../src/review/reviewOwnPaths.ts";
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts";
 import { tempRepos } from "../support/tempRepos.ts";
 
@@ -44,5 +45,35 @@ describe("loadDiffs", () => {
     const plain = diffs.find((d) => effectivePath(d) === "src/plain.ts");
     expect(plain?.diff).toContain("+export const plain = 1;");
     expect(plain?.diff).not.toContain("new file mode 120000");
+  });
+  test("workspace mode leaves out the review's own state dir and the output paths it is handed", async () => {
+    const dir = initRepo();
+    write(join(dir, "src/app.ts"), "export const v = 1;\n");
+    git(dir, ["add", "."]);
+    git(dir, ["commit", "-m", "init"]);
+    // No .gitignore: everything below is untracked.
+    write(join(dir, "src/app.ts"), "export const v = 2;\n");
+    write(join(dir, ".smithers-review/review.db"), "db");
+    write(join(dir, ".smithers-review/walkthrough.html"), "<html></html>");
+    write(join(dir, ".smithers-review/.smithers-review-artifacts/a.html"), "<html></html>");
+    write(join(dir, "docs/walk.html"), "<html></html>");
+    write(join(dir, "docs/.smithers-review-artifacts/b.html"), "<html></html>");
+    write(join(dir, "state/r.db"), "db");
+    write(join(dir, "state/r.db-wal"), "wal");
+    // Neighbours of the excluded paths stay in the review.
+    write(join(dir, ".smithers-reviewer/keep.ts"), "export const keep = 1;\n");
+    write(join(dir, "docs/walk.html.ts"), "export const keep = 2;\n");
+    write(join(dir, "state/r.dbx.ts"), "export const keep = 3;\n");
+
+    const paths = async (own: ReadonlyArray<string>) =>
+      (await loadDiffs(dir, { ...normalizeOpenCodeReviewInput({}), repo: dir }, own)).map(effectivePath).sort();
+    const always = ["src/app.ts", ".smithers-reviewer/keep.ts", "docs/walk.html.ts", "state/r.dbx.ts"];
+
+    expect(await paths([])).toEqual(
+      [...always, "docs/.smithers-review-artifacts/b.html", "docs/walk.html", "state/r.db", "state/r.db-wal"].sort(),
+    );
+    expect(await paths(reviewOwnPaths(dir, { out: "docs/walk.html", db: join(dir, "state/r.db") }))).toEqual(
+      always.sort(),
+    );
   });
 });

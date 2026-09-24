@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { walkthroughArtifactsDir } from "./walkthroughArtifactsDir.ts";
 
 function atomicWrite(path: string, html: string): void {
   const temporary = `${path}.${randomUUID()}.tmp`;
@@ -18,7 +19,7 @@ function atomicWrite(path: string, html: string): void {
  * gets a new one, so publication never reads another run's public output.
  */
 export function writeWalkthroughArtifact(outPath: string, html: string): string {
-  const artifacts = join(dirname(outPath), ".smithers-review-artifacts");
+  const artifacts = walkthroughArtifactsDir(outPath);
   mkdirSync(artifacts, { recursive: true });
   const artifactPath = join(artifacts, `${randomUUID()}.html`);
   atomicWrite(artifactPath, html);
