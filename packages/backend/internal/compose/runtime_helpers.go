@@ -326,7 +326,6 @@ var (
 	newEmailTransport = initEmailTransport
 	newSecretCodec    = webhook.NewSecretCodec
 	newBlobStore      = initializeBlobStore
-	ensurePairSchema  = (*services.PairService).EnsureSchema
 	loadAlertRegistry = alertregistry.Load
 )
 

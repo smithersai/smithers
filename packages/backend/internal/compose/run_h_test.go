@@ -26,7 +26,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
-	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 )
@@ -623,24 +622,6 @@ func TestRun_FullyConfigured(t *testing.T) {
 	_ = resp.Body.Close()
 	h.shutdownAndWaitNil()
 	assert.Contains(t, h.logs.String(), "error shutting down tracer provider")
-}
-
-func TestRun_PairSchemaWarn(t *testing.T) {
-	preserveSlog(t)
-	env := baseRunEnv(t)
-
-	swapVar(t, &ensurePairSchema, func(*services.PairService, context.Context) error {
-		return errors.New("pair schema boom")
-	})
-	h := startRun(t, env)
-	resp, err := h.get("/health")
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	_ = resp.Body.Close()
-	h.shutdownAndWaitNil()
-
-	out := h.logs.String()
-	assert.Contains(t, out, "pair: ensure schema failed")
 }
 
 func TestRun_LocalLegacyWorkflowsFailClosed(t *testing.T) {

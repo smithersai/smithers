@@ -635,7 +635,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var sandboxClient services.SandboxVMClient
 	var workflowSandboxClient services.WorkflowSandboxVMClient
 	var repoGatewaySandbox services.RepoGatewayVMClient
-	var pairSandbox services.PairSandbox
 	var goldenSnapshotSandbox services.GoldenSnapshotVMClient
 	var orphanSandbox services.SandboxOrphanVMClient
 	var provider sandbox.Provider
@@ -649,7 +648,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		sandboxClient = provider
 		workflowSandboxClient = provider
 		repoGatewaySandbox = provider
-		pairSandbox = provider
 		goldenSnapshotSandbox = provider
 		orphanSandbox = provider
 		if accessRevoker, ok := provider.(sandbox.AccessGrantRevoker); ok {
@@ -661,13 +659,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// deleted with its repository: nothing else can see them, because every
 	// other sweep starts from the row that is gone.
 	sandboxOrphanReaper := services.NewSandboxOrphanReaper(hostedQueries, orphanSandbox, smithersMetrics)
-
-	// Smithers Pair: realtime multiplayer pair-coding (shared doc + cursors +
-	// one shared Codex model run in a Microsandbox sandbox). Key-gated, no repo.
-	pairService := services.NewPairService(pool, pairSandbox, landingService)
-	if err := ensurePairSchema(pairService, ctx); err != nil {
-		slog.Warn("pair: ensure schema failed", "error", err)
-	}
 
 	// Initialize agent log store (GCS-backed when available, in-memory fallback).
 	// Transcripts are retention-limited operational data: they belong in the
