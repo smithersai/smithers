@@ -10,9 +10,10 @@
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { createHash, randomUUID } from "node:crypto"
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
+import { StringDecoder } from "node:string_decoder"
 import type * as Changes from "./changes.ts"
 import type * as Context from "./context.ts"
 import type * as Extension from "./extension.ts"
@@ -288,13 +289,44 @@ export const quarantine = (file: string, error: unknown): string => {
   }
 }
 
+/** Stream metadata lines only; event payloads never accumulate in memory. */
+function* metadata(file: string): Generator<string> {
+  const fd = openSync(file, "r")
+  const bytes = Buffer.allocUnsafe(64 * 1024)
+  const decoder = new StringDecoder("utf8")
+  let line = ""
+  let skip = false
+  try {
+    while (true) {
+      const size = readSync(fd, bytes, 0, bytes.length, null)
+      if (size === 0) break
+      const parts = decoder.write(bytes.subarray(0, size)).split("\n")
+      for (let i = 0; i < parts.length; i++) {
+        if (!skip) {
+          line += parts[i]!
+          if (line.length >= 32 && !/^\{"type":"(session|user|name)"/.test(line)) {
+            skip = true
+            line = ""
+          }
+        }
+        if (i < parts.length - 1) {
+          if (!skip) yield line
+          line = ""
+          skip = false
+        }
+      }
+    }
+    if (!skip && line !== "") yield line + decoder.end()
+  } finally { closeSync(fd) }
+}
+
 /** A listing parses only the header, the first prompt and names, and skips a damaged file instead of failing the list. */
 const summary = (file: string): (Summary & { readonly cwd?: string }) | undefined => {
   let header: Record | undefined
   let first: Record | undefined
   let named: Record | undefined
   try {
-    for (const line of readFileSync(file, "utf8").split("\n")) {
+    for (const line of metadata(file)) {
       const type = /^\{"type":"(session|user|name)"/.exec(line)?.[1]
       if (type === undefined || (type === "user" && first !== undefined)) continue
       let record: Record
@@ -334,7 +366,30 @@ export const list = (cwd: string): ReadonlyArray<Summary> =>
     .map(({ cwd: _cwd, ...row }) => row)
     .sort((a, b) => b.modified - a.modified)
 
-export const latest = (cwd: string): string | undefined => list(cwd)[0]?.file
+/** Startup needs only modification times; legacy folders also require their cwd header. */
+export const latest = (cwd: string): string | undefined => {
+  const candidates: Array<{ file: string; modified: number }> = []
+  for (const folder of [directory(cwd), legacyDirectory(cwd)]) {
+    if (!existsSync(folder)) continue
+    for (const name of readdirSync(folder)) {
+      if (!name.endsWith(".jsonl")) continue
+      const file = join(folder, name)
+      try {
+        const info = statSync(file)
+        if (!info.isFile()) continue
+        if (folder === legacyDirectory(cwd)) {
+          const records = metadata(file)
+          try {
+            const first = records.next().value
+            if (first === undefined || (JSON.parse(first) as { cwd?: string }).cwd !== cwd) continue
+          } finally { records.return(undefined) }
+        }
+        candidates.push({ file, modified: info.mtimeMs })
+      } catch { /* A concurrent removal must not block startup. */ }
+    }
+  }
+  return candidates.sort((a, b) => b.modified - a.modified)[0]?.file
+}
 
 /** A user turn a fork can start before. `index` is its position in the file's records. */
 export interface Turn {
