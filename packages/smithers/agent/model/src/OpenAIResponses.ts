@@ -879,5 +879,6 @@ export const chatgptProtocol: Protocol.Protocol<
   // `prompt_cache_key` alone: live on gpt-6-sol (2026-09-24) the body field
   // without it cached one frame in three, as codex-rs `responses_session_id`
   // warns. Codex sends its conversation id in both.
-  headers: (request) => request.cacheKey === undefined ? {} : { "session-id": request.cacheKey }
+  headers: (request): Readonly<Record<string, string>> =>
+    request.cacheKey === undefined ? {} : { "session-id": request.cacheKey }
 })
