@@ -392,7 +392,7 @@ func sqlcQueryConstants(t *testing.T) map[string]string {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join("..", "db", "*.sql.go"))
 	require.NoError(t, err)
-	require.NotEmpty(t, files, "internal/db/*.sql.go must exist (run zig build sqlc)")
+	require.NotEmpty(t, files, "internal/db/*.sql.go must exist (run sqlc generate in db/product)")
 
 	queries := map[string]string{}
 	fset := token.NewFileSet()

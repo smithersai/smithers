@@ -10,13 +10,10 @@ import (
 // have, so a stale worker retry or a late duplicate outcome report can never
 // resurrect or clobber a terminal incident (see issues #295, #324, #21).
 //
-// This lives in a hand-written ext file (matching the established pattern in
-// alert_remediation_jobs_ext.go) rather than db/cluster/queries/alert_incidents.sql
-// because this cluster is scoped to avoid `zig build sqlc` regeneration.
-// Follow-up handoff (tracked outside this cluster, not a TODO in this diff):
-// the db-schema-queries cluster should fold these guards into
-// db/cluster/queries/alert_incidents.sql and regenerate so the unguarded generated
-// functions above can be deleted.
+// These guards are hand-written because this package's schema source,
+// db/cluster, no longer lives in this repository. Prefer them over the
+// unguarded generated UpdateAlertIncidentState and
+// RecordAlertIncidentRemediationOutcome.
 
 const updateAlertIncidentStateGuarded = `
 UPDATE alert_incidents

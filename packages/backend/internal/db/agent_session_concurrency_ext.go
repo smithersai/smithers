@@ -6,7 +6,7 @@ import "context"
 // hold a live Microsandbox VM across the WHOLE fleet.
 //
 // This is a hand-written extension method (not sqlc-generated) following the
-// rate_limit_quotas_ext.go pattern, so it does NOT require `zig build sqlc`.
+// rate_limit_quotas_ext.go pattern rather than db/product/queries.
 //
 // The predicate matches the reaper's live-VM definition (ListStaleActiveSessions
 // in db/product/queries/agent.sql): a session is counted only while status='active' AND

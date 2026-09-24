@@ -101,7 +101,7 @@ func findCmdServerSchemaPath() string {
 // testDatabaseURL resolves the cmd/server test database URL, creates the
 // database if missing and applies db/cluster/sqlc_schema.sql once. If Postgres is
 // unreachable the calling test is skipped (coverage is only measured with
-// `zig build docker-up`).
+// SMITHERS_TEST_DATABASE_URL).
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
 	dsn := resolveCmdServerTestDatabaseURL()

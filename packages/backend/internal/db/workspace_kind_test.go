@@ -11,7 +11,7 @@ import (
 
 func TestActiveWorkspaceUniquenessIncludesKind(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 
 	ctx := context.Background()

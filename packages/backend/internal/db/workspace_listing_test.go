@@ -22,7 +22,7 @@ import (
 
 func TestTouchWorkspaceLastAccessed_BumpsColumn(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -54,7 +54,7 @@ func TestTouchWorkspaceLastAccessed_BumpsColumn(t *testing.T) {
 
 func TestWorkspaceTargetBookmark_RoundTrips(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -92,7 +92,7 @@ func TestWorkspaceTargetBookmark_RoundTrips(t *testing.T) {
 
 func TestListIdleWorkspaces_ExcludesFreshPendingSession(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -146,7 +146,7 @@ func TestListIdleWorkspaces_ExcludesFreshPendingSession(t *testing.T) {
 
 func TestWorkspaceLastAccessedBackfill_SeedsFromLastActivity(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -200,7 +200,7 @@ func TestWorkspaceLastAccessedBackfill_SeedsFromLastActivity(t *testing.T) {
 
 func TestListUserWorkspacesAcrossRepos_OwnerRepo(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -234,7 +234,7 @@ func TestListUserWorkspacesAcrossRepos_OwnerRepo(t *testing.T) {
 
 func TestListUserWorkspacesAcrossRepos_ExcludesTombstonedAndOrphaned(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -273,7 +273,7 @@ func TestListUserWorkspacesAcrossRepos_ExcludesTombstonedAndOrphaned(t *testing.
 
 func TestListUserWorkspacesAcrossRepos_OrderingAndLastActivityAt(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -322,7 +322,7 @@ func TestListUserWorkspacesAcrossRepos_OrderingAndLastActivityAt(t *testing.T) {
 
 func TestListUserWorkspacesAcrossRepos_FallsBackWhenNoLastAccessed(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -362,7 +362,7 @@ func TestListUserWorkspacesAcrossRepos_FallsBackWhenNoLastAccessed(t *testing.T)
 
 func TestListUserWorkspacesAcrossRepos_TieBreaksByWorkspaceIDDesc(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -400,7 +400,7 @@ func TestListUserWorkspacesAcrossRepos_TieBreaksByWorkspaceIDDesc(t *testing.T) 
 
 func TestListUserWorkspacesAcrossRepos_CollaboratorRepoShows_RevokeHides(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -455,7 +455,7 @@ func TestListUserWorkspacesAcrossRepos_CollaboratorRepoShows_RevokeHides(t *test
 
 func TestListUserWorkspacesAcrossRepos_OrgOwnerAndTeamAccess(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -504,7 +504,7 @@ func TestListUserWorkspacesAcrossRepos_OrgOwnerAndTeamAccess(t *testing.T) {
 
 func TestListUserWorkspacesAcrossRepos_RejectsStaleAndCrossOrgTeamGrants(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -565,7 +565,7 @@ func TestListUserWorkspacesAcrossRepos_RejectsStaleAndCrossOrgTeamGrants(t *test
 
 func TestListUserWorkspacesAcrossRepos_PublicRepoShowsOwnerScoped(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -615,7 +615,7 @@ func TestListUserWorkspacesAcrossRepos_PublicRepoShowsOwnerScoped(t *testing.T) 
 
 func TestListUserWorkspacesAcrossRepos_Pagination(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})
@@ -661,7 +661,7 @@ func TestListUserWorkspacesAcrossRepos_Pagination(t *testing.T) {
 
 func TestListReadableReposForUser_Matrix(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 	ctx := context.Background()
 	tx, err := sharedPool.BeginTx(ctx, pgx.TxOptions{})

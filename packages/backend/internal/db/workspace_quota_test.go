@@ -11,13 +11,13 @@ import (
 )
 
 // Ticket 0105: DB-level validation for the sandbox-quota semantics.
-// These tests go through a real Postgres (zig build docker-up) so reviewers
+// These tests go through a real Postgres (SMITHERS_TEST_DATABASE_URL) so reviewers
 // know the count query isn't a mock, the partial index really matches,
 // and soft-delete actually drops rows out of the count.
 
 func TestCountActiveWorkspacesByUser_ReflectsSoftDelete(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 
 	ctx := context.Background()
@@ -83,7 +83,7 @@ func TestCountActiveWorkspacesByUser_ReflectsSoftDelete(t *testing.T) {
 // one-active-primary-per-user+repo unique constraint.
 func TestCountActiveWorkspacesByUser_HandlesHundredRows(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 
 	ctx := context.Background()
@@ -114,7 +114,7 @@ func TestCountActiveWorkspacesByUser_HandlesHundredRows(t *testing.T) {
 
 func TestCountActiveWorkspacesByUser_QueryPlanUsesActiveIndex(t *testing.T) {
 	if testing.Short() {
-		t.Skip("db integration test; requires Postgres (zig build docker-up)")
+		t.Skip("db integration test; requires Postgres (set SMITHERS_TEST_DATABASE_URL)")
 	}
 
 	ctx := context.Background()
