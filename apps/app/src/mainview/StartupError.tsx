@@ -11,19 +11,28 @@ import { switchBackendTarget } from "./runtime/BackendTargetSelection"
  * React style objects, and the DOM builder derives its `style` attribute from
  * them — a cosmetic edit here reaches both paths. Every value is a string so
  * that neither path has to reproduce React's unit handling for numbers.
+ *
+ * Colours are theme tokens, so dark theme gets light text on a dark page. Each
+ * fallback is a light colour for the DOM panel a bundle that never ran shows
+ * without tokens.css.
  */
+
+/** The page behind a startup panel; the watchdog's overlay paints it too. */
+export const STARTUP_PAGE_BACKGROUND = "var(--bg, #ffffff)"
+
 const PANEL_STYLE = {
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   maxWidth: "44rem",
   margin: "4rem auto",
   padding: "2rem",
-  color: "#1a1a1a"
+  color: "var(--text, #1a1a1a)",
+  background: STARTUP_PAGE_BACKGROUND
 } as const satisfies CSSProperties
 
 const DETAIL_STYLE = {
   whiteSpace: "pre-wrap",
   wordBreak: "break-word",
-  background: "#f4f1ea",
+  background: "var(--surface, #f4f1ea)",
   padding: "1rem",
   borderRadius: "8px"
 } as const satisfies CSSProperties

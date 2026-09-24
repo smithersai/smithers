@@ -1,4 +1,4 @@
-import { createStartupErrorElement, startupErrorMessage } from "./StartupError"
+import { createStartupErrorElement, STARTUP_PAGE_BACKGROUND, startupErrorMessage } from "./StartupError"
 import { createClientErrorReporter } from "./state/ClientErrors"
 import type { ClientErrorReporter } from "./state/ClientErrors"
 
@@ -81,7 +81,7 @@ export const startStartupWatchdog = (options: StartupWatchdogOptions): StartupWa
     panel = createStartupErrorElement(documentTarget, startupErrorMessage(reason, firstBootError))
     overlay = documentTarget.createElement("div")
     overlay.dataset.startupFailure = "true"
-    overlay.setAttribute("style", "position: fixed; inset: 0; z-index: 2147483647; overflow: auto; background: white")
+    overlay.setAttribute("style", `position: fixed; inset: 0; z-index: 2147483647; overflow: auto; background: ${STARTUP_PAGE_BACKGROUND}`)
     overlay.append(panel.element)
     documentTarget.body.append(overlay)
   }

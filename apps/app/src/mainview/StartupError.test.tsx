@@ -7,6 +7,8 @@ import { createStartupErrorElement, StartupErrorPanel } from "./StartupError"
 
 import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
 import { BootstrapFailure } from "./runtime/Runtime"
+import { PALETTES } from "./state/AppState"
+import { contrastRatio, rgbOf, variant, type Declarations, type Rgb } from "./styles/paletteTokens"
 
 GlobalRegistrator.register()
 const roots = new Set<Root>()
@@ -128,3 +130,98 @@ for (const kind of ["unreachable", "missing", "server", "invalid"] as const) {
     }
   })
 }
+
+/*
+ * Every startup panel is legible in every theme the page can be in.
+ *
+ * The defect this pins: the panel painted `#1a1a1a` text and no background,
+ * so in dark theme it sat on the page's `--bg` (#011627 in night-owl) at
+ * 1.1:1 and "Smithers is open in another tab" was invisible. The pairs are
+ * resolved from the panel's real declarations against tokens.css, and also
+ * with no stylesheet at all, because the DOM path runs when the bundle (and
+ * the CSS it imports) never loaded.
+ */
+describe("the startup panels are legible in every theme", () => {
+  /** A theme is a palette and mode from tokens.css, or no stylesheet (the UA's white page). */
+  const THEMES: ReadonlyArray<{ readonly name: string; readonly tokens: Declarations | undefined }> = [
+    { name: "no stylesheet", tokens: undefined },
+    ...PALETTES.flatMap((palette) =>
+      (["light", "dark"] as const).map((mode) => ({ name: `${palette} ${mode}`, tokens: variant(palette, mode) }))
+    )
+  ]
+
+  const hex = (value: string): Rgb => {
+    const match = /^#([0-9a-f]{6})$/i.exec(value.trim())
+    if (match === null) throw new Error(`not a colour this check can read: ${value}`)
+    const number = Number.parseInt(match[1] ?? "", 16)
+    return { r: (number >> 16) & 255, g: (number >> 8) & 255, b: number & 255 }
+  }
+
+  /** What a declared value paints: a token when the sheet is loaded, its fallback when not. */
+  const paint = (value: string, tokens: Declarations | undefined): Rgb => {
+    const reference = /^var\(\s*(--[a-z0-9-]+)\s*(?:,\s*([^)]+))?\)$/i.exec(value.trim())
+    if (reference === null) return hex(value)
+    if (tokens !== undefined) return rgbOf(tokens, reference[1] ?? "")
+    if (reference[2] === undefined) throw new Error(`${value} paints nothing without the stylesheet`)
+    return hex(reference[2])
+  }
+
+  /** An empty declaration paints nothing and inherits, or shows what is behind it. */
+  const painted = (value: string, tokens: Declarations | undefined): Rgb | undefined =>
+    value === "" ? undefined : paint(value, tokens)
+
+  /** An unpainted panel shows the page behind it: body's `--bg`, or the UA's white. */
+  const page = (tokens: Declarations | undefined): Rgb =>
+    tokens === undefined ? { r: 255, g: 255, b: 255 } : rgbOf(tokens, "--bg")
+
+  const renderPanel = (reason: unknown): HTMLElement => {
+    const host = document.createElement("div")
+    document.body.append(host)
+    const root = createRoot(host)
+    roots.add(root)
+    flushSync(() => root.render(<StartupErrorPanel reason={reason} />))
+    const panel = host.querySelector("main")
+    if (panel === null) throw new Error("the React panel rendered no <main>")
+    return panel
+  }
+
+  test("every panel's text and detail clear 4.5:1 in all themes, on both paths", async () => {
+    const fallback = createStartupErrorElement(document, "boot rejected")
+    try {
+      const panels = [
+        { name: "DOM failed to start", element: fallback.element },
+        { name: "failed to start", element: renderPanel(new Error("boot rejected")) },
+        { name: "open in another tab", element: renderPanel(new WriterHeldByAnotherTabError()) },
+        { name: "moved to another tab", element: renderPanel(new WriterMovedToAnotherTabError()) },
+        { name: "backend unavailable", element: renderPanel(new BootstrapFailure("unreachable", 0)) }
+      ]
+      const failures: Array<string> = []
+      let checked = 0
+      for (const theme of THEMES) {
+        for (const panel of panels) {
+          const text = paint(panel.element.style.color, theme.tokens)
+          const ground = painted(panel.element.style.background, theme.tokens) ?? page(theme.tokens)
+          const pairs = [{ where: "panel", text, ground }]
+          const detail = panel.element.querySelector("pre")
+          if (detail !== null) {
+            pairs.push({
+              where: "detail",
+              text: painted(detail.style.color, theme.tokens) ?? text,
+              ground: painted(detail.style.background, theme.tokens) ?? ground
+            })
+          }
+          for (const pair of pairs) {
+            checked += 1
+            const ratio = contrastRatio(pair.text, pair.ground)
+            if (ratio < 4.5) failures.push(`${theme.name}: ${panel.name} ${pair.where} is ${ratio}:1`)
+          }
+        }
+      }
+      // 19 themes x (5 panels + 2 details): guards against passing on an empty sweep.
+      expect(checked).toBe(THEMES.length * 7)
+      expect(failures).toEqual([])
+    } finally {
+      await fallback.dispose()
+    }
+  })
+})
