@@ -22,6 +22,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FsFailure from "./internal/FsFailure.ts"
 import * as Match from "./internal/Match.ts"
 import * as Preserve from "./internal/Preserve.ts"
 import { sourceLines } from "./internal/Text.ts"
@@ -249,9 +250,7 @@ export const run = Effect.fn("Edit.run")(function*(
     return yield* Effect.fail(invalid(input.path, "replaceAll cannot be used with startLine/endLine"))
   }
   const bytes = yield* fileSystem.readFile(input.path).pipe(
-    Effect.mapError(() =>
-      new StdError.StdError({ code: "not_found", message: `File not found: ${input.path}`, path: input.path })
-    )
+    Effect.mapError(FsFailure.reading(input.path, `File not found: ${input.path}`))
   )
   if (bytes.includes(0)) {
     return yield* Effect.fail(
@@ -313,13 +312,20 @@ export const run = Effect.fn("Edit.run")(function*(
   replaced += content.slice(cursor)
   yield* Preserve.writeFileString(fileSystem, input.path, replaced).pipe(
     Effect.mapError((error) =>
-      new StdError.StdError({
-        code: "command_failed",
-        message: error.reason.method === "chmod"
-          ? `Could not preserve the mode of ${input.path} before replacement by chmod`
-          : `Could not write ${input.path}`,
-        path: input.path
-      })
+      error.reason.method === "chmod"
+        ? new StdError.StdError({
+          code: "command_failed",
+          message: `Could not preserve the mode of ${input.path} before replacement by chmod`,
+          path: input.path
+        })
+        : FsFailure.denied(input.path, () =>
+          new StdError.StdError({
+            code: "command_failed",
+            message: `Could not write ${input.path}`,
+            path: input.path
+          }))(
+            error
+          )
     )
   )
   const first = targets[0]!

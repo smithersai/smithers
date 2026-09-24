@@ -131,9 +131,13 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     models: { flag: ["--model"], suggestions: ["claude-fable-5", "fable", "opus", "sonnet"] },
     signal: (host) => {
       const { join } = hostPath(host)
-      const state = readJson(host, join(host.home, ".claude.json"))
-      const oauth = state?.oauthAccount
       const configDir = envDir(host, "CLAUDE_CONFIG_DIR", join(host.home, ".claude"))
+      // With CLAUDE_CONFIG_DIR set, Claude Code keeps `.claude.json` inside
+      // that directory rather than in home.
+      const state = (nonEmptyString(host.env.CLAUDE_CONFIG_DIR)
+        ? readJson(host, join(configDir, ".claude.json"))
+        : null) ?? readJson(host, join(host.home, ".claude.json"))
+      const oauth = state?.oauthAccount
       if (typeof oauth === "object" && oauth !== null) {
         const { emailAddress, organizationName } = oauth as Record<string, unknown>
         return {
@@ -154,8 +158,8 @@ export const DETECTORS: ReadonlyArray<Detector> = [
     displayName: "Codex",
     binary: "codex",
     launch: ["codex"],
-    /* `codex --help`: "-m, --model <MODEL>"; the ids are the GPT-5.6 family packages/smithers/agent/model/src/DeferredTools.ts lists. */
-    models: { flag: ["-m"], suggestions: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] },
+    /* `codex --help`: "-m, --model <MODEL>"; the ids are the seats apps/tui/src/models.ts routes Codex to. */
+    models: { flag: ["-m"], suggestions: ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"] },
     signal: (host) => {
       const { join } = hostPath(host)
       const auth = readJson(host, join(envDir(host, "CODEX_HOME", join(host.home, ".codex")), "auth.json"))

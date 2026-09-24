@@ -36,6 +36,7 @@
  *
  * @since 1.0.0
  */
+import * as Prune from "./internal/Prune.ts"
 
 /**
  * The reserved output key a flow reports a measured write under.
@@ -63,24 +64,10 @@ export const key = "mutated"
  * @since 1.0.0
  */
 export const defaultPrune: ReadonlyArray<string> = [
-  ".git",
-  ".jj",
-  ".hg",
-  ".svn",
-  ".flows",
-  "node_modules",
-  "__pycache__",
-  ".pytest_cache",
-  ".mypy_cache",
-  ".ruff_cache",
-  ".tox",
-  ".nox",
-  ".venv",
+  ...Prune.repositoryDirectories,
+  // Build and environment directories a search still reads, since a project
+  // may keep sources under these names, but a measurement leaves out.
   "venv",
-  ".eggs",
-  ".gradle",
-  ".turbo",
-  ".next",
   "target"
 ]
 

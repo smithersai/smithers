@@ -51,6 +51,7 @@ Some of them export more than the common nine:
 | `Bash`         | `DEFAULT_TIMEOUT_MS`                                                                        |
 | `Explore`      | `make(options: { model?: string })`, and no `run`                                           |
 | `Grep`         | `ContextLine`, `Symbol`, `Match` schemas                                                    |
+| `Read`         | `MAX_READ_FILE_BYTES`, the 64 MiB bound past which `read` refuses a file                    |
 | `ShellCommand` | `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `DEFAULT_MAX_OUTPUT_TOKENS`, `TIMEOUT_EXIT_CODE` |
 | `TestRun`      | `scratchDirectory`, `DEFAULT_TIMEOUT_MS`, `MAX_CAPTURE_BYTES`, `Outcome`                    |
 | `UpdatePlan`   | `StepStatus`, `Plan`                                                                        |
@@ -250,16 +251,16 @@ command and reports whether the two answers differ under the reserved
 `mutated` key. The harness reads `true` as a measured write, the way it reads
 `invalidProbe` as a measured refusal.
 
-| Export                  | Type                                                | Meaning                                                                        |
-| ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                 |
-| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into; the one list the host walk shares.       |
-| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                             |
-| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.      |
-| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                 |
-| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.     |
-| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.      |
-| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less. |
+| Export                  | Type                                                | Meaning                                                                                                                                        |
+| ----------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                   | `"mutated"`                                         | The reserved output key a flow reports a measured write under.                                                                                 |
+| `defaultPrune`          | `ReadonlyArray<string>`                             | Directory names never descended into: every name the search walk skips, including both scratch checkout directories, plus `venv` and `target`. |
+| `defaultIgnoreSuffixes` | `ReadonlyArray<string>`                             | Name suffixes left out, compiled output above all.                                                                                             |
+| `maxPaths`              | `50000`                                             | The bound past which a listing is a prefix and reports `complete: false`.                                                                      |
+| `Measurement`           | interface                                           | `{ digest, paths, complete }`.                                                                                                                 |
+| `script`                | `(options?: { prune?, ignoreSuffixes? }) => string` | The POSIX shell script: sorted `find` + `stat -c` listing, `cksum`, count.                                                                     |
+| `parse`                 | `(stdout: string) => Measurement \| undefined`      | Reads one measurement; anything malformed is unmeasured, never unchanged.                                                                      |
+| `moved`                 | `(before?, after?) => boolean \| undefined`         | `true`/`false` from two complete measurements; `undefined` from anything less.                                                                 |
 
 Identity, not content: size and mtime per file, so a rewrite that restores
 both is invisible, exactly as it is to the host walk. Every tool the script

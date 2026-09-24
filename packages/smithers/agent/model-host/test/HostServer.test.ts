@@ -1,10 +1,12 @@
 import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import { agentTurnJournalDigestInput } from "@smthrs/rpc/AgentTurnJournal"
-import { Effect, Stream } from "effect"
+import { Effect, Metric, Stream } from "effect"
 import { createHash } from "node:crypto"
-import { describe, expect, test } from "vitest"
-import { createModelTurnHandler, MODEL_HOST_PROTOCOL, MODEL_HOST_STREAM_PATH } from "../src/HostServer.ts"
+import { describe, expect, test, vi } from "vitest"
+import { createModelTurnHandler, MODEL_HOST_PROTOCOL, MODEL_HOST_STREAM_PATH, turnFailures } from "../src/HostServer.ts"
+import { ResolveFailed } from "../src/ModelHostError.ts"
 
 const cursor = { version: 1 as const, runId: "run", legId: "leg", batch: 0, position: 0, hash: "a".repeat(64) }
 const grant = {
@@ -128,7 +130,7 @@ test("the authenticated model stream emits provider frames through the configure
 const options = {
   authorization: "host-token",
   callbackBaseUrl: "http://callback.test",
-  resolve: () => Effect.fail(new Error("private provider diagnostic"))
+  resolve: () => Effect.fail(new ResolveFailed({ message: "private provider diagnostic" }))
 }
 const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
   new Request("http://host.test/v1/chat/turn", {
@@ -229,4 +231,116 @@ test("preserves the repository grant and hides provider failures", async () => {
   })))
   expect(response.status).toBe(502)
   expect(await response.json()).toEqual({ status: "error", code: "turn_failed" })
+})
+
+const failing = (error: unknown) =>
+  createModelTurnHandler({
+    ...options,
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({ stream: () => Stream.fail(error as ModelError) }),
+        options: { modelId: "fixture" }
+      }),
+    fetchImpl: async () => new Response(null, { status: 204 })
+  })
+
+const failureCount = (failure: string) =>
+  Effect.runPromise(Metric.value(Metric.withAttributes(turnFailures, { failure }))).then((state) => state.count)
+
+test("logs the failure class and turn identity, never the cause text", async () => {
+  const lines: Array<string> = []
+  const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
+    lines.push(args.map((arg) => typeof arg === "string" ? arg : JSON.stringify(arg)).join(" "))
+  })
+  const log = vi.spyOn(console, "log").mockImplementation((...args) => {
+    lines.push(args.map((arg) => typeof arg === "string" ? arg : JSON.stringify(arg)).join(" "))
+  })
+  try {
+    const before = await failureCount("ResolveFailed")
+    const response = await createModelTurnHandler(options)(post(JSON.stringify(grant)))
+    expect(response.status).toBe(502)
+    expect(await response.json()).toEqual({ status: "error", code: "turn_failed" })
+    expect(await failureCount("ResolveFailed")).toBe(before + 1)
+  } finally {
+    spy.mockRestore()
+    log.mockRestore()
+  }
+  const text = lines.join("\n")
+  expect(text).toContain("ResolveFailed")
+  expect(text).toContain("turn")
+  expect(text).not.toContain("private provider diagnostic")
+})
+
+test.each(
+  [
+    ["rate_limited", "provider_quota"],
+    ["quota_exceeded", "provider_quota"],
+    ["provider_internal", "turn_failed"]
+  ] as const
+)("answers a provider %s as %s", async (code, answer) => {
+  const response = await failing(new ModelError({ code, message: "signed request detail" }))(
+    post(JSON.stringify(grant))
+  )
+  expect(response.status).toBe(502)
+  expect(await response.json()).toEqual({ status: "error", code: answer })
+})
+
+test("counts a refused commit under its own failure class", async () => {
+  const before = await failureCount("CommitRefused")
+  const handler = createModelTurnHandler({
+    ...options,
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({
+          stream: () => Stream.fromIterable<ModelEvent.ModelEvent>([{ type: "settle", stopReason: "stop" }])
+        }),
+        options: { modelId: "fixture" }
+      }),
+    fetchImpl: async (input) =>
+      String(input).includes("provider-started")
+        ? new Response(null, { status: 204 })
+        : new Response(null, { status: 409 })
+  })
+  const response = await handler(post(JSON.stringify(grant)))
+  expect(await response.json()).toEqual({ status: "error", code: "turn_failed" })
+  expect(await failureCount("CommitRefused")).toBe(before + 1)
+})
+
+test.each(["Bearer host-toke", "Bearer host-tokenx", "host-token", ""])(
+  "refuses a near-miss token %j",
+  async (value) => {
+    const response = await createModelTurnHandler(options)(post(JSON.stringify(grant), { authorization: value }))
+    expect(response.status).toBe(401)
+  }
+)
+
+test("answers an aborted turn as cancelled and a dying provider as a defect", async () => {
+  const abort = new AbortController()
+  const hanging = createModelTurnHandler({
+    ...options,
+    resolve: () => Effect.never,
+    fetchImpl: async () => new Response(null, { status: 204 })
+  })
+  const request = new Request("http://host.test/v1/chat/turn", {
+    method: "POST",
+    headers: { authorization: "Bearer host-token" },
+    body: JSON.stringify(grant),
+    signal: abort.signal
+  })
+  const pending = hanging(request)
+  setTimeout(() => abort.abort(), 10)
+  expect(await (await pending).json()).toEqual({ status: "error", code: "cancelled" })
+
+  const before = await failureCount("Defect")
+  const dying = createModelTurnHandler({
+    ...options,
+    resolve: () =>
+      Effect.succeed({
+        model: Model.make({ stream: () => Stream.die(new Error("provider bug")) }),
+        options: { modelId: "fixture" }
+      }),
+    fetchImpl: async () => new Response(null, { status: 204 })
+  })
+  expect(await (await dying(post(JSON.stringify(grant)))).json()).toEqual({ status: "error", code: "turn_failed" })
+  expect(await failureCount("Defect")).toBe(before + 1)
 })

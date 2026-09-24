@@ -123,6 +123,33 @@ describe("resolving a specifier to a file", () => {
         .toEqual(["exact.mjs", "extensionless.ts", "folder/index.ts"])
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
+  it.effect("resolves a NodeNext .js, .mjs or .cjs specifier to its TypeScript source", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": [`import { x } from "./schema.js"`, `import "./view.js"`, `import "./m.mjs"`, `import "./c.cjs"`]
+          .join("\n"),
+        "schema.ts": "export const x = 1",
+        "view.tsx": "export const v = 2",
+        "m.mts": "export const m = 3",
+        "c.cts": "export const c = 4"
+      })
+
+      const found = yield* walk(root, "flow.ts")
+      expect(found.map((entry) => entry.path)).toEqual(["c.cts", "m.mts", "schema.ts", "view.tsx"])
+      expect(found.every((entry) => entry.contentDigest !== undefined)).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("prefers a real .js file over its TypeScript counterpart", () =>
+    Effect.gen(function*() {
+      const root = yield* tree({
+        "flow.ts": `import "./both.js"`,
+        "both.js": "export const js = 1",
+        "both.ts": "export const ts = 1"
+      })
+
+      expect((yield* walk(root, "flow.ts")).map((entry) => entry.path)).toEqual(["both.js"])
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
   it.effect("records a specifier nothing answers to, naming the file that asked", () =>
     Effect.gen(function*() {
       const root = yield* tree({

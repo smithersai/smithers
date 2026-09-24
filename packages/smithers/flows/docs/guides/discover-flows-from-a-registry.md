@@ -13,7 +13,7 @@ registration phase reads from: third for `layerHost`, fifth for `make` and
 ## Pass the project registry
 
 [`@smthrs/registry`](/api/registry) discovers a project's flows from
-`<root>/flows/**` and the installed packs. `Executable.layerProject` builds that
+`<root>/flows/**` and the installed packs. `Registry.layerProject` builds that
 registry; `Executable.layer` is the registration that turns every discovered
 descriptor into a registered durable flow.
 
@@ -21,6 +21,7 @@ descriptor into a registered durable flow.
 import { Action } from "@smthrs/flows"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import * as Executable from "@smthrs/registry/Executable"
+import * as Registry from "@smthrs/registry/Registry"
 import * as Layer from "effect/Layer"
 
 const registration = Executable.layer({ delegates: [Agent, Shell] }).pipe(
@@ -34,7 +35,7 @@ const host = NodeRuntime.layerHost(
     owner: { hostId: "local-worker" }
   },
   registration,
-  Executable.layerProject({ root })
+  Registry.layerProject({ root })
 )
 ```
 
@@ -51,7 +52,7 @@ const engine = NodeRuntime.layer(
   stepBoundary,
   workspaceSandbox,
   registration,
-  Executable.layerProject({ root })
+  Registry.layerProject({ root })
 )
 ```
 

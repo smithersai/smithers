@@ -97,7 +97,19 @@ const withDetachedWorktree = <A, E, R>(
           )
           return yield* use(host)
         }),
-      () => Effect.ignore(git(root, ["worktree", "remove", "--force", host]))
+      // A checkout left behind is a stale copy of the repository inside the
+      // workspace. Walks prune it, but the operator must still hear about it.
+      () =>
+        git(root, ["worktree", "remove", "--force", host]).pipe(
+          Effect.flatMap((removed) =>
+            removed.exitCode === 0 ? Effect.void : Effect.fail(failed(removed.stderr.trim()))
+          ),
+          Effect.catch((error) =>
+            Effect.logWarning("could not remove a scratch checkout").pipe(
+              Effect.annotateLogs({ path: host, reason: error.message })
+            )
+          )
+        )
     )
   })
 

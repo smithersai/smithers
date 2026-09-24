@@ -270,7 +270,13 @@ const publish = (
 ): Effect.Effect<void, FlowStoreError> =>
   Effect.uninterruptibleMask((restore) =>
     Effect.gen(function*() {
-      const generation = yield* fs.makeTempDirectory({ directory: root, prefix: ".flow-store-" })
+      // A named, exclusive mkdir instead of makeTempDirectory: the capability
+      // kernel's guarded filesystem, which every agent-reachable native host
+      // composes, refuses the makeTemp* family (see Executable.reserveSibling).
+      // A non-recursive mkdir fails when the name is taken, so the generation
+      // is still this save's own.
+      const generation = path.join(root, `.flow-store-${globalThis.crypto.randomUUID()}`)
+      yield* fs.makeDirectory(generation)
       const entries = files.map(([relative, source], index) => ({
         relative,
         source,

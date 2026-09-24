@@ -17,6 +17,7 @@ import { Effect } from "effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as StdError from "../StdError.ts"
 import * as Ignore from "./Ignore.ts"
+import * as Prune from "./Prune.ts"
 import { rootFailure } from "./SearchContract.ts"
 
 /**
@@ -25,20 +26,7 @@ import { rootFailure } from "./SearchContract.ts"
  * @category constants
  * @since 1.0.0
  */
-export const skippedDirectories: ReadonlySet<string> = new Set([
-  ".git",
-  ".hg",
-  ".jj",
-  ".svn",
-  ".flows",
-  "node_modules",
-  "__pycache__",
-  ".venv",
-  ".tox",
-  ".mypy_cache",
-  ".pytest_cache",
-  ".ruff_cache"
-])
+export const skippedDirectories: ReadonlySet<string> = new Set(Prune.repositoryDirectories)
 
 /**
  * How many filesystem questions one directory level asks at a time.

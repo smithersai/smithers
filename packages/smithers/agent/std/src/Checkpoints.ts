@@ -72,6 +72,7 @@ import { Context, Effect, Layer, Schema } from "effect"
 import * as Exec from "./internal/Exec.ts"
 import { GitWorktree } from "./internal/GitWorktree.ts"
 import { withoutTrailingSlash } from "./internal/Paths.ts"
+import * as Prune from "./internal/Prune.ts"
 import * as StdError from "./StdError.ts"
 import * as TestRunner from "./TestRunner.ts"
 
@@ -96,7 +97,7 @@ export const baseId = "base"
  * @category constants
  * @since 1.0.0
  */
-export const scratchDirectory = ".flows-checkpoints"
+export const scratchDirectory = Prune.checkpointScratch
 
 /**
  * The git-config section {@link layerGit} records minted checkpoints under.

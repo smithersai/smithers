@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FsFailure from "./internal/FsFailure.ts"
 import { DEFAULT_READ_LIMIT, MAX_ENTRIES, notice } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 
@@ -158,13 +159,7 @@ export const run = Effect.fn("Ls.run")(function*(
   const fileSystem = yield* FileSystem.FileSystem
   const path = yield* Path.Path
   const info = yield* fileSystem.stat(input.path).pipe(
-    Effect.mapError(() =>
-      new StdError.StdError({
-        code: "not_found",
-        message: `Directory not found: ${input.path}`,
-        path: input.path
-      })
-    )
+    Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
   )
   if (info.type !== "Directory") {
     return yield* Effect.fail(
@@ -176,13 +171,7 @@ export const run = Effect.fn("Ls.run")(function*(
     )
   }
   const names = yield* fileSystem.readDirectory(input.path).pipe(
-    Effect.mapError(() =>
-      new StdError.StdError({
-        code: "not_found",
-        message: `Directory not found: ${input.path}`,
-        path: input.path
-      })
-    )
+    Effect.mapError(FsFailure.reading(input.path, `Directory not found: ${input.path}`))
   )
   const sortedNames = [...names].sort(byText)
   const offset = input.offset ?? 1

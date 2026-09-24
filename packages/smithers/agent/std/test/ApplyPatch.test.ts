@@ -571,7 +571,7 @@ describe("ApplyPatch.run", () => {
       layer()
     ))
     const failure = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
-    expect(failure).toMatchObject({ code: "command_failed", path: "/second.txt" })
+    expect(failure).toMatchObject({ code: "permission_denied", path: "/second.txt" })
     expect(failure?.message).toContain("added=[\"/first.txt\"]")
     expect(failure?.message).toContain("modified=[]")
     expect(failure?.message).toContain("deleted=[]")

@@ -43,6 +43,7 @@ import { fileURLToPath } from "node:url"
 import * as Descriptor from "../src/Descriptor.ts"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
+import * as Registry from "../src/Registry.ts"
 import standalone, { Shout } from "./fixtures/executable/flows/standalone/flow.ts"
 
 const flowsRoot = fileURLToPath(new URL("./fixtures/executable/flows", import.meta.url))
@@ -761,7 +762,7 @@ describe("the host seam", () => {
         "registry-host",
         Layer.mergeAll(runLayer, Interpreter.layer(Echo), Executable.layer(options)).pipe(
           Layer.provideMerge(Action.layerImplementations)
-        ).pipe(Layer.provideMerge(Executable.layerProject({ root: projectRoot })))
+        ).pipe(Layer.provideMerge(Registry.layerProject({ root: projectRoot })))
       )
 
       const observed = yield* Effect.gen(function*() {

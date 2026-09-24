@@ -63,6 +63,8 @@ export const notFound = (path: string): StdError.StdError =>
 export const rootFailure = (path: string, error: PlatformError.PlatformError): StdError.StdError =>
   error.reason._tag === "NotFound"
     ? notFound(path)
+    : error.reason._tag === "PermissionDenied"
+    ? new StdError.StdError({ code: "permission_denied", message: `Cannot search ${path}: ${error.message}`, path })
     : new StdError.StdError({ code: "command_failed", message: `Cannot search ${path}: ${error.message}`, path })
 
 /**

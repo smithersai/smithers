@@ -122,7 +122,10 @@ interface PendingToolCall {
 const doneFrame = (runId: string, event: ModelEvent.Settle): AgentTurnFrame => {
   if (event.stopReason === "tool-calls") return { runId, type: "done", reason: "tool_call" }
   if (event.stopReason === "aborted") return { runId, type: "done", reason: "cancelled" }
-  if (["error", "content-filter", "unknown"].includes(event.stopReason)) {
+  // A reply cut off at the output token limit is not a finished reply. The
+  // error keeps the truncation visible to the reader instead of passing it
+  // off as a normal stop.
+  if (["error", "content-filter", "unknown", "length"].includes(event.stopReason)) {
     return { runId, type: "done", reason: "stop", error: `model stopped: ${event.stopReason}` }
   }
   return { runId, type: "done", reason: "stop" }

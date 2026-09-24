@@ -1,11 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import * as ts from "typescript"
 import { expect, it } from "vitest"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
-const declarations = join(packageRoot, "dist/esm/index.d.ts")
 
 it("typechecks the quickstart snippets in the files the guide names", () => {
   const guide = readFileSync(join(packageRoot, "docs/quickstart.md"), "utf8")
@@ -35,7 +34,9 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
       allowImportingTsExtensions: true,
       skipLibCheck: true,
       types: [],
-      paths: { "@smthrs/plugin": [existsSync(declarations) ? declarations : join(packageRoot, "src/index.ts")] }
+      // Always the source: a dist left over from an earlier build would check
+      // the guide against an API the package no longer has.
+      paths: { "@smthrs/plugin": [join(packageRoot, "src/index.ts")] }
     })
     const diagnostics = ts.getPreEmitDiagnostics(program).map((diagnostic) =>
       ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
@@ -45,4 +46,6 @@ it("typechecks the quickstart snippets in the files the guide names", () => {
   } finally {
     rmSync(temporaryRoot, { recursive: true, force: true })
   }
-})
+  // A whole TypeScript program over the package source: tens of seconds on a
+  // loaded machine, and past the suite's 30 s default.
+}, 180_000)

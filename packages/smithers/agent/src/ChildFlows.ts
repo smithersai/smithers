@@ -82,7 +82,12 @@ export const SendOutput = Schema.Struct({ delivered: Schema.Boolean })
  * @category schemas
  * @since 0.1.0
  */
-export const AwaitInput = Schema.Struct({ child: Schema.String })
+export const AwaitInput = Schema.Struct({
+  child: Schema.String,
+  timeoutSeconds: Schema.optional(
+    Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(3600))
+  ).annotate({ description: "Seconds to wait before answering still_running; defaults to 600" })
+})
 
 /**
  * Output for `agent/await`.
@@ -134,7 +139,8 @@ export const sendFlow = Flow.make({
  */
 export const awaitFlow = Flow.make({
   name: "agent/await",
-  description: "Wait for a child agent to finish and return its output.",
+  description:
+    "Wait for a child agent to finish and return its output. A child still running after timeoutSeconds fails with still_running; await it again to keep waiting.",
   input: AwaitInput,
   output: AwaitOutput,
   effects: lifecycle
@@ -154,7 +160,7 @@ export const awaitFlow = Flow.make({
 export class ChildError extends Schema.TaggedError<ChildError>()(
   "@smthrs/agent/ChildFlows/ChildError",
   {
-    code: Schema.Literals(["unsupported", "not_found", "failed"]),
+    code: Schema.Literals(["unsupported", "not_found", "failed", "still_running"]),
     message: Schema.String
   }
 ) {}

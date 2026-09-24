@@ -10,6 +10,7 @@ import { Effect, Layer, Redacted } from "effect"
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient"
 import { toModel } from "./ConfiguredModelRoute.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
+import { ResolveFailed } from "./ModelHostError.ts"
 
 /**
  * Inputs for the single-owner environment-backed model resolver.
@@ -34,10 +35,10 @@ export interface EnvironmentModelResolverOptions {
 export const environmentModelResolver = (options: EnvironmentModelResolverOptions): ModelTurnResolver => (grant) => {
   const binding: unknown = grant.request.model ?? options.binding
   const planned = planModelBinding(binding, hostModelCredentials(options.env), { kind: "generation" })
-  if (!planned.ok) return Effect.fail(new Error("configured model is unavailable"))
+  if (!planned.ok) return Effect.fail(new ResolveFailed({ message: "configured model is unavailable" }))
   const credential = options.env[modelCredentialEnvName(planned.plan.credential)]?.trim()
   if (credential === undefined || credential === "") {
-    return Effect.fail(new Error("configured model credential is unavailable"))
+    return Effect.fail(new ResolveFailed({ message: "configured model credential is unavailable" }))
   }
   const guardedFetch = options.fetchImpl ?? globalThis.fetch
   const transport = FetchHttpClient.layer.pipe(
@@ -53,6 +54,6 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
         ...(options.maxTokens === undefined ? {} : { maxTokens: options.maxTokens })
       }
     })),
-    Effect.mapError(() => new Error("configured model route is unavailable"))
+    Effect.mapError(() => new ResolveFailed({ message: "configured model route is unavailable" }))
   )
 }

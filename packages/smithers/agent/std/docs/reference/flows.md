@@ -55,9 +55,11 @@ Reads a text file by 1-based offset and limit.
 | `truncated`  | boolean          | Whether displayed output was cut.          |
 | `notice`     | string, optional | The truncation disclosure.                 |
 
-Fails with `not_found`, `is_directory`, `binary_file` (a NUL byte or invalid
-UTF-8), or `offset_out_of_range`. For a missing relative path, `not_found` names
-the nearest directory that exists and its entries, closest name first:
+Fails with `not_found`, `permission_denied`, `is_directory`, `binary_file` (a
+NUL byte or invalid UTF-8), `offset_out_of_range`, or `response_too_large` for a
+file over 64 MiB (`Read.MAX_READ_FILE_BYTES`), which it refuses before loading.
+For a missing relative path, `not_found` names the nearest directory that exists
+and its entries, closest name first:
 
 ```text
 File not found: apps/tui/src/commands.ts. apps/tui/src holds: complete.ts, app.tsx.
@@ -485,6 +487,7 @@ all values.
 | `invalid_input`            | The input is self-contradictory or names an unusable value.   |
 | `no_match`                 | The edit anchor or patch context is not in the file.          |
 | `not_modified`             | The write would leave the file exactly as it was.             |
+| `permission_denied`        | The host or the capability kernel refused access to the path. |
 | `outside_declared_reads`   | A hermetic path token is outside the declared read set.       |
 | `outside_declared_writes`  | A hermetic path token is outside the declared write set.      |
 | `command_failed`           | The process could not start, or a host operation failed.      |
@@ -494,7 +497,7 @@ all values.
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
 | `unsupported`              | The service does not implement this query.                    |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
-| `response_too_large`       | The response exceeded the byte cap before decoding.           |
+| `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
 | `outside_container`        | A sealed `bash` was asked to run outside its one container.   |
 
 The list is closed and stable, and it is the vocabulary a host binding its own

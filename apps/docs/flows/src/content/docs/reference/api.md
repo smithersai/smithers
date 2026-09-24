@@ -247,7 +247,7 @@ process or signal handlers.
 
 `registry` is the optional catalog the registration phase reads from. A host that
 discovers its flows rather than listing them passes
-[`@smthrs/registry`](https://registry.smithers.sh/reference/api/)'s `Executable.layerProject({ root })`, and
+[`@smthrs/registry`](https://registry.smithers.sh/reference/api/)'s `Registry.layerProject({ root })`, and
 builds `registerFlows` from `Executable.layer(...)`. The registry is provided
 beneath registration and above the engine, so every discovered flow is
 registered before the runtime accepts a launch. Omitting it is exactly the

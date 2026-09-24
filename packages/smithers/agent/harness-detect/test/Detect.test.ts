@@ -74,15 +74,30 @@ describe("the candidate dirs", () => {
       home: "C:\\Users\\u",
       env: { PATH: "D:\\first;D:\\second" },
       binaries: [
-        "C:\\Users\\u\\.local\\bin\\claude",
-        "C:\\Users\\u\\.nvm\\versions\\node\\v24.1.0\\bin\\node",
-        "D:\\first\\claude",
-        "D:\\second\\codex"
+        "C:\\Users\\u\\.local\\bin\\claude.exe",
+        "C:\\Users\\u\\.nvm\\versions\\node\\v24.1.0\\bin\\node.exe",
+        "D:\\first\\claude.cmd",
+        // The POSIX shim npm writes beside the .cmd is not a Windows command.
+        "D:\\second\\codex",
+        "D:\\second\\codex.cmd"
       ]
     })
     expect(harnessCandidateDirs(h)).toContain("C:\\Users\\u\\.nvm\\versions\\node\\v24.1.0\\bin")
-    expect(findBinary("claude", h)).toBe("C:\\Users\\u\\.local\\bin\\claude")
-    expect(findBinary("codex", h)).toBe("D:\\second\\codex")
+    expect(harnessCandidateDirs(h)).not.toContain("/opt/homebrew/bin")
+    expect(harnessCandidateDirs(h)).not.toContain("/usr/local/bin")
+    expect(findBinary("claude", h)).toBe("C:\\Users\\u\\.local\\bin\\claude.exe")
+    expect(findBinary("codex", h)).toBe("D:\\second\\codex.cmd")
+    expect(findBinary("gemini", h)).toBeNull()
+  })
+
+  test("Windows honors a PathExt spelled in any case", () => {
+    const h = host({
+      platform: "win32",
+      home: "C:\\Users\\u",
+      env: { PATH: undefined, Path: "D:\\tools", PathExt: ".PS1" },
+      binaries: ["D:\\tools\\codex.cmd", "D:\\tools\\codex.ps1"]
+    })
+    expect(findBinary("codex", h)).toBe("D:\\tools\\codex.ps1")
   })
 
   test("explicit dirs come before PATH, nvm highest first", () => {
@@ -143,7 +158,7 @@ describe("the table", () => {
       platform: "win32",
       home: "C:\\Users\\u",
       env: { PATH: "D:\\tools", CODEX_HOME: "D:\\config\\codex" },
-      binaries: ["D:\\tools\\codex", "D:\\tools\\hermes"],
+      binaries: ["D:\\tools\\codex.cmd", "D:\\tools\\hermes.exe"],
       files: {
         "D:\\config\\codex\\auth.json": JSON.stringify({ tokens: { id_token: jwt({ email: "a@b.c" }) } }),
         "C:\\Users\\u\\.hermes\\auth.json": JSON.stringify({ providers: { local: "fixture" } })
@@ -198,7 +213,7 @@ describe("the table", () => {
     expect(harnessModelSpec("nope")).toBeUndefined()
     expect(harnessModels("codex")).toEqual({
       flag: ["-m"],
-      suggestions: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+      suggestions: ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"]
     })
     expect(harnessModels("opencode")?.list).toEqual(["opencode", "models"])
     expect(harnessModels("opencode-kimi")?.list).toEqual(["opencode", "models", "kimi-for-coding"])
@@ -219,7 +234,7 @@ describe("the table", () => {
       listable: true
     })
     expect(byId.codex?.models).toEqual({
-      suggestions: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+      suggestions: ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"],
       listable: false
     })
     expect(byId.crush?.models).toBeUndefined()
@@ -247,6 +262,17 @@ describe("the table", () => {
     })
     expect(await claudeOf({ env: { CLAUDE_CONFIG_DIR: "/cfg" }, files: { "/cfg/.credentials.json": "{}" } }))
       .toMatchObject({ status: "signed-in" })
+    // A second account under CLAUDE_CONFIG_DIR keeps its .claude.json there,
+    // and it wins over the default account's file in home.
+    expect(
+      await claudeOf({
+        env: { CLAUDE_CONFIG_DIR: "/cfg" },
+        files: {
+          "/cfg/.claude.json": JSON.stringify({ oauthAccount: { emailAddress: "second@b.c" } }),
+          "/Users/u/.claude.json": JSON.stringify({ oauthAccount: { emailAddress: "first@b.c" } })
+        }
+      })
+    ).toMatchObject({ status: "signed-in", account: { email: "second@b.c" } })
     // An empty override is no override: the default config dir still answers.
     expect(await claudeOf({ env: { CLAUDE_CONFIG_DIR: "" }, files: { "/Users/u/.claude/.credentials.json": "{}" } }))
       .toMatchObject({ status: "signed-in" })

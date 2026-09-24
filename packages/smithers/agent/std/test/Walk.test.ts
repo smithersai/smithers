@@ -3,8 +3,11 @@ import * as Path from "@smthrs/kernel/Path"
 import { Cause, Effect, Exit, PlatformError } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import { describe, expect, it } from "vitest"
+import * as Checkpoints from "../src/Checkpoints.ts"
 import * as Walk from "../src/internal/Walk.ts"
 import type * as StdError from "../src/StdError.ts"
+import * as TestRun from "../src/TestRun.ts"
+import * as TreeFingerprint from "../src/TreeFingerprint.ts"
 
 const walk = (fileSystem: FileSystem.FileSystem, root: string) =>
   Effect.runPromise(
@@ -39,7 +42,7 @@ describe("Walk.files", () => {
     const cause = "ENOENT: no such file or directory, lstat '/usr/local/bin/smithers-jj-export'"
     const error = failure(await walk(statFailing("PermissionDenied", cause), "."))
     expect(error).toBeDefined()
-    expect(error?.code).not.toBe("not_found")
+    expect(error?.code).toBe("permission_denied")
     expect(error?.message).not.toContain("Path not found")
     expect(error?.message).toContain("PermissionDenied")
     expect(error?.message).toContain(cause)
@@ -50,5 +53,28 @@ describe("Walk.files", () => {
     const error = failure(await walk(statFailing("NotFound", "ENOENT"), "/missing"))
     expect(error?.code).toBe("not_found")
     expect(error?.message).toBe("Path not found: /missing")
+  })
+
+  it("never descends into a live checkpoint or test-baseline checkout", async () => {
+    const result = await Effect.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const fileSystem = yield* FileSystem.FileSystem
+        const path = yield* Path.Path
+        const root = yield* fileSystem.makeTempDirectoryScoped()
+        yield* fileSystem.writeFileString(`${root}/source.ts`, "x")
+        for (const scratch of [Checkpoints.scratchDirectory, TestRun.scratchDirectory]) {
+          yield* fileSystem.makeDirectory(`${root}/${scratch}/run-1`, { recursive: true })
+          yield* fileSystem.writeFileString(`${root}/${scratch}/run-1/source.ts`, "stale")
+        }
+        return (yield* Walk.files(fileSystem, path, root, true)).files.map((file) => path.relative(root, file))
+      })).pipe(Effect.provide(NodeServices.layer))
+    )
+    expect(result).toEqual(["source.ts"])
+  })
+
+  it("shares its skip list with the tree fingerprint", () => {
+    for (const name of Walk.skippedDirectories) expect(TreeFingerprint.defaultPrune).toContain(name)
+    expect(TreeFingerprint.defaultPrune).toContain(Checkpoints.scratchDirectory)
+    expect(TreeFingerprint.defaultPrune).toContain(TestRun.scratchDirectory)
   })
 })

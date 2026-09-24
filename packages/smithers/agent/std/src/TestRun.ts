@@ -34,6 +34,7 @@ import * as Container from "./Container.ts"
 import { capability, envelope } from "./internal/Declaration.ts"
 import * as Exec from "./internal/Exec.ts"
 import { GitWorktree } from "./internal/GitWorktree.ts"
+import * as Prune from "./internal/Prune.ts"
 import * as TestReport from "./internal/TestReport.ts"
 import { MAX_SHELL_OUTPUT_BYTES, truncateBytes } from "./internal/Text.ts"
 import * as Probe from "./Probe.ts"
@@ -64,7 +65,7 @@ export const description =
  * @category constants
  * @since 1.0.0
  */
-export const scratchDirectory = ".flows-test-base"
+export const scratchDirectory = Prune.testBaseScratch
 
 /**
  * Default wall-clock budget for one test run.

@@ -128,7 +128,9 @@ test.each(["aborted", "error", "content-filter", "unknown", "stop", "length"] as
       runId: turn.runId,
       type: "done",
       reason: stopReason === "aborted" ? "cancelled" : "stop",
-      ...(["error", "content-filter", "unknown"].includes(stopReason) ? { error: `model stopped: ${stopReason}` } : {})
+      ...(["error", "content-filter", "unknown", "length"].includes(stopReason)
+        ? { error: `model stopped: ${stopReason}` }
+        : {})
     }])
   }
 )

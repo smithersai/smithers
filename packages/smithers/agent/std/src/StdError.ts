@@ -22,6 +22,7 @@ export const Code = Schema.Literals([
   "invalid_input",
   "no_match",
   "not_modified",
+  "permission_denied",
   "outside_declared_reads",
   "outside_declared_writes",
   "command_failed",

@@ -486,6 +486,40 @@ const reserveSibling = (
     )
   })
 
+/**
+ * How old a load sibling must be before a later load may remove it.
+ *
+ * A live load removes its own sibling as soon as the import settles, so a
+ * sibling this old was left by a crash or a failed unlink. The age keeps a
+ * concurrent load in another process from losing the file mid-import.
+ */
+const staleSiblingAgeMs = 10 * 60 * 1000
+
+/** `.smithers-<digest>-<sequence>-<base-36 epoch ms><extension>`, as {@link reserveSibling} names it. */
+const loadSibling = /^\.smithers-.+-[0-9a-z]+-([0-9a-z]+)\.[A-Za-z0-9]+$/
+
+/**
+ * Removes the load siblings a crash left in `directory`. Best effort: a
+ * listing or an unlink that fails leaves the file for the next load.
+ */
+const removeStaleSiblings = (
+  fs: FileSystem.FileSystem,
+  path: Path.Path,
+  directory: string
+): Effect.Effect<void> =>
+  fs.readDirectory(directory).pipe(
+    Effect.flatMap((names) =>
+      Effect.forEach(names, (name) => {
+        const stamp = loadSibling.exec(name)?.[1]
+        const createdAt = stamp === undefined ? Number.NaN : Number.parseInt(stamp, 36)
+        return Number.isFinite(createdAt) && Date.now() - createdAt > staleSiblingAgeMs
+          ? Effect.ignore(fs.remove(path.join(directory, name)))
+          : Effect.void
+      }, { discard: true })
+    ),
+    Effect.ignore
+  )
+
 const importModule = (
   path: string,
   source: { readonly bytes: Uint8Array; readonly contentDigest: string }
@@ -502,9 +536,20 @@ const importModule = (
       platformPath.dirname(sourcePath),
       `.smithers-${source.contentDigest}-`
     )
+    yield* removeStaleSiblings(fs, platformPath, platformPath.dirname(sourcePath))
     const modulePath = yield* Effect.acquireRelease(
       reserveSibling(fs, prefix, platformPath.extname(sourcePath) || ".mjs"),
-      (reserved) => fs.remove(reserved).pipe(Effect.orDie)
+      // The module is already evaluated; a sibling that will not unlink (EBUSY
+      // on Windows, a guard refusal) must not undo a successful load. The next
+      // load in this directory sweeps it once it is stale.
+      (reserved) =>
+        fs.remove(reserved).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("could not remove a module load sibling").pipe(
+              Effect.annotateLogs({ path: reserved, reason: String(cause) })
+            )
+          )
+        )
     )
     yield* fs.writeFile(modulePath, source.bytes)
     // Said before the import, because a declaration captures its site while
@@ -1333,7 +1378,10 @@ export const Refresh: Context.Service<Refresh, Refresh> = Context.Service("flows
  * Re-importing is not a problem the caller has to solve: the default loader
  * writes the verified bytes to a private sibling named by their content
  * digest and imports THAT, so new bytes are a new module specifier and the
- * ESM cache cannot answer with the previous body.
+ * ESM cache cannot answer with the previous body. The cost is retention: each
+ * load has its own specifier and ESM offers no unload, so the process keeps
+ * every module it has loaded for its lifetime, one per load of each flow. A
+ * long-lived host that refreshes often should expect that growth.
  *
  * @category layers
  * @since 1.0.0-rc.0
@@ -1492,21 +1540,3 @@ const makeRefresh = (
       })).pipe(Effect.provideContext(services))
     return Refresh.of({ flow })
   })
-
-/**
- * Compatibility alias for the project registry options, retained for one release candidate.
- *
- * @deprecated Use `Registry.ProjectOptions`.
- * @category models
- * @since 1.0.0-rc.0
- */
-export type ProjectOptions = Registry.ProjectOptions
-
-/**
- * Compatibility alias for the project registry constructor, retained for one release candidate.
- *
- * @deprecated Use `Registry.layerProject`.
- * @category layers
- * @since 1.0.0-rc.0
- */
-export const layerProject: typeof Registry.layerProject = Registry.layerProject

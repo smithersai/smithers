@@ -9,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FsFailure from "./internal/FsFailure.ts"
 import * as Preserve from "./internal/Preserve.ts"
 import * as StdError from "./StdError.ts"
 
@@ -148,23 +149,27 @@ export const run = Effect.fn("Write.run")(function*(
   const existed = yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false))
   if (existed) {
     const info = yield* fileSystem.stat(input.path).pipe(
-      Effect.mapError(() => writeError(input.path, `Could not inspect ${input.path} before writing`))
+      Effect.mapError(
+        FsFailure.denied(input.path, () => writeError(input.path, `Could not inspect ${input.path} before writing`))
+      )
     )
     if (info.type === "Directory") {
       return yield* Effect.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`))
     }
   }
   yield* fileSystem.makeDirectory(path.dirname(input.path), { recursive: true }).pipe(
-    Effect.mapError(() => writeError(input.path, `Could not create the parent directory of ${input.path}`))
+    Effect.mapError(
+      FsFailure.denied(
+        input.path,
+        () => writeError(input.path, `Could not create the parent directory of ${input.path}`)
+      )
+    )
   )
   yield* Preserve.writeFileString(fileSystem, input.path, input.content).pipe(
     Effect.mapError((error) =>
-      writeError(
-        input.path,
-        error.reason.method === "chmod"
-          ? `Could not preserve the mode of ${input.path} before replacement by chmod`
-          : `Could not write ${input.path}`
-      )
+      error.reason.method === "chmod"
+        ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)
+        : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)
     )
   )
   return {

@@ -770,6 +770,64 @@ describe("the modules a flow's entry imports", () => {
       expect(failure.message).toContain("refresh")
     }).pipe(Effect.scoped, Effect.provide(platform)))
 
+  it.effect("keeps a load whose sibling will not unlink, and sweeps only stale siblings", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const greet = yield* fs.readFileString(`${flowsRoot}/greet/flow.ts`)
+      const root = yield* project({ "flows/greet/flow.ts": greet })
+      const directory = `${root}/flows/greet`
+      const stale = `.smithers-deadbeef-1-${(Date.now() - 60 * 60 * 1000).toString(36)}.ts`
+      const fresh = `.smithers-deadbeef-2-${Date.now().toString(36)}.ts`
+      yield* fs.writeFileString(`${directory}/${stale}`, "")
+      yield* fs.writeFileString(`${directory}/${fresh}`, "")
+      const descriptor = yield* descriptorIn(root, "greet")
+      const refused: Array<string> = []
+      // The unlink of this load's own sibling fails, as EBUSY does on Windows.
+      const stubborn = FileSystem.FileSystem.of({
+        ...fs,
+        remove: (target, options) =>
+          target.includes("/.smithers-") && !target.endsWith(stale)
+            ? Effect.sync(() => refused.push(target)).pipe(
+              Effect.andThen(Effect.fail(PlatformError.systemError({
+                _tag: "Busy",
+                module: "FileSystem",
+                method: "remove",
+                pathOrDescriptor: target
+              })))
+            )
+            : fs.remove(target, options)
+      })
+
+      const executable = yield* Executable.fromDescriptor(descriptor, options()).pipe(
+        Effect.provideService(FileSystem.FileSystem, stubborn)
+      )
+      expect(executable.delegate).toBe("test/echo")
+      expect(refused).toHaveLength(1)
+      const left = yield* fs.readDirectory(directory)
+      expect(left).not.toContain(stale)
+      expect(left).toContain(fresh)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
+  it.effect("pins a NodeNext './x.js' import of x.ts and loads the module", () =>
+    Effect.gen(function*() {
+      const root = yield* project({
+        "flows/pinned/flow.ts": selfFlow(`Node.succeed(value0)`, ["./helper.js"]),
+        "flows/pinned/helper.ts": `export const value0 = "pinned"`
+      })
+      const descriptor = yield* descriptorIn(root, "pinned")
+      let loaded = false
+      yield* Executable.fromDescriptor(
+        descriptor,
+        options({
+          load: () => {
+            loaded = true
+            return Effect.succeed({ default: greetModule })
+          }
+        })
+      )
+      expect(loaded).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(platform)))
+
   it.effect("refuses a module reaching a specifier that resolves to no file", () =>
     Effect.gen(function*() {
       const root = yield* project({
@@ -1214,10 +1272,6 @@ describe("the host's catalog", () => {
 })
 
 describe("the project registry", () => {
-  it("retains the project constructor compatibility alias", () => {
-    expect(Executable.layerProject).toBe(Registry.layerProject)
-  })
-
   it.effect("loads a module discovered through a relative project root", () =>
     Effect.gen(function*() {
       const executable = yield* Executable.fromRegistry("greet", options())

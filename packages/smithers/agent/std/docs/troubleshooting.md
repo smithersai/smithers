@@ -26,7 +26,8 @@ of `/workspace` is read as the root-relative path `workspace/tests/**`.
 **What to change.** Read `notice`. It names the reason, and where a leading path
 duplicates the root, the root-relative pattern you probably meant. The other
 reasons it reports are a directory that does not exist, a directory that is
-never descended into (`.git`, `node_modules`, and ten more), and a hidden path
+never descended into (`.git`, `node_modules`, the checkpoint and test-baseline
+scratch checkouts, and fifteen more), and a hidden path
 with `hidden` left false.
 
 ## A search found nothing, and the result says retriedAsLiteral
@@ -112,6 +113,23 @@ or invalid UTF-8, or past the end of the file.
 through this flow at all. For the offset, note that reading an empty file
 returns an empty page rather than failing, so `offset_out_of_range` means a real
 overshoot.
+
+## permission_denied: Permission denied
+
+**What happened.** The host refused the path, or the capability kernel did: a
+symlink that escapes the workspace, a hard-linked file, or a missing grant. The
+file exists; searching for it elsewhere will not help.
+
+**What to change.** Grant the capability the call needs, or fix the path's
+permissions on the host.
+
+## response_too_large on read
+
+**What happened.** The file is larger than 64 MiB. `read` decodes the whole
+file to count its lines, so it refuses before loading one that large.
+
+**What to change.** Search the file with `grep`, or print the line range you
+need with `bash`.
 
 ## outside_declared_reads or outside_declared_writes
 

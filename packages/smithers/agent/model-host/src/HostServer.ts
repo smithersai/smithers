@@ -4,12 +4,15 @@
  * @since 1.0.0-rc.0
  */
 import type * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
 import { AgentTurnCursorSchema } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import { Effect } from "effect"
+import { Cause, Effect, Exit, Metric, Option } from "effect"
+import { createHash, timingSafeEqual } from "node:crypto"
 import { z } from "zod"
 import { runDurableChatTurn } from "./DurableChatProducer.ts"
 import type { DurableChatGrant } from "./DurableChatProducer.ts"
+import type { ProducerError, ResolveFailed } from "./ModelHostError.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -25,7 +28,11 @@ export const MODEL_HOST_PROTOCOL = "smithers.chat-model-host/v1"
  * @since 1.0.0-rc.0
  */
 export const MODEL_HOST_TURN_PATH = "/v1/chat/turn"
-/** The authenticated sealed model stream endpoint. */
+/** The authenticated sealed model stream endpoint.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
 export const MODEL_HOST_STREAM_PATH = "/v1/model/stream"
 /** The protocol identity endpoint.
  *
@@ -66,7 +73,7 @@ export interface ModelTurnResolution {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type ModelTurnResolver = (grant: DurableChatGrant) => Effect.Effect<ModelTurnResolution, Error>
+export type ModelTurnResolver = (grant: DurableChatGrant) => Effect.Effect<ModelTurnResolution, ResolveFailed>
 
 /**
  * Dependencies for the authenticated model host request handler.
@@ -158,6 +165,68 @@ const boundedJson = async (request: Request): Promise<unknown | undefined> => {
 }
 
 /**
+ * Failed model host turns by failure class.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const turnFailures = Metric.counter("smithers_model_host_turn_failures", {
+  description: "Model host turns that ended in a refusal, by failure class"
+})
+
+/**
+ * Model host turn wall time in milliseconds, by outcome.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const turnDuration = Metric.histogram("smithers_model_host_turn_duration_ms", {
+  description: "Model host turn wall time in milliseconds, by outcome",
+  boundaries: Metric.exponentialBoundaries({ start: 100, factor: 2, count: 12 })
+})
+
+/**
+ * What a failed turn is: the failure class, its provider or producer status,
+ * and the response code the caller sees. Never the cause text.
+ */
+interface TurnFailure {
+  readonly failure: string
+  readonly status?: number
+  readonly code?: string
+  readonly response: "turn_failed" | "provider_quota" | "cancelled"
+}
+
+const classify = (cause: Cause.Cause<ResolveFailed | ProducerError | Model.ModelFailure>): TurnFailure => {
+  const error = Option.getOrUndefined(Cause.findErrorOption(cause))
+  if (error === undefined) {
+    return Cause.hasInterruptsOnly(cause)
+      ? { failure: "Interrupted", response: "cancelled" }
+      : { failure: "Defect", response: "turn_failed" }
+  }
+  if (error instanceof ModelError) {
+    return {
+      failure: "ModelFailure",
+      code: error.code,
+      response: error.code === "rate_limited" || error.code === "quota_exceeded" ? "provider_quota" : "turn_failed"
+    }
+  }
+  return {
+    failure: error._tag,
+    ...("status" in error ? { status: error.status } : {}),
+    response: "turn_failed"
+  }
+}
+
+const digest = (value: string): Buffer => createHash("sha256").update(value).digest()
+
+/**
+ * Compares a presented header with the expected one in constant time. Equal
+ * length SHA-256 digests keep the comparison from leaking a prefix match.
+ */
+const authorized = (presented: string | null, expected: Buffer): boolean =>
+  presented !== null && timingSafeEqual(digest(presented), expected)
+
+/**
  * Creates the Fetch handler shared by the local executable and Plue service.
  *
  * @category constructors
@@ -166,6 +235,7 @@ const boundedJson = async (request: Request): Promise<unknown | undefined> => {
 export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (request: Request) => Promise<Response> => {
   if (options.authorization.trim() === "") throw new Error("model host authorization is required")
   const callbackBaseUrl = normalizedBaseUrl(options.callbackBaseUrl)
+  const expectedAuthorization = digest(`Bearer ${options.authorization}`)
   return async (request) => {
     const url = new URL(request.url)
     if (url.pathname === MODEL_HOST_HEALTH_PATH && request.method === "GET") {
@@ -173,7 +243,7 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
     }
     if (url.pathname === MODEL_HOST_STREAM_PATH) {
       if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
-      if (request.headers.get("authorization") !== `Bearer ${options.authorization}`) {
+      if (!authorized(request.headers.get("authorization"), expectedAuthorization)) {
         return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
       }
       const body = streamRequest(await boundedJson(request))
@@ -214,25 +284,45 @@ export const createModelTurnHandler = (options: ModelTurnHandlerOptions): (reque
     }
     if (url.pathname !== MODEL_HOST_TURN_PATH) return new Response("Not found", { status: 404 })
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
-    if (request.headers.get("authorization") !== `Bearer ${options.authorization}`) {
+    if (!authorized(request.headers.get("authorization"), expectedAuthorization)) {
       return Response.json({ status: "error", code: "forbidden" }, { status: 401 })
     }
     const grant = decodeGrant(await boundedJson(request), callbackBaseUrl)
     if (grant === undefined) return Response.json({ status: "error", code: "request_invalid" }, { status: 400 })
-    try {
-      await Effect.runPromise(
-        options.resolve(grant).pipe(
-          Effect.flatMap(({ model, options: modelOptions }) =>
-            runDurableChatTurn(model, grant, modelOptions, callbackBaseUrl, options.fetchImpl)
-          )
-        ),
-        { signal: request.signal }
-      )
+    const started = performance.now()
+    const exit = await Effect.runPromiseExit(
+      options.resolve(grant).pipe(
+        Effect.flatMap(({ model, options: modelOptions }) =>
+          runDurableChatTurn(model, grant, modelOptions, callbackBaseUrl, options.fetchImpl)
+        )
+      ),
+      { signal: request.signal }
+    )
+    const elapsed = performance.now() - started
+    if (Exit.isSuccess(exit)) {
+      await Effect.runPromise(Metric.update(Metric.withAttributes(turnDuration, { outcome: "success" }), elapsed))
       return new Response(null, { status: 204 })
-    } catch {
-      // Provider and transport causes can hold signed requests. The durable Go
-      // boundary records the generic terminal receipt after this refusal.
-      return Response.json({ status: "error", code: "turn_failed" }, { status: 502 })
     }
+    // Provider and transport causes can hold signed requests, so the log line
+    // and the response carry the failure class and status codes only. The
+    // durable Go boundary records the generic terminal receipt after this
+    // refusal.
+    const failed = classify(exit.cause)
+    await Effect.runPromise(
+      Effect.logError("model host turn failed").pipe(
+        Effect.annotateLogs({
+          failure: failed.failure,
+          ...(failed.status === undefined ? {} : { status: failed.status }),
+          ...(failed.code === undefined ? {} : { code: failed.code }),
+          turnId: grant.turnId,
+          runId: grant.runId,
+          generation: grant.generation,
+          elapsedMs: Math.round(elapsed)
+        }),
+        Effect.andThen(Metric.update(Metric.withAttributes(turnFailures, { failure: failed.failure }), 1)),
+        Effect.andThen(Metric.update(Metric.withAttributes(turnDuration, { outcome: "failure" }), elapsed))
+      )
+    )
+    return Response.json({ status: "error", code: failed.response }, { status: 502 })
   }
 }

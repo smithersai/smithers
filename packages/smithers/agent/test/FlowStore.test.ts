@@ -131,6 +131,32 @@ describe("FlowStore.makeMemory", () => {
 })
 
 describe("FlowStore.layerFileSystem", () => {
+  it("publishes on a host that refuses makeTempDirectory, as the kernel filesystem does", async () => {
+    const directory = root()
+    const result = await Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const path = yield* Path.Path
+      const refused = PlatformError.systemError({
+        _tag: "PermissionDenied",
+        module: "FileSystem",
+        method: "makeTempDirectory",
+        description: "host does not provide descriptor-relative, no-follow filesystem isolation"
+      })
+      const kernelLike = FileSystem.FileSystem.of({
+        ...fs,
+        makeTempDirectory: () => Effect.fail(refused),
+        makeTempDirectoryScoped: () => Effect.fail(refused)
+      })
+      return yield* FlowStore.makeFileSystem(kernelLike, path, directory).write("triage", files("triage"))
+    }).pipe(Effect.provide(platform), Effect.runPromiseExit)
+
+    expect(Exit.isSuccess(result)).toBe(true)
+    for (const [relative, source] of Object.entries(files("triage"))) {
+      expect(readFileSync(join(directory, relative), "utf8")).toBe(source)
+    }
+    expect(readdirSync(directory)).toStrictEqual(["flows"])
+  })
+
   it.each([1, 2])("preserves the previous file set when staged write %i runs out of space", async (failAt) => {
     const directory = root()
     const original = files("triage")

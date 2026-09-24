@@ -41,7 +41,7 @@ The root entry point exports these namespaces; each is also importable from `@sm
 | `NodeLanguageServer` | `Config`, `MAX_QUEUED_FRAMES`, `MAX_PENDING_REQUESTS`, `make`, `layer`                                                                                                                                  | Implements LanguageServer with Node child processes.                           |
 | `PortableSearch`     | `make`, `layer`                                                                                                                                                                                         | Implements Search by walking the kernel filesystem in process.                 |
 | `Probe`              | `key`, `Reason`, `InvalidProbe`, `Attribution`, `CONFIDENCE_FLOOR`, `MAX_OUTPUT_BYTES`, `posix`, `probeAttribution`, `classify`, `unjudged`                                                             | Attributes a non-zero exit to the command or to the tree, with Jev.            |
-| `Read`               | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`, `activity`, `presentation`                                                                            | Declares and runs bounded file reads.                                          |
+| `Read`               | `name`, `description`, `Input`, `Output`, `effects`, `effectsFor`, `capabilities`, `flow`, `run`, `activity`, `presentation`, `MAX_READ_FILE_BYTES`                                                     | Declares and runs bounded file reads.                                          |
 | `Relocate`           | `Relocation`, `relocate`                                                                                                                                                                                | Rewrites a call's input so the call runs against a materialized checkpoint.    |
 | `Search`             | `GrepInput`, `GrepLine`, `ContextLine`, `Symbol`, `GrepMatch`, `GrepOutput`, `GlobInput`, `GlobOutput`, `Search`, `make`, `makeNoop`, `layerNoop`                                                       | Defines the search service both peers implement.                               |
 | `SearchConformance`  | `GeneratedFile`, `Plan`, `Divergence`, `plan`, `materialize`, `compare`, `report`                                                                                                                       | Generates a tree and calls, then reports where two Search peers disagree.      |
@@ -125,6 +125,7 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `invalid_input`            | The input is self-contradictory or names an unusable value.   |
 | `no_match`                 | The edit anchor or patch context is not in the file.          |
 | `not_modified`             | The write would leave the file exactly as it was.             |
+| `permission_denied`        | The host or the capability kernel refused access to the path. |
 | `outside_declared_reads`   | A hermetic path token is outside the declared read set.       |
 | `outside_declared_writes`  | A hermetic path token is outside the declared write set.      |
 | `command_failed`           | The process could not start, or a host operation failed.      |
@@ -134,7 +135,7 @@ Handlers keep ordinary outcomes in the success channel: a non-zero exit code, an
 | `provider_unavailable`     | No host bound the service this flow needs, or it refused.     |
 | `unsupported`              | The service does not implement this query.                    |
 | `unsupported_content_type` | The response is not a type this flow renders.                 |
-| `response_too_large`       | The response exceeded the byte cap before decoding.           |
+| `response_too_large`       | The response or file exceeded the byte cap before decoding.   |
 
 Six services are injected, and a flow whose service a host has not bound gets a `makeNoop` refusal rather than a silent success: `Search` for `grep` and `glob`, `Container` for a containerised `bash` or `test`, `TestRunner` for `test`, `Checkpoints` for agent-side pinning, `WebSearch` for `websearch`, and `LanguageServer` for `lsp`. Refusing loudly is the contract, because a flow that appears to work while doing nothing costs a model the frames it takes to notice.
 

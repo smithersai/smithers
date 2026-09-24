@@ -73,8 +73,8 @@ export const harnessCandidateDirs = (
   return [
     join(host.home, ".local", "bin"),
     join(host.home, ".bun", "bin"),
-    "/opt/homebrew/bin",
-    "/usr/local/bin",
+    // Homebrew and the POSIX local prefix do not exist on Windows.
+    ...(host.platform === "win32" ? [] : ["/opt/homebrew/bin", "/usr/local/bin"]),
     ...nvm,
     join(host.home, ".cargo", "bin"),
     join(host.home, ".opencode", "bin")
@@ -104,10 +104,28 @@ const compareSemver = (left: RegExpExecArray, right: RegExpExecArray): number =>
  */
 export const findBinary = (name: string, host: HarnessHost): string | null => {
   const { delimiter, join } = hostPath(host)
-  const fromPath = (host.env.PATH ?? "").split(delimiter).filter((dir) => dir !== "")
+  const windows = host.platform === "win32"
+  // Windows environment names are case-insensitive, so a copied env may
+  // spell them `Path` or `PathExt`.
+  const variable = (key: string): string | undefined =>
+    host.env[key] ?? (windows
+      ? Object.entries(host.env).find(([candidate, value]) => value !== undefined && candidate.toUpperCase() === key)
+        ?.[1]
+      : undefined)
+  const fromPath = (variable("PATH") ?? "").split(delimiter).filter((dir) => dir !== "")
+  // A Windows command is a file with an executable extension: npm installs
+  // `claude.cmd`, native installers `codex.exe`. A bare `claude` beside them
+  // is a POSIX shell shim Windows cannot launch.
+  const names = windows
+    ? (variable("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD").split(";").filter((extension) => extension !== "").map((
+      extension
+    ) => `${name}${extension.toLowerCase()}`)
+    : [name]
   for (const dir of [...harnessCandidateDirs(host), ...fromPath]) {
-    const candidate = join(dir, name)
-    if (host.isFile(candidate)) return candidate
+    for (const file of names) {
+      const candidate = join(dir, file)
+      if (host.isFile(candidate)) return candidate
+    }
   }
   return null
 }

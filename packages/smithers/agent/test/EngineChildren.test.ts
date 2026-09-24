@@ -306,7 +306,7 @@ const childErrorOf = (exit: Exit.Exit<unknown, unknown>): ChildFlows.ChildError 
 
 describe("EngineChildren.spawn", () => {
   it("distinguishes a delimiter-bearing direct child from a nested child", () => {
-    const direct = EngineChildren.childExecutionId("root", "review/child/check")
+    const direct = EngineChildren.childExecutionId("root", EngineChildren.childExecutionId("review", "check"))
     const nested = EngineChildren.childExecutionId(EngineChildren.childExecutionId("root", "review"), "check")
     expect(direct).not.toBe(nested)
     expect(EngineChildren.childExecutionId("root", "review/check")).not.toBe(direct)
@@ -325,7 +325,11 @@ describe("EngineChildren.spawn", () => {
         }).pipe(Effect.map(({ child }) => child), Effect.orDie))
       yield* runtime.register(Parent, () =>
         Effect.gen(function*() {
-          const direct = yield* port.spawn({ flow: Counted._tag, label: "review/child/check", input: { count: 1 } })
+          const direct = yield* port.spawn({
+            flow: Counted._tag,
+            label: EngineChildren.childExecutionId("review", "check"),
+            input: { count: 1 }
+          })
           const reviewer = yield* port.spawn({ flow: Worker._tag, label: "review" })
           const nested = (yield* port.await(reviewer)).output
           expect(direct.child).not.toBe(nested)
@@ -334,28 +338,6 @@ describe("EngineChildren.spawn", () => {
           return "independent"
         }).pipe(Effect.orDie))
       expect(yield* runtime.execute(Parent, { executionId: "nested-parent", payload: {} })).toBe("independent")
-    })))
-
-  it("replays persisted legacy ids without creating new legacy children", () =>
-    run(Effect.gen(function*() {
-      const runtime = yield* engine("children-legacy")
-      const port = yield* children({ legacyChildIds: true }).pipe(
-        Effect.provideService(FlowRuntime.FlowRuntime, runtime)
-      )
-      yield* registerChildren(runtime)
-      const legacyId = "legacy-parent/child/review/check"
-      yield* runtime.execute(Worker, { executionId: legacyId, payload: {} })
-      yield* runtime.register(Parent, () =>
-        Effect.gen(function*() {
-          const replayed = yield* port.spawn({ flow: Worker._tag, label: "review/check" })
-          expect(replayed.child).toBe(legacyId)
-          expect((yield* port.await(replayed)).output).toBe("worker finished")
-          const missing = yield* Effect.exit(port.spawn({ flow: Worker._tag, label: "new" }))
-          expect(childErrorOf(missing)?.code).toBe("failed")
-          expect(childErrorOf(missing)?.message).toContain("new children require v2 ids")
-          return "replayed"
-        }).pipe(Effect.orDie))
-      expect(yield* runtime.execute(Parent, { executionId: "legacy-parent", payload: {} })).toBe("replayed")
     })))
 
   it("starts a durable child that outlives the run that spawned it", () =>
@@ -851,7 +833,7 @@ describe("EngineChildren.await", () => {
       expect(codes).toEqual(["failed", "not_found", "not_found"])
     })))
 
-  it("dies rather than guessing when the run store itself is broken", () =>
+  it("fails typed rather than guessing when the run store itself is broken", () =>
     run(Effect.gen(function*() {
       const runtime = yield* engine("children-await-broken")
       const store = yield* RunStore.RunStore
@@ -874,9 +856,43 @@ describe("EngineChildren.await", () => {
 
       const exit = yield* Effect.exit(port.await({ child: "any-child" }))
       // A store that cannot answer is not a missing child: reporting
-      // `not_found` here would tell a cell its child never existed.
-      expect(Exit.isFailure(exit) && exit.cause.reasons.some((reason) => reason._tag === "Die")).toBe(true)
+      // `not_found` here would tell a cell its child never existed. Nor is it
+      // a defect in the calling cell: a busy database is data it can see.
+      expect(Exit.isFailure(exit) && exit.cause.reasons.some((reason) => reason._tag === "Die")).toBe(false)
+      expect(childErrorOf(exit)).toMatchObject({ code: "failed", message: expect.stringContaining("any-child") })
     })))
+
+  it.each([
+    {
+      name: "the port's bound",
+      options: { awaitTimeout: "30 millis" as const },
+      timeoutSeconds: undefined,
+      bound: "30ms"
+    },
+    { name: "the call's timeoutSeconds", options: {}, timeoutSeconds: 1, bound: "1s" }
+  ])(
+    "answers still_running for a child that does not settle within $name",
+    ({ bound, options, timeoutSeconds }) =>
+      run(Effect.gen(function*() {
+        const runtime = yield* engine(`children-await-bounded-${bound}`)
+        const store = yield* RunStore.RunStore
+        const port = yield* children(options).pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
+        yield* runtime.register(Worker, () => Effect.succeed("worker finished"))
+        // A row nobody ever drives: the child a parked approval leaves behind.
+        yield* store.create(
+          "stuck-child",
+          JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} }),
+          { lineageId: FlowEngine.Round.initial("stuck-child").rootExecutionId, roundOrdinal: 0 }
+        )
+        const exit = yield* Effect.exit(
+          port.await({ child: "stuck-child", ...(timeoutSeconds === undefined ? {} : { timeoutSeconds }) })
+        )
+        expect(childErrorOf(exit)).toMatchObject({
+          code: "still_running",
+          message: expect.stringContaining(`after ${bound}`)
+        })
+      }))
+  )
 })
 
 describe("EngineChildren.send", () => {
@@ -927,7 +943,7 @@ describe("EngineChildren.send", () => {
       const store = yield* RunStore.RunStore
       const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       yield* store.create(
-        "send-identity/child/identity",
+        EngineChildren.childExecutionId("send-identity", "identity"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       // Two sends with the SAME text. A content-addressed id would collapse
@@ -935,15 +951,21 @@ describe("EngineChildren.send", () => {
       // ordinal, so the child hears both.
       yield* runtime.register(Parent, () =>
         Effect.gen(function*() {
-          yield* port.send({ child: "send-identity/child/identity", message: "same words" })
-          yield* port.send({ child: "send-identity/child/identity", message: "same words" })
+          yield* port.send({
+            child: EngineChildren.childExecutionId("send-identity", "identity"),
+            message: "same words"
+          })
+          yield* port.send({
+            child: EngineChildren.childExecutionId("send-identity", "identity"),
+            message: "same words"
+          })
           return "sent"
         }).pipe(Effect.orDie))
 
       yield* runtime.execute(Parent, { executionId: "send-identity", payload: {} })
       const drained = yield* queue.drain({
-        runId: "send-identity/child/identity",
-        targetLineageId: "send-identity/child/identity",
+        runId: EngineChildren.childExecutionId("send-identity", "identity"),
+        targetLineageId: EngineChildren.childExecutionId("send-identity", "identity"),
         boundary: "turn-1",
         wouldIdle: false
       })
@@ -969,20 +991,26 @@ describe("EngineChildren.send", () => {
       const first = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       const second = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       yield* store.create(
-        "send-two-ports/child/two-port",
+        EngineChildren.childExecutionId("send-two-ports", "two-port"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       yield* runtime.register(Parent, () =>
         Effect.gen(function*() {
-          yield* first.send({ child: "send-two-ports/child/two-port", message: "same words" })
-          yield* second.send({ child: "send-two-ports/child/two-port", message: "same words" })
+          yield* first.send({
+            child: EngineChildren.childExecutionId("send-two-ports", "two-port"),
+            message: "same words"
+          })
+          yield* second.send({
+            child: EngineChildren.childExecutionId("send-two-ports", "two-port"),
+            message: "same words"
+          })
           return "sent"
         }).pipe(Effect.orDie))
 
       yield* runtime.execute(Parent, { executionId: "send-two-ports", payload: {} })
       const drained = yield* queue.drain({
-        runId: "send-two-ports/child/two-port",
-        targetLineageId: "send-two-ports/child/two-port",
+        runId: EngineChildren.childExecutionId("send-two-ports", "two-port"),
+        targetLineageId: EngineChildren.childExecutionId("send-two-ports", "two-port"),
         boundary: "turn-1",
         wouldIdle: false
       })
@@ -1001,7 +1029,7 @@ describe("EngineChildren.send", () => {
       const store = yield* RunStore.RunStore
       const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       yield* store.create(
-        "send-across-park/child/parked-send",
+        EngineChildren.childExecutionId("send-across-park", "parked-send"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       let announcements = 0
@@ -1014,14 +1042,20 @@ describe("EngineChildren.send", () => {
         tier: "sealed",
         execute: Effect.gen(function*() {
           announcements += 1
-          yield* port.send({ child: "send-across-park/child/parked-send", message: "first" })
+          yield* port.send({
+            child: EngineChildren.childExecutionId("send-across-park", "parked-send"),
+            message: "first"
+          })
         }).pipe(Effect.orDie)
       })
       yield* runtime.register(Parent, () =>
         Effect.gen(function*() {
           yield* Announce
           yield* DurableDeferred.await(parkGate)
-          yield* port.send({ child: "send-across-park/child/parked-send", message: "second" })
+          yield* port.send({
+            child: EngineChildren.childExecutionId("send-across-park", "parked-send"),
+            message: "second"
+          })
           return "sent"
         }).pipe(Effect.orDie))
 
@@ -1034,8 +1068,8 @@ describe("EngineChildren.send", () => {
       })
       const settled = yield* runtime.execute(Parent, { executionId: "send-across-park", payload: {} })
       const drained = yield* queue.drain({
-        runId: "send-across-park/child/parked-send",
-        targetLineageId: "send-across-park/child/parked-send",
+        runId: EngineChildren.childExecutionId("send-across-park", "parked-send"),
+        targetLineageId: EngineChildren.childExecutionId("send-across-park", "parked-send"),
         boundary: "turn-1",
         wouldIdle: false
       })
@@ -1058,7 +1092,10 @@ describe("EngineChildren.send", () => {
       // time belongs to a composition that holds nothing the first one built.
       const body = (port: ChildFlows.Children, message: string) =>
         Effect.gen(function*() {
-          const delivered = yield* port.send({ child: "send-redrive/child/redrive", message }).pipe(
+          const delivered = yield* port.send({
+            child: EngineChildren.childExecutionId("send-redrive", "redrive"),
+            message
+          }).pipe(
             Effect.map((sent) => `${sent.delivered}`),
             Effect.catch((error) =>
               Effect.succeed(`${(error as ChildFlows.ChildError).code} ${(error as ChildFlows.ChildError).message}`)
@@ -1080,7 +1117,7 @@ describe("EngineChildren.send", () => {
             Effect.provideService(ControlService.Control, control)
           )
           yield* store.create(
-            "send-redrive/child/redrive",
+            EngineChildren.childExecutionId("send-redrive", "redrive"),
             JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
           )
           yield* runtime.register(Parent, () => body(port, "hold position"))
@@ -1108,8 +1145,8 @@ describe("EngineChildren.send", () => {
           })
           const settled = yield* runtime.execute(Parent, { executionId: "send-redrive", payload: {} })
           const drained = yield* queue.drain({
-            runId: "send-redrive/child/redrive",
-            targetLineageId: "send-redrive/child/redrive",
+            runId: EngineChildren.childExecutionId("send-redrive", "redrive"),
+            targetLineageId: EngineChildren.childExecutionId("send-redrive", "redrive"),
             boundary: "turn-1",
             wouldIdle: false
           })
@@ -1137,7 +1174,10 @@ describe("EngineChildren.send", () => {
       // answer is a refusal: the words in this call were never delivered.
       const body = (port: ChildFlows.Children, message: string) =>
         Effect.gen(function*() {
-          const outcome = yield* port.send({ child: "send-collide/child/collide", message }).pipe(
+          const outcome = yield* port.send({
+            child: EngineChildren.childExecutionId("send-collide", "collide"),
+            message
+          }).pipe(
             Effect.map((sent) => `${sent.delivered}`),
             Effect.catch((error) =>
               Effect.succeed(`${(error as ChildFlows.ChildError).code} ${(error as ChildFlows.ChildError).message}`)
@@ -1154,7 +1194,7 @@ describe("EngineChildren.send", () => {
           const store = yield* RunStore.RunStore
           const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
           yield* store.create(
-            "send-collide/child/collide",
+            EngineChildren.childExecutionId("send-collide", "collide"),
             JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
           )
           yield* runtime.register(Parent, () => body(port, "hold position"))
@@ -1182,8 +1222,8 @@ describe("EngineChildren.send", () => {
           })
           const settled = yield* runtime.execute(Parent, { executionId: "send-collide", payload: {} })
           const drained = yield* queue.drain({
-            runId: "send-collide/child/collide",
-            targetLineageId: "send-collide/child/collide",
+            runId: EngineChildren.childExecutionId("send-collide", "collide"),
+            targetLineageId: EngineChildren.childExecutionId("send-collide", "collide"),
             boundary: "turn-1",
             wouldIdle: false
           })
@@ -1307,7 +1347,11 @@ describe("EngineChildren.send", () => {
             ControlService.make({ ...control, steer: () => Effect.succeed(receipt) })
           )
         )
-      const terminal = yield* answering({ _tag: "Terminal", runId: "send-receipts/child/receipt", status: "completed" })
+      const terminal = yield* answering({
+        _tag: "Terminal",
+        runId: EngineChildren.childExecutionId("send-receipts", "receipt"),
+        status: "completed"
+      })
       const parked = yield* answering({
         _tag: "Parked",
         receiptId: "receipt-1",
@@ -1315,11 +1359,11 @@ describe("EngineChildren.send", () => {
         status: "waiting-approval"
       })
       yield* store.create(
-        "send-receipts/child/receipt",
+        EngineChildren.childExecutionId("send-receipts", "receipt"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       const reported = (port: ChildFlows.Children, message: string) =>
-        port.send({ child: "send-receipts/child/receipt", message }).pipe(
+        port.send({ child: EngineChildren.childExecutionId("send-receipts", "receipt"), message }).pipe(
           Effect.map(() => "delivered"),
           Effect.catch((error) => Effect.succeed((error as ChildFlows.ChildError).message))
         )
@@ -1332,15 +1376,21 @@ describe("EngineChildren.send", () => {
 
       const outcome = yield* runtime.execute(Parent, { executionId: "send-receipts", payload: {} })
       const drained = yield* queue.drain({
-        runId: "send-receipts/child/receipt",
-        targetLineageId: "send-receipts/child/receipt",
+        runId: EngineChildren.childExecutionId("send-receipts", "receipt"),
+        targetLineageId: EngineChildren.childExecutionId("send-receipts", "receipt"),
         boundary: "turn-1",
         wouldIdle: false
       })
 
-      expect(outcome).toContain("agent/send could not steer send-receipts/child/receipt: the child run is completed.")
       expect(outcome).toContain(
-        "agent/send could not steer send-receipts/child/receipt: the control plane answered Parked."
+        `agent/send could not steer ${
+          EngineChildren.childExecutionId("send-receipts", "receipt")
+        }: the child run is completed.`
+      )
+      expect(outcome).toContain(
+        `agent/send could not steer ${
+          EngineChildren.childExecutionId("send-receipts", "receipt")
+        }: the control plane answered Parked.`
       )
       // Nothing was admitted, which is exactly why neither call may answer
       // `delivered`.
@@ -1352,7 +1402,7 @@ describe("EngineChildren.send", () => {
       const runtime = yield* engine("children-send-refusals")
       const port = yield* children().pipe(Effect.provideService(FlowRuntime.FlowRuntime, runtime))
       yield* runtime.register(Parent, () =>
-        port.send({ child: "send-refusals/child/no-such-child", message: "hello" }).pipe(
+        port.send({ child: EngineChildren.childExecutionId("send-refusals", "no-such-child"), message: "hello" }).pipe(
           Effect.map(() =>
             "delivered"
           ),
@@ -1360,7 +1410,9 @@ describe("EngineChildren.send", () => {
         ))
 
       const inside = yield* runtime.execute(Parent, { executionId: "send-refusals", payload: {} })
-      const outside = yield* Effect.exit(port.send({ child: "send-refusals/child/no-such-child", message: "hello" }))
+      const outside = yield* Effect.exit(
+        port.send({ child: EngineChildren.childExecutionId("send-refusals", "no-such-child"), message: "hello" })
+      )
 
       expect(inside).toBe("not_found")
       expect(childErrorOf(outside)?.code).toBe("unsupported")
@@ -1384,11 +1436,11 @@ describe("EngineChildren.send", () => {
         Effect.provideService(ControlService.Control, foreign)
       )
       yield* store.create(
-        "send-foreign/child/foreign-steer",
+        EngineChildren.childExecutionId("send-foreign", "foreign-steer"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       yield* runtime.register(Parent, () =>
-        port.send({ child: "send-foreign/child/foreign-steer", message: "hello" }).pipe(
+        port.send({ child: EngineChildren.childExecutionId("send-foreign", "foreign-steer"), message: "hello" }).pipe(
           Effect.map(() =>
             "delivered"
           ),
@@ -1408,12 +1460,14 @@ describe("EngineChildren.send", () => {
         Effect.provideService(FlowRuntime.FlowRuntime, runtime)
       )
       yield* store.create(
-        "send-broken/child/steerable",
+        EngineChildren.childExecutionId("send-broken", "steerable"),
         JSON.stringify({ version: 1, flowName: Worker._tag, payload: {} })
       )
       yield* runtime.register(Parent, () =>
-        port.send({ child: "send-broken/child/steerable", message: "hello" }).pipe(
-          Effect.map(() => "delivered"),
+        port.send({ child: EngineChildren.childExecutionId("send-broken", "steerable"), message: "hello" }).pipe(
+          Effect.map(() =>
+            "delivered"
+          ),
           Effect.catch((error) => Effect.succeed(`${(error as ChildFlows.ChildError).code}`))
         ))
 

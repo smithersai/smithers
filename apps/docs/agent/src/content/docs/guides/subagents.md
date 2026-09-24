@@ -81,12 +81,7 @@ spawns the same child rather than a second one, because the engine's create is
 idempotent on the execution id. The label is therefore the child's identity
 within its parent: two concurrent children of one flow need two labels.
 
-Keep returned ids opaque. `await` and `send` accept already-persisted legacy
-ids. To re-drive parents whose children used `${parentExecutionId}/child/${label}`,
-compose their port with `legacyChildIds: true`. This mode starts only existing
-rows and refuses new legacy children. Use the default port for new parents.
-Legacy rows retain their original identities, including any pre-existing label
-ambiguity; they are not automatically migrated.
+Keep returned ids opaque.
 
 `spawn` answers once the child's run row exists, within `startTimeout`
 (default 30 seconds). Until admission succeeds, failure, a store defect, or
@@ -114,6 +109,10 @@ The distinct endings:
 - A child whose round handed its lineage to a new execution id is `failed`:
   that id holds no value, and an await that kept polling it would wait forever.
 - An unknown child id is `not_found`.
+- A child still running after `timeoutSeconds` (1 to 3600; the port's
+  `awaitTimeout`, 10 minutes, when omitted) is `still_running`. Await it again
+  to keep waiting.
+- A run store that cannot answer is `failed`, never `not_found`.
 
 ## send
 

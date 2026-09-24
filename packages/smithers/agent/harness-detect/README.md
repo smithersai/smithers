@@ -23,11 +23,14 @@ Path formatting and `PATH` separators follow `host.platform`.
   order: `~/.local/bin`, `~/.bun/bin`, `/opt/homebrew/bin`, `/usr/local/bin`,
   the nvm node dirs newest first, `~/.cargo/bin`, `~/.opencode/bin`. A Finder
   launch inherits the launchd `PATH`, which holds none of these, so the
-  candidate dirs are not an optimization.
+  candidate dirs are not an optimization. On Windows the two POSIX prefixes are
+  skipped and a binary matches only with a `PATHEXT` extension (default
+  `.COM;.EXE;.BAT;.CMD`), so `claude.cmd` is found and the POSIX shim beside it
+  is not.
 - **The version.** `<binary> --version`, delegated to the host, parsed with
   `parseVersionLine` — `"2.1.247 (Claude Code)"` is `2.1.247` and
   `"crush version v0.1.11"` is `0.1.11`.
-- **The account.** Per vendor, off this user's own files: `~/.claude.json`'s
+- **The account.** Per vendor, off this user's own files: `.claude.json`'s (in `CLAUDE_CONFIG_DIR` when set, then `~`)
   `oauthAccount` then `.credentials.json`, the Codex `auth.json` `id_token`'s
   `email` claim (decoded, never verified, never returned), the OpenCode
   `auth.json` providers, and so on, with the vendor's API-key environment

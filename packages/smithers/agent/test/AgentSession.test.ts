@@ -1866,7 +1866,10 @@ describe("AgentSession", () => {
     // never entered, and the run was never re-claimed.
     expect(observed).toEqual({ status: "parked", delegations: [], claims: 0 })
     expect(answers).toEqual([])
-  }, 30_000)
+    // Every wait above is a bounded count of scheduler turns, not a clock, so
+    // the result does not depend on speed. The budget covers a loaded machine:
+    // measured there, admission took 7 s and reaching the park 26 s.
+  }, 120_000)
 
   it("journals a bounded cause when the model fails, for an empty and an absent input", async () => {
     const results = await Effect.runPromise(

@@ -12,6 +12,8 @@ import {
 import type { AgentTurnCursor, AgentTurnJournalReply } from "@smthrs/rpc/AgentTurnJournal"
 import type { AgentTurnFrame, FetchLike, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { Effect } from "effect"
+import { CommitRefused, ProducerUnreachable, ProviderStartRefused, ReceiptMismatch } from "./ModelHostError.ts"
+import type { ProducerError } from "./ModelHostError.ts"
 import { runModelTurn } from "./ModelTurnHost.ts"
 import type { ModelTurnOptions } from "./ModelTurnHost.ts"
 
@@ -37,21 +39,29 @@ export interface DurableChatGrant {
 
 type CommitReply = Extract<AgentTurnJournalReply, { readonly status: "committed" | "duplicate" }>
 
-const asError = (cause: unknown): Error => cause instanceof Error ? cause : new Error("chat producer request failed")
+const unreachable = (step: ProducerUnreachable["step"]) => (): ProducerUnreachable =>
+  new ProducerUnreachable({ step, message: "chat producer request failed" })
 
 const sha256Hex = async (value: string): Promise<string> => {
   const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
 }
 
-const commitReply = async (response: Response): Promise<CommitReply> => {
-  if (!response.ok) throw new Error(`chat producer commit refused (${response.status})`)
-  const parsed = AgentTurnJournalReplySchema.safeParse(await response.json())
-  if (!parsed.success || (parsed.data.status !== "committed" && parsed.data.status !== "duplicate")) {
-    throw new Error("chat producer commit returned an invalid receipt")
-  }
-  return parsed.data
-}
+const invalidReceipt = () => new ReceiptMismatch({ message: "chat producer commit returned an invalid receipt" })
+
+const commitReply = (response: Response): Effect.Effect<CommitReply, CommitRefused | ReceiptMismatch> =>
+  response.ok
+    ? Effect.tryPromise({ try: () => response.json() as Promise<unknown>, catch: invalidReceipt }).pipe(
+      Effect.flatMap((body) => {
+        const parsed = AgentTurnJournalReplySchema.safeParse(body)
+        return parsed.success && (parsed.data.status === "committed" || parsed.data.status === "duplicate")
+          ? Effect.succeed(parsed.data)
+          : Effect.fail(invalidReceipt())
+      })
+    )
+    : Effect.fail(
+      new CommitRefused({ status: response.status, message: `chat producer commit refused (${response.status})` })
+    )
 
 /**
  * Writes exact, hash-checked batches for one producer generation.
@@ -76,7 +86,7 @@ export class DurableChatProducer {
     this.cursor = AgentTurnCursorSchema.parse(grant.cursor)
   }
 
-  providerStarted(): Effect.Effect<void, Error> {
+  providerStarted(): Effect.Effect<void, ProducerUnreachable | ProviderStartRefused> {
     const url = new URL("/internal/chat/provider-started", this.callbackBaseUrl)
     url.searchParams.set("turnId", this.grant.turnId)
     url.searchParams.set("generation", String(this.grant.generation))
@@ -87,15 +97,20 @@ export class DurableChatProducer {
           signal,
           headers: { authorization: `Bearer ${this.grant.token}` }
         }),
-      catch: asError
+      catch: unreachable("provider_started")
     }).pipe(
       Effect.flatMap((response) =>
-        response.ok ? Effect.void : Effect.fail(new Error(`chat provider start refused (${response.status})`))
+        response.ok ? Effect.void : Effect.fail(
+          new ProviderStartRefused({
+            status: response.status,
+            message: `chat provider start refused (${response.status})`
+          })
+        )
       )
     )
   }
 
-  write(frame: AgentTurnFrame): Effect.Effect<void, Error> {
+  write(frame: AgentTurnFrame): Effect.Effect<void, ProducerError> {
     const expected = this.cursor
     const body = JSON.stringify({
       turnId: this.grant.turnId,
@@ -103,15 +118,18 @@ export class DurableChatProducer {
       expected,
       frames: [frame]
     })
-    const invoke = (signal: AbortSignal) =>
-      this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
-        method: "POST",
-        signal,
-        headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
-        body
-      }).then(commitReply)
-    return Effect.tryPromise({ try: invoke, catch: asError }).pipe(
-      Effect.catch(() => Effect.tryPromise({ try: invoke, catch: asError })),
+    const invoke = Effect.tryPromise({
+      try: (signal) =>
+        this.fetchImpl(new URL("/internal/chat/commit", this.callbackBaseUrl), {
+          method: "POST",
+          signal,
+          headers: { "content-type": "application/json", authorization: `Bearer ${this.grant.token}` },
+          body
+        }),
+      catch: unreachable("commit")
+    }).pipe(Effect.flatMap(commitReply))
+    return invoke.pipe(
+      Effect.catch(() => invoke),
       Effect.flatMap((reply) =>
         Effect.tryPromise({
           try: async () => {
@@ -132,11 +150,11 @@ export class DurableChatProducer {
               reply.cursor.batch !== reply.batch.batch ||
               reply.cursor.position !== reply.batch.from + reply.batch.frames.length - 1
             ) {
-              throw new Error("chat producer receipt did not extend the committed cursor")
+              throw new Error("receipt mismatch")
             }
             this.cursor = reply.cursor
           },
-          catch: asError
+          catch: () => new ReceiptMismatch({ message: "chat producer receipt did not extend the committed cursor" })
         })
       )
     )
@@ -155,7 +173,7 @@ export const runDurableChatTurn = (
   options: ModelTurnOptions,
   callbackBaseUrl: string = grant.producerBaseUrl,
   fetchImpl?: FetchLike
-): Effect.Effect<void, Model.ModelFailure | Error> => {
+): Effect.Effect<void, Model.ModelFailure | ProducerError> => {
   const producer = new DurableChatProducer(callbackBaseUrl, grant, fetchImpl)
   return Effect.gen(function*() {
     yield* producer.providerStarted()

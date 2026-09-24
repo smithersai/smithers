@@ -114,7 +114,7 @@ describe("Write", () => {
       )),
       layer()
     ))
-    expect(failureOf(exit)).toMatchObject({ code: "command_failed", path: "/file.txt" })
+    expect(failureOf(exit)).toMatchObject({ code: "permission_denied", path: "/file.txt" })
     expect(writes).toBe(0)
   })
 
@@ -189,7 +189,7 @@ describe("Write", () => {
     expect(failureOf(exit)).toMatchObject({ code: "command_failed", path: "/directory" })
   })
 
-  it("fails with command_failed and the path when the filesystem refuses the write", async () => {
+  it("fails with permission_denied and the path when the filesystem refuses the write", async () => {
     const host = FileSystem.makeNoop({
       exists: () => Effect.succeed(false),
       makeDirectory: () => Effect.void,
@@ -204,7 +204,7 @@ describe("Write", () => {
       )),
       layer()
     ))
-    expect(failureOf(exit)).toMatchObject({ code: "command_failed", path: "/file.txt" })
+    expect(failureOf(exit)).toMatchObject({ code: "permission_denied", path: "/file.txt" })
   })
 
   it("declares compensable hermetic effects and narrows each invocation", () => {

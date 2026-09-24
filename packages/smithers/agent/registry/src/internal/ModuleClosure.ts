@@ -66,6 +66,19 @@ export const closureByteLimit = 16 * 1024 * 1024
  */
 const suffixes = ["", ".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json"]
 
+/**
+ * The TypeScript sources a JavaScript specifier stands for.
+ *
+ * Under NodeNext, `import "./schema.js"` names `schema.ts`: the author writes
+ * the extension the module will have after compilation. TypeScript and Bun
+ * both resolve it that way when no `.js` file exists, so the pinner does too.
+ */
+const typeScriptCounterparts: ReadonlyArray<readonly [string, ReadonlyArray<string>]> = [
+  [".js", [".ts", ".tsx"]],
+  [".mjs", [".mts"]],
+  [".cjs", [".cts"]]
+]
+
 /** The files a specifier naming a DIRECTORY resolves to. */
 const indexNames = ["index.ts", "index.tsx", "index.mts", "index.js", "index.mjs"]
 
@@ -135,6 +148,16 @@ const resolve = (
 ): Effect.Effect<string | undefined> =>
   Effect.gen(function*() {
     const base = path.resolve(fromDirectory, specifier)
+    const exact = yield* Effect.result(fs.stat(base))
+    if (exact._tag === "Success" && exact.success.type === "File") return base
+    for (const [extension, sources] of typeScriptCounterparts) {
+      if (!base.endsWith(extension)) continue
+      for (const source of sources) {
+        const candidate = `${base.slice(0, -extension.length)}${source}`
+        const stat = yield* Effect.result(fs.stat(candidate))
+        if (stat._tag === "Success" && stat.success.type === "File") return candidate
+      }
+    }
     for (const suffix of suffixes) {
       const candidate = `${base}${suffix}`
       const stat = yield* Effect.result(fs.stat(candidate))

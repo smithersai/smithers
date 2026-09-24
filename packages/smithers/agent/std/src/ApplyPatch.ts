@@ -12,9 +12,11 @@ import * as Flow from "@smthrs/core/Flow"
 import * as Path from "@smthrs/kernel/Path"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
+import type * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as ApplyPatchText from "./internal/ApplyPatch.ts"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FsFailure from "./internal/FsFailure.ts"
 import * as Preserve from "./internal/Preserve.ts"
 import * as StdError from "./StdError.ts"
 
@@ -236,13 +238,7 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
   for (const hunk of parsed.hunks) {
     if (hunk.kind !== "update") continue
     const bytes = yield* fileSystem.readFile(hunk.path).pipe(
-      Effect.mapError(() =>
-        new StdError.StdError({
-          code: "not_found",
-          message: `Failed to read file to update ${hunk.path}`,
-          path: hunk.path
-        })
-      )
+      Effect.mapError(FsFailure.reading(hunk.path, `Failed to read file to update ${hunk.path}`))
     )
     if (bytes.includes(0)) {
       return yield* Effect.fail(
@@ -277,6 +273,13 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
     prepared.set(hunk, contents)
   }
 
+  // A denial names itself, so the model does not retry a write the host refuses.
+  const mutationFailure =
+    (code: StdError.Code, message: string, offendingPath: string) =>
+    (error: PlatformError.PlatformError): StdError.StdError =>
+      error.reason._tag === "PermissionDenied"
+        ? mutationError("permission_denied", `Permission denied: ${offendingPath}`, offendingPath)
+        : mutationError(code, message, offendingPath)
   const mutationError = (code: StdError.Code, message: string, offendingPath: string): StdError.StdError =>
     new StdError.StdError({
       code,
@@ -292,20 +295,20 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
         const parent = path.dirname(hunk.path)
         if (parent !== "" && parent !== ".") {
           yield* fileSystem.makeDirectory(parent, { recursive: true }).pipe(
-            Effect.mapError(() =>
-              mutationError("command_failed", `Failed to create parent directories for ${hunk.path}`, hunk.path)
+            Effect.mapError(
+              mutationFailure("command_failed", `Failed to create parent directories for ${hunk.path}`, hunk.path)
             )
           )
         }
         yield* fileSystem.writeFile(hunk.path, encoder.encode(hunk.contents)).pipe(
-          Effect.mapError(() => mutationError("command_failed", `Failed to write file ${hunk.path}`, hunk.path))
+          Effect.mapError(mutationFailure("command_failed", `Failed to write file ${hunk.path}`, hunk.path))
         )
         added.push(hunk.path)
         break
       }
       case "delete": {
         yield* fileSystem.remove(hunk.path).pipe(
-          Effect.mapError(() => mutationError("not_found", `Failed to delete file ${hunk.path}`, hunk.path))
+          Effect.mapError(mutationFailure("not_found", `Failed to delete file ${hunk.path}`, hunk.path))
         )
         deleted.push(hunk.path)
         break
@@ -317,8 +320,8 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
           const parent = path.dirname(hunk.movePath)
           if (parent !== "" && parent !== ".") {
             yield* fileSystem.makeDirectory(parent, { recursive: true }).pipe(
-              Effect.mapError(() =>
-                mutationError(
+              Effect.mapError(
+                mutationFailure(
                   "command_failed",
                   `Failed to create parent directories for ${destination}`,
                   destination
@@ -329,19 +332,19 @@ export const run = Effect.fn("ApplyPatch.run")(function*(
         }
         yield* Preserve.writeFile(fileSystem, destination, encoder.encode(contents)).pipe(
           Effect.mapError((error) =>
-            mutationError(
-              "command_failed",
-              error.reason.method === "chmod"
-                ? `Could not preserve the mode of ${destination} before replacement by chmod`
-                : `Failed to write file ${destination}`,
-              destination
-            )
+            error.reason.method === "chmod"
+              ? mutationError(
+                "command_failed",
+                `Could not preserve the mode of ${destination} before replacement by chmod`,
+                destination
+              )
+              : mutationFailure("command_failed", `Failed to write file ${destination}`, destination)(error)
           )
         )
         modified.push(destination)
         if (hunk.movePath !== undefined && hunk.movePath !== hunk.path) {
           yield* fileSystem.remove(hunk.path).pipe(
-            Effect.mapError(() => mutationError("command_failed", `Failed to remove original ${hunk.path}`, hunk.path))
+            Effect.mapError(mutationFailure("command_failed", `Failed to remove original ${hunk.path}`, hunk.path))
           )
         }
         break

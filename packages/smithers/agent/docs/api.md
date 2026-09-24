@@ -1440,20 +1440,18 @@ holds, and is not restricted.
 
 ### EngineChildren.Options
 
-| Field          | Type                      | What it decides                                                                                                                                                  |
-| -------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `flows`        | `ReadonlyArray<Flow.Any>` | The flows a child may run, by `_tag`. Anything else is `ChildError { code: "not_found" }`. Registering the flow with the runtime is separate and still required. |
-| `pollInterval` | `Duration.Input`          | How long `await` waits before re-reading an unsettled child, and how long `spawn` waits between checks for the child's run row. Defaults to 250 ms.              |
-| `startTimeout` | `Duration.Input`          | How long `spawn` waits for the child's run row before reporting the child never started. Defaults to 30 seconds.                                                 |
+| Field          | Type                      | What it decides                                                                                                                                                     |
+| -------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flows`        | `ReadonlyArray<Flow.Any>` | The flows a child may run, by `_tag`. Anything else is `ChildError { code: "not_found" }`. Registering the flow with the runtime is separate and still required.    |
+| `pollInterval` | `Duration.Input`          | How long `await` waits before re-reading an unsettled child, and how long `spawn` waits between checks for the child's run row. Defaults to 250 ms.                 |
+| `startTimeout` | `Duration.Input`          | How long `spawn` waits for the child's run row before reporting the child never started. Defaults to 30 seconds.                                                    |
+| `awaitTimeout` | `Duration.Input`          | How long `await` polls an unsettled child before answering `ChildError { code: "still_running" }`, when the call names no `timeoutSeconds`. Defaults to 10 minutes. |
 
 `spawn` owns its startup fiber until the row is confirmed. Timeout, store
 failure, and cancellation interrupt and join it before returning failure.
 
-`legacyChildIds?: boolean` selects the old `${parentExecutionId}/child/${label}`
-format for replaying existing children only. It refuses to create missing legacy
-rows. Configure it only for parents persisted before the new format; use the
-default for new parents. `await` and `send` accept both formats. Existing legacy
-ambiguities are retained; no rows are automatically renamed.
+A run store that cannot answer is `ChildError { code: "failed" }`, logged with
+its cause, never `not_found` and never a defect.
 
 ### EngineChildren.childExecutionId
 

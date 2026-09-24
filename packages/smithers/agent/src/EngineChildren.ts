@@ -97,11 +97,13 @@ export interface Options {
    */
   readonly startTimeout?: Duration.Input | undefined
   /**
-   * Replay existing children written with the old `/child/` concatenation.
-   * Refuses to create new legacy rows. Use only for parents persisted before
-   * the length-delimited id format; new parents use the default format.
+   * How long `await` polls a child that has not settled before answering
+   * `still_running`, when the call names no `timeoutSeconds`.
+   *
+   * A child parked on an approval nobody answers would otherwise hold the
+   * parent's cell call in a poll loop forever. Defaults to 10 minutes.
    */
-  readonly legacyChildIds?: boolean | undefined
+  readonly awaitTimeout?: Duration.Input | undefined
 }
 
 /**
@@ -121,14 +123,10 @@ export const childExecutionId = (
   label: string
 ): string => `child-v2:${parentExecutionId.length}:${parentExecutionId}${label.length}:${label}`
 
-/**
- * Checks ancestry through the length-delimited parent component. Legacy ids
- * remain readable so hosts can collect or steer already-persisted children.
- */
+/** Checks ancestry through the length-delimited parent component. */
 const ownsChild = (parentExecutionId: string, child: string): boolean => {
   let current = child
   while (true) {
-    if (current.startsWith(`${parentExecutionId}/child/`)) return true
     const prefix = /^child-v2:(\d+):/.exec(current)
     if (prefix === null) return false
     const start = prefix[0].length
@@ -233,22 +231,27 @@ export const make = (
     const crypto = yield* Crypto.Crypto
     const pollInterval = Duration.fromInputUnsafe(options.pollInterval ?? "250 millis")
     const startTimeout = Duration.fromInputUnsafe(options.startTimeout ?? "30 seconds")
+    const awaitTimeout = Duration.fromInputUnsafe(options.awaitTimeout ?? "10 minutes")
     const declarations = new Map(options.flows.map((flow) => [flow._tag, flow]))
 
     /**
      * The child's run row, or nothing if no such run exists yet.
      *
      * Only `not_found_row` becomes "nothing". A store that cannot answer is a
-     * defect: reporting it as an absent child would tell a cell its child
-     * never existed, which is a different and much worse claim.
+     * typed `failed`, logged with its cause: reporting it as an absent child
+     * would tell a cell its child never existed, which is a different and much
+     * worse claim, and a transient store error (a busy database, an I/O
+     * failure) is not a defect in the calling cell.
      */
-    const rowOf = (executionId: string): Effect.Effect<Option.Option<RunStore.RunRow>> =>
+    const rowOf = (executionId: string): Effect.Effect<Option.Option<RunStore.RunRow>, ChildError> =>
       store.get(executionId).pipe(
         Effect.map(Option.some),
         Effect.catch((error) =>
           error.code === "not_found_row"
             ? Effect.succeedNone
-            : Effect.die(error)
+            : Effect.logWarning(`agent: the run store could not read child run ${executionId}`, error).pipe(
+              Effect.andThen(Effect.fail(failed(`The run store could not read the child run ${executionId}.`)))
+            )
         )
       )
 
@@ -368,12 +371,7 @@ export const make = (
         const parent = yield* parentInstance("agent/spawn")
         const flow = yield* declarationOf(input.flow, "agent/spawn")
         const label = input.label ?? input.flow
-        const child = options.legacyChildIds
-          ? `${parent.executionId}/child/${label}`
-          : childExecutionId(parent.executionId, label)
-        if (options.legacyChildIds && Option.isNone(yield* rowOf(child))) {
-          return yield* Effect.fail(failed(`Legacy child run ${child} does not exist; new children require v2 ids.`))
-        }
+        const child = childExecutionId(parent.executionId, label)
         // Detached on purpose, and detached in the durable sense: `discard`
         // is what the engine records as the child's `onParentExit` policy, so
         // this child survives its parent's completion instead of being
@@ -456,7 +454,24 @@ export const make = (
           onSome: Effect.succeed
         })
       )
-      return Effect.andThen(ownedByCaller("agent/await", input.child), attempt)
+      const timeout = input.timeoutSeconds === undefined
+        ? awaitTimeout
+        : Duration.seconds(input.timeoutSeconds)
+      return Effect.andThen(
+        ownedByCaller("agent/await", input.child),
+        Effect.timeoutOrElse(attempt, {
+          duration: timeout,
+          orElse: () =>
+            Effect.fail(
+              new ChildError({
+                code: "still_running",
+                message: `The child run ${input.child} is still running after ${
+                  Duration.format(timeout)
+                }; await it again to keep waiting.`
+              })
+            )
+        })
+      )
     }
 
     const send: ChildFlows.Children["send"] = (input) =>

@@ -23,6 +23,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
+import * as FsFailure from "./internal/FsFailure.ts"
 import { DEFAULT_READ_LIMIT, MAX_LINE_CHARS, MAX_OUTPUT_BYTES, notice, slice, truncateBytes } from "./internal/Text.ts"
 import * as StdError from "./StdError.ts"
 
@@ -178,12 +179,20 @@ const clipLine = (line: string): string => {
   return line
 }
 
-const fileError = (path: string) =>
-  new StdError.StdError({
-    code: "not_found",
-    message: `File not found: ${path}`,
-    path
-  })
+/**
+ * The largest file `read` loads.
+ *
+ * `read` decodes the whole file to count its lines, so the file is held in
+ * memory twice over: its bytes and a UTF-16 string. Past this bound a page
+ * read would cost the host gigabytes for a window of a few thousand lines,
+ * and past 2 GiB Node cannot load the file at all.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_READ_FILE_BYTES = 64 * 1024 * 1024
+
+const fileError = (path: string) => FsFailure.reading(path, `File not found: ${path}`)
 
 const sharedPrefix = (left: string, right: string): number => {
   let index = 0
@@ -253,7 +262,9 @@ export const run = Effect.fn("Read.run")(function*(
     Effect.catchTag(
       "PlatformError",
       (error) =>
-        error.reason._tag === "NotFound" ? missingFile(fileSystem, input.path) : Effect.fail(fileError(input.path))
+        error.reason._tag === "NotFound"
+          ? missingFile(fileSystem, input.path)
+          : Effect.fail(fileError(input.path)(error))
     )
   )
   if (info.type === "Directory") {
@@ -274,7 +285,18 @@ export const run = Effect.fn("Read.run")(function*(
       })
     )
   }
-  const bytes = yield* fileSystem.readFile(input.path).pipe(Effect.mapError(() => fileError(input.path)))
+  const size = Number(info.size)
+  if (size > MAX_READ_FILE_BYTES) {
+    return yield* Effect.fail(
+      new StdError.StdError({
+        code: "response_too_large",
+        message:
+          `${input.path} is ${size} bytes, over the ${MAX_READ_FILE_BYTES}-byte read limit; search it with grep or print a line range with bash`,
+        path: input.path
+      })
+    )
+  }
+  const bytes = yield* fileSystem.readFile(input.path).pipe(Effect.mapError(fileError(input.path)))
   if (bytes.includes(0)) {
     return yield* Effect.fail(
       new StdError.StdError({
