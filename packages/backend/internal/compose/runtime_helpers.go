@@ -43,6 +43,12 @@ var apiCSRFBypassPaths = []string{
 	// double-submit nonce (smithers_oauth2_authorize_csrf) enforced by
 	// OAuth2Handler.PostAuthorizeDecision.
 	"/api/oauth2/authorize",
+}
+
+// apiCSRFExemptRoutes are route patterns mounted outside apiCSRFMiddleware by
+// design. The route coverage contract accepts them; they are not a runtime
+// bypass, because ExcludePaths matches literal paths only.
+var apiCSRFExemptRoutes = []string{
 	// Gateway relay requests authenticate with the opaque gateway id plus the
 	// gateway operator token. They never accept browser session credentials and
 	// include WebSocket/non-JSON traffic, so CSRF does not apply.

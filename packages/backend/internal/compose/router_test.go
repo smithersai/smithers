@@ -1219,8 +1219,11 @@ func TestServerRouter_APIMutatingRoutesUseDefaultCSRFOrExplicitBypass(t *testing
 			routes, ok := tc.router.(chi.Routes)
 			require.True(t, ok, "router must expose chi routes for contract walk")
 
-			bypassPaths := make(map[string]struct{}, len(apiCSRFBypassPaths))
+			bypassPaths := make(map[string]struct{}, len(apiCSRFBypassPaths)+len(apiCSRFExemptRoutes))
 			for _, path := range apiCSRFBypassPaths {
+				bypassPaths[path] = struct{}{}
+			}
+			for _, path := range apiCSRFExemptRoutes {
 				bypassPaths[path] = struct{}{}
 			}
 

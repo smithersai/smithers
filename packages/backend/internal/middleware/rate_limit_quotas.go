@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -299,7 +300,7 @@ func PerUserConnectedRepos(counter ConnectedRepoCounter, max int) func(http.Hand
 			return 0, nil
 		}
 		return counter.CountConnectedReposForUser(ctx, userID)
-	}, max, "connected repos limit reached")
+	}, max, "connected_repos", "connected repos limit reached")
 }
 
 // PerUserConcurrentWorkflowRuns blocks new workflow runs once the user
@@ -313,8 +314,16 @@ func PerUserConcurrentWorkflowRuns(counter ConcurrentWorkflowRunCounter, max int
 			return 0, nil
 		}
 		return counter.CountActiveWorkflowRunsForUser(ctx, userID)
-	}, max, "concurrent workflow runs limit reached")
+	}, max, "concurrent_workflow_runs", "concurrent workflow runs limit reached")
 }
+
+// QuotaCounterErrors counts per-user cap checks that failed open because the
+// active-count query errored, by cap scope. compose registers it on the
+// Smithers registry.
+var QuotaCounterErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+	Name: "smithers_quota_counter_errors_total",
+	Help: "Per-user cap checks that failed open because counting active resources failed, by scope.",
+}, []string{"scope"})
 
 // PerUserConcurrentSandboxes blocks new sandbox creation once the user
 // already has `max` active (default 3).
@@ -327,10 +336,10 @@ func PerUserConcurrentSandboxes(counter ConcurrentSandboxCounter, max int, befor
 			return 0, nil
 		}
 		return counter.CountActiveSandboxesForUser(ctx, userID)
-	}, max, "concurrent sandboxes limit reached", beforeRefusal...)
+	}, max, "concurrent_sandboxes", "concurrent sandboxes limit reached", beforeRefusal...)
 }
 
-func userCountCapMiddleware(count func(ctx context.Context, userID int64) (int, error), max int, message string, beforeRefusal ...func(context.Context, int64) error) func(http.Handler) http.Handler {
+func userCountCapMiddleware(count func(ctx context.Context, userID int64) (int, error), max int, scope, message string, beforeRefusal ...func(context.Context, int64) error) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := UserFromContext(r.Context())
@@ -344,7 +353,16 @@ func userCountCapMiddleware(count func(ctx context.Context, userID int64) (int, 
 			if err != nil {
 				// Fail open on counter errors — this is a safety guard, not a
 				// security boundary, and we'd rather not 500 on a transient
-				// DB blip.
+				// DB blip. Report it: a counter that keeps failing disables
+				// the cap for every user, and that must show in logs and
+				// /metrics.
+				QuotaCounterErrors.WithLabelValues(scope).Inc()
+				LoggerFromContext(r.Context()).Error("per-user cap counter failed; allowing request",
+					"scope", scope,
+					"user_id", user.ID,
+					"request_id", RequestIDFromContext(r.Context()),
+					"error", err,
+				)
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -1074,8 +1074,11 @@ UPDATE access_tokens
 SET last_used_at = NOW(),
     updated_at = NOW()
 WHERE id = $1
+  AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes')
 `
 
+// Throttled to one write per five minutes per token: agents poll with their
+// tokens, and an unthrottled stamp rewrote the row on every request.
 func (q *Queries) UpdateAccessTokenLastUsed(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, updateAccessTokenLastUsed, id)
 	return err

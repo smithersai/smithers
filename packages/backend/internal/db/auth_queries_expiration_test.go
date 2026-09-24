@@ -198,3 +198,50 @@ func TestDeleteExpiredAccessTokens_NoExpiryNotDeleted(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "permanent-token", token.Name)
 }
+
+// TestUpdateAccessTokenLastUsed_Throttled verifies the last-used stamp is
+// written at most once per five minutes, so a token polling every second
+// does not rewrite its row on every request.
+func TestUpdateAccessTokenLastUsed_Throttled(t *testing.T) {
+	q, pool := newQueries(t)
+	ctx := context.Background()
+	userID := mustCreateUser(t, pool, "token-last-used-user")
+	token, err := q.CreateAccessToken(ctx, CreateAccessTokenParams{
+		UserID:         userID,
+		Name:           "polling-token",
+		TokenHash:      "token-hash-last-used",
+		TokenLastEight: "01234567",
+		Scopes:         "read:repository",
+	})
+	require.NoError(t, err)
+
+	lastUsedAgo := func(ago string) time.Time {
+		t.Helper()
+		var stamped time.Time
+		require.NoError(t, pool.QueryRow(ctx,
+			`UPDATE access_tokens SET last_used_at = NOW() - $2::interval WHERE id = $1 RETURNING last_used_at`,
+			token.ID, ago).Scan(&stamped))
+		return stamped
+	}
+	readLastUsed := func() time.Time {
+		t.Helper()
+		var got time.Time
+		require.NoError(t, pool.QueryRow(ctx, `SELECT last_used_at FROM access_tokens WHERE id = $1`, token.ID).Scan(&got))
+		return got
+	}
+
+	recent := lastUsedAgo("1 minute")
+	require.NoError(t, q.UpdateAccessTokenLastUsed(ctx, token.ID))
+	assert.True(t, recent.Equal(readLastUsed()), "a stamp under five minutes old must not be rewritten")
+
+	stale := lastUsedAgo("10 minutes")
+	require.NoError(t, q.UpdateAccessTokenLastUsed(ctx, token.ID))
+	assert.True(t, readLastUsed().After(stale), "a stamp over five minutes old must be refreshed")
+
+	_, err = pool.Exec(ctx, `UPDATE access_tokens SET last_used_at = NULL WHERE id = $1`, token.ID)
+	require.NoError(t, err)
+	require.NoError(t, q.UpdateAccessTokenLastUsed(ctx, token.ID))
+	var lastUsed *time.Time
+	require.NoError(t, pool.QueryRow(ctx, `SELECT last_used_at FROM access_tokens WHERE id = $1`, token.ID).Scan(&lastUsed))
+	assert.NotNil(t, lastUsed, "a never-used token must be stamped on first use")
+}

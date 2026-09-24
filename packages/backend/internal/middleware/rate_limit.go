@@ -662,8 +662,15 @@ func matchesExcludedPath(path, excludedPath string) bool {
 }
 
 // ExcludePaths wraps a middleware so it is skipped only for matching routes,
-// not for arbitrary substring matches elsewhere in the path.
+// not for arbitrary substring matches elsewhere in the path. Each entry is a
+// literal request path, or a prefix when it ends in "/". It panics on a chi
+// route pattern ("{param}" or "*"), which could never match a request path.
 func ExcludePaths(mw func(http.Handler) http.Handler, excludedPaths ...string) func(http.Handler) http.Handler {
+	for _, excludedPath := range excludedPaths {
+		if strings.ContainsAny(excludedPath, "{*") {
+			panic("middleware.ExcludePaths: route pattern " + excludedPath + " never matches a request path; list literal paths or a trailing-slash prefix")
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		wrapped := mw(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

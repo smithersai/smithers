@@ -953,6 +953,19 @@ func TestGlobalAPIRateLimit_UsesAPIScopeKey(t *testing.T) {
 	assert.Contains(t, store.keysSeen, "api|user:7")
 }
 
+// ExcludePaths matches literal request paths, so a chi route pattern can never
+// match at runtime. Accepting one would let a bypass list look complete while
+// excluding nothing.
+func TestExcludePaths_RejectsRoutePatterns(t *testing.T) {
+	t.Parallel()
+
+	noop := func(next http.Handler) http.Handler { return next }
+	for _, pattern := range []string{"/api/gateways/{gatewayID}", "/api/gateways/{gatewayID}/*", "/api/*"} {
+		assert.Panics(t, func() { ExcludePaths(noop, "/api/ok", pattern) }, pattern)
+	}
+	assert.NotPanics(t, func() { ExcludePaths(noop, "/api/oauth2/token", "/api/search/") })
+}
+
 func TestExcludePaths_SkipsMiddlewareForMatchingPaths(t *testing.T) {
 	t.Parallel()
 

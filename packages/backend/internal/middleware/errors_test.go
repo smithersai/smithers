@@ -2,7 +2,10 @@ package middleware
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -938,4 +942,30 @@ func decodeMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	return payload.Message
+}
+
+// A panic must reach the request's structured logger as one Error record with
+// the stack, so it pages and correlates with the request, and must be counted.
+func TestJSONRecoverer_LogsPanicToRequestLogger(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	handler := JSONRecoverer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("structured boom")
+	}))
+	req := httptest.NewRequest(http.MethodPost, "/api/_test/panic", nil)
+	req = req.WithContext(context.WithValue(req.Context(), loggerContextKey, logger))
+	before := promtestutil.ToFloat64(HandlerPanics)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, before+1, promtestutil.ToFloat64(HandlerPanics))
+	var record map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &record), "exactly one JSON log record: %s", buf.String())
+	assert.Equal(t, "ERROR", record["level"])
+	assert.Equal(t, "handler panic", record["msg"])
+	assert.Equal(t, "structured boom", record["panic"])
+	assert.Equal(t, "/api/_test/panic", record["path"])
+	assert.Equal(t, http.MethodPost, record["method"])
+	assert.Contains(t, record["stack"], "TestJSONRecoverer_LogsPanicToRequestLogger")
 }

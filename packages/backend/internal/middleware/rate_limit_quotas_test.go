@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -262,8 +263,11 @@ func TestPerUserConcurrentSandboxes_FailOpenOnCounterError(t *testing.T) {
 		User: &db.User{ID: 2, Username: "u", LowerUsername: "u"},
 	}))
 	rec := httptest.NewRecorder()
+	before := promtestutil.ToFloat64(QuotaCounterErrors.WithLabelValues("concurrent_sandboxes"))
 	handler.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusNoContent, rec.Code, "should fail open on counter error")
+	require.Equal(t, before+1, promtestutil.ToFloat64(QuotaCounterErrors.WithLabelValues("concurrent_sandboxes")),
+		"a fail-open counter error must be counted so a disabled cap is visible")
 }
 
 func TestPerUserCap_AnonymousRequestsPassThrough(t *testing.T) {

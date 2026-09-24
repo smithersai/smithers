@@ -147,10 +147,13 @@ WHERE id = sqlc.arg(id)
   AND user_id = sqlc.arg(user_id);
 
 -- name: UpdateAccessTokenLastUsed :exec
+-- Throttled to one write per five minutes per token: agents poll with their
+-- tokens, and an unthrottled stamp rewrote the row on every request.
 UPDATE access_tokens
 SET last_used_at = NOW(),
     updated_at = NOW()
-WHERE id = $1;
+WHERE id = $1
+  AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '5 minutes');
 
 -- name: DeleteExpiredAccessTokens :execrows
 -- Prune expired personal access tokens after a 1-day grace window. Expired

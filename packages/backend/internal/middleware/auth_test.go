@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -19,35 +20,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
-
-type mockUserQuerier struct {
-	getAuthInfoByTokenHashFn     func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error)
-	getOAuth2AccessTokenByHashFn func(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error)
-	getUserByIDFn                func(ctx context.Context, id int64) (db.User, error)
-	getAuthInfoByTokenHashCalls  int
-}
-
-func (m *mockUserQuerier) GetAuthInfoByTokenHash(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-	m.getAuthInfoByTokenHashCalls++
-	if m.getAuthInfoByTokenHashFn != nil {
-		return m.getAuthInfoByTokenHashFn(ctx, tokenHash)
-	}
-	return db.GetAuthInfoByTokenHashRow{}, assert.AnError
-}
-
-func (m *mockUserQuerier) GetOAuth2AccessTokenByHash(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error) {
-	if m.getOAuth2AccessTokenByHashFn != nil {
-		return m.getOAuth2AccessTokenByHashFn(ctx, tokenHash)
-	}
-	return db.Oauth2AccessToken{}, pgx.ErrNoRows
-}
-
-func (m *mockUserQuerier) GetUserByID(ctx context.Context, id int64) (db.User, error) {
-	if m.getUserByIDFn != nil {
-		return m.getUserByIDFn(ctx, id)
-	}
-	return db.User{}, pgx.ErrNoRows
-}
 
 func TestExtractToken(t *testing.T) {
 	t.Parallel()
@@ -139,232 +111,6 @@ func TestExtractToken_IgnoresQueryParamTokens(t *testing.T) {
 
 	r := httptest.NewRequest(http.MethodGet, "/api/notifications?token=smithers_0123456789abcdef0123456789abcdef01234567", nil)
 	assert.Equal(t, "", ExtractToken(r))
-}
-
-func TestTokenAuth_ValidToken(t *testing.T) {
-	t.Parallel()
-
-	token := "smithers_0123456789abcdef0123456789abcdef01234567"
-	hash := sha256.Sum256([]byte(token))
-	expectedHash := hex.EncodeToString(hash[:])
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			require.Equal(t, expectedHash, tokenHash)
-			return db.GetAuthInfoByTokenHashRow{
-				ID:          1,
-				Username:    "testuser",
-				TokenID:     33,
-				TokenScopes: "write:repository",
-			}, nil
-		},
-	}
-
-	var capturedUser *db.User
-	var capturedAuthInfo *AuthInfo
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedUser = UserFromContext(r.Context())
-		capturedAuthInfo = AuthInfoFromContext(r.Context())
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	require.NotNil(t, capturedUser)
-	assert.Equal(t, "testuser", capturedUser.Username)
-	require.NotNil(t, capturedAuthInfo)
-	assert.Equal(t, int64(33), capturedAuthInfo.TokenID)
-	assert.True(t, capturedAuthInfo.IsTokenAuth)
-	assert.True(t, capturedAuthInfo.Scopes.Has(ScopeWriteRepository))
-	assert.Equal(t, TokenSourcePersonalAccessToken, capturedAuthInfo.TokenSource)
-}
-
-func TestTokenAuth_RejectsMalformedTokenWithoutDBLookup(t *testing.T) {
-	t.Parallel()
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			t.Fatalf("db lookup must not happen for malformed token: %s", tokenHash)
-			return db.GetAuthInfoByTokenHashRow{}, nil
-		},
-	}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer not_smithers_prefix")
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Equal(t, 0, q.getAuthInfoByTokenHashCalls)
-}
-
-func TestTokenAuth_NoToken(t *testing.T) {
-	t.Parallel()
-
-	q := &mockUserQuerier{}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-}
-
-func TestTokenAuth_ValidOAuth2Token(t *testing.T) {
-	t.Parallel()
-
-	token := "smithers_oat_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	hash := sha256.Sum256([]byte(token))
-	expectedHash := hex.EncodeToString(hash[:])
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			require.Equal(t, expectedHash, tokenHash)
-			return db.GetAuthInfoByTokenHashRow{}, pgx.ErrNoRows
-		},
-		getOAuth2AccessTokenByHashFn: func(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error) {
-			require.Equal(t, expectedHash, tokenHash)
-			return db.Oauth2AccessToken{
-				ID:     44,
-				UserID: 5,
-				Scopes: []string{"read:user", "write:repository"},
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			require.Equal(t, int64(5), id)
-			return db.User{
-				ID:            5,
-				Username:      "oauth-app-user",
-				LowerUsername: "oauth-app-user",
-				IsActive:      true,
-			}, nil
-		},
-	}
-
-	var capturedAuthInfo *AuthInfo
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedAuthInfo = AuthInfoFromContext(r.Context())
-		w.WriteHeader(http.StatusOK)
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	require.Equal(t, http.StatusOK, w.Code)
-	require.NotNil(t, capturedAuthInfo)
-	assert.Equal(t, int64(44), capturedAuthInfo.TokenID)
-	assert.True(t, capturedAuthInfo.Scopes.Has(ScopeReadUser))
-	assert.True(t, capturedAuthInfo.Scopes.Has(ScopeWriteRepository))
-	assert.Equal(t, TokenSourceOAuth2AccessToken, capturedAuthInfo.TokenSource)
-}
-
-func TestTokenAuth_TokenNotFound(t *testing.T) {
-	t.Parallel()
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			return db.GetAuthInfoByTokenHashRow{}, pgx.ErrNoRows
-		},
-	}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer smithers_0123456789abcdef0123456789abcdef01234567")
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Equal(t, "invalid or expired token", apiErrorMessage(t, w))
-}
-
-func TestTokenAuth_DBFailureReturnsInternal(t *testing.T) {
-	t.Parallel()
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			return db.GetAuthInfoByTokenHashRow{}, assert.AnError
-		},
-	}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer smithers_0123456789abcdef0123456789abcdef01234567")
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Equal(t, "internal server error", apiErrorMessage(t, w))
-}
-
-func TestTokenAuth_SetsAuthInfoInContext(t *testing.T) {
-	t.Parallel()
-
-	token := "smithers_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	hash := sha256.Sum256([]byte(token))
-	expectedHash := hex.EncodeToString(hash[:])
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			require.Equal(t, expectedHash, tokenHash)
-			return db.GetAuthInfoByTokenHashRow{
-				ID:          42,
-				Username:    "alice",
-				TokenID:     999,
-				TokenScopes: "read:repository,write:user",
-			}, nil
-		},
-	}
-
-	var gotUser *db.User
-	var gotAuth *AuthInfo
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotUser = UserFromContext(r.Context())
-		gotAuth = AuthInfoFromContext(r.Context())
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "token "+token)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, r)
-
-	require.Equal(t, http.StatusNoContent, w.Code)
-	require.NotNil(t, gotUser)
-	assert.Equal(t, int64(42), gotUser.ID)
-	assert.Equal(t, "alice", gotUser.Username)
-
-	require.NotNil(t, gotAuth)
-	assert.Equal(t, int64(999), gotAuth.TokenID)
-	assert.Equal(t, "read:repository,write:user", gotAuth.RawScopes)
-	assert.True(t, gotAuth.IsTokenAuth)
-	assert.True(t, gotAuth.Scopes.Has(ScopeReadRepository))
-	assert.True(t, gotAuth.Scopes.Has(ScopeWriteUser))
 }
 
 func apiErrorMessage(t *testing.T, rec *httptest.ResponseRecorder) string {
@@ -563,70 +309,6 @@ func TestRequireAuth_RejectsAnonymous(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.False(t, nextCalled)
 	assert.Equal(t, "authentication required", apiErrorMessage(t, rec))
-}
-
-func TestTokenAuth_OverridesSessionAuthWhenComposedAfterAuthLoader(t *testing.T) {
-	t.Parallel()
-
-	sessionKey := "550e8400-e29b-41d4-a716-446655440000"
-	token := "smithers_0123456789abcdef0123456789abcdef01234567"
-	tokenHash := sha256.Sum256([]byte(token))
-
-	q := &mockAuthLoaderQuerier{
-		getAuthSessionBySessionKeyFn: func(ctx context.Context, key string) (db.AuthSession, error) {
-			requireSessionLookupKey(t, sessionKey, key)
-			return db.AuthSession{
-				SessionKey: key,
-				UserID:     7,
-				Username:   "session-user",
-				ExpiresAt:  time.Now().UTC().Add(time.Hour),
-			}, nil
-		},
-		getAuthInfoByTokenHashFn: func(ctx context.Context, gotHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			require.Equal(t, hex.EncodeToString(tokenHash[:]), gotHash)
-			return db.GetAuthInfoByTokenHashRow{
-				ID:            9,
-				Username:      "token-user",
-				LowerUsername: "token-user",
-				IsActive:      true,
-				TokenID:       44,
-				TokenScopes:   "read:user",
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			switch id {
-			case 7:
-				return db.User{
-					ID:            7,
-					Username:      "session-user",
-					LowerUsername: "session-user",
-					IsActive:      true,
-				}, nil
-			default:
-				return db.User{}, pgx.ErrNoRows
-			}
-		},
-	}
-
-	var gotInfo *AuthInfo
-	handler := AuthLoader(q, config.AuthConfig{})(TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotInfo = AuthInfoFromContext(r.Context())
-		w.WriteHeader(http.StatusNoContent)
-	})))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sse/ticket", nil)
-	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: sessionKey})
-	req.Header.Set("Authorization", "token "+token)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	require.NotNil(t, gotInfo)
-	require.NotNil(t, gotInfo.User)
-	assert.Equal(t, int64(9), gotInfo.User.ID)
-	assert.Equal(t, "token-user", gotInfo.User.Username)
-	assert.True(t, gotInfo.IsTokenAuth)
-	assert.Equal(t, hex.EncodeToString(tokenHash[:]), gotInfo.TokenHash)
 }
 
 func TestAuthLoader_LoadsSessionCookie(t *testing.T) {
@@ -1265,38 +947,6 @@ func TestAuthLoader_TokenAuthUpdateLastUsedFailureSilentlyIgnored(t *testing.T) 
 
 // --- prohibit_login enforcement tests ---
 
-func TestTokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
-	t.Parallel()
-
-	token := "smithers_0123456789abcdef0123456789abcdef01234567"
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			return db.GetAuthInfoByTokenHashRow{
-				ID:            42,
-				Username:      "banned-user",
-				IsActive:      true,
-				ProhibitLogin: true,
-				TokenID:       1,
-				TokenScopes:   "read:repository",
-			}, nil
-		},
-	}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called for prohibited-login user")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusForbidden, w.Code)
-	assert.Equal(t, "account is suspended", apiErrorMessage(t, w))
-}
-
 func TestAuthLoader_SessionAuth_RejectsProhibitedLoginUser(t *testing.T) {
 	t.Parallel()
 
@@ -1337,6 +987,40 @@ func TestAuthLoader_SessionAuth_RejectsProhibitedLoginUser(t *testing.T) {
 	assert.Nil(t, capturedUser, "prohibited-login user should not be set in context via session auth")
 }
 
+// Session auth must use the same "enabled" predicate as token auth and the
+// publish_user_access_change trigger: active, login allowed, not deleted.
+func TestAuthLoader_SessionAuth_RejectsDisabledUser(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		user db.User
+	}{
+		{"inactive", db.User{ID: 78, Username: "u", LowerUsername: "u", IsActive: false}},
+		{"deleted", db.User{ID: 78, Username: "u", LowerUsername: "u", IsActive: true, DeletedAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}},
+		{"prohibited", db.User{ID: 78, Username: "u", LowerUsername: "u", IsActive: true, ProhibitLogin: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			q := &mockAuthLoaderQuerier{
+				getAuthSessionBySessionKeyFn: func(ctx context.Context, key string) (db.AuthSession, error) {
+					return db.AuthSession{SessionKey: key, UserID: 78, Username: "u", ExpiresAt: time.Now().UTC().Add(24 * time.Hour)}, nil
+				},
+				getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) { return tc.user, nil },
+			}
+			var capturedUser *db.User
+			handler := AuthLoader(q, config.AuthConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				capturedUser = UserFromContext(r.Context())
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
+			req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "a6051465-b966-4b6b-94f1-7bc6fef9d17f"})
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+			assert.Nil(t, capturedUser, "a disabled user must not authenticate through a session cookie")
+		})
+	}
+}
+
 func TestAuthLoader_TokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
 	t.Parallel()
 
@@ -1368,39 +1052,6 @@ func TestAuthLoader_TokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
 
 	require.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Nil(t, capturedUser, "prohibited-login user should not be set in context via token auth")
-}
-
-// TestTokenAuth_ExpiredTokenRejected pins the expired-PAT contract: expiry is
-// enforced in SQL by GetAuthInfoByTokenHash (db/product/queries/users.sql — the lookup
-// includes `expires_at IS NULL OR expires_at > NOW()`), so an expired token's
-// hash matches no row (pgx.ErrNoRows) and both middleware token paths must
-// answer 401 rather than authenticating or 500ing. The mock reproduces the SQL
-// contract for a token whose expires_at has passed.
-func TestTokenAuth_ExpiredTokenRejected(t *testing.T) {
-	t.Parallel()
-
-	q := &mockUserQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			// Expired rows are filtered out by the WHERE clause: no row.
-			return db.GetAuthInfoByTokenHashRow{}, pgx.ErrNoRows
-		},
-		getOAuth2AccessTokenByHashFn: func(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error) {
-			return db.Oauth2AccessToken{}, pgx.ErrNoRows
-		},
-	}
-
-	handler := TokenAuth(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Fatal("handler should not be called for an expired token")
-	}))
-
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("Authorization", "Bearer smithers_0123456789abcdef0123456789abcdef01234567")
-	w := httptest.NewRecorder()
-
-	handler.ServeHTTP(w, r)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Equal(t, "invalid or expired token", apiErrorMessage(t, w))
 }
 
 // --- CSRF cookie self-heal (#207) ---

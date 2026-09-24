@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"net"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 
 	apierrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -67,6 +68,13 @@ func allowsOAuth2FormEncodedBody(r *http.Request, contentType string) bool {
 	}
 }
 
+// HandlerPanics counts handler panics JSONRecoverer recovered. compose
+// registers it on the Smithers registry.
+var HandlerPanics = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "smithers_http_handler_panics_total",
+	Help: "HTTP handler panics recovered by JSONRecoverer.",
+})
+
 // JSONRecoverer mirrors chi's Recoverer but returns APIError JSON for API routes.
 func JSONRecoverer(next http.Handler) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
@@ -76,12 +84,16 @@ func JSONRecoverer(next http.Handler) http.Handler {
 					panic(rvr)
 				}
 
-				logEntry := chiMiddleware.GetLogEntry(r)
-				if logEntry != nil {
-					logEntry.Panic(rvr, debug.Stack())
-				} else {
-					chiMiddleware.PrintPrettyStack(rvr)
-				}
+				// One structured Error record on the request logger, so the
+				// panic pages and carries request_id, trace and user_id.
+				HandlerPanics.Inc()
+				LoggerFromContext(r.Context()).Error("handler panic",
+					"panic", fmt.Sprint(rvr),
+					"stack", string(debug.Stack()),
+					"method", r.Method,
+					"path", r.URL.Path,
+					"request_id", RequestIDFromContext(r.Context()),
+				)
 
 				if r.Header.Get("Connection") == "Upgrade" {
 					return

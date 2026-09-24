@@ -144,3 +144,59 @@ func TestBrokerMetricsScrapeDuringBlockedUnlisten(t *testing.T) {
 	b.Stop()
 	require.Zero(t, b.ActiveConnections())
 }
+
+type blockedListenNotifier struct {
+	brokerCovNopNotifier
+	entered chan context.Context
+}
+
+func (n *blockedListenNotifier) listen(ctx context.Context, _ string) error {
+	select {
+	case n.entered <- ctx:
+	default:
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+// A stalled LISTEN must not hold the dispatch goroutine, which owns all NOTIFY
+// fan-out, without a deadline.
+func TestBrokerListenHasDeadline(t *testing.T) {
+	n := &blockedListenNotifier{entered: make(chan context.Context, 1)}
+	b := NewBroker(nil)
+	b.conn = n
+	go b.dispatch()
+	defer b.Stop()
+	subscribed := make(chan error, 1)
+	go func() {
+		_, err := b.Subscribe(context.Background(), "stalled", 1)
+		subscribed <- err
+	}()
+	select {
+	case ctx := <-n.entered:
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok, "LISTEN on the dispatch goroutine needs a deadline")
+		require.WithinDuration(t, time.Now().Add(brokerListenTimeout), deadline, time.Second)
+	case <-time.After(time.Second):
+		t.Fatal("LISTEN was not issued")
+	}
+	select {
+	case err := <-subscribed:
+		require.Error(t, err)
+	case <-time.After(brokerListenTimeout + time.Second):
+		t.Fatal("stalled LISTEN blocked Subscribe past its deadline")
+	}
+
+	recovering := NewBroker(nil)
+	recovering.pendingSubs["again"] = 1
+	relistened := make(chan bool, 1)
+	go func() {
+		relistened <- recovering.relisten(&blockedListenNotifier{entered: make(chan context.Context, 1)})
+	}()
+	select {
+	case ok := <-relistened:
+		require.False(t, ok, "a timed-out re-LISTEN is a lost connection")
+	case <-time.After(brokerListenTimeout + time.Second):
+		t.Fatal("stalled re-LISTEN blocked recovery past its deadline")
+	}
+}

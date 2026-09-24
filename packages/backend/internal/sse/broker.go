@@ -18,6 +18,12 @@ var brokerStopTimeout = 5 * time.Second
 
 const brokerUnlistenTimeout = 3 * time.Second
 
+// brokerListenTimeout bounds a LISTEN issued on the dispatch goroutine, which
+// owns all NOTIFY fan-out: a stalled LISTEN must not freeze every subscriber.
+// pgx closes a connection whose query is cancelled, so the next wait fails
+// and dispatch recovers the connection.
+const brokerListenTimeout = 3 * time.Second
+
 // maxReconnectBackoff caps the exponential backoff between attempts to
 // re-establish the shared notification connection after it is lost.
 const maxReconnectBackoff = 30 * time.Second
@@ -591,6 +597,18 @@ func (b *Broker) unlistenIfIdleLocked(channel string) error {
 	return b.conn.unlisten(ctx, channel)
 }
 
+// listenWithTimeout issues LISTEN under brokerListenTimeout and logs a failure
+// with its channel.
+func listenWithTimeout(conn brokerNotifier, channel string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), brokerListenTimeout)
+	defer cancel()
+	err := conn.listen(ctx, channel)
+	if err != nil {
+		slog.Warn("sse broker: LISTEN failed", "channel", channel, "error", err)
+	}
+	return err
+}
+
 // dispatch is the background goroutine that calls WaitForNotification on the
 // shared connection and fans out each notification to all matching subscribers.
 func (b *Broker) dispatch() {
@@ -659,7 +677,7 @@ func (b *Broker) dispatch() {
 				b.mu.Unlock()
 				cmd.resp <- err
 			} else {
-				cmd.resp <- conn.listen(context.Background(), cmd.channel)
+				cmd.resp <- listenWithTimeout(conn, cmd.channel)
 			}
 			continue
 		case result := <-notifications:
@@ -812,7 +830,7 @@ func (b *Broker) relisten(conn brokerNotifier) bool {
 	b.mu.Unlock()
 
 	for _, ch := range channels {
-		if err := conn.listen(context.Background(), ch); err != nil {
+		if err := listenWithTimeout(conn, ch); err != nil {
 			slog.Warn("sse broker: re-LISTEN after reconnect failed", "channel", ch, "error", err)
 			b.mu.Lock()
 			b.conn = nil

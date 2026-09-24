@@ -20,7 +20,11 @@ func RealIP(trustedHops int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if trustedHops > 0 {
-				if ip := clientIPFromForwardedFor(r.Header.Get("X-Forwarded-For"), trustedHops); ip != "" {
+				if ip := clientIPFromForwardedFor(
+					// Join every header line: a proxy that does not merge
+					// duplicates appends its entries as a new line, and
+					// Header.Get would return only the client's first line.
+					strings.Join(r.Header.Values("X-Forwarded-For"), ","), trustedHops); ip != "" {
 					r.RemoteAddr = ip
 				}
 			}

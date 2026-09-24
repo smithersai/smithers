@@ -92,7 +92,7 @@ func TestReviewRateLimitRetryAfterSurvivesHeaderStripping(t *testing.T) {
 	}
 
 	t.Run("count_quota", func(t *testing.T) {
-		handler := userCountCapMiddleware(func(context.Context, int64) (int, error) { return 3, nil }, 3, "full")(
+		handler := userCountCapMiddleware(func(context.Context, int64) (int, error) { return 3, nil }, 3, "test", "full")(
 			http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("full quota reached handler") }),
 		)
 		req := httptest.NewRequest(http.MethodPost, "/sandboxes", nil)

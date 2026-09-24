@@ -37,13 +37,6 @@ func UserFromContext(ctx context.Context) *db.User {
 	return u
 }
 
-// UserQuerier defines the database operations needed by auth middleware.
-type UserQuerier interface {
-	GetAuthInfoByTokenHash(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error)
-	GetOAuth2AccessTokenByHash(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error)
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-}
-
 // AuthLoaderQuerier defines the database operations needed by AuthLoader.
 type AuthLoaderQuerier interface {
 	GetAuthSessionBySessionKey(ctx context.Context, sessionKey string) (db.AuthSession, error)
@@ -52,70 +45,6 @@ type AuthLoaderQuerier interface {
 	GetOAuth2AccessTokenByHash(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error)
 	UpdateAccessTokenLastUsed(ctx context.Context, id int64) error
 	GetUserByID(ctx context.Context, id int64) (db.User, error)
-}
-
-// TokenAuth returns middleware that authenticates requests via API token.
-// It accepts token/Bearer schemes and HTTP Basic credentials whose password is
-// a Smithers token. Basic support is required by Git's credential-helper flow,
-// including the standard Git LFS HTTP transport; the username is ignored.
-func TokenAuth(queries UserQuerier) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			token := ExtractToken(r)
-			if token == "" {
-				errors.WriteError(w, errors.Unauthorized("authentication required"))
-				return
-			}
-
-			// SHA-256 hash the token
-			hash := sha256.Sum256([]byte(token))
-			tokenHash := hex.EncodeToString(hash[:])
-
-			authRow, err := queries.GetAuthInfoByTokenHash(r.Context(), tokenHash)
-			if err != nil {
-				if !stdErrors.Is(err, pgx.ErrNoRows) {
-					errors.WriteError(w, errors.Internal("internal server error"))
-					return
-				}
-
-				oauthInfo, oauthErr := loadOAuth2AccessToken(r.Context(), queries, tokenHash)
-				if oauthErr != nil {
-					if stdErrors.Is(oauthErr, pgx.ErrNoRows) {
-						errors.WriteError(w, errors.Unauthorized("invalid or expired token"))
-						return
-					}
-					errors.WriteError(w, errors.Internal("internal server error"))
-					return
-				}
-
-				ctx := ContextWithAuthInfo(r.Context(), oauthInfo)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
-			user := authRowToUser(authRow)
-			if user.ProhibitLogin {
-				errors.WriteError(w, errors.Forbidden("account is suspended"))
-				return
-			}
-
-			authInfo := &AuthInfo{
-				User:        &user,
-				TokenID:     authRow.TokenID,
-				TokenHash:   tokenHash,
-				RawScopes:   authRow.TokenScopes,
-				Scopes:      ParseTokenScopes(authRow.TokenScopes),
-				IsTokenAuth: true,
-				TokenSource: TokenSourcePersonalAccessToken,
-			}
-
-			if !allowWorkspaceRestrictedToken(w, r, authInfo) {
-				return
-			}
-			ctx := ContextWithAuthInfo(r.Context(), authInfo)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
 }
 
 // workspaceHeadReportPath matches the one API route a workspace-restricted
@@ -337,7 +266,9 @@ func loadSessionAuth(
 		}
 		return nil, nil, err
 	}
-	if user.ProhibitLogin {
+	// Same "enabled" predicate as token auth and the
+	// publish_user_access_change trigger.
+	if !user.IsActive || user.ProhibitLogin || user.DeletedAt.Valid {
 		return nil, nil, nil
 	}
 
