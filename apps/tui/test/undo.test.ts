@@ -301,7 +301,7 @@ describe("undo", () => {
     expect(Undo.target(r.transcript(), cellRows(r.transcript())[1]!.id)).toEqual({ _tag: "Uncaptured", flows: ["edit"] })
   })
 
-  it("refuses Undo after a shell call with no receipt in the same turn", async () => {
+  it("undoes a turn with a verified-empty shell call and a captured write", async () => {
     const cwd = gitRepo()
     put(cwd, "a.ts", "x\n")
     gitCommit(cwd)
@@ -309,12 +309,15 @@ describe("undo", () => {
     r.prompt("status")
     r.cell()
     const { receipts } = await r.call("bash", { command: "git status" }, () => {})
-    expect(receipts).toHaveLength(0)
+    expect(receipts.map((receipt) => receipt.patches)).toEqual([[]])
     await r.call("write", { path: "a.ts", content: "changed\n" }, write(cwd, "a.ts", "changed\n"))
     r.settle()
+    const summary = Summary.panel(r.transcript())
+    expect(summary.rows.flatMap((row) => row.details.filter((detail) => detail.kind === "diff"))).toHaveLength(1)
+    expect(summary.rows.find((row) => row.details.some((detail) => detail.kind === "code"))?.label).toContain("Wrote a.ts")
     const result = await undo(cwd, r.transcript(), cellRows(r.transcript())[0]!.id)
-    expect(result).toEqual({ _tag: "Uncaptured", flows: ["bash"] })
-    expect(get(cwd, "a.ts")).toBe("changed\n")
+    expect(result).toMatchObject({ files: [{ path: "a.ts", next: "x\n" }] })
+    expect(get(cwd, "a.ts")).toBe("x\n")
   })
 
   it("captures only a named file while another worker edits elsewhere", async () => {

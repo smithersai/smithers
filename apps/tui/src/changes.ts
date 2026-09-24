@@ -154,7 +154,6 @@ export const splitPatch = (diff: string): Patch[] =>
       patch.match(/^diff --git a\/.+ b\/(.+)$/m)?.[1] ?? "Changes"
     return { path: path.replace(/\t.*$/, ""), patch }
   })
-const unavailable: Patch = { path: "Changes", patch: "Diff unavailable or too large." }
 
 const changedPatch = (path: string, old: FileState, next: FileState): Patch | undefined => {
   if (old.digest === undefined || next.digest === undefined ||
@@ -259,8 +258,7 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
     if (jj) {
       const result = yield* binding.run(call)
       const diff = yield* Effect.promise(() => command("jj", cwd, ["diff", "--from", jj, "--git", "--color=never"]))
-      const patches = diff === undefined ? [unavailable] : splitPatch(diff)
-      if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+      if (diff !== undefined) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches: splitPatch(diff) }))
       return result
     }
     const candidates = yield* Effect.promise(() => gitPaths(cwd))
@@ -275,9 +273,11 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
     const allPaths = [...new Set([...candidates, ...afterPaths])]
     const afterStats = yield* Effect.promise(() => stats(cwd, allPaths))
     const patches: Patch[] = []
+    let verified = true
     for (const path of allPaths) {
-      const pre = beforeStats.get(path) ?? null
+      const pre = beforeStats.has(path) ? beforeStats.get(path) : null
       const post = afterStats.get(path)
+      if (pre === undefined || post === undefined) verified = false
       if (sameStat(pre, post)) continue
       const old = before.get(path) ?? (pre === null
         ? { digest: null, text: null, mode: undefined }
@@ -286,9 +286,10 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
         : yield* Effect.promise(() => indexState(cwd, blobs.get(path)!, pre)))
       const next = yield* Effect.promise(() => fileState(resolve(cwd, path)))
       const diff = changedPatch(path, old, next)
+      if (old.digest === undefined || next.digest === undefined) verified = false
       if (diff !== undefined) patches.push(diff)
     }
-    if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+    if (verified) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
     return result
   })
 

@@ -104,8 +104,8 @@ describe("bash capture under git", () => {
     expect(receipts[0]!.patches.map((patch) => patch.path)).toEqual(["first.ts"])
   }, 20_000)
 
-  it("emits no receipt for a call that changed nothing, or outside a repository", async () => {
-    expect(await bash(repository(), () => {})).toEqual([])
+  it("emits a verified-empty receipt for a no-op in a repository, but none outside one", async () => {
+    expect((await bash(repository(), () => {})).map((receipt) => receipt.patches)).toEqual([[]])
     expect(await bash(mkdtempSync(join(tmpdir(), "tui-capture-")), () => {})).toEqual([])
   }, 20_000)
 })
