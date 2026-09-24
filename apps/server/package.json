@@ -12,7 +12,6 @@
     }
   },
   "scripts": {
-    "deploy:dry-run": "bun scripts/deploy.ts --dry-run",
     "deploy": "bun scripts/deploy.ts",
     "deploy:dry": "bun scripts/deploy.ts --dry-run",
     "check": "tsc --noEmit && bun scripts/effect-policy.ts",

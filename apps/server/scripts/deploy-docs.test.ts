@@ -206,3 +206,12 @@ test("wrangler.jsonc lists no var among the Cloudflare secrets", () => {
   expect(listed.filter((name) => name in WORKER_IDENTITY.vars)).toEqual([])
   expect(listed.filter((name) => !(name in WORKER_IDENTITY.secrets) && !WORKER_IDENTITY.optionalVars.includes(name))).toEqual([])
 })
+
+test("deploy commands are unique and every documented server script exists", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> }
+  const commands = Object.values(manifest.scripts)
+  expect(new Set(commands).size).toBe(commands.length)
+  const documented = [...guide.matchAll(/pnpm --filter smithers-server run ([\w:-]+)/g)].map(([, script]) => script!)
+  expect(documented.length).toBeGreaterThan(0)
+  for (const script of documented) expect(manifest.scripts[script]).toBeDefined()
+})
