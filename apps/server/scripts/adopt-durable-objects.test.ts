@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
+import { readWranglerConfig } from "../src/wranglerConfig"
 import { stripComments } from "./effect-policy"
-import { compareBridge, compareDurableObjects, compareVars } from "./adopt-durable-objects"
+import { compareBridge, compareDurableObjects, compareObservability, compareVars } from "./adopt-durable-objects"
 import type { LiveBinding } from "./adopt-durable-objects"
 
 const live: ReadonlyArray<LiveBinding> = WORKER_IDENTITY.durableObjects.map((binding) => ({
@@ -157,5 +158,30 @@ describe("the preflight never deploys", () => {
 })
 
 test("wrangler.jsonc agrees with src/workerIdentity.ts", () => {
-  expect(compareBridge().map((f) => f.level)).toEqual(["PASS", "PASS"])
+  expect(compareBridge().map((f) => f.level)).toEqual(["PASS", "PASS", "PASS"])
+})
+
+/*
+ * Workers Logs. Several failure signals (client-error export skips, GitHub
+ * App failures, upstream timeouts) exist only as console lines, so a script
+ * without persisted logs loses them unless someone runs `wrangler tail`.
+ */
+describe("Workers Logs", () => {
+  test("a wrangler.jsonc that drops the observability block fails the bridge", () => {
+    const { observability: _dropped, ...config } = readWranglerConfig()
+    const finding = compareBridge(config).find((f) => f.check === "wrangler.jsonc observability")
+    expect(finding?.level).toBe("FAIL")
+  })
+
+  test("a live script that keeps no logs is a WARN the deploy resolves", () => {
+    for (const live of [null, undefined, { enabled: false }]) {
+      const finding = compareObservability(live)
+      expect(finding.level).toBe("WARN")
+      expect(finding.detail).toContain("no logs")
+    }
+  })
+
+  test("a live script with Workers Logs on is a PASS", () => {
+    expect(compareObservability({ enabled: true, head_sampling_rate: 1 }).level).toBe("PASS")
+  })
 })

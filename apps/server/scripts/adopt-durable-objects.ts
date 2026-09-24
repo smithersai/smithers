@@ -30,6 +30,7 @@
  * scripts/canary/rollback-probe.ts uses (shapes read back live 2026-08-18).
  */
 import { readWranglerConfig } from "../src/wranglerConfig"
+import type { WranglerConfig } from "../src/wranglerConfig"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
 import type { DurableObjectIdentity } from "../src/workerIdentity"
 
@@ -109,8 +110,7 @@ export const compareDurableObjects = (
 }
 
 /** wrangler.jsonc (the bridge) must say what src/workerIdentity.ts says. */
-export const compareBridge = (): ReadonlyArray<Finding> => {
-  const config = readWranglerConfig()
+export const compareBridge = (config: WranglerConfig = readWranglerConfig()): ReadonlyArray<Finding> => {
   const bridge = config.durable_objects.bindings.map((binding) => `${binding.name}=${binding.class_name}`).sort()
   const declared = WORKER_IDENTITY.durableObjects.map(pair).sort()
   const same = bridge.length === declared.length && bridge.every((entry, index) => entry === declared[index])
@@ -120,8 +120,19 @@ export const compareBridge = (): ReadonlyArray<Finding> => {
       : { level: "FAIL", check: "wrangler.jsonc agrees with src/workerIdentity.ts", detail: `wrangler: ${bridge.join(", ")}; identity: ${declared.join(", ")}` },
     config.name === WORKER_IDENTITY.name
       ? { level: "PASS", check: "wrangler.jsonc name", detail: config.name }
-      : { level: "FAIL", check: "wrangler.jsonc name", detail: `${config.name} != ${WORKER_IDENTITY.name}` }
+      : { level: "FAIL", check: "wrangler.jsonc name", detail: `${config.name} != ${WORKER_IDENTITY.name}` },
+    config.observability?.enabled === WORKER_IDENTITY.observability.enabled
+      ? { level: "PASS", check: "wrangler.jsonc observability", detail: `enabled=${config.observability.enabled}` }
+      : { level: "FAIL", check: "wrangler.jsonc observability", detail: `wrangler: ${JSON.stringify(config.observability ?? null)}; identity: ${JSON.stringify(WORKER_IDENTITY.observability)}` }
   ]
+}
+
+/** Workers Logs on the live script: off means every console line is lost unless someone is tailing. */
+export const compareObservability = (live: unknown): Finding => {
+  const enabled = typeof live === "object" && live !== null && (live as { enabled?: unknown }).enabled === true
+  return enabled
+    ? { level: "PASS", check: "Workers Logs", detail: "enabled on the live script" }
+    : { level: "WARN", check: "Workers Logs", detail: `live observability is ${JSON.stringify(live ?? null)}, so the live script keeps no logs; the deploy turns them on` }
 }
 
 /**
@@ -246,6 +257,7 @@ const main = async (): Promise<number> => {
         ? { level: "PASS", check: "compatibility", detail: `${result.compatibility_date} [${flags}]` }
         : { level: "FAIL", check: "compatibility", detail: `live ${result.compatibility_date} [${flags}] vs declared ${WORKER_IDENTITY.compatibility.date} [${declaredFlags}]` }
     )
+    findings.push(compareObservability(result.observability))
     findings.push({ level: "INFO", check: "migration tag", detail: `Cloudflare does not report it here; wrangler.jsonc's last tag is ${readWranglerConfig().migrations.at(-1)?.tag}. wrangler sends only the steps after the live tag, so an unchanged list is a no-op; the binding checks above are what prove nothing is created, renamed or deleted` })
     const asset = bindings.find((b) => b.type === "assets")
     findings.push(asset ? { level: "PASS", check: "assets binding", detail: asset.name } : { level: "WARN", check: "assets binding", detail: "the live script has no assets binding; the deploy adds ASSETS" })

@@ -42,6 +42,8 @@ export const WORKER_IDENTITY = {
     readonly pattern: string
     readonly zoneId: string
   }>,
+  /** Workers Logs (wrangler.jsonc `observability`): every console line the Worker writes is kept. */
+  observability: { enabled: true },
   /** No workers.dev surface: the live script serves only its domain and route. */
   workersDev: false,
   assets: {
