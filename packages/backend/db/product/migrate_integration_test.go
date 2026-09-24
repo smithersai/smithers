@@ -70,15 +70,15 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer pool.Close()
-	if applied, err := Status(ctx, pool); err != nil || applied {
-		t.Fatalf("fresh database status: applied=%v err=%v", applied, err)
+	if pending, err := Status(ctx, pool); err != nil || len(pending) == 0 {
+		t.Fatalf("fresh database status: pending=%v err=%v", pending, err)
 	}
 
 	if err := Apply(ctx, pool); err != nil {
 		t.Fatalf("fresh product migration: %v", err)
 	}
-	if applied, err := Status(ctx, pool); err != nil || !applied {
-		t.Fatalf("migrated database status: applied=%v err=%v", applied, err)
+	if pending, err := Status(ctx, pool); err != nil || len(pending) != 0 {
+		t.Fatalf("migrated database status: pending=%v err=%v", pending, err)
 	}
 	if err := Apply(ctx, pool); err != nil {
 		t.Fatalf("idempotent product migration: %v", err)
@@ -213,8 +213,8 @@ func TestApplyFreshProductDatabase(t *testing.T) {
 	if err := Apply(ctx, pool); !errors.Is(err, ErrChecksumMismatch) {
 		t.Fatalf("changed baseline should be rejected, got %v", err)
 	}
-	if applied, err := Status(ctx, pool); applied || !errors.Is(err, ErrChecksumMismatch) {
-		t.Fatalf("changed baseline status: applied=%v err=%v", applied, err)
+	if pending, err := Status(ctx, pool); !errors.Is(err, ErrChecksumMismatch) {
+		t.Fatalf("changed baseline status: pending=%v err=%v", pending, err)
 	}
 	registered, err := registeredMigrations()
 	if err != nil {

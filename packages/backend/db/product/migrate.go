@@ -8,9 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -110,31 +112,44 @@ func appliedMigrations(ctx context.Context, q migrationQuerier, registered []mig
 	return applied, nil
 }
 
-// Status reports whether every migration supported by this binary is applied.
-// A newer database or checksum drift is an error. Adoption can verify and
-// record later historical product objects before pending earlier migrations
-// run; Status reports incomplete until every numbered migration is present.
-func Status(ctx context.Context, pool *pgxpool.Pool) (bool, error) {
+// Status returns the registered migration versions the database has not
+// applied, in version order. An empty result means the schema is current.
+func Status(ctx context.Context, pool *pgxpool.Pool) ([]int, error) {
 	if pool == nil {
-		return false, errors.New("product migration requires a PostgreSQL pool")
+		return nil, errors.New("product migration requires a PostgreSQL pool")
 	}
 	registered, err := registeredMigrations()
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.smithers_product_migrations') IS NOT NULL`).Scan(&exists); err != nil {
-		return false, fmt.Errorf("inspect product migration ledger: %w", err)
+		return nil, fmt.Errorf("inspect product migration ledger: %w", err)
 	}
-	if !exists {
-		return false, nil
+	applied := map[int]bool{}
+	if exists {
+		if applied, err = appliedMigrations(ctx, pool, registered); err != nil {
+			return nil, err
+		}
 	}
-	applied, err := appliedMigrations(ctx, pool, registered)
-	if err != nil {
-		return false, err
+	pending := []int{}
+	for _, item := range registered {
+		if !applied[item.version] {
+			pending = append(pending, item.version)
+		}
 	}
-	return len(applied) == len(registered), nil
+	return pending, nil
 }
+
+// Migration DDL waits at most migrationLockTimeout for a table lock, so an
+// ALTER queued behind a long transaction cannot stall every later query on
+// that table. A lock timeout rolls back and retries after a growing pause.
+var (
+	migrationLockTimeout      = 5 * time.Second
+	migrationStatementTimeout = 15 * time.Minute
+	migrationLockAttempts     = 5
+	migrationLockBackoff      = time.Second
+)
 
 // Apply installs every pending product migration in one transaction. An
 // advisory lock serializes concurrent starts; the ledger rejects changed SQL
@@ -148,6 +163,23 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
+	for attempt := 1; ; attempt++ {
+		err = applyOnce(ctx, pool, registered)
+		var pgErr *pgconn.PgError
+		if err == nil || attempt >= migrationLockAttempts || !errors.As(err, &pgErr) || pgErr.Code != "55P03" {
+			return err
+		}
+		wait := migrationLockBackoff * time.Duration(1<<(attempt-1))
+		slog.Warn("product migration lock wait timed out; retrying", "attempt", attempt, "retry_in", wait, "error", err)
+		select {
+		case <-ctx.Done():
+			return errors.Join(err, ctx.Err())
+		case <-time.After(wait):
+		}
+	}
+}
+
+func applyOnce(ctx context.Context, pool *pgxpool.Pool, registered []migration) error {
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin product migration: %w", err)
@@ -160,6 +192,10 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('smithers:product:migration', 0))`); err != nil {
 		return fmt.Errorf("lock product migration: %w", err)
 	}
+	if _, err := tx.Exec(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = %d; SET LOCAL statement_timeout = %d`,
+		migrationLockTimeout.Milliseconds(), migrationStatementTimeout.Milliseconds())); err != nil {
+		return fmt.Errorf("bound product migration waits: %w", err)
+	}
 	if _, err := tx.Exec(ctx, `CREATE TABLE IF NOT EXISTS public.smithers_product_migrations (
 		version integer PRIMARY KEY,
 		checksum text NOT NULL,
@@ -171,6 +207,7 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
+	var durations [][2]int64
 	for _, item := range registered {
 		if applied[item.version] {
 			continue
@@ -187,15 +224,20 @@ func Apply(ctx context.Context, pool *pgxpool.Pool) error {
 				continue
 			}
 		}
+		started := time.Now()
 		if _, err := tx.Exec(ctx, item.sql, pgx.QueryExecModeSimpleProtocol); err != nil {
 			return fmt.Errorf("apply product migration %d: %w", item.version, err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO public.smithers_product_migrations(version, checksum) VALUES ($1, $2)`, item.version, item.checksum); err != nil {
 			return fmt.Errorf("record product migration %d: %w", item.version, err)
 		}
+		durations = append(durations, [2]int64{int64(item.version), time.Since(started).Milliseconds()})
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit product migration: %w", err)
+	}
+	for _, d := range durations {
+		slog.Info("product migration applied", "version", d[0], "duration_ms", d[1])
 	}
 	return nil
 }

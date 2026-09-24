@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,14 +50,18 @@ func runMigrate(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if subcommand == "apply" {
 		return applyProductSchema(ctx, pool)
 	}
-	applied, err := productSchemaStatus(ctx, pool)
+	pending, err := productSchemaStatus(ctx, pool)
 	if err != nil {
 		return err
 	}
-	if applied {
+	if len(pending) == 0 {
 		_, err = fmt.Fprintln(stdout, "applied")
-	} else {
-		_, err = fmt.Fprintln(stdout, "pending")
+		return err
 	}
+	versions := make([]string, len(pending))
+	for i, version := range pending {
+		versions[i] = strconv.Itoa(version)
+	}
+	_, err = fmt.Fprintln(stdout, "pending "+strings.Join(versions, " "))
 	return err
 }

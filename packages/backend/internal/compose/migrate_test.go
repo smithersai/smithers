@@ -34,14 +34,19 @@ func TestRunMigrate_UsesEmbeddedProductMigration(t *testing.T) {
 func TestRunMigrate_Status(t *testing.T) {
 	t.Setenv("SMITHERS_DATABASE_URL", "postgres://u:p@127.0.0.1:5432/product?sslmode=disable")
 	old := productSchemaStatus
-	productSchemaStatus = func(context.Context, *pgxpool.Pool) (bool, error) { return true, nil }
 	t.Cleanup(func() { productSchemaStatus = old })
-	var output bytes.Buffer
-	if err := runMigrate(context.Background(), []string{"status"}, &output, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-	if got := output.String(); got != "applied\n" {
-		t.Fatalf("status = %q", got)
+	for _, tc := range []struct {
+		pending []int
+		want    string
+	}{{nil, "applied\n"}, {[]int{13, 14}, "pending 13 14\n"}} {
+		productSchemaStatus = func(context.Context, *pgxpool.Pool) ([]int, error) { return tc.pending, nil }
+		var output bytes.Buffer
+		if err := runMigrate(context.Background(), []string{"status"}, &output, io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		if got := output.String(); got != tc.want {
+			t.Fatalf("status = %q, want %q", got, tc.want)
+		}
 	}
 }
 
