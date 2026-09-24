@@ -20,6 +20,18 @@ const cells = (transcript: Transcript.Transcript) =>
   transcript.items.filter((item): item is Extract<Transcript.Item, { kind: "cell" }> => item.kind === "cell")
 
 describe("replaying a recorded run", () => {
+  it("drops the refused seat's streaming text before rendering the fallback", () => {
+    const events = [
+      { _tag: "model-requested" },
+      { _tag: "model-delta", delta: { type: "text-delta", text: "seat one partial" } },
+      { _tag: "model-retried", code: "rate_limited" },
+      { _tag: "model-delta", delta: { type: "text-delta", text: "fallback reply" } }
+    ]
+    const transcript = events.reduce((state, event, at) => Transcript.apply(state, event as never, at), Transcript.empty)
+    expect(transcript.streaming).toBe("fallback reply")
+    expect(cells(transcript).map((cell) => cell.prose)).toEqual(["fallback reply"])
+    expect(transcript.items.some((item) => item.kind === "cell" && item.prose.includes("seat one"))).toBe(false)
+  })
   it("shows one settled cell per produced program, then the answer", () => {
     const transcript = replay()
     const produced = recorded.filter(({ event }) => event._tag === "cell-produced").map(({ event }) => event.cell.text)

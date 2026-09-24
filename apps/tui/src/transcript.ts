@@ -415,7 +415,12 @@ const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: nu
         )
       }
     case "model-retried":
-      return note(transcript, `retrying · ${event.code}`, at)
+      { const open = lastCell(transcript)
+        const cleared = open?.status === "writing"
+          ? { ...transcript, items: transcript.items.filter((item) => item !== open), cells: open.index - 1 }
+          : transcript
+        return note({ ...cleared, streaming: "", thinking: false, requestedAt: at }, `retrying · ${event.code}`, at)
+      }
     case "cell-produced": {
       const open = lastCell(transcript)
       const produced = (cell: CellItem): CellItem => ({ ...cell, source: event.cell.text, status: "running" })
