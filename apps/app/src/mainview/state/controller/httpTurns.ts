@@ -35,14 +35,16 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
   const recovering = new Set<string>()
   const launchFailures = new Map<string, string>()
   const stopping = new Map<string, Promise<void>>()
-  let failed = false
+  /** Attempts whose durable write failed: no further effects, only a settling interrupt. */
+  const poisoned = new Set<string>()
   let pending = Promise.resolve()
-  const active = (attemptId: string): HttpTurn | undefined => {
-    if (failed || ctx.disposed) return undefined
+  const owned = (attemptId: string): HttpTurn | undefined => {
+    if (ctx.disposed) return undefined
     const turn = store.collections.httpTurns.get(attemptId)
     return turn?.status === "active" && ctx.activeTurn?.httpAttemptId === attemptId &&
       dependencies.isCurrentTurn(ctx.activeTurn) ? turn : undefined
   }
+  const active = (attemptId: string): HttpTurn | undefined => poisoned.has(attemptId) ? undefined : owned(attemptId)
   const mirror = (turn: HttpTurn): ActiveTurn => dependencies.ownTurn({ id: turn.turnId, httpAttemptId: turn.id,
     receivedText: turn.receivedText, toolLegs: httpToolLegCount(store.collections.httpTurnLegs.values(), turn.id),
     toolItems: httpToolItems(store.collections.httpTurnLegs.values(), turn.id),
@@ -51,13 +53,14 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
   const clearTimer = (attemptId: string): void => { const timer = timers.get(attemptId); if (timer !== undefined) clearTimeout(timer); timers.delete(attemptId) }
   const finish = (attemptId: string): void => {
     clearTimer(attemptId)
+    poisoned.delete(attemptId)
     const turn = store.collections.httpTurns.get(attemptId)
     if (turn !== undefined) journal?.disconnect(turn.turnId)
     if (ctx.activeTurn?.httpAttemptId === attemptId) ctx.activeTurn = undefined
     if (!ctx.disposed) dependencies.settled()
   }
   const interrupt = async (attemptId: string, status: "failed" | "cancelled" | "ambiguous", detail: string, silent = false): Promise<void> => {
-    if (!active(attemptId)) return
+    if (!owned(attemptId)) return
     await store.dispatch({ type: "http.turn.interrupted", actor: status === "cancelled" ? "user" : "system", attemptId, status, detail, ...(silent ? { silent: true } : {}) }).isPersisted.promise
     finish(attemptId)
   }
@@ -68,6 +71,18 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
       void catchUp(attemptId).catch(() => {}).finally(() => schedule(attemptId))
     }, 1_000)
     timers.set(attemptId, timer); ctx.unref(timer)
+  }
+  /*
+   * A failed durable write stops this attempt's effects: nothing continues
+   * from an optimistic projection without its receipt. The attempt then
+   * settles honestly; if that write fails too, Stop or a reload settles it.
+   */
+  const fail = async (attemptId: string): Promise<void> => {
+    poisoned.add(attemptId)
+    clearTimer(attemptId)
+    const turn = ctx.disposed ? undefined : store.collections.httpTurns.get(attemptId)
+    if (turn) journal?.disconnect(turn.turnId)
+    await interrupt(attemptId, "ambiguous", "This response could not be saved. Its outcome is unknown; it was not restarted.").catch(() => {})
   }
   const launch = async (attemptId: string): Promise<void> => {
     const turn = active(attemptId), leg = turn && store.collections.httpTurnLegs.get(turn.legId)
@@ -124,14 +139,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         if (active(attemptId)?.legId !== next.legId) return
         await launch(attemptId)
       }
-    } catch {
-      // Failed durable work poisons the owner; do not add a second write or
-      // continue effects from an optimistic projection without its receipt.
-      const turn = ctx.disposed ? undefined : store.collections.httpTurns.get(attemptId)
-      if (turn) journal?.disconnect(turn.turnId)
-      clearTimer(attemptId)
-      failed = true
-    } finally { driving.delete(attemptId) }
+    } catch { await fail(attemptId) } finally { driving.delete(attemptId) }
   }
   const afterCommit = (attemptId: string): void => {
     if (ctx.disposed) return
@@ -144,31 +152,32 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     void drive(attemptId)
   }
   const apply = async (delivery: AgentTurnJournalDelivery): Promise<void> => {
-    if (ctx.disposed || failed) return
+    if (ctx.disposed) return
     const leg = store.collections.httpTurnLegs.get(delivery.cursor.legId)
     if (!leg || !active(leg.attemptId) || active(leg.attemptId)?.legId !== leg.id || delivery.cursor.runId !== leg.turnId) return
-    if (delivery.type === "accepted") {
-      await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: leg.attemptId, legId: leg.id, cursor: delivery.cursor }).isPersisted.promise
-    } else if (delivery.type === "batch") {
-      let receipt
-      try {
-        receipt = store.dispatch({ type: "http.turn.batch.received", actor: "system", attemptId: leg.attemptId, legId: leg.id, batch: delivery.batch })
-      } catch (error) {
-        if (!(error instanceof HttpTurnIntegrityError)) throw error
-        await interrupt(leg.attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted.")
-        return
+    try {
+      if (delivery.type === "accepted") {
+        await store.dispatch({ type: "http.leg.accepted", actor: "system", attemptId: leg.attemptId, legId: leg.id, cursor: delivery.cursor }).isPersisted.promise
+      } else if (delivery.type === "batch") {
+        let receipt
+        try {
+          receipt = store.dispatch({ type: "http.turn.batch.received", actor: "system", attemptId: leg.attemptId, legId: leg.id, batch: delivery.batch })
+        } catch (error) {
+          if (!(error instanceof HttpTurnIntegrityError)) throw error
+          await interrupt(leg.attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted.")
+          return
+        }
+        await receipt.isPersisted.promise
+        afterCommit(leg.attemptId)
       }
-      await receipt.isPersisted.promise
-      afterCommit(leg.attemptId)
+    } catch (error) {
+      await fail(leg.attemptId)
+      throw error
     }
   }
   const enqueue = (work: () => Promise<void>): Promise<void> => {
     const next = pending.then(work)
-    pending = next.catch(() => {
-      failed = true
-      for (const id of timers.keys()) clearTimer(id)
-      if (ctx.activeTurn?.httpAttemptId) journal?.disconnect(ctx.activeTurn.id)
-    })
+    pending = next.catch(() => {})
     return next
   }
   const applyPage = async (attemptId: string, requested: HttpTurnLeg, reply: AgentTurnJournalReply): Promise<void> => {
@@ -209,7 +218,8 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
       try { reply = await journal.read({ runId: turn.turnId, journal: leg.journal, after: leg.cursor ?? null }) }
       catch (error) {
         if (!(error instanceof AgentJournalIntegrityError)) throw error
-        await enqueue(() => interrupt(attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted."))
+        await enqueue(() => interrupt(attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted.")
+          .catch(() => fail(attemptId)))
         return
       }
       await enqueue(async () => {
@@ -217,8 +227,8 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         if (!sameCursor(store.collections.httpTurnLegs.get(leg.id)?.cursor, leg.cursor)) return
         try { await applyPage(attemptId, leg, reply) }
         catch (error) {
-          if (!(error instanceof AgentJournalIntegrityError)) throw error
-          await interrupt(attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted.")
+          if (!(error instanceof AgentJournalIntegrityError)) { await fail(attemptId); throw error }
+          await interrupt(attemptId, "ambiguous", "The saved response failed an integrity check. It was not replayed or restarted.").catch(() => fail(attemptId))
         }
       })
       if (reply.status !== "ok" || !reply.more) return
@@ -264,7 +274,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
   const stop = (): boolean => {
     const attemptId = ctx.activeTurn?.httpAttemptId
     if (!attemptId) return false
-    const turn = active(attemptId)
+    const turn = owned(attemptId)
     const cancelled = interrupt(attemptId, "cancelled", "Stopped the current response.").then(() => {
       if (turn && !ctx.disposed) return agent.cancelTurn(turn.turnId)
     })

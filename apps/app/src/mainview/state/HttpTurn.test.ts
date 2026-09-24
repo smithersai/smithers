@@ -539,3 +539,65 @@ test.each(["network", "503", "storage_failed"])("recovery keeps an accepted turn
   expect(restored.session().phase).toBe("responding")
   expect(urls).not.toContain(TURN_PATH)
 })
+
+test("a one-shot failed batch commit settles the live turn as ambiguous and Chat accepts the next send without a reload", async () => {
+  const disk = memoryStorage()
+  let fail = false
+  const storage = { ...disk, setItem: (key: string, value: string) => { if (fail) { fail = false; throw new Error("disk unavailable") } disk.setItem(key, value) } }
+  const store = await open(storage), remote = journalAgent(), controller = controllerFor(store, remote.agent)
+  controller.send("Hello")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const batch = batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "Unsaved" }])
+  fail = true
+  await expect(remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })).rejects.toThrow("disk unavailable")
+  await until(() => store.session().phase === "idle")
+  expect([...store.collections.httpTurns.values()][0]?.status).toBe("ambiguous")
+  expect(store.collections.messages.get(`message-${request.runId}-smithers`)?.text).toContain("could not be saved")
+  expect(remote.disconnected).toContain(request.runId)
+  expect(await controller.send("Again")).toBe(true)
+  await until(() => remote.starts.length === 2)
+  const next = remote.starts[1]!, nextCursor = initialCursor(next.runId, next.journal!.legId)
+  await remote.emit({ type: "accepted", cursor: nextCursor })
+  const done = batchOf(nextCursor, [{ type: "delta", runId: next.runId, kind: "text", text: "Saved answer" }, { type: "done", runId: next.runId, reason: "stop" }])
+  await remote.emit({ type: "batch", batch: done, cursor: cursorOf(done) })
+  expect(store.session().phase).toBe("idle")
+  expect(store.collections.messages.get(`message-${next.runId}-smithers`)?.text).toBe("Saved answer")
+  expect((await store.verifyState()).valid).toBe(true)
+})
+
+test("Stop still settles a turn whose batch and ambiguity writes both failed, once storage recovers", async () => {
+  const disk = memoryStorage()
+  let fail = false
+  const storage = { ...disk, setItem: (key: string, value: string) => { if (fail) throw new Error("disk unavailable"); disk.setItem(key, value) } }
+  const store = await open(storage), remote = journalAgent(), controller = controllerFor(store, remote.agent)
+  controller.send("Hello")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await remote.emit({ type: "accepted", cursor })
+  const batch = batchOf(cursor, [{ type: "delta", runId: request.runId, kind: "text", text: "Unsaved" }])
+  fail = true
+  await expect(remote.emit({ type: "batch", batch, cursor: cursorOf(batch) })).rejects.toThrow("disk unavailable")
+  await store.settled?.()
+  expect(store.session().phase).toBe("responding")
+  fail = false
+  await controller.commands.run("chat.stop")
+  await until(() => store.session().phase === "idle")
+  expect([...store.collections.httpTurns.values()][0]?.status).toBe("cancelled")
+  expect(await controller.send("Again")).toBe(true)
+  await until(() => remote.starts.length === 2)
+  expect((await store.verifyState()).valid).toBe(true)
+})
+
+test("a malformed acceptance cursor settles the live turn as ambiguous instead of wedging Chat", async () => {
+  const store = await open(), remote = journalAgent(), controller = controllerFor(store, remote.agent)
+  controller.send("Hello")
+  await until(() => remote.starts.length === 1)
+  const request = remote.starts[0]!, cursor = initialCursor(request.runId, request.journal!.legId)
+  await expect(remote.emit({ type: "accepted", cursor: { ...cursor, batch: 3 } })).rejects.toThrow("acceptance cursor")
+  await until(() => store.session().phase === "idle")
+  expect([...store.collections.httpTurns.values()][0]?.status).toBe("ambiguous")
+  expect(await controller.send("Again")).toBe(true)
+  await until(() => remote.starts.length === 2)
+})
