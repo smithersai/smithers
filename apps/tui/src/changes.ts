@@ -87,6 +87,13 @@ const fileState = async (path: string): Promise<FileState> => {
   }
 }
 /**
+ * The most line edits a patch diffs; more is labeled too large. It bounds the
+ * work instead of a wall-clock timeout, which fired whenever the process was
+ * descheduled and so labeled one-line edits too large under CPU load. Giving
+ * up on two unrelated 20,000-line files at 1,000 edits takes about 100 ms.
+ */
+const maxEditLength = 1_000
+/**
  * `null` is an absent file: its side of the patch is `/dev/null`, so creation and deletion reverse.
  * A deletion carries the file's `mode` as git's `deleted file mode` header, so undo restores it.
  */
@@ -99,7 +106,7 @@ export const patch = (path: string, before: string | null, after: string | null,
     after ?? "",
     "",
     "",
-    { context: 3, timeout: 100, maxEditLength: 10_000 }
+    { context: 3, maxEditLength }
   )
   if (body === undefined) return { path, patch: `Diff too large: ${path}` }
   return after !== null || deletedMode === undefined

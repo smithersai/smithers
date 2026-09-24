@@ -146,3 +146,25 @@ describe("named write capture", () => {
     expect(receipts[0]?.patches.at(-1)?.patch).toContain("1 additional files")
   }, 20_000)
 })
+
+describe("patch", () => {
+  it("diffs a small edit even when the process stalls mid-diff", () => {
+    // Under CPU load the process can be descheduled for over 100 ms inside one
+    // synchronous diff. A wall-clock budget then labeled a one-line edit
+    // "Diff too large" and undo refused it as binary or large.
+    const now = Date.now
+    let clock = now()
+    Date.now = () => (clock += 150)
+    try {
+      const patch = Changes.patch("math.js", "export const add = (a, b) => a - b\n", "export const add = (a, b) => a + b\n")
+      expect(patch?.patch).toContain("-export const add = (a, b) => a - b")
+      expect(patch?.patch).toContain("+export const add = (a, b) => a + b")
+    } finally {
+      Date.now = now
+    }
+  })
+  it("labels a rewrite beyond the edit bound too large, whatever the clock", () => {
+    const lines = (prefix: string) => Array.from({ length: 600 }, (_, i) => `${prefix}${i}`).join("\n")
+    expect(Changes.patch("big.txt", lines("a"), lines("b"))?.patch).toBe("Diff too large: big.txt")
+  })
+})
