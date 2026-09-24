@@ -626,7 +626,8 @@ export function App(props: AppProps) {
     ? ["a"]
     : []
   const lanes = new Map(snapshot.tabs.map((tab, index) => [tab.id, { title: tabTitle(tab), tone: lane(index) }]))
-  const timeline = Timeline.merge(
+  const mergeTimeline = useMemo(() => Timeline.cached(), [])
+  const timeline = mergeTimeline(
     [
       { id: Timeline.chat, transcript },
       ...snapshot.tabs.map((tab) => ({ id: tab.id, transcript: workspace.transcript(tab.id) }))
@@ -2104,7 +2105,7 @@ export function App(props: AppProps) {
                 const step = row.item.kind === "cell" ? Scrubber.step(transcriptOf(row.source), row.item) : undefined
                 const entry = card !== undefined
                   ? <View.Card panel={card} focused={row.key === focusedCard} onOpen={() => perform({ kind: "open", surface: card.id.startsWith("flow:") ? card.id : `ui:${card.id}` })} />
-                  : <View.Entry item={row.item} now={now} tick={tick} expanded={expanded} selected={row.key === jumpTarget}
+                  : <View.Entry item={row.item} now={View.ticking(row.item) ? now : 0} tick={View.ticking(row.item) ? tick : ""} expanded={expanded} selected={row.key === jumpTarget}
                     {...(step === undefined ? {} : { step })} {...(worker === undefined ? {} : { tone: worker.tone })} />
                 return worker === undefined
                   ? <box key={row.key} id={row.key}>{entry}</box>

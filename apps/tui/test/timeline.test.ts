@@ -53,3 +53,12 @@ describe("timeline", () => {
     expect(Timeline.merge(sources, twice)).toHaveLength(4)
   })
 })
+
+test("reuses merged rows across clock renders and invalidates changed transcripts", () => {
+  const merge = Timeline.cached()
+  const first = merge(sources, Timeline.all)
+  expect(merge(sources.map((source) => ({ ...source })), Timeline.all)).toBe(first)
+  const changed = [{ ...sources[0]!, transcript: Transcript.note(chat, "new", 60) }, sources[1]!]
+  expect(merge(changed, Timeline.all).at(-1)?.item).toMatchObject({ text: "new" })
+  expect(merge(changed, { ...Timeline.all, query: "new" })).toHaveLength(1)
+})

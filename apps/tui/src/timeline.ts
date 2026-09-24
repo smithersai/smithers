@@ -91,3 +91,18 @@ export const merge = (sources: ReadonlyArray<Source>, filter: Filter = all): Rea
     .filter((row) => query === "" || text(row.item).toLowerCase().includes(query))
     .sort((a, b) => a.at - b.at)
 }
+
+/** One view's merge cache: clock-only renders reuse rows without sorting again. */
+export const cached = (): typeof merge => {
+  let previous: ReadonlyArray<Source> = []
+  let selected: Filter | undefined
+  let rows: ReadonlyArray<Row> = []
+  return (sources, filter = all) => {
+    if (selected === filter && sources.length === previous.length &&
+      sources.every((source, index) => source.id === previous[index]!.id && source.transcript === previous[index]!.transcript)) return rows
+    previous = sources
+    selected = filter
+    rows = merge(sources, filter)
+    return rows
+  }
+}
