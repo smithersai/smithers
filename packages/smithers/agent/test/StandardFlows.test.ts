@@ -49,7 +49,10 @@ const nativeHelperAvailable = [
   join(import.meta.dirname, "../../../../target/debug/smithers-jj-export"),
   "/usr/local/bin/smithers-jj-export"
 ].some((path) => path !== undefined && existsSync(path))
-const guardedDisk = process.env.CI || nativeHelperAvailable ? it : it.skip
+const guardedDisk = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY || nativeHelperAvailable ? it : it.skip
+const guardedDiskReason = process.platform === "win32" && guardedDisk === it.skip
+  ? "skipped on Windows: native smithers-jj-export was not built"
+  : "requires native smithers-jj-export"
 
 /**
  * The host slices each helper takes. A catalog is the binding list a source
@@ -160,7 +163,7 @@ describe("the standard capability catalog", () => {
     ]
   ) {
     guardedDisk(
-      `searches the guarded disk workspace through ${fixture.flow} without an absolute root (requires native smithers-jj-export)`,
+      `searches the guarded disk workspace through ${fixture.flow} without an absolute root (${guardedDiskReason})`,
       async () => {
         const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-standard-search-")))
         try {
