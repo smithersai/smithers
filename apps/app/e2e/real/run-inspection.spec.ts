@@ -25,7 +25,7 @@ import {
   workflowRpcPosts
 } from "./run-inspection/ui"
 import { awaitSeededFlow, FAILED_FLOW, measureWorkspaceHost, PIN_FILES, readWorkspaceText, restartWorkspaceHost, SEEDED_FLOW, writeSeededFlow } from "./run-inspection/seeded-flow"
-import { captureRevisions, enrichedEvidence, hostContains, MODULE_COMMIT, moduleEvidence, reloadBootEvidence } from "./run-inspection/revisions"
+import { captureRevisions, enrichedEvidence, hostProducer, MODULE_COMMIT, moduleEvidence, reloadBootEvidence } from "./run-inspection/revisions"
 import { moduleMeaning } from "./run-inspection/module-evidence"
 import { assertSuccessfulEdit, journalMeaning, requireLaterPhase } from "./run-inspection/semantic"
 import { compareEmptyTimeline, compareMeaning, gatherEvidence, inspectKeyboard, inspectRunning, launchSubject, readFinalOutput, readJournal } from "./run-inspection/exercise"
@@ -278,7 +278,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
   const host = await captureRevisions(page, testInfo)
   const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
   await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host, measuredAfterResume: true })
-  expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
+  if (host.pin._tag === "HostPinRead") expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.pin.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, SEEDED_FLOW, { args: marker }, testInfo)
@@ -305,7 +305,7 @@ workflowTest("a successful prompt run matches its journal while live and after k
       await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-      await enrichedEvidence(testInfo, host, rows)
+      await enrichedEvidence(testInfo, host.pin, rows)
     })
   }
 })
@@ -331,7 +331,7 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
   const host = await captureRevisions(page, testInfo)
   const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
   await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host, measuredAfterResume: true })
-  expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.sha256)
+  if (host.pin._tag === "HostPinRead") expect(measured.sha256, "the executing workspace contains the pinned host artifact after resume").toBe(host.pin.sha256)
   await command(page, `/repo.select ${repo}#workspace:${workspaceId}`)
   await closeComposer(page)
   const subject = await launchSubject(page, workflowRepo, FAILED_FLOW, { args: "Observe the declared budget failure." }, testInfo)
@@ -356,7 +356,7 @@ workflowTest("a budget-failed prompt run shows its recorded failure without clai
       await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-subject-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-      await enrichedEvidence(testInfo, host, rows)
+      await enrichedEvidence(testInfo, host.pin, rows)
     })
   }
 })
@@ -377,7 +377,8 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
   const host = await captureRevisions(page, testInfo)
   const measured = await measureWorkspaceHost(page, request, repo, workspaceId!)
   await attachProductionJson(testInfo, "timeline-workspace-host", { repo, workspaceId, measured, host })
-  expect(measured.sha256).toBe(host.sha256)
+  if (host.pin._tag === "HostPinRead") expect(measured.sha256).toBe(host.pin.sha256)
+  const producer = hostProducer(host.pin, MODULE_COMMIT)
   const catalog = await gatewayCall(page, request, repo, "List", { _tag: "flows" }, workspaceId)
   await attachProductionJson(testInfo, "timeline-module-catalog", catalog.payload)
   expect((catalog.payload as { items: { flowId: string }[] }).items.map(one => one.flowId)).toContain("repository-jobs/issues")
@@ -409,7 +410,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
      * keep it running. So a live boundary is taken when the run offers one and
      * named unexercised when it does not, and never assumed.
      */
-    const live = hostContains(host.sourceCommit, MODULE_COMMIT)
+    const live = producer === "HostContainsCommit"
       ? await inspectRunning(page, request, workflowRepo, subject, testInfo, host.frontendRevision, moduleMeaning, false, "report")
       : undefined
     const terminal = await waitForTerminalRun(page, request, repo, subject.runId, 10 * 60_000, workspaceId)
@@ -441,7 +442,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
     }
     const expected = moduleMeaning(rows)
     // A host that carries the producer must record this module's steps; only an older one may read empty.
-    if (hostContains(host.sourceCommit, MODULE_COMMIT)) {
+    if (producer === "HostContainsCommit") {
       expect(expected.frames.length).toBeGreaterThanOrEqual(2)
       // Each frame is placed by the invocation that recorded it, so two steps
       // cannot be folded into one timeline by a shared frame number.
@@ -453,7 +454,7 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
       ? await compareEmptyTimeline(subject.card, subject.trace, expected)
       : await compareMeaning(subject.card, subject.trace, expected)
     await attachProductionJson(testInfo, "timeline-module-semantic-comparison", { expected, rendered, terminal, live,
-      recordedFrames: expected.frames.length, hostRevision: host.sourceCommit })
+      recordedFrames: expected.frames.length, host: host.pin, producer })
     await subject.card.screenshot({ path: testInfo.outputPath("timeline-module.png") })
     await testInfo.attach("timeline-module", { path: testInfo.outputPath("timeline-module.png"), contentType: "image/png" })
   } finally {
@@ -461,8 +462,8 @@ workflowTest("an ordinary module run reports recorded step evidence or its pinne
       await reloadBootEvidence(testInfo)
       const rows = await readJournal(page, request, workflowRepo, subject.runId)
       await attachProductionJson(testInfo, "timeline-module-journal", { repo, workspaceId, runId: subject.runId, events: rows })
-      await moduleEvidence(testInfo, host, rows)
-      await enrichedEvidence(testInfo, host, rows)
+      await moduleEvidence(testInfo, host.pin, rows)
+      await enrichedEvidence(testInfo, host.pin, rows)
     })
   }
 })

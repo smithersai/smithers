@@ -50,6 +50,15 @@ bun apps/app/scripts/check-real-e2e.ts   # the structural gate alone, no browser
 reuses `dist/`, and `SMITHERS_REAL_BASE_URL` points the suite at a deployed
 canary instead of booting a host.
 
+`real/run-inspection.spec.ts` compares the deployed frontend's sources with
+this checkout through jj, or through git on a clone without jj; the deployed
+revision must be fetched. Its coding host claims need the API image's pin,
+which no product endpoint serves. An operator with cluster access sets
+`SMITHERS_REAL_HOST_PIN_CONTEXT` to the kube context of the deployment under
+test (production is `gke_plue-prod-1771780303_us-central1_plue-cluster`).
+Without it, each scenario records a `HostPinUnread` annotation and skips only
+the claims that need the pin.
+
 `real/models.spec.ts` tests a configured model against a provider the runner
 owns. A custom model credential is a NAME the operator declares as an env pair
 before the host boots: `SMITHERS_MODEL_KEY_<NAME>` holds the value and

@@ -9,7 +9,13 @@ import { moduleRows } from "./module-evidence"
 
 export const ENRICHED_COMMIT = "3b2b9f518c"
 export const MODULE_COMMIT = "0c31eb19cecf"
-export type HostManifest = { sourceCommit: string; sha256: string; object: string; frontendRevision: string }
+/** The kube context of the deployment under test; only an operator with cluster access sets it. */
+export const HOST_PIN_CONTEXT_ENV = "SMITHERS_REAL_HOST_PIN_CONTEXT"
+export type HostPin =
+  | { _tag: "HostPinRead"; sourceCommit: string; sha256: string; object: string }
+  | { _tag: "HostPinUnread"; message: string }
+export type HostRevisions = { frontendRevision: string; pin: HostPin }
+export type HostProducer = "HostContainsCommit" | "HostPredatesCommit" | "HostPinUnread"
 
 /** The card sources whose deployed bytes decide the run header this tier reads. */
 export const HEADER_SOURCES = ["apps/app/src/mainview/cards/RunTraceStatus.ts"] as const
@@ -29,18 +35,36 @@ export type DeployedSourceFact =
   | { _tag: "DeployedSourceMatchesWorkingCopy"; frontendRevision: string; files: readonly string[] }
   | { _tag: "DeployedSourcePredatesWorkingCopy"; frontendRevision: string; message: string; files: readonly string[] }
 
+/** One VCS command and how its output answers the question. */
+type VersionedRead<T> = readonly [argv: readonly string[], answer: (stdout: string) => T]
+
+/**
+ * Answers from jj, or from git on a clone without a jj checkout. Only a
+ * revision neither can read fails, naming both refusals.
+ */
+const versioned = <T>(root: string, jj: VersionedRead<T>, git: VersionedRead<T>): T => {
+  const refusals: string[] = []
+  for (const [[command, ...args], answer] of [jj, git]) {
+    try {
+      return answer(execFileSync(command!, args, { encoding: "utf8", cwd: root, timeout: 30000, stdio: ["ignore", "pipe", "pipe"] }))
+    } catch (error) { refusals.push(`${command}: ${error instanceof Error ? error.message : String(error)}`) }
+  }
+  throw new Error(`Neither jj nor git in ${root} could answer: ${refusals.join("; ")}`)
+}
+
 /**
  * Compares the deployed bundle's sources with this working copy's, by exact
  * bytes at the deployed revision. A commit id would stop naming this lane's
  * own fix the moment it is rebased; the file contents keep saying what the
  * browser under test is actually running.
  */
-export const deployedSource = (frontendRevision: string, sources: readonly string[]): DeployedSourceFact => {
+export const deployedSource = (frontendRevision: string, sources: readonly string[], root = repositoryRoot()): DeployedSourceFact => {
   if (!/^[0-9a-f]{40}$/.test(frontendRevision)) throw new Error("Invalid deployed frontend revision")
-  const root = repositoryRoot()
   const differing = sources.filter(path => {
-    const deployed = execFileSync("jj", ["file", "show", "--ignore-working-copy", "-r", frontendRevision, path],
-      { encoding: "utf8", cwd: root, timeout: 30000 })
+    const bytes = (stdout: string) => stdout
+    const deployed = versioned(root,
+      [["jj", "file", "show", "--ignore-working-copy", "-r", frontendRevision, path], bytes],
+      [["git", "show", `${frontendRevision}:${path}`], bytes])
     return deployed !== readFileSync(resolve(root, path), "utf8")
   })
   return differing.length === 0
@@ -52,26 +76,60 @@ export const deployedSource = (frontendRevision: string, sources: readonly strin
 export const deployedHeaderSource = (frontendRevision: string): DeployedSourceFact =>
   deployedSource(frontendRevision, HEADER_SOURCES)
 export type ProducerFact =
+  | { _tag: "HostPinUnread"; producingCommit: string; message: string; observed: number }
   | { _tag: "HostPredatesCommit"; hostRevision: string; producingCommit: string; message: string; observed: number }
   | { _tag: "EnrichedPayloadsVerified"; hostRevision: string; producingCommit: string; observed: number }
   | { _tag: "EventNotRecorded"; hostRevision: string; producingCommit: string; message: string; observed: 0 }
   | { _tag: "EnrichedPayloadMissing"; hostRevision: string; producingCommit: string; message: string; observed: number; sequences: number[] }
 
-/** Ask the live API image for its pin, not the developer checkout's manifest. */
-export const captureRevisions = async (page: Page, testInfo: TestInfo, attachment = "timeline-revisions"): Promise<HostManifest> => {
+/**
+ * The API image's coding host pin, read from the cluster an operator names.
+ * Nothing in the product surface serves the pin, so without that context the
+ * pin is unread: the tier says so instead of guessing a cluster or failing a
+ * contributor's run for want of cluster credentials.
+ */
+export const readHostPin = (context: string | undefined): HostPin => {
+  if (context === undefined || context === "") return { _tag: "HostPinUnread",
+    message: `${HOST_PIN_CONTEXT_ENV} is unset, so the coding host pin and every claim that depends on it are unexercised` }
+  const manifest = JSON.parse(execFileSync("kubectl", [
+    "--context", context, "exec", "-n", "smithers", "deploy/smithers-api", "-c", "api", "--",
+    "cat", "/usr/local/lib/smithers/coding-host.json"
+  ], { encoding: "utf8", timeout: 30000 })) as { sourceCommit: string; sha256: string; object: string }
+  return { _tag: "HostPinRead", sourceCommit: manifest.sourceCommit, sha256: manifest.sha256, object: manifest.object }
+}
+
+/** The served frontend revision, and the API image's host pin when an operator can read it. */
+export const captureRevisions = async (page: Page, testInfo: TestInfo, attachment = "timeline-revisions"): Promise<HostRevisions> => {
   const response = await page.request.get(new URL("/__build.json", page.url()).toString())
   expect(response.status()).toBe(200)
   const frontend = await response.json() as { gitSha?: unknown; builtAt?: unknown }
   expect(frontend.gitSha).toMatch(/^[0-9a-f]{40}$/)
-  const manifest = JSON.parse(execFileSync("kubectl", [
-    "--context", "gke_plue-prod-1771780303_us-central1_plue-cluster", "exec", "-n", "smithers", "deploy/smithers-api", "-c", "api", "--",
-    "cat", "/usr/local/lib/smithers/coding-host.json"
-  ], { encoding: "utf8", timeout: 30000 })) as HostManifest
-  expect(manifest.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
-  expect(manifest.sha256).toMatch(/^[0-9a-f]{64}$/)
-  await attachProductionJson(testInfo, attachment, { frontend, host: manifest, capturedAt: new Date().toISOString() })
-  return { ...manifest, frontendRevision: frontend.gitSha as string }
+  const pin = readHostPin(process.env[HOST_PIN_CONTEXT_ENV])
+  if (pin._tag === "HostPinRead") {
+    expect(pin.sourceCommit).toMatch(/^[0-9a-f]{40}$/)
+    expect(pin.sha256).toMatch(/^[0-9a-f]{64}$/)
+  } else if (!testInfo.annotations.some(({ type }) => type === pin._tag)) {
+    testInfo.annotations.push({ type: pin._tag, description: pin.message })
+  }
+  await attachProductionJson(testInfo, attachment, { frontend, host: pin, capturedAt: new Date().toISOString() })
+  return { frontendRevision: frontend.gitSha as string, pin }
 }
+
+const hostContains = (revision: string, producingCommit: string, root: string): boolean => {
+  // Revsets use only validated hexadecimal revisions, with no shell interpolation.
+  if (!/^[0-9a-f]{10,40}$/.test(revision) || !/^[0-9a-f]{10,40}$/.test(producingCommit)) throw new Error("Invalid evidence revision")
+  // jj prints the producer when it is an ancestor; git prints it only when it is not.
+  return versioned(root,
+    [["jj", "log", "--ignore-working-copy", "-r", `${producingCommit} & ancestors(${revision})`, "--no-graph", "-T", "commit_id"],
+      stdout => stdout.trim() !== ""],
+    [["git", "rev-list", "--max-count=1", `${producingCommit}^{commit}`, "--not", `${revision}^{commit}`],
+      stdout => stdout.trim() === ""])
+}
+
+/** Whether the pinned host carries the commit that produces a payload, or the pin is unread. */
+export const hostProducer = (pin: HostPin, producingCommit: string, root = repositoryRoot()): HostProducer =>
+  pin._tag === "HostPinUnread" ? "HostPinUnread"
+    : hostContains(pin.sourceCommit, producingCommit, root) ? "HostContainsCommit" : "HostPredatesCommit"
 
 /** A live boundary this tier compared the card at, and the run status it was compared under. */
 export type LiveBoundary = { readonly status: string; readonly seq: number }
@@ -142,31 +200,27 @@ export const reloadBootEvidence = async (testInfo: TestInfo): Promise<void> => {
   await attachProductionJson(testInfo, "timeline-reload-boot-ms", reloadBootFact(reloadBootTimings()))
 }
 
-export const hostContains = (revision: string, producingCommit: string): boolean => {
-  // Revsets use only validated hexadecimal revisions, with no shell interpolation.
-  if (!/^[0-9a-f]{10,40}$/.test(revision) || !/^[0-9a-f]{10,40}$/.test(producingCommit)) throw new Error("Invalid evidence revision")
-  return execFileSync("jj", ["log", "--ignore-working-copy", "-r", `${producingCommit} & ancestors(${revision})`, "--no-graph", "-T", "commit_id"],
-    { encoding: "utf8", timeout: 30000 }).trim() !== ""
-}
-
-export const enrichedEvidence = async (testInfo: TestInfo, host: HostManifest, rows: readonly JournalRow[]): Promise<void> => {
+export const enrichedEvidence = async (testInfo: TestInfo, pin: HostPin, rows: readonly JournalRow[]): Promise<void> => {
   const observed = moduleRows(rows).filter(({ kind: journalKind }) => journalKind === "control.agent.steering-drained" || journalKind === "control.agent.sufficiency-observed")
   const missing = observed.filter(({ kind: journalKind, payload }) => {
     const p = typeof payload === "object" && payload !== null ? payload as Record<string, unknown> : {}
     return journalKind === "control.agent.steering-drained" ? !Array.isArray(p.messages) : p.failed === undefined || p.passed === undefined
   }).map(row => Number(row.sequence))
-  const fact: ProducerFact = !hostContains(host.sourceCommit, ENRICHED_COMMIT)
-    ? { _tag: "HostPredatesCommit", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT,
+  const producer = hostProducer(pin, ENRICHED_COMMIT)
+  const fact: ProducerFact = pin._tag === "HostPinUnread"
+    ? { _tag: "HostPinUnread", producingCommit: ENRICHED_COMMIT, message: pin.message, observed: observed.length }
+    : producer === "HostPredatesCommit"
+    ? { _tag: "HostPredatesCommit", hostRevision: pin.sourceCommit, producingCommit: ENRICHED_COMMIT,
       message: `host predates ${ENRICHED_COMMIT}; enriched steering and sufficiency payloads are not release evidence`, observed: observed.length }
     : observed.length === 0
-    ? { _tag: "EventNotRecorded", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT, message: "No steering drain or sufficiency event was recorded", observed: 0 }
+    ? { _tag: "EventNotRecorded", hostRevision: pin.sourceCommit, producingCommit: ENRICHED_COMMIT, message: "No steering drain or sufficiency event was recorded", observed: 0 }
     : missing.length > 0
-    ? { _tag: "EnrichedPayloadMissing", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT,
+    ? { _tag: "EnrichedPayloadMissing", hostRevision: pin.sourceCommit, producingCommit: ENRICHED_COMMIT,
       message: "The producing revision is present, but required payload fields are missing", observed: observed.length, sequences: missing }
-    : { _tag: "EnrichedPayloadsVerified", hostRevision: host.sourceCommit, producingCommit: ENRICHED_COMMIT, observed: observed.length }
+    : { _tag: "EnrichedPayloadsVerified", hostRevision: pin.sourceCommit, producingCommit: ENRICHED_COMMIT, observed: observed.length }
   await attachProductionJson(testInfo, "timeline-producer-capability", { fact, events: observed, inventory: demandInventory(rows) })
   if (fact._tag !== "EnrichedPayloadsVerified") testInfo.annotations.push({ type: fact._tag, description: fact.message })
-  if (fact._tag === "HostPredatesCommit") return
+  if (fact._tag === "HostPinUnread" || fact._tag === "HostPredatesCommit") return
   expect(missing, "required enriched payload fields").toEqual([])
 }
 
@@ -198,14 +252,17 @@ export const demandInventory = (rows: readonly JournalRow[]): ReadonlyArray<Read
   return [...observed].map(([name, count]) => ({ name, observed: count, _tag: count > 0 ? "Exercised" : "Unexercised" }))
 }
 
-export const moduleEvidence = async (testInfo: TestInfo, host: HostManifest, rows: readonly JournalRow[]): Promise<void> => {
+export const moduleEvidence = async (testInfo: TestInfo, pin: HostPin, rows: readonly JournalRow[]): Promise<void> => {
   const events = rows.filter(row => (row.payload as Record<string, unknown> | undefined)?.eventType === "flows.harness.step-fact.v1")
-  const fact = !hostContains(host.sourceCommit, MODULE_COMMIT)
-    ? { _tag: "HostPredatesCommit", hostRevision: host.sourceCommit, producingCommit: MODULE_COMMIT, observed: events.length,
+  const producer = hostProducer(pin, MODULE_COMMIT)
+  const fact = pin._tag === "HostPinUnread"
+    ? { _tag: "HostPinUnread", producingCommit: MODULE_COMMIT, observed: events.length, message: pin.message }
+    : producer === "HostPredatesCommit"
+    ? { _tag: "HostPredatesCommit", hostRevision: pin.sourceCommit, producingCommit: MODULE_COMMIT, observed: events.length,
       message: `host predates ${MODULE_COMMIT}; module step frames are not release evidence` }
-    : { _tag: events.length > 0 ? "ModuleStepTrailRecorded" : "ModuleStepTrailMissing", hostRevision: host.sourceCommit,
+    : { _tag: events.length > 0 ? "ModuleStepTrailRecorded" : "ModuleStepTrailMissing", hostRevision: pin.sourceCommit,
       producingCommit: MODULE_COMMIT, observed: events.length, message: events.length > 0 ? "Recorded module checkpoints" : "The module agent recorded no checkpoints" }
   await attachProductionJson(testInfo, "timeline-module-capability", { fact, events })
   testInfo.annotations.push({ type: fact._tag, description: fact.message })
-  if (fact._tag !== "HostPredatesCommit") expect(events.length, fact.message).toBeGreaterThan(0)
+  if (producer === "HostContainsCommit") expect(events.length, fact.message).toBeGreaterThan(0)
 }
