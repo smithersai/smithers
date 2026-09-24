@@ -75,7 +75,7 @@ describe("walkthrough publish and serve", () => {
     const served = await worker.fetch(new Request(body.url), env);
     expect(served.status).toBe(200);
     expect(served.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(served.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(served.headers.get("cache-control")).toBe("no-store");
     expect(served.headers.get("x-robots-tag")).toBe("noindex");
     expect(served.headers.get("content-security-policy")).toBe("sandbox allow-scripts");
     expect(await served.text()).toBe(html);

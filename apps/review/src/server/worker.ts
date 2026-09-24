@@ -92,7 +92,7 @@ export function createReviewWorker(overrides?: Partial<ReviewWorkerDeps>) {
         return new Response(object.body, {
           headers: {
             "content-type": "text/html; charset=utf-8",
-            "cache-control": "public, max-age=31536000, immutable",
+            "cache-control": "no-store",
             "x-robots-tag": "noindex",
             "content-security-policy": "sandbox allow-scripts",
           },

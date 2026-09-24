@@ -14,3 +14,7 @@ Use the authorized `DELETE /api/walkthroughs/:id` endpoint to remove pending
 entries and their objects, then retry publishing. Pending entries use the same
 repository authorization as complete entries. If deletion wins while an upload
 is in flight, publishing cleans up the late object and returns `409`.
+
+Hosted URLs are unlisted, not authenticated: anyone with the URL can read the
+HTML, including private-repository diffs. Responses use `Cache-Control: no-store`;
+deletion removes the hosted copy but cannot recall files already downloaded.
