@@ -15,9 +15,9 @@ SELECT COUNT(*)
 FROM wiki_pages
 WHERE repository_id = $1
   AND (
-    title ILIKE '%' || $2::text || '%'
-    OR slug ILIKE '%' || $2::text || '%'
-    OR body ILIKE '%' || $2::text || '%'
+    strpos(lower(title), lower($2::text)) > 0
+    OR strpos(lower(slug), lower($2::text)) > 0
+    OR strpos(lower(body), lower($2::text)) > 0
   )
 `
 
@@ -235,16 +235,16 @@ FROM wiki_pages wp
 JOIN users u ON u.id = wp.author_id
 WHERE wp.repository_id = $1
   AND (
-    wp.title ILIKE '%' || $2::text || '%'
-    OR wp.slug ILIKE '%' || $2::text || '%'
-    OR wp.body ILIKE '%' || $2::text || '%'
+    strpos(lower(wp.title), lower($2::text)) > 0
+    OR strpos(lower(wp.slug), lower($2::text)) > 0
+    OR strpos(lower(wp.body), lower($2::text)) > 0
   )
 ORDER BY
     CASE
         WHEN lower(wp.slug) = lower($2::text) THEN 0
         WHEN lower(wp.title) = lower($2::text) THEN 1
-        WHEN lower(wp.title) LIKE lower($2::text) || '%' THEN 2
-        WHEN lower(wp.slug) LIKE lower($2::text) || '%' THEN 3
+        WHEN starts_with(lower(wp.title), lower($2::text)) THEN 2
+        WHEN starts_with(lower(wp.slug), lower($2::text)) THEN 3
         ELSE 4
     END,
     wp.updated_at DESC,

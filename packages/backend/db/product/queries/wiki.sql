@@ -26,9 +26,9 @@ SELECT COUNT(*)
 FROM wiki_pages
 WHERE repository_id = sqlc.arg(repository_id)
   AND (
-    title ILIKE '%' || sqlc.arg(query)::text || '%'
-    OR slug ILIKE '%' || sqlc.arg(query)::text || '%'
-    OR body ILIKE '%' || sqlc.arg(query)::text || '%'
+    strpos(lower(title), lower(sqlc.arg(query)::text)) > 0
+    OR strpos(lower(slug), lower(sqlc.arg(query)::text)) > 0
+    OR strpos(lower(body), lower(sqlc.arg(query)::text)) > 0
   );
 
 -- name: SearchWikiPagesByRepo :many
@@ -47,16 +47,16 @@ FROM wiki_pages wp
 JOIN users u ON u.id = wp.author_id
 WHERE wp.repository_id = sqlc.arg(repository_id)
   AND (
-    wp.title ILIKE '%' || sqlc.arg(query)::text || '%'
-    OR wp.slug ILIKE '%' || sqlc.arg(query)::text || '%'
-    OR wp.body ILIKE '%' || sqlc.arg(query)::text || '%'
+    strpos(lower(wp.title), lower(sqlc.arg(query)::text)) > 0
+    OR strpos(lower(wp.slug), lower(sqlc.arg(query)::text)) > 0
+    OR strpos(lower(wp.body), lower(sqlc.arg(query)::text)) > 0
   )
 ORDER BY
     CASE
         WHEN lower(wp.slug) = lower(sqlc.arg(query)::text) THEN 0
         WHEN lower(wp.title) = lower(sqlc.arg(query)::text) THEN 1
-        WHEN lower(wp.title) LIKE lower(sqlc.arg(query)::text) || '%' THEN 2
-        WHEN lower(wp.slug) LIKE lower(sqlc.arg(query)::text) || '%' THEN 3
+        WHEN starts_with(lower(wp.title), lower(sqlc.arg(query)::text)) THEN 2
+        WHEN starts_with(lower(wp.slug), lower(sqlc.arg(query)::text)) THEN 3
         ELSE 4
     END,
     wp.updated_at DESC,

@@ -434,14 +434,14 @@ FROM users u
 WHERE u.is_active = TRUE
   AND (
     u.search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
-    OR u.lower_username LIKE LOWER(sqlc.arg(query)::text) || '%'
-    OR LOWER(u.display_name) LIKE LOWER(sqlc.arg(query)::text) || '%'
+    OR starts_with(u.lower_username, LOWER(sqlc.arg(query)::text))
+    OR starts_with(LOWER(u.display_name), LOWER(sqlc.arg(query)::text))
   )
 ORDER BY
   CASE
     WHEN u.lower_username = LOWER(sqlc.arg(query)::text) THEN 0
-    WHEN u.lower_username LIKE LOWER(sqlc.arg(query)::text) || '%' THEN 1
-    WHEN LOWER(u.display_name) LIKE LOWER(sqlc.arg(query)::text) || '%' THEN 2
+    WHEN starts_with(u.lower_username, LOWER(sqlc.arg(query)::text)) THEN 1
+    WHEN starts_with(LOWER(u.display_name), LOWER(sqlc.arg(query)::text)) THEN 2
     ELSE 3
   END,
   rank DESC,
@@ -455,8 +455,8 @@ FROM users
 WHERE is_active = TRUE
   AND (
     search_vector @@ websearch_to_tsquery('simple', sqlc.arg(query)::text)
-    OR lower_username LIKE LOWER(sqlc.arg(query)::text) || '%'
-    OR LOWER(display_name) LIKE LOWER(sqlc.arg(query)::text) || '%'
+    OR starts_with(lower_username, LOWER(sqlc.arg(query)::text))
+    OR starts_with(LOWER(display_name), LOWER(sqlc.arg(query)::text))
   );
 
 -- name: GetCodeSearchIndexedCommit :one
