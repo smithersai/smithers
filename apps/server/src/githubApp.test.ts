@@ -211,6 +211,14 @@ describe("the installation token exchange", () => {
     }
   })
 
+  test("mints the token down-scoped to repository metadata, never the App's full grant", async () => {
+    const { token, requests } = harness()
+    await token()
+    const exchange = requests[1]!
+    expect(exchange.headers.get("content-type")).toBe("application/json")
+    expect(await exchange.json()).toEqual({ permissions: { metadata: "read" } })
+  })
+
   test("prefers the smithersai installation over another account's, and falls back to the first", async () => {
     const roster = installations([{ id: 1, login: "someone-else" }, { id: 150824198, login: "SmithersAI" }])
     const chosen = async (body: unknown) => {
@@ -378,11 +386,22 @@ describe("the edge copy of the installation token", () => {
     const edge = memoryEdgeCache()
     const { token, advance } = harness({ edge })
     await token()
-    expect([...edge.records.keys()]).toEqual(["https://github-app.smithers.invalid/installation-token"])
+    expect([...edge.records.keys()]).toEqual(["https://github-app.smithers.invalid/installation-token/metadata-read"])
     advance(56 * 60_000)
     const cold = harness({ edge })
     cold.advance(56 * 60_000)
     await cold.token()
+    expect(cold.paths()).toHaveLength(2)
+  })
+
+  test("a token cached before the down-scope is never served", async () => {
+    const edge = memoryEdgeCache()
+    await Effect.runPromise(edge.put(
+      "https://github-app.smithers.invalid/installation-token",
+      new Response("ghs_full_scope_token", { headers: { "x-installation-expires": String(NOW + 3_000_000) } })
+    ))
+    const cold = harness({ edge })
+    expect((await cold.token())?.value).toBe(INSTALLATION_TOKEN)
     expect(cold.paths()).toHaveLength(2)
   })
 

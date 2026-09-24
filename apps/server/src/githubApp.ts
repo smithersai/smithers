@@ -27,7 +27,7 @@ import type { TransportShape } from "./Http"
  *      `smithersai` organization (live: installation 150824198, every
  *      repository), and
  *   3. `POST /app/installations/{id}/access_tokens` to mint the installation
- *      token the reads carry as a bearer.
+ *      token the reads carry as a bearer, down-scoped to `metadata: read`.
  *
  * The token is cached in the isolate and in the Cache API under a private URL
  * for 55 minutes, so a cold isolate does not re-exchange; a 401 on a read
@@ -137,10 +137,19 @@ const JWT_BACKDATE_S = 60
 const JWT_LIFETIME_S = 9 * 60
 
 /**
+ * The scope every installation token is minted with. The token's only reader
+ * is the public roster's `GET /repos/{name}`, which needs repository metadata
+ * and nothing else, so a leaked token cannot write to the organization
+ * whatever the App itself is granted.
+ */
+const TOKEN_SCOPE = { permissions: { metadata: "read" } }
+
+/**
  * The Cache API key for the installation token. The hostname is not routed
  * anywhere, so the entry is reachable only by this Worker's own cache lookups.
+ * The path names the scope, so a token minted under another scope is never read.
  */
-const TOKEN_CACHE_URL = "https://github-app.smithers.invalid/installation-token"
+const TOKEN_CACHE_URL = "https://github-app.smithers.invalid/installation-token/metadata-read"
 const EXPIRES_HEADER = "x-installation-expires"
 
 /** Bytes over their own ArrayBuffer: what `crypto.subtle` accepts as a BufferSource. */
@@ -302,22 +311,24 @@ export const makeGithubAppAuth = (
     const held = yield* Ref.make<HeldToken | undefined>(undefined)
     const failedUntil = yield* Ref.make(0)
 
-    const githubRequest = (url: string, jwt: string, method: "GET" | "POST") =>
+    const githubRequest = (url: string, jwt: string, body?: unknown) =>
       new Request(url, {
-        method,
+        method: body === undefined ? "GET" : "POST",
         headers: {
           accept: "application/vnd.github+json",
           authorization: `Bearer ${jwt}`,
           "user-agent": "Smithers-github-app",
-          "x-github-api-version": "2022-11-28"
+          "x-github-api-version": "2022-11-28",
+          ...(body === undefined ? {} : { "content-type": "application/json" })
         },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         // workerd throws on redirect: "error" before the request is sent, so a
         // redirect is asked for manually and read as the non-answer it is.
         redirect: "manual"
       })
 
-    const github = (url: string, jwt: string, method: "GET" | "POST") =>
-      fetchWithDeadline("githubApp", githubRequest(url, jwt, method), undefined, GITHUB_TIMEOUT_MS).pipe(
+    const github = (url: string, jwt: string, body?: unknown) =>
+      fetchWithDeadline("githubApp", githubRequest(url, jwt, body), undefined, GITHUB_TIMEOUT_MS).pipe(
         Effect.provideService(Transport, transport)
       )
 
@@ -345,7 +356,7 @@ export const makeGithubAppAuth = (
     /** The installation to mint a token on: the `smithersai` one, else the first GitHub returned. */
     const chooseInstallation = (jwt: string): Effect.Effect<number | undefined> =>
       Effect.gen(function*() {
-        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations`, jwt, "GET"))
+        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations`, jwt))
         if (Result.isFailure(response)) {
           log("the GitHub App installation lookup could not reach GitHub")
           return undefined
@@ -372,7 +383,7 @@ export const makeGithubAppAuth = (
 
     const exchange = (id: number, jwt: string): Effect.Effect<GithubBearer | undefined> =>
       Effect.gen(function*() {
-        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations/${id}/access_tokens`, jwt, "POST"))
+        const response = yield* Effect.result(github(`${GITHUB_API}/app/installations/${id}/access_tokens`, jwt, TOKEN_SCOPE))
         if (Result.isFailure(response)) {
           log("the GitHub App installation token exchange could not reach GitHub")
           return undefined
