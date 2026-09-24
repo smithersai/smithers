@@ -45,6 +45,8 @@ jobs:
         run: cargo +1.98.0 build --locked -p smithers-ffi --bin smithers-jj-export
       - name: Test filesystem through the helper modules
         run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export atomic_ -- --nocapture
+      - name: Test native Windows process identities
+        run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export windows_process::tests -- --nocapture
       - name: Test workspace file recovery
         run: cargo +1.98.0 test --locked -p smithers-ffi --bin smithers-jj-export workspace_files::tests -- --nocapture
       - name: Verify managed guest authority is unavailable locally
