@@ -1,6 +1,5 @@
 version: "2"
-# Product migrations are the only authored product DDL. The combined hosted
-# schema is generated from these migrations and private cluster sources.
+# Product migrations are the only authored product DDL.
 sql:
   - engine: "postgresql"
     schema: "migrations/"

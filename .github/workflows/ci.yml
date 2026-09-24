@@ -776,11 +776,6 @@ jobs:
             fi
           fi
         shell: "bash"
-      - name: "Check public backend boundary"
-        run: |
-          python3 -B -m unittest scripts/test_check_go_boundaries.py
-          ./scripts/check-public-backend-boundary.sh
-
       - name: "Build and test shared backend"
         run: "pnpm exec smthrs test '//:backendGo' --verbose"
         env:

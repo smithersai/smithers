@@ -29,6 +29,13 @@ FORBIDDEN_TOPOLOGY = re.compile(
 
 def source_imports(root: Path = ROOT) -> list[str]:
     failures = []
+    for relative in (
+        "packages/backend/db/cluster",
+        "packages/backend/db/generate_schema.py",
+        "packages/backend/db/sqlc.yaml",
+    ):
+        if (root / relative).exists():
+            failures.append(f"{relative}: private schema belongs to Plue")
     forbidden = "|".join(re.escape(prefix) for prefix in FORBIDDEN_SOURCE + FORBIDDEN_LOCAL_GRAPH)
     import_pattern = re.compile(r'^\s*(?:import\s+)?(?:[\w.]+\s+)?"(?:' + forbidden + r')')
     for source_root in (root / "packages", root / "apps"):

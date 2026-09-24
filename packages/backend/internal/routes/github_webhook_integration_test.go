@@ -11,12 +11,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -221,11 +221,6 @@ func resetGitHubWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, err
 		}
 	}
 
-	schemaBytes, err := os.ReadFile(findGitHubWebhookRouteSchemaPath())
-	if err != nil {
-		return nil, fmt.Errorf("read schema: %w", err)
-	}
-
 	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("connect to test database: %w", err)
@@ -236,7 +231,7 @@ func resetGitHubWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("terminate existing connections: %w", err)
 	}
 
-	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		return nil, fmt.Errorf("reset schema: %w", err)
 	}
@@ -246,20 +241,15 @@ func resetGitHubWebhookRouteTestDatabase(databaseURL string) (*pgxpool.Pool, err
 		return nil, fmt.Errorf("bad pool config: %w", err)
 	}
 
-	return pgxpool.NewWithConfig(context.Background(), cfg)
-}
-
-func findGitHubWebhookRouteSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		return nil, err
 	}
-	for _, candidate := range candidates {
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
+	if err := product.Apply(context.Background(), pool); err != nil {
+		pool.Close()
+		return nil, err
 	}
-	return candidates[0]
+	return pool, nil
 }
 
 func signRouteGitHubWebhookBody(body []byte, secret string) string {

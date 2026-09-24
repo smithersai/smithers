@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -68,19 +68,13 @@ func TestMain(m *testing.M) {
 	}
 	adminConn.Close(context.Background())
 
-	schemaBytes, err := os.ReadFile(findSchemaPath())
-	if err != nil {
-		webhookDBUnavailableReason = fmt.Sprintf("cannot read schema: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
 	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
 	if err != nil {
 		webhookDBUnavailableReason = fmt.Sprintf("cannot connect to test db for schema setup: %v", err)
 		code := m.Run()
 		os.Exit(code)
 	}
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		webhookDBUnavailableReason = fmt.Sprintf("schema setup failed: %v", err)
 		code := m.Run()
@@ -101,6 +95,12 @@ func TestMain(m *testing.M) {
 		webhookDBUnavailableReason = fmt.Sprintf("cannot create pool: %v", err)
 		code := m.Run()
 		os.Exit(code)
+	}
+
+	if err := product.Apply(context.Background(), webhookTestPool); err != nil {
+		fmt.Fprintf(os.Stderr, "product migration setup failed: %v\n", err)
+		webhookTestPool.Close()
+		os.Exit(1)
 	}
 
 	code := m.Run()
@@ -196,22 +196,12 @@ func TestUpdateTaskStatus_SetsRetryAndFinalFailure(t *testing.T) {
 	assert.False(t, isActive)
 }
 
-func findSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return candidates[0]
-}
-
 func newWebhookQueries(t *testing.T) (*db.Queries, *pgxpool.Pool) {
 	t.Helper()
 	if webhookTestPool == nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("required product database unavailable: %s", webhookDBUnavailableReason)
+		}
 		t.Skipf("webhook integration DB unavailable: %s", webhookDBUnavailableReason)
 	}
 	truncateWebhookTables(t, webhookTestPool)

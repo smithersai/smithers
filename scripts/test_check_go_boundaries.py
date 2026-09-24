@@ -29,6 +29,12 @@ class BoundaryTests(unittest.TestCase):
         self.write("packages/backend/auth_test.go", 'package backend\nimport crypto "github.com/ethereum/go-ethereum/crypto"\n')
         self.assertEqual(len(boundaries.source_imports(self.root)), 1)
 
+    def test_private_schema_cannot_be_restored(self):
+        self.write("packages/backend/db/cluster/sqlc_schema.sql", "CREATE TABLE private_placement (id bigint);\n")
+        self.assertEqual(boundaries.source_imports(self.root), [
+            "packages/backend/db/cluster: private schema belongs to Plue",
+        ])
+
     def test_dependency_resolution_failure_is_not_a_pass(self):
         self.assertTrue(boundaries.local_graph(self.root))
 

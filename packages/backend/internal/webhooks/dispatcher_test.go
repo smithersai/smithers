@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -70,20 +70,13 @@ func TestMain(m *testing.M) {
 	}
 	adminConn.Close(context.Background())
 
-	schemaBytes, err := os.ReadFile(findDispatcherSchemaPath())
-	if err != nil {
-		dispatcherDBUnavailableReason = fmt.Sprintf("cannot read schema: %v", err)
-		code := m.Run()
-		os.Exit(code)
-	}
-
 	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
 	if err != nil {
 		dispatcherDBUnavailableReason = fmt.Sprintf("cannot connect to test db for schema setup: %v", err)
 		code := m.Run()
 		os.Exit(code)
 	}
-	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
+	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
 	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
 		dispatcherDBUnavailableReason = fmt.Sprintf("schema setup failed: %v", err)
 		code := m.Run()
@@ -104,6 +97,12 @@ func TestMain(m *testing.M) {
 		dispatcherDBUnavailableReason = fmt.Sprintf("cannot create pool: %v", err)
 		code := m.Run()
 		os.Exit(code)
+	}
+
+	if err := product.Apply(context.Background(), dispatcherTestPool); err != nil {
+		fmt.Fprintf(os.Stderr, "product migration setup failed: %v\n", err)
+		dispatcherTestPool.Close()
+		os.Exit(1)
 	}
 
 	code := m.Run()
@@ -430,22 +429,12 @@ func TestDispatchEvent_IntegrationStatusPayload_PersistsSenderLogin(t *testing.T
 	assert.Equal(t, float64(ownerID), sender["id"])
 }
 
-func findDispatcherSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return candidates[0]
-}
-
 func newDispatcherQueries(t *testing.T) (*db.Queries, *pgxpool.Pool) {
 	t.Helper()
 	if dispatcherTestPool == nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("required product database unavailable: %s", dispatcherDBUnavailableReason)
+		}
 		t.Skipf("dispatcher integration DB unavailable: %s", dispatcherDBUnavailableReason)
 	}
 	truncateDispatcherTables(t, dispatcherTestPool)
@@ -488,7 +477,7 @@ func mustCreateDispatcherRepo(t *testing.T, pool *pgxpool.Pool, userID int64, na
 	var id int64
 	err := pool.QueryRow(
 		context.Background(),
-		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number, storage_set_id) VALUES ($1, $2, $3, '', TRUE, 'main', 1, 's1') RETURNING id`,
+		`INSERT INTO repositories (user_id, name, lower_name, description, is_public, default_bookmark, next_issue_number) VALUES ($1, $2, $3, '', TRUE, 'main', 1) RETURNING id`,
 		userID,
 		name,
 		lower,

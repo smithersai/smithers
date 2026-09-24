@@ -11,17 +11,18 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
@@ -84,21 +85,8 @@ func resolveCmdServerTestDatabaseURL() string {
 	return defaultCmdServerTestDatabaseURL
 }
 
-func findCmdServerSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return candidates[0]
-}
-
 // testDatabaseURL resolves the cmd/server test database URL, creates the
-// database if missing and applies db/cluster/sqlc_schema.sql once. If Postgres is
+// database if missing and applies the product migrations once. If Postgres is
 // unreachable the calling test is skipped (coverage is only measured with
 // SMITHERS_TEST_DATABASE_URL).
 func testDatabaseURL(t *testing.T) string {
@@ -123,16 +111,12 @@ func setupCmdServerSchema(dsn string) error {
 		return fmt.Errorf("bad database URL: %w", err)
 	}
 	dbName := strings.TrimPrefix(parsed.Path, "/")
-	schemaBytes, err := os.ReadFile(findCmdServerSchemaPath())
-	if err != nil {
-		return fmt.Errorf("read schema: %w", err)
-	}
 
 	// This shared Postgres may be under concurrent load from sibling coverage
 	// runs, so use a generous deadline and retry once on lock contention.
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		lastErr = applyCmdServerSchemaOnce(dsn, parsed, dbName, string(schemaBytes))
+		lastErr = applyCmdServerSchemaOnce(dsn, parsed, dbName)
 		if lastErr == nil {
 			return nil
 		}
@@ -141,7 +125,7 @@ func setupCmdServerSchema(dsn string) error {
 	return lastErr
 }
 
-func applyCmdServerSchemaOnce(dsn string, parsed *url.URL, dbName, schema string) error {
+func applyCmdServerSchemaOnce(dsn string, parsed *url.URL, dbName string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -169,11 +153,16 @@ func applyCmdServerSchemaOnce(dsn string, parsed *url.URL, dbName, schema string
 	defer schemaConn.Close(ctx)
 	// Fail fast on lock contention instead of hanging for the full deadline.
 	_, _ = schemaConn.Exec(ctx, `SET lock_timeout = '10s'`)
-	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + schema
+	combined := `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`
 	if _, err := schemaConn.Exec(ctx, combined); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
-	return nil
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	return product.Apply(ctx, pool)
 }
 
 // ---------------------------------------------------------------------------

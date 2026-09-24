@@ -118,7 +118,9 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	go func() { done <- run(serverCtx, nil) }()
 	client := &http.Client{Timeout: 30 * time.Second}
 	ready := false
-	for range 100 {
+	// Fresh product migrations can take longer than ten seconds on a busy
+	// PostgreSQL host. Bound readiness by elapsed time, not a poll count.
+	for deadline := time.Now().Add(time.Minute); time.Now().Before(deadline); {
 		response, getErr := client.Get(origin + "/readyz")
 		if getErr == nil {
 			response.Body.Close()
