@@ -16,7 +16,8 @@ const program = (
   escaped = true,
   platform = "linux",
   standardFds?: ReadonlyArray<number | "ignore">,
-  identityResult?: unknown
+  identityResult?: unknown,
+  acknowledgeCleanup = false
 ) => {
   const statusFrames: Array<unknown> = []
   const observations: Array<unknown> = []
@@ -79,7 +80,16 @@ const program = (
     clearTimeout: () => {}
   })
   const send = (message: unknown) => requests.emit("data", JSON.stringify(message) + "\n")
-  send({ type: "configure", command: "fixture", args: [], userFds: [], standardFds, killSignal, graceMs: 25 })
+  send({
+    type: "configure",
+    command: "fixture",
+    args: [],
+    userFds: [],
+    standardFds,
+    killSignal,
+    graceMs: 25,
+    acknowledgeCleanup
+  })
   send({ type: "start" })
   return {
     signals,
@@ -97,6 +107,32 @@ const program = (
 }
 
 describe("supervisor stop policy", () => {
+  it("keeps flushed terminal status alive until the host acknowledges receipt", () => {
+    const helper = program("SIGKILL", false, "linux", undefined, undefined, true)
+    helper.target.emit("exit", 0, null)
+    expect(helper.statusFrames).toEqual([{ type: "exit", code: 0, signal: null }, { type: "cleanup" }])
+    expect(helper.signals).toEqual([])
+    helper.send({ type: "cleanup_ack" })
+    expect(helper.signals).toEqual([[-4101, "SIGKILL"]])
+  })
+
+  it("still bounds cleanup to 100 ms when the host never acknowledges", () => {
+    const helper = program("SIGKILL", false, "linux", undefined, undefined, true)
+    helper.target.emit("exit", 0, null)
+    expect(helper.signals).toEqual([])
+    expect(helper.timers.map((timer) => timer.millis)).toEqual([100])
+    helper.timers[0]!.run()
+    expect(helper.signals).toEqual([[-4101, "SIGKILL"]])
+  })
+
+  it("rejects an acknowledgment before cleanup or without negotiated receipts", () => {
+    const pending = program("SIGKILL", false, "linux", undefined, undefined, true)
+    expect(() => pending.send({ type: "cleanup_ack" })).toThrow("Unexpected cleanup acknowledgment")
+    const unnegotiated = program("SIGKILL", false)
+    unnegotiated.target.emit("exit", 0, null)
+    expect(() => unnegotiated.send({ type: "cleanup_ack" })).toThrow("Unexpected cleanup acknowledgment")
+  })
+
   const observed = { status: 0, signal: null, stdout: "{\"status\":\"started\",\"created\":\"123456789012345678\"}" }
   it("reports its own exact Windows identity and removes the private helper setting", () => {
     const helper = program("SIGTERM", false, "win32", [3, 4, 5], observed)

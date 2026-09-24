@@ -129,10 +129,11 @@ const force = () => {
         throw new Error('Escaped descendants did not settle before the cleanup bound');
       }
     } catch (error) { cleanupError(error); }
-    // A stopped/unresponsive parent must not prevent our own cleanup. Normally
-    // the tiny final frame flushes immediately; the fallback bounds that flush.
+    // TLS write completion does not prove the peer received terminal status.
+    // Keep the owner alive for its receipt; an unresponsive host still cannot
+    // delay cleanup beyond the existing delivery bound.
     setTimeout(selfKill, 100);
-    send({ type: 'cleanup' }, selfKill);
+    send({ type: 'cleanup' }, config?.acknowledgeCleanup ? () => {} : selfKill);
   };
   complete();
 };
@@ -187,6 +188,9 @@ requests.on('data', (data) => {
     if (message.type === 'configure') {
       if (config !== undefined || stopping) throw new Error('Duplicate or late configuration');
       config = message;
+    } else if (message.type === 'cleanup_ack') {
+      if (!config?.acknowledgeCleanup || !killing) throw new Error('Unexpected cleanup acknowledgment');
+      selfKill();
     } else if (message.type === 'stop') stop(message);
     else if (message.type === 'start') {
       if (config === undefined || target !== undefined || stopping) throw new Error('Invalid activation');

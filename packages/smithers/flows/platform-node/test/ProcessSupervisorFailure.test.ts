@@ -240,6 +240,7 @@ const fixture = (settings: Settings = {}) => {
     requests,
     commands,
     exitTarget: () => send({ type: "exit", code: 0, signal: null }),
+    announceCleanup: () => send({ type: "cleanup" }),
     get unrefs() {
       return unrefs
     },
@@ -496,6 +497,34 @@ describe("failed process shutdown", () => {
       expect(host.unrefs).toBe(0)
       expect(host.rawFinalizerReferenced).toBe(true)
     } finally {
+      host.dispose()
+    }
+  })
+
+  it("disconnects a failed cleanup receipt write and waits for native job settlement", async () => {
+    const host = fixture({ platform: "win32" })
+    const original = Supervisor.Control.prototype.write
+    const refused = promise<void>()
+    const write = vi.spyOn(Supervisor.Control.prototype, "write").mockImplementation(
+      function(this: Supervisor.Control, message) {
+        if (typeof message === "object" && message !== null && "type" in message && message.type === "cleanup_ack") {
+          refused.resolve()
+          return Promise.reject(new Error("the cleanup receipt write failed"))
+        }
+        return original.call(this, message)
+      }
+    )
+    try {
+      const result = await run(host, () =>
+        Effect.promise(async () => {
+          host.announceCleanup()
+          await bounded(refused.promise)
+        }))
+      expect(Exit.isSuccess(result.outcome)).toBe(true)
+      expect(result.live).toEqual([])
+      expect(host.rawKills).toBe(0)
+    } finally {
+      write.mockRestore()
       host.dispose()
     }
   })

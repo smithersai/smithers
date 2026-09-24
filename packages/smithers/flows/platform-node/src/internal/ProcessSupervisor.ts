@@ -71,6 +71,7 @@ export const failure = (method: string, command: string, cause: unknown): Platfo
     method,
     pathOrDescriptor: command,
     syscall: error.syscall,
+    description: error.message,
     cause: error
   })
 }
@@ -170,6 +171,7 @@ export class Control {
   closeSent = false
   fault: unknown
   onTargetExit: () => void = () => {}
+  onCleanup: () => void = () => {}
   private receivedReady = false
   private receivedStarted = false
   private withdrawn = false
@@ -404,6 +406,7 @@ export class Control {
         return
       case "cleanup":
         this.cleanupAcknowledged = true
+        this.onCleanup()
         return
       default:
         throw new Error("Unknown process status")
@@ -629,6 +632,14 @@ export const prepare = (
       })
       yield* bounded(wait(job.ready.promise, "spawn", command.command), startupMs, "spawn", command.command)
     }
+    const acknowledgeCleanup = windows || transport === "tls"
+    if (acknowledgeCleanup) {
+      control.onCleanup = () => {
+        if (!control.ownerDone) {
+          void control.write({ type: "cleanup_ack" }).catch(() => control.disconnect())
+        }
+      }
+    }
     const options = command.options
     // Match Effect/Node's undefined-vs-empty environment semantics in the host,
     // before replacing the helper's environment with its isolated bootstrap.
@@ -637,6 +648,7 @@ export const prepare = (
       wait(
         control.write({
           type: "configure",
+          acknowledgeCleanup,
           command: command.command,
           args: command.args,
           cwd: resolve(options.cwd ?? process.cwd()),

@@ -96,6 +96,21 @@ describe.each(process.platform === "win32" ? ["native" as const] : ["native", "t
         expect(await bounded(control.exited.promise)).toBe(0)
       }))
 
+    it("acknowledges cleanup only after consuming the preceding terminal status", () =>
+      session(async (control, socket, requests) => {
+        let delivered: Promise<void> | undefined
+        control.onCleanup = () => {
+          expect(control.targetDone).toBe(true)
+          delivered = control.write({ type: "cleanup_ack" })
+        }
+        control.activationSent = true
+        const receipt = once(requests, "data")
+        await send(socket, ready, spawned, exited, { type: "cleanup" })
+        expect(String((await bounded(receipt))[0])).toBe("{\"type\":\"cleanup_ack\"}\n")
+        await bounded(delivered!)
+        expect(await bounded(control.exited.promise)).toBe(0)
+      }))
+
     it("accepts fragmented frames and preserves a target exit buffered after raw owner exit", () =>
       session(async (control, socket) => {
         let exits = 0
