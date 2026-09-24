@@ -742,6 +742,13 @@ type GithubSyncedRepo struct {
 	UpdatedAt           time.Time          `json:"updated_at"`
 }
 
+type GithubSyncedRepoReadGrant struct {
+	UserID          int64     `json:"user_id"`
+	OwnerLoginLower string    `json:"owner_login_lower"`
+	RepoNameLower   string    `json:"repo_name_lower"`
+	VerifiedAt      time.Time `json:"verified_at"`
+}
+
 type GithubWebhookJob struct {
 	ID                 int64              `json:"id"`
 	DeliveryID         string             `json:"delivery_id"`

@@ -304,6 +304,11 @@ func (s *GitHubUserReposService) syncGitHubRepoListing(ctx context.Context, user
 		if delErr := s.queries.DeleteGitHubRepoListing(errCtx, userID); delErr != nil {
 			slog.Warn("github repo listing cache invalidation failed", "user_id", userID, "error", delErr)
 		}
+		// The same credential proved this user's store read grants; drop them so
+		// the shared metadata store stops answering for a user GitHub rejects.
+		if revokeErr := s.syncedRepos.RevokeReadGrants(errCtx, userID); revokeErr != nil {
+			slog.Warn("github synced repo read grants not revoked", "user_id", userID, "error", revokeErr)
+		}
 		slog.Warn("github credential gone; repo listing cache invalidated", "user_id", userID, "error", err)
 		return err
 	}

@@ -47,11 +47,13 @@ func (s *GitHubUserReposService) ListAuthenticatedUserGitHubIssueComments(
 	}
 
 	// Serve from the continuously-synced comment store when this repo is
-	// enrolled and webhook-fed; the live passthrough below is the FALLBACK.
+	// enrolled and webhook-fed and this user holds a fresh read grant; the live
+	// passthrough below is the FALLBACK.
 	if s.syncedRepos != nil {
+		grant := s.syncedRepos.ReadGrant(ctx, userID, normalizedOwner, normalizedRepo)
 		fetch := s.syncedRepoBackfillFetcher(userID, normalizedOwner, normalizedRepo)
 		if page, served := s.syncedRepos.ServeComments(
-			ctx, normalizedOwner, normalizedRepo, number, fetch,
+			ctx, grant, number, fetch,
 		); served {
 			syncedAt := page.SyncedAt
 			return GitHubRepoMetadataResult{
@@ -77,7 +79,7 @@ func (s *GitHubUserReposService) ListAuthenticatedUserGitHubIssueComments(
 	if err != nil {
 		return GitHubRepoMetadataResult{}, err
 	}
-	s.enrollSyncedRepoLazily(userID, normalizedOwner, normalizedRepo)
+	s.recordSyncedRepoAccess(userID, normalizedOwner, normalizedRepo)
 	result.Source = GitHubRepoMetadataSourceLive
 	return result, nil
 }

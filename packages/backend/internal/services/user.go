@@ -46,6 +46,7 @@ type UserQuerier interface {
 	UpdateUserNotificationPreferences(ctx context.Context, arg db.UpdateUserNotificationPreferencesParams) (db.User, error)
 	ListUserOAuthAccounts(ctx context.Context, userID int64) ([]db.OauthAccount, error)
 	DeleteOAuthAccount(ctx context.Context, arg db.DeleteOAuthAccountParams) error
+	DeleteGitHubSyncedRepoReadGrantsForUser(ctx context.Context, userID int64) error
 }
 
 type UserProfileService interface {
@@ -584,6 +585,11 @@ func (s *UserService) DeleteConnectedAccount(ctx context.Context, userID, accoun
 		UserID: userID,
 	}); err != nil {
 		return pkgerrors.Internal("failed to delete connected account")
+	}
+	// Read grants were proved by a linked credential; after an unlink the
+	// shared GitHub metadata store must re-prove access through a live read.
+	if err := s.queries.DeleteGitHubSyncedRepoReadGrantsForUser(ctx, userID); err != nil {
+		return pkgerrors.Internal("failed to revoke github repository read grants")
 	}
 	return nil
 }

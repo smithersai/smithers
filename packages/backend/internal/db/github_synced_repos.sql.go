@@ -157,6 +157,16 @@ func (q *Queries) DeleteGitHubSyncedIssuesNotIn(ctx context.Context, arg DeleteG
 	return err
 }
 
+const deleteGitHubSyncedRepoReadGrantsForUser = `-- name: DeleteGitHubSyncedRepoReadGrantsForUser :exec
+DELETE FROM github_synced_repo_read_grants
+WHERE user_id = $1::bigint
+`
+
+func (q *Queries) DeleteGitHubSyncedRepoReadGrantsForUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, deleteGitHubSyncedRepoReadGrantsForUser, userID)
+	return err
+}
+
 const enrollGitHubSyncedRepo = `-- name: EnrollGitHubSyncedRepo :one
 INSERT INTO github_synced_repos (
     owner_login, owner_login_lower, repo_name, repo_name_lower,
@@ -308,6 +318,32 @@ func (q *Queries) GetGitHubSyncedRepoByGitHubID(ctx context.Context, githubRepos
 		&i.ConsecutiveFailures,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getGitHubSyncedRepoReadGrant = `-- name: GetGitHubSyncedRepoReadGrant :one
+SELECT user_id, owner_login_lower, repo_name_lower, verified_at
+FROM github_synced_repo_read_grants
+WHERE user_id = $1::bigint
+  AND owner_login_lower = LOWER($2::text)
+  AND repo_name_lower = LOWER($3::text)
+`
+
+type GetGitHubSyncedRepoReadGrantParams struct {
+	UserID     int64  `json:"user_id"`
+	OwnerLogin string `json:"owner_login"`
+	RepoName   string `json:"repo_name"`
+}
+
+func (q *Queries) GetGitHubSyncedRepoReadGrant(ctx context.Context, arg GetGitHubSyncedRepoReadGrantParams) (GithubSyncedRepoReadGrant, error) {
+	row := q.db.QueryRow(ctx, getGitHubSyncedRepoReadGrant, arg.UserID, arg.OwnerLogin, arg.RepoName)
+	var i GithubSyncedRepoReadGrant
+	err := row.Scan(
+		&i.UserID,
+		&i.OwnerLoginLower,
+		&i.RepoNameLower,
+		&i.VerifiedAt,
 	)
 	return i, err
 }
@@ -793,5 +829,26 @@ func (q *Queries) UpsertGitHubSyncedIssueComment(ctx context.Context, arg Upsert
 		arg.GithubCreatedAt,
 		arg.GithubUpdatedAt,
 	)
+	return err
+}
+
+const upsertGitHubSyncedRepoReadGrant = `-- name: UpsertGitHubSyncedRepoReadGrant :exec
+
+INSERT INTO github_synced_repo_read_grants (user_id, owner_login_lower, repo_name_lower, verified_at)
+VALUES ($1::bigint, LOWER($2::text), LOWER($3::text), NOW())
+ON CONFLICT (user_id, owner_login_lower, repo_name_lower) DO UPDATE
+SET verified_at = NOW()
+`
+
+type UpsertGitHubSyncedRepoReadGrantParams struct {
+	UserID     int64  `json:"user_id"`
+	OwnerLogin string `json:"owner_login"`
+	RepoName   string `json:"repo_name"`
+}
+
+// ---- Per-user read grants (live-read proof gating the shared store) ----
+// Stamped only after the user's own credential read the repo live from GitHub.
+func (q *Queries) UpsertGitHubSyncedRepoReadGrant(ctx context.Context, arg UpsertGitHubSyncedRepoReadGrantParams) error {
+	_, err := q.db.Exec(ctx, upsertGitHubSyncedRepoReadGrant, arg.UserID, arg.OwnerLogin, arg.RepoName)
 	return err
 }

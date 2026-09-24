@@ -135,13 +135,16 @@ func (s *GitHubUserReposService) ListAuthenticatedUserGitHubRepoMetadata(
 		return GitHubRepoMetadataResult{}, err
 	}
 
-	// Serve from the continuously-synced store when this repo is enrolled and
-	// has last-good rows; the live passthrough below is the FALLBACK, not the
-	// norm (unenrolled repos, store misses, filters the store does not model).
+	// Serve from the continuously-synced store when this repo is enrolled, has
+	// last-good rows, and this user's own credential read it live recently (the
+	// store is shared, so only a fresh read grant authorizes it). The live
+	// passthrough below is the FALLBACK (no grant, unenrolled repos, store
+	// misses, filters the store does not model).
 	if s.syncedRepos != nil {
+		grant := s.syncedRepos.ReadGrant(ctx, userID, normalizedOwner, normalizedRepo)
 		fetch := s.syncedRepoBackfillFetcher(userID, normalizedOwner, normalizedRepo)
 		if page, served := s.syncedRepos.ServeMetadata(
-			ctx, userID, normalizedOwner, normalizedRepo, normalizedResource, query, fetch,
+			ctx, grant, normalizedResource, query, fetch,
 		); served {
 			syncedAt := page.SyncedAt
 			return GitHubRepoMetadataResult{
@@ -172,18 +175,20 @@ func (s *GitHubUserReposService) ListAuthenticatedUserGitHubRepoMetadata(
 	if err != nil {
 		return GitHubRepoMetadataResult{}, err
 	}
-	// The live read just proved this user's token can see the repo — the spec's
-	// lazy enrollment trigger. Enrolling is idempotent and runs detached so the
-	// read path never waits on it; the NEXT read is served from the store.
-	s.enrollSyncedRepoLazily(userID, normalizedOwner, normalizedRepo)
+	// The live read just proved this user's token can see the repo: stamp the
+	// user's read grant and lazily enroll. Both are idempotent and run detached
+	// so the read path never waits on them; the NEXT read is served from the store.
+	s.recordSyncedRepoAccess(userID, normalizedOwner, normalizedRepo)
 	result.Source = GitHubRepoMetadataSourceLive
 	return result, nil
 }
 
-// enrollSyncedRepoLazily adds a repo the caller provably can see to the sync
-// registry, in the background. Failures are logged and dropped: enrollment is an
-// optimization, never a reason to fail a read that already succeeded.
-func (s *GitHubUserReposService) enrollSyncedRepoLazily(userID int64, owner, repo string) {
+// recordSyncedRepoAccess runs after a successful live read with the user's own
+// credential. It stamps the user's read grant, then adds the repo to the sync
+// registry, in the background. Failures are logged and dropped: both are
+// optimizations, never a reason to fail a read that already succeeded; a
+// missing grant only sends the next read live again.
+func (s *GitHubUserReposService) recordSyncedRepoAccess(userID int64, owner, repo string) {
 	if s.syncedRepos == nil {
 		return
 	}
@@ -195,6 +200,9 @@ func (s *GitHubUserReposService) enrollSyncedRepoLazily(userID int64, owner, rep
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		if err := s.syncedRepos.RecordReadGrant(ctx, userID, owner, repo); err != nil {
+			slog.Warn("github synced repo read grant not recorded", "user_id", userID, "owner", owner, "repo", repo, "error", err)
+		}
 		row, err := s.syncedRepos.EnrollGitHubRepo(ctx, EnrollGitHubRepoInput{
 			Owner:       owner,
 			Repo:        repo,

@@ -63,6 +63,9 @@ func TestGitHubIssueComments_ServesSyncedStoreWhenEnrolled(t *testing.T) {
 		Payload:      json.RawMessage(`{"id":9001,"body":"from the store"}`),
 	}))
 
+	// User 42's own credential read this repo live moments ago.
+	require.NoError(t, synced.RecordReadGrant(context.Background(), 42, "octo", "widget"))
+
 	// Any upstream hit is a test failure: the store must serve.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("store-servable comments read must not hit the live passthrough")
@@ -140,14 +143,14 @@ func TestSyncedRepos_ServeCommentsRequiresWebhookHeartbeat(t *testing.T) {
 	store := newFakeSyncedRepoStore()
 	service := NewGitHubSyncedRepoService(store)
 
-	_, served := service.ServeComments(context.Background(), "octo", "widget", 7, nil)
+	_, served := service.ServeComments(context.Background(), testReadGrant("octo", "widget"), 7, nil)
 	assert.False(t, served, "an unenrolled repo must fall through to the live passthrough")
 
 	row, err := service.EnrollGitHubRepo(context.Background(), EnrollGitHubRepoInput{Owner: "octo", Repo: "widget"})
 	require.NoError(t, err)
 	require.NoError(t, store.MarkGitHubSyncedRepoSynced(context.Background(), row.ID))
 
-	_, served = service.ServeComments(context.Background(), "octo", "widget", 7, nil)
+	_, served = service.ServeComments(context.Background(), testReadGrant("octo", "widget"), 7, nil)
 	assert.False(t, served, "no webhook heartbeat yet — the comments store may be incomplete")
 
 	require.NoError(t, store.TouchGitHubSyncedRepoWebhook(context.Background(), row.ID))
@@ -159,12 +162,12 @@ func TestSyncedRepos_ServeCommentsRequiresWebhookHeartbeat(t *testing.T) {
 		GithubCreatedAt: pgtype.Timestamptz{Valid: false},
 	}))
 
-	page, served := service.ServeComments(context.Background(), "octo", "widget", 7, nil)
+	page, served := service.ServeComments(context.Background(), testReadGrant("octo", "widget"), 7, nil)
 	require.True(t, served)
 	assert.JSONEq(t, `[{"id":9001,"body":"hi"}]`, string(page.Body))
 
 	// A different issue number has no rows — still served (empty), never live.
-	page, served = service.ServeComments(context.Background(), "octo", "widget", 99, nil)
+	page, served = service.ServeComments(context.Background(), testReadGrant("octo", "widget"), 99, nil)
 	require.True(t, served)
 	assert.JSONEq(t, `[]`, string(page.Body))
 }

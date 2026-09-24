@@ -32,6 +32,8 @@ type fakeSyncedRepoStore struct {
 	mirrorStatusParams []db.RecordGitHubMirrorStatusParams
 	mirrorStatusRows   int64
 	mirrorStatusErr    error
+	readGrants         map[string]time.Time // "userID|owner/repo" -> verified_at
+	readGrantErr       error
 }
 
 func newFakeSyncedRepoStore() *fakeSyncedRepoStore {
@@ -39,6 +41,7 @@ func newFakeSyncedRepoStore() *fakeSyncedRepoStore {
 		repos:            map[string]*db.GithubSyncedRepo{},
 		issues:           map[string]db.GithubSyncedIssue{},
 		comments:         map[string]db.GithubSyncedIssueComment{},
+		readGrants:       map[string]time.Time{},
 		mirrorStatusRows: 1,
 	}
 }
@@ -358,6 +361,56 @@ func (f *fakeSyncedRepoStore) ListGitHubSyncedIssueComments(_ context.Context, a
 	return rows, nil
 }
 
+func readGrantKey(userID int64, owner, repo string) string {
+	return strconv.FormatInt(userID, 10) + "|" + syncedRepoKey(owner, repo)
+}
+
+func (f *fakeSyncedRepoStore) UpsertGitHubSyncedRepoReadGrant(_ context.Context, arg db.UpsertGitHubSyncedRepoReadGrantParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.readGrantErr != nil {
+		return f.readGrantErr
+	}
+	f.readGrants[readGrantKey(arg.UserID, arg.OwnerLogin, arg.RepoName)] = time.Now()
+	return nil
+}
+
+func (f *fakeSyncedRepoStore) GetGitHubSyncedRepoReadGrant(_ context.Context, arg db.GetGitHubSyncedRepoReadGrantParams) (db.GithubSyncedRepoReadGrant, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.readGrantErr != nil {
+		return db.GithubSyncedRepoReadGrant{}, f.readGrantErr
+	}
+	verifiedAt, ok := f.readGrants[readGrantKey(arg.UserID, arg.OwnerLogin, arg.RepoName)]
+	if !ok {
+		return db.GithubSyncedRepoReadGrant{}, pgx.ErrNoRows
+	}
+	return db.GithubSyncedRepoReadGrant{
+		UserID:          arg.UserID,
+		OwnerLoginLower: strings.ToLower(arg.OwnerLogin),
+		RepoNameLower:   strings.ToLower(arg.RepoName),
+		VerifiedAt:      verifiedAt,
+	}, nil
+}
+
+func (f *fakeSyncedRepoStore) DeleteGitHubSyncedRepoReadGrantsForUser(_ context.Context, userID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	prefix := strconv.FormatInt(userID, 10) + "|"
+	for key := range f.readGrants {
+		if strings.HasPrefix(key, prefix) {
+			delete(f.readGrants, key)
+		}
+	}
+	return nil
+}
+
+// testReadGrant is a checked grant for unit tests that exercise the store
+// read itself; request-level tests obtain grants through ReadGrant.
+func testReadGrant(owner, repo string) GitHubRepoReadGrant {
+	return GitHubRepoReadGrant{owner: owner, repo: repo, ok: true}
+}
+
 func (f *fakeSyncedRepoStore) repoByID(id int64) db.GithubSyncedRepo {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -398,7 +451,7 @@ func TestSyncedRepos_ServeMetadataServesStoreWhenFresh(t *testing.T) {
 	seedSyncedIssue(t, store, row.ID, GitHubRepoMetadataIssues, 5, "open", now.Add(-time.Hour))
 	seedSyncedIssue(t, store, row.ID, GitHubRepoMetadataIssues, 3, "closed", now.Add(-2*time.Hour))
 
-	page, served := service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	page, served := service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{}, nil)
 	require.True(t, served, "an enrolled, backfilled repo must be served from the store")
 	assert.False(t, page.Stale)
@@ -407,11 +460,67 @@ func TestSyncedRepos_ServeMetadataServesStoreWhenFresh(t *testing.T) {
 	assert.Empty(t, page.Link, "a short page is the last page")
 }
 
+func TestSyncedRepos_StoreRefusesCallerWithoutReadGrant(t *testing.T) {
+	store := newFakeSyncedRepoStore()
+	service := NewGitHubSyncedRepoService(store)
+	ctx := context.Background()
+	row, err := service.EnrollGitHubRepo(ctx, EnrollGitHubRepoInput{
+		Owner: "acme", Repo: "secret", EnrolledVia: GitHubSyncedRepoEnrolledViaImport,
+	})
+	require.NoError(t, err)
+	require.NoError(t, store.MarkGitHubSyncedRepoSynced(ctx, row.ID))
+	require.NoError(t, store.TouchGitHubSyncedRepoWebhook(ctx, row.ID))
+	seedSyncedIssue(t, store, row.ID, GitHubRepoMetadataIssues, 1, "open", time.Now())
+
+	_, served := service.ServeMetadata(ctx, GitHubRepoReadGrant{}, GitHubRepoMetadataIssues, url.Values{}, nil)
+	assert.False(t, served, "a fresh shared store must not answer a caller with no read grant")
+	_, served = service.ServeComments(ctx, GitHubRepoReadGrant{}, 1, nil)
+	assert.False(t, served, "comments must not be served without a read grant")
+
+	// User 7 never read acme/secret live: no grant.
+	grant := service.ReadGrant(ctx, 7, "acme", "secret")
+	_, served = service.ServeMetadata(ctx, grant, GitHubRepoMetadataIssues, url.Values{}, nil)
+	assert.False(t, served)
+
+	// User 8 did: served, case-insensitively.
+	require.NoError(t, service.RecordReadGrant(ctx, 8, "acme", "secret"))
+	_, served = service.ServeMetadata(ctx, service.ReadGrant(ctx, 8, "ACME", "Secret"), GitHubRepoMetadataIssues, url.Values{}, nil)
+	assert.True(t, served)
+	// A grant for one repo reads only that repo: the grant carries the slug.
+	other := service.ReadGrant(ctx, 8, "acme", "other")
+	_, served = service.ServeMetadata(ctx, other, GitHubRepoMetadataIssues, url.Values{}, nil)
+	assert.False(t, served)
+}
+
+func TestSyncedRepos_ReadGrantExpiresAndFailsClosed(t *testing.T) {
+	store := newFakeSyncedRepoStore()
+	service := NewGitHubSyncedRepoService(store)
+	ctx := context.Background()
+	require.NoError(t, service.RecordReadGrant(ctx, 8, "acme", "secret"))
+	require.NoError(t, service.RecordReadGrant(ctx, 9, "acme", "secret"))
+	assert.True(t, service.ReadGrant(ctx, 8, "acme", "secret").ok)
+
+	base := time.Now()
+	service.now = func() time.Time { return base.Add(githubSyncedRepoReadGrantTTL - time.Second) }
+	assert.True(t, service.ReadGrant(ctx, 8, "acme", "secret").ok, "inside the TTL the grant holds")
+	service.now = func() time.Time { return base.Add(githubSyncedRepoReadGrantTTL + time.Second) }
+	assert.False(t, service.ReadGrant(ctx, 8, "acme", "secret").ok, "past the TTL the user must re-prove access live")
+	service.now = time.Now
+
+	require.NoError(t, service.RevokeReadGrants(ctx, 8))
+	assert.False(t, service.ReadGrant(ctx, 8, "acme", "secret").ok, "revocation drops the user's grants")
+	assert.True(t, service.ReadGrant(ctx, 9, "acme", "secret").ok, "revocation leaves other users' grants")
+
+	store.readGrantErr = errors.New("db down")
+	assert.False(t, service.ReadGrant(ctx, 9, "acme", "secret").ok, "an unreadable grant fails closed to live")
+	assert.False(t, service.ReadGrant(ctx, 0, "acme", "secret").ok)
+}
+
 func TestSyncedRepos_ServeMetadataFallsBackToLiveWhenNotEnrolledOrUnmodelled(t *testing.T) {
 	store := newFakeSyncedRepoStore()
 	service := NewGitHubSyncedRepoService(store)
 
-	_, served := service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	_, served := service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{}, nil)
 	assert.False(t, served, "an unenrolled repo must fall through to the live passthrough")
 
@@ -420,7 +529,7 @@ func TestSyncedRepos_ServeMetadataFallsBackToLiveWhenNotEnrolledOrUnmodelled(t *
 	require.NoError(t, store.MarkGitHubSyncedRepoSynced(context.Background(), row.ID))
 
 	// A label filter is not modeled by the store — it must go live, not lie.
-	_, served = service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	_, served = service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{"labels": {"bug"}}, nil)
 	assert.False(t, served)
 }
@@ -450,7 +559,7 @@ func TestSyncedRepos_ServeMetadataServesLastGoodWithStalenessAndRevalidates(t *t
 		return json.RawMessage(`[]`), nil
 	}
 
-	page, served := service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	page, served := service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{}, fetch)
 	require.True(t, served, "stale must still serve last-good, never fail")
 	assert.True(t, page.Stale)
@@ -480,7 +589,7 @@ func TestSyncedRepos_BackfillFailureRecordsErrorAndKeepsLastGood(t *testing.T) {
 	fetch := func(context.Context, string, url.Values) (json.RawMessage, error) {
 		return nil, errors.New("github is down")
 	}
-	page, served := service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	page, served := service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{}, fetch)
 	require.True(t, served)
 	assert.JSONEq(t, `[{"number":9,"state":"open"}]`, string(page.Body))
@@ -522,7 +631,7 @@ func TestSyncedRepos_WebhookEventsKeepStoreFresh(t *testing.T) {
 	assert.Len(t, store.comments, 1)
 
 	// The heartbeat alone keeps a quiet repo fresh — no polling needed.
-	page, served := service.ServeMetadata(ctx, 1, "octo", "widget", GitHubRepoMetadataPulls, url.Values{}, nil)
+	page, served := service.ServeMetadata(ctx, testReadGrant("octo", "widget"), GitHubRepoMetadataPulls, url.Values{}, nil)
 	require.True(t, served)
 	assert.False(t, page.Stale)
 	assert.JSONEq(t, `[{"id":2,"number":11,"state":"open","title":"PR","updated_at":"2026-08-01T00:00:00Z"}]`, string(page.Body))

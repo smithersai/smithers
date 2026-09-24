@@ -64,7 +64,7 @@ func TestSyncedRepos_ConsecutiveFailuresTripKillSwitch(t *testing.T) {
 	assert.Equal(t, int32(githubSyncedRepoHardFailAfter), failed.ConsecutiveFailures)
 
 	// Still serves last-good (honestly, with the error surfaced)...
-	page, served := service.ServeMetadata(context.Background(), 1, "octo", "widget",
+	page, served := service.ServeMetadata(context.Background(), testReadGrant("octo", "widget"),
 		GitHubRepoMetadataIssues, url.Values{}, nil)
 	require.True(t, served)
 	assert.NotEmpty(t, page.SyncError)

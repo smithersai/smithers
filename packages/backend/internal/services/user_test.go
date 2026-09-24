@@ -163,6 +163,10 @@ func (m *mockUserQuerier) DeleteOAuthAccount(_ context.Context, _ db.DeleteOAuth
 	return nil
 }
 
+func (m *mockUserQuerier) DeleteGitHubSyncedRepoReadGrantsForUser(context.Context, int64) error {
+	return nil
+}
+
 func mustAPIErrorStatus(t *testing.T, err error) int {
 	t.Helper()
 

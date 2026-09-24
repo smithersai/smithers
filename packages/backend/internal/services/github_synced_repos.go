@@ -56,6 +56,11 @@ const (
 	githubSyncedRepoReconcilerTick = time.Minute
 	// githubSyncedRepoReconcilerBatch bounds one tick's candidate scan.
 	githubSyncedRepoReconcilerBatch = 20
+	// githubSyncedRepoReadGrantTTL bounds how long one successful live read
+	// with a user's own GitHub credential lets the shared store answer that
+	// user for that repo. It is the revocation bound: a user who loses GitHub
+	// access keeps store access for at most this long.
+	githubSyncedRepoReadGrantTTL = 10 * time.Minute
 )
 
 // GitHubSyncedRepoStore is the registry + metadata store surface, satisfied by
@@ -81,6 +86,9 @@ type GitHubSyncedRepoStore interface {
 	UpsertGitHubSyncedIssueComment(ctx context.Context, arg db.UpsertGitHubSyncedIssueCommentParams) error
 	DeleteGitHubSyncedIssueComment(ctx context.Context, arg db.DeleteGitHubSyncedIssueCommentParams) error
 	ListGitHubSyncedIssueComments(ctx context.Context, arg db.ListGitHubSyncedIssueCommentsParams) ([]db.GithubSyncedIssueComment, error)
+	UpsertGitHubSyncedRepoReadGrant(ctx context.Context, arg db.UpsertGitHubSyncedRepoReadGrantParams) error
+	GetGitHubSyncedRepoReadGrant(ctx context.Context, arg db.GetGitHubSyncedRepoReadGrantParams) (db.GithubSyncedRepoReadGrant, error)
+	DeleteGitHubSyncedRepoReadGrantsForUser(ctx context.Context, userID int64) error
 }
 
 // GitHubSyncedRepoMirrorer creates (or refreshes) the jjhub-side git mirror for
@@ -399,6 +407,59 @@ func (s *GitHubSyncedRepoService) RecordMirror(ctx context.Context, syncedRepoID
 	})
 }
 
+// GitHubRepoReadGrant is proof that one user's own GitHub credential read one
+// repository live within githubSyncedRepoReadGrantTTL. Its fields are
+// unexported and ReadGrant is its only constructor, so the shared store cannot
+// be read without a checked grant. The zero value is "no grant".
+type GitHubRepoReadGrant struct {
+	owner string
+	repo  string
+	ok    bool
+}
+
+// ReadGrant looks up the caller's live-read proof for owner/repo. It fails
+// closed: a missing, expired, or unreadable grant sends the caller live.
+func (s *GitHubSyncedRepoService) ReadGrant(ctx context.Context, userID int64, owner, repo string) GitHubRepoReadGrant {
+	if s == nil || s.store == nil || userID <= 0 {
+		return GitHubRepoReadGrant{}
+	}
+	row, err := s.store.GetGitHubSyncedRepoReadGrant(ctx, db.GetGitHubSyncedRepoReadGrantParams{
+		UserID: userID, OwnerLogin: owner, RepoName: repo,
+	})
+	if err != nil {
+		if !stdErrors.Is(err, pgx.ErrNoRows) {
+			slog.Warn("github synced repo read grant unreadable; serving live",
+				"user_id", userID, "owner", owner, "repo", repo, "error", err)
+		}
+		return GitHubRepoReadGrant{}
+	}
+	if s.now().Sub(row.VerifiedAt) > githubSyncedRepoReadGrantTTL {
+		return GitHubRepoReadGrant{}
+	}
+	return GitHubRepoReadGrant{owner: owner, repo: repo, ok: true}
+}
+
+// RecordReadGrant stamps the caller's live-read proof. Call it only after a
+// live GitHub read with the user's own credential succeeded for owner/repo.
+func (s *GitHubSyncedRepoService) RecordReadGrant(ctx context.Context, userID int64, owner, repo string) error {
+	if s == nil || s.store == nil || userID <= 0 {
+		return nil
+	}
+	return s.store.UpsertGitHubSyncedRepoReadGrant(ctx, db.UpsertGitHubSyncedRepoReadGrantParams{
+		UserID: userID, OwnerLogin: owner, RepoName: repo,
+	})
+}
+
+// RevokeReadGrants drops every live-read proof the user holds, so their next
+// read of any repo goes live. Call it when the user's GitHub credential is
+// gone.
+func (s *GitHubSyncedRepoService) RevokeReadGrants(ctx context.Context, userID int64) error {
+	if s == nil || s.store == nil || userID <= 0 {
+		return nil
+	}
+	return s.store.DeleteGitHubSyncedRepoReadGrantsForUser(ctx, userID)
+}
+
 // GitHubSyncedMetadataPage is a store-served metadata response plus the honest
 // provenance the proxy exposes as headers.
 type GitHubSyncedMetadataPage struct {
@@ -414,18 +475,20 @@ type GitHubSyncedMetadataPage struct {
 // live GitHub passthrough. It never blocks on GitHub: the very first read for a
 // newly enrolled repo is a miss that schedules a background backfill, so the
 // user sees live data immediately and the store takes over from the next read.
+// The store is shared across users, so it answers only a caller holding a
+// fresh read grant for this repo; without one the caller goes live, where
+// GitHub itself decides what the user's credential can see.
 func (s *GitHubSyncedRepoService) ServeMetadata(
 	ctx context.Context,
-	userID int64,
-	owner string,
-	repo string,
+	grant GitHubRepoReadGrant,
 	resource string,
 	query url.Values,
 	fetch gitHubSyncedRepoPageFetcher,
 ) (page GitHubSyncedMetadataPage, served bool) {
-	if s == nil || s.store == nil {
+	if s == nil || s.store == nil || !grant.ok {
 		return GitHubSyncedMetadataPage{}, false
 	}
+	owner, repo := grant.owner, grant.repo
 	// Filters the store does not model (labels/head/base, custom sorts) go
 	// live, exactly like the repo-listing cache's non-canonical shapes.
 	if !storeServableGitHubMetadataQuery(query) {
@@ -512,14 +575,14 @@ func (s *GitHubSyncedRepoService) ServeMetadata(
 // repos are served from the store.
 func (s *GitHubSyncedRepoService) ServeComments(
 	ctx context.Context,
-	owner string,
-	repo string,
+	grant GitHubRepoReadGrant,
 	issueNumber int64,
 	fetch gitHubSyncedRepoPageFetcher,
 ) (page GitHubSyncedMetadataPage, served bool) {
-	if s == nil || s.store == nil || issueNumber <= 0 {
+	if s == nil || s.store == nil || !grant.ok || issueNumber <= 0 {
 		return GitHubSyncedMetadataPage{}, false
 	}
+	owner, repo := grant.owner, grant.repo
 	row, err := s.store.GetGitHubSyncedRepo(ctx, db.GetGitHubSyncedRepoParams{OwnerLogin: owner, RepoName: repo})
 	if err != nil {
 		if !stdErrors.Is(err, pgx.ErrNoRows) {

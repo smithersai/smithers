@@ -295,3 +295,23 @@ WHERE github_synced_issue_comments.github_updated_at IS NULL
 DELETE FROM github_synced_issue_comments
 WHERE synced_repo_id = sqlc.arg(synced_repo_id)
   AND github_id = sqlc.arg(github_id);
+
+-- ---- Per-user read grants (live-read proof gating the shared store) ----
+
+-- name: UpsertGitHubSyncedRepoReadGrant :exec
+-- Stamped only after the user's own credential read the repo live from GitHub.
+INSERT INTO github_synced_repo_read_grants (user_id, owner_login_lower, repo_name_lower, verified_at)
+VALUES (sqlc.arg(user_id)::bigint, LOWER(sqlc.arg(owner_login)::text), LOWER(sqlc.arg(repo_name)::text), NOW())
+ON CONFLICT (user_id, owner_login_lower, repo_name_lower) DO UPDATE
+SET verified_at = NOW();
+
+-- name: GetGitHubSyncedRepoReadGrant :one
+SELECT *
+FROM github_synced_repo_read_grants
+WHERE user_id = sqlc.arg(user_id)::bigint
+  AND owner_login_lower = LOWER(sqlc.arg(owner_login)::text)
+  AND repo_name_lower = LOWER(sqlc.arg(repo_name)::text);
+
+-- name: DeleteGitHubSyncedRepoReadGrantsForUser :exec
+DELETE FROM github_synced_repo_read_grants
+WHERE user_id = sqlc.arg(user_id)::bigint;
