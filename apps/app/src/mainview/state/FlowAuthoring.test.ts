@@ -4,6 +4,10 @@ import { scopedControllers } from "./ControllerTestScope"
 import { json, memoryStorage, settle, waitFor, silentAgent, unavailableRepositories } from "./TestFixtures"
 import type { Card } from "./AppState"
 import { runtimeRunKey } from "./RuntimeProjection"
+import { createControllerContext } from "./controller/context"
+import { createFailureController } from "./controller/failures"
+import { createFlowAuthoringController } from "./controller/flowAuthoring"
+import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 
 const createController = scopedControllers()
 const REPO = "test/authoring"
@@ -255,4 +259,58 @@ test("reload ignores older authors and the next edit compares the latest plan", 
   await waitFor(() => plans(second.store)[0]?.payload.planId === "plan-review-3")
   expect(plans(second.store)).toHaveLength(1)
   expect(plans(second.store)[0]?.payload.previousPlan?.planId).toBe("plan-review-2")
+})
+
+test("a request whose card could not be saved can be requested again", async () => {
+  const relay = fixture()
+  relay.release()
+  const disk = memoryStorage()
+  let fail = false
+  const storage = { ...disk, setItem: (key: string, value: string) => { if (fail) { fail = false; throw new Error("disk unavailable") } disk.setItem(key, value) } }
+  const { store, controller } = await ready(relay, storage)
+  fail = true
+  await expect(controller.createWorkflow("make a review flow", REPO)).rejects.toThrow()
+  expect(relay.calls.filter(call => call.procedure === "Plan")).toHaveLength(0)
+  expect(await controller.createWorkflow("make a review flow", REPO)).toEqual({ value: `flow-requested repo=${REPO}` })
+  await waitFor(() => runs(store)[0]?.payload.runId === "author-1")
+  expect(runs(store)).toHaveLength(1)
+})
+
+test("an authoring wait holds no scope registration after it settles and still wakes on disposal", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const signIn = (login: string) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  await signIn("will")
+  const ctx = createControllerContext(store, unavailableRepositories, silentAgent, { toastDebounceMs: 0, toastAutoDismissMs: 10000 })
+  const { withToast } = createFailureController(ctx)
+  /* Count the background authoring work in flight, through the real toast door. */
+  let running = 0
+  Object.assign(ctx, { withToast: (async (key, title, doneTitle, work, ...rest) => {
+    running += 1
+    try { return await withToast(key, title, doneTitle, work, ...rest) } finally { running -= 1 }
+  }) satisfies typeof withToast })
+  const register = ctx.onDispose
+  let registrations = 0
+  Object.assign(ctx, { onDispose: (finalizer: () => void | Promise<void>) => { registrations += 1; return register(finalizer) } })
+  const authoring = createFlowAuthoringController(ctx, () => 0, async () => true, async () => {})
+  /* A launched author whose run has not been read yet: every resume waits on it. */
+  const launched = () => store.dispatch({ type: "card.upsert", actor: "system", card: { id: "flow-author-wait", kind: "run-trace", title: "Creating a flow", status: "active", ordinal: 1, createdAt: 1,
+    payload: { repo: REPO, gatewayBindingVersion: 1, runId: "author-1", workflow: FLOW_AUTHORING_ENTRY, phase: "running", steps: [], result: null, lastSeq: 0,
+      input: { args: "wait" }, authoring: { requestId: "request-1", owner: "will" } } } }).isPersisted.promise
+  const constructed = registrations
+  /* Each focus resumes the author; each account switch ends that wait. */
+  for (let focus = 0; focus < 3; focus += 1) {
+    await launched()
+    authoring.resume()
+    expect(running).toBe(1)
+    await signIn("someone-else")
+    await waitFor(() => running === 0)
+    await signIn("will")
+  }
+  expect(registrations).toBe(constructed)
+  await launched()
+  authoring.resume()
+  expect(running).toBe(1)
+  await ctx.dispose()
+  await waitFor(() => running === 0)
+  await store.dispose?.()
 })

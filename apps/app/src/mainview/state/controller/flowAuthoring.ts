@@ -31,17 +31,21 @@ export const createFlowAuthoringController = (
   const upsert = (card: Card) => store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 
   // Subscription waits on persisted collection state, not a second polling loop.
+  // One scope finalizer wakes the waits still open; a settled wait leaves the set.
+  const waits = new Set<() => void>()
+  ctx.onDispose(() => { for (const wake of [...waits]) wake() })
   const until = (done: () => boolean): Promise<void> => new Promise(resolve => {
     const subscriptions: Array<{ unsubscribe(): void }> = []
     let finished = false
     const check = () => {
       if (finished || !ctx.disposed && !done()) return
       finished = true
+      waits.delete(check)
       for (const subscription of subscriptions) subscription.unsubscribe()
       resolve()
     }
     for (const collection of [store.collections.cards, store.collections.runtimeRuns, store.collections.identitySessions]) subscriptions.push(collection.subscribeChanges(check))
-    ctx.onDispose(check)
+    waits.add(check)
     check()
   })
 
@@ -166,7 +170,8 @@ export const createFlowAuthoringController = (
       } }).isPersisted.promise
       persisting.set(id, saved)
     }
-    if (saved) { await saved; persisting.delete(id) }
+    // A rejected save must not answer every later request for this card.
+    if (saved) try { await saved } finally { if (persisting.get(id) === saved) persisting.delete(id) }
     void send(id)
     return { value: `flow-requested repo=${repo}` }
   }
