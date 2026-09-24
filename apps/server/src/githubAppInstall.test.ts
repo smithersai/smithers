@@ -86,3 +86,43 @@ test("verification includes later pages so a second installation and every repos
   // three subrequests per repo tripped the Worker's 1000-subrequest ceiling.
   expect(identityCalls).toEqual({ validate: 1, cloudToken: 1 })
 })
+
+test("oversized inventories refuse before any per-repository access calls", async () => {
+  let calls = 0, access = 0
+  const response = await Effect.runPromise(handleGitHubAppInstall(new Request("https://app.test/api/user/github-app/installations", { headers: { cookie: "smithers_session=test" } })).pipe(
+    Effect.provide(configLayer({ IDENTITY_UPSTREAM_URL: "https://identity.test", IDENTITY_SERVICE_TOKEN: "svc", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" })),
+    Effect.provide(transportLayer(async input => {
+      calls++
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.pathname === "/api/identity/validate") return Response.json({ login: "ada", allowlisted: true })
+      if (url.pathname === "/api/identity/cloud-token") return Response.json({ found: true, token: "fixture" })
+      if (url.pathname === "/api/user/github-repos") return Response.json(Array.from({ length: 100 }, (_, i) => ({ full_name: `ada/page${url.searchParams.get("page")}-${i}` })))
+      access++
+      return Response.json({ verdict: "ok", installation_id: 42 })
+    }))
+  ))
+  expect(response.status).toBe(503)
+  expect(access).toBe(0)
+  expect(calls).toBe(12)
+})
+
+test.each(["inventory", "diagnosis"])("bounds and cancels an oversized %s body", async seam => {
+  let cancelled = false
+  const response = await Effect.runPromise(handleGitHubAppInstall(new Request("https://app.test/api/user/github-app/installations", { headers: { cookie: "smithers_session=test" } })).pipe(
+    Effect.provide(configLayer({ IDENTITY_UPSTREAM_URL: "https://identity.test", IDENTITY_SERVICE_TOKEN: "svc", SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test" })),
+    Effect.provide(transportLayer(async input => {
+      const path = new URL(input instanceof Request ? input.url : String(input)).pathname
+      if (path === "/api/identity/validate") return Response.json({ login: "ada", allowlisted: true })
+      if (path === "/api/identity/cloud-token") return Response.json({ found: true, token: "fixture" })
+      if (path === "/api/user/github-repos" && seam === "diagnosis") return Response.json([{ full_name: "ada/repo" }])
+      let chunks = 0
+      return new Response(new ReadableStream({ pull(controller) {
+        // Finite but over the limit, so the old unbounded reader finishes.
+        if (chunks++ < 80) controller.enqueue(new Uint8Array(65536).fill(32))
+        else controller.close()
+      }, cancel() { cancelled = true } }))
+    }))
+  ))
+  expect(response.status).toBe(502)
+  expect(cancelled).toBe(true)
+})

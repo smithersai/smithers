@@ -2,11 +2,15 @@ import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
-import { fetchWithDeadline } from "./Http"
+import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import { requireTurnSession } from "./identity"
 import { json, refuse, upstreamUnreachable } from "./Responses"
 
 export const INSTALLATIONS_PATH = "/api/user/github-app/installations"
+// At most 2 identity reads + 10 inventory pages + 900 diagnoses per request.
+const ACCESS_BUDGET = 900
+const INVENTORY_MAX_BYTES = 4 * 1024 * 1024
+const DIAGNOSIS_MAX_BYTES = 64 * 1024
 const record = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value)
 
 /** Verify against the caller's GitHub inventory and live App/user access diagnosis.
@@ -32,46 +36,52 @@ export const handleGitHubAppInstall = (request: Request, installationId?: string
   const repos: Array<{ fullName: string; pushedAt: string; installationId: number }> = []
   const seen = new Set<string>()
   const blockers: string[] = []
+  const candidates: Array<{ name: string; pushedAt: string }> = []
+  let complete = false
   for (let page = 1; page <= 10; page++) {
     const inventory = yield* read(`/api/user/github-repos?sort=pushed&direction=desc&per_page=100&page=${page}`)
     // Upstream prose never passes through (the proxy's rule): restate it.
-    if (!inventory.ok) return json(inventory.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." })
-    const body: unknown = yield* Effect.promise(() => inventory.json().catch(() => null))
+    if (!inventory.ok) {
+      yield* discardBody(inventory)
+      return json(inventory.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." })
+    }
+    const body: unknown = yield* readBoundedJson(inventory, INVENTORY_MAX_BYTES).pipe(Effect.catch(() => Effect.succeed(undefined)))
     const rows = Array.isArray(body) ? body : record(body) && Array.isArray(body.repos) ? body.repos : record(body) && Array.isArray(body.items) ? body.items : undefined
     if (rows === undefined) return refuse("upstream_malformed", "Smithers Cloud returned an unreadable repository list.")
-    const candidates = rows.flatMap(row => {
+    candidates.push(...rows.flatMap(row => {
       if (!record(row)) return []
       const name = typeof row.full_name === "string" ? row.full_name : undefined
       if (name === undefined || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(name) || seen.has(name)) return []
       seen.add(name)
       return [{ name, pushedAt: typeof row.pushed_at === "string" ? row.pushed_at : "" }]
-    })
-    const statuses = yield* Effect.forEach(candidates, candidate => Effect.gen(function* () {
-      const response = yield* read(`/api/user/github-access/${candidate.name.split("/").map(encodeURIComponent).join("/")}?surface=issues`)
-      const body: unknown = yield* Effect.promise(() => response.json().catch(() => null))
-      return { ...candidate, status: response.status, ok: response.ok, body }
-    }), { concurrency: 6 })
-    for (const status of statuses) {
-      // A repository disappearing from this account during the read is no
-      // longer a candidate. Other errors must not masquerade as no install.
-      if (status.status === 403 || status.status === 404) continue
-      if (!status.ok) return json(status.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." })
-      const app = status.body
-      if (!record(app) || typeof app.verdict !== "string") return refuse("upstream_malformed", "Smithers Cloud returned an unreadable GitHub access diagnosis.")
-      if (app.verdict !== "ok" && app.verdict !== "app-not-installed" && typeof app.detail === "string" &&
-        (installationId === undefined || String(app.installation_id) === installationId)) blockers.push(app.detail)
-      if (app.verdict === "ok" &&
-        typeof app.installation_id === "number" && Number.isSafeInteger(app.installation_id) && app.installation_id > 0 &&
-        (installationId === undefined || String(app.installation_id) === installationId)) {
-        repos.push({ fullName: status.name, pushedAt: status.pushedAt, installationId: app.installation_id })
-      }
-    }
-    // Read every page: another installation (and the rest of the chip menu)
-    // may be on a later page even after the active repository is known.
-    if (rows.length < 100) return repos.length === 0 && blockers.length > 0 ? refuse("request_conflict", blockers[0] ?? "") : json(200, { repos })
+    }))
+    if (rows.length < 100) { complete = true; break }
   }
-  return refuse(
-    "service_temporarily_unavailable",
-    "The repository inventory is too large to verify in one request. Try connecting the repository directly."
+  if (!complete || candidates.length > ACCESS_BUDGET) return refuse(
+    "service_temporarily_unavailable", "Smithers Cloud could not verify this repository inventory within its request budget."
   )
+  const diagnoses = yield* Effect.result(Effect.forEach(candidates, candidate => Effect.gen(function* () {
+    const response = yield* read(`/api/user/github-access/${candidate.name.split("/").map(encodeURIComponent).join("/")}?surface=issues`)
+    if (response.status === 403 || response.status === 404) { yield* discardBody(response); return undefined }
+    if (!response.ok) {
+      yield* discardBody(response)
+      return yield* Effect.fail(json(response.status, { message: "Smithers Cloud could not verify the GitHub App installation. Try again." }))
+    }
+    const body = yield* readBoundedJson(response, DIAGNOSIS_MAX_BYTES).pipe(Effect.catch(() => Effect.succeed(undefined)))
+    if (!record(body) || typeof body.verdict !== "string") return yield* Effect.fail(refuse("upstream_malformed", "Smithers Cloud returned an unreadable GitHub access diagnosis."))
+    return { ...candidate, body }
+  }), { concurrency: 6 }))
+  if (Result.isFailure(diagnoses)) return diagnoses.failure
+  for (const status of diagnoses.success) {
+    if (status === undefined) continue
+    const app = status.body
+    if (app.verdict !== "ok" && app.verdict !== "app-not-installed" && typeof app.detail === "string" &&
+      (installationId === undefined || String(app.installation_id) === installationId)) blockers.push(app.detail)
+    if (app.verdict === "ok" &&
+      typeof app.installation_id === "number" && Number.isSafeInteger(app.installation_id) && app.installation_id > 0 &&
+      (installationId === undefined || String(app.installation_id) === installationId)) {
+      repos.push({ fullName: status.name, pushedAt: status.pushedAt, installationId: app.installation_id })
+    }
+  }
+  return repos.length === 0 && blockers.length > 0 ? refuse("request_conflict", blockers[0] ?? "") : json(200, { repos })
 })
