@@ -1,8 +1,8 @@
 /**
  * The shared refusal gate every outward-effect rule runs before it acts.
  *
- * These assertions are about refusals only. Passing the gate is a loud
- * `NotImplemented`, never a silent green, and that is asserted too.
+ * These assertions are about refusals only. No rule has an outward
+ * transport yet, so the package planner refuses every one before this gate.
  */
 import { describe, expect, it } from "vitest"
 import * as Outward from "../src/Outward.ts"
@@ -68,20 +68,6 @@ describe("refuse", () => {
 
   it("passes satisfied declaration requirements", () => {
     expect(Outward.refuse(requirements(), { approvalGranted: true })).toBeUndefined()
-  })
-})
-
-describe("act", () => {
-  it("throws the refusal for each refusal code", () => {
-    expect(() => Outward.act(requirements({ declared: [] }), { approvalGranted: true }))
-      .toThrow(/Npm\.Publish: missing_secret: /)
-    expect(() => Outward.act(requirements({ approval: "required" }), { approvalGranted: false }))
-      .toThrow(/Npm\.Publish: approval_unsatisfied: /)
-  })
-
-  it("refuses to fake a green past the gate", () => {
-    expect(() => Outward.act(requirements(), { approvalGranted: true }))
-      .toThrow(/^NotImplemented: Npm\.Publish passed its refusal gate/)
   })
 })
 

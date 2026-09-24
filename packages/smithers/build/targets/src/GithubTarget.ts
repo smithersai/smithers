@@ -597,19 +597,3 @@ export const refusePr = (target: Target.AnyTarget, invocation: PrInvocation): Pr
   }
   return undefined
 }
-
-/**
- * Runs the `Github.Pr` refusal gate and refuses everything past it.
- *
- * This lane ships the refusal paths only. An invocation that satisfies the
- * gate does not silently succeed: opening the pull request is not
- * implemented, and saying so loudly is the no-fake-green rule.
- *
- * @category execution
- * @since 0.1.0
- */
-export const openPr = (target: Target.AnyTarget, invocation: PrInvocation): never => {
-  const refusal = refusePr(target, invocation)
-  if (refusal !== undefined) throw refusal
-  throw new Error("NotImplemented: Github.Pr passed its refusal gate, and opening the pull request is not implemented")
-}

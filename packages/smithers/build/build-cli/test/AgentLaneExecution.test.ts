@@ -655,7 +655,7 @@ export const Package = S.Package({ targets: { scoped } })
 
 describe("Github.Pr dispatch", () => {
   it(
-    "refuses without the token declaration and without approval; values stay lazy until HTTP egress",
+    "refuses in the plan before any gate runs, whatever the token or approval",
     async () => {
       const root = await temporaryWorkspace()
       await write(root, "WORKSPACE.ts", workspaceModule())
@@ -673,32 +673,16 @@ export const Package = S.Package({ targets: { gate, prNoToken, pr, prApproval } 
       )
       initRepo(root)
       commitAll(root)
-      const withoutToken = { ...process.env, GITHUB_TOKEN: undefined }
 
-      const undeclared = await serve(root, ["//:prNoToken"], { environment: withoutToken })
-      expect(undeclared.exitCode).toBe(1)
-      expect(undeclared.logs).toContain(
-        "refused: [missing_token_secret] Github.Pr declares no " +
-          "S.HttpSecret(S.Secret(\"GITHUB_TOKEN\"), [...]) in secrets"
-      )
-
-      const noValue = await serve(root, ["//:pr"], { environment: withoutToken })
-      expect(noValue.exitCode).toBe(1)
-      expect(noValue.logs).toMatch(/\/\/:gate {2}(ran|hit)/)
-      expect(noValue.logs).toContain("NotImplemented: Github.Pr passed its refusal gate")
-
-      const approval = await serve(root, ["//:prApproval"], {
-        environment: { ...process.env, GITHUB_TOKEN: "ghp_secret" }
-      })
-      expect(approval.exitCode).toBe(1)
-      expect(approval.logs).toContain("approval required")
-      expect(approval.logs).not.toContain("//:gate ")
-
-      const past = await serve(root, ["//:pr"], { environment: { ...process.env, GITHUB_TOKEN: "ghp_secret" } })
-      expect(past.exitCode).toBe(1)
-      expect(past.logs).toMatch(/\/\/:gate {2}(ran|hit)/)
-      expect(past.logs).toContain("NotImplemented: Github.Pr passed its refusal gate")
-      expect(past.logs).not.toContain("ghp_secret")
+      for (const label of ["prNoToken", "pr", "prApproval"]) {
+        const refused = await serve(root, [`//:${label}`], {
+          environment: { ...process.env, GITHUB_TOKEN: "ghp_secret" }
+        })
+        expect(refused.exitCode).toBe(1)
+        expect(refused.logs).toContain("Github.Pr: not implemented by this executor")
+        expect(refused.logs).not.toContain("//:gate ")
+        expect(refused.logs).not.toContain("ghp_secret")
+      }
     },
     120_000
   )

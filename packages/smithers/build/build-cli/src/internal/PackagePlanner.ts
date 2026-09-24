@@ -165,6 +165,12 @@ export const attrMember = (attrs: unknown, name: string): unknown => {
   return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined
 }
 
+// Outward rules whose action has no transport in this executor. Refusing in
+// the plan keeps `run` from spending gate runs on a target that cannot turn
+// green; each rule leaves this refusal when its transport lands.
+const notImplementedOutward = (rule: string): string =>
+  `${rule}: not implemented by this executor; the plan refuses before any gate or outward effect`
+
 const attrTargets = (attrs: unknown, name: string): ReadonlyArray<Target.AnyTarget> =>
   collectTargets(attrMember(attrs, name))
 
@@ -2281,6 +2287,7 @@ const visit = async (
         break
       case "Github.Pr":
         selection = { family: "outward", rule, lane: { kind: "github-pr" } }
+        noteRefusal(notImplementedOutward(rule))
         break
       case "Npm.Pack": {
         if (context.managerBinary === undefined) {
@@ -2463,11 +2470,13 @@ const visit = async (
       case "Npm.Publish":
       case "Changesets.Publish":
         selection = { family: "outward", rule, lane: { kind: "outward", required: ["NPM_TOKEN"] } }
+        noteRefusal(notImplementedOutward(rule))
         break
       case "Github.Release":
       case "Github.Pages":
       case "Git.Pr":
         selection = { family: "outward", rule, lane: { kind: "outward", required: ["GITHUB_TOKEN"] } }
+        noteRefusal(notImplementedOutward(rule))
         break
       case "Memory.Retain":
         selection = { family: "outward", rule, lane: { kind: "memory-retain" } }
@@ -3136,7 +3145,10 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
   // A declared environment resolves once per plan and fails closed: the
   // host's PATH is never consulted for a tool the workspace said comes from
   // the closure.
-  const hostEnvironment = Workspace.withheldEnvironment(options.environment ?? process.env, options.remoteCache?.credentials)
+  const hostEnvironment = Workspace.withheldEnvironment(
+    options.environment ?? process.env,
+    options.remoteCache?.credentials
+  )
   const nixDeclaration = WorkspaceDeclaration.nixEnvironment(workspace)
   const nixEnvironment = nixDeclaration === undefined
     ? undefined

@@ -219,21 +219,21 @@ An agent whose accepted candidate becomes a pull request. The attrs match `Agent
 - **Type:** the `GitTarget` module
 - **Since:** `0.1.0`
 
-The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC and refuses even after its preconditions pass. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not.
+The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC: the plan refuses it before any gate runs. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not.
 
 ### `Smithers.Github`
 
 - **Type:** the `GithubTarget` module
 - **Since:** `0.1.0`
 
-The GitHub target flavors: `Github.Setup`, `Github.Workflow`, `Github.CiGen`, `Github.Pr`, `Github.Pages`, `Github.Release`, and `Github.Ci`. The package executor handles these declarations and none is cacheable. `Github.Pr`, `Github.Pages`, and `Github.Release` are unsupported in this RC: their precondition checks do not implement the outward action, and execution always refuses. `Github.Pr` is gated: an invocation whose declaration names no `HttpSecret` over `GITHUB_TOKEN`, or that declares `approval: "required"` without a granted approval, is refused with `PrRefused` before any provider call.
+The GitHub target flavors: `Github.Setup`, `Github.Workflow`, `Github.CiGen`, `Github.Pr`, `Github.Pages`, `Github.Release`, and `Github.Ci`. The package executor handles these declarations and none is cacheable. `Github.Pr`, `Github.Pages`, and `Github.Release` are unsupported in this RC: the plan refuses each one as `not implemented by this executor` before any gate or provider call. `GithubTarget.refusePr` keeps the `Github.Pr` declaration check: a declaration that names no `HttpSecret` over `GITHUB_TOKEN`, or that declares `approval: "required"` without a granted approval, yields `PrRefused`.
 
 ### `Smithers.Npm`
 
 - **Type:** `{ NodeModules, Pack, Publish, Published, Downstream }`
 - **Since:** `0.1.0`
 
-The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and refuses after checking its outward preconditions; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented.
+The npm-facing surface. `Npm.NodeModules({ packageJson })` is the workspace declaration for the installed module tree; `Npm.Pack`, `Npm.Publish`, `Npm.Published`, and `Npm.Downstream` are rules that run under the package executor. `Npm.Pack` and `Npm.Published` are supported and cacheable. `Npm.Publish` is unsupported and the plan refuses it before any gate runs; `Npm.Downstream` is unsupported because the isolated remote checkout runner is not implemented.
 
 ### `Smithers.Markdown`
 
@@ -371,7 +371,7 @@ Every other export of `Smithers.ts`, in source order:
 | `Smithers.Go`                     | namespace          | Go toolchain and package rules.                                                                                                                                                   |
 | `Smithers.Stamp`                  | namespace          | Late-bound build stamps.                                                                                                                                                          |
 | `Smithers.Nix`                    | namespace          | Nix dev-shell version authority and tools.                                                                                                                                        |
-| `Smithers.Changesets`             | namespace          | Changesets versioning and publication declarations; `Changesets.Publish` is unsupported in this RC and always refuses execution.                                                  |
+| `Smithers.Changesets`             | namespace          | Changesets versioning and publication declarations; `Changesets.Publish` is unsupported in this RC and the plan refuses it.                                                       |
 | `Smithers.Api`                    | namespace          | API-surface checks, `Api.Compat`.                                                                                                                                                 |
 | `Smithers.Size`                   | namespace          | Artifact-size checks, `Size.Budgets`.                                                                                                                                             |
 

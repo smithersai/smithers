@@ -12,7 +12,6 @@ import * as ExecSandbox from "@smthrs/targets/ExecSandbox"
 import * as GithubTarget from "@smthrs/targets/GithubTarget"
 import * as Input from "@smthrs/targets/Input"
 import type * as NodeArtifact from "@smthrs/targets/NodeArtifact"
-import * as Outward from "@smthrs/targets/Outward"
 import type * as Reference from "@smthrs/targets/Reference"
 import type * as Secret from "@smthrs/targets/Secret"
 import * as Shell from "@smthrs/targets/Shell"
@@ -56,7 +55,6 @@ import * as Workspace from "../Workspace.ts"
 import type { ExecuteOptions, PackageNode, PackagePlan, TestOperandPlan } from "./PackageOptions.ts"
 import type { StoredResolve } from "./PackagePlanner.ts"
 import {
-  attrMember,
   binaryIdentity,
   bundlerScratchDirectory,
   collectTagged,
@@ -742,7 +740,10 @@ export const executeEffect = (
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
               attrs,
-              environment: Workspace.withheldEnvironment(options.environment ?? process.env, options.remoteCache?.credentials)
+              environment: Workspace.withheldEnvironment(
+                options.environment ?? process.env,
+                options.remoteCache?.credentials
+              )
             })
           )
         }
@@ -2230,22 +2231,11 @@ export const executeEffect = (
             case "Changesets.Publish":
             case "Github.Release":
             case "Github.Pages":
-            case "Git.Pr": {
-              if (node.lane?.kind !== "outward") return fail(`${node.rule} planned no outward requirements`)
-              try {
-                Outward.act({
-                  rule: node.rule,
-                  required: node.lane.required,
-                  declared: attrMember(Target.metadata(node.declaration).attrs, "secrets") as never,
-                  approval: attrMember(Target.metadata(node.declaration).attrs, "approval") === "required"
-                    ? "required"
-                    : undefined
-                }, { approvalGranted: false })
-              } catch (cause) {
-                return fail(Diagnostic.describe(cause))
-              }
-              return fail(`${node.rule} outward gate returned unexpectedly`)
-            }
+            case "Git.Pr":
+            case "Github.Pr":
+              // The planner refuses these before any gate runs; reaching here
+              // means a plan skipped that refusal, so fail rather than act.
+              return fail(`${node.rule}: not implemented by this executor`)
             case "Shell.Serve":
             case "Anvil.Fork":
             case "Docker.Serve":
@@ -2639,18 +2629,6 @@ export const executeEffect = (
                 `${node.label}  inert declaration (${workflow.run.length} run entries); rendered through its Github.CiGen target`
               )
               return green("ran")
-            }
-            case "Github.Pr": {
-              // Refusal paths only: no token declaration or (already refused at
-              // plan time) no approval. Secret values remain unread until a real
-              // HTTP transport exists. Past the gate, opening the pull request is
-              // NotImplemented and says so.
-              try {
-                GithubTarget.openPr(node.declaration, { approvalGranted: false })
-              } catch (cause) {
-                return fail(GithubTarget.isPrRefused(cause) ? `refused: ${cause.message}` : Diagnostic.describe(cause))
-              }
-              return fail("Github.Pr settled without opening a pull request")
             }
             case "Memory.Retain": {
               return yield* Effect.gen(function*() {

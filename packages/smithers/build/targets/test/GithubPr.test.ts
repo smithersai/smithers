@@ -1,8 +1,8 @@
 /**
  * `S.Github.Pr` refusal paths: the target never reaches its outward action
  * without the declared token secret and a satisfied approval. Values are a
- * transport concern. This lane ships only the refusals; a satisfied gate is a loud
- * NotImplemented, never a silent green.
+ * transport concern. No transport exists yet, so the package planner refuses
+ * the rule before this gate runs.
  */
 import { describe, expect, it } from "vitest"
 import * as GithubTarget from "../src/GithubTarget.ts"
@@ -55,21 +55,7 @@ describe("refusePr", () => {
   })
 })
 
-describe("openPr", () => {
-  it("throws the typed refusal before any outward action", () => {
-    try {
-      GithubTarget.openPr(withToken("required"), { approvalGranted: false })
-      throw new Error("expected a PrRefused")
-    } catch (cause) {
-      expect(GithubTarget.isPrRefused(cause)).toBe(true)
-      expect((cause as GithubTarget.PrRefused).code).toBe("approval_unsatisfied")
-    }
-  })
-
-  it("refuses loudly past the gate instead of faking green", () => {
-    expect(() => GithubTarget.openPr(withToken(), { approvalGranted: true })).toThrow(/NotImplemented: Github\.Pr/)
-  })
-
+describe("isPrRefused", () => {
   it("guards reject non-refusal values", () => {
     expect(GithubTarget.isPrRefused(new Error("plain"))).toBe(false)
     expect(GithubTarget.isPrRefused(undefined)).toBe(false)

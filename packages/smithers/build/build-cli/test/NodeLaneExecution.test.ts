@@ -389,13 +389,23 @@ describe("Node lane package execution", () => {
     expect((await serve(root, ["//:downstream"])).logs).toContain("isolated remote checkout runner")
   })
 
-  it("refuses outward rules before effects for missing secrets and approval", async () => {
+  it("refuses every outward rule without a transport in the plan, before any gate runs", async () => {
     const root = await fixture()
-    const missing = await serve(root, ["//:publishMissing", "--plan"])
-    expect(missing.output).toContain("missing secret")
-    const approval = await serve(root, ["//:publishApproval", "--plan"])
-    expect(approval.output).toContain("approval required")
-    expect((await serve(root, ["//:pages"])).logs).toContain("NotImplemented: Github.Pages")
-    expect((await serve(root, ["//:pr"])).logs).toContain("NotImplemented: Git.Pr")
+    for (
+      const [label, rule] of [
+        ["publishMissing", "Npm.Publish"],
+        ["publishApproval", "Npm.Publish"],
+        ["pages", "Github.Pages"],
+        ["pr", "Git.Pr"]
+      ] as const
+    ) {
+      const planned = await serve(root, [`//:${label}`, "--plan"])
+      expect(planned.output).toContain(`${rule}: not implemented by this executor`)
+      const run = await serve(root, [`//:${label}`])
+      expect(run.exitCode).toBe(1)
+      expect(run.logs).toContain(`${rule}: not implemented by this executor`)
+      expect(run.logs).not.toContain("//:gate ")
+      expect(run.logs).not.toContain("NotImplemented")
+    }
   })
 })

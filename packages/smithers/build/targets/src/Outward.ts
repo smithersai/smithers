@@ -17,6 +17,10 @@
  *   granted. Package mode has no approval store, so the refusal is the
  *   honest answer there and the invocation has no side effect to undo.
  *
+ * No rule has an outward transport yet. The package planner refuses each
+ * one as not implemented, before this gate or any rule gate runs, so a
+ * plannable outward target never spends a gate run on a certain failure.
+ *
  * This generalises the `Github.Pr` gate that shipped first; that rule keeps
  * its own named error for compatibility and this module is what every rule
  * added afterwards uses.
@@ -122,22 +126,4 @@ export const refuse = (requirements: Requirements, invocation: Invocation): Refu
     )
   }
   return undefined
-}
-
-/**
- * Runs the gate and refuses everything past it.
- *
- * Passing the gate is not success: the outward action itself is not
- * implemented by this executor, and saying so loudly is the no-fake-green
- * rule. Callers that do implement the action call {@link refuse} instead.
- *
- * @category execution
- * @since 0.1.0
- */
-export const act = (requirements: Requirements, invocation: Invocation): never => {
-  const refusal = refuse(requirements, invocation)
-  if (refusal !== undefined) throw refusal
-  throw new Error(
-    `NotImplemented: ${requirements.rule} passed its refusal gate, and performing the outward action is not implemented`
-  )
 }

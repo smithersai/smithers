@@ -163,7 +163,8 @@ sees it.
 `Outward` is the shared refusal gate for the five rules that push bytes to
 somebody else's machine. It reads declarations only: a required credential the
 declaration never names is refused here, and a variable that is declared but
-unset is refused later, at the transport boundary.
+unset is refused later, at the transport boundary. No outward rule has a
+transport yet, so the package planner refuses each one before this gate runs.
 
 ## Workspace toolchains
 
