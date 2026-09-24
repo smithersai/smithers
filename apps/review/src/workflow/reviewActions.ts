@@ -1,3 +1,4 @@
+import { withDefault } from "../schema/withDefault.ts";
 /**
  * The review flow's non-model steps.
  *
@@ -228,10 +229,13 @@ export const RenderWalkthrough = Action.make("smithers-review/RenderWalkthrough"
     target: ReviewTarget,
     changes: Changes,
     review: ReviewRunOutput,
+    narrateFailure: withDefault(Schema.String, ""),
+    quizFailure: withDefault(Schema.String, ""),
     story: Schema.NullOr(Story),
     quiz: Schema.NullOr(Quiz),
   },
   success: Schema.Struct({
+    review: ReviewRunOutput,
     walkthrough: WalkthroughOutput,
     story: Story,
     quiz: Schema.NullOr(Quiz),
@@ -245,8 +249,17 @@ export const RenderWalkthrough = Action.make("smithers-review/RenderWalkthrough"
  * @category layers
  */
 export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
-  ({ changes, input, quiz: rawQuiz, review, story: rawStory, target }) =>
+  ({ changes, input, quiz: rawQuiz, review: originalReview, story: rawStory, target, narrateFailure, quizFailure }) =>
     Effect.promise(async () => {
+      const warnings = [
+        ...(narrateFailure ? [{ file: "", type: "narrator_error", message: narrateFailure }] : []),
+        ...(quizFailure ? [{ file: "", type: "quiz_error", message: quizFailure }] : []),
+      ];
+      const review = warnings.length === 0 ? originalReview : {
+        ...originalReview,
+        status: originalReview.status === "success" ? "completed_with_warnings" as const : originalReview.status,
+        warnings: [...originalReview.warnings, ...warnings],
+      };
       const story = normalizeStory(rawStory, changes.files);
       const impact = assessChangeImpact(changes.files, review.comments);
       const quiz = rawQuiz
@@ -281,6 +294,7 @@ export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
       const outPath = walkthroughPath(target.repoDir, input.out);
       const artifactPath = writeWalkthroughArtifact(outPath, html);
       return {
+        review,
         walkthrough: {
           path: outPath,
           artifactPath,

@@ -1,3 +1,4 @@
+import { CurrentReviewFile } from "../workflow/currentReviewFile.ts";
 /**
  * Live stderr progress for a review run.
  *
@@ -26,9 +27,9 @@ import * as Layer from "effect/Layer";
 export interface ProgressReporter {
   /** The `EventSink` layer that feeds this reporter. */
   readonly layer: Layer.Layer<EventSink.EventSink>;
-  /** Model turns opened so far, by seat. */
+  /** Model turns opened so far, by seat and file. */
   readonly turns: () => ReadonlyMap<string, number>;
-  /** Total prompt and completion tokens the run settled. */
+  /** Prompt and completion tokens observed by this invocation. */
   readonly tokens: () => { readonly input: number; readonly output: number };
 }
 
@@ -49,12 +50,14 @@ export function createProgressReporter(options: {
   let output = 0;
 
   const emit = (event: AgentEvent.AgentEvent): Effect.Effect<void> =>
-    Effect.sync(() => {
+    Effect.gen(function*() {
+      const file = yield* CurrentReviewFile;
       switch (event._tag) {
         case "turn-opened": {
-          const seen = (turns.get(event.seat) ?? 0) + 1;
-          turns.set(event.seat, seen);
-          options.write(`${event.seat}: turn ${seen}`);
+          const label = file ? `${event.seat} ${file}` : event.seat;
+          const seen = (turns.get(label) ?? 0) + 1;
+          turns.set(label, seen);
+          options.write(`${label}: turn ${seen}`);
           return;
         }
         case "model-settled": {

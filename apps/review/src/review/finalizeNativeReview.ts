@@ -153,14 +153,14 @@ export function finalizeNativeReview(
   }
   const finalComments = sortComments(deduped.comments);
 
-  // Agents fabricate token counts in their structured output; report zeros rather
+  // Agents fabricate token counts in their structured output; leave usage unknown rather
   // than presenting fiction as telemetry in a metered product.
   const summary = decodeSummary({
     filesReviewed: prepared.reviewableFiles,
     comments: finalComments.length,
-    totalTokens: 0,
-    inputTokens: 0,
-    outputTokens: 0,
+    totalTokens: null,
+    inputTokens: null,
+    outputTokens: null,
     elapsed: "",
   });
   const status =

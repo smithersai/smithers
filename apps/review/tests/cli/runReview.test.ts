@@ -42,6 +42,8 @@ test.each(["completed_with_warnings", "failed"] as const)("CLI reports warnings 
     expect(lines.join("\n")).toContain(warning.message);
     expect(lines.join("\n")).toContain("verifier_error");
     expect(uploaded).toBe("this run");
+    expect(lines.join("\n")).toContain("tokens observed: 0 input, 0 output");
+    expect(JSON.parse(readFileSync(join(dir, "summary.json"), "utf8")).tokens).toEqual({ input: 0, output: 0, total: 0 });
     expect(JSON.parse(readFileSync(join(dir, "summary.json"), "utf8")).warnings).toEqual([warning]);
     expect(exit).toHaveBeenCalledWith(status === "failed" ? 1 : 0);
   } finally {

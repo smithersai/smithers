@@ -222,6 +222,9 @@ export async function runReview(args: ReviewArgs): Promise<void> {
     return failRun(`smithers-review: run ${runId} failed: ${(error as Error)?.message ?? String(error)}`);
   }
 
+  const observed = reporter.tokens();
+  const tokens = { ...observed, total: observed.input + observed.output };
+  console.error(`[smithers-review] tokens observed: ${tokens.input} input, ${tokens.output} output`);
   const walkthrough = result.walkthrough;
   const review = result.review;
 
@@ -345,6 +348,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
           walkthroughUrl: shareUrl,
           publishError,
           failedFileReviews,
+          tokens,
           impact: impactLevel,
           questions: questionCount,
         }),

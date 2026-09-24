@@ -74,8 +74,13 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
         background: input.background,
         mode: target.mode,
         ref: target.ref,
-      }).pipe(Node.catch({ onFailure: () => Node.succeed(null) }))
-      : Node.succeed(null);
+      }).pipe(
+        Node.map((value) => ({ value, failure: "" })),
+        Node.catch({ onFailure: (error) => Node.succeed(error).pipe(
+          Node.map((failure) => ({ value: null, failure: failure.message })),
+        ) }),
+      )
+      : Node.succeed({ value: null, failure: "" });
     const quiz = quizzing
       ? QuizChanges.call({
         timeout: input.timeout,
@@ -83,8 +88,13 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
         findings: review.comments,
         impact: { level: impact.level, reasons: impact.reasons },
         background: input.background,
-      }).pipe(Node.catch({ onFailure: () => Node.succeed(null) }))
-      : Node.succeed(null);
+      }).pipe(
+        Node.map((value) => ({ value, failure: "" })),
+        Node.catch({ onFailure: (error) => Node.succeed(error).pipe(
+          Node.map((failure) => ({ value: null, failure: failure.message })),
+        ) }),
+      )
+      : Node.succeed({ value: null, failure: "" });
     return Node.all({ story, quiz }).pipe(
       Node.bindPlanned((narrated) =>
         RenderWalkthrough.call({
@@ -92,13 +102,15 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
           target,
           changes,
           review,
-          story: narrated.story,
-          quiz: narrated.quiz,
+          story: narrated.story.value,
+          quiz: narrated.quiz.value,
+          narrateFailure: narrated.story.failure,
+          quizFailure: narrated.quiz.failure,
         })
       ),
       Node.map((rendered) => ({
         target,
-        review,
+        review: rendered.review,
         walkthrough: rendered.walkthrough,
         story: rendered.story,
         quiz: rendered.quiz,

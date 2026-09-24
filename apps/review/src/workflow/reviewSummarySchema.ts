@@ -10,9 +10,9 @@ import { withDefault } from "../schema/withDefault.ts";
 export const ReviewSummary = Schema.Struct({
   filesReviewed: withDefault(Schema.Number, 0),
   comments: withDefault(Schema.Number, 0),
-  totalTokens: withDefault(Schema.Number, 0),
-  inputTokens: withDefault(Schema.Number, 0),
-  outputTokens: withDefault(Schema.Number, 0),
+  totalTokens: withDefault(Schema.NullOr(Schema.Number), null),
+  inputTokens: withDefault(Schema.NullOr(Schema.Number), null),
+  outputTokens: withDefault(Schema.NullOr(Schema.Number), null),
   elapsed: withDefault(Schema.String, ""),
 });
 

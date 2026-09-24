@@ -83,4 +83,6 @@ The steps call two sibling directories:
 Every model step is wrapped in `Node.catch`. A file review that fails becomes a
 `subtask_error` warning against that file, a verifier that fails leaves the
 findings unverified with a `verifier_error` warning, and a narrator that fails
-falls back to the deterministic story. 0.x spelled all three `continueOnFail`.
+falls back to the deterministic story with a `narrator_error` warning. A quiz
+failure produces `quiz_error`. Rendering returns the updated review so every
+reporting surface receives these warnings.

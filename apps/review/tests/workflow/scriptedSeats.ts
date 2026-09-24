@@ -65,6 +65,7 @@ export function scriptedModel(answer: Answer): Model.Model {
           ModelEvent.ModelEvent.TextStart({ type: "text-start", id: "cell" }),
           ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "cell", text: "```cell\n" + cell + "\n```" }),
           ModelEvent.ModelEvent.TextEnd({ type: "text-end", id: "cell" }),
+          ModelEvent.ModelEvent.Usage({ inputTokens: 100, outputTokens: 20 }),
           ModelEvent.ModelEvent.Settle({ type: "settle", stopReason: "stop" }),
         ]);
       })),

@@ -1,9 +1,10 @@
+import { createProgressReporter } from "../../src/cli/createProgressReporter.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Layer } from "effect";
 import { TestClock } from "effect/testing";
 import { Review } from "../../src/workflow/reviewFlow.ts";
 import { layerMemory } from "../../src/workflow/reviewLayer.ts";
@@ -100,12 +101,13 @@ const runReview = (
   repo: string,
   input: ReviewOverrides,
   answer: (ask: string) => unknown,
+  reporter = createProgressReporter({ write: () => {} }),
 ) =>
   Effect.runPromise(
     Review.execute({ repo, ...input } as Parameters<typeof Review.execute>[0], {
       executionId: `review-test-${Math.random()}`,
     }).pipe(
-      Effect.provide(layerMemory(scriptedSeats(answer), process.env)),
+      Effect.provide(layerMemory(scriptedSeats(answer), process.env).pipe(Layer.provideMerge(reporter.layer))),
       Effect.orDie,
     ),
   );
@@ -268,10 +270,15 @@ describe("the review flow", () => {
         expect(result.review.status).toBe("completed_with_warnings");
         expect(result.review.warnings.find((warning) => warning.type === "verifier_error")?.message).toContain("timed out after 1 minute(s)");
       } else if (seat === "narrate") {
+        expect(result.review.warnings.some((warning) => warning.type === "narrator_error")).toBe(true);
         expect(result.story.chapters.length).toBeGreaterThan(0);
         expect(result.story.headline).not.toBe("Two bindings");
+    expect(result.review.status).toBe("completed_with_warnings");
+    expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "narrator_error" }));
+    expect(readFileSync(result.walkthrough.path, "utf8")).toContain("narrator_error");
       } else {
         expect(result.quiz).toBeNull();
+        expect(result.review.warnings.some((warning) => warning.type === "quiz_error")).toBe(true);
       }
     }
     expect(result.walkthrough.path).toBe(join(repo, "w.html"));
@@ -367,6 +374,9 @@ describe("the review flow", () => {
     expect(result.review.comments).toHaveLength(1);
     expect(result.story.chapters.length).toBeGreaterThan(0);
     expect(result.story.headline).not.toBe("Two bindings");
+    expect(result.review.status).toBe("completed_with_warnings");
+    expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "narrator_error" }));
+    expect(readFileSync(result.walkthrough.path, "utf8")).toContain("narrator_error");
   }, 120_000);
 
   test("--no-review skips the seats and reports the skipped status", async () => {
@@ -409,4 +419,25 @@ describe("the review flow", () => {
     expect(result.quiz?.questions).toHaveLength(1);
     expect(result.walkthrough.questions).toBe(1);
   }, 120_000);
+});
+
+
+test("live progress distinguishes concurrent file reviews and counts their usage", async () => {
+  const repo = tempRepo(2);
+  const lines: string[] = [];
+  const reporter = createProgressReporter({ write: (line) => lines.push(line) });
+  await runReview(repo, { narrate: false, quiz: "off", verify: false, out: join(repo, "w.html") }, answerFor(), reporter);
+  expect(lines.some((line) => line.includes("src/file0.ts") && line.includes("turn 1"))).toBe(true);
+  expect(lines.some((line) => line.includes("src/file1.ts") && line.includes("turn 1"))).toBe(true);
+  expect(reporter.tokens().input).toBeGreaterThan(0);
+});
+
+
+test("a quiz refusal reaches the result and walkthrough as a warning", async () => {
+  const repo = tempRepo(1);
+  const result = await runReview(repo, { narrate: false, quiz: "on", verify: false, out: join(repo, "w.html") }, answerFor({ refuse: new Set(["quiz"]) }));
+  expect(result.review.status).toBe("completed_with_warnings");
+  expect(result.review.warnings).toContainEqual(expect.objectContaining({ type: "quiz_error", message: "The cell frame failed" }));
+  expect(result.quiz).toBeNull();
+  expect(readFileSync(result.walkthrough.path, "utf8")).toContain("quiz_error");
 });

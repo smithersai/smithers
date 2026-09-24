@@ -65,3 +65,16 @@ read the current tree. A completed execution returns its recorded result.
 Use a fresh ID to review new changes. `--publish` and `--pr` reporting run
 again after recovery when supplied; these external effects are outside the
 durable review flow.
+
+
+File-review progress includes the path and that file's turn count. The final
+stderr line and JSON `tokens: { input, output, total }` report model usage
+observed during this CLI invocation. A fully replayed action emits no new
+usage; replayed events from an unfinished action may be observed again. These
+counts are diagnostics, not billing totals. Agent-written token totals are
+ignored; unmeasured review-summary usage is `null`.
+
+Narrator and quiz failures remain visible as `narrator_error` and `quiz_error`
+warnings in terminal output, the JSON summary, PR output, and the walkthrough.
+Findings remain available; narration uses its deterministic fallback and a
+failed quiz is omitted. A successful review becomes `completed_with_warnings`.

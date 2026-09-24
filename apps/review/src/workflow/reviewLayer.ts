@@ -1,3 +1,4 @@
+import { CurrentReviewFile } from "./currentReviewFile.ts"
 /**
  * The compositions a review run needs: one for a real host, one for a test.
  *
@@ -61,6 +62,7 @@ const withDeadline = <I, R>(action: {
       action: (payload) => Effect.suspend(() => {
         const { timeout, path } = Schema.decodeUnknownSync(deadlineInput)(payload)
         return original.action(payload).pipe(
+          Effect.provideService(CurrentReviewFile, path ?? ""),
           Effect.interruptible,
           Effect.timeoutOrElse({
             duration: Duration.minutes(timeout),
