@@ -128,9 +128,13 @@ const worker = {
     const started = Date.now()
     const cutoff = new Date(started - retentionDays * millisecondsPerDay).toISOString()
     try {
-      const removed = await pruneStaleEntries(env.CACHE_DATABASE, cutoff)
-      console.log(JSON.stringify({ event: "smithers.build.retention", removed, cutoff }))
-      record(env.CACHE_REQUEST_METRICS, "retention", "SCHEDULED", "ok", [Date.now() - started, removed])
+      const { backlog, removed } = await pruneStaleEntries(env.CACHE_DATABASE, cutoff)
+      console.log(JSON.stringify({ event: "smithers.build.retention", removed, backlog, cutoff }))
+      record(env.CACHE_REQUEST_METRICS, "retention", "SCHEDULED", "ok", [
+        Date.now() - started,
+        removed,
+        backlog ? 1 : 0
+      ])
     } catch (cause) {
       record(env.CACHE_REQUEST_METRICS, "retention", "SCHEDULED", "failed", [Date.now() - started, 0])
       // The allowlisted diagnostic is the record; the rethrown failure is what

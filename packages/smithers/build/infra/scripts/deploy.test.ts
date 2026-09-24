@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -43,6 +44,13 @@ beforeAll(async () => {
   directory = await realpath(await mkdtemp(NodePath.join(tmpdir(), "smithers-deploy-")))
   await write("exit-zero", "process.exit(0)\n")
   await write("exit-seven", "process.exit(7)\n")
+  // Records the argv the wrapper hands Alchemy, after the script path.
+  await write(
+    "record-argv",
+    `import { writeFileSync } from "node:fs"
+writeFileSync(process.env.SMITHERS_DEPLOY_ARGV_FILE, JSON.stringify(process.argv.slice(2)))
+`
+  )
   // The wrapper spawns [cli, "deploy", "alchemy.run.ts", ...args], so the
   // marker path this stub reports through is argv[4].
   await write(
@@ -150,6 +158,61 @@ describe("deploy wrapper", () => {
     },
     30_000
   )
+
+  it("drops the `--` separator pnpm forwards literally before Alchemy parses its flags", async () => {
+    const argvFile = NodePath.join(directory, "recorded-argv.json")
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    vi.stubEnv("SMITHERS_DEPLOY_ARGV_FILE", argvFile)
+    try {
+      // `pnpm run deploy -- --yes` runs `deploy.ts --stage prod -- --yes`.
+      const code = await deploy(["--stage", "prod", "--", "--yes"], {
+        cli: script("record-argv"),
+        cwd: directory,
+        stateDirectory: stateDirectory("argv-state"),
+        redact: async () => 0
+      })
+
+      expect(code).toBe(0)
+      expect(JSON.parse(readFileSync(argvFile, "utf8"))).toEqual(["deploy", "alchemy.run.ts", "--stage", "prod", "--yes"])
+    } finally {
+      vi.unstubAllEnvs()
+      stdout.mockRestore()
+    }
+  })
+
+  // The pinned CLI imports every provider at startup, so one provider that
+  // no longer loads under the pinned Effect breaks every deploy and plan.
+  it("boots the pinned Alchemy CLI", () => {
+    const { cli, cwd } = resolveDeployOptions({})
+    const help = spawnSync(process.execPath, [cli, "--help"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...process.env, NO_TRACK: "1" }
+    })
+
+    expect(help.stderr).not.toContain("is not a function")
+    expect(help.status).toBe(0)
+    expect(help.stdout).toContain("deploy")
+  }, 70_000)
+
+  it("loads the stack and stops at its own configuration on a dry run", () => {
+    const { cli, cwd } = resolveDeployOptions({})
+    const env: NodeJS.ProcessEnv = { ...process.env, CI: "1", NO_TRACK: "1" }
+    // Without the cache credentials the stack refuses before any provider call.
+    delete env.SMITHERS_CACHE_READ_TOKEN
+    delete env.SMITHERS_CACHE_WRITE_TOKEN
+    const dryRun = spawnSync(process.execPath, [cli, "deploy", "alchemy.run.ts", "--dry-run", "--stage", "test"], {
+      cwd,
+      encoding: "utf8",
+      timeout: 60_000,
+      env
+    })
+    const output = `${dryRun.stdout}${dryRun.stderr}`
+
+    expect(output).not.toMatch(/is not a function|Cannot find module|ERR_MODULE_NOT_FOUND|SyntaxError/)
+    expect(output).toContain("SMITHERS_CACHE_READ_TOKEN")
+  }, 70_000)
 
   it("drives the pinned Alchemy CLI from this directory and redacts real state by default", () => {
     const resolved = resolveDeployOptions({})

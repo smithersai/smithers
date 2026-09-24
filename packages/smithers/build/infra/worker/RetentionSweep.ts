@@ -9,7 +9,17 @@ interface KeyRow {
 }
 
 const retentionBatchRows = 500
-const maxRetentionBatches = 20
+
+/**
+ * How long one retention invocation keeps deleting.
+ *
+ * The budget stays well inside a daily cron invocation's wall-clock limit.
+ * An invocation that spends it reports a backlog instead of stopping silently.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const retentionBudgetMs = 60_000
 
 /**
  * How long an unread action-cache entry survives.
@@ -26,19 +36,50 @@ const maxRetentionBatches = 20
 export const retentionDays = 30
 
 /**
+ * What one retention invocation did.
+ *
+ * `backlog` is true when the invocation stopped at its time budget with rows
+ * still past the cutoff; the next scheduled run continues from there.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface RetentionResult {
+  readonly removed: number
+  readonly backlog: boolean
+}
+
+/**
+ * Substitutions for the retention clock.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export interface RetentionOptions {
+  readonly now?: (() => number) | undefined
+  readonly budgetMs?: number | undefined
+}
+
+/**
  * Deletes action-cache entries last read before `cutoff`, in bounded batches.
  *
  * `cutoff` is an ISO-8601 instant in the same rendering the table stores, so
  * the comparison is the lexicographic one the `last_accessed_at` index
- * supports. One invocation removes at most twenty batches; the next scheduled
- * run continues from where this one stopped.
+ * supports. Batches continue until one comes back short or the time budget is
+ * spent; the next scheduled run continues from where this one stopped.
  *
  * @category storage
  * @since 0.1.0
  */
-export const pruneStaleEntries = async (database: D1Database, cutoff: string): Promise<number> => {
+export const pruneStaleEntries = async (
+  database: D1Database,
+  cutoff: string,
+  options: RetentionOptions = {}
+): Promise<RetentionResult> => {
+  const now = options.now ?? Date.now
+  const deadline = now() + (options.budgetMs ?? retentionBudgetMs)
   let removed = 0
-  for (let batch = 0; batch < maxRetentionBatches; batch += 1) {
+  for (;;) {
     const deleted = await database
       .prepare(
         `DELETE FROM smithers_build_cache_entry
@@ -54,7 +95,7 @@ export const pruneStaleEntries = async (database: D1Database, cutoff: string): P
       .all<KeyRow>()
     const count = deleted.results.length
     removed += count
-    if (count < retentionBatchRows) break
+    if (count < retentionBatchRows) return { removed, backlog: false }
+    if (now() >= deadline) return { removed, backlog: true }
   }
-  return removed
 }

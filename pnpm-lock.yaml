@@ -21,9 +21,14 @@ pnpmfileChecksum: sha256-WT4I+tYhRao6cP63D8ZRgAv3w9Cn2XcR/8xhNAyhVro=
 patchedDependencies:
   '@alchemy.run/cloudflare-runtime@2.0.0-beta.76': 859c30107955a689df9df79e69d26546d470db5ca1721b89d9877d89a9a32a87
   '@distilled.cloud/aws@1.0.0-rc.8': f0e808c78116209b2bbdee4dc3492d201fd206e773b845088daebd6c8836744f
+  '@distilled.cloud/axiom@1.0.0-rc.8': 5c91d69879a44f90b48132f8ff28a98048a3b7c2fee2c02a9b5a2610ba537e2e
   '@distilled.cloud/cloudflare@1.0.0-rc.8': 2fba05ed20f7e59d229e1205210f5b740d7078acab39a3d5cab99497394053f4
   '@distilled.cloud/core@1.0.0-rc.8': 2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261
-  alchemy@2.0.0-beta.76: c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610
+  '@distilled.cloud/fly-io@1.0.0-rc.8': bcd05255dbb48a45ab036ec174935f2e0690bc4a2137c1485aabeb49208f3342
+  '@distilled.cloud/hetzner@1.0.0-rc.8': 294f67cc5a8c67fbb56b91b93c08748d72f0053d9ace5ff8d7dd974296715ccd
+  '@distilled.cloud/planetscale@1.0.0-rc.8': fad9c71404c23d3349ba06ea43f4fc67b76bf5adc29e261db278e2c27acd2ddf
+  '@distilled.cloud/railway@1.0.0-rc.8': 6abc90680fb890e0a54e2e44abbd6adc64ad9c073aff34a536c1b2dd0146e3f2
+  alchemy@2.0.0-beta.76: c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293
 
 importers:
 
@@ -312,7 +317,7 @@ importers:
         version: 26.4.1
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       bun-types:
         specifier: ^1.4.0
         version: 1.4.0
@@ -340,7 +345,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -362,7 +367,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -384,7 +389,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -406,7 +411,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -428,7 +433,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -450,7 +455,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -472,7 +477,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -494,7 +499,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -516,7 +521,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -538,7 +543,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -560,7 +565,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -582,7 +587,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -604,7 +609,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -626,7 +631,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -648,7 +653,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -670,7 +675,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -692,7 +697,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -714,7 +719,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -736,7 +741,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -758,7 +763,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -780,7 +785,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -802,7 +807,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -824,7 +829,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -846,7 +851,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -868,7 +873,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -890,7 +895,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -912,7 +917,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -934,7 +939,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -956,7 +961,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -978,7 +983,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1000,7 +1005,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1022,7 +1027,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1044,7 +1049,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1066,7 +1071,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1088,7 +1093,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1110,7 +1115,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1132,7 +1137,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1154,7 +1159,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1176,7 +1181,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1198,7 +1203,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1220,7 +1225,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1232,7 +1237,7 @@ importers:
         version: 0.42.0(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(astro@7.3.1(@astrojs/markdown-remark@7.3.0(supports-color@10.2.2))(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.4.1)(aws4fetch@1.0.20)(ioredis@5.11.1(supports-color@10.2.2))(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(supports-color@10.2.2)(typescript@5.9.3)
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
 
   apps/docs/smithers-patterns:
     dependencies:
@@ -1251,7 +1256,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1273,7 +1278,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1295,7 +1300,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1317,7 +1322,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1339,7 +1344,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1361,7 +1366,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1383,7 +1388,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1405,7 +1410,7 @@ importers:
         version: link:../shared
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -1485,7 +1490,7 @@ importers:
         version: 26.4.1
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       bun-types:
         specifier: ^1.4.0
         version: 1.4.0
@@ -3620,7 +3625,7 @@ importers:
         version: 5.0.0(vitest@5.0.0)
       alchemy:
         specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+        version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       dprint:
         specifier: 0.55.2
         version: 0.55.2
@@ -16158,7 +16163,7 @@ snapshots:
       effect: 4.0.0-rc.115
       fast-xml-parser: 5.11.1
 
-  '@distilled.cloud/axiom@1.0.0-rc.8(effect@4.0.0-rc.115)':
+  '@distilled.cloud/axiom@1.0.0-rc.8(patch_hash=5c91d69879a44f90b48132f8ff28a98048a3b7c2fee2c02a9b5a2610ba537e2e)(effect@4.0.0-rc.115)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
@@ -16172,12 +16177,12 @@ snapshots:
     dependencies:
       effect: 4.0.0-rc.115
 
-  '@distilled.cloud/fly-io@1.0.0-rc.8(effect@4.0.0-rc.115)':
+  '@distilled.cloud/fly-io@1.0.0-rc.8(patch_hash=bcd05255dbb48a45ab036ec174935f2e0690bc4a2137c1485aabeb49208f3342)(effect@4.0.0-rc.115)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
 
-  '@distilled.cloud/hetzner@1.0.0-rc.8(effect@4.0.0-rc.115)':
+  '@distilled.cloud/hetzner@1.0.0-rc.8(patch_hash=294f67cc5a8c67fbb56b91b93c08748d72f0053d9ace5ff8d7dd974296715ccd)(effect@4.0.0-rc.115)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
@@ -16187,12 +16192,12 @@ snapshots:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
 
-  '@distilled.cloud/planetscale@1.0.0-rc.8(effect@4.0.0-rc.115)':
+  '@distilled.cloud/planetscale@1.0.0-rc.8(patch_hash=fad9c71404c23d3349ba06ea43f4fc67b76bf5adc29e261db278e2c27acd2ddf)(effect@4.0.0-rc.115)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
 
-  '@distilled.cloud/railway@1.0.0-rc.8(effect@4.0.0-rc.115)':
+  '@distilled.cloud/railway@1.0.0-rc.8(patch_hash=6abc90680fb890e0a54e2e44abbd6adc64ad9c073aff34a536c1b2dd0146e3f2)(effect@4.0.0-rc.115)':
     dependencies:
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
       effect: 4.0.0-rc.115
@@ -20011,7 +20016,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3):
+  alchemy@2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.76(patch_hash=859c30107955a689df9df79e69d26546d470db5ca1721b89d9877d89a9a32a87)(@distilled.cloud/cloudflare@1.0.0-rc.8(patch_hash=2fba05ed20f7e59d229e1205210f5b740d7078acab39a3d5cab99497394053f4)(effect@4.0.0-rc.115))(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(effect@4.0.0-rc.115)(rolldown@1.2.5)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
       '@alchemy.run/floci': 2.0.0-beta.76(effect@4.0.0-rc.115)
@@ -20019,14 +20024,14 @@ snapshots:
       '@aws-sdk/credential-providers': 3.1125.0
       '@clack/prompts': 1.7.0
       '@distilled.cloud/aws': 1.0.0-rc.8(patch_hash=f0e808c78116209b2bbdee4dc3492d201fd206e773b845088daebd6c8836744f)(effect@4.0.0-rc.115)
-      '@distilled.cloud/axiom': 1.0.0-rc.8(effect@4.0.0-rc.115)
+      '@distilled.cloud/axiom': 1.0.0-rc.8(patch_hash=5c91d69879a44f90b48132f8ff28a98048a3b7c2fee2c02a9b5a2610ba537e2e)(effect@4.0.0-rc.115)
       '@distilled.cloud/cloudflare': 1.0.0-rc.8(patch_hash=2fba05ed20f7e59d229e1205210f5b740d7078acab39a3d5cab99497394053f4)(effect@4.0.0-rc.115)
       '@distilled.cloud/core': 1.0.0-rc.8(patch_hash=2e74e125c7aa7cbae55cc1cafa78290b12a0b2b6ac90b98d144ee8fe6b8de261)(effect@4.0.0-rc.115)
-      '@distilled.cloud/fly-io': 1.0.0-rc.8(effect@4.0.0-rc.115)
-      '@distilled.cloud/hetzner': 1.0.0-rc.8(effect@4.0.0-rc.115)
+      '@distilled.cloud/fly-io': 1.0.0-rc.8(patch_hash=bcd05255dbb48a45ab036ec174935f2e0690bc4a2137c1485aabeb49208f3342)(effect@4.0.0-rc.115)
+      '@distilled.cloud/hetzner': 1.0.0-rc.8(patch_hash=294f67cc5a8c67fbb56b91b93c08748d72f0053d9ace5ff8d7dd974296715ccd)(effect@4.0.0-rc.115)
       '@distilled.cloud/neon': 1.0.0-rc.8(effect@4.0.0-rc.115)
-      '@distilled.cloud/planetscale': 1.0.0-rc.8(effect@4.0.0-rc.115)
-      '@distilled.cloud/railway': 1.0.0-rc.8(effect@4.0.0-rc.115)
+      '@distilled.cloud/planetscale': 1.0.0-rc.8(patch_hash=fad9c71404c23d3349ba06ea43f4fc67b76bf5adc29e261db278e2c27acd2ddf)(effect@4.0.0-rc.115)
+      '@distilled.cloud/railway': 1.0.0-rc.8(patch_hash=6abc90680fb890e0a54e2e44abbd6adc64ad9c073aff34a536c1b2dd0146e3f2)(effect@4.0.0-rc.115)
       '@effect/sql-d1': 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@effect/sql-sqlite-do': 4.0.0-rc.115(effect@4.0.0-rc.115)
       '@effect/vitest': 4.0.0-rc.115(effect@4.0.0-rc.115)(vitest@5.0.0)

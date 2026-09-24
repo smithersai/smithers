@@ -1,0 +1,28 @@
+diff --git a/lib/credentials.js b/lib/credentials.js
+--- a/lib/credentials.js
++++ b/lib/credentials.js
+@@ -27,8 +27,8 @@
+ const envConfig = EffectConfig.all({
+     // `HCLOUD_TOKEN` / `HCLOUD_ENDPOINT` are what the `hcloud` CLI, the
+     // Terraform provider and the official Go library read.
+-    token: EffectConfig.string("HCLOUD_TOKEN"),
+-    apiBaseUrl: EffectConfig.string("HCLOUD_ENDPOINT").pipe(EffectConfig.withDefault(DEFAULT_API_BASE_URL)),
++    token: EffectConfig.String("HCLOUD_TOKEN"),
++    apiBaseUrl: EffectConfig.String("HCLOUD_ENDPOINT").pipe(EffectConfig.withDefault(DEFAULT_API_BASE_URL)),
+ });
+ export const CredentialsFromEnv = Layer.succeed(Credentials, envConfig.pipe(Effect.mapError(() => new ConfigError({
+     message: "HCLOUD_TOKEN environment variable is required",
+diff --git a/src/credentials.ts b/src/credentials.ts
+--- a/src/credentials.ts
++++ b/src/credentials.ts
+@@ -37,8 +37,8 @@
+ const envConfig = EffectConfig.all({
+   // `HCLOUD_TOKEN` / `HCLOUD_ENDPOINT` are what the `hcloud` CLI, the
+   // Terraform provider and the official Go library read.
+-  token: EffectConfig.string("HCLOUD_TOKEN"),
+-  apiBaseUrl: EffectConfig.string("HCLOUD_ENDPOINT").pipe(
++  token: EffectConfig.String("HCLOUD_TOKEN"),
++  apiBaseUrl: EffectConfig.String("HCLOUD_ENDPOINT").pipe(
+     EffectConfig.withDefault(DEFAULT_API_BASE_URL),
+   ),
+ });

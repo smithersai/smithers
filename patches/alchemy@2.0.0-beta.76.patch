@@ -186,10 +186,35 @@ index c38ed7595823900a8d9803487c60dde3d3c63c64..640ec216b67d1eedd0f87e38e4878308
      envFile,
      profile: awsProfile,
 diff --git a/lib/Cli/commands/cloudflare.js b/lib/Cli/commands/cloudflare.js
-index d71a1f2acb82ec6d27310637626bdb22192f499e..26b3cab76ca7ac12deee6301b11e666ff3a1e8dd 100644
 --- a/lib/Cli/commands/cloudflare.js
 +++ b/lib/Cli/commands/cloudflare.js
-@@ -203,13 +203,13 @@ const createTokenCommand = Command.make("create-token", {
+@@ -40,9 +40,9 @@
+     });
+     return Layer.mergeAll(cf, ConfigProvider.layer(withProfileOverride(yield* loadConfigProvider(envFileOpt), profileName)), logger);
+ });
+-const cloudflareForce = Flag.boolean("force").pipe(Flag.withDescription("Force a full redeploy even if the state-store worker already exists. " +
++const cloudflareForce = Flag.Boolean("force").pipe(Flag.withDescription("Force a full redeploy even if the state-store worker already exists. " +
+     "Without this flag, an existing worker is adopted and only its credentials are refreshed."), Flag.withDefault(false));
+-const cloudflareWorkerName = Flag.string("worker-name").pipe(Flag.withDescription("Override the default state-store worker name (advanced; only needed for multiple state stores per account)."), Flag.optional, Flag.map(Option.getOrUndefined));
++const cloudflareWorkerName = Flag.String("worker-name").pipe(Flag.withDescription("Override the default state-store worker name (advanced; only needed for multiple state stores per account)."), Flag.optional, Flag.map(Option.getOrUndefined));
+ const bootstrapCommand = Command.make("bootstrap", {
+     envFile,
+     profile,
+@@ -159,10 +159,10 @@
+         required: true,
+     });
+ });
+-const allPermissionsFlag = Flag.boolean("all-permissions").pipe(Flag.withDescription("Grant the token EVERY Cloudflare permission group (a 'god token'). " +
++const allPermissionsFlag = Flag.Boolean("all-permissions").pipe(Flag.withDescription("Grant the token EVERY Cloudflare permission group (a 'god token'). " +
+     "Use with care — it has full access to your account."), Flag.withDefault(false));
+-const tokenNameFlag = Flag.string("name").pipe(Flag.withDescription("Name for the API token. Defaults to 'alchemy' (or 'alchemy-all-permissions')."), Flag.optional, Flag.map(Option.getOrUndefined));
+-const tokenAccountIdFlag = Flag.string("account-id").pipe(Flag.withDescription("Cloudflare account ID(s) to scope the token to (comma-separated for " +
++const tokenNameFlag = Flag.String("name").pipe(Flag.withDescription("Name for the API token. Defaults to 'alchemy' (or 'alchemy-all-permissions')."), Flag.optional, Flag.map(Option.getOrUndefined));
++const tokenAccountIdFlag = Flag.String("account-id").pipe(Flag.withDescription("Cloudflare account ID(s) to scope the token to (comma-separated for " +
+     "multiple). If omitted, you'll be prompted to select from your accounts."), Flag.optional, Flag.map(Option.match({
+     onNone: () => undefined,
+     onSome: (v) => v
+@@ -203,13 +203,13 @@
          // The Global API Key is a dashboard-only secret — there is no API to
          // fetch it — so read it from the environment or prompt for it. It is
          // used only to create the token and is never stored.
@@ -205,6 +230,19 @@ index d71a1f2acb82ec6d27310637626bdb22192f499e..26b3cab76ca7ac12deee6301b11e666f
          const email = envEmail ??
              (yield* Clank.text({
                  message: "Cloudflare account email",
+@@ -335,9 +335,9 @@
+         }
+     }).pipe(Effect.provide(configProvider));
+ })));
+-const tailFlag = Flag.boolean("tail").pipe(Flag.withDescription("Stream logs in real time via the Cloudflare tail websocket instead of fetching past entries."), Flag.withDefault(false));
+-const limitFlag = Flag.integer("limit").pipe(Flag.withDescription("Number of log entries to fetch (ignored with --tail)"), Flag.withDefault(100));
+-const sinceFlag = Flag.string("since").pipe(Flag.withDescription("Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')"), Flag.optional, Flag.map(Option.getOrUndefined));
++const tailFlag = Flag.Boolean("tail").pipe(Flag.withDescription("Stream logs in real time via the Cloudflare tail websocket instead of fetching past entries."), Flag.withDefault(false));
++const limitFlag = Flag.Int("limit").pipe(Flag.withDescription("Number of log entries to fetch (ignored with --tail)"), Flag.withDefault(100));
++const sinceFlag = Flag.String("since").pipe(Flag.withDescription("Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')"), Flag.optional, Flag.map(Option.getOrUndefined));
+ /**
+  * `alchemy cloudflare state logs` — get or tail logs from the
+  * `alchemy-state-store` Worker on the user's account. Lets us debug
 diff --git a/lib/Cli/commands/deploy.js b/lib/Cli/commands/deploy.js
 index 3d8f9595dcbc5c8390ac1d9dbd9102d46e303607..13bdb39b20795360773c1e8811f7ab939cfcef3f 100644
 --- a/lib/Cli/commands/deploy.js
@@ -219,10 +257,18 @@ index 3d8f9595dcbc5c8390ac1d9dbd9102d46e303607..13bdb39b20795360773c1e8811f7ab93
  const runStack = Effect.fn(function* ({ main, stage, envFile, profile, dryRun = false, force = false, yes = false, destroy = false, dev = false, adopt = false, }) {
      const stackEffect = yield* importStack(main);
 diff --git a/lib/Cli/commands/login.js b/lib/Cli/commands/login.js
-index 1e411939b33cbad1e20406136a6de274c633cfe3..ccd7c6104c0848ad177e33170bf9d9b9dbc0f9ee 100644
 --- a/lib/Cli/commands/login.js
 +++ b/lib/Cli/commands/login.js
-@@ -17,7 +17,7 @@ const loginConfigure = Flag.boolean("configure").pipe(Flag.withDescription("Run
+@@ -9,7 +9,7 @@
+ import { AlchemyProfile } from "../../Auth/Profile.js";
+ import * as Clank from "../../Util/Clank.js";
+ import { buildBuiltinAuthProviders, buildStackProviders, envFile, instrumentCommand, printProfile, profile, } from "./_shared.js";
+-const loginConfigure = Flag.boolean("configure").pipe(Flag.withDescription("Run the provider's interactive configure step before logging in"), Flag.withDefault(false));
++const loginConfigure = Flag.Boolean("configure").pipe(Flag.withDescription("Run the provider's interactive configure step before logging in"), Flag.withDefault(false));
+ /**
+  * Stack entrypoint whose `providers()` layer selects which auth providers
+  * to log in with. Optional: when omitted and no `alchemy.run.ts` exists in
+@@ -17,7 +17,7 @@
   * provider, so logging in (and refreshing credentials) works from any
   * folder.
   */
@@ -231,7 +277,7 @@ index 1e411939b33cbad1e20406136a6de274c633cfe3..ccd7c6104c0848ad177e33170bf9d9b9
  export const loginCommand = Command.make("login", {
      main: loginMain,
      envFile,
-@@ -45,7 +45,7 @@ export const loginCommand = Command.make("login", {
+@@ -45,7 +45,7 @@
          }));
      }
      const profiles = yield* AlchemyProfile;
@@ -1289,10 +1335,54 @@ index 63283173d2730b86f4c227720cbdc9bda8046ff8..952da40d1cc64d6ce9dab78a1736219b
    Flag.withDefault(false),
  );
 diff --git a/src/Cli/commands/cloudflare.ts b/src/Cli/commands/cloudflare.ts
-index 8eaab97a79f01fd74513816a2b81537946bde513..bf1bf3518710706381fef8d08aba9dd255faaf07 100644
 --- a/src/Cli/commands/cloudflare.ts
 +++ b/src/Cli/commands/cloudflare.ts
-@@ -329,7 +329,7 @@ const createTokenCommand = Command.make(
+@@ -72,7 +72,7 @@
+     );
+   });
+ 
+-const cloudflareForce = Flag.boolean("force").pipe(
++const cloudflareForce = Flag.Boolean("force").pipe(
+   Flag.withDescription(
+     "Force a full redeploy even if the state-store worker already exists. " +
+       "Without this flag, an existing worker is adopted and only its credentials are refreshed.",
+@@ -80,7 +80,7 @@
+   Flag.withDefault(false),
+ );
+ 
+-const cloudflareWorkerName = Flag.string("worker-name").pipe(
++const cloudflareWorkerName = Flag.String("worker-name").pipe(
+   Flag.withDescription(
+     "Override the default state-store worker name (advanced; only needed for multiple state stores per account).",
+   ),
+@@ -252,7 +252,7 @@
+     });
+   });
+ 
+-const allPermissionsFlag = Flag.boolean("all-permissions").pipe(
++const allPermissionsFlag = Flag.Boolean("all-permissions").pipe(
+   Flag.withDescription(
+     "Grant the token EVERY Cloudflare permission group (a 'god token'). " +
+       "Use with care — it has full access to your account.",
+@@ -260,7 +260,7 @@
+   Flag.withDefault(false),
+ );
+ 
+-const tokenNameFlag = Flag.string("name").pipe(
++const tokenNameFlag = Flag.String("name").pipe(
+   Flag.withDescription(
+     "Name for the API token. Defaults to 'alchemy' (or 'alchemy-all-permissions').",
+   ),
+@@ -268,7 +268,7 @@
+   Flag.map(Option.getOrUndefined),
+ );
+ 
+-const tokenAccountIdFlag = Flag.string("account-id").pipe(
++const tokenAccountIdFlag = Flag.String("account-id").pipe(
+   Flag.withDescription(
+     "Cloudflare account ID(s) to scope the token to (comma-separated for " +
+       "multiple). If omitted, you'll be prompted to select from your accounts.",
+@@ -329,7 +329,7 @@
          // The Global API Key is a dashboard-only secret — there is no API to
          // fetch it — so read it from the environment or prompt for it. It is
          // used only to create the token and is never stored.
@@ -1301,7 +1391,7 @@ index 8eaab97a79f01fd74513816a2b81537946bde513..bf1bf3518710706381fef8d08aba9dd2
            Config.option,
            Config.map(Option.getOrUndefined),
          );
-@@ -341,7 +341,7 @@ const createTokenCommand = Command.make(
+@@ -341,7 +341,7 @@
              validate: (v) => (v.trim().length === 0 ? "Required" : undefined),
            }));
  
@@ -1310,6 +1400,29 @@ index 8eaab97a79f01fd74513816a2b81537946bde513..bf1bf3518710706381fef8d08aba9dd2
            Config.option,
            Config.map(Option.getOrUndefined),
          );
+@@ -533,19 +533,19 @@
+   ),
+ );
+ 
+-const tailFlag = Flag.boolean("tail").pipe(
++const tailFlag = Flag.Boolean("tail").pipe(
+   Flag.withDescription(
+     "Stream logs in real time via the Cloudflare tail websocket instead of fetching past entries.",
+   ),
+   Flag.withDefault(false),
+ );
+ 
+-const limitFlag = Flag.integer("limit").pipe(
++const limitFlag = Flag.Int("limit").pipe(
+   Flag.withDescription("Number of log entries to fetch (ignored with --tail)"),
+   Flag.withDefault(100),
+ );
+ 
+-const sinceFlag = Flag.string("since").pipe(
++const sinceFlag = Flag.String("since").pipe(
+   Flag.withDescription(
+     "Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')",
+   ),
 diff --git a/src/Cli/commands/deploy.ts b/src/Cli/commands/deploy.ts
 index 848d8c3da8bf82491297488ea812448a1fb82f58..cf440c417c37391231afa36b57727f2bbb72af69 100644
 --- a/src/Cli/commands/deploy.ts
@@ -1324,10 +1437,18 @@ index 848d8c3da8bf82491297488ea812448a1fb82f58..cf440c417c37391231afa36b57727f2b
      "Adopt pre-existing cloud resources that conflict with this stack instead of failing. " +
        "Useful for re-importing infrastructure into a fresh state store.",
 diff --git a/src/Cli/commands/login.ts b/src/Cli/commands/login.ts
-index c2d08bd05ccb25f8926f0936e6103eddddb8cf96..427815bea9a7211d3c7e05c8159d7236cebfebf1 100644
 --- a/src/Cli/commands/login.ts
 +++ b/src/Cli/commands/login.ts
-@@ -34,7 +34,7 @@ const loginConfigure = Flag.boolean("configure").pipe(
+@@ -20,7 +20,7 @@
+   profile,
+ } from "./_shared.ts";
+ 
+-const loginConfigure = Flag.boolean("configure").pipe(
++const loginConfigure = Flag.Boolean("configure").pipe(
+   Flag.withDescription(
+     "Run the provider's interactive configure step before logging in",
+   ),
+@@ -34,7 +34,7 @@
   * provider, so logging in (and refreshing credentials) works from any
   * folder.
   */
@@ -1336,7 +1457,7 @@ index c2d08bd05ccb25f8926f0936e6103eddddb8cf96..427815bea9a7211d3c7e05c8159d7236
    Argument.withDescription(
      "Stack entrypoint whose providers() to log in with, defaults to alchemy.run.ts (falls back to all built-in providers when absent)",
    ),
-@@ -83,7 +83,7 @@ export const loginCommand = Command.make(
+@@ -83,7 +83,7 @@
        }
  
        const profiles = yield* AlchemyProfile;
@@ -2067,3 +2188,266 @@ index 940a70aa7e0388ab450349c175de2702eff60ac6..8101939b1a2305d496dd1587d27dcd36
    Config.option,
  );
  
+diff --git a/lib/Cli/commands/state.js b/lib/Cli/commands/state.js
+--- a/lib/Cli/commands/state.js
++++ b/lib/Cli/commands/state.js
+@@ -21,10 +21,10 @@
+  * Useful for inspecting orphaned local state after a partially-failed
+  * bootstrap.
+  */
+-const localFlag = Flag.boolean("local").pipe(Flag.withDescription("Read from local .alchemy/state instead of the stack's configured state store"), Flag.withDefault(false));
+-const stackFlag = Flag.string("stack").pipe(Flag.withDescription("Stack name (e.g. AlchemyEffectWebsite)"));
+-const stageFlag = Flag.string("stage").pipe(Flag.withDescription("Stage name (e.g. dev, prod)"));
+-const fqnFlag = Flag.string("fqn").pipe(Flag.withDescription("Fully-qualified resource name"));
++const localFlag = Flag.Boolean("local").pipe(Flag.withDescription("Read from local .alchemy/state instead of the stack's configured state store"), Flag.withDefault(false));
++const stackFlag = Flag.String("stack").pipe(Flag.withDescription("Stack name (e.g. AlchemyEffectWebsite)"));
++const stageFlag = Flag.String("stage").pipe(Flag.withDescription("Stage name (e.g. dev, prod)"));
++const fqnFlag = Flag.String("fqn").pipe(Flag.withDescription("Fully-qualified resource name"));
+ /**
+  * Build the layer stack used by every `alchemy state ...` subcommand.
+  *
+@@ -156,8 +156,8 @@
+         yield* Console.log(lines.join("\n"));
+     }));
+ })));
+-const optionalStackFlag = Flag.string("stack").pipe(Flag.withDescription("Stack name to export. Omit to export ALL stacks in the store."), Flag.optional, Flag.map(Option.getOrUndefined));
+-const optionalStageFlag = Flag.string("stage").pipe(Flag.withDescription("Stage to export within the stack. Omit to export all stages."), Flag.optional, Flag.map(Option.getOrUndefined));
++const optionalStackFlag = Flag.String("stack").pipe(Flag.withDescription("Stack name to export. Omit to export ALL stacks in the store."), Flag.optional, Flag.map(Option.getOrUndefined));
++const optionalStageFlag = Flag.String("stage").pipe(Flag.withDescription("Stage to export within the stack. Omit to export all stages."), Flag.optional, Flag.map(Option.getOrUndefined));
+ /**
+  * Bulk state read: every matching resource record as one JSON
+  * document, so a whole estate is read in a single CLI invocation
+@@ -196,8 +196,8 @@
+         }, null, 2));
+     }));
+ })));
+-const clearStackFlag = Flag.string("stack").pipe(Flag.withDescription("Stack name to clear. Omit to clear ALL stacks in the store."), Flag.optional, Flag.map(Option.getOrUndefined));
+-const clearStageFlag = Flag.string("stage").pipe(Flag.withDescription("Stage to clear within the stack. Omit to clear all stages in the stack."), Flag.optional, Flag.map(Option.getOrUndefined));
++const clearStackFlag = Flag.String("stack").pipe(Flag.withDescription("Stack name to clear. Omit to clear ALL stacks in the store."), Flag.optional, Flag.map(Option.getOrUndefined));
++const clearStageFlag = Flag.String("stage").pipe(Flag.withDescription("Stage to clear within the stack. Omit to clear all stages in the stack."), Flag.optional, Flag.map(Option.getOrUndefined));
+ /**
+  * Destructive: removes resource state from the store. The actual cloud
+  * resources are NOT touched — this only affects what alchemy thinks
+diff --git a/lib/Cli/commands/logs.js b/lib/Cli/commands/logs.js
+--- a/lib/Cli/commands/logs.js
++++ b/lib/Cli/commands/logs.js
+@@ -14,8 +14,8 @@
+ import { AuthProviders } from "../../Auth/AuthProvider.js";
+ import { withProfileOverride } from "../../Auth/Profile.js";
+ import { envFile, formatLocalTimestamp, importStack, instrumentCommand, parseResourceFilter, parseSince, profile, resourceFilter, script, stage, TAIL_COLORS, TAIL_RESET, } from "./_shared.js";
+-const logsLimit = Flag.integer("limit").pipe(Flag.withDescription("Number of log entries to fetch"), Flag.withDefault(100));
+-const logsSince = Flag.string("since").pipe(Flag.withDescription("Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')"), Flag.optional, Flag.map(Option.getOrUndefined));
++const logsLimit = Flag.Int("limit").pipe(Flag.withDescription("Number of log entries to fetch"), Flag.withDefault(100));
++const logsSince = Flag.String("since").pipe(Flag.withDescription("Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')"), Flag.optional, Flag.map(Option.getOrUndefined));
+ export const logsCommand = Command.make("logs", {
+     main: script,
+     envFile,
+diff --git a/lib/Cli/commands/nuke.js b/lib/Cli/commands/nuke.js
+--- a/lib/Cli/commands/nuke.js
++++ b/lib/Cli/commands/nuke.js
+@@ -10,29 +10,29 @@
+ import { isNonInteractive } from "../selectCli.js";
+ import * as NukeUI from "../tui/components/Nuke.js";
+ import { buildStackProviders, dryRun, envFile, instrumentCommand, profile, script, yes, } from "./_shared.js";
+-const includeFlag = Flag.string("include").pipe(Flag.withDescription("Glob of provider IDs to include (e.g. 'Cloudflare.*' or 'Cloudflare.Worker'). " +
++const includeFlag = Flag.String("include").pipe(Flag.withDescription("Glob of provider IDs to include (e.g. 'Cloudflare.*' or 'Cloudflare.Worker'). " +
+     "Repeatable; when omitted, every provider is included."), Flag.atLeast(0));
+-const excludeFlag = Flag.string("exclude").pipe(Flag.withDescription("Glob of provider IDs to exclude (applied after --include). Repeatable."), Flag.atLeast(0));
+-const filterFlag = Flag.string("filter").pipe(Flag.withDescription("JavaScript expression evaluated with `resource` in scope " +
++const excludeFlag = Flag.String("exclude").pipe(Flag.withDescription("Glob of provider IDs to exclude (applied after --include). Repeatable."), Flag.atLeast(0));
++const filterFlag = Flag.String("filter").pipe(Flag.withDescription("JavaScript expression evaluated with `resource` in scope " +
+     '(e.g. \'resource.Type === "Cloudflare.Worker" && ' +
+     'resource.workerName.startsWith("alchemy-")\'). Any resource for which ' +
+     "an expression is truthy is SPARED. Repeatable."), Flag.atLeast(0));
+-const verboseFlag = Flag.boolean("verbose").pipe(Flag.withAlias("v"), Flag.withDescription("List every individual resource that will be deleted, not just per-provider counts."), Flag.withDefault(false));
+-const concurrencyFlag = Flag.integer("concurrency").pipe(Flag.withDescription("Max number of providers scanned/deleted in parallel (resources within a " +
++const verboseFlag = Flag.Boolean("verbose").pipe(Flag.withAlias("v"), Flag.withDescription("List every individual resource that will be deleted, not just per-provider counts."), Flag.withDefault(false));
++const concurrencyFlag = Flag.Int("concurrency").pipe(Flag.withDescription("Max number of providers scanned/deleted in parallel (resources within a " +
+     "provider are always deleted concurrently). Use 0 for unbounded. " +
+     "Default: 16 — unbounded tends to be slower because it triggers " +
+     "provider-side rate limiting and retry backoff."), Flag.withDefault(16), Flag.map((n) => (n <= 0 ? "unbounded" : n)));
+-const timeoutFlag = Flag.integer("timeout").pipe(Flag.withDescription("Per-provider timeout (seconds) for each list/delete call, so one slow or " +
++const timeoutFlag = Flag.Int("timeout").pipe(Flag.withDescription("Per-provider timeout (seconds) for each list/delete call, so one slow or " +
+     "hanging provider can't stall the whole run. Default: 120."), Flag.withDefault(120));
+-const independentFlag = Flag.boolean("independent").pipe(Flag.withDescription("Delete every resource independently instead of in coordinated passes. " +
++const independentFlag = Flag.Boolean("independent").pipe(Flag.withDescription("Delete every resource independently instead of in coordinated passes. " +
+     "In pass mode a single slow or hanging delete delays the next pass for " +
+     "everything; with --independent each resource retries its own delete " +
+     "with backoff, in parallel, until it succeeds or --retries is " +
+     "exhausted. Dependency violations resolve naturally as the blocking " +
+     "resources are deleted concurrently."), Flag.withDefault(false));
+-const retriesFlag = Flag.integer("retries").pipe(Flag.withDescription("With --independent: retries per resource after the initial delete " +
++const retriesFlag = Flag.Int("retries").pipe(Flag.withDescription("With --independent: retries per resource after the initial delete " +
+     "attempt (each attempt still bounded by --timeout). Default: 10."), Flag.withDefault(10));
+-const localFlag = Flag.boolean("local").pipe(Flag.withDescription("Enumerate and delete LOCAL (emulated) resources instead of real cloud " +
++const localFlag = Flag.Boolean("local").pipe(Flag.withDescription("Enumerate and delete LOCAL (emulated) resources instead of real cloud " +
+     "ones — the floci-emulated AWS account and the Cloudflare local " +
+     "runtime that `alchemy dev` provisions into. Only providers with a " +
+     "local implementation participate, so nothing in the real cloud is " +
+diff --git a/src/Cli/commands/state.ts b/src/Cli/commands/state.ts
+--- a/src/Cli/commands/state.ts
++++ b/src/Cli/commands/state.ts
+@@ -31,22 +31,22 @@
+  * Useful for inspecting orphaned local state after a partially-failed
+  * bootstrap.
+  */
+-const localFlag = Flag.boolean("local").pipe(
++const localFlag = Flag.Boolean("local").pipe(
+   Flag.withDescription(
+     "Read from local .alchemy/state instead of the stack's configured state store",
+   ),
+   Flag.withDefault(false),
+ );
+ 
+-const stackFlag = Flag.string("stack").pipe(
++const stackFlag = Flag.String("stack").pipe(
+   Flag.withDescription("Stack name (e.g. AlchemyEffectWebsite)"),
+ );
+ 
+-const stageFlag = Flag.string("stage").pipe(
++const stageFlag = Flag.String("stage").pipe(
+   Flag.withDescription("Stage name (e.g. dev, prod)"),
+ );
+ 
+-const fqnFlag = Flag.string("fqn").pipe(
++const fqnFlag = Flag.String("fqn").pipe(
+   Flag.withDescription("Fully-qualified resource name"),
+ );
+ 
+@@ -262,7 +262,7 @@
+   ),
+ );
+ 
+-const optionalStackFlag = Flag.string("stack").pipe(
++const optionalStackFlag = Flag.String("stack").pipe(
+   Flag.withDescription(
+     "Stack name to export. Omit to export ALL stacks in the store.",
+   ),
+@@ -270,7 +270,7 @@
+   Flag.map(Option.getOrUndefined),
+ );
+ 
+-const optionalStageFlag = Flag.string("stage").pipe(
++const optionalStageFlag = Flag.String("stage").pipe(
+   Flag.withDescription(
+     "Stage to export within the stack. Omit to export all stages.",
+   ),
+@@ -334,7 +334,7 @@
+   ),
+ );
+ 
+-const clearStackFlag = Flag.string("stack").pipe(
++const clearStackFlag = Flag.String("stack").pipe(
+   Flag.withDescription(
+     "Stack name to clear. Omit to clear ALL stacks in the store.",
+   ),
+@@ -342,7 +342,7 @@
+   Flag.map(Option.getOrUndefined),
+ );
+ 
+-const clearStageFlag = Flag.string("stage").pipe(
++const clearStageFlag = Flag.String("stage").pipe(
+   Flag.withDescription(
+     "Stage to clear within the stack. Omit to clear all stages in the stack.",
+   ),
+diff --git a/src/Cli/commands/logs.ts b/src/Cli/commands/logs.ts
+--- a/src/Cli/commands/logs.ts
++++ b/src/Cli/commands/logs.ts
+@@ -30,12 +30,12 @@
+   TAIL_RESET,
+ } from "./_shared.ts";
+ 
+-const logsLimit = Flag.integer("limit").pipe(
++const logsLimit = Flag.Int("limit").pipe(
+   Flag.withDescription("Number of log entries to fetch"),
+   Flag.withDefault(100),
+ );
+ 
+-const logsSince = Flag.string("since").pipe(
++const logsSince = Flag.String("since").pipe(
+   Flag.withDescription(
+     "Fetch logs since this time (e.g. '1h', '30m', '2024-01-01T00:00:00Z')",
+   ),
+diff --git a/src/Cli/commands/nuke.ts b/src/Cli/commands/nuke.ts
+--- a/src/Cli/commands/nuke.ts
++++ b/src/Cli/commands/nuke.ts
+@@ -25,7 +25,7 @@
+   yes,
+ } from "./_shared.ts";
+ 
+-const includeFlag = Flag.string("include").pipe(
++const includeFlag = Flag.String("include").pipe(
+   Flag.withDescription(
+     "Glob of provider IDs to include (e.g. 'Cloudflare.*' or 'Cloudflare.Worker'). " +
+       "Repeatable; when omitted, every provider is included.",
+@@ -33,14 +33,14 @@
+   Flag.atLeast(0),
+ );
+ 
+-const excludeFlag = Flag.string("exclude").pipe(
++const excludeFlag = Flag.String("exclude").pipe(
+   Flag.withDescription(
+     "Glob of provider IDs to exclude (applied after --include). Repeatable.",
+   ),
+   Flag.atLeast(0),
+ );
+ 
+-const filterFlag = Flag.string("filter").pipe(
++const filterFlag = Flag.String("filter").pipe(
+   Flag.withDescription(
+     "JavaScript expression evaluated with `resource` in scope " +
+       '(e.g. \'resource.Type === "Cloudflare.Worker" && ' +
+@@ -50,7 +50,7 @@
+   Flag.atLeast(0),
+ );
+ 
+-const verboseFlag = Flag.boolean("verbose").pipe(
++const verboseFlag = Flag.Boolean("verbose").pipe(
+   Flag.withAlias("v"),
+   Flag.withDescription(
+     "List every individual resource that will be deleted, not just per-provider counts.",
+@@ -58,7 +58,7 @@
+   Flag.withDefault(false),
+ );
+ 
+-const concurrencyFlag = Flag.integer("concurrency").pipe(
++const concurrencyFlag = Flag.Int("concurrency").pipe(
+   Flag.withDescription(
+     "Max number of providers scanned/deleted in parallel (resources within a " +
+       "provider are always deleted concurrently). Use 0 for unbounded. " +
+@@ -69,7 +69,7 @@
+   Flag.map((n): number | "unbounded" => (n <= 0 ? "unbounded" : n)),
+ );
+ 
+-const timeoutFlag = Flag.integer("timeout").pipe(
++const timeoutFlag = Flag.Int("timeout").pipe(
+   Flag.withDescription(
+     "Per-provider timeout (seconds) for each list/delete call, so one slow or " +
+       "hanging provider can't stall the whole run. Default: 120.",
+@@ -77,7 +77,7 @@
+   Flag.withDefault(120),
+ );
+ 
+-const independentFlag = Flag.boolean("independent").pipe(
++const independentFlag = Flag.Boolean("independent").pipe(
+   Flag.withDescription(
+     "Delete every resource independently instead of in coordinated passes. " +
+       "In pass mode a single slow or hanging delete delays the next pass for " +
+@@ -89,7 +89,7 @@
+   Flag.withDefault(false),
+ );
+ 
+-const retriesFlag = Flag.integer("retries").pipe(
++const retriesFlag = Flag.Int("retries").pipe(
+   Flag.withDescription(
+     "With --independent: retries per resource after the initial delete " +
+       "attempt (each attempt still bounded by --timeout). Default: 10.",
+@@ -97,7 +97,7 @@
+   Flag.withDefault(10),
+ );
+ 
+-const localFlag = Flag.boolean("local").pipe(
++const localFlag = Flag.Boolean("local").pipe(
+   Flag.withDescription(
+     "Enumerate and delete LOCAL (emulated) resources instead of real cloud " +
+       "ones — the floci-emulated AWS account and the Cloudflare local " +

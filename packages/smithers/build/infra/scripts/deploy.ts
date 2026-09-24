@@ -114,7 +114,10 @@ const runAlchemy = (
   new Promise((resolve, reject) => {
     let child: ChildProcess
     try {
-      child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...args], {
+      // pnpm forwards the `--` in `pnpm run deploy -- --yes` literally, and
+      // Alchemy reads every argument after it as a positional, so drop it.
+      const alchemyArgs = args.filter((arg) => arg !== "--")
+      child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",
         env: process.env,

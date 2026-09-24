@@ -100,7 +100,7 @@ CI=1 pnpm exec alchemy plan alchemy.run.ts --stage prod
 Apply it:
 
 ```sh
-CI=1 pnpm run deploy -- --yes
+CI=1 pnpm run deploy --yes
 ```
 
 The `CI=1` prefix is for the environment-token path. Omit it when you use an
@@ -294,9 +294,10 @@ The Worker writes one Analytics Engine datapoint per request to the dataset
 `findMissing`, `healthz`, or `other`) as the index, then the route class,
 method, and status as blobs and the duration in milliseconds as the first
 double. Each retention run writes one more under `retention`, with `ok` or
-`failed` as its outcome and the rows removed as the second double. The
-retention run also logs one JSON record, `{"event":"smithers.build.retention",
-"removed":...,"cutoff":...}`. Workers Logs keep every invocation log and
+`failed` as its outcome, the rows removed as the second double, and `1` as the
+third double when the run stopped with stale rows left. The retention run also
+logs one JSON record, `{"event":"smithers.build.retention","removed":...,
+"backlog":...,"cutoff":...}`. Workers Logs keep every invocation log and
 Workers Traces sample one request in ten.
 
 ## Retention and capacity
@@ -305,8 +306,14 @@ D1 holds 10 GB per database and an action-cache entry is up to 1 MiB, so an
 unpruned store would refuse every publication with `503` after roughly ten
 thousand entries. A cron trigger runs the Worker's `scheduled` handler daily;
 it deletes entries whose `last_accessed_at` is more than 30 days old, in
-bounded batches, using the LRU index the read path already maintains. Deleting
+batches of 500, using the LRU index the read path already maintains. Deleting
 a cold entry only costs the next build a cache miss.
+
+One run deletes batches until a batch comes back short or 60 seconds have
+passed. A run that stops at the 60-second budget logs `"backlog":true`, and
+the next daily run continues from the oldest remaining entry. Alert on
+`backlog` staying true across runs: stale rows are then accumulating faster
+than one run deletes them.
 
 R2 has no such ceiling and no scheduled reader, so artifact retention is the
 bucket's own lifecycle: an artifact expires 90 days after it was uploaded, and
@@ -320,6 +327,24 @@ miss, never a corrupt restore.
 
 `DELETE /ac/{keyDigest}` is the manual escape hatch for one entry; it removes
 the D1 row and never the R2 objects the entry named.
+
+## Roll back a deployment
+
+Alchemy deploys every change to all traffic at once, so a bad Worker fails
+every CI cache request until it is replaced. Roll back by deploying the last
+good commit through the wrapper:
+
+1. Check out the last good commit.
+2. From `packages/smithers/build/infra`, run `CI=1 pnpm run deploy --yes`.
+3. Confirm the rollback with the checks in [Verify the service](#verify-the-service).
+
+Do not roll back with `wrangler rollback` or the Cloudflare dashboard. Either
+restores the older script while Alchemy state still describes the newer one,
+so the next plan compares against a script that is no longer live.
+
+D1 migrations are forward-only. Deploying an older commit does not undo a
+migration it lacks. Repair a bad migration with a new migration file in
+`worker/migrations/`, then deploy.
 
 ## Deploy wrapper
 

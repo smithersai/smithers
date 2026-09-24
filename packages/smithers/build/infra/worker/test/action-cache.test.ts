@@ -361,7 +361,10 @@ describe("action-cache retention", () => {
     seed("cold", "2026-01-01T00:00:00.000Z")
     seed("warm", "2026-08-30T00:00:00.000Z")
 
-    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toBe(1)
+    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toEqual({
+      removed: 1,
+      backlog: false
+    })
 
     expect(survivors()).toEqual(["warm"])
   })
@@ -369,38 +372,65 @@ describe("action-cache retention", () => {
   it("deletes more rows than one batch holds and reports the total", async () => {
     for (let index = 0; index < 501; index += 1) seed(`cold-${index}`, "2026-01-01T00:00:00.000Z")
 
-    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toBe(501)
+    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toEqual({
+      removed: 501,
+      backlog: false
+    })
 
     expect(survivors()).toEqual([])
   })
 
-  it("stops after twenty batches and resumes on the next invocation", async () => {
+  const seedCold = (count: number): void => {
     const insert = d1.sqlite.prepare(
       `INSERT INTO smithers_build_cache_entry (key_digest, entry_json, result_json, last_accessed_at)
       VALUES (?, '{}', '{}', ?)`
     )
     d1.sqlite.exec("BEGIN")
     try {
-      for (let index = 0; index < 10_001; index += 1) {
-        insert.run(`cold-${index}`, "2026-01-01T00:00:00.000Z")
-      }
+      for (let index = 0; index < count; index += 1) insert.run(`cold-${index}`, "2026-01-01T00:00:00.000Z")
       d1.sqlite.exec("COMMIT")
     } catch (error) {
       d1.sqlite.exec("ROLLBACK")
       throw error
     }
+  }
 
-    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toBe(10_000)
-    expect(survivors()).toHaveLength(1)
+  it("drains a backlog larger than ten thousand rows in one invocation", async () => {
+    seedCold(12_001)
 
-    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toBe(1)
+    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toEqual({
+      removed: 12_001,
+      backlog: false
+    })
+    expect(survivors()).toEqual([])
+  })
+
+  it("stops at its time budget, reports the backlog, and resumes on the next invocation", async () => {
+    seedCold(1_001)
+    // Every batch costs one budget unit, so the budget allows exactly one batch.
+    let clock = 0
+    const now = (): number => clock++
+
+    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z", { now, budgetMs: 1 })).resolves.toEqual({
+      removed: 500,
+      backlog: true
+    })
+    expect(survivors()).toHaveLength(501)
+
+    await expect(pruneStaleEntries(d1.database, "2026-06-01T00:00:00.000Z")).resolves.toEqual({
+      removed: 501,
+      backlog: false
+    })
     expect(survivors()).toEqual([])
   })
 
   it("removes nothing when every entry is inside the window", async () => {
     seed("warm", "2026-08-30T00:00:00.000Z")
 
-    await expect(pruneStaleEntries(d1.database, "2026-01-01T00:00:00.000Z")).resolves.toBe(0)
+    await expect(pruneStaleEntries(d1.database, "2026-01-01T00:00:00.000Z")).resolves.toEqual({
+      removed: 0,
+      backlog: false
+    })
 
     expect(survivors()).toEqual(["warm"])
   })
@@ -426,10 +456,11 @@ describe("action-cache retention", () => {
       expect(JSON.parse(String(logs.mock.calls[0]?.[0]))).toEqual({
         event: "smithers.build.retention",
         removed: 1,
+        backlog: false,
         cutoff: new Date(now - retentionDays * 86_400_000).toISOString()
       })
       expect(points).toEqual([
-        { indexes: ["retention"], blobs: ["retention", "SCHEDULED", "ok"], doubles: [expect.any(Number), 1] }
+        { indexes: ["retention"], blobs: ["retention", "SCHEDULED", "ok"], doubles: [expect.any(Number), 1, 0] }
       ])
     } finally {
       vi.useRealTimers()

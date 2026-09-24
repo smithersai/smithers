@@ -103,8 +103,13 @@
   "patchedDependencies": {
     "@alchemy.run/cloudflare-runtime@2.0.0-beta.76": "patches/@alchemy.run__cloudflare-runtime@2.0.0-beta.76.patch",
     "@distilled.cloud/aws@1.0.0-rc.8": "patches/@distilled.cloud__aws@1.0.0-rc.8.patch",
+    "@distilled.cloud/axiom@1.0.0-rc.8": "patches/@distilled.cloud__axiom@1.0.0-rc.8.patch",
     "@distilled.cloud/cloudflare@1.0.0-rc.8": "patches/@distilled.cloud__cloudflare@1.0.0-rc.8.patch",
     "@distilled.cloud/core@1.0.0-rc.8": "patches/@distilled.cloud__core@1.0.0-rc.8.patch",
+    "@distilled.cloud/fly-io@1.0.0-rc.8": "patches/@distilled.cloud__fly-io@1.0.0-rc.8.patch",
+    "@distilled.cloud/hetzner@1.0.0-rc.8": "patches/@distilled.cloud__hetzner@1.0.0-rc.8.patch",
+    "@distilled.cloud/planetscale@1.0.0-rc.8": "patches/@distilled.cloud__planetscale@1.0.0-rc.8.patch",
+    "@distilled.cloud/railway@1.0.0-rc.8": "patches/@distilled.cloud__railway@1.0.0-rc.8.patch",
     "alchemy@2.0.0-beta.76": "patches/alchemy@2.0.0-beta.76.patch"
   }
 }
