@@ -28,6 +28,104 @@ const source = (control: Control.Service): Control.Service => ({
 })
 
 describe("native health producer lifetime", () => {
+  it("retries discovery after a failed scan and observes newly discovered runs", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const control = source(yield* Control.Control)
+        const failed = yield* Deferred.make<void>()
+        const recorded = yield* Deferred.make<void>()
+        let attempts = 0
+        const flaky: Control.Service = {
+          ...control,
+          list: (request) =>
+            Effect.gen(function*() {
+              attempts += 1
+              if (attempts === 1) {
+                yield* Deferred.succeed(failed, undefined)
+                return yield* Effect.die("temporary discovery failure")
+              }
+              return yield* control.list(request)
+            })
+        }
+        const observedJournal = {
+          ...journal,
+          emitDurableUnfenced: (input: JournalEvent.Input) =>
+            journal.emitDurableUnfenced(input).pipe(
+              Effect.tap(() =>
+                input.eventType === Health.statusObservedEventType
+                  ? Deferred.succeed(recorded, undefined)
+                  : Effect.void
+              )
+            )
+        }
+        const fiber = yield* Effect.scoped(
+          HealthHost.watch(Health.makeRegistry({ limits: { maxSubjects: 1 } })).pipe(
+            Effect.provideService(Control.Control, flaky),
+            Effect.provideService(Journal.Journal, observedJournal)
+          )
+        ).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(failed)
+        yield* TestClock.adjust(5_000)
+        yield* Deferred.await(recorded)
+        expect(attempts).toBeGreaterThan(1)
+        const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 10 })
+        expect(page.entries.some((entry) => entry.eventType === Health.statusObservedEventType)).toBe(true)
+        yield* Fiber.interrupt(fiber)
+      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+    )
+  })
+
+  it("releases a failed observation so the next scan can retry the same subject", async () => {
+    await Effect.runPromise(
+      Effect.gen(function*() {
+        const journal = yield* Journal.Journal
+        const original = source(yield* Control.Control)
+        const control: Control.Service = {
+          ...original,
+          list: (request) =>
+            original.list(request).pipe(Effect.map((result) =>
+              result._tag === "runs"
+                ? { ...result, items: result.items.filter((run) => run.runId === "health-0") }
+                : result
+            ))
+        }
+        const failed = yield* Deferred.make<void>()
+        const recorded = yield* Deferred.make<void>()
+        let observations = 0
+        const flakyJournal = {
+          ...journal,
+          emitDurableUnfenced: (input: JournalEvent.Input) =>
+            Effect.gen(function*() {
+              if (input.eventType === Health.statusObservedEventType) {
+                observations += 1
+                if (observations === 1) {
+                  yield* Deferred.succeed(failed, undefined)
+                  return yield* Effect.die("temporary journal failure")
+                }
+              }
+              const result = yield* journal.emitDurableUnfenced(input)
+              if (input.eventType === Health.statusObservedEventType) yield* Deferred.succeed(recorded, undefined)
+              return result
+            })
+        }
+        const fiber = yield* Effect.scoped(
+          HealthHost.watch(Health.makeRegistry({ limits: { maxSubjects: 1 } })).pipe(
+            Effect.provideService(Control.Control, control),
+            Effect.provideService(Journal.Journal, flakyJournal)
+          )
+        ).pipe(Effect.forkChild({ startImmediately: true }))
+        yield* Deferred.await(failed)
+        yield* TestClock.adjust(5_000)
+        yield* Deferred.await(recorded)
+        expect(observations).toBeGreaterThan(1)
+        const page = yield* journal.entries({ runId: JournalEvent.RunId.make("health-0"), limit: 10 })
+        expect(page.entries.some((entry) => entry.eventType === Health.statusObservedEventType)).toBe(true)
+        yield* Fiber.interrupt(fiber)
+      }).pipe(Effect.provide(TestControl.layer()), Effect.scoped, Effect.provide(TestClock.layer()))
+    )
+  })
+
   it("does not alarm on an ordinary minute of silent work under production defaults", async () => {
     await Effect.runPromise(
       Effect.gen(function*() {
