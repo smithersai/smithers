@@ -23,6 +23,12 @@ export async function handleAdminKeys(request: Request, env: ReviewWorkerEnv, no
     return jsonError(401, "unauthorized");
   }
   if (request.method !== "POST") return jsonError(405, "method not allowed");
+  const revoke = /^\/api\/admin\/keys\/([a-f0-9]{64})\/revoke$/.exec(new URL(request.url).pathname);
+  if (revoke) {
+    const result = await env.DB.prepare("UPDATE api_keys SET revoked_at = COALESCE(revoked_at, ?) WHERE hash = ?")
+      .bind(now, revoke[1]).run();
+    return result.meta.changes ? new Response(null, { status: 204 }) : jsonError(404, "key not found");
+  }
   let body: MintBody;
   try {
     body = (await request.json()) as MintBody;

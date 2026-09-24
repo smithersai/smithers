@@ -4,12 +4,11 @@ import { handleAdminUsage } from "./admin/handleAdminUsage.ts";
 import type { ReviewWorkerEnv } from "./env.ts";
 import { jsonError } from "./jsonError.ts";
 import { landingPage } from "./landingPage.ts";
-import { ensureSchema } from "./migrations.ts";
 import { handleMetrics } from "./metrics/handleMetrics.ts";
 import { handlePlan } from "./plan/handlePlan.ts";
 import { handleAnthropic } from "./proxy/handleAnthropic.ts";
 import { handleSessions } from "./sessions/handleSessions.ts";
-import { handleWalkthroughs } from "./walkthroughs/handleWalkthroughs.ts";
+import { handleWalkthroughs, pruneReviewData } from "./walkthroughs/handleWalkthroughs.ts";
 
 export type { ReviewWorkerEnv } from "./env.ts";
 
@@ -69,6 +68,15 @@ function defaultDeps(ctx?: ReviewWorkerCtx): ReviewWorkerDeps {
  */
 export function createReviewWorker(overrides?: Partial<ReviewWorkerDeps>) {
   return {
+    async scheduled(_event: unknown, env: ReviewWorkerEnv): Promise<void> {
+      try {
+        const counts = await pruneReviewData(env, overrides?.now?.() ?? Date.now());
+        console.info("smithers-review: retention complete", counts);
+      } catch (error) {
+        console.error("smithers-review: retention failed", error);
+        throw error;
+      }
+    },
     async fetch(request: Request, env: ReviewWorkerEnv, ctx?: ReviewWorkerCtx): Promise<Response> {
       const deps: ReviewWorkerDeps = { ...defaultDeps(ctx), ...overrides };
       const url = new URL(request.url);
@@ -78,7 +86,7 @@ export function createReviewWorker(overrides?: Partial<ReviewWorkerDeps>) {
         return new Response(landingPage, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
-      // GET /w/<id> works without a DB round trip — keep before ensureSchema.
+      // Hosted artifacts do not need a database read.
       if (request.method === "GET" && /^\/w\/[a-z0-9]{8,32}$/.test(url.pathname)) {
         if (!env.WALKTHROUGHS) return jsonError(503, "walkthrough storage unavailable");
         const id = url.pathname.slice("/w/".length);
@@ -102,7 +110,6 @@ export function createReviewWorker(overrides?: Partial<ReviewWorkerDeps>) {
       // Everything below needs D1. A missing binding is a deploy/config
       // problem — answer 503 instead of crashing on an undefined dereference.
       if (!env.DB) return jsonError(503, "database unavailable");
-      await ensureSchema(env.DB);
 
       if (request.method === "POST" && url.pathname === "/api/sessions") {
         return handleSessions(request, env, deps, origin);
@@ -119,11 +126,11 @@ export function createReviewWorker(overrides?: Partial<ReviewWorkerDeps>) {
       if (url.pathname === "/api/admin/repos") {
         return handleAdminRepos(request, env, deps.now());
       }
-      if (url.pathname === "/api/admin/keys") {
+      if (url.pathname === "/api/admin/keys" || /^\/api\/admin\/keys\/[a-f0-9]{64}\/revoke$/.test(url.pathname)) {
         return handleAdminKeys(request, env, deps.now());
       }
       if (url.pathname === "/api/admin/usage") {
-        return handleAdminUsage(request, env);
+        return handleAdminUsage(request, env, deps.now());
       }
 
       if (url.pathname === "/api/plan" && request.method === "GET") {

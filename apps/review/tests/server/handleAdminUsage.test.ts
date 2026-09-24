@@ -7,7 +7,7 @@ function makeWorker() {
     jwksUrl: "http://unused",
     anthropicBaseUrl: "http://unused",
     fetchUpstream: fetch,
-    now: () => Date.now(),
+    now: () => Date.UTC(2025, 5, 3),
     waitUntil: () => undefined,
   });
 }

@@ -42,7 +42,7 @@ export async function handleMetrics(request: Request, env: ReviewWorkerEnv): Pro
   const monthKey = monthKeyOf(Date.now());
 
   // usage_totals is maintained at settlement (recordUsage) and backfilled once
-  // by ensureSchema, so this read is bounded by distinct (repo, model) pairs
+  // at deploy time, so this read is bounded by distinct (repo, model) pairs
   // rather than by the size of the append-only usage_events log.
   const totalsRes = await env.DB.prepare(
     "SELECT repo, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd FROM usage_totals ORDER BY repo, model",

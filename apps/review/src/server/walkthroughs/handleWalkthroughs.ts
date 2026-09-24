@@ -183,3 +183,32 @@ function isPublishToken(request: Request, env: ReviewWorkerEnv): boolean {
 function walkthroughBase(env: ReviewWorkerEnv, url: URL): string {
   return (env.PUBLIC_BASE_URL ?? url.origin).replace(/\/$/, "");
 }
+
+
+/** Delete expired objects before their rows so failed R2 deletes remain retryable. */
+export async function pruneReviewData(env: ReviewWorkerEnv, now: number): Promise<Record<string, number>> {
+  const cutoff = now - 90 * 86400000;
+  const expired = await env.DB.prepare("SELECT id FROM walkthroughs WHERE created_at < ? ORDER BY created_at LIMIT 20")
+    .bind(cutoff).all<{ id: string }>();
+  let walkthroughs = 0;
+  for (const { id } of expired.results) {
+    await env.WALKTHROUGHS.delete(`walkthroughs/${id}.html`);
+    await env.DB.prepare("DELETE FROM walkthroughs WHERE id = ?").bind(id).run();
+    walkthroughs++;
+  }
+  // Keep unsettled calls and their idempotency records until reconciliation.
+  const results = await env.DB.batch([
+    env.DB.prepare(`DELETE FROM sessions WHERE hash IN (
+      SELECT hash FROM sessions WHERE expires_at < ?
+      AND NOT EXISTS (SELECT 1 FROM usage_reservations WHERE session_hash = sessions.hash) LIMIT 1000
+    )`).bind(now - 86400000),
+    env.DB.prepare(`DELETE FROM usage_events WHERE id IN (
+      SELECT id FROM usage_events WHERE created_at < ?
+      AND NOT EXISTS (SELECT 1 FROM usage_reservations WHERE id = usage_events.id) LIMIT 1000
+    )`).bind(cutoff),
+    env.DB.prepare(`DELETE FROM reviewed_prs WHERE rowid IN (
+      SELECT rowid FROM reviewed_prs WHERE month < ? LIMIT 1000
+    )`).bind(new Date(cutoff).toISOString().slice(0, 7)),
+  ]);
+  return { walkthroughs, sessions: results[0]?.meta.changes ?? 0, usageEvents: results[1]?.meta.changes ?? 0, reviewedPrs: results[2]?.meta.changes ?? 0 };
+}

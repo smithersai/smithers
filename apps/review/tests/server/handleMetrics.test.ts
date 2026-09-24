@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { D1Database } from "../../src/server/d1.ts";
-import { ensureSchema } from "../../src/server/migrations.ts";
+import { REVIEW_MIGRATIONS } from "../../src/server/migrations.ts";
 import { recordUsage } from "../../src/server/proxy/recordUsage.ts";
 import { createReviewWorker } from "../../src/server/worker.ts";
 import { buildTestEnv } from "./helpers/buildTestEnv.ts";
@@ -100,8 +100,8 @@ describe("GET /metrics", () => {
         .run();
     }
     // Backfill runs inside the migration and is idempotent across worker instances.
-    await ensureSchema(db);
-    await ensureSchema({ prepare: (q) => db.prepare(q), exec: (q) => db.exec(q), batch: (s) => db.batch(s) });
+    await db.exec(REVIEW_MIGRATIONS[0].sql);
+    await db.exec(REVIEW_MIGRATIONS[0].sql);
     await db.prepare("INSERT INTO sessions (hash, repo, pr, expires_at, spend_cap_usd, created_at) VALUES ('s', ?, 1, ?, 1, 1)")
       .bind(REPO, Date.now() + 60_000)
       .run();
@@ -142,8 +142,7 @@ describe("GET /metrics", () => {
       exec: (q) => db.exec(q),
       batch: (s) => db.batch(s),
     };
-    // The worker ensures the schema per DB instance; a third backfill must not double count either.
-    await ensureSchema(spied);
+    // A cold worker reads the migrated schema without running DDL.
     queries.length = 0;
     const env = { ...(await buildTestEnv()), DB: spied };
     const res = await makeWorker().fetch(

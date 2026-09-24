@@ -264,3 +264,25 @@ because the durable composition does not build under Bun.
 
 Live GitHub checks are opt-in: run `pnpm -C apps/review test:live` with GitHub
 credentials. Ordinary unit tests skip them even when `gh` is signed in.
+
+### Service data lifecycle
+
+Alchemy applies the versioned SQL in `src/server/migrations.ts` before updating
+the Worker. SQL files are materialized under `.alchemy/review-migrations` for
+Alchemy's migration ledger. Append a version; never edit an applied migration.
+Before adopting the existing database, verify it has the baseline columns
+(`repos.quiz`, `api_keys.spend_cap_usd`, `sessions.api_key_hash`, usage cache-token
+columns, `usage_reservations.model`, and `walkthroughs.status`). The baseline
+refuses missing columns; reconcile legacy schema before adoption. No request
+runs DDL.
+
+Hourly retention removes walkthroughs and raw usage older than 90 days,
+expired sessions after a one-day grace period, and old monthly PR records.
+Unsettled reservations, their sessions/events, and lifetime usage totals stay.
+Each pass is bounded and retries failed R2 deletions before dropping their rows.
+Watch `smithers-review: retention complete` / `retention failed` in Worker logs.
+Audit pre-existing R2 objects without walkthrough rows separately during adoption.
+
+Revoke a leaked key with authenticated `POST /api/admin/keys/:sha256/revoke`.
+It immediately invalidates the key and sessions issued from it. Admin usage
+accepts `?days=1..90` (default 30).

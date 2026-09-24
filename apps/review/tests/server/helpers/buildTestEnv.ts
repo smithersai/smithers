@@ -1,5 +1,5 @@
 import type { ReviewWorkerEnv } from "../../../src/server/env.ts";
-import { ensureSchema } from "../../../src/server/migrations.ts";
+import { REVIEW_MIGRATIONS } from "../../../src/server/migrations.ts";
 import { memoryBucket } from "./memoryBucket.ts";
 import { sqliteD1 } from "./sqliteD1.ts";
 
@@ -13,7 +13,7 @@ export interface TestEnvOverrides {
 
 export async function buildTestEnv(overrides: TestEnvOverrides = {}): Promise<ReviewWorkerEnv> {
   const db = sqliteD1();
-  await ensureSchema(db);
+  for (const migration of REVIEW_MIGRATIONS) await db.exec(migration.sql);
   return {
     WALKTHROUGHS: memoryBucket(),
     DB: db,

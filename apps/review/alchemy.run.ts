@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { REVIEW_MIGRATIONS } from "./src/server/migrations.ts";
 /**
  * Alchemy 2 stack for the smithers review service. Importing it deploys nothing.
  *
@@ -31,7 +33,11 @@ const requireSecret = (name: string) =>
 
 export const walkthroughsProps = { name: "smithers-review-walkthroughs-williamcory" };
 const bucket = Cloudflare.R2.Bucket("walkthroughs", walkthroughsProps);
-export const reviewDbProps = { name: "smithers-review-review-db-williamcory" };
+// Materialize the immutable SQL for Alchemy's versioned deploy-time runner.
+const migrationsDir = ".alchemy/review-migrations";
+mkdirSync(migrationsDir, { recursive: true });
+for (const migration of REVIEW_MIGRATIONS) writeFileSync(`${migrationsDir}/${migration.name}`, migration.sql);
+export const reviewDbProps = { name: "smithers-review-review-db-williamcory", migrations: migrationsDir };
 const db = Cloudflare.D1.Database("review-db", reviewDbProps);
 
 export const workerProps = {
@@ -52,6 +58,7 @@ export const workerProps = {
   // A declared domain detaches every live hostname it does not list.
   domain: { name: "review.jjhub.tech", zoneId: "72854846f57d9e46794e7e6aae7e3328" },
   routes: [],
+  crons: ["17 * * * *"],
 } satisfies Cloudflare.WorkerProps;
 
 export const worker = Cloudflare.Worker("smithers-review", workerProps);
