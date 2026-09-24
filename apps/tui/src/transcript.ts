@@ -391,7 +391,6 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
 const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
   switch (event._tag) {
     case "supervisor-settled":
-      if (transcript.contextAssessment?.scope === event.scope && transcript.contextAssessment.frame > event.frame) return transcript
       if (event.outdatedContext === undefined && event.irrelevantContext === undefined) return transcript
       return { ...transcript, contextAssessment: {
         scope: event.scope, frame: event.frame,
