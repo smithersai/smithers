@@ -84,9 +84,14 @@ const (
 )
 
 type egressProxyProcess struct {
-	port    int
+	port int
+	// cmd and stopped are guarded by EgressProxyManager.mu. stopped marks a
+	// reservation a concurrent Stop or Suspend already released, so a spawn
+	// still in flight must kill its child instead of publishing it.
 	cmd     *exec.Cmd
+	stopped bool
 	done    chan struct{}
+	// exitErr is written before done closes and read only after it closes.
 	exitErr error
 	// startedAt is when the proxy was reserved for its sandbox. The runtime
 	// only learns about the sandbox after its create completes, so a proxy
@@ -118,6 +123,9 @@ type EgressProxyManager struct {
 	// instead of failing as an anonymous "proxy unavailable".
 	revoked map[string]string
 	audit   chan msb.SandboxEgressAuditRecord
+	// beforeSpawn is a test seam run after the port reservation is published
+	// and before the child starts.
+	beforeSpawn func(sandboxID string)
 }
 
 // NewEgressProxyManager validates the binary and CA and writes the CA to
@@ -232,6 +240,9 @@ func (m *EgressProxyManager) start(ctx context.Context, sandboxID string, policy
 	proc := &egressProxyProcess{port: port, done: make(chan struct{}), startedAt: time.Now()}
 	m.procs[sandboxID] = proc
 	m.mu.Unlock()
+	if m.beforeSpawn != nil {
+		m.beforeSpawn(sandboxID)
+	}
 
 	endpoint, err := m.spawn(ctx, sandboxID, proc, policy)
 	if err != nil {
@@ -243,7 +254,16 @@ func (m *EgressProxyManager) start(ctx context.Context, sandboxID string, policy
 		_ = os.RemoveAll(m.sandboxDir(sandboxID))
 		return EgressProxyEndpoint{}, err
 	}
-	if err := os.WriteFile(m.markerPath(sandboxID), []byte(strconv.Itoa(port)+"\n"), 0o600); err != nil {
+	// Check and persist under the lock so a concurrent Stop cannot remove the
+	// marker between the check and the write.
+	m.mu.Lock()
+	if proc.stopped {
+		m.mu.Unlock()
+		return EgressProxyEndpoint{}, fmt.Errorf("%w: proxy was stopped while starting", ErrEgressProxyUnavailable)
+	}
+	err = os.WriteFile(m.markerPath(sandboxID), []byte(strconv.Itoa(port)+"\n"), 0o600)
+	m.mu.Unlock()
+	if err != nil {
 		m.Stop(sandboxID)
 		return EgressProxyEndpoint{}, fmt.Errorf("%w: persist proxy marker: %v", ErrEgressProxyUnavailable, err)
 	}
@@ -312,7 +332,6 @@ func (m *EgressProxyManager) spawn(ctx context.Context, sandboxID string, proc *
 	if err := cmd.Start(); err != nil {
 		return EgressProxyEndpoint{}, fmt.Errorf("%w: start iron-proxy: %v", ErrEgressProxyUnavailable, err)
 	}
-	proc.cmd = cmd
 	logger := m.config.Logger.With("sandbox_id", sandboxID, "egress_proxy_port", proc.port)
 	go m.relayLogs(logger, sandboxID, stdout)
 	go func() {
@@ -322,6 +341,17 @@ func (m *EgressProxyManager) spawn(ctx context.Context, sandboxID string, proc *
 			logger.Warn("egress proxy exited", "error", proc.exitErr)
 		}
 	}()
+	m.mu.Lock()
+	proc.cmd = cmd
+	stopped := proc.stopped
+	m.mu.Unlock()
+	if stopped {
+		// A Stop released this reservation while the child was starting;
+		// nothing tracks the process, so it must not outlive this call.
+		_ = cmd.Process.Kill()
+		<-proc.done
+		return EgressProxyEndpoint{}, fmt.Errorf("%w: proxy was stopped while starting", ErrEgressProxyUnavailable)
+	}
 
 	if err := m.waitListening(ctx, listen, proc); err != nil {
 		m.Stop(sandboxID)
@@ -648,6 +678,7 @@ func (m *EgressProxyManager) Suspend(sandboxID string) {
 
 func (m *EgressProxyManager) stopLocked(sandboxID string, proc *egressProxyProcess) {
 	delete(m.procs, sandboxID)
+	proc.stopped = true
 	if proc.cmd == nil || proc.cmd.Process == nil {
 		return
 	}

@@ -255,6 +255,11 @@ func (r *SDKRuntime) Create(ctx context.Context, id string, generation int64, re
 		}
 	}()
 	request = normalizeCreateRequest(request)
+	// Reject an unbootable request before the egress proxy receives secret
+	// values: no return above the post-create cleanup may leave one running.
+	if strings.TrimSpace(request.SnapshotID) == "" && strings.TrimSpace(request.Image) == "" {
+		return sandbox.CreateResult{}, errors.New("Microsandbox image is required")
+	}
 	var proxyEnv map[string]string
 	if egressEnabled(request) {
 		if r.egress == nil {
@@ -309,9 +314,6 @@ func (r *SDKRuntime) Create(ctx context.Context, id string, generation int64, re
 		registryImage = snapshot.ImageRef()
 		options = append(options, upstream.WithFromSnapshot(request.SnapshotID))
 	} else {
-		if strings.TrimSpace(request.Image) == "" {
-			return sandbox.CreateResult{}, errors.New("Microsandbox image is required")
-		}
 		options = append(options,
 			upstream.WithImage(request.Image),
 			// SA1019: the SDK's WithRootDisk replacement changes the rootfs

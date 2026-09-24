@@ -356,25 +356,25 @@ func sanitizeGitRepositories(repositories []sandbox.GitRepositorySpec) []sandbox
 	return result
 }
 
+// redactURLUserInfo hides the userinfo of an HTTP(S) URL. The scheme match is
+// case-insensitive and the userinfo ends at the last '@' of the authority, so
+// a password holding a raw '@' is still hidden whole.
 func redactURLUserInfo(raw string) string {
 	for _, marker := range []string{"https://", "http://"} {
-		if len(raw) > len(marker) && raw[:len(marker)] == marker {
-			rest := raw[len(marker):]
-			if at := indexByte(rest, '@'); at >= 0 {
-				return marker + "[redacted]@" + rest[at+1:]
-			}
+		if len(raw) <= len(marker) || !strings.EqualFold(raw[:len(marker)], marker) {
+			continue
 		}
+		rest := raw[len(marker):]
+		authority := rest
+		if end := strings.IndexAny(rest, "/?#"); end >= 0 {
+			authority = rest[:end]
+		}
+		if at := strings.LastIndexByte(authority, '@'); at >= 0 {
+			return raw[:len(marker)] + "[redacted]@" + rest[at+1:]
+		}
+		return raw
 	}
 	return raw
-}
-
-func indexByte(value string, needle byte) int {
-	for index := 0; index < len(value); index++ {
-		if value[index] == needle {
-			return index
-		}
-	}
-	return -1
 }
 
 func redactEnvironment(environment map[string]string) map[string]string {

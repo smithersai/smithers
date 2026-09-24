@@ -21,6 +21,10 @@ const maxTaskExecutionAttempts int32 = 3
 const maxConsecutiveClaimFailures = 3
 const defaultTaskStatusPollInterval = 2 * time.Second
 
+// defaultPollInterval replaces a non-positive Config.PollInterval, which
+// time.NewTicker would reject with a panic in the polling goroutine.
+const defaultPollInterval = 5 * time.Second
+
 // defaultTaskCleanupTimeout is the fallback ceiling on post-task isolation.
 // It is a safety net, not the expected duration: quarantine renames state
 // aside in milliseconds and unlinks it in the background. The old 30s ceiling
@@ -73,6 +77,9 @@ type Executor struct {
 
 // NewExecutor creates a new task executor
 func NewExecutor(pool TaskPool, runnerID int64, config Config) *Executor {
+	if config.PollInterval <= 0 {
+		config.PollInterval = defaultPollInterval
+	}
 	return &Executor{
 		pool:     pool,
 		runnerID: runnerID,

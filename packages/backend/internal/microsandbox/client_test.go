@@ -122,6 +122,25 @@ func TestClientTransportRetryReusesGeneratedIdempotencyKeyAndBody(t *testing.T) 
 	assert.Equal(t, bodies[0], bodies[1])
 }
 
+func TestSanitizeCreateRequestRedactsGitUserInfoInAnySchemeCase(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"HTTPS://user:sentinel@example.com/org/repo.git":    "HTTPS://[redacted]@example.com/org/repo.git",
+		"Http://user:sentinel@example.com/org/repo.git":     "Http://[redacted]@example.com/org/repo.git",
+		"https://user:sen%40tinel@example.com/org/repo.git": "https://[redacted]@example.com/org/repo.git",
+		"https://user:sen@tinel@example.com/org/repo.git":   "https://[redacted]@example.com/org/repo.git",
+		"https://example.com/org/repo@v1.git":               "https://example.com/org/repo@v1.git",
+		"git@example.com:org/repo.git":                      "git@example.com:org/repo.git",
+	}
+	for raw, want := range cases {
+		payload := SanitizeCreateRequest(sandbox.CreateRequest{GitRepos: []sandbox.GitRepositorySpec{{Repo: raw}}})
+		var sanitized sandbox.CreateRequest
+		require.NoError(t, json.Unmarshal(payload, &sanitized))
+		assert.Equal(t, want, sanitized.GitRepos[0].Repo, raw)
+		assert.NotContains(t, string(payload), "tinel", raw)
+	}
+}
+
 func TestSanitizeCreateRequestRedactsOperationCredentials(t *testing.T) {
 	t.Parallel()
 	request := sandbox.CreateRequest{

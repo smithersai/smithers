@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -21,12 +22,18 @@ func (p *RunnerPool) claimRunner(ctx context.Context, runnerID int64) (db.Workfl
 	}
 
 	// No task was claimed (no pending work, or the claim query failed);
-	// either way the runner must not be left in the busy state.
-	if _, releaseErr := p.store.ReleaseRunner(ctx, runnerID); releaseErr != nil && errors.Is(err, pgx.ErrNoRows) {
-		return db.WorkflowTask{}, releaseErr
+	// either way the runner must not be left in the busy state. The release
+	// runs detached from ctx so a claim that failed on an expired context
+	// still reaches the database.
+	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
+	defer cancel()
+	if _, releaseErr := p.store.ReleaseRunner(releaseCtx, runnerID); releaseErr != nil {
+		return db.WorkflowTask{}, errors.Join(err, releaseErr)
 	}
 	return db.WorkflowTask{}, err
 }
+
+const releaseTimeout = 5 * time.Second
 
 func (p *RunnerPool) markTaskRunning(ctx context.Context, taskID, runnerID int64) error {
 	rows, err := p.store.MarkWorkflowTaskRunning(ctx, db.MarkWorkflowTaskRunningParams{

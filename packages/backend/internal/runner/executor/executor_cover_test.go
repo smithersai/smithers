@@ -112,3 +112,14 @@ func TestExecutor_Cov_InvalidPayloadDoesNotSelfComplete(t *testing.T) {
 	assert.Equal(t, int64(82), pool.getLastTaskID())
 	assert.Equal(t, "done", pool.getLastStatus())
 }
+
+// An omitted PollInterval must not panic the polling goroutine in
+// time.NewTicker; the executor falls back to a positive default.
+func TestExecutor_Cov_ZeroPollIntervalUsesDefault(t *testing.T) {
+	t.Parallel()
+
+	for _, interval := range []time.Duration{0, -time.Second} {
+		e := NewExecutor(&mockPool{}, 72, Config{PollInterval: interval})
+		assert.Equal(t, defaultPollInterval, e.config.PollInterval)
+	}
+}

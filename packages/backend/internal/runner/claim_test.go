@@ -269,3 +269,31 @@ func TestRunnerPool_markTaskDone_PoolHasNoDependencyResolutionMethods(t *testing
 	err = pool.CompleteTask(context.Background(), 1, 1, "failed", "")
 	require.NoError(t, err)
 }
+
+// A claim that failed because the caller's context expired must still reach
+// the database to release the runner, and a failed release must surface.
+func TestRunnerPool_claimRunner_ReleasesOnAnExpiredContextAndJoinsReleaseError(t *testing.T) {
+	t.Parallel()
+
+	releaseErr := errors.New("release failed")
+	store := &mockStore{
+		claimIdleRunnerFn: func(_ context.Context, runnerID int64) (clusterdb.RunnerPool, error) {
+			return clusterdb.RunnerPool{ID: runnerID, Status: "busy"}, nil
+		},
+		claimPendingTaskFn: func(ctx context.Context, _ pgtype.Int8) (db.WorkflowTask, error) {
+			return db.WorkflowTask{}, ctx.Err()
+		},
+		releaseRunnerFn: func(ctx context.Context, _ int64) (int64, error) {
+			assert.NoError(t, ctx.Err(), "release must not inherit the claim's expired context")
+			return 0, releaseErr
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	pool := NewRunnerPool(store, Config{})
+	_, err := pool.claimRunner(ctx, 13)
+	require.ErrorIs(t, err, context.Canceled)
+	require.ErrorIs(t, err, releaseErr)
+	assert.Equal(t, 1, store.ReleaseCallCount())
+}
