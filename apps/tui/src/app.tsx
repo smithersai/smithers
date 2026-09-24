@@ -1703,8 +1703,9 @@ export function App(props: AppProps) {
   const width = sideChat ? 40 : Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
   const mainWidth = Math.max(20, dimensions.width - width - (showSidebar ? 24 : 0) - 2)
   const accent = bashMode ? color.success : working ? color.faint : color.brand
-  const tabCount = Math.max(1, Math.floor(width / 24))
-  const tabTitleWidth = Math.min(22, Math.max(1, Math.floor(width / tabCount) - 2))
+  const tabsWidth = width - (focusMain ? 6 : 0)
+  const tabCount = Math.max(1, Math.floor(tabsWidth / 24))
+  const tabTitleWidth = Math.min(22, Math.max(1, Math.floor(tabsWidth / tabCount) - 2))
   const firstTab = Math.max(
     0,
     Math.min(surfaces.findIndex((tab) => tab.id === surface) - Math.floor(tabCount / 2), surfaces.length - tabCount)
@@ -1718,6 +1719,41 @@ export function App(props: AppProps) {
       action: panel.rows[Math.max(0, Math.min(navigation.selected, panel.rows.length - 1))]?.action?.label
     })
     : Keys.hintsFor(footerContext)
+  const toastRows = [
+    ...snapshot.tabs.filter((tab) =>
+      now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
+    ).map((tab) => ({
+      id: tab.id,
+      text: `${
+        tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
+          ? tick
+          : tab.status === "parked"
+          ? "⏸"
+          : tab.status === "queued"
+          ? "…"
+          : tab.status === "done"
+          ? "✓"
+          : "✗"
+      } ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
+      tone: tab.status === "failed" ? "danger" as const : "info" as const
+    })),
+    ...flowRuns.filter((run) =>
+      run.status === "input" || now - run.startedAt >= 300 && (run.endedAt === undefined || now - run.endedAt < 3000)
+    ).map((run) => ({
+      id: `flow:${run.id}`,
+      text: `${flowRunning(run) ? `${tick} ` : flowGlyph(run.status)}${run.flow} · ${run.status}`,
+      tone: run.status === "failed" ? "danger" as const : "info" as const
+    })),
+    ...(search?.status === "running" && now - search.startedAt >= 300
+      ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
+      : []),
+    ...(undoing !== undefined && now - undoing >= 300
+      ? [{ id: "undo", text: `${tick} Undoing`, tone: "info" as const }]
+      : []),
+    ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
+  ]
+  const toastWidth = Math.min(60, mainWidth - 2)
+  const toastHeight = Math.min(Math.floor(dimensions.height / 2), Math.max(1, toastRows.length * 3))
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
@@ -1747,8 +1783,8 @@ export function App(props: AppProps) {
         </box>
       ) : null}
       <box style={{ flexDirection: "column", height: focusMain && !sideChat ? "55%" : "100%", width, paddingTop: 1 }}>
-        {focusMain ? <text fg={color.brand}>Chat</text> : null}
-        <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
+        <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1, width }}>
+          {focusMain ? <text fg={color.brand} style={{ flexShrink: 0 }}>Chat  </text> : null}
           {visibleTabs.map((tab) => (
             <text key={tab.id} wrapMode="none" fg={surface === tab.id ? color.brand : color.faint} onMouseDown={() => clickTab(tab.id)}>
               {" "}{tab.title.length > tabTitleWidth ? `${tab.title.slice(0, tabTitleWidth - 1)}…` : tab.title}{" "}
@@ -1987,43 +2023,12 @@ export function App(props: AppProps) {
       </box>
       </box>
       {whichKey ? <View.KeyPopup bindings={Keys.bindingsFor(footerContext)} width={dimensions.width} height={dimensions.height} /> : null}
-      <View.ToastStack
-        rows={[
-          ...snapshot.tabs.filter((tab) =>
-            now - tab.startedAt >= 300 && (tab.endedAt === undefined || now - tab.endedAt < 3000)
-          ).map((tab) => ({
-            id: tab.id,
-            text: `${
-              tab.status === "running" || tab.status === "requested" || tab.status === "waiting"
-                ? tick
-                : tab.status === "parked"
-                ? "⏸"
-                : tab.status === "queued"
-                ? "…"
-                : tab.status === "done"
-                ? "✓"
-                : "✗"
-            } ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
-            tone: tab.status === "failed" ? "danger" as const : "info" as const
-          })),
-          // A parked run waits on the user, not on the stopped clock's debounce.
-          ...flowRuns.filter((run) =>
-            run.status === "input" ||
-            now - run.startedAt >= 300 && (run.endedAt === undefined || now - run.endedAt < 3000)
-          ).map((run) => ({
-            id: `flow:${run.id}`,
-            text: `${flowRunning(run) ? `${tick} ` : flowGlyph(run.status)}${run.flow} · ${run.status}`,
-            tone: run.status === "failed" ? "danger" as const : "info" as const
-          })),
-          ...(search?.status === "running" && now - search.startedAt >= 300
-            ? [{ id: "search", text: `${tick} text: ${search.query}`, tone: "info" as const }]
-            : []),
-          ...(undoing !== undefined && now - undoing >= 300
-            ? [{ id: "undo", text: `${tick} Undoing`, tone: "info" as const }]
-            : []),
-          ...(toast === undefined ? [] : [{ id: "notice", ...toast }])
-        ]}
-      />
+      {sideChat
+        ? toastRows.length === 0 ? null : <box style={{ position: "absolute", left: mainWidth - toastWidth,
+          top: dimensions.height - toastHeight - 2, width: toastWidth, height: toastHeight }}>
+          <View.ToastStack rows={toastRows} />
+        </box>
+        : <View.ToastStack rows={toastRows} />}
       {picker === undefined ? null : (
         <View.Dialog
           title={picker.kind === "model" || picker.kind === "worker-model"
