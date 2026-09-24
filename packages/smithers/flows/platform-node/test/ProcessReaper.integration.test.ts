@@ -127,17 +127,44 @@ const windowsRecord = {
  * shim on `PATH` can no longer reach it — which is the point of the guard. The
  * parsing branches are driven through the configured executable instead.
  */
+const psAnswers = new Map<string, { readonly stdout: string; readonly status: number }>()
 const psShim = (name: string, printed: string, status = 0): string => {
   const bin = join(directory, `ps-${name}`)
   mkdirSync(bin, { recursive: true })
   const executable = join(bin, "ps")
+  psAnswers.set(executable, { stdout: printed, status })
   writeFileSync(executable, `#!/bin/sh\nprintf '%s' '${printed}'\nexit ${status}\n`)
   chmodSync(executable, 0o755)
   return executable
 }
 
-/** A POSIX system whose identity probe runs `executable`. */
-const withPs = (executable: string) => ProcessReaper.posixSystemWith({ psExecutable: executable })
+/** Real POSIX fixtures; Windows exercises their native command result contract. */
+const withPs = (executable: string, nativeResult = process.platform === "win32") => {
+  const system = ProcessReaper.posixSystemWith({ psExecutable: executable })
+  const answer = psAnswers.get(executable)
+  if (!nativeResult || answer === undefined) return system
+  // Windows cannot execute a POSIX shebang. Supply the requested ps result
+  // while leaving the real kernel liveness probe and parser in production.
+  const query = <A>(body: () => A): A => {
+    const original = NativeMutable.spawnSync
+    const mocked = vi.spyOn(NativeMutable, "spawnSync").mockImplementation((...args: Parameters<typeof original>) => {
+      expect(args[0]).toBe(executable)
+      return { pid: 0, output: [], stdout: answer.stdout, stderr: "", signal: null, status: answer.status }
+    })
+    syncBuiltinESMExports()
+    try {
+      return body()
+    } finally {
+      mocked.mockRestore()
+      syncBuiltinESMExports()
+    }
+  }
+  return {
+    ...system,
+    startedAtMs: (pid: number) => query(() => system.startedAtMs(pid)),
+    ownGroup: () => query(() => system.ownGroup())
+  }
+}
 
 /** Exercises the native taskkill result without signalling a real process. */
 const withTaskkill = <A>(status: number | Error, body: () => A): A => {
@@ -552,7 +579,7 @@ describe("ProcessReaper", () => {
 
     // A `ps` that answers with something unusable is the same as a `ps` that
     // cannot answer: no evidence, and no evidence never authorizes a kill.
-    expect(withPs(psShim("garbage", "not a date")).startedAtMs(process.pid)).toEqual({ _tag: "unavailable" })
+    expect(withPs(psShim("garbage", "not a date"), true).startedAtMs(process.pid)).toEqual({ _tag: "unavailable" })
     expect(withPs(psShim("silent", "")).startedAtMs(process.pid)).toEqual({ _tag: "unavailable" })
     // A `ps` that is not there at all is the same absence of evidence.
     expect(withPs(join(directory, "no-such-ps")).startedAtMs(process.pid)).toEqual({ _tag: "unavailable" })

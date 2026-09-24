@@ -2,8 +2,8 @@
  * Crash reaping on a Linux host that has no `ps`: every identity question is
  * read from `/proc`, and every decision is reported.
  *
- * The `/proc` here is a directory the test writes, so the case runs on any
- * POSIX host, but the group it describes and kills is a real detached process.
+ * The `/proc` fixture supplies identity observations on every test host.
+ * Cleanup signals a real native process: a POSIX group or a Windows tree.
  */
 import { describe, expect, it } from "@effect/vitest"
 import { ProcessLedger } from "@smthrs/kernel"
@@ -50,25 +50,36 @@ const spyLedger = (orphans: ReadonlyArray<ProcessLedger.ProcessRecord>) => {
 }
 
 describe("ProcessReaper on /proc", () => {
-  it.live("kills a stale foreign group with no ps binary on the host", () =>
+  it.live("reaps a real native process using proc identity without a ps binary", () =>
     Effect.gen(function*() {
-      const child = spawn("sh", ["-c", "sleep 30"], { detached: true, stdio: "ignore" })
+      const child = spawn(process.execPath, ["-e", "setInterval(()=>{},1000)"], {
+        detached: true,
+        windowsHide: true,
+        stdio: "ignore"
+      })
       child.unref()
       const leader = child.pid as number
       const startedAtMs = Date.now()
+      const native = ProcessReaper.systemFor(process.platform)
+      const pgid = process.platform === "win32" ? null : leader
       const root = fakeProc([{ pid: leader, startedAtMs }], process.pid)
       try {
         const record: ProcessLedger.ProcessRecord = {
           pid: leader,
-          pgid: leader,
+          pgid,
           hostId: "proc-host",
           ownerPid: 2_147_483_646,
           startedAtMs,
-          commandDigest: "sh -c sleep"
+          commandDigest: "node process fixture"
         }
         const ledger = spyLedger([record])
-        const system = ProcessReaper.procSystemWith({ procRoot: root })
-        expect(system.ownGroup()).toBe(process.pid)
+        const proc = ProcessReaper.procSystemWith({ procRoot: root })
+        expect(proc.ownGroup()).toBe(process.pid)
+        // Keep identity and boot observations on the synthetic /proc. Only
+        // signalling and group guards follow the real host's process model.
+        const system = process.platform === "win32"
+          ? { ...proc, ownGroup: native.ownGroup, refuseTarget: native.refuseTarget, killTree: native.killTree }
+          : proc
         const decided = yield* ProcessReaper.reap({ system }).pipe(
           Effect.provideService(ProcessLedger.ProcessLedger, ledger.service)
         )
@@ -77,10 +88,15 @@ describe("ProcessReaper on /proc", () => {
         expect(yield* Effect.promise(() => waitForExit(leader, 2_000))).toBe(true)
       } finally {
         rmSync(root, { recursive: true, force: true })
-        try {
-          process.kill(-leader, "SIGKILL")
-        } catch {
-          // already reaped
+        if (child.exitCode === null && child.signalCode === null) {
+          native.killTree({
+            pid: leader,
+            pgid,
+            hostId: "fixture-cleanup",
+            ownerPid: process.pid,
+            startedAtMs,
+            commandDigest: "node process fixture"
+          })
         }
       }
     }))

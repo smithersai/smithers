@@ -161,7 +161,7 @@ describe.runIf(process.platform === "linux")("ProcSnapshot.snapshot on a real /p
 })
 
 describe("ProcessReaper.groupSnapshotFor", () => {
-  it("asks the kernel directly on Linux and ps everywhere else", () => {
+  it("observes native POSIX groups and reports none on Windows", () => {
     // On Linux the reader needs no `ps` binary at all, which is the whole
     // point: `procps` is absent from the Cloud CI image (run 11727).
     const linux = ProcessReaper.groupSnapshotFor("linux")
@@ -176,7 +176,8 @@ describe("ProcessReaper.groupSnapshotFor", () => {
     // observed rather than one it invented.
     expect(linux(process.pid) !== undefined).toBe(process.platform === "linux")
     const chosen = ProcessReaper.groupSnapshotFor(process.platform)(process.pid)
-    expect(chosen?.ownGroup).toBeGreaterThan(0)
+    if (process.platform === "win32") expect(chosen).toBeUndefined()
+    else expect(chosen?.ownGroup).toBeGreaterThan(0)
   })
 })
 
