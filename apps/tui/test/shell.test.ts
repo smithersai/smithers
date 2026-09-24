@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import { readFileSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import * as Shell from "../src/shell.ts"
+import * as Transcript from "../src/transcript.ts"
 
 describe("shell output", () => {
   it("masks credential-named environment values in the output it shows, saves and sends", async () => {
@@ -58,4 +59,15 @@ describe("shell output", () => {
     expect(text.trim().split("\n")).toHaveLength(2000)
     expect(updates).toBeLessThan(50)
   }, 20_000)
+})
+
+describe("Transcript.shellOutput", () => {
+  it("keeps only the tail of a running command's live output", () => {
+    const start = Transcript.shellStart(Transcript.empty, "yes", false)
+    const id = start.items[0]!.id
+    let transcript = start
+    for (let index = 0; index < 400; index++) transcript = Transcript.shellOutput(transcript, id, "y\n".repeat(1000))
+    const item = transcript.items[0] as Extract<Transcript.Item, { kind: "shell" }>
+    expect(item.output).toBe(Shell.tail("y\n".repeat(400_000)).text)
+  })
 })

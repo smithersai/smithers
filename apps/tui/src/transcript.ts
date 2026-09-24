@@ -10,7 +10,7 @@ import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as Activity from "./activity.ts"
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
-import type * as Shell from "./shell.ts"
+import * as Shell from "./shell.ts"
 
 export type CellStatus = "writing" | "running" | "done" | "failed" | "rejected"
 
@@ -167,8 +167,9 @@ const updateItem = <K extends Item["kind"]>(
   ) => (item.id === id && item.kind === kind ? update(item as Extract<Item, { kind: K }>) : item))
 })
 
+/** A running command's live output, held to the tail its result will keep. */
 export const shellOutput = (transcript: Transcript, id: string, text: string): Transcript =>
-  updateItem(transcript, id, "shell", (item) => ({ ...item, output: item.output + text }))
+  updateItem(transcript, id, "shell", (item) => ({ ...item, output: Shell.tail(item.output + text).text }))
 
 export const shellDone = (transcript: Transcript, id: string, result: Shell.Result): Transcript =>
   updateItem(transcript, id, "shell", (item) => ({ ...item, output: result.output, result }))
