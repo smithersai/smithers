@@ -10,7 +10,8 @@ permissions:
 
 concurrency:
   group: distribution-${{ github.ref }}
-  cancel-in-progress: true
+  # Finish the active image acceptance; newer pushes replace only pending work.
+  cancel-in-progress: false
 
 jobs:
   image:

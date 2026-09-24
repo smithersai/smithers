@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { artifactDigest, authorizeActivation, classifyLive, classifyLocal, decideDeploy, preflightDeploy, readLiveFacts, verifyActivated, type ActivationRequest, type LiveFacts } from "./deployGuard"
+import { WORKER_IDENTITY } from "../src/workerIdentity"
 import { FakeCloudflare } from "./cutover/install-fake"
 import { applyPhase, prepareInstall, restoreAll } from "./cutover/install"
 
@@ -116,7 +117,7 @@ test("the guard reads the installer's real admission/fence versions and blocks C
   expect((await guard("src/index.ts")).mode).toBe("normal")
 })
 
-test("the real deploy.ts refuses before spawning anything when a cutover version is live, and proceeds when legacy is live", () => {
+test("the real deploy.ts enforces the checkout identity before any subprocess", () => {
   const shims = dir(), log = join(shims, "spawned.log")
   for (const cmd of ["git", "jj", "node", "pnpm", "bun", "npx", "wrangler"]) writeFileSync(join(shims, cmd), `#!/bin/sh\necho "${cmd} $*" >> ${log}\nexit 1\n`, { mode: 0o700 })
   const deploy = (live: string) => {
@@ -125,16 +126,21 @@ test("the real deploy.ts refuses before spawning anything when a cutover version
       { cwd: new URL("..", import.meta.url).pathname, env: { PATH: shims, HOME: process.env.HOME ?? "", CLOUDFLARE_API_TOKEN: "fake-control-plane-token", DEPLOY_INTERLOCK_LIVE: live } })
     return { code: run.exitCode, out: run.stdout.toString() + run.stderr.toString(), spawned: existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [] }
   }
-  for (const [live, code] of [["fence", "DEPLOY_GUARD_LIVE_CUTOVER"], ["admission", "DEPLOY_GUARD_LIVE_CUTOVER"], ["export", "DEPLOY_GUARD_LIVE_CUTOVER"], ["edge", "DEPLOY_GUARD_LEGACY_OVER_EDGE"]] as const) {
-    const result = deploy(live)
+  const local = WORKER_IDENTITY.entry === "src/edge.ts" ? "edge" : "legacy"
+  const refused = local === "edge"
+    ? [["legacy", "DEPLOY_GUARD_EDGE_BEFORE_CUTOVER"], ["admission", "DEPLOY_GUARD_LIVE_CUTOVER"], ["export", "DEPLOY_GUARD_LIVE_CUTOVER"]]
+    : [["fence", "DEPLOY_GUARD_LIVE_CUTOVER"], ["admission", "DEPLOY_GUARD_LIVE_CUTOVER"], ["export", "DEPLOY_GUARD_LIVE_CUTOVER"], ["edge", "DEPLOY_GUARD_LEGACY_OVER_EDGE"]]
+  for (const [live, code] of refused) {
+    const result = deploy(live!)
     expect(result.code).toBe(1)
-    expect(result.out).toContain(code)
-    expect(result.spawned).toEqual([]) // no revision read, no build, no wrangler
+    expect(result.out).toContain(code!)
+    expect(result.spawned).toEqual([])
   }
-  for (const live of ["legacy", "secret-rotated"]) {
+  const permitted = local === "edge" ? ["edge", "fence"] : ["legacy", "secret-rotated"]
+  for (const live of permitted) {
     const result = deploy(live)
-    expect(result.out).toContain("cutover interlock: normal (local legacy, live legacy")
-    expect(result.spawned[0]).toMatch(/^(git|jj) /) // the pipeline went on to its revision read
+    expect(result.out).toContain(`cutover interlock: ${live === "fence" ? "activation" : "normal"} (local ${local}, live ${live === "fence" ? "cutover-fence" : local}`)
+    expect(result.spawned[0]).toMatch(/^(git|jj) /)
     expect(result.spawned.some(line => line.includes("wrangler"))).toBe(false)
   }
 })

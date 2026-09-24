@@ -162,7 +162,7 @@ test("an owner backend names its credential door without promising GitHub", asyn
   })
 })
 
-test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud OAuth route", async () => {
+test("the web-Plue session uses the selected backend identity and canonical OAuth route", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const assigned: string[] = []
   let localStatusReads = 0
@@ -181,7 +181,7 @@ test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud 
     bootstrap: WEB,
     applicationTarget: resolveApplicationTarget({
       apiVersion: 1,
-      mode: "web-selfhost",
+      mode: "web-plue",
       apiOrigin: "",
       auth: { kind: "session" },
       cors: "same-origin",
@@ -197,13 +197,13 @@ test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud 
     }
   })
   try {
-    await controller.adoptSession(signedOut)
+    await controller.loadSession()
     await controller.commands.run("auth.sign-in")
     await settle()
 
-    expect(assigned).toEqual(["/api/auth/github/start"])
+    expect(assigned).toEqual(["/api/auth/github"])
     expect(localStatusReads).toBe(0)
-    expect(applicationIdentityReads).toBe(0)
+    expect(applicationIdentityReads).toBe(1)
   } finally {
     await controller.dispose()
     if (hadWindow) globals.window = previousWindow

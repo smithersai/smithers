@@ -10,10 +10,11 @@
   native Durable Object class's `fetch` line marked
   `// effect-policy: boundary`). `pnpm run check:effect` enforces it; run
   `pnpm run check` (typecheck + policy) before landing.
-- The deployed entry is `src/index.ts` (`wrangler.jsonc` `main`): workerd's
-  `fetch(request, env, ctx)` over the Effect router, the same shape the tests
-  run. Bindings arrive in `env` and `layersFromEnv` (`src/Environment.ts`)
-  turns them into the service Layers.
+- The prepared deployment entry is `src/edge.ts` (`wrangler.jsonc` `main`):
+  workerd's `fetch(request, env)` over the Effect transport and asset router.
+  Product authority belongs to the shared backend. Activate only after the
+  drain and migration receipts in `docs/shared-edge-cutover.md`; `src/index.ts`
+  remains legacy maintenance/rollback source until that cutover completes.
 - Preserve HTTP contracts and the deployed Worker name, domains, Durable Object
   class identities AND binding names, and persisted storage keys during
   implementation refactors. `src/workerIdentity.ts` is the one place those

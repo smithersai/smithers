@@ -10,13 +10,12 @@
  * A mirror that holds no projection yet answers 404, and that is "no rules
  * declared", not an error.
  *
- * The BOX is GET /api/workflow/triggers?repo=owner/repo (apps/server
- * workflowTriggers.ts): the trigger store and webhook registry of the
+ * The BOX is canonical workflow RPC `List {_tag: "triggers"}`: the trigger store and webhook registry of the
  * signed-in session's own box. Its `live` flag says whether a box answered;
  * the seam asks it only for a signed-in session, and a signed-out card
  * carries no live rows and no placeholders for them.
  */
-import { WORKFLOW_RPC_PATH, WORKFLOW_TRIGGERS_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { WORKFLOW_RPC_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { FACTORY_PROJECTION_PATH, FactoryProjectionSchema, ruleFlows } from "@smthrs/rpc/FactoryProjection"
 import type { FactoryProjection, FactoryRule } from "@smthrs/rpc/FactoryProjection"
 import { refusalOf } from "@smthrs/rpc/Refusal"
@@ -43,14 +42,8 @@ export const NO_RULES_SENTENCE = "No rules declared yet"
 export const registerUnavailableSentence = (repo: string): string =>
   `A schedule cannot be registered on ${repo} from here yet: this workspace has no repository/trigger flow.`
 
-/*
- * The Worker's generic-trigger routes (apps/server repositoryTriggers.ts).
- * They address `flow:<slug>` repository jobs on Smithers Cloud, which the
- * shared route table does not name yet.
- */
-const TRIGGER_REGISTRATIONS_PATH = "/api/workflow/trigger-registrations"
-const TRIGGER_PAUSE_PATH = "/api/workflow/trigger-pause"
-const TRIGGER_APPROVAL_PATH = "/api/workflow/trigger-approval"
+const jobPath = (repo: string, slug?: string): string =>
+  `/api/repos/${repo.split("/").map(encodeURIComponent).join("/")}/repository-jobs${slug === undefined ? "" : `/flow:${encodeURIComponent(slug)}`}`
 
 /** The workspace built-in that registers a repository flow on a schedule. */
 const REGISTRAR_FLOW = "repository/trigger"
@@ -299,8 +292,8 @@ const catchUpOf = (value: unknown): TriggerRow["catchUp"] =>
  * does not take is left out and the row states the rest.
  */
 const builderFields = (value: Record<string, unknown>): Partial<TriggerRow> => {
-  const upcoming = Array.isArray(value.nextFiresAt)
-    ? value.nextFiresAt.filter((at): at is number => typeof at === "number")
+  const upcoming = Array.isArray(value.nextOccurrencesMs)
+    ? value.nextOccurrencesMs.filter((at): at is number => typeof at === "number")
     : undefined
   const overlap = overlapOf(value.overlap)
   const catchUp = catchUpOf(value.catchUp)
@@ -309,13 +302,13 @@ const builderFields = (value: Record<string, unknown>): Partial<TriggerRow> => {
     ...(overlap === undefined ? {} : { overlap }),
     ...(catchUp === undefined ? {} : { catchUp }),
     ...(typeof value.maxCatchUp === "number" ? { maxCatchUp: value.maxCatchUp } : {}),
-    ...(typeof value.pendingAt === "number" ? { pendingAt: value.pendingAt } : {}),
-    ...(typeof value.schedulerLastTickAt === "number" ? { schedulerLastTickAt: value.schedulerLastTickAt } : {})
+    ...(typeof value.pendingAtMs === "number" ? { pendingAt: value.pendingAtMs } : {}),
+    ...(typeof value.schedulerLastTickMs === "number" ? { schedulerLastTickAt: value.schedulerLastTickMs } : {})
   }
 }
 
 /**
- * One row of the Worker's triggers route as the card holds it.
+ * One canonical Control TriggerSummary as the card holds it.
  *
  * The route carries the box's whole TriggerSummary; the card has a field for
  * the schedule and, behind the flow builder's flag, for the fields
@@ -324,23 +317,18 @@ const builderFields = (value: Record<string, unknown>): Partial<TriggerRow> => {
  */
 const triggerRow = (value: unknown): TriggerRow | undefined => {
   if (!isRecord(value)) return undefined
-  if (typeof value.id !== "string" || typeof value.flowId !== "string" || typeof value.cron !== "string") return undefined
+  if (typeof value.triggerId !== "string" || typeof value.flowId !== "string" || typeof value.cron !== "string") return undefined
   return {
-    id: value.id,
+    id: value.triggerId,
     flowId: value.flowId,
     cron: value.cron,
     ...(typeof value.timezone === "string" ? { timezone: value.timezone } : {}),
     enabled: value.enabled === true,
-    ...(typeof value.lastFiredAt === "number" ? { lastFiredAt: value.lastFiredAt } : {}),
-    ...(typeof value.nextFireAt === "number" ? { nextFireAt: value.nextFireAt } : {}),
+    ...(typeof value.lastFiredAtMs === "number" ? { lastFiredAt: value.lastFiredAtMs } : {}),
+    ...(Array.isArray(value.nextOccurrencesMs) && typeof value.nextOccurrencesMs[0] === "number" ? { nextFireAt: value.nextOccurrencesMs[0] } : {}),
     ...(typeof value.activeRunId === "string" ? { activeRunId: value.activeRunId } : {}),
     ...builderFields(value)
   }
-}
-
-const webhookRow = (value: unknown): WebhookRow | undefined => {
-  if (!isRecord(value) || typeof value.name !== "string") return undefined
-  return { name: value.name, ...(typeof value.flowId === "string" ? { flowId: value.flowId } : {}) }
 }
 
 interface LiveList {
@@ -357,30 +345,26 @@ const NO_LIVE: LiveList = { live: false, triggers: [], webhooks: [] }
  * is "no box answered" and the card shows no live column at all.
  */
 export const readLiveTriggers = async (ctx: SeamContext, repo: string): Promise<LiveList> => {
-  const answer = await readJson(ctx, `${ctx.baseUrl}${WORKFLOW_TRIGGERS_PATH}?repo=${encodeURIComponent(repo)}`)
-  if (answer.status !== 200 || !isRecord(answer.body) || answer.body.status !== "ok" || answer.body.live !== true) return NO_LIVE
-  const triggers = (Array.isArray(answer.body.triggers) ? answer.body.triggers : [])
-    .map((row) => triggerRow(row))
-    .filter((row): row is TriggerRow => row !== undefined)
-  const webhooks = (Array.isArray(answer.body.webhooks) ? answer.body.webhooks : [])
-    .map(webhookRow)
-    .filter((row): row is WebhookRow => row !== undefined)
-  return { live: true, triggers, webhooks }
+  const answer = await relayTo(ctx, repo, "List", { _tag: "triggers" }, undefined)
+  if (!answer.ok || answer.value._tag !== "triggers" || !Array.isArray(answer.value.items)) return NO_LIVE
+  const triggers = answer.value.items.map(triggerRow).filter((row): row is TriggerRow => row !== undefined)
+  return { live: true, triggers, webhooks: [] }
 }
 
 /**
- * One `flow:*` registration as the Worker publishes it (E9), read into the
+ * One canonical `flow:*` repository-job registration, read into the
  * dispatcher's own row shape. `cron` is the registration's schedule, which is
  * what a generic trigger always carries; the timezone is Plue's fixed UTC.
  */
 const registrationRow = (value: unknown): TriggerRow | undefined => {
   if (!isRecord(value)) return undefined
-  if (typeof value.slug !== "string" || typeof value.flowId !== "string" || typeof value.schedule !== "string") return undefined
-  const next = typeof value.nextFireAt === "string" ? Date.parse(value.nextFireAt) : Number.NaN
+  if (typeof value.job !== "string" || !/^flow:[a-z0-9][a-z0-9-]{0,63}$/.test(value.job) ||
+    typeof value.id !== "string" || typeof value.flow_id !== "string" || typeof value.schedule !== "string" || typeof value.enabled !== "boolean") return undefined
+  const next = typeof value.next_fire_at === "string" ? Date.parse(value.next_fire_at) : Number.NaN
   return {
-    id: typeof value.registrationId === "string" ? value.registrationId : value.slug,
-    slug: value.slug,
-    flowId: value.flowId,
+    id: value.id,
+    slug: value.job.slice("flow:".length),
+    flowId: value.flow_id,
     cron: value.schedule,
     timezone: "UTC",
     enabled: value.enabled === true,
@@ -398,9 +382,9 @@ const registrationRow = (value: unknown): TriggerRow | undefined => {
  * merge in `listTriggers`, which asks for a row.
  */
 export const readTriggerRegistrations = async (ctx: SeamContext, repo: string): Promise<LiveList> => {
-  const answer = await readJson(ctx, `${ctx.baseUrl}${TRIGGER_REGISTRATIONS_PATH}?repo=${encodeURIComponent(repo)}`)
-  if (answer.status !== 200 || !isRecord(answer.body) || answer.body.status !== "ok") return NO_LIVE
-  const triggers = (Array.isArray(answer.body.rows) ? answer.body.rows : [])
+  const answer = await readJson(ctx, `${ctx.baseUrl}${jobPath(repo)}`)
+  if (answer.status !== 200 || !Array.isArray(answer.body)) return NO_LIVE
+  const triggers = answer.body
     .map(registrationRow)
     .filter((row): row is TriggerRow => row !== undefined)
   return { live: true, triggers, webhooks: [] }
@@ -542,12 +526,12 @@ export const readTriggerFires = async (ctx: SeamContext, repo: string, triggerId
   }
 }
 
-/** One of the Worker's own trigger routes, with its typed refusal kept whole. */
-const workerCall = async (
+/** One canonical repository-job action, preserving backend failures. */
+const jobCall = async (
   ctx: SeamContext,
   path: string,
-  body: unknown
-): Promise<{ readonly ok: true; readonly value: Record<string, unknown> } | { readonly ok: false; readonly message: string }> => {
+  body?: unknown
+): Promise<{ readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly message: string }> => {
   let response: Response
   try {
     response = await ctx.http(`${ctx.baseUrl}${path}`, {
@@ -559,7 +543,7 @@ const workerCall = async (
     return { ok: false, message: unreachableSentence("Smithers Cloud", error) }
   }
   const answer: unknown = await response.json().catch(() => undefined)
-  if (!response.ok || !isRecord(answer) || answer.status !== "ok") {
+  if (!response.ok) {
     return { ok: false, message: refusalSentence(refusalOf({ body: answer, status: response.status, message: errorMessage(answer, "Smithers Cloud didn't answer.") })) }
   }
   return { ok: true, value: answer }
@@ -1004,10 +988,13 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
     })
     if (!approved.ok) return refuse(approved.message)
     /* The receipt states the envelope the registration will carry, which is the plan's bounded by those limits. */
-    const receipt = await workerCall(ctx, TRIGGER_APPROVAL_PATH, {
-      repo, slug, flowId: request.flow, planId, planDigest, envelope: reviewedEnvelope(envelope, limits)
+    const receipt = await jobCall(ctx, `${jobPath(repo, slug)}/approvals`, {
+      flow_id: request.flow, plan_id: planId, plan_digest: planDigest, envelope: reviewedEnvelope(envelope, limits)
     })
     if (!receipt.ok) return refuse(receipt.message)
+    if (!isRecord(receipt.value) || typeof receipt.value.approved_at !== "string" || typeof receipt.value.approved_by !== "number") {
+      return refuse("Smithers Cloud did not state who approved this plan.")
+    }
     const registrar = await relay(ctx, repo, "Plan", {
       flowId: REGISTRAR_FLOW,
       input: {
@@ -1247,10 +1234,11 @@ export const createTriggersSeam = (ctx: SeamContext, runtime: TriggersRuntime): 
   const pauseTrigger = async (request: TriggerWrite, repo: string): Promise<string | void | { readonly value: string }> => {
     const slug = request.slug ?? ""
     if (!SLUG.test(slug)) return "A schedule name is lower-case letters, digits and dashes, up to 64 characters."
-    const paused = await workerCall(ctx, TRIGGER_PAUSE_PATH, { repo, slug })
+    const paused = await jobCall(ctx, `${jobPath(repo, slug)}/pause`)
     if (!paused.ok) return refusePause(paused.message)
     /* Smithers Cloud counts the registrations it stopped; a name it does not hold stops none, and that is not a pause. */
-    if (typeof paused.value.paused === "number" && paused.value.paused < 1) {
+    if (!Array.isArray(paused.value)) return refusePause("Smithers Cloud returned an unreadable pause receipt.")
+    if (paused.value.length < 1) {
       return refusePause(`No schedule "${slug}" is registered on ${repo}.`)
     }
     await listTriggers(repo)

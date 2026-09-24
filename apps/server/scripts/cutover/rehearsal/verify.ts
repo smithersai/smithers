@@ -28,6 +28,11 @@ export const judgeRehearsal = (phase: RehearsalPhase, status: number, body: stri
   return facts
 }
 
+export const readRehearsalBaseline = (path: string): SelfTest => {
+  const receipt = JSON.parse(readFileSync(path, "utf8")) as { status?: number; facts?: unknown }
+  return judgeRehearsal("baseline", receipt.status ?? 0, JSON.stringify(receipt.facts), null)!
+}
+
 if (import.meta.main) {
   const [origin, phase, out] = process.argv.slice(2)
   try {
@@ -35,7 +40,7 @@ if (import.meta.main) {
     const dir = resolve(out), st = lstatSync(dir)
     if (!st.isDirectory() || (st.mode & 0o077) !== 0) throw new Error("REHEARSAL_DIRECTORY_NOT_PRIVATE")
     const baselinePath = resolve(dir, "baseline.json")
-    const baseline = phase !== "baseline" && existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, "utf8")) as SelfTest : null
+    const baseline = phase !== "baseline" && existsSync(baselinePath) ? readRehearsalBaseline(baselinePath) : null
     const response = await fetch(`${origin}/selftest`, { redirect: "error", signal: AbortSignal.timeout(30_000) })
     const body = await response.text()
     const facts = judgeRehearsal(phase as RehearsalPhase, response.status, body, baseline)
