@@ -13,16 +13,16 @@ the tarball until `@smthrs/ui` is released.
 pnpm exec smithers-build create-app ledger                 # default
 ```
 
-|                          | `default`   | `aomi`                        |
-| ------------------------ | ----------- | ----------------------------- |
-| Files copied             | 33          | 113                           |
-| Pages                    | 1           | 12                            |
-| Panes                    | 1           | 6                             |
-| Flows                    | 1           | 2                             |
-| Tool sources             | 1           | 3                             |
-| Agent host in the Worker | shipped     | shipped, mock turn by default |
-| Fixture recording        | not shipped | `pnpm test:record`            |
-| Private dependencies     | none        | `@smthrs/ui`                  |
+|                          | `default`   | `aomi`             |
+| ------------------------ | ----------- | ------------------ |
+| Files copied             | 33          | 115                |
+| Pages                    | 1           | 12                 |
+| Panes                    | 1           | 6                  |
+| Flows                    | 1           | 2                  |
+| Tool sources             | 1           | 3                  |
+| Agent host in the Worker | shipped     | shipped            |
+| Fixture recording        | not shipped | `pnpm test:record` |
+| Private dependencies     | none        | `@smthrs/ui`       |
 
 Use `default` to start an app. Read `aomi` in the repository as a worked UI
 example; it is not a public scaffold in this release candidate.
@@ -118,18 +118,19 @@ in-memory EVM fork, six panes, a full Worker, and a Cloudflare deploy.
   and `flows` (`show-script`, `write-flow`, which writes a flow, its test, and
   its fixture back into the app's own source tree).
 - **Worker.** A router free of `cloudflare:workers` so it can be driven on
-  plain Node, one Durable Object per session, an NDJSON turn stream, seat
-  resolution over workerd's `fetch`, and a guard that enforces a bearer
-  credential, a 64 KiB body cap, and a session-id shape.
+  plain Node, one Durable Object per session, an NDJSON turn stream run by
+  `@smthrs/create-app/worker`, and a guard that enforces a bearer credential,
+  a 64 KiB body cap, and a session-id shape.
 - **Tests.** Every flow replays a fixture, plus suites for the wire contract,
   the stream, the turn, the Worker, and the Tevm fork.
 
 ### Chain tool configuration
 
-`TOOLS.ts` composes the deterministic Tevm mock with an empty grant. A host
-using `layerTevm` supplies `TevmOptions.rpcUrl`, or sets `TEVM_FORK_RPC_URL` in
-the process environment. Worker hosts pass the binding as `rpcUrl`; the
-shipped Worker still uses the mock. `tevm/fork` accepts only `blockTag` and
+`TOOLS.ts` composes the deterministic Tevm mock with an empty grant, which the
+fixtures and tests run on. A host using `layerTevm` supplies
+`TevmOptions.rpcUrl`, or sets `TEVM_FORK_RPC_URL` in the process environment.
+The shipped Worker passes its `TEVM_FORK_RPC_URL` binding as `rpcUrl` and
+refuses a turn without it. `tevm/fork` accepts only `blockTag` and
 cannot select an endpoint. Its block defaults to `TevmOptions.blockTag`, then
 `latest`. Failed lazy connections are retried on the next call.
 
@@ -145,38 +146,33 @@ integer `intervalSeconds` from 0 to 86400 (default 12). `tevm/simulate` accepts
 at most 256 calls, including an empty list. Inputs outside these bounds
 return `invalid_input` before a handler runs.
 
-### The turn is mocked by default
+### The turn
 
-`APP_MOCK_TURN` defaults to `1`, and the Worker streams a fixed sequence of
-frames so the shell, the pane host, and cancellation all work end to end.
-The mock emits a `chain-balance` pane with `chain`, `address`, `native`, and
-`tokens` props. Its native balance is `1234567890123456789` wei on mainnet.
-Card ids include the turn's persisted user-message id, so later turns retain
-earlier cards. An unrouted flow emits one error frame and settles as `failed`,
-including when the flow registry is empty.
+A turn runs the chat flow on `runTurn` from `@smthrs/create-app/worker`, and a
+pipeline run runs the build flow on `runFlow`, with the QuickJS variant built
+from the `.wasm` module `wrangler.jsonc` compiles. The Worker rebinds `ui` to
+the turn's stream, `flows` to the session's Durable Object, and `tevm` to the
+real fork. There is no mock turn: a turn missing the seat's key,
+`AI_GATEWAY_API_KEY`, or `TEVM_FORK_RPC_URL` answers 503 with
+`code: "host_unconfigured"` and a message naming the secret, before the session
+is marked running. A pipeline run in the same state settles its `flow-run` card
+`failed` with that message.
 
-Setting it to `0` asks for the real agent path, which the template does not
-ship. The turn and the pipeline run both refuse it with an
-`unsupported_runtime` message naming two blockers, and `worker/README.md`
-records the shape the live path will take. The Worker passes `layerFor`
-no `sandboxVariant`, so the QuickJS sandbox compiles its WebAssembly from
-bytes, which workerd refuses; the `layerFor` doc comment in
-`@smthrs/create-app/runtime` is the one statement of that seam. And there is
-no Durable Object engine store, so a turn's journal does not survive the
-request.
+A turn is one request on the in-memory flow engine. An eviction mid-turn ends
+it; the messages and cards already written stay.
 
 ### What it needs to run
 
 `.dev.vars.example` lists five values, and the template's own README explains
 each:
 
-| Variable            | What reads it                                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| `OPENAI_API_KEY`    | Seat resolution, for the `openai:` seats the template ships                                            |
-| `TEVM_FORK_RPC_URL` | The real Tevm layer and fork test. The shipped Worker uses the mock                                    |
-| `APP_MOCK_TURN`     | The Worker's turn path                                                                                 |
-| `APP_API_TOKEN`     | The API guard. Missing or empty refuses requests (401) unless local open mode is explicitly enabled    |
-| `APP_API_OPEN`      | Set to `1` only in `.dev.vars.example` for local development without a token; never deploy this opt-in |
+| Variable             | What reads it                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `OPENAI_API_KEY`     | Seat resolution, for the `openai:` seats the template ships                                            |
+| `AI_GATEWAY_API_KEY` | The completion judge every turn and run needs                                                          |
+| `TEVM_FORK_RPC_URL`  | The Worker's Tevm fork, and the fork test                                                              |
+| `APP_API_TOKEN`      | The API guard. Missing or empty refuses requests (401) unless local open mode is explicitly enabled    |
+| `APP_API_OPEN`       | Set to `1` only in `.dev.vars.example` for local development without a token; never deploy this opt-in |
 
 Set `APP_API_TOKEN` as a secret before the first public deploy. A configured
 token takes precedence over `APP_API_OPEN`. Health omits authentication

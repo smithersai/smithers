@@ -17,16 +17,16 @@ second deployable and no origin server.
 | `env.ts` | The bindings, as an interface. Nothing else reads configuration |
 | `AppSession.ts` | One Durable Object per session: transcript, cards, saved flows |
 | `turn.ts` | One agent turn as an NDJSON stream of `TurnFrame` lines, with the runtime imported lazily |
-| `turnImpl.ts` | The turn itself: the mock stream, and the live `Agent.run` path behind it |
-| `flowRunImpl.ts` | `POST /api/flows/run`: a routed flow executed outside the conversation |
-| `seats.ts` | `<provider>:<model>` resolved to a live model over workerd's `fetch`; knows `openai` and `anthropic`, and refuses any other provider |
-| `crypto.ts` | `effect/Crypto` over WebCrypto, because effect ships no Worker layer |
+| `turnImpl.ts` | The turn itself: `runTurn` from `@smthrs/create-app/worker`, written into the session as it runs |
+| `flowRunImpl.ts` | `POST /api/flows/run`: a routed flow executed outside the conversation, projected onto one `flow-run` card |
+| `host.ts` | The run host both share: the Tevm fork, the per-run `ui` and `flows` tool sources, and the observer that persists frames |
+| `sandbox.ts` | The QuickJS variant built from the `.wasm` module import; the only file that imports it |
 
 ## Routes
 
 | Method and path | Answer |
 | --- | --- |
-| `POST /api/agent/turn` | NDJSON stream of `TurnFrame`, forwarded from the session object; 400 for a flow that is not routed or not a chat flow |
+| `POST /api/agent/turn` | NDJSON stream of `TurnFrame`, forwarded from the session object; 400 for a flow that is not routed or not a chat flow; 503 `{ error, code: "host_unconfigured" }` naming the missing secret |
 | `POST /api/agent/turn/cancel` | `{ cancelled }` |
 | `GET /api/session?id=` | `SessionState` |
 | `GET /api/session` | `{ sessions: SessionSummary[] }`, newest first, read from the registry object; the shell's Recent column renders it. An object evicted mid-turn never reports its settle, so a `running` row can outlive its turn; `?id=` reads the session object itself |
@@ -94,14 +94,18 @@ Secrets, required before deploy, set once per environment and never committed:
 
 ```sh
 wrangler secret put OPENAI_API_KEY --config worker/wrangler.jsonc
+wrangler secret put AI_GATEWAY_API_KEY --config worker/wrangler.jsonc
+wrangler secret put TEVM_FORK_RPC_URL --config worker/wrangler.jsonc
 wrangler secret put APP_API_TOKEN --config worker/wrangler.jsonc
 ```
 
-`seats.ts` reads the credential for the provider the seat names, so the secret
-follows `AGENT.ts`: `OPENAI_API_KEY` for the `openai:gpt-5.5` this template
-ships, `ANTHROPIC_API_KEY` for an `anthropic:` seat. `TEVM_FORK_RPC_URL` is not
-a deploy secret: only `test/tevm.test.ts` reads it, from the test process
-environment.
+The seat resolver (`seatsFromEnv` in `@smthrs/create-app/worker`) reads the
+credential for the provider the seat names, so the secret follows `AGENT.ts`:
+`OPENAI_API_KEY` for the `openai:gpt-5.5` this template ships,
+`ANTHROPIC_API_KEY` for an `anthropic:` seat. `AI_GATEWAY_API_KEY` runs the
+completion judge. `TEVM_FORK_RPC_URL` is the endpoint the chain tool forks;
+the run grants `net:post` on its origin and nothing wider. A turn missing any
+of them is refused with a 503 that names the secret.
 
 `pnpm test` runs Vitest as a plain Node process, outside workerd, so nothing
 in `.dev.vars` reaches it. A recording (`pnpm test:record`) reads the seat's
@@ -169,58 +173,25 @@ to the Worker name, so renaming it creates a fresh Worker with empty storage and
 orphans every session. The custom domain follows the `routes` entry in whichever
 config declares it. Neither field changes as part of a routine deploy.
 
-## Milestone 1: the turn is mocked
+## The turn
 
-`APP_MOCK_TURN` defaults to `1` and `worker/turn.ts` streams a fixed sequence —
-deltas, one `tevm/getBalance` call, a `chain-balance` pane card, `done` — so the
-shell, the pane host, and cancel all work end to end. Setting it to `0` asks
-for the real `Agent.run` path, which does not run under workerd yet. Both
-`runTurn` (`worker/turnImpl.ts`) and `runFlowRun` (`worker/flowRunImpl.ts`)
-refuse it with the `liveRuntimeUnsupported` message: a turn streams one `error`
-frame and settles `failed`, and a pipeline run settles its `flow-run` card
-`failed` with the same text. The template ships no live implementation.
+A turn is `runTurn` from `@smthrs/create-app/worker`, the same host the
+default template serves: the seat from `AGENT.ts`, the completion judge, cells
+in a QuickJS realm built from the `.wasm` module `wrangler.jsonc` compiles, and
+the in-memory flow engine. `host.ts` rebinds three tool sources per run: `ui`
+paints into the turn's stream, `flows` saves into this session's object and
+reads the cells this turn ran, and `tevm` is the real fork over
+`TEVM_FORK_RPC_URL`. Every frame is observed as the run produces it, so the
+cards, the user message, the answer, and the Recent row are written whether or
+not a reader is keeping up.
 
-Two items block it:
+A pipeline flow (`POST /api/flows/run`) runs on the same host through
+`runFlow`. Its `flow-run` card settles once, with the steps the flow returned
+in its output (`BuildPlan.steps`).
 
-1. **The sandbox build.** `layerFor` in `@smthrs/create-app/runtime` selects
-   the QuickJS build, and its doc comment is the one statement of what a
-   Worker host needs: a variant built from a `.wasm` module import, passed as
-   `sandboxVariant`. Without it the sandbox compiles WebAssembly from bytes,
-   which workerd refuses, so every real turn dies before it reaches the model.
-   This Worker does not build or pass that variant yet.
-2. **No Durable Object engine store.** `@smthrs/database` has no
-   `ctx.storage.sql` driver, so a turn runs on `FlowEngine.layerMemory` and its
-   journal does not survive the request. `AppSession` persists the app's own
-   state (messages, cards, flows) instead, which is why a reload redraws the
-   transcript but cannot resume a half-finished turn.
-
-The model transport itself is clear: `@smthrs/model` reaches no Node builtin on
-the Worker path, `@smthrs/kernel/HttpClient` re-exports Effect's own
-`HttpClient` tag rather than declaring one, and `seats.ts` satisfies it with
-`FetchHttpClient.layer`.
-
-### The shape of the live path
-
-When both blockers land, the live path replaces the refusal in each entry
-point:
-
-- **Turn.** Wrap `Agent.run` in one `Action` inside a one-step `Flow`, because
-  `Agent.run` needs the engine port a running flow body provides, and
-  `materializeFlow(...).action` buffers the events a turn has to stream.
-  Provide it with `layerFor({ agent, sandbox, tools, seats: seatsFor(env),
-  crypto: layerCrypto, sandboxVariant })`. Rebind the `ui` and `flows` tool
-  sources to the session (`uiSource` over a `CardSink` that calls
-  `appendCard`, and `promoteSource` over `FlowStore` and `CellHistory`), and
-  keep every other source as `TOOLS.ts` declares it. Project each
-  `AgentEvent` onto frames: `model-delta` becomes `delta`, `cell-produced`
-  becomes `cell`, `cell-call-settled` becomes `call` (with the input from its
-  `cell-call-started`), a `complete` transition becomes `done`, `suspended`
-  becomes `park`, and `aborted` becomes `error`.
-- **Pipeline run.** Decode the request payload against the flow's declared
-  payload, fail the card with the expected keys if it does not match, then
-  run `materializeFlow(...).flow.execute` under the same `layerFor`. Read the
-  settled steps from the output's `steps` field (the `BuildPlan.steps`
-  shape) and settle the card `cancelled` when the signal aborted.
+A turn is one request. Its journal is the in-memory engine's, so an eviction
+mid-turn ends the turn; the transcript and cards already written stay, and the
+next turn starts fresh.
 
 ## Cancellation
 

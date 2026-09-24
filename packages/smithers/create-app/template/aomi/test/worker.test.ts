@@ -30,10 +30,11 @@ import {
   type SessionSummary
 } from "../src/api.ts"
 import type { Env } from "../worker/env.ts"
-import { type FlowRoute, type Phase, runFlowRun } from "../worker/flowRunImpl.ts"
+import { type Phase, runFlowRun } from "../worker/flowRunImpl.ts"
 import { authorized, isSessionId, MAX_BODY_BYTES } from "../worker/guard.ts"
 import { INDEX_SESSION } from "../worker/registry.ts"
 import { handle } from "../worker/router.ts"
+import { nodeHost, scriptedSeat } from "./support/recordedHost.ts"
 
 // ---------------------------------------------------------------------------
 // The doubles
@@ -108,9 +109,6 @@ const harness = (): Harness => {
   const env = {
     APP_NAME: "aomi",
     APP_API_OPEN: "1",
-    // The routing tests must not depend on which turn implementation is
-    // compiled in, and the mock is what a default deploy runs.
-    APP_MOCK_TURN: "1",
     // The id is the name: a Durable Object id is opaque to the router, which
     // only ever passes it straight back to `get`.
     SESSIONS: {
@@ -358,17 +356,17 @@ describe("POST /api/flows/run", () => {
 // ---------------------------------------------------------------------------
 
 /**
- * The mock run, which is what a default deploy executes. The live path calls a
- * model and does not run under workerd yet (`worker/flowRunImpl.ts`).
+ * A flow run on the real host. The seat answers with one scripted cell that
+ * returns a plan, so what is proven is the card: one id, the steps the flow
+ * reported, and the phase the run ended on.
  */
 describe("runFlowRun", () => {
-  // The mock run reads nothing off a route but its id, so the injected table
-  // carries the ids `routes.gen.ts` records and nothing else. Loading the
-  // generated table here would pull every flow module, every layer file, and
-  // every tool module — `tools/tevm.ts` and its `tevm` dependency included —
-  // into a suite whose subject is what the Worker answers.
-  const routes = async (): Promise<ReadonlyArray<FlowRoute>> =>
-    ["chat", "build"].map((id) => ({ id }) as unknown as FlowRoute)
+  const plan = nodeHost(scriptedSeat(`await ctx.done({
+    name: "arb",
+    summary: "An arbitrage scanner.",
+    files: [],
+    steps: [{ name: "plan", status: "done" }, { name: "smoke", status: "pending" }]
+  })`))
 
   const runCards = async (
     flowId: string,
@@ -376,63 +374,48 @@ describe("runFlowRun", () => {
   ): Promise<{ readonly phase: Phase; readonly cards: ReadonlyArray<FlowRunCard> }> => {
     const cards: Array<FlowRunCard> = []
     const phase = await runFlowRun({
-      env: { APP_MOCK_TURN: "1" } as unknown as Env,
+      env: { APP_NAME: "aomi" } as Env,
+      session: { writeFlow: () => ({ files: [] }), listFlows: () => [] },
       request: { sessionId: "s1", flowId, payload: { app: "arb", prompt: "build it" } },
       executionId: "exec-1",
-      routes,
+      seams: plan,
       signal,
       emit: (frame) => {
-        expect(frame.type).toBe("card.update")
         if (frame.type === "card.update" && frame.card.kind === "flow-run") cards.push(frame.card)
       }
     })
     return { phase, cards }
   }
 
-  test("replaces one card for the whole run", async () => {
-    const { cards } = await runCards("build")
-    expect(cards.length).toBeGreaterThan(1)
-    expect(new Set(cards.map((card) => card.id))).toEqual(new Set(["exec-1"]))
-    expect(new Set(cards.map((card) => card.executionId))).toEqual(new Set(["exec-1"]))
-  })
-
-  test("declares every step before running any of them", async () => {
-    const { cards } = await runCards("build")
-    const first = cards[0]
-    expect(first?.phase).toBe("running")
-    expect(first?.steps.map((step) => step.status)).toEqual(first?.steps.map(() => "pending"))
-    expect(first?.steps.map((step) => step.name)).toEqual(["describe", "plan", "generate", "validate", "smoke"])
-  })
-
-  test("settles completed with every step done", async () => {
+  test("settles its one card completed with the steps the flow reported", async () => {
     const { phase, cards } = await runCards("build")
-    const last = cards[cards.length - 1]
     expect(phase).toBe("completed")
-    expect(last?.phase).toBe("completed")
-    expect(last?.steps.every((step) => step.status === "done")).toBe(true)
-    expect(last?.error).toBeUndefined()
+    expect(cards).toHaveLength(1)
+    expect(cards[0]).toMatchObject({
+      id: "exec-1",
+      executionId: "exec-1",
+      phase: "completed",
+      steps: [{ name: "plan", status: "done" }, { name: "smoke", status: "done" }],
+      result: { name: "arb" }
+    })
+    expect(cards[0]?.error).toBeUndefined()
   })
 
-  test("carries the payload back on the settled card", async () => {
-    const { cards } = await runCards("build")
-    expect(cards[cards.length - 1]?.result).toMatchObject({ flowId: "build", payload: { app: "arb" } })
-  })
-
-  test("an aborted run settles cancelled with no step left running", async () => {
+  test("an aborted run settles cancelled", async () => {
     const controller = new AbortController()
     controller.abort()
     const { phase, cards } = await runCards("build", controller.signal)
-    const last = cards[cards.length - 1]
     expect(phase).toBe("cancelled")
-    expect(last?.phase).toBe("cancelled")
-    expect(last?.steps.some((step) => step.status === "running" || step.status === "pending")).toBe(false)
+    expect(cards.map((card) => card.phase)).toEqual(["cancelled"])
   })
 
-  test("an unrouted flow settles failed and names itself", async () => {
-    const { phase, cards } = await runCards("saved/arb")
-    expect(phase).toBe("failed")
-    expect(cards).toHaveLength(1)
-    expect(cards[0]?.error).toContain("saved/arb")
+  test("an unrouted flow and a chat flow settle failed and say why", async () => {
+    const unrouted = await runCards("saved-arb")
+    expect(unrouted.phase).toBe("failed")
+    expect(unrouted.cards[0]?.error).toContain("saved-arb")
+    const chat = await runCards("chat")
+    expect(chat.phase).toBe("failed")
+    expect(chat.cards[0]?.error).toContain("chat flow")
   })
 })
 

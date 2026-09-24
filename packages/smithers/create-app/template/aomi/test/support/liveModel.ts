@@ -2,13 +2,11 @@
  * The live seat a recording run streams from: `<provider>:<model>` over the
  * platform's `fetch`, credentialed from the provider's environment variable.
  *
- * This is the credentialed half of `worker/seats.ts` with the Worker's env
- * binding replaced by `process.env` and the `Seat` wrapper dropped, because
- * `cachedModelTest`'s `live` option asks for a bare `Model.Model` and builds
- * the seat itself. The duplication is deliberate. Importing `worker/seats.ts`
- * here would pull the Worker's env type and `@smthrs/agent`'s seat machinery
- * into a vitest process that needs neither, and the test would break the
- * moment the Worker's env grew a field that has nothing to do with models.
+ * This is the credentialed half of `seatsFromEnv` in
+ * `@smthrs/create-app/worker` with the Worker's env binding replaced by
+ * `process.env` and the `Seat` wrapper dropped, because `cachedModelTest`'s
+ * `live` option asks for a bare `Model.Model` and builds the seat itself. It
+ * also knows the ChatGPT-subscription credential, which a Worker never has.
  *
  * Two providers are credentialed here because the app has run on both. The
  * machine that records a fixture supplies one key, the seat in AGENT.ts names
@@ -75,7 +73,7 @@ const providers: Record<string, Provider> = {
   openai: { envVar: "OPENAI_API_KEY", route: Route.openai as RouteFor }
 }
 
-/** The provider a bare seat resolves to, matching `worker/seats.ts`. */
+/** The provider a bare seat resolves to, matching `seatsFromEnv`. */
 const DEFAULT_PROVIDER = "anthropic"
 
 /**

@@ -19,6 +19,7 @@
 import { DatabaseSync } from "node:sqlite"
 import type { Env } from "../../worker/env.ts"
 import { AppSession } from "../../worker/AppSession.ts"
+import type { HostSeams } from "../../worker/host.ts"
 
 export interface DurableObjectHarness {
   /** The bindings, with `SESSIONS` resolving names to objects of this harness. */
@@ -35,8 +36,11 @@ export interface DurableObjectHarness {
   readonly settled: () => Promise<void>
 }
 
-/** The bindings and the objects behind them, one set per test. */
-export const durableObjects = (env: Partial<Env> = {}): DurableObjectHarness => {
+/**
+ * The bindings and the objects behind them, one set per test. `seams` is what
+ * every object's turns and flow runs execute on (`AppSession.seams`).
+ */
+export const durableObjects = (env: Partial<Env> = {}, seams?: HostSeams): DurableObjectHarness => {
   const databases = new Map<string, DatabaseSync>()
   const objects = new Map<string, AppSession>()
   const faults = new Map<string, string>()
@@ -100,12 +104,12 @@ export const durableObjects = (env: Partial<Env> = {}): DurableObjectHarness => 
   const bindings = {
     APP_NAME: "aomi",
     APP_API_OPEN: "1",
-    APP_MOCK_TURN: "1",
     ...env
   } as Env
 
   const recreate = (name: string): AppSession => {
     const created = new AppSession(state(name), bindings)
+    created.seams = seams
     objects.set(name, created)
     return created
   }

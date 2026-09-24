@@ -903,8 +903,8 @@ export const tevmSource = (services: Context.Context<Tevm>): FlowBinding.Source 
 }
 
 /**
- * The source TOOLS.ts composes today: the chain flows over the deterministic
- * mock. The Worker builds its own with `tevmSource(Context.make(Tevm, ...))`
- * once a real client exists.
+ * The source TOOLS.ts composes: the chain flows over the deterministic mock,
+ * for fixtures and tests. A Worker run replaces it with the real fork
+ * (`worker/host.ts`).
  */
 export const tevm: FlowBinding.Source = tevmSource(Context.make(Tevm, makeMock()))

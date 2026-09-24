@@ -22,6 +22,7 @@
   "dependencies": {
     "@effect/platform-node": "4.0.0-rc.115",
     "@effect/platform-node-shared": "4.0.0-rc.115",
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@smthrs/agent": "1.0.0-rc.1",
     "@smthrs/capability": "1.0.0-rc.1",
     "@smthrs/cli": "next",
@@ -39,6 +40,7 @@
     "@smthrs/testing": "1.0.0-rc.1",
     "@smthrs/ui": "1.0.0-rc.0",
     "effect": "4.0.0-rc.115",
+    "quickjs-emscripten-core": "0.32.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tevm": "1.0.0-next.149",

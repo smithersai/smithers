@@ -25,6 +25,8 @@ import type { TurnFrame } from "../src/ui.ts"
 import {
   layerCryptoWeb,
   resolveChatFlow,
+  resolvePipelineFlow,
+  runFlow,
   runTurn,
   seatsFromEnv,
   type TurnHost,
@@ -170,6 +172,44 @@ describe("runTurn", () => {
     expect(frames.filter((frame) => frame.type === "done" || frame.type === "error")).toHaveLength(1)
   })
 
+  it("hands every frame to the observer, the terminal one included, before the reader", async () => {
+    const seen: Array<TurnFrame["type"]> = []
+    const stream = await runTurn(await host({ observe: (frame) => void seen.push(frame.type) }), question)
+    if (!(stream instanceof ReadableStream)) throw new Error("refused")
+    const frames = await read(stream)
+    expect(seen).toEqual(frames.map((frame) => frame.type))
+    expect(seen.at(-1)).toBe("done")
+  })
+
+  it("observes the terminal frame of a run whose reader hung up", async () => {
+    const seen: Array<TurnFrame> = []
+    const stream = await runTurn(await host({ observe: (frame) => void seen.push(frame) }), question)
+    if (!(stream instanceof ReadableStream)) throw new Error("refused")
+    await stream.cancel()
+    const terminal = () => seen.filter((frame) => frame.type === "done" || frame.type === "error")
+    for (let tries = 0; terminal().length === 0 && tries < 500; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+    expect(seen.filter((frame) => frame.type === "done" || frame.type === "error")).toEqual([
+      { type: "error", message: "The turn was cancelled." }
+    ])
+  })
+
+  it("ends with the observer's failure when observing the terminal frame throws", async () => {
+    const stream = await runTurn(
+      await host({
+        observe: (frame) => {
+          if (frame.type === "done") throw new Error("could not persist the answer")
+        }
+      }),
+      question
+    )
+    if (!(stream instanceof ReadableStream)) throw new Error("refused")
+    const frames = await read(stream)
+    expect(frames.at(-1)).toEqual({ type: "error", message: "could not persist the answer" })
+    expect(frames.filter((frame) => frame.type === "done" || frame.type === "error")).toHaveLength(1)
+  })
+
   it("refuses a host whose tools cannot be composed before opening a stream", async () => {
     const refused = await runTurn(
       await host({
@@ -219,6 +259,37 @@ describe("resolveChatFlow", () => {
       error: "flow_not_chat",
       message: "\"build\" is not a chat flow"
     })
+  })
+})
+
+describe("runFlow", () => {
+  // The chat route with `chat` off: the same prompt, so the same fixture replays.
+  const pipeline: TurnRoute = { ...flows[0]!, id: "answer", spec: { ...flows[0]!.spec, chat: false } }
+
+  it("runs a pipeline flow to one done frame with the same frames a turn streams", async () => {
+    const stream = await runFlow(await host({ flows: [...flows, pipeline] }), { ...question, flow: "answer" })
+    if (!(stream instanceof ReadableStream)) throw new Error(`refused: ${JSON.stringify(stream)}`)
+    const frames = await read(stream)
+    expect(frames.some((frame) => frame.type === "card")).toBe(true)
+    expect(frames.at(-1)!.type).toBe("done")
+    expect(frames.filter((frame) => frame.type === "done" || frame.type === "error")).toHaveLength(1)
+  })
+
+  it("refuses a chat flow and an unrouted one before opening a stream", async () => {
+    expect(await runFlow(await host(), question)).toEqual({
+      status: 400,
+      error: "flow_not_pipeline",
+      message: "\"chat\" is a chat flow; run it as a turn"
+    })
+    expect(await runFlow(await host(), { flow: "nope", payload: {} })).toMatchObject({
+      status: 400,
+      error: "flow_not_routed",
+      known: ["chat"]
+    })
+  })
+
+  it("resolves a pipeline route by id", () => {
+    expect(resolvePipelineFlow([...flows, pipeline], "answer")).toBe(pipeline)
   })
 })
 

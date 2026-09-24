@@ -13,11 +13,10 @@
  * table is used in that role; only the other three are used in the session
  * role.
  *
- * The engine journal is deliberately NOT here. `@smthrs/database` has no
- * Durable Object SQLite driver yet, so a turn runs on
- * `FlowEngine.layerMemory` and this object persists the app's own state
- * instead. When the driver lands the journal moves in beside these tables and
- * a resumed turn replays rather than restarts.
+ * The engine journal is deliberately NOT here. A turn is one request and runs
+ * on the in-memory flow engine (`@smthrs/create-app/worker`); this object
+ * persists the app's own state instead. A turn cut off by eviction is not
+ * resumed; the next turn starts fresh.
  */
 import { DurableObject } from "cloudflare:workers"
 import * as Option from "effect/Option"
@@ -35,6 +34,7 @@ import {
   type TurnRequest
 } from "../src/api.ts"
 import type { Env } from "./env.ts"
+import type { HostSeams, SessionFlows } from "./host.ts"
 import { INDEX_SESSION, indexSession, titleFrom } from "./registry.ts"
 import { track } from "./stream.ts"
 import { runTurn } from "./turn.ts"
@@ -182,6 +182,21 @@ export class AppSession extends DurableObject<Env> {
    */
   private registryStub: ReturnType<typeof indexSession> | undefined
 
+  /**
+   * What a Node test replaces in the run host: the QuickJS build, the seat,
+   * the judge, the chain. The Worker never sets it, so a deployed turn runs on
+   * the workerd build, the provider keys, and the configured fork.
+   */
+  seams: HostSeams | undefined
+
+  /** The session half `flows/write-flow` writes through. */
+  private flowStore(): SessionFlows {
+    return {
+      writeFlow: (id, description, files) => this.writeFlow(id, description, files),
+      listFlows: () => this.listFlows()
+    }
+  }
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     ctx.storage.transactionSync(() => {
@@ -305,33 +320,55 @@ export class AppSession extends DurableObject<Env> {
    * `POST /api/agent/turn` — one turn, streamed as NDJSON.
    *
    * A second turn on a busy session is refused rather than queued: two turns
-   * writing one transcript is a race the shell has no way to render.
+   * writing one transcript is a race the shell has no way to render. A turn the
+   * host cannot run (a missing seat key, judge key, or fork endpoint) is
+   * refused with a typed JSON body before the session is marked running.
    */
-  turn(request: TurnRequest): Response {
+  async turn(request: TurnRequest): Promise<Response> {
     if (this.busy) {
       return Response.json(
         { error: "A turn is already streaming for this session." },
         { status: 409 }
       )
     }
+    // Held across the lazy load, so a second request cannot start a turn while
+    // this one is still being built.
+    this.busy = true
     const controller = new AbortController()
     this.cancels.add(controller)
-    this.busy = true
+    const release = (): void => {
+      this.busy = false
+      this.cancels.delete(controller)
+    }
+
+    let body: Awaited<ReturnType<typeof runTurn>>
+    try {
+      body = await runTurn({
+        env: this.env,
+        session: {
+          ...this.flowStore(),
+          appendMessage: (role, text) => this.appendMessage(role, text),
+          appendCard: (card) => this.appendCard(card),
+          settle: (status) => this.register(request.sessionId, request.message, status)
+        },
+        seams: this.seams,
+        request,
+        signal: controller.signal
+      })
+    } catch (cause) {
+      release()
+      return Response.json(
+        { error: cause instanceof Error ? cause.message : String(cause) },
+        { status: 500 }
+      )
+    }
+    if (!(body instanceof ReadableStream)) {
+      release()
+      const { status, error, message } = body
+      return Response.json({ error: message, code: error }, { status })
+    }
     this.stage = request.flowId
     this.register(request.sessionId, request.message, "running")
-
-    const body = runTurn({
-      env: this.env,
-      session: {
-        appendMessage: (role, text) => this.appendMessage(role, text),
-        appendCard: (card) => this.appendCard(card),
-        writeFlow: (id, description, files) => this.writeFlow(id, description, files),
-        listFlows: () => this.listFlows(),
-        settle: (status) => this.register(request.sessionId, request.message, status)
-      },
-      request,
-      signal: controller.signal
-    })
 
     // The flag and the controller belong to this stream, so they are cleared
     // where the stream ends rather than where the request returns. `track` runs
@@ -340,10 +377,7 @@ export class AppSession extends DurableObject<Env> {
     // `busy` true and every later turn answered 409. A hangup also aborts the
     // controller, which is the signal the turn itself watches.
     const tracked = track(body, {
-      onSettle: () => {
-        this.busy = false
-        this.cancels.delete(controller)
-      },
+      onSettle: release,
       onCancel: (reason) => controller.abort(reason)
     })
 
@@ -421,7 +455,8 @@ export class AppSession extends DurableObject<Env> {
    * object alive for the writes that land after the response was sent.
    *
    * The router has already refused an unrouted flow and a chat flow
-   * (`worker/router.ts`, `flowRefusal`), so this only has to run it.
+   * (`worker/router.ts`, `flowRefusal`); a direct object call that bypasses
+   * it gets the same refusal as a `failed` card.
    */
   runFlow(request: FlowRunRequest): FlowRunResponse {
     const executionId = crypto.randomUUID()
@@ -454,6 +489,8 @@ export class AppSession extends DurableObject<Env> {
       const { runFlowRun } = await import("./flowRunImpl.ts")
       phase = await runFlowRun({
         env: this.env,
+        session: this.flowStore(),
+        seams: this.seams,
         request,
         executionId,
         signal: controller.signal,

@@ -321,16 +321,22 @@ the judge has no `AI_GATEWAY_API_KEY`. The request's signal cancels the run.
 | `seats`          | `SeatProvider`, optional                                   |
 | `evaluator`      | `Layer.Layer<Evaluator.Evaluator>`, optional               |
 | `crypto`         | `Layer.Layer<Crypto.Crypto>`, optional                     |
+| `observe`        | `(frame: TurnFrame) => void`, optional                     |
 
 `tools` rebinds a route's sources per turn, so a `ui` source can write each
 card to `TurnCards` and it streams as a `card` frame. The optional layers
 default to `seatsFromEnv(env)`, the gateway judge read from `env`, and
-`layerCryptoWeb`.
+`layerCryptoWeb`. `observe` sees every frame as the run produces it, and
+exactly one terminal frame even after the reader hangs up, so a host can
+persist a run without depending on its reader. A throw while observing the
+terminal frame replaces it with an `error` frame.
 
 ### The rest
 
 `runTurn` is `turnResponse` without the HTTP: it returns the stream or the
-refusal. `resolveChatFlow` is the routing check alone. `seatsFromEnv` resolves
+refusal. `runFlow` is the same for a pipeline flow, refusing a chat flow with
+`400 flow_not_pipeline`. `resolveChatFlow` and `resolvePipelineFlow` are the
+routing checks alone. `seatsFromEnv` resolves
 `anthropic:<model>` and `openai:<model>` seats over `fetch` from
 `ANTHROPIC_API_KEY` and `OPENAI_API_KEY`. `layerCryptoWeb` is `effect/Crypto`
 over WebCrypto.

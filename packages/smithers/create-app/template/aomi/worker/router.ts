@@ -99,8 +99,8 @@ const fileFlows = async (): Promise<Array<FlowSummary>> => {
  * A chat flow runs only as a turn and a pipeline flow only as a flow run.
  * The check is here rather than only in the Durable Object because it needs
  * the routed flow list, and refusing before the object is woken keeps a typo
- * from creating a session. The turn implementation repeats the chat half
- * (`worker/turnImpl.ts`), so a direct object call cannot bypass it.
+ * from creating a session. The run host repeats both halves
+ * (`@smthrs/create-app/worker`), so a direct object call cannot bypass them.
  */
 const flowRefusal = async (
   flowId: string,

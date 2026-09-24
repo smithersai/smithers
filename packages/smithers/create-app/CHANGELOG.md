@@ -8,12 +8,24 @@
 
 - Added `@smthrs/create-app/worker`: `turnResponse` runs a routed chat flow for
   one `POST /api/turn` under workerd and streams `TurnFrame` NDJSON back.
+- `@smthrs/create-app/worker` adds `runFlow` and `resolvePipelineFlow` for
+  pipeline flows (refused as `flow_not_pipeline` when the flow is a chat flow),
+  and `TurnHost.observe`, which sees every frame, the terminal one included,
+  as the run produces it.
 
 ### Fixed
 
 - The `default` template's `/api/turn` runs the chat flow instead of answering
   HTTP 501. It answers 503 `host_unconfigured` until the seat's provider key
   and `AI_GATEWAY_API_KEY` are set.
+- The `aomi` template's Worker runs real turns and pipeline runs on
+  `@smthrs/create-app/worker` instead of streaming a canned turn. The
+  `APP_MOCK_TURN` switch, the mock turn, and the mock flow run are gone. A turn
+  needs the seat's key, `AI_GATEWAY_API_KEY`, and `TEVM_FORK_RPC_URL`; without
+  one it answers 503 `host_unconfigured` naming the secret. Deployments delete
+  the `APP_MOCK_TURN` var and set the two new secrets.
+- The `aomi` chat fixture replays again: it was recorded against an older cell
+  contract and failed as unscripted.
 
 ## [1.0.0-rc.1] - 2026-09-22
 

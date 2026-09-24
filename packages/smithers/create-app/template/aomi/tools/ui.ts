@@ -20,6 +20,7 @@
 import * as Flow from "@smthrs/core/Flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type { AppCard } from "@smthrs/create-app/ui"
+import type { TurnCards } from "@smthrs/create-app/worker"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -253,13 +254,28 @@ export const uiSource = (services: Context.Context<CardSink | PaneNames>): FlowB
   ])
 
 /**
- * The source TOOLS.ts composes today: a sink that drops cards and an empty
- * pane registry. The Worker builds its own per turn with
- * `uiSource(Context.merge(...))` so cards reach the session.
- *
- * TODO(milestone-3): worker/turn.ts passes the session sink and the pane list
- * from routes.gen.ts here.
+ * The source TOOLS.ts composes: a sink that drops cards and an empty pane
+ * registry. A Worker turn replaces it with {@link turnSource}.
  */
 export const ui: FlowBinding.Source = uiSource(
   Context.add(Context.make(CardSink, makeNoop()), PaneNames, makePanes([]))
 )
+
+/**
+ * The source a Worker turn binds: every card goes to that turn's stream, and
+ * the pane registry is the routed pane list.
+ */
+export const turnSource = (cards: TurnCards, paneNames: ReadonlyArray<string>): FlowBinding.Source =>
+  uiSource(
+    Context.add(
+      Context.make(
+        CardSink,
+        CardSink.of({
+          emit: (card) => Effect.sync(() => cards.emit(card)),
+          update: (card) => Effect.sync(() => cards.update(card))
+        })
+      ),
+      PaneNames,
+      makePanes(paneNames.map((name) => ({ name, fullscreen: false })))
+    )
+  )

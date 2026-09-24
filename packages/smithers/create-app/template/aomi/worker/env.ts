@@ -13,13 +13,16 @@ export interface Env {
   /** One Durable Object per chat session: messages, cards, saved flows. */
   readonly SESSIONS: DurableObjectNamespace<AppSession>
   /**
-   * Provider credentials for the agent seat, one per provider `worker/seats.ts`
-   * knows. A seat resolves against the binding for the provider it names, so a
-   * deployment only sets the one its AGENT.ts seats use. `wrangler secret put`.
+   * Provider credentials for the agent seat. A seat resolves against the
+   * binding for the provider it names (`seatsFromEnv` in
+   * `@smthrs/create-app/worker`), so a deployment only sets the one its
+   * AGENT.ts seats use. `wrangler secret put`.
    */
   readonly ANTHROPIC_API_KEY?: string
   readonly OPENAI_API_KEY?: string
-  /** Upstream JSON-RPC the Tevm fork reads state from. Optional in mock mode. */
+  /** The Vercel AI Gateway key the completion judge runs on. Every turn needs it. */
+  readonly AI_GATEWAY_API_KEY?: string
+  /** Upstream JSON-RPC the Tevm fork reads state from. A turn is refused without it. */
   readonly TEVM_FORK_RPC_URL?: string
   /**
    * The shared credential every `/api/*` route but `GET /api/health` requires.
@@ -32,11 +35,4 @@ export interface Env {
   readonly APP_API_OPEN?: string
   /** The app name from `PACKAGE.ts`, echoed by `GET /api/health`. */
   readonly APP_NAME: string
-  /**
-   * Milestone-1 switch. Anything but `"0"` streams the mock turn; `"0"` asks
-   * for the real `Agent.run` path, which does not yet run under workerd (see
-   * `worker/turn.ts`). Delete the switch, and the mock, once that path runs
-   * there.
-   */
-  readonly APP_MOCK_TURN?: string
 }

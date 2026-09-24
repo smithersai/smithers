@@ -6,6 +6,15 @@
 	// The agent path imports `@smthrs/*` packages that reach for Node builtins
 	// through their platform shims. Nothing on the Worker path imports undici.
 	"compatibility_flags": ["nodejs_compat"],
+	// The QuickJS WebAssembly export has no .wasm suffix. Match it explicitly so
+	// it is bundled as a compiled module, the only kind workerd instantiates.
+	"rules": [
+		{
+			"type": "CompiledWasm",
+			"globs": ["**/*.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
+			"fallthrough": true
+		}
+	],
 	// The custom domain declared in PACKAGE.ts. Point it at a zone your account
 	// owns. Wrangler creates the DNS record and the certificate on first
 	// deploy; removing this entry detaches the domain from this Worker.
@@ -33,15 +42,14 @@
 	},
 	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["AppSession"] }],
 	"vars": {
-		"APP_NAME": "__APP_NAME__",
-		// Milestone 1 ships the mock turn. Set to "0" to ask for the real
-		// Agent.run path (blocked upstream; see worker/README.md).
-		"APP_MOCK_TURN": "1"
+		"APP_NAME": "__APP_NAME__"
 	},
 	// Secrets, set with `wrangler secret put --config worker/wrangler.jsonc`.
-	// Only the provider the app's AGENT.ts seats name has to be set:
+	// Only the provider the app's AGENT.ts seats name has to be set, plus the
+	// judge key and the fork endpoint; a turn answers 503 until they are:
 	//   OPENAI_API_KEY     — credential for an `openai:<model>` seat
 	//   ANTHROPIC_API_KEY  — credential for an `anthropic:<model>` seat
+	//   AI_GATEWAY_API_KEY — Vercel AI Gateway key for the completion judge
 	//   TEVM_FORK_RPC_URL  — JSON-RPC the Tevm fork reads chain state from
 	//   APP_API_TOKEN      — shared credential every /api/* route but health
 	//                        requires. Missing or empty refuses requests (401).

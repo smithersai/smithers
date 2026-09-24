@@ -163,7 +163,15 @@ export type TurnRefusal =
     readonly known: ReadonlyArray<string>
   }
   | { readonly status: 400; readonly error: "flow_not_chat"; readonly message: string }
+  | { readonly status: 400; readonly error: "flow_not_pipeline"; readonly message: string }
   | { readonly status: 503; readonly error: "host_unconfigured"; readonly message: string }
+
+const unrouted = (flows: ReadonlyArray<TurnRoute>, id: string): TurnRefusal => ({
+  status: 400,
+  error: "flow_not_routed",
+  message: `No flow is routed as "${id}"`,
+  known: flows.map((flow) => flow.id)
+})
 
 /**
  * The routed chat flow named `id`, or the refusal that says why there is none.
@@ -175,16 +183,27 @@ export type TurnRefusal =
  */
 export const resolveChatFlow = (flows: ReadonlyArray<TurnRoute>, id: string): TurnRoute | TurnRefusal => {
   const route = flows.find((flow) => flow.id === id)
-  if (route === undefined) {
-    return {
-      status: 400,
-      error: "flow_not_routed",
-      message: `No flow is routed as "${id}"`,
-      known: flows.map((flow) => flow.id)
-    }
-  }
+  if (route === undefined) return unrouted(flows, id)
   if (route.spec.chat !== true) {
     return { status: 400, error: "flow_not_chat", message: `"${id}" is not a chat flow` }
+  }
+  return route
+}
+
+/**
+ * The routed pipeline flow named `id`, or the refusal that says why there is
+ * none.
+ *
+ * A flow with `chat: true` runs as a turn, not as a flow run.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const resolvePipelineFlow = (flows: ReadonlyArray<TurnRoute>, id: string): TurnRoute | TurnRefusal => {
+  const route = flows.find((flow) => flow.id === id)
+  if (route === undefined) return unrouted(flows, id)
+  if (route.spec.chat === true) {
+    return { status: 400, error: "flow_not_pipeline", message: `"${id}" is a chat flow; run it as a turn` }
   }
   return route
 }
@@ -224,6 +243,15 @@ export interface TurnHost {
   readonly seats?: SeatProvider | undefined
   readonly evaluator?: Layer.Layer<Evaluator.Evaluator> | undefined
   readonly crypto?: Layer.Layer<Crypto.Crypto> | undefined
+  /**
+   * Sees every frame as the run produces it, before the reader does, and
+   * exactly one terminal `done` or `error` frame even when the reader has hung
+   * up. A host persists a run here so the record does not depend on how fast,
+   * or whether, anyone reads the stream. A throw while observing a frame fails
+   * the run; a throw while observing the terminal frame replaces it with an
+   * `error` frame carrying that message.
+   */
+  readonly observe?: ((frame: TurnFrame) => void) | undefined
 }
 
 /**
@@ -291,14 +319,39 @@ const frameOf = (
  * @category constructors
  * @since 1.0.0
  */
-export const runTurn = async (
+export const runTurn = (
   host: TurnHost,
   request: TurnRequest,
   signal?: AbortSignal
 ): Promise<ReadableStream<Uint8Array> | TurnRefusal> => {
   const route = resolveChatFlow(host.flows, request.flow)
-  if ("error" in route) return route
+  return "error" in route ? Promise.resolve(route) : execute(host, route, request.payload, signal)
+}
 
+/**
+ * {@link runTurn} for a pipeline flow: the same checks, the same frames, the
+ * same single terminal frame. A chat flow is refused with
+ * `flow_not_pipeline`.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const runFlow = (
+  host: TurnHost,
+  request: TurnRequest,
+  signal?: AbortSignal
+): Promise<ReadableStream<Uint8Array> | TurnRefusal> => {
+  const route = resolvePipelineFlow(host.flows, request.flow)
+  return "error" in route ? Promise.resolve(route) : execute(host, route, request.payload, signal)
+}
+
+/** Runs one resolved route; the shared body of {@link runTurn} and {@link runFlow}. */
+const execute = async (
+  host: TurnHost,
+  route: TurnRoute,
+  payload: unknown,
+  signal: AbortSignal | undefined
+): Promise<ReadableStream<Uint8Array> | TurnRefusal> => {
   const seats = host.seats ?? seatsFromEnv(host.env)
   const seat = await Effect.runPromise(Effect.result(seats.resolve(route.agent.seat)))
   if (seat._tag === "Failure") return { status: 503, error: "host_unconfigured", message: seat.failure.message }
@@ -306,6 +359,7 @@ export const runTurn = async (
   const lines: Array<TurnFrame> = []
   let push: ((frame: TurnFrame) => void) | undefined
   const send = (frame: TurnFrame): void => {
+    host.observe?.(frame)
     if (push === undefined) lines.push(frame)
     else push(frame)
   }
@@ -342,15 +396,15 @@ export const runTurn = async (
   const runtime = Layer.mergeAll(materialized.action.layer, Interpreter.layer(materialized.flow), sink).pipe(
     Layer.provideMerge(hostLayer)
   )
-  // `materializeFlow` erases the payload and success types; `execute` reads
+  // `materializeFlow` erases the payload and success types; `run` reads
   // `this.payloadSchema`, so it stays bound to its flow.
-  const execute = materialized.flow.execute.bind(materialized.flow) as (
+  const run = materialized.flow.execute.bind(materialized.flow) as (
     payload: unknown,
     options: { readonly executionId: string }
   ) => Effect.Effect<unknown, unknown>
-  // The raw payload, not the decoded one: `execute` decodes it itself, and a
+  // The raw payload, not the decoded one: `run` decodes it itself, and a
   // transforming schema must not decode twice.
-  const program = execute(request.payload, { executionId: `turn/${route.id}/${crypto.randomUUID()}` }).pipe(
+  const program = run(payload, { executionId: `turn/${route.id}/${crypto.randomUUID()}` }).pipe(
     Effect.provide(runtime as unknown as Layer.Layer<never>)
   )
 
@@ -367,14 +421,23 @@ export const runTurn = async (
           // The reader is gone; the run is being interrupted.
         }
       }
+      const finish = (frame: TurnFrame): void => {
+        try {
+          host.observe?.(frame)
+        } catch (cause) {
+          write({ type: "error", message: messageOf(cause) })
+          return
+        }
+        write(frame)
+      }
       push = write
       for (const frame of lines.splice(0)) write(frame)
       try {
         if (signal?.aborted === true) aborted.abort()
         const output = await Effect.runPromise(program, { signal: aborted.signal })
-        write({ type: "done", output })
+        finish({ type: "done", output })
       } catch (cause) {
-        write({ type: "error", message: aborted.signal.aborted ? "The turn was cancelled." : messageOf(cause) })
+        finish({ type: "error", message: aborted.signal.aborted ? "The turn was cancelled." : messageOf(cause) })
       } finally {
         signal?.removeEventListener("abort", onAbort)
         try {

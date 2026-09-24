@@ -7,20 +7,28 @@
  * real class from `worker/AppSession.ts`, constructed by
  * `test/support/durableObject.ts` over a `node:sqlite` database per name.
  *
- * The turn is the mock turn, which is what a default deploy runs: it writes
- * the user message, streams deltas, paints one pane card, and settles the
- * session's row in the registry, all through the same seams a live turn uses.
+ * A turn is a real run: the seat replays the committed chat fixture, cells run
+ * on the Node QuickJS build, and the chain is the deterministic mock. It writes
+ * the user message, the card the model painted, and the answer, and settles the
+ * session's row in the registry. A flow run answers from a scripted cell,
+ * because what it proves is the card and the row, not a model's plan.
  */
 import * as Schema from "effect/Schema"
 import { describe, expect, it, vi } from "vitest"
 import { type AppCard, SessionState, type TurnFrame, TurnFrame as TurnFrameSchema } from "../src/api.ts"
 import { INDEX_SESSION } from "../worker/registry.ts"
 import { durableObjects } from "./support/durableObject.ts"
+import { fixtures, nodeHost, recordedHost, scriptedSeat } from "./support/recordedHost.ts"
 
-// The mock turn and the mock flow run read the generated route table, which
-// reaches the chain tool and the layout. Neither runs here; see mockTurn.test.ts.
-vi.mock("../TOOLS.ts", () => ({ Tools: { sources: [] } }))
-vi.mock("../app/layout.tsx", () => ({ default: () => null }))
+const chat = recordedHost(fixtures.chat)
+
+/** A build run that returns a plan with two stages, one of them still running. */
+const plan = nodeHost(scriptedSeat(`await ctx.done({
+  name: "arb",
+  summary: "An arbitrage scanner.",
+  files: [{ path: "app/pages/index.tsx", purpose: "The scanner page" }],
+  steps: [{ name: "describe", status: "done" }, { name: "validate", status: "running" }]
+})`))
 
 const html = (id: string, html = `<p>${id}</p>`): AppCard => ({ kind: "html", id, html })
 
@@ -57,12 +65,12 @@ describe("AppSession storage", () => {
   })
 
   it("keeps every row and drops every transient field when the object is recreated", async () => {
-    const app = durableObjects()
+    const app = durableObjects({}, chat)
     const before = app.session("s1")
     before.appendMessage("user", "hello")
     before.appendCard(html("c1"))
     before.writeFlow("arb", "arb scan", { "flow.ts": "export {}" })
-    expect(before.turn({ sessionId: "s1", flowId: "chat", message: "again" }).status).toBe(200)
+    expect((await before.turn({ sessionId: "s1", flowId: "chat", message: "again" })).status).toBe(200)
     expect(before.state("s1").busy).toBe(true)
 
     const after = app.recreate("s1")
@@ -163,24 +171,29 @@ describe("AppSession storage", () => {
 })
 
 describe("AppSession turns", () => {
-  const request = { sessionId: "s1", flowId: "chat", message: "Check the balance" }
+  const request = { sessionId: "s1", flowId: "chat", message: "What is vitalik.eth's ETH balance on mainnet?" }
 
   it("persists each turn's transcript and card, and settles the registry row", async () => {
-    const app = durableObjects()
+    const app = durableObjects({}, chat)
     const session = app.session("s1")
-    const first = await frames(session.turn(request))
+    const first = await frames(await session.turn(request))
     expect(first.at(-1)?.type).toBe("done")
-    const second = await frames(session.turn({ ...request, message: "And again" }))
+    // The same question again: the fixture replays one recorded turn.
+    const second = await frames(await session.turn(request))
     expect(second.at(-1)?.type).toBe("done")
     await app.settled()
 
     const state = Schema.decodeUnknownSync(SessionState)(app.recreate("s1").state("s1"))
     expect(state.busy).toBe(false)
+    const answers = [first, second].map((turn) => {
+      const done = turn.at(-1) as Extract<TurnFrame, { type: "done" }>
+      return (done.output as { answer: string }).answer
+    })
     expect(state.messages.map((message) => [message.role, message.text])).toEqual([
-      ["user", "Check the balance"],
-      ["assistant", expect.any(String)],
-      ["user", "And again"],
-      ["assistant", expect.any(String)]
+      ["user", request.message],
+      ["assistant", answers[0]],
+      ["user", request.message],
+      ["assistant", answers[1]]
     ])
     const painted = [...first, ...second].flatMap((frame) => (frame.type === "card" ? [frame.card] : []))
     expect(painted).toHaveLength(2)
@@ -189,61 +202,96 @@ describe("AppSession turns", () => {
       "message", "card", "message", "message", "card", "message"
     ])
     expect(app.session(INDEX_SESSION).sessions()).toEqual([
-      { id: "s1", title: "Check the balance", status: "ready", stage: "chat", at: expect.any(Number) }
+      { id: "s1", title: request.message, status: "ready", stage: "chat", at: expect.any(Number) }
     ])
   })
 
-  it("refuses a second turn while one streams, and takes one after cancel", async () => {
-    const app = durableObjects()
+  it("refuses a turn the host cannot run with a typed 503, writing nothing", async () => {
+    const app = durableObjects({}, { ...chat, seats: undefined, evaluator: undefined })
     const session = app.session("s1")
-    const streaming = session.turn(request)
+    const response = await session.turn(request)
+    expect(response.status).toBe(503)
+    const body = await response.json() as { error: string; code: string }
+    expect(body.code).toBe("host_unconfigured")
+    expect(body.error).toContain("OPENAI_API_KEY")
+    await app.settled()
+    expect(session.state("s1")).toMatchObject({ messages: [], cards: [], busy: false })
+    expect(app.session(INDEX_SESSION).sessions()).toEqual([])
+    // The refusal released the session: a configured host takes the next turn.
+    session.seams = chat
+    expect((await frames(await session.turn(request))).at(-1)?.type).toBe("done")
+  })
+
+  it("refuses a second turn while one streams, and takes one after cancel", async () => {
+    const app = durableObjects({}, chat)
+    const session = app.session("s1")
+    const pending = session.turn(request)
+    expect((await session.turn(request)).status).toBe(409)
+    const streaming = await pending
     expect(streaming.status).toBe(200)
-    expect(session.turn(request).status).toBe(409)
     expect(session.state("s1").busy).toBe(true)
 
     expect(session.cancel("s1")).toEqual({ cancelled: true })
     const output = await frames(streaming)
-    expect(output.some((frame) => frame.type === "error")).toBe(true)
+    expect(output.at(-1)).toEqual({ type: "error", message: "The turn was cancelled." })
     await app.settled()
     expect(session.state("s1").busy).toBe(false)
     expect(session.cancel("s1")).toEqual({ cancelled: false })
     expect(app.session(INDEX_SESSION).sessions()).toMatchObject([{ id: "s1", status: "idle" }])
 
-    const next = await frames(session.turn(request))
+    const next = await frames(await session.turn(request))
     expect(next.at(-1)?.type).toBe("done")
     await app.settled()
     expect(app.session(INDEX_SESSION).sessions()).toMatchObject([{ id: "s1", status: "ready" }])
   })
 
   it("a reader that hangs up frees the session for the next turn", async () => {
-    const app = durableObjects()
+    const app = durableObjects({}, chat)
     const session = app.session("s1")
-    const streaming = session.turn(request)
+    const streaming = await session.turn(request)
     await streaming.body!.cancel()
     await app.settled()
     expect(session.state("s1").busy).toBe(false)
     expect(session.cancel("s1")).toEqual({ cancelled: false })
-    expect((await frames(session.turn(request))).at(-1)?.type).toBe("done")
+    expect((await frames(await session.turn(request))).at(-1)?.type).toBe("done")
   })
 
   it("a flow run writes one card, replaces it as it settles, and reports the row", async () => {
-    const app = durableObjects()
+    const app = durableObjects({}, plan)
     const session = app.session("s1")
-    const { executionId } = session.runFlow({ sessionId: "s1", flowId: "build", payload: { app: "arb" } })
+    const payload = { app: "arb", prompt: "Scan for arbitrage." }
+    const { executionId } = session.runFlow({ sessionId: "s1", flowId: "build", payload })
     expect(session.state("s1").cards).toEqual([
       { kind: "flow-run", id: executionId, flowId: "build", executionId, phase: "running", steps: [] }
     ])
     await app.settled()
     const cards = app.recreate("s1").state("s1").cards
     expect(cards).toHaveLength(1)
-    expect(cards[0]).toMatchObject({ kind: "flow-run", id: executionId, phase: "completed" })
+    expect(cards[0]).toMatchObject({
+      kind: "flow-run",
+      id: executionId,
+      phase: "completed",
+      // Read from the plan the flow returned; a step left running settles done.
+      steps: [{ name: "describe", status: "done" }, { name: "validate", status: "done" }],
+      result: { name: "arb" }
+    })
     expect(app.session(INDEX_SESSION).sessions()).toMatchObject([{ id: "s1", status: "ready", stage: "build" }])
   })
 
-  it("cancel reaches a flow run in flight", async () => {
-    const app = durableObjects()
+  it("a flow run the host cannot run settles its card failed with the refusal", async () => {
+    const app = durableObjects({}, { ...plan, chain: undefined })
     const session = app.session("s1")
-    const { executionId } = session.runFlow({ sessionId: "s1", flowId: "build", payload: {} })
+    const { executionId } = session.runFlow({ sessionId: "s1", flowId: "build", payload: { app: "a", prompt: "p" } })
+    await app.settled()
+    expect(session.state("s1").cards).toMatchObject([{ id: executionId, phase: "failed" }])
+    expect((session.state("s1").cards[0] as { error: string }).error).toContain("TEVM_FORK_RPC_URL")
+    expect(app.session(INDEX_SESSION).sessions()).toMatchObject([{ id: "s1", status: "failed" }])
+  })
+
+  it("cancel reaches a flow run in flight", async () => {
+    const app = durableObjects({}, plan)
+    const session = app.session("s1")
+    const { executionId } = session.runFlow({ sessionId: "s1", flowId: "build", payload: { app: "a", prompt: "p" } })
     expect(session.cancel("s1")).toEqual({ cancelled: true })
     await app.settled()
     expect(session.state("s1").cards).toMatchObject([{ id: executionId, phase: "cancelled" }])
@@ -290,9 +338,9 @@ describe("AppSession as the registry", () => {
   })
 
   it("the registry object never registers itself", async () => {
-    const app = durableObjects()
+    const app = durableObjects({}, chat)
     const registry = app.session(INDEX_SESSION)
-    await frames(registry.turn({ sessionId: INDEX_SESSION, flowId: "chat", message: "hello" }))
+    await frames(await registry.turn({ sessionId: INDEX_SESSION, flowId: "chat", message: "hello" }))
     await app.settled()
     expect(registry.sessions()).toEqual([])
   })

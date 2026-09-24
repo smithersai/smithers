@@ -85,7 +85,8 @@ export const layerNoopHistory = (overrides: Partial<CellHistoryService> = {}): L
 export interface FlowStoreService {
   readonly write: (
     id: string,
-    files: Record<string, string>
+    files: Record<string, string>,
+    description?: string
   ) => Effect.Effect<{ readonly files: ReadonlyArray<string> }, PromoteError>
   readonly list: () => Effect.Effect<ReadonlyArray<FlowSummary>, PromoteError>
 }
@@ -279,7 +280,7 @@ export const promoteSource = (services: Context.Context<CellHistory | FlowStore>
             // a saved flow that does not compile breaks `//:typeCheck` for the
             // whole app, and the model can fix it in this turn.
             const store = yield* FlowStore
-            const written = yield* store.write(input.id, filesFor(input))
+            const written = yield* store.write(input.id, filesFor(input), input.description)
             return { files: written.files }
           })
       }),
@@ -288,10 +289,43 @@ export const promoteSource = (services: Context.Context<CellHistory | FlowStore>
   ])
 
 /**
- * The source TOOLS.ts composes today: an empty cell history and an in-memory
- * store. The Worker builds its own per turn with the recorded cells and the
- * session's Durable Object store.
+ * The source TOOLS.ts composes: an empty cell history and an in-memory store.
+ * A Worker turn replaces it with {@link sessionSource}.
  */
 export const promote: FlowBinding.Source = promoteSource(
   Context.add(Context.make(CellHistory, makeNoopHistory()), FlowStore, makeMemoryStore())
 )
+
+/** The half of a session `flows/write-flow` writes through. */
+export interface SessionFlows {
+  readonly writeFlow: (
+    id: string,
+    description: string,
+    files: Record<string, string>
+  ) => { readonly files: ReadonlyArray<string> }
+  readonly listFlows: () => ReadonlyArray<FlowSummary>
+}
+
+/**
+ * The source a Worker turn binds: `flows/show-script` reads `cells`, the array
+ * the turn appends each executed cell to, and `flows/write-flow` saves into
+ * the session's Durable Object.
+ */
+export const sessionSource = (
+  session: SessionFlows,
+  cells: ReadonlyArray<ExecutedCell>
+): FlowBinding.Source =>
+  promoteSource(
+    Context.add(
+      Context.make(CellHistory, CellHistory.of({ cells: () => Effect.sync(() => [...cells]) })),
+      FlowStore,
+      FlowStore.of({
+        write: (id, files, description) =>
+          Effect.try({
+            try: () => session.writeFlow(id, description ?? id, files),
+            catch: (cause) => new PromoteError({ message: `Saving flow "${id}" failed; retry flows/write-flow.`, cause })
+          }),
+        list: () => Effect.sync(() => session.listFlows())
+      })
+    )
+  )
