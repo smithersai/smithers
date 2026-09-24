@@ -32,7 +32,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_GENERIC_READ,
     FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
     FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_TRAVERSE,
-    FILE_TYPE_DISK, SYNCHRONIZE,
+    FILE_TYPE_DISK, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
 use windows_sys::Win32::System::SystemServices::{
@@ -503,6 +503,14 @@ impl Directory {
         Ok(current)
     }
 
+    pub(super) fn try_clone(&self) -> io::Result<Self> {
+        self.0.try_clone().map(Self)
+    }
+
+    pub(super) fn self_info(&self) -> io::Result<Info> {
+        info(&self.0)
+    }
+
     pub(super) fn child(&self, name: &OsStr) -> io::Result<Self> {
         let file = open(
             Some(&self.0),
@@ -580,6 +588,23 @@ impl Directory {
         )?;
         regular_file(&file)?;
         Ok(file)
+    }
+
+    /// Windows chmod changes the readonly attribute. It must preserve the
+    /// existing DACL and must never follow an alias to another file.
+    pub(super) fn set_readonly(&self, name: &OsStr, readonly: bool) -> io::Result<()> {
+        let file = open_with(
+            Some(&self.0),
+            name_units(name)?,
+            FILE_WRITE_ATTRIBUTES,
+            false,
+            FILE_SHARE_READ,
+            None,
+        )?;
+        regular_file(&file)?;
+        let mut permissions = file.metadata()?.permissions();
+        permissions.set_readonly(readonly);
+        file.set_permissions(permissions)
     }
 
     pub(super) fn read_link(&self, name: &OsStr) -> io::Result<OsString> {
@@ -676,7 +701,10 @@ impl Directory {
                 if name != [b'.' as u16] && name != [b'.' as u16, b'.' as u16] {
                     entries.push(OsString::from_wide(name));
                     if entries.len() > limit {
-                        return Err(io::Error::other("directory entry limit exceeded"));
+                        return Err(io::Error::new(
+                            io::ErrorKind::FileTooLarge,
+                            "directory entry limit exceeded",
+                        ));
                     }
                 }
                 if next == 0 {

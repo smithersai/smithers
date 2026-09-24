@@ -45,6 +45,12 @@ use jj_lib::workspace::Workspace;
 mod append_prepare;
 // Run the Windows namespace boundary tests independently of the command host.
 #[cfg(all(test, windows))]
+mod atomic_glob;
+#[cfg(all(test, windows))]
+mod atomic_protocol;
+#[cfg(all(test, windows))]
+mod atomic_windows_fs;
+#[cfg(all(test, windows))]
 mod atomic_windows_handle;
 pub mod jj_core;
 pub mod tree_export;
