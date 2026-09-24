@@ -152,9 +152,9 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
   for (const [label, job] of [
     ["//apps/app:check", "apps-e2e"], ["//apps/app:unitTests", "apps-e2e"], ["//apps/app:browserE2e", "apps-e2e"],
     ["//apps/server:check", "test"], ["//apps/server:unitTests", "test"],
-    ["//apps/review:unitTests", "test"], ["//apps/bug-worker:unitTests", "test"], ["//apps/status-site:unitTests", "test"],
+    ["//apps/review:unitTests", "test"], ["//apps/bug-worker:unitTests", "test"],
     ["//apps/review:check", "test"], ["//apps/review:checkTests", "test"],
-    ["//apps/bug-worker:check", "test"], ["//apps/status-site:check", "test"],
+    ["//apps/bug-worker:check", "test"],
     ["//evals/agent:test", "test"], ["//evals/authoring:test", "test"],
     ["//evals/agent:check", "test"], ["//evals/authoring:check", "test"], ["//evals/swebench:check", "test"],
     ["//evals/review-seeded-bugs:suite", "test"], ["//evals/review-seeded-bugs:test", "test"],
@@ -212,7 +212,7 @@ test("required CI resolves package, app, script, evaluation and fault suites to 
     // while the general NodeTest/Vitest runners always execute fresh work.
     if (["NodeTest", "Vitest"].includes(row.rule)) assert.equal(row.cacheable, false, `${row.label}: review all effective inputs before enabling result reuse`)
   }
-  for (const app of ["server", "app", "review", "bug-worker", "status-site"]) {
+  for (const app of ["server", "app", "review", "bug-worker"]) {
     assert.match(readFileSync(join(root, `apps/${app}/PACKAGE.ts`), "utf8"), /Coverage policy: assertion-only/)
   }
 })

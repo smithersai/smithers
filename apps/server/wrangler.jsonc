@@ -23,10 +23,9 @@
 	// (`bun x wrangler deployments list` names them; DEPLOY.md "Rollback").
 	// The app under the apex (wave "smithers.sh is the product"): this Worker
 	// serves the whole smithers.sh Astro build (landing, docs, the prerendered
-	// app page, /_astro chunks), so one zone route claims every apex path. A
-	// zone route wins over a custom domain on the same hostname, so the old
-	// assets-only Worker smithers-site-v1 keeps the apex custom domain as the
-	// fallback until it is retired (DEPLOY.md "Cutover log"). Splitting the apex
+	// app page, /_astro chunks), so one zone route claims every apex path, and
+	// no other Worker may claim the apex (apps/site/scripts/deployment.test.mjs).
+	// Splitting the apex
 	// by prefix served page HTML from one build and its /_astro chunks from the
 	// other (404). Rollback: restore the three narrow routes (smithers.sh/smithersai/*,
 	// /api/*, /assets/*) and deploy; the canary custom domain is untouched either way.

@@ -99,7 +99,6 @@ export const releaseGates = [
   { name: "Server typecheck and tests", verb: "ci", target: "//apps/server/..." },
   { name: "Review app and workers", verb: "ci", target: "//apps/review/..." },
   { name: "Bug worker", verb: "ci", target: "//apps/bug-worker/..." },
-  { name: "Status site", verb: "ci", target: "//apps/status-site/..." },
   { name: "Project copy drift", verb: "lint", target: "//:projectCopy" },
   { name: "Site", verb: "ci", target: "//apps/site/..." },
   { name: "Package docs sites", verb: "ci", target: "//apps/docs/..." },

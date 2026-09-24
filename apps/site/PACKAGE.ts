@@ -388,21 +388,19 @@ const docsRuntimeTests = Smithers.Shell.Test({
     Smithers.file("scripts/deployment.test.mjs"),
     Smithers.glob("src/content/docs/docs/tutorials/*.mdx"),
     Smithers.file("src/content/docs/docs/guides/child-flows.mdx"),
-    Smithers.file("alchemy.run.ts"),
-    Smithers.file("wrangler.jsonc"),
     Smithers.file("package.json"),
     Smithers.file("//apps/docs/shared/alchemy-site.mjs"),
     Smithers.file("//apps/docs/shared/alchemy-site.d.ts"),
     Smithers.file("//apps/docs/shared/manifest.mjs"),
     Smithers.file("//apps/docs/shared/package.json"),
-    Smithers.file("//apps/status-site/wrangler.jsonc"),
-    ...["review", "bug-worker", "status-site"].flatMap((name) => [
-      Smithers.file(`//apps/${name}/alchemy.run.ts`),
-      Smithers.file(`//apps/${name}/package.json`)
-    ]),
+    Smithers.glob("//apps/*/wrangler.jsonc"),
+    Smithers.glob("//apps/*/alchemy.run.ts"),
+    Smithers.file("//apps/server/scripts/canary/workers-manifest.ts"),
     Smithers.file("//apps/docs/README.md"),
     Smithers.file("//apps/bug-worker/README.md"),
     Smithers.file("//apps/review/CONTRIBUTING.md"),
+    Smithers.file("//apps/review/package.json"),
+    Smithers.file("//apps/bug-worker/package.json"),
     ...docsSites.flatMap((site) => [
       Smithers.file(`//apps/docs/${site.slug}/alchemy.run.ts`),
       Smithers.file(`//apps/docs/${site.slug}/package.json`)

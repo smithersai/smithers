@@ -1629,33 +1629,12 @@ importers:
       '@types/react':
         specifier: ^19.2.18
         version: 19.2.18
-      alchemy:
-        specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
       effect:
         specifier: 4.0.0-rc.115
         version: 4.0.0-rc.115
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-
-  apps/status-site:
-    devDependencies:
-      '@types/node':
-        specifier: 26.4.1
-        version: 26.4.1
-      alchemy:
-        specifier: 2.0.0-beta.76
-        version: 2.0.0-beta.76(patch_hash=c06f8124a9bca36823accbaaa69ef5dd4a28cec35426b3c5507ff17c93ca3610)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
-      bun-types:
-        specifier: ^1.4.0
-        version: 1.4.0
-      typescript:
-        specifier: ~5.9.3
-        version: 5.9.3
-      wrangler:
-        specifier: ^4.129.0
-        version: 4.129.0(@cloudflare/workers-types@5.20260903.1)
 
   apps/tui:
     dependencies:

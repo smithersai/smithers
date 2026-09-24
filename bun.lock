@@ -915,20 +915,8 @@
         "@smthrs/testing": "workspace:*",
         "@smthrs/time-travel": "workspace:*",
         "@types/react": "^19.2.18",
-        "alchemy": "2.0.0-beta.76",
         "effect": "4.0.0-rc.115",
         "typescript": "~5.9.3",
-      },
-    },
-    "apps/status-site": {
-      "name": "@smthrs/status-site",
-      "version": "0.0.1",
-      "devDependencies": {
-        "@types/node": "26.4.1",
-        "alchemy": "2.0.0-beta.76",
-        "bun-types": "^1.4.0",
-        "typescript": "~5.9.3",
-        "wrangler": "^4.129.0",
       },
     },
     "apps/tui": {
@@ -4542,8 +4530,6 @@
     "@smthrs/sandbox": ["@smthrs/sandbox@workspace:packages/smithers/flows/sandbox"],
 
     "@smthrs/scorers": ["@smthrs/scorers@workspace:packages/smithers/agent/scorers"],
-
-    "@smthrs/status-site": ["@smthrs/status-site@workspace:apps/status-site"],
 
     "@smthrs/std": ["@smthrs/std@workspace:packages/smithers/agent/std"],
 

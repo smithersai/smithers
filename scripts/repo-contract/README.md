@@ -37,7 +37,6 @@ production denominator across Worker, CLI, React and static assets.
 | `apps/app` | Typecheck, Bun units, offline Playwright | TSX/host/React denominator; packaged native host and live provider acceptance. |
 | `apps/review` | Node/Bun typechecks and unit contracts | Mixed CLI/Worker denominator; credentialed review case is optional and cannot close offline coverage. |
 | `apps/bug-worker` | Real fetch handler against in-memory KV | Complete Worker branch measurement, including transport failures. |
-| `apps/status-site` | Worker and published-surface/static-page contracts | Worker denominator and browser rendering coverage. |
 
 These are explicit transitional exceptions owned by the corresponding app, not
 zero-percent thresholds or completed coverage work. A future numeric gate must

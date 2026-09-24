@@ -7472,10 +7472,6 @@
       },
       {
         "kind": "file",
-        "path": "apps/status-site/package.json"
-      },
-      {
-        "kind": "file",
         "path": "apps/tui/package.json"
       },
       {
@@ -7909,14 +7905,6 @@
       },
       {
         "kind": "file",
-        "path": "apps/site/alchemy.run.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/site/wrangler.jsonc"
-      },
-      {
-        "kind": "file",
         "path": "apps/site/package.json"
       },
       {
@@ -7936,12 +7924,18 @@
         "path": "apps/docs/shared/package.json"
       },
       {
-        "kind": "file",
-        "path": "apps/status-site/wrangler.jsonc"
+        "kind": "glob",
+        "pattern": "apps/*/wrangler.jsonc",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/*/alchemy.run.ts",
+        "exclude": []
       },
       {
         "kind": "file",
-        "path": "apps/review/alchemy.run.ts"
+        "path": "apps/server/scripts/canary/workers-manifest.ts"
       },
       {
         "kind": "file",
@@ -7949,19 +7943,7 @@
       },
       {
         "kind": "file",
-        "path": "apps/bug-worker/alchemy.run.ts"
-      },
-      {
-        "kind": "file",
         "path": "apps/bug-worker/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/status-site/alchemy.run.ts"
-      },
-      {
-        "kind": "file",
-        "path": "apps/status-site/package.json"
       },
       {
         "kind": "file",
@@ -8769,10 +8751,6 @@
       },
       {
         "kind": "file",
-        "path": "apps/status-site/package.json"
-      },
-      {
-        "kind": "file",
         "path": "apps/tui/package.json"
       },
       {
@@ -9238,90 +9216,6 @@
     "dependencies": [],
     "source": {
       "file": "apps/site/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/status-site:check",
-    "package": "apps/status-site",
-    "name": "check",
-    "rule": "Typecheck",
-    "kinds": [
-      "build"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/site/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/status-site/alchemy.run.ts"
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/tests/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/status-site/tsconfig.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "apps/status-site/PACKAGE.ts"
-    }
-  },
-  {
-    "label": "//apps/status-site:unitTests",
-    "package": "apps/status-site",
-    "name": "unitTests",
-    "rule": "NodeTest",
-    "kinds": [
-      "test"
-    ],
-    "cacheable": false,
-    "inputs": [
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/src/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/site/*",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "apps/status-site/alchemy.run.ts"
-      },
-      {
-        "kind": "glob",
-        "pattern": "apps/status-site/tests/**/*.ts",
-        "exclude": []
-      },
-      {
-        "kind": "file",
-        "path": "packages/smithers/package.json"
-      },
-      {
-        "kind": "file",
-        "path": "apps/bug-worker/package.json"
-      }
-    ],
-    "outputs": [],
-    "dependencies": [],
-    "source": {
-      "file": "apps/status-site/PACKAGE.ts"
     }
   },
   {

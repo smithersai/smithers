@@ -93,18 +93,13 @@ The first Alchemy 2 run takes over the Workers Alchemy 1 created with
 flag, a name or hostname held by another Worker fails the deploy. The release
 workflow runs `pnpm docs:deploy` on every release tag.
 
-The main site defaults to the dedicated physical Worker
-`smithers-site-v1`, matching `apps/site/wrangler.jsonc`. Its logical Alchemy
-stack and resource identifiers remain `smithers-site`. The existing physical
-`smithers-site` Worker serves `jjhub.tech` and must retain that separate site.
-`SMITHERS_SITE_WORKER_NAME` overrides the main site's physical name and is
-required when `SMITHERS_SITE_DOMAIN` selects a preview domain. Review all
-account-wide domain assignments before overriding a physical Worker name:
-Alchemy reconciles its complete domain list, including domains in other zones.
-Both configurations disable workers.dev URLs and use 404-page asset handling.
+`apps/site` has no stack of its own: `smithers-mvp-web` (`apps/server`)
+serves its build at the apex. The physical `smithers-site` Worker serves
+`jjhub.tech` and must keep that site.
 
 `node --test apps/site/scripts/deployment.test.mjs` checks every stack offline:
-names, hostnames, state, and scripts.
+names, hostnames, state, and scripts. It fails when two Workers claim one
+hostname, counting the Workers in `apps/server/scripts/canary/workers-manifest.ts`.
 
 ## Slugs come from the manifest
 

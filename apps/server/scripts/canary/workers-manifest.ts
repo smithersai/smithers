@@ -6,7 +6,8 @@
  * roll one back — which is exactly why their health has to be assertable from
  * outside. This
  * file is the only place the deployment's shape is written down where CI can
- * read it.
+ * read it. apps/site/scripts/deployment.test.mjs fails when a Worker in this
+ * repository claims one of these hostnames.
  *
  * These origins are addresses, not credentials. Four of them are already
  * committed in apps/server/wrangler.jsonc, all resolve in public DNS, and
@@ -125,7 +126,7 @@ export const BACKING_WORKERS: ReadonlyArray<BackingWorker> = [
     alternateOrigins: [],
     path: "/healthz",
     contract: "ok-json",
-    note: "the public status site"
+    note: "the public status page, Worker smithers-cloud-status"
   },
   {
     name: "sync",

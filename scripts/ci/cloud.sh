@@ -334,7 +334,6 @@ gate_tools() {
     server) echo 'js jj' ;;
     review-app) echo 'js' ;;
     bug-worker) echo 'js' ;;
-    status-site) echo 'js' ;;
     project-copy) echo 'js' ;;
     site) echo 'js' ;;
     docs) echo 'js' ;;
@@ -459,9 +458,6 @@ run_gate() {
       ;;
     bug-worker)
       pnpm exec smthrs ci '//apps/bug-worker/...' --verbose
-      ;;
-    status-site)
-      pnpm exec smthrs ci '//apps/status-site/...' --verbose
       ;;
     project-copy)
       pnpm exec smthrs lint '//:projectCopy' --verbose

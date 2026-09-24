@@ -438,7 +438,6 @@ const ci = Smithers.GithubCiGen({
         { name: "Server typecheck and tests", verb: Smithers.Verb.Ci, pattern: "//apps/server/..." },
         { name: "Review app and workers", verb: Smithers.Verb.Ci, pattern: "//apps/review/..." },
         { name: "Bug worker", verb: Smithers.Verb.Ci, pattern: "//apps/bug-worker/..." },
-        { name: "Status site", verb: Smithers.Verb.Ci, pattern: "//apps/status-site/..." },
         { name: "Project copy drift", verb: Smithers.Verb.Lint, pattern: "//:projectCopy" },
         // smithers.sh: the landing page and the Starlight docs. `astro check`
         // and `astro build` over apps/site/src/content/docs.

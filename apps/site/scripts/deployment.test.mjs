@@ -4,7 +4,7 @@ import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
@@ -12,86 +12,16 @@ import ts from "typescript"
 import { sites } from "../../docs/shared/manifest.mjs"
 
 const root = resolve(import.meta.dirname, "../../..")
-const appEntries = ["review", "bug-worker", "status-site"].map((name) => join(root, "apps", name, "alchemy.run.ts"))
+const appEntries = ["review", "bug-worker"].map((name) => join(root, "apps", name, "alchemy.run.ts"))
 
 /** The smithers.sh zone on account dd3525a4132493566aeb38de533c8827. */
 const SMITHERS_ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14"
 
-const appOptions = ["STATUS_SITE_DOMAIN", "CLOUDFLARE_SMITHERS_ZONE_ID"]
-
-let mainSiteImport = 0
-const importMainSite = async (overrides = {}) => {
-  const names = ["SMITHERS_SITE_DOMAIN", "SMITHERS_SITE_WORKER_NAME", "CLOUDFLARE_SMITHERS_ZONE_ID"]
-  const previous = new Map(names.map((name) => [name, process.env[name]]))
-  try {
-    for (const name of names) {
-      if (overrides[name] === undefined) delete process.env[name]
-      else process.env[name] = overrides[name]
-    }
-    return await import(`${pathToFileURL(join(root, "apps/site/alchemy.run.ts")).href}?main-site-${mainSiteImport++}`)
-  } finally {
-    for (const [name, value] of previous) {
-      if (value === undefined) delete process.env[name]
-      else process.env[name] = value
-    }
-  }
-}
-
-test("the main site defaults to its dedicated Worker and agrees with Wrangler", async () => {
-  const site = await importMainSite()
-  const wranglerPath = join(root, "apps/site/wrangler.jsonc")
-  const wrangler = ts.parseConfigFileTextToJson(wranglerPath, readFileSync(wranglerPath, "utf8"))
-  assert.equal(wrangler.error, undefined)
-  assert.ok(Effect.isEffect(site.default))
-  assert.equal(site.siteProps.name, "smithers-site-v1")
-  assert.equal(site.siteProps.name, wrangler.config.name)
-  assert.equal(site.siteProps.command, "pnpm run build")
-  assert.equal(site.siteProps.outdir, wrangler.config.assets.directory)
-  assert.equal(site.siteProps.compatibility.date, wrangler.config.compatibility_date)
-  assert.equal(site.siteProps.workersDev, wrangler.config.workers_dev)
-  assert.equal(site.siteProps.assets.notFoundHandling, wrangler.config.assets.not_found_handling)
-  assert.deepEqual(site.siteProps.domain, { name: wrangler.config.routes[0].pattern })
-  assert.equal(site.siteProps.domain.name, "smithers.sh")
-})
-
-test("main-site overrides preserve separate preview identity and refuse an unnamed preview", async () => {
-  const preview = await importMainSite({
-    SMITHERS_SITE_DOMAIN: " preview.example.test ",
-    SMITHERS_SITE_WORKER_NAME: " smithers-site-preview-test ",
-    CLOUDFLARE_SMITHERS_ZONE_ID: " test-zone "
-  })
-  assert.ok(Effect.isEffect(preview.default))
-  assert.equal(preview.siteProps.name, "smithers-site-preview-test")
-  assert.deepEqual(preview.siteProps.domain, { name: "preview.example.test", zoneId: "test-zone" })
-  const apex = await importMainSite({ SMITHERS_SITE_WORKER_NAME: " explicit-main-site-test " })
-  assert.equal(apex.siteProps.name, "explicit-main-site-test")
-  assert.deepEqual(apex.siteProps.domain, { name: "smithers.sh" })
-  for (const workerName of [undefined, "", "  "]) {
-    await assert.rejects(
-      importMainSite({ SMITHERS_SITE_DOMAIN: "preview.example.test", SMITHERS_SITE_WORKER_NAME: workerName }),
-      /Set SMITHERS_SITE_WORKER_NAME to a separate Worker name for a preview domain/
-    )
-  }
-})
-
-test("all deployment entry points import as Alchemy 2 stack effects", async (t) => {
-  const overrides = new Map()
-  const set = (name, value) => {
-    overrides.set(name, process.env[name])
-    if (value === undefined) delete process.env[name]
-    else process.env[name] = value
-  }
-  t.after(() => {
-    for (const [name, value] of overrides) {
-      if (value === undefined) delete process.env[name]
-      else process.env[name] = value
-    }
-  })
-  set("SMITHERS_SITE_DOMAIN", undefined)
-  set("SMITHERS_SITE_WORKER_NAME", undefined)
-  for (const name of appOptions) set(name, undefined)
-  const entryPoints = [join(root, "apps/site/alchemy.run.ts"), ...appEntries]
-  for (const site of sites) entryPoints.push(join(site.siteDir, "alchemy.run.ts"))
+test("all deployment entry points import as Alchemy 2 stack effects", async () => {
+  const entryPoints = [
+    ...appEntries,
+    ...sites.map((site) => join(site.siteDir, "alchemy.run.ts"))
+  ]
   for (const path of entryPoints) {
     const module = await import(pathToFileURL(path).href)
     assert.ok(Effect.isEffect(module.default), `${path}: the CLI needs a default-exported stack effect`)
@@ -101,7 +31,6 @@ test("all deployment entry points import as Alchemy 2 stack effects", async (t) 
 test("stack properties and shared implementation typecheck against the declared Alchemy API", () => {
   const program = ts.createProgram({
     rootNames: [
-      join(root, "apps/site/alchemy.run.ts"),
       ...appEntries,
       join(root, "apps/docs/shared/alchemy-site.mjs"),
       ...sites.map((site) => join(site.siteDir, "alchemy.run.ts"))
@@ -133,7 +62,7 @@ test("stack properties and shared implementation typecheck against the declared 
 })
 
 test("app stacks retain their Worker routing and defer required redacted credentials", async () => {
-  const [review, bugs, status] = await Promise.all(appEntries.map((path) => import(pathToFileURL(path).href)))
+  const [review, bugs] = await Promise.all(appEntries.map((path) => import(pathToFileURL(path).href)))
   // The live Worker, bucket, database and hostname observed on Cloudflare
   // 2026-09-23: Alchemy 1 names. Another name creates a second Worker and
   // empty storage beside the live ones.
@@ -191,36 +120,42 @@ test("app stacks retain their Worker routing and defer required redacted credent
     assert.ok(Redacted.isRedacted(value))
     assert.equal(Redacted.value(value), "deployment-test-placeholder")
   }
-
-  const wranglerPath = join(root, "apps/status-site/wrangler.jsonc")
-  const wrangler = ts.parseConfigFileTextToJson(wranglerPath, readFileSync(wranglerPath, "utf8"))
-  assert.equal(wrangler.error, undefined)
-  assert.equal(status.workerProps.name, wrangler.config.name)
-  assert.equal(status.workerProps.main, wrangler.config.main)
-  assert.equal(status.workerProps.compatibility.date, wrangler.config.compatibility_date)
-  assert.equal(status.workerProps.workersDev, wrangler.config.workers_dev)
-  assert.equal(status.workerProps.domain.name, wrangler.config.routes[0].pattern)
-  assert.equal(status.workerProps.assets.directory, resolve(root, "apps/status-site", wrangler.config.assets.directory))
-  assert.equal(wrangler.config.assets.binding, "ASSETS")
-  assert.equal(status.workerProps.assets.notFoundHandling, wrangler.config.assets.not_found_handling)
-  assert.equal(status.workerProps.assets.runWorkerFirst, wrangler.config.assets.run_worker_first)
-  assert.deepEqual(status.workerProps.observability, wrangler.config.observability)
 })
 
-test("the status stack's overrides preserve its domain and zone", async (t) => {
-  const previous = new Map(appOptions.map((name) => [name, process.env[name]]))
-  t.after(() => {
-    for (const [name, value] of previous) {
-      if (value === undefined) delete process.env[name]
-      else process.env[name] = value
+test("every hostname has one owning Worker, in this repository or in the canary manifest", async () => {
+  // A zone route wins over a custom domain on the same hostname, so a second
+  // claim is never a fallback: it is a Worker nobody can reach, deployed and
+  // tested as if it were live.
+  const owners = new Map()
+  const claim = (host, worker) => owners.set(host, new Set([...(owners.get(host) ?? []), worker]))
+  const apps = join(root, "apps")
+  for (const app of readdirSync(apps)) {
+    const wranglerPath = join(apps, app, "wrangler.jsonc")
+    if (existsSync(wranglerPath)) {
+      const { config, error } = ts.parseConfigFileTextToJson(wranglerPath, readFileSync(wranglerPath, "utf8"))
+      assert.equal(error, undefined, wranglerPath)
+      for (const route of config.routes ?? []) claim(route.pattern.split("/")[0], config.name)
     }
-  })
-  Object.assign(process.env, {
-    STATUS_SITE_DOMAIN: " status-preview.example ",
-    CLOUDFLARE_SMITHERS_ZONE_ID: " test-zone "
-  })
-  const status = await import(`${pathToFileURL(join(root, "apps/status-site/alchemy.run.ts")).href}?deployment-overrides`)
-  assert.deepEqual(status.workerProps.domain, { name: "status-preview.example", zoneId: "test-zone" })
+    const stackPath = join(apps, app, "alchemy.run.ts")
+    if (existsSync(stackPath)) {
+      const stack = await import(pathToFileURL(stackPath).href)
+      for (const props of Object.values(stack)) {
+        if (typeof props !== "object" || props === null || !("domain" in props)) continue
+        for (const host of [props.domain.name, ...(props.domain.aliases ?? [])]) claim(host, props.name)
+      }
+    }
+  }
+  const { docsSiteProps } = await import("../../docs/shared/alchemy-site.mjs")
+  for (const site of sites) claim(site.domain, docsSiteProps(site.slug).name)
+  // Deployed from another repository and probed by the canary.
+  const { BACKING_WORKERS } = await import("../../server/scripts/canary/workers-manifest.ts")
+  for (const worker of BACKING_WORKERS) {
+    for (const origin of [worker.origin, ...worker.alternateOrigins]) {
+      if (origin !== undefined) claim(new URL(origin).hostname, `${worker.name} (canary manifest)`)
+    }
+  }
+  const contested = [...owners].filter(([, workers]) => workers.size > 1).map(([host, workers]) => `${host}: ${[...workers].join(", ")}`)
+  assert.deepEqual(contested, [])
 })
 
 test("docs sites derive the live Alchemy 1 Worker name and hostname from the slug alone", async (t) => {

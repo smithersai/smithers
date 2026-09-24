@@ -154,8 +154,9 @@ state, so a new entry here lands in the same commit as the test change.
   `/_astro` chunks from the old one (404). A zone route takes precedence over
   a custom domain on the same hostname (the live `/api/*` route proved it).
   Rollback = restore the three narrow routes and deploy (seconds).
-  `smithers-site-v1` still holds the apex custom domain as the fallback until
-  it is retired.
+  `smithers-site-v1` left the repository on 2026-09-24: this zone route had
+  shadowed its apex custom domain since this change. Roll back with this
+  Worker's own versions ("Rollback").
 - Deploy tool moved from Wrangler to Alchemy 2 (2026-09-09) and back to
   wrangler (2026-09-12). The Alchemy path uploaded the binding set wholesale
   (`keepBindings: undefined`, `alchemy@2.0.0-beta.76` `WorkerProvider.ts:3584`),
