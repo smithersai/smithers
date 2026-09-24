@@ -161,14 +161,12 @@ export const createWorkflowPumpController = (
 
   const patchRunCard = (
     cardId: string,
-    patch: Partial<Extract<Card, { kind: "run-trace" }>["payload"]>,
-    status?: Card["status"]
+    patch: Partial<Extract<Card, { kind: "run-trace" }>["payload"]>
   ): void => {
     const card = store.collections.cards.get(cardId)
     if (ctx.disposed || card === undefined || card.kind !== "run-trace" || card.runtimeView?.revision !== undefined) return
     // Execution comes from the gateway observation. Watcher state is local
     // evidence and must not overwrite a run verdict or fan out to card copies.
-    void status
     const state = patch.phase === "reconnecting" || patch.phase === "quiet" || patch.phase === "stopped" ? patch.phase : "connected"
     const scope = runtimeScopeOf(card)
     if (scope === undefined) return
