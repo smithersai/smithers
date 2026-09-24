@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Optional `ModelError.quotaScope: "model" | "account"` records a classifier's
+  quota boundary. It survives schema round trips, HTTP error normalization,
+  and streamed-error redaction. Existing serialized errors still decode.
+
 ### Fixed
 
 - Anthropic Messages requests now carry prompt-cache breakpoints: one on the

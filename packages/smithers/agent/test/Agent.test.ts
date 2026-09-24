@@ -485,7 +485,61 @@ describe("capacity seat chain", () => {
       { type: "text", text: "```cell\nctx.done('fallback')\n```" }
     ])
   })
-  it("cools every seat bound to the refused route", async () => {
+  it.each(
+    [
+      { code: "rate_limited", quotaScope: undefined },
+      { code: "rate_limited", quotaScope: "model" },
+      { code: "quota_exceeded", quotaScope: "model" }
+    ] as const
+  )("tries a sibling model on the same route after $code/$quotaScope", async (refusal) => {
+    const contacted: Array<string> = []
+    const first = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          contacted.push("fable")
+          return Stream.fail(
+            new ModelError({
+              ...refusal,
+              message: "limit reached",
+              retryAfterMillis: 60_000,
+              httpStatus: 429
+            })
+          )
+        })
+    })
+    const answer = recordedCells([], ["ctx.done('opus answered')"])
+    const second = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push("opus")
+          return answer.stream(request)
+        })
+    })
+    const events: Array<AgentEvent.AgentEvent> = []
+    const outcome = await drive(collect({
+      model: first,
+      registry: registryOf([]),
+      sink: events,
+      seat: Seat.make({ id: "fable", modelId: "fable", model: first, route, contextWindowTokens: 0 }),
+      fallbackSeats: [
+        Seat.make({ id: "fable-alias", modelId: "fable", model: first, route, contextWindowTokens: 0 }),
+        Seat.make({ id: "opus", modelId: "opus", model: second, route, contextWindowTokens: 0 })
+      ],
+      capacity: { park: false }
+    }))
+    expect(outcome._tag).toBe("completed")
+    expect(contacted).toEqual(["fable", "opus"])
+    expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+  })
+
+  it.each(
+    [
+      { code: "rate_limited", quotaScope: "account", httpStatus: 429 },
+      { code: "quota_exceeded", quotaScope: undefined, httpStatus: 429 },
+      { code: "rate_limited", quotaScope: undefined, httpStatus: 529 },
+      { code: "authentication", quotaScope: undefined, httpStatus: 401 }
+    ] as const
+  )("cools every seat on an account-wide $code/$httpStatus refusal", async (refusal) => {
     const contacted: Array<string> = []
     const refused = Model.make({
       stream: () =>
@@ -493,10 +547,9 @@ describe("capacity seat chain", () => {
           contacted.push("first")
           return Stream.fail(
             new ModelError({
-              code: "rate_limited",
+              ...refusal,
               message: "account limit",
-              resetAtEpochMillis: Date.now() + 3_600_000,
-              httpStatus: 429
+              resetAtEpochMillis: Date.now() + 3_600_000
             })
           )
         })
@@ -519,7 +572,7 @@ describe("capacity seat chain", () => {
     expect(contacted).toEqual(["first"])
   })
 
-  it("contacts the next seat and completes the same frame with its REPL state", async () => {
+  it.each(["first", "second"])("keeps REPL state on another route for model %s", async (modelId) => {
     const contacted: Array<string> = []
     const events: Array<AgentEvent.AgentEvent> = []
     const firstAnswer = recordedCells([], ["globalThis.kept = 41; console.log('ready')"])
@@ -555,7 +608,7 @@ describe("capacity seat chain", () => {
       seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
       fallbackSeats: [Seat.make({
         id: "second",
-        modelId: "second",
+        modelId,
         model: second,
         route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
         contextWindowTokens: 0
@@ -567,30 +620,37 @@ describe("capacity seat chain", () => {
     expect(events.some((event) => event._tag === "resolved")).toBe(true)
   })
 
-  it("parks when both seats refuse, then un-parks on the test clock and completes", async () => {
+  it.each(
+    [
+      { shared: true, scope: undefined },
+      { shared: false, scope: undefined },
+      { shared: true, scope: "account" }
+    ] as const
+  )("retains longer cooldowns on resume ($shared/$scope)", async ({ shared, scope }) => {
     const contacted: Array<string> = []
     const events: Array<AgentEvent.AgentEvent> = []
-    let firstCalls = 0
+    let secondCalls = 0
     const completed = recordedCells([], ["ctx.done('done')"])
-    const refusal = () =>
+    const refusal = (wakeAt: number, quotaScope?: ModelError["quotaScope"]) =>
       new ModelError({
         code: "rate_limited",
         message: "usage limit",
-        resetAtEpochMillis: 6_000,
+        quotaScope,
+        resetAtEpochMillis: wakeAt,
         httpStatus: 429
       })
     const first = Model.make({
-      stream: (request) =>
+      stream: () =>
         Stream.suspend(() => {
           contacted.push("first")
-          return firstCalls++ === 0 ? Stream.fail(refusal()) : completed.stream(request)
+          return Stream.fail(refusal(12_000))
         })
     })
     const second = Model.make({
-      stream: () =>
+      stream: (request) =>
         Stream.suspend(() => {
           contacted.push("second")
-          return Stream.fail(refusal())
+          return secondCalls++ === 0 ? Stream.fail(refusal(6_000, scope)) : completed.stream(request)
         })
     })
     const outcome = await Effect.gen(function*() {
@@ -609,7 +669,7 @@ describe("capacity seat chain", () => {
               id: "second",
               modelId: "second",
               model: second,
-              route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
+              route: shared ? route : { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
               contextWindowTokens: 0
             })]
           }),
@@ -620,8 +680,14 @@ describe("capacity seat chain", () => {
       expect(firstExit._tag).toBe("suspended")
       expect(events.some((event) => event._tag === "model-parked")).toBe(true)
       yield* awaitParked(engine, driveFlow)
+      yield* TestClock.adjust("2 seconds")
       settled = Deferred.makeUnsafe<Outcome>()
-      yield* TestClock.adjust("5 seconds")
+      yield* engine.resume(driveFlow, "exec-1")
+      expect((yield* Deferred.await(settled))._tag).toBe("suspended")
+      yield* awaitParked(engine, driveFlow)
+      expect(contacted).toEqual(["first", "second"])
+      settled = Deferred.makeUnsafe<Outcome>()
+      yield* TestClock.adjust("3 seconds")
       return yield* Deferred.await(settled)
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
@@ -631,7 +697,7 @@ describe("capacity seat chain", () => {
       Effect.runPromise
     )
     expect(outcome._tag).toBe("completed")
-    expect(contacted).toEqual(["first", "second", "first"])
+    expect(contacted).toEqual(["first", "second", "second"])
     const transitions = events.map((event) => event._tag).filter((tag) =>
       tag === "model-parked" || tag === "model-unparked"
     )
@@ -719,7 +785,14 @@ describe("capacity seat chain", () => {
     expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(QuotaPolicy.defaultMaxParks)
   })
 
-  it("records one park across a durable resume with retry-after", async () => {
+  it.each([
+    { source: "retry-after", retryAfterMillis: 5_000, waitMillis: 5_000 },
+    { source: "default", retryAfterMillis: undefined, waitMillis: 900_000 }
+  ])("keeps the original $source deadline across repeated durable resumes", async ({
+    source,
+    retryAfterMillis,
+    waitMillis
+  }) => {
     const events: Array<AgentEvent.AgentEvent> = []
     let calls = 0
     const completed = recordedCells([], ["ctx.done('done')"])
@@ -728,7 +801,7 @@ describe("capacity seat chain", () => {
         Stream.suspend(() =>
           ++calls === 1
             ? Stream.fail(
-              new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis: 5_000, httpStatus: 429 })
+              new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis, httpStatus: 429 })
             )
             : completed.stream(request)
         )
@@ -747,8 +820,17 @@ describe("capacity seat chain", () => {
       expect((yield* Deferred.await(settled))._tag).toBe("suspended")
       expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
       yield* awaitParked(engine, driveFlow)
+      for (let resume = 0; resume < 2; resume++) {
+        yield* TestClock.adjust(waitMillis / 4)
+        settled = Deferred.makeUnsafe<Outcome>()
+        yield* engine.resume(driveFlow, "exec-1")
+        expect((yield* Deferred.await(settled))._tag).toBe("suspended")
+        yield* awaitParked(engine, driveFlow)
+        expect(calls).toBe(1)
+        expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
+      }
       settled = Deferred.makeUnsafe<Outcome>()
-      yield* TestClock.adjust("5 seconds")
+      yield* TestClock.adjust(waitMillis / 2)
       return yield* Deferred.await(settled)
     }).pipe(
       Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
@@ -758,6 +840,11 @@ describe("capacity seat chain", () => {
       Effect.runPromise
     )
     expect(outcome._tag).toBe("completed")
+    expect(calls).toBe(2)
+    expect(events.find((event) => event._tag === "model-parked")).toMatchObject({
+      wakeAt: 1_000 + waitMillis,
+      source
+    })
     expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
       .toEqual(["model-parked", "model-unparked"])
   })
