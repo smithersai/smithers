@@ -42,6 +42,7 @@
     "./ArtifactStoreMetrics": "./src/ArtifactStoreMetrics.ts",
     "./ArtifactSweep": "./src/ArtifactSweep.ts",
     "./CombinedArtifacts": "./src/CombinedArtifacts.ts",
+    "./FileLease": "./src/FileLease.ts",
     "./RemoteArtifacts": "./src/RemoteArtifacts.ts",
     "./index": "./src/index.ts"
   },
@@ -122,6 +123,16 @@
         "require": {
           "types": "./dist/cjs/CombinedArtifacts.d.ts",
           "default": "./dist/cjs/CombinedArtifacts.js"
+        }
+      },
+      "./FileLease": {
+        "import": {
+          "types": "./dist/esm/FileLease.d.ts",
+          "default": "./dist/esm/FileLease.js"
+        },
+        "require": {
+          "types": "./dist/cjs/FileLease.d.ts",
+          "default": "./dist/cjs/FileLease.js"
         }
       },
       "./RemoteArtifacts": {

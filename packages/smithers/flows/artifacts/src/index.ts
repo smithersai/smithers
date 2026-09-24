@@ -56,6 +56,12 @@ export * as ArtifactSweep from "./ArtifactSweep.ts"
 export * as CombinedArtifacts from "./CombinedArtifacts.ts"
 
 /**
+ * @category coordination
+ * @since 1.0.0-rc.1
+ */
+export * as FileLease from "./FileLease.ts"
+
+/**
  * @category services
  * @since 1.0.0-rc.0
  * @slop

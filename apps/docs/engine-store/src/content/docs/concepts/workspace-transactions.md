@@ -76,18 +76,41 @@ Two more properties bind the write:
 
 The filesystem host serializes preflight, apply, and rollback with
 other cooperating commits. A semaphore is shared by workspace root in the
-process. An exclusively created `.smithers-workspace-lock` directory under the
-root coordinates separate processes, including callers using symlink aliases
-of the same root. This path is reserved: bundles cannot materialize it or its
-children. The `.flows` engine state directory is reserved the same way, so no
+process. A `.smithers-workspace-lock` lease file under the root coordinates
+separate processes, including callers using symlink aliases of the same root.
+This path is reserved: bundles cannot materialize it or its children. The `.flows` engine state directory is reserved the same way, so no
 write set, `**` glob, or `expected` boundary mode lets a step body replace the
 engine database, its `-wal` and `-shm` siblings, or artifact objects kept
 there. Add other state paths under the root with the `reservedPaths` option.
 A write or removal that targets a reserved path or lies beneath one fails
 `materialize` with `host_unavailable` before any file changes; a symlink alias
 of one is refused with `path_escapes_workspace` like any other symlink.
-Filesystem hosts must support exclusive non-recursive directory creation and
-removal.
+Filesystem hosts must support exclusive `wx` file creation, `stat` with an
+mtime, `utimes`, `rename`, and `remove`.
+
+The lock is `@smthrs/artifacts/FileLease`, the same lease the artifact store
+uses for its objects directory. The file holds a unique owner token, and the
+holder refreshes its mtime while the commit runs:
+
+| Bound                          | Value                          |
+| ------------------------------ | ------------------------------ |
+| Heartbeat interval             | 10 seconds                     |
+| Stale after                    | 60 seconds without a heartbeat |
+| Acquisition deadline           | 2 minutes                      |
+| Retry interval while contended | 25 milliseconds                |
+
+A killed or crashed holder stops heartbeating, and the next committer reclaims
+its lock a minute later. Reclaimers of one stale lock race for a `wx` claim
+file first, so the lock is moved away at most once and a fresh lock is never
+displaced. A committer that cannot take the lock within two minutes fails with
+`commit_lock_timeout` instead of waiting forever; the deadline ends before
+preflight starts, so it never interrupts an apply. A lock directory left by an
+rc.1 build is reclaimed on the same 60-second bound.
+
+The fence is bounded, not absolute. A holder whose host stalls past 60 seconds
+(a suspended machine, a stopped debugger) is reaped while it still runs; its
+heartbeat logs `Workspace commit lock was reclaimed while its holder was still
+running`, and its commit continues unfenced.
 
 Copy-back needs a host that can make those descriptor-relative requests. On
 Node and Bun that is `@smthrs/platform-node`'s `AtomicFileSystem.layer`, which
@@ -100,14 +123,13 @@ kernel-guarded `FileSystem.layer` rooted at the same workspace also qualifies.
 symlink swap out of the write. Writers that ignore the advisory lock are not serialized.
 
 The undo journal exists only in memory. A process crash can leave partial file
-changes and the lock directory behind. Rollback can also fail: the returned
+changes behind; the lock it held is reclaimed once stale. Rollback can also fail: the returned
 compound cause preserves the original apply failure and a `WorkspaceError`
 with code `host_unavailable` whose cause contains the rollback failure. Neither
 case guarantees restoration. The caller owns host reconciliation before
-resuming work: inspect affected paths and restore or accept their state. Remove
-a stale lock only after confirming its owner has stopped and reconciling the
-workspace. Waiting for a lock is interruptible; its age never authorizes stealing
-it from a possibly live writer.
+resuming work: inspect affected paths and restore or accept their state.
+Waiting for the lock is interruptible, and an interrupted waiter never removes
+a lock it does not own.
 
 ## Queued effects are dispatched after copy-back, never inside it
 

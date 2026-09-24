@@ -12,7 +12,9 @@ import * as Fiber from "effect/Fiber"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
+import { TestClock } from "effect/testing"
 import { spawn } from "node:child_process"
+import { fileURLToPath } from "node:url"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
 
@@ -38,6 +40,31 @@ const text = (files: ReadonlyArray<WorkspaceSandbox.HostFile>, path: string): st
  * isolation, which is what copy-back requires of a host.
  */
 const isolated = KernelFileSystem.withIsolatedFileSystem
+
+const lockChild = new URL("./fixtures/workspace-lock-child.ts", import.meta.url)
+
+/**
+ * The lease operations the commit lock makes (`@smthrs/artifacts/FileLease`),
+ * over a fake host's file map: an exclusive `wx` create, an owner read, and
+ * the release.
+ */
+const leaseOps = (files: Map<string, Uint8Array>) => ({
+  writeFileString:
+    ((path: string, data: string, options?: { readonly flag?: string }) =>
+      Effect.suspend(() =>
+        options?.flag === "wx" && files.has(path)
+          ? Effect.fail(PlatformError.systemError({ _tag: "AlreadyExists", module: "test", method: "writeFileString" }))
+          : Effect.sync(() => void files.set(path, encoder.encode(data)))
+      )) as never,
+  readFileString: ((path: string) =>
+    Effect.suspend(() => {
+      const bytes = files.get(path)
+      return bytes === undefined
+        ? Effect.fail(PlatformError.systemError({ _tag: "NotFound", module: "test", method: "readFileString" }))
+        : Effect.succeed(decoder.decode(bytes))
+    })) as never,
+  remove: ((path: string) => Effect.sync(() => void files.delete(path))) as never
+})
 
 /**
  * A descriptor-relative host whose every request runs through `around`, so a
@@ -705,6 +732,7 @@ describe("WorkspaceSandbox transaction filesystem", () => {
 describe("WorkspaceSandbox filesystem host", () => {
   const hostLayer = (files: Map<string, Uint8Array>) => {
     const fs = FileSystem.makeNoop({
+      ...leaseOps(files),
       exists: (path) =>
         Effect.succeed(
           files.has(String(path)) || [...files.keys()].some((candidate) => candidate.startsWith(`${String(path)}/`))
@@ -967,6 +995,7 @@ describe("WorkspaceSandbox filesystem host", () => {
     Effect.gen(function*() {
       const files = new Map<string, Uint8Array>()
       const fs = FileSystem.makeNoop({
+        ...leaseOps(files),
         exists: (path) => Effect.succeed(files.has(String(path))),
         readFile: (path) => Effect.succeed(files.get(String(path))!),
         writeFile: (path, data) => Effect.sync(() => void files.set(String(path), data)),
@@ -1159,6 +1188,7 @@ describe("WorkspaceSandbox filesystem host atomicity", () => {
         const entered = yield* Deferred.make<void>()
         const release = yield* Deferred.make<void>()
         const fs = FileSystem.makeNoop({
+          ...leaseOps(new Map()),
           readFile: () =>
             Effect.sync(() => {
               if (committing) preflightReads++
@@ -1223,6 +1253,7 @@ describe("WorkspaceSandbox filesystem host atomicity", () => {
   const faultLayer = (files: Map<string, Uint8Array>, failOn: (call: number) => boolean) => {
     let calls = 0
     const fs = FileSystem.makeNoop({
+      ...leaseOps(files),
       exists: (path) => Effect.succeed(files.has(String(path))),
       readFile: (path) => Effect.succeed(files.get(String(path))!),
       writeFile: (path, data) => {
@@ -1400,26 +1431,130 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       return accepted
     })
 
+  // A lock create refused because the path exists: another owner holds it.
+  const contending = (fs: FileSystem.FileSystem, attempted: Deferred.Deferred<void>) =>
+    intercept(
+      fs,
+      (request, proceed) =>
+        request.operation === "writeFileString" && request.path.endsWith("/.smithers-workspace-lock")
+          ? proceed.pipe(Effect.tapError(() => Deferred.succeed(attempted, undefined)))
+          : proceed
+    )
+
+  const backdate = (fs: FileSystem.FileSystem, path: string, ms: number) =>
+    Effect.suspend(() => {
+      const then = new Date(Date.now() - ms)
+      return fs.utimes(path, then, then)
+    })
+
   it.effect("interrupts a lock wait without removing another owner's lock or leaking a permit", () =>
     withCrypto(
       Effect.scoped(Effect.gen(function*() {
         const { fs, root } = yield* temp
         const lock = `${root}/.smithers-workspace-lock`
-        yield* fs.makeDirectory(lock)
+        yield* fs.writeFileString(lock, "foreign-owner")
         const attempted = yield* Deferred.make<void>()
-        const waitingFs = intercept(fs, (request, proceed) =>
-          request.operation === "makeDirectory"
-            ? proceed.pipe(Effect.tapError(() => Deferred.succeed(attempted, undefined)))
-            : proceed)
-        const sandbox = WorkspaceSandbox.makeFileSystem(waitingFs, yield* ArtifactStore.ArtifactStore, root)
+        const sandbox = WorkspaceSandbox.makeFileSystem(
+          contending(fs, attempted),
+          yield* ArtifactStore.ArtifactStore,
+          root
+        )
         const accepted = yield* write(sandbox, [["file", "new"]], ["file"])
         const waiting = yield* Effect.forkChild(sandbox.materialize(accepted))
         yield* Deferred.await(attempted)
         yield* Fiber.interrupt(waiting)
-        expect(yield* fs.exists(lock)).toBe(true)
+        expect(yield* fs.readFileString(lock)).toBe("foreign-owner")
         expect(yield* fs.exists(`${root}/file`)).toBe(false)
-        yield* fs.remove(lock, { recursive: true })
+        yield* fs.remove(lock)
         yield* sandbox.materialize(accepted)
+        expect(yield* fs.readFileString(`${root}/file`)).toBe("new")
+        expect(yield* fs.exists(lock)).toBe(false)
+      })).pipe(Effect.provide(nodeLayer))
+    ))
+
+  for (const shape of ["file", "legacy directory"] as const) {
+    it.effect(`reclaims a stale ${shape} lock left by a killed owner`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          // Real file mtimes are read against the test clock.
+          yield* Effect.suspend(() => TestClock.setTime(Date.now()))
+          const { fs, root } = yield* temp
+          const lock = `${root}/.smithers-workspace-lock`
+          if (shape === "file") yield* fs.writeFileString(lock, "killed-owner")
+          else yield* fs.makeDirectory(lock)
+          yield* backdate(fs, lock, 61_000)
+          const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+          yield* sandbox.materialize(yield* write(sandbox, [["file", "new"]], ["file"]))
+          expect(yield* fs.readFileString(`${root}/file`)).toBe("new")
+          // The lock, its reclaim claim, and the tombstone are all gone.
+          expect(yield* fs.readDirectory(root)).toEqual(["file"])
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+
+    it.effect(`fails with commit_lock_timeout while a live ${shape} lock is held`, () =>
+      withCrypto(
+        Effect.scoped(Effect.gen(function*() {
+          // The test clock stays at zero, so the lock's real mtime never ages
+          // past the stale bound: it reads as a live owner's heartbeat.
+          const { fs, root } = yield* temp
+          const lock = `${root}/.smithers-workspace-lock`
+          if (shape === "file") yield* fs.writeFileString(lock, "live-owner")
+          else yield* fs.makeDirectory(lock)
+          const attempted = yield* Deferred.make<void>()
+          const sandbox = WorkspaceSandbox.makeFileSystem(
+            contending(fs, attempted),
+            yield* ArtifactStore.ArtifactStore,
+            root
+          )
+          const accepted = yield* write(sandbox, [["file", "new"]], ["file"])
+          const waiting = yield* Effect.forkChild(Effect.flip(sandbox.materialize(accepted)))
+          yield* Deferred.await(attempted)
+          yield* TestClock.adjust("2 minutes")
+          expect(yield* Fiber.join(waiting)).toMatchObject({ code: "commit_lock_timeout" })
+          expect(yield* fs.exists(`${root}/file`)).toBe(false)
+          expect((yield* fs.stat(lock)).type).toBe(shape === "file" ? "File" : "Directory")
+        })).pipe(Effect.provide(nodeLayer))
+      ))
+  }
+
+  it.live("recovers the commit lock after its owner process is hard-killed", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, root } = yield* temp
+        const lock = `${root}/.smithers-workspace-lock`
+        const child = yield* Effect.acquireRelease(
+          Effect.sync(() =>
+            spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(lockChild), root], {
+              cwd: new URL("..", import.meta.url),
+              stdio: ["pipe", "pipe", "pipe"]
+            })
+          ),
+          (child) =>
+            Effect.sync(() => {
+              if (child.exitCode === null) child.kill("SIGKILL")
+            })
+        )
+        let stderr = ""
+        child.stderr.on("data", (data) => {
+          stderr += String(data)
+        })
+        const killed = new Promise<NodeJS.Signals | null>((resolve) =>
+          child.once("exit", (_, signal) => resolve(signal))
+        )
+        yield* Effect.promise(() =>
+          new Promise<void>((resolve, reject) => {
+            child.stdout.once("data", () => resolve())
+            child.once("exit", (code) => reject(new Error(`child exited ${code}: ${stderr}`)))
+          })
+        )
+        child.kill("SIGKILL")
+        expect(yield* Effect.promise(() => killed)).toBe("SIGKILL")
+        expect(yield* fs.exists(lock)).toBe(true)
+        // The killed owner's heartbeat stopped; age its lock past the bound
+        // instead of waiting a minute of wall time.
+        yield* backdate(fs, lock, 120_000)
+        const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+        yield* sandbox.materialize(yield* write(sandbox, [["file", "new"]], ["file"]))
         expect(yield* fs.readFileString(`${root}/file`)).toBe("new")
         expect(yield* fs.exists(lock)).toBe(false)
       })).pipe(Effect.provide(nodeLayer))
@@ -1541,11 +1676,11 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         const alias = `${outside}/alias`
         yield* fs.symlink(root, alias)
         const contended = yield* Deferred.make<void>()
-        const waitingFs = intercept(fs, (request, proceed) =>
-          request.operation === "makeDirectory"
-            ? proceed.pipe(Effect.tapError(() => Deferred.succeed(contended, undefined)))
-            : proceed)
-        const sandbox = WorkspaceSandbox.makeFileSystem(waitingFs, yield* ArtifactStore.ArtifactStore, alias)
+        const sandbox = WorkspaceSandbox.makeFileSystem(
+          contending(fs, contended),
+          yield* ArtifactStore.ArtifactStore,
+          alias
+        )
         const accepted = yield* write(sandbox, [["file", "B"]], ["file"])
         // The child holds its first data write after acquiring the advisory lock.
         const script = `

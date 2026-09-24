@@ -170,6 +170,7 @@ result could not be moved through one. The `code` says which:
 | `not_found`              | A path the transaction needed was absent.                                                               |
 | `host_unavailable`       | The host filesystem or artifact store refused, or the host cannot make descriptor-relative requests.    |
 | `path_escapes_workspace` | A change's path crosses a symlink or a hard-linked file, or the workspace root was replaced mid-commit. |
+| `commit_lock_timeout`    | Another writer held `.smithers-workspace-lock` for the whole 2-minute acquisition deadline.             |
 
 **What to change.** For `path_escapes_workspace`, replace the symlink with the
 real file or directory, or have the body write the referent path: copy-back
@@ -179,6 +180,11 @@ cause saying the host "does not provide descriptor-relative, no-follow
 filesystem isolation" means the sandbox was composed over a path-based
 filesystem such as `NodeFileSystem.layer`; compose it over
 `@smthrs/platform-node`'s `AtomicFileSystem.layer` instead.
+
+For `commit_lock_timeout`, another commit on the same root is still running
+and heartbeating its lock. Retry once it finishes; do not delete the lock by
+hand. A lock whose owner was killed, and a lock directory left by an rc.1
+build, is reclaimed on its own once its mtime is 60 seconds old.
 
 ## UndeclaredRead
 

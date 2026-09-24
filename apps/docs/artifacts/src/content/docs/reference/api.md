@@ -1,10 +1,10 @@
 ---
 title: "API reference"
-description: "Every export of @smthrs/artifacts: the store contract and its errors, the filesystem, memory, no-op, HTTP, and combined implementations, the sweep and backup lease, and the two metrics."
+description: "Every export of @smthrs/artifacts: the store contract and its errors, the filesystem, memory, no-op, HTTP, and combined implementations, the sweep, backup lease, and file lease, and the two metrics."
 editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flows/artifacts/docs/api.md"
 ---
 
-`@smthrs/artifacts` exports six modules. Each is available from the root as a
+`@smthrs/artifacts` exports seven modules. Each is available from the root as a
 namespace and from its own subpath:
 
 ```ts
@@ -374,6 +374,54 @@ returns `None` when a live backup deliberately fenced the operation, which
 `failure` maps an unknown host cause into the caller's error type, which is how
 these combinators stay usable from a tool with its own error channel. See
 [Fence a backup against the sweep](/guides/fence-a-backup/).
+
+## FileLease
+
+`@smthrs/artifacts/FileLease`. The cross-process lock-file lease under the
+per-digest locks and `ArtifactBackupLease`, exported for other packages that
+need the same fence; `@smthrs/engine-store` uses it for the workspace commit
+lock.
+
+```ts
+declare const withLease: <A, E, R, E2>(
+  fs: FileSystem,
+  lockPath: string,
+  effect: Effect<A, E, R>,
+  failure: (cause: unknown) => E2,
+  options?: Options
+) => Effect<A, E | E2, R>
+
+declare const hold: <A, E, R, E2>(
+  fs: FileSystem,
+  lockPath: string,
+  effect: Effect<A, E, R>,
+  failure: (cause: unknown) => E2,
+  options?: HoldOptions
+) => Effect<A, E | E2, R>
+```
+
+`withLease` creates `lockPath` with `wx`, writes a unique owner token, and
+refreshes its mtime while `effect` runs. It reclaims a lock whose mtime is
+older than the stale bound, at most once per lock generation, and fails with
+`failure(TimeoutError)` when acquisition misses its deadline. Every other host
+refusal reaches `failure` as the `PlatformError`. A directory at `lockPath` is
+treated as a lock with no readable owner and reclaimed on the same bound.
+`hold` is the same lease without a deadline, for a caller that bounds a wider
+wait itself; `onAcquired` runs once the lease is held.
+
+| Option           | Default        | Meaning                                          |
+| ---------------- | -------------- | ------------------------------------------------ |
+| `heartbeatEvery` | `"10 seconds"` | How often the holder refreshes the lock's mtime. |
+| `staleAfterMs`   | `60_000`       | Age past which a lock or reclaim claim is stale. |
+| `acquireWithin`  | `"2 minutes"`  | Acquisition deadline (`withLease` only).         |
+| `retryEvery`     | `"25 millis"`  | Sleep between attempts while contended.          |
+| `label`          | `"File lease"` | Names the lock in the reclaimed-holder warning.  |
+| `annotations`    | none           | Extra fields logged with that warning.           |
+
+The host needs exclusive `wx` file creation, `readFileString`, `stat` with an
+mtime, `utimes`, `rename`, and `remove`. Reclaim writes siblings named
+`<lockPath>.reclaim-<token>` and `<lockPath>.stale-<token>`. The fence is
+bounded: see [Coordination](/concepts/coordination/).
 
 ## ArtifactStoreMetrics
 

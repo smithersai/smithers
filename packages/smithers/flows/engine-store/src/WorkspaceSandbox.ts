@@ -37,6 +37,7 @@
  * @since 0.1.0
  */
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import * as FileLease from "@smthrs/artifacts/FileLease"
 import { Sha256 } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -312,7 +313,8 @@ export const WorkspaceErrorCode = Schema.Literals([
   "invalid_path",
   "not_found",
   "host_unavailable",
-  "path_escapes_workspace"
+  "path_escapes_workspace",
+  "commit_lock_timeout"
 ])
 
 /**
@@ -440,9 +442,11 @@ export interface Service {
    *
    * Filesystem coordination reserves `.smithers-workspace-lock` under the
    * root, and copy-back refuses the `.flows` engine state directory plus any
-   * `FileSystemOptions.reservedPaths`, whatever the write set or mode. A killed process can leave this advisory lock directory behind;
-   * remove it only after confirming the owner has stopped and reconciling
-   * the workspace. Writers that ignore the lock are outside this guarantee.
+   * `FileSystemOptions.reservedPaths`, whatever the write set or mode. The
+   * lock is an `@smthrs/artifacts/FileLease`: a killed holder's lock is
+   * reclaimed once its heartbeat is 60 seconds old, and a commit that cannot
+   * take it within 2 minutes fails with `commit_lock_timeout` before changing
+   * anything. Writers that ignore the lock are outside this guarantee.
    */
   readonly materialize: <Output>(
     accepted: Accepted<Output>
@@ -1246,6 +1250,22 @@ const copyBackFailure = (path: string) => (error: PlatformError.PlatformError): 
     : hostFailure(error)
 
 /**
+ * Maps a commit-lock failure: a missed acquisition deadline is
+ * `commit_lock_timeout`, so a caller can tell "another writer holds the root"
+ * from "the host refused".
+ */
+const lockFailure = (cause: unknown): WorkspaceError =>
+  Cause.isTimeoutError(cause)
+    ? new WorkspaceError({
+      code: "commit_lock_timeout",
+      message:
+        `another writer held ${commitLockName} for the whole acquisition deadline; a lock whose owner stopped is reclaimed once its heartbeat is ${FileLease.defaultStaleAfterMs} ms old`,
+      cause
+    })
+    // `FileLease` hands every other refusal over as the host's `PlatformError`.
+    : copyBackFailure(commitLockName)(cause as PlatformError.PlatformError)
+
+/**
  * Builds the filesystem-backed workspace sandbox.
  *
  * **Copy-in, not overlay.** The transaction is seeded with exactly the
@@ -1272,13 +1292,13 @@ const copyBackFailure = (path: string) => (error: PlatformError.PlatformError): 
  * whole-filesystem isolation attestation (`withIsolatedFileSystem`, for an
  * in-memory volume); a plain path-based host is refused at copy-back with
  * `host_unavailable`. Snapshot reads use `fs` as given. A root-keyed semaphore and
- * an exclusively created advisory lock directory serialize cooperating
- * callers, including separate processes. Preconditions run before file
+ * the `.smithers-workspace-lock` lease file (`@smthrs/artifacts/FileLease`)
+ * serialize cooperating callers, including separate processes. Preconditions run before file
  * changes, and the apply loop keeps each target's pre-image for in-process
  * rollback. A crash or rollback failure can leave partial changes; see
  * {@link Service.materialize} for the caller's reconciliation obligations.
- * Hosts must implement exclusive non-recursive `makeDirectory` creation and
- * removal of the reserved `.smithers-workspace-lock` directory. Copy-back
+ * Hosts must implement exclusive `wx` file creation, `stat` with an mtime,
+ * `utimes`, `rename`, and `remove` for the reserved lock. Copy-back
  * also refuses the `.flows` engine state directory and any
  * {@link FileSystemOptions.reservedPaths}, so no write set or boundary mode
  * lets a step body replace the engine database or its artifact blobs.
@@ -1336,8 +1356,6 @@ export const makeFileSystem = (
         const hit = reservedAt(change.path)
         if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
       }
-      // mkdir without recursive is an exclusive create on filesystem hosts.
-      // Unlike a file write, acquisition cannot leave a partly written lock.
       yield* fs.makeDirectory(root === "" ? "." : root, { recursive: true }).pipe(Effect.mapError(hostFailure))
       // Pinned once per commit, after the root exists: every lock, preflight,
       // apply, and rollback call below resolves against this root identity.
@@ -1346,29 +1364,16 @@ export const makeFileSystem = (
         Effect.mapError(hostFailure)
       )
       const canonical = yield* canonicalRoot
-      const lockPath = hostPath(commitLockName)
+      // The confined view refuses `utimes`, which the lease heartbeat needs.
+      // The heartbeat touches the lock only after a confined, no-follow read
+      // found this call's own token there, so the one path-based call it
+      // makes can at worst refresh an mtime.
+      const leaseHost: FileSystem.FileSystem = { ...host, utimes: fs.utimes }
       return yield* coordinateCommit(
         canonical ?? root,
-        Effect.gen(function*() {
-          while (true) {
-            const committed = yield* Effect.acquireUseRelease(
-              host.makeDirectory(lockPath).pipe(
-                Effect.as(true),
-                Effect.catchReason("PlatformError", "AlreadyExists", () => Effect.succeed(false)),
-                Effect.mapError(copyBackFailure(commitLockName))
-              ),
-              (acquired) => acquired ? effect(host).pipe(Effect.as(true)) : Effect.succeed(false),
-              (acquired) =>
-                acquired
-                  ? host.remove(lockPath, { recursive: true }).pipe(Effect.mapError(copyBackFailure(commitLockName)))
-                  : Effect.void
-            )
-            if (committed) return
-            // Wait outside acquireUseRelease's uninterruptible acquisition.
-            // A killed owner leaves a stale lock for the caller to reconcile;
-            // never steal a lock based on its age while another writer may live.
-            yield* Effect.sleep("10 millis")
-          }
+        FileLease.withLease(leaseHost, hostPath(commitLockName), effect(host), lockFailure, {
+          label: "Workspace commit lock",
+          annotations: { root: canonical ?? root }
         })
       )
     })

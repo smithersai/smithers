@@ -412,19 +412,23 @@ symlink on a change's path, including one swapped in mid-commit, fails with
 `path_escapes_workspace` and is never followed. The host must carry the
 kernel's atomic executor (`@smthrs/platform-node`'s `AtomicFileSystem`), an
 isolation attestation, or be the kernel-guarded filesystem for the same root. The filesystem host serializes cooperating commits through preflight,
-apply, and rollback, using a workspace-root semaphore and the exclusively
-created `.smithers-workspace-lock` advisory directory. The directory and its
-children are reserved, as are the `.flows` engine state directory and every
-`reservedPaths` entry, under any write set or boundary mode. A change that
-targets or lies beneath a reserved path fails with `host_unavailable`. Hosts must support exclusive non-recursive directory
-creation and removal; writers that ignore the lock are outside this guarantee.
+apply, and rollback, using a workspace-root semaphore and the
+`.smithers-workspace-lock` lease file (`@smthrs/artifacts/FileLease`: heartbeat
+every 10 seconds, stale after 60 seconds, acquisition deadline 2 minutes). The
+lock and its children are reserved, as are the `.flows` engine state directory
+and every `reservedPaths` entry, under any write set or boundary mode. A change
+that targets or lies beneath a reserved path fails with `host_unavailable`.
+Hosts must support exclusive `wx` file creation, `stat` with an mtime,
+`utimes`, `rename`, and `remove`; writers that ignore the lock are outside this
+guarantee.
 
 Rollback uses in-memory file pre-images. Copy-back is not crash-atomic, and
 rollback can fail. A compound cause preserves the apply failure plus a
 `WorkspaceError` (`host_unavailable`) carrying the rollback cause. The caller
 must reconcile host files after a crash or failed rollback before resuming.
-A crash can leave a stale lock; remove it only after confirming the owner has
-stopped and reconciling the workspace. Lock waits are interruptible.
+A crashed holder's lock is reclaimed once its heartbeat is 60 seconds old. A
+commit that cannot take the lock within 2 minutes fails with
+`commit_lock_timeout` and changes nothing. Lock waits are interruptible.
 
 | Export                      | Signature                                                                                                                          | Meaning                                                                                                                     |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -466,10 +470,10 @@ stopped and reconciling the workspace. Lock waits are interruptible.
 
 ### Errors
 
-| Error                     | Fields                                                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `WorkspaceError`          | `code` of `invalid_path`, `not_found`, `host_unavailable`, or `path_escapes_workspace`; `message`; optional `cause` carried whole |
-| `MaterializationConflict` | `paths` (at most 1,024, each at most 4,096 characters) and `message`                                                              |
+| Error                     | Fields                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WorkspaceError`          | `code` of `invalid_path`, `not_found`, `host_unavailable`, `path_escapes_workspace`, or `commit_lock_timeout`; `message`; optional `cause` carried whole |
+| `MaterializationConflict` | `paths` (at most 1,024, each at most 4,096 characters) and `message`                                                                                     |
 
 It is a deterministic transaction model, not a security boundary. A body
 reaching the host through a service the transaction does not seed is outside it;
