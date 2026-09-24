@@ -77,5 +77,7 @@ describe("generation parameter contract", () => {
       String(anthropicDefault)
     )
     expect(passage).toMatch(/Anthropic/)
+    expect(passage, `${path} must say where Anthropic's reasoningEffort goes`).toContain("output_config.effort")
+    expect(passage).toContain("maxOutputTokensFor")
   })
 })

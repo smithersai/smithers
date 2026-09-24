@@ -356,6 +356,40 @@ describe("RequestExecutor", () => {
     expect(requests).toHaveLength(2)
   })
 
+  it("waits the whole in-budget Retry-After past the backoff cap before retrying", async () => {
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const layer = executorLayer([
+      {
+        status: 429,
+        body: JSON.stringify({ error: { message: "rate limited" } }),
+        headers: { "retry-after": "30" }
+      },
+      { status: 200, body: "ok" }
+    ], requests)
+
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function*() {
+          const executor = yield* RequestExecutor.RequestExecutor
+          const fiber = yield* execute(executor, request()).pipe(Effect.forkChild)
+          yield* Effect.yieldNow
+          expect(requests).toHaveLength(1)
+          yield* TestClock.adjust(29_999)
+          expect(requests).toHaveLength(1)
+          yield* TestClock.adjust(1)
+          return yield* Fiber.join(fiber)
+        }).pipe(
+          Effect.provide(layer),
+          Effect.provide(TestClock.layer()),
+          Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+        )
+      )
+    )
+
+    expect(result.status).toBe(200)
+    expect(requests).toHaveLength(2)
+  })
+
   it("does not retry a 400 response", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer([

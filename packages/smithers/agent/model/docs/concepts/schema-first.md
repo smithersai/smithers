@@ -25,11 +25,15 @@ promise enforceable rather than conventional.
 optional, and an omitted field leaves the provider's default in place, so a
 request never smuggles in an unstated knob. The Anthropic Messages lowering is
 the one exception, because that API requires a budget: an omitted `maxTokens`
-is sent as `max_tokens: 4096`. Dropping a knob is a separate rule from
-defaulting one. A protocol with no wire field for a stated knob leaves it out
-of the body, so `topK`, `stopSequences`, and `thinkingBudget` are absent from
-both OpenAI bodies, and the ChatGPT backend refuses a stated `maxTokens` in
-`Route.prepare` rather than sending the request without it.
+is sent as the model's output ceiling from `ModelCatalog.maxOutputTokensFor`,
+or as `max_tokens: 4096` for a model the catalog has not met. Dropping a knob is
+a separate rule from defaulting one. A protocol with no wire field for a stated
+knob leaves it out of the body, so `topK`, `stopSequences`, and `thinkingBudget`
+are absent from both OpenAI bodies, and the ChatGPT backend refuses a stated
+`maxTokens` in `Route.prepare` rather than sending the request without it. On
+Anthropic, `reasoningEffort` becomes `output_config.effort` (clamped to the
+levels the model accepts, with adaptive thinking) and is dropped for a model
+with no effort control.
 
 ## Four pieces, four reasons to change
 

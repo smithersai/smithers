@@ -18,10 +18,12 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as HttpBody from "effect/unstable/http/HttpBody"
 import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as CanonicalJson from "./CanonicalJson.ts"
 
 /**
@@ -520,18 +522,20 @@ const invalidQuestionStatuses = new Set([400, 422])
 
 /**
  * The statuses that say "not now" rather than "not this": the provider shed
- * the request or the caller is over its rate. The same request may be
- * answered a moment later, so these alone are asked again.
+ * the request, the caller is over its rate, or a proxy lost the upstream. The
+ * same request may be answered a moment later, so these, and a connection
+ * that failed before any status, alone are asked again.
  */
-const retryStatuses = new Set([429, 503])
+const retryStatuses = new Set([429, 502, 503, 504])
 
 /**
  * Jev through the Vercel AI Gateway, over the kernel `HttpClient`.
  *
- * One POST per attempt and one deadline over the whole evaluation. A 429 or a
- * 503 is asked again, up to `attempts` requests in all, after a pause of
- * {@link retryBackoffMs} that doubles each time; the answer is still Jev's,
- * and a request shed on every attempt fails `refused` with the last status.
+ * One POST per attempt and one deadline over the whole evaluation. A 429, 502,
+ * 503 or 504, or a connection that failed before any status, is asked again,
+ * up to `attempts` requests in all, after a pause of {@link retryBackoffMs}
+ * that doubles each time; the answer is still Jev's, and a request shed on
+ * every attempt fails `refused` with the last status (or `unreachable`).
  * On 2026-09-23 `typesafe-ai/jev` shed about one request in seven with a 503
  * in ~125 ms, with no `retry-after` and no fallback behind the gateway; the
  * same body sent again was answered. The deadline bounds the retries too: no
@@ -639,11 +643,23 @@ export function layerVercelGateway(
             KernelHttpClient.withModelCall(model),
             Effect.mapError((error) => new EvaluatorError({ code: "unreachable", message: error.message }))
           )
-          let response = yield* send
-          for (let attempt = 1; attempt < attempts && retryStatuses.has(response.status); attempt++) {
+          // An evaluation is a pure question, so asking it again is safe.
+          const retryable = (outcome: Result.Result<HttpClientResponse.HttpClientResponse, EvaluatorError>) =>
+            Result.isFailure(outcome) || retryStatuses.has(outcome.success.status)
+          let outcome = yield* Effect.result(send)
+          for (let attempt = 1; attempt < attempts && retryable(outcome); attempt++) {
             yield* Effect.sleep(retryBackoffMs * 2 ** (attempt - 1))
-            response = yield* send
+            outcome = yield* Effect.result(send)
           }
+          if (Result.isFailure(outcome)) {
+            const error = outcome.failure
+            return yield* Effect.fail(
+              attempts > 1
+                ? new EvaluatorError({ code: error.code, message: `${error.message} on all ${attempts} attempts` })
+                : error
+            )
+          }
+          const response = outcome.success
           if (response.status !== 200) {
             const retried = attempts > 1 && retryStatuses.has(response.status)
             return yield* Effect.fail(
@@ -809,6 +825,8 @@ export const layerFromEnvironment = (
  * completion-capable host's missing-key default: such a host must bind a live
  * or scripted judge before it opens resources, and
  * {@link layerFromEnvironment} enforces that choice at composition time.
+ * It is also the judge a host binds when it has disarmed the claim brake
+ * (`claimCap: 0`), so that nothing on the host will ever ask it.
  *
  * @category layers
  * @since 1.0.0-rc.0

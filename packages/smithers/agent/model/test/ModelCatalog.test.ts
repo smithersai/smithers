@@ -28,9 +28,25 @@ describe("ModelCatalog.contextWindowTokensFor", () => {
     ["claude-mythos-5", 1_000_000],
     ["us.anthropic.claude-opus-4-6-v1", 200_000],
     ["publishers/anthropic/models/claude-opus-5@20260101", 200_000],
-    ["claude-opus-5-1", 200_000],
+    ["claude-opus-5-1", 1_000_000],
+    ["claude-opus-5-5", 1_000_000],
+    ["claude-sonnet-5-1", 1_000_000],
+    ["claude-opus-5-20260101", 200_000],
     ["claude-sonnet-4-5", 200_000]
   ])("budgets %s at %i tokens", (model, tokens) => {
+    expect(ModelCatalog.contextWindowTokensFor(model)).toBe(tokens)
+  })
+
+  // Every seat the TUI offers must resolve a real window, never the unknown
+  // floor, or long sessions on it compact early and discard context.
+  it.each([
+    ["gpt-6-sol", 400_000],
+    ["gpt-6-astra", 400_000],
+    ["gpt-6-luna", 400_000],
+    ["gpt-5.6-sol", 400_000],
+    ["claude-opus-5-5", 1_000_000],
+    ["claude-fable-5-1", 1_000_000]
+  ])("budgets the TUI seat %s at %i tokens", (model, tokens) => {
     expect(ModelCatalog.contextWindowTokensFor(model)).toBe(tokens)
   })
 

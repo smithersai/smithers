@@ -196,7 +196,11 @@ describe("AnthropicMessages streaming", () => {
     ])
   })
 
-  it("buffers increasing unsigned thinking fragment counts in near-linear time", () => {
+  // Timing is not asserted here: at this protocol's per-event cost a wall-clock
+  // ratio could not tell a linear buffer from a quadratic one, and it timed out
+  // under load. The buffer is a Chunk, whose append the fragment walk in
+  // ToolStream.test.ts already bounds.
+  it("buffers many unsigned thinking fragments and flushes them whole at the block end", () => {
     const stream = AnthropicMessages.protocol.stream
     const decode = Schema.decodeUnknownSync(stream.event)
     const deltas = ["a", "b"].map((thinking) =>
@@ -206,31 +210,23 @@ describe("AnthropicMessages streaming", () => {
         delta: { type: "thinking_delta", thinking }
       }))
     )
-    const measure = (count: number): number => {
-      let [state] = step(
-        stream.initial(streamRequest),
-        JSON.stringify({
-          type: "content_block_start",
-          index: 0,
-          content_block: { type: "thinking", thinking: "prefix" }
-        })
-      )
-      const started = performance.now()
-      for (let index = 0; index < count; index++) {
-        const [next, events] = Effect.runSync(stream.step(state, deltas[index % 2]!))
-        state = next
-        if (events.length !== 0) throw new Error("Unsigned thinking was emitted before settlement")
-      }
-      const elapsed = performance.now() - started
-      const [, events] = step(state, "{\"type\":\"content_block_stop\",\"index\":0}")
-      expect(events.filter((event) => event.type === "thinking-delta").map((event) => event.text).join(""))
-        .toBe("prefix" + "ab".repeat(count / 2))
-      return elapsed
+    const count = 2_000
+    let [state] = step(
+      stream.initial(streamRequest),
+      JSON.stringify({
+        type: "content_block_start",
+        index: 0,
+        content_block: { type: "thinking", thinking: "prefix" }
+      })
+    )
+    for (let index = 0; index < count; index++) {
+      const [next, events] = Effect.runSync(stream.step(state, deltas[index % 2]!))
+      state = next
+      if (events.length !== 0) throw new Error("Unsigned thinking was emitted before settlement")
     }
-    measure(2_000)
-    const small = Math.min(...Array.from({ length: 3 }, () => measure(10_000)))
-    const large = Math.min(...Array.from({ length: 3 }, () => measure(40_000)))
-    expect(large).toBeLessThan(small * 8 + 20)
+    const [, events] = step(state, "{\"type\":\"content_block_stop\",\"index\":0}")
+    expect(events.filter((event) => event.type === "thinking-delta").map((event) => event.text).join(""))
+      .toBe("prefix" + "ab".repeat(count / 2))
   })
 
   it.each(["signature", "stop", "halt"] as const)(
@@ -493,11 +489,27 @@ describe("AnthropicMessages streaming", () => {
     ])).toEqual([])
   })
 
+  it("closes a well-formed call the provider never stopped at message_stop, before the settle", () => {
+    const events = replay([
+      "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"weather\"}}",
+      "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}",
+      "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}",
+      "{\"type\":\"message_stop\"}"
+    ]).filter((event) => event.type === "tool-call-end" || event.type === "settle")
+
+    expect(events).toMatchObject([
+      { type: "tool-call-end", id: "toolu_1", arguments: "{}" },
+      { type: "settle", stopReason: "tool-calls" }
+    ])
+  })
+
   it("fails the stream when a completed tool call did not accumulate JSON", () => {
     const error = replayError([
       "{\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"toolu_bad\",\"name\":\"weather\"}}",
       "{\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{oops\"}}",
-      "{\"type\":\"content_block_stop\",\"index\":0}"
+      "{\"type\":\"content_block_stop\",\"index\":0}",
+      "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}",
+      "{\"type\":\"message_stop\"}"
     ])
 
     expect(error).toBeInstanceOf(ModelError)
@@ -1026,10 +1038,8 @@ describe("AnthropicMessages body lowering", () => {
       params: GenerationParams.make()
     } as unknown as ModelRequest
 
-    expect(body(untyped).messages).toEqual([
-      { role: "user", content: [] },
-      { role: "assistant", content: [] }
-    ])
+    // Anthropic rejects an empty message, so one with nothing to carry is omitted.
+    expect(body(untyped).messages).toEqual([])
   })
 
   it("lowers every sampling knob and omits the ones left unset", () => {
@@ -1045,7 +1055,7 @@ describe("AnthropicMessages body lowering", () => {
       )
 
     expect(withParams(GenerationParams.make({
-      maxTokens: 256,
+      maxTokens: 2_048,
       temperature: 0.5,
       topP: 0.9,
       topK: 40,
@@ -1053,7 +1063,7 @@ describe("AnthropicMessages body lowering", () => {
       thinkingBudget: 1_024
     }))).toEqual({
       model: "claude-sonnet-4-5",
-      max_tokens: 256,
+      max_tokens: 2_048,
       messages: [],
       stream: true,
       temperature: 0.5,
@@ -1071,11 +1081,11 @@ describe("AnthropicMessages body lowering", () => {
       messages: [],
       stream: true
     })
-    expect(withParams(GenerationParams.make({ maxTokens: 0, thinkingBudget: 0 }))).toMatchObject({
-      max_tokens: 0,
+    expect(withParams(GenerationParams.make({ maxTokens: 1, thinkingBudget: 0 }))).toMatchObject({
+      max_tokens: 1,
       thinking: { type: "enabled", budget_tokens: 0 }
     })
-    // The Responses-only effort knob never reaches an Anthropic body.
+    // A model with no effort control drops the effort knob.
     expect(CanonicalJson.stringify(withParams(GenerationParams.make({ reasoningEffort: "high" })))).not.toContain(
       "high"
     )
@@ -1101,5 +1111,100 @@ describe("AnthropicMessages body lowering", () => {
         "{\"error\":{\"type\":\"invalid_request_error\",\"message\":\"tools.0.name: invalid value\"}}"
       )
     ).toMatchObject({ code: "invalid_request" })
+  })
+})
+
+describe("AnthropicMessages generation budget and effort", () => {
+  const request = (modelId: string, params: ConstructorParameters<typeof GenerationParams>[0] = {}) =>
+    ModelRequest.make({
+      modelId,
+      system: [],
+      messages: [Message.user("hello")],
+      tools: [],
+      params: GenerationParams.make(params)
+    })
+
+  it("defaults max_tokens to the model's output ceiling, not 4096, for a current Claude model", () => {
+    expect(body(request("claude-opus-5-5")).max_tokens).toBe(128_000)
+    expect(body(request("claude-fable-5-1")).max_tokens).toBe(128_000)
+    expect(body(request("claude-sonnet-4-5")).max_tokens).toBe(4096)
+    expect(body(request("claude-opus-5-5", { maxTokens: 512 })).max_tokens).toBe(512)
+  })
+
+  it("lowers reasoningEffort to output_config.effort with adaptive thinking", () => {
+    const lowered = body(request("claude-opus-5-5", { reasoningEffort: "xhigh" }))
+    expect(lowered.output_config).toEqual({ effort: "xhigh" })
+    expect(lowered.thinking).toEqual({ type: "adaptive" })
+  })
+
+  it("clamps an effort the model does not accept to the nearest level below", () => {
+    expect(body(request("claude-opus-4-6", { reasoningEffort: "xhigh" })).output_config).toEqual({ effort: "high" })
+    expect(body(request("claude-opus-4-6", { reasoningEffort: "max" })).output_config).toEqual({ effort: "max" })
+    expect(body(request("claude-opus-4-5", { reasoningEffort: "max" })).output_config).toEqual({ effort: "high" })
+    expect(body(request("claude-opus-4-5", { reasoningEffort: "max" })).thinking).toBeUndefined()
+  })
+
+  it("lowers none and minimal to the lowest effort without asking for thinking", () => {
+    for (const reasoningEffort of ["none", "minimal"] as const) {
+      const lowered = body(request("claude-opus-5", { reasoningEffort }))
+      expect(lowered.output_config).toEqual({ effort: "low" })
+      expect(lowered.thinking).toBeUndefined()
+    }
+  })
+
+  it("drops reasoningEffort on a model with no effort control", () => {
+    const lowered = body(request("claude-sonnet-4-5", { reasoningEffort: "high" }))
+    expect(lowered).not.toHaveProperty("output_config")
+    expect(lowered).not.toHaveProperty("thinking")
+  })
+
+  it("keeps an explicit thinking budget ahead of adaptive thinking", () => {
+    const lowered = body(request("claude-opus-4-6", { reasoningEffort: "high", thinkingBudget: 2048 }))
+    expect(lowered.thinking).toEqual({ type: "enabled", budget_tokens: 2048 })
+    expect(lowered.output_config).toEqual({ effort: "high" })
+  })
+
+  it("raises a defaulted max_tokens above a thinking budget that would not fit under it", () => {
+    const lowered = body(request("claude-sonnet-4-5", { thinkingBudget: 4096 }))
+    expect(lowered.max_tokens).toBeGreaterThan(4096)
+    expect(lowered.thinking).toEqual({ type: "enabled", budget_tokens: 4096 })
+  })
+
+  it("rejects a thinking budget that is not below a stated maxTokens", () => {
+    const error = Effect.runSync(
+      AnthropicMessages.protocol.body.from(request("claude-sonnet-4-5", { maxTokens: 2048, thinkingBudget: 2048 }), {
+        native: true
+      }).pipe(Effect.flip)
+    )
+    expect(error).toMatchObject({ code: "invalid_request", path: "params.thinkingBudget" })
+  })
+})
+
+describe("AnthropicMessages empty content", () => {
+  it("drops empty text blocks and omits messages whose lowered content is empty", () => {
+    const requestBody = body(ModelRequest.make({
+      modelId: "claude-sonnet-4-5",
+      system: [],
+      messages: [
+        Message.user("first"),
+        Message.assistant([ThinkingPart.make({ text: "never signed" })], { stopReason: "stop" }),
+        Message.user(""),
+        Message.user("second"),
+        Message.assistant([
+          { type: "text", text: "" },
+          ToolCallPart.make({ id: "toolu_1", name: "weather", arguments: "{}" })
+        ], { stopReason: "tool-calls" }),
+        Message.tool([ToolResultPart.make({ toolCallId: "toolu_1", content: "sunny" })])
+      ],
+      tools: [],
+      params: GenerationParams.make()
+    }))
+
+    expect(requestBody.messages).toEqual([
+      { role: "user", content: [{ type: "text", text: "first" }] },
+      { role: "user", content: [{ type: "text", text: "second" }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "weather", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "sunny" }] }
+    ])
   })
 })

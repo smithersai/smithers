@@ -417,6 +417,15 @@ describe("the claim brake", () => {
     }
   })
 
+  it("quotes the completion it could not judge, so a judge outage does not lose the answer", async () => {
+    for (const layer of [Layer.empty as Layer.Layer<Evaluator.Evaluator>, Evaluator.layerUnavailable()]) {
+      const error = await unjudged({ layer, claim: "The answer is 42, written to answer.txt." })
+
+      expect(error.message).toContain("The completion this refused, word for word:")
+      expect(error.message).toContain("The answer is 42, written to answer.txt.")
+    }
+  })
+
   it("carries the transport's error as the cause, so nothing is laundered", async () => {
     const failure = new Evaluator.EvaluatorError({ code: "refused", status: 503, message: "gateway down" })
     const error = await unjudged({ layer: refusing(failure).layer })

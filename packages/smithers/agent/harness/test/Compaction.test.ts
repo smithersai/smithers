@@ -391,9 +391,20 @@ describe("Compaction", () => {
       const request = Effect.runSync(Compaction.summaryRequest(input, step))
       expect(
         request.messages.flatMap((item) => [...item.content]).map((part) => "text" in part ? part.text : undefined)
-      ).toEqual(["first", "middle"])
+      ).toEqual(["first", "middle", Compaction.summaryTurn])
       expect(request.system.map((part) => part.text)).toEqual([Compaction.summaryInstruction])
       expect(request.tools).toEqual([])
+    })
+
+    it("ends on a user turn that asks for the summary, even when the prefix ends on the model's own turn", () => {
+      // A trailing assistant message is a prefill on Anthropic, which the
+      // model continues instead of summarizing, and some models reject.
+      const input = window()
+      const step = Effect.runSync(Compaction.declare(input, 2, summarizer))
+      const request = Effect.runSync(Compaction.summaryRequest(input, step))
+      const last = request.messages.at(-1)
+      expect(last?.role).toBe("user")
+      expect(last?.content).toEqual([{ type: "text", text: Compaction.summaryTurn }])
     })
 
     it("uses the summarizer's own model and parameters when it declares them", () => {
@@ -447,7 +458,7 @@ describe("Compaction", () => {
       })
       const step = Effect.runSync(Compaction.declare(input, 1, summarizer))
       const request = Effect.runSync(Compaction.summaryRequest(input, step))
-      expect(request.messages).toEqual([])
+      expect(request.messages).toEqual([ModelRequest.Message.user(Compaction.summaryTurn)])
       expect(request.system.map((part) => part.text)).toEqual([Compaction.summaryInstruction])
     })
 

@@ -6,9 +6,17 @@
 import { Chunk, Effect, Option, Result, Schema } from "effect"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
+import * as ModelCatalog from "./ModelCatalog.ts"
 import { ModelError, type ModelErrorCode } from "./ModelError.ts"
 import { ModelEvent, type Usage } from "./ModelEvent.ts"
-import { JsonObject, type Message, type ModelRequest, type StopReason, type ToolDefinition } from "./ModelRequest.ts"
+import {
+  JsonObject,
+  type Message,
+  type ModelRequest,
+  type ReasoningEffort,
+  type StopReason,
+  type ToolDefinition
+} from "./ModelRequest.ts"
 import { jsonEvent, make as makeProtocol, type Protocol } from "./Protocol.ts"
 import * as ToolStream from "./ToolStream.ts"
 
@@ -91,10 +99,17 @@ const AnthropicTool = Schema.Struct({
   defer_loading: Schema.optional(Schema.Boolean)
 })
 
-const ThinkingConfig = Schema.Struct({
-  type: Schema.Literal("enabled"),
-  budget_tokens: Schema.Finite
-})
+const ThinkingConfig = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("enabled"),
+    budget_tokens: Schema.Finite
+  }),
+  Schema.Struct({ type: Schema.Literal("adaptive") })
+])
+
+const Effort = Schema.Literals(["low", "medium", "high", "xhigh", "max"])
+
+const OutputConfig = Schema.Struct({ effort: Effort })
 
 /**
  * Schema for the deterministic `POST /v1/messages` body.
@@ -114,7 +129,8 @@ export const Body = Schema.Struct({
   top_p: Schema.optional(Schema.Finite),
   top_k: Schema.optional(Schema.Finite),
   stop_sequences: Schema.optional(Schema.Array(Schema.String)),
-  thinking: Schema.optional(ThinkingConfig)
+  thinking: Schema.optional(ThinkingConfig),
+  output_config: Schema.optional(OutputConfig)
 })
 
 /**
@@ -269,7 +285,9 @@ const lowerAssistant = (
     const content: Array<AssistantWireBlock> = []
     for (const part of message.content) {
       if (part.type === "text") {
-        content.push({ type: "text", text: part.text })
+        // Anthropic rejects an empty text block, and Claude sometimes opens
+        // one before a tool_use block, so it never reaches the wire.
+        if (part.text !== "") content.push({ type: "text", text: part.text })
         continue
       }
       if (part.type === "thinking") {
@@ -292,7 +310,9 @@ const lowerAssistant = (
         })
         continue
       }
-      if (part.type === "tool-call") {
+      // A truncated turn's calls never ran and have no tool_result to pair
+      // with; see ToolStream.truncated.
+      if (part.type === "tool-call" && !ToolStream.truncated(message.stopReason)) {
         content.push({
           type: "tool_use",
           id: part.id,
@@ -301,15 +321,17 @@ const lowerAssistant = (
         })
       }
     }
-    return { role: "assistant", content }
+    // Every message but a final assistant one must carry content; a turn that
+    // held only unsigned thinking or empty text lowers to nothing.
+    return content.length === 0 ? undefined : { role: "assistant", content }
   })
 
-const lowerUser = (message: Extract<Message, { readonly role: "user" }>): WireMessage => {
+const lowerUser = (message: Extract<Message, { readonly role: "user" }>): WireMessage | undefined => {
   const content: Array<UserWireBlock> = []
   for (const part of message.content) {
-    if (part.type === "text") content.push({ type: "text", text: part.text })
+    if (part.type === "text" && part.text !== "") content.push({ type: "text", text: part.text })
   }
-  return { role: "user", content }
+  return content.length === 0 ? undefined : { role: "user", content }
 }
 
 const lowerToolResults = (
@@ -348,7 +370,8 @@ const lowerMessages = (
     const messages: Array<WireMessage> = []
     for (const message of request.messages) {
       if (message.role === "user") {
-        messages.push(lowerUser(message))
+        const lowered = lowerUser(message)
+        if (lowered !== undefined) messages.push(lowered)
         continue
       }
       if (message.role === "assistant") {
@@ -360,6 +383,82 @@ const lowerMessages = (
     }
     return messages
   })
+
+type Effort = typeof Effort.Type
+
+const effortOrder: ReadonlyArray<Effort> = ["low", "medium", "high", "xhigh", "max"]
+
+/**
+ * The effort levels a Claude model accepts in `output_config.effort`, and
+ * whether it takes `thinking: { type: "adaptive" }`. A model absent from this
+ * table has no effort control, so `reasoningEffort` is dropped for it.
+ * https://platform.claude.com/docs/en/build-with-claude/effort
+ */
+const effortSupport: ReadonlyArray<
+  readonly [RegExp, { readonly levels: ReadonlyArray<Effort>; readonly adaptive: boolean }]
+> = [
+  [
+    /^claude-(?:(?:opus|sonnet)-5(?:-[0-9]{1,2})?|(?:fable|mythos)-5(?:-[0-9]+)*|opus-4-[78])$/i,
+    { levels: effortOrder, adaptive: true }
+  ],
+  [/^claude-(?:opus|sonnet)-4-6$/i, { levels: ["low", "medium", "high", "max"], adaptive: true }],
+  [/^claude-opus-4-5$/i, { levels: ["low", "medium", "high"], adaptive: false }]
+]
+
+/**
+ * Lower the neutral effort onto a model's supported levels. `none` and
+ * `minimal` have no Anthropic equivalent and map to `low` without asking for
+ * thinking; a level the model lacks clamps to the nearest one below it.
+ */
+const lowerEffort = (
+  modelId: string,
+  requested: ReasoningEffort | undefined
+): Pick<Body, "thinking" | "output_config"> => {
+  if (requested === undefined) return {}
+  const support = effortSupport.find(([pattern]) => pattern.test(modelId))?.[1]
+  if (support === undefined) return {}
+  const thinks = requested !== "none" && requested !== "minimal"
+  const wanted = thinks ? effortOrder.indexOf(requested) : 0
+  // Every supported model accepts `low`, so the walk starts there.
+  const effort = effortOrder.slice(1, wanted + 1).reduce<Effort>(
+    (best, level) => support.levels.includes(level) ? level : best,
+    "low"
+  )
+  return {
+    ...(thinks && support.adaptive ? { thinking: { type: "adaptive" as const } } : {}),
+    output_config: { effort }
+  }
+}
+
+/** The budget Anthropic requires: stated, else the model ceiling, else 4096. */
+const DEFAULT_MAX_TOKENS = 4096
+
+const lowerBudget = (
+  request: Request
+): Result.Result<Pick<Body, "max_tokens" | "thinking">, ModelError> => {
+  const params = request.params
+  const budget = params.thinkingBudget
+  const defaulted = ModelCatalog.maxOutputTokensFor(request.modelId) ?? DEFAULT_MAX_TOKENS
+  if (budget === undefined) return Result.succeed({ max_tokens: params.maxTokens ?? defaulted })
+  const thinking = { type: "enabled" as const, budget_tokens: budget }
+  if (params.maxTokens === undefined) {
+    // budget_tokens must sit below max_tokens; leave room for the answer.
+    return Result.succeed({
+      max_tokens: budget < defaulted ? defaulted : budget + DEFAULT_MAX_TOKENS,
+      thinking
+    })
+  }
+  if (budget >= params.maxTokens) {
+    return Result.fail(
+      new ModelError({
+        code: "invalid_request",
+        message: "Anthropic Messages requires params.thinkingBudget to be below params.maxTokens",
+        path: "params.thinkingBudget"
+      })
+    )
+  }
+  return Result.succeed({ max_tokens: params.maxTokens, thinking })
+}
 
 const buildBody = (
   request: Request,
@@ -391,12 +490,17 @@ const buildBody = (
       )
     }
 
+    const budget = yield* lowerBudget(request)
+    const effort = lowerEffort(request.modelId, params.reasoningEffort)
+    // An explicit thinking budget wins over the adaptive thinking effort asks for.
+    const thinking = budget.thinking ?? effort.thinking
+
     // Field order is explicit even though Route performs canonical encoding.
     // A model call is a sealed step, so this keeps construction itself
     // reviewable as one byte-deterministic declaration.
     return {
       model: request.modelId,
-      max_tokens: params.maxTokens ?? 4096,
+      max_tokens: budget.max_tokens,
       ...(system.length === 0 ? {} : { system }),
       messages,
       ...(tools.length === 0 ? {} : { tools }),
@@ -407,9 +511,8 @@ const buildBody = (
       ...(params.stopSequences === undefined || params.stopSequences.length === 0
         ? {}
         : { stop_sequences: params.stopSequences }),
-      ...(params.thinkingBudget === undefined
-        ? {}
-        : { thinking: { type: "enabled", budget_tokens: params.thinkingBudget } })
+      ...(thinking === undefined ? {} : { thinking }),
+      ...(effort.output_config === undefined ? {} : { output_config: effort.output_config })
     }
   })
 
@@ -689,7 +792,10 @@ const onContentBlockStop = (
   }
 
   const ended = ToolStream.end(state.tools, block.id)
-  if (ended instanceof ModelError) return Result.fail(ended)
+  // Arguments that are not a JSON object may be a call the output budget cut
+  // off, which only the stop reason still to come can say. The call stays
+  // open and `onMessageStop` decides.
+  if (ended instanceof ModelError) return Result.succeed({ state: { ...state, blocks }, events: [] })
   return Result.succeed({
     state: { ...state, blocks, tools: ended.state },
     events: [
@@ -718,22 +824,53 @@ const onMessageDelta = (state: State, event: AnthropicEvent): StepResult => {
   }
 }
 
-const onMessageStop = (state: State): StepResult => {
-  if (state.settled) return { state, events: [] }
-  return {
-    state: { ...state, settled: true },
-    events: [
-      ...(state.usage === undefined || state.usageEmitted
-        ? []
-        : [ModelEvent.Usage(state.usage)]),
-      ModelEvent.Settle({
-        type: "settle",
-        stopReason: state.stopReason ?? "unknown",
-        responseId: state.responseId
-      })
-    ]
+/**
+ * Closes the calls still open at `message_stop`. A truncated turn closes them
+ * with what arrived (see `ToolStream.truncated`); any other turn must have
+ * sent a complete JSON object for each, or the stream fails.
+ */
+const closeOpenCalls = (state: State): Result.Result<StepResult, ModelError> => {
+  if (ToolStream.truncated(state.stopReason)) {
+    const flushed = ToolStream.flushAborted(state.tools)
+    return Result.succeed({
+      state: { ...state, tools: flushed.state },
+      events: flushed.completed.map((call) =>
+        ModelEvent.ToolCallEnd({ type: "tool-call-end", id: call.callId, arguments: call.arguments })
+      )
+    })
   }
+  let tools = state.tools
+  const events: Array<ModelEvent> = []
+  for (const call of state.tools.open) {
+    const ended = ToolStream.end(tools, call.callId)
+    if (ended instanceof ModelError) return Result.fail(ended)
+    tools = ended.state
+    events.push(
+      ModelEvent.ToolCallEnd({ type: "tool-call-end", id: call.callId, arguments: ended.completed.arguments })
+    )
+  }
+  return Result.succeed({ state: { ...state, tools }, events })
 }
+
+const onMessageStop = (state: State): Result.Result<StepResult, ModelError> =>
+  Result.gen(function*() {
+    if (state.settled) return { state, events: [] }
+    const closed = yield* closeOpenCalls(state)
+    return {
+      state: { ...closed.state, settled: true },
+      events: [
+        ...closed.events,
+        ...(state.usage === undefined || state.usageEmitted
+          ? []
+          : [ModelEvent.Usage(state.usage)]),
+        ModelEvent.Settle({
+          type: "settle",
+          stopReason: state.stopReason ?? "unknown",
+          responseId: state.responseId
+        })
+      ]
+    }
+  })
 
 const providerReason = (
   status: number | undefined,
@@ -768,7 +905,7 @@ const stepEvent = (state: State, event: AnthropicEvent): Result.Result<StepResul
   if (event.type === "content_block_delta") return Result.succeed(onContentBlockDelta(state, event))
   if (event.type === "content_block_stop") return onContentBlockStop(state, event)
   if (event.type === "message_delta") return Result.succeed(onMessageDelta(state, event))
-  if (event.type === "message_stop") return Result.succeed(onMessageStop(state))
+  if (event.type === "message_stop") return onMessageStop(state)
   if (event.type === "error") return Result.fail(streamError(event))
   return Result.succeed({ state, events: [] })
 }

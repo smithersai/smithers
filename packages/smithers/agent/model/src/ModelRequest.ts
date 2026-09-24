@@ -401,15 +401,20 @@ export type ReasoningEffort = typeof ReasoningEffort.Type
 /**
  * The sampling and budget knobs of one request. Every field is optional; an
  * omitted field leaves the provider default in place, except that the Anthropic
- * Messages lowering sends `max_tokens: 4096` for an omitted `maxTokens`,
- * because that API requires a budget.
+ * Messages lowering sends the model's output ceiling from
+ * `ModelCatalog.maxOutputTokensFor`, or `max_tokens: 4096` for a model the
+ * catalog has not met, for an omitted `maxTokens`, because that API requires a
+ * budget.
  *
  * Dropping a knob is a separate rule from defaulting one. A protocol with no
  * wire field for a stated knob leaves it out of the body, so `topK`,
- * `stopSequences`, and `thinkingBudget` are absent from both OpenAI bodies. The
- * one stated knob that fails instead of being dropped is `maxTokens` on the
+ * `stopSequences`, and `thinkingBudget` are absent from both OpenAI bodies.
+ * Anthropic lowers `reasoningEffort` to `output_config.effort`, clamped to the
+ * levels the model accepts, and drops it for a model with no effort control.
+ * The stated knobs that fail instead of being dropped are `maxTokens` on the
  * ChatGPT-subscription route, which `Route.prepare` rejects as
- * `invalid_request`.
+ * `invalid_request`, and an Anthropic `thinkingBudget` not below a stated
+ * `maxTokens`.
  *
  * @category models
  * @since 0.1.0

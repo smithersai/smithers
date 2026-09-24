@@ -4,27 +4,24 @@ import { ModelError } from "../src/ModelError.ts"
 import * as ToolStream from "../src/ToolStream.ts"
 
 describe("ToolStream", () => {
-  it("accumulates increasing fragment counts in near-linear time", () => {
-    const measure = (count: number): number => {
-      let state = ToolStream.start(ToolStream.initial(), { callId: "call", name: "write" })
-      state = ToolStream.delta(state, "call", "{\"text\":\"")
-      const started = performance.now()
-      for (let index = 0; index < count; index++) {
-        state = ToolStream.delta(state, "call", index % 2 === 0 ? "a" : "b")
-      }
-      const elapsed = performance.now() - started
-      state = ToolStream.delta(state, "call", "\"}")
-      const result = ToolStream.end(state, "call")
-      if (result instanceof ModelError) throw result
-      expect(result.completed.arguments).toBe("{\"text\":\"" + "ab".repeat(count / 2) + "\"}")
-      return elapsed
+  // A quadratic accumulator (copying every fragment on each delta) takes
+  // minutes on 200,000 fragments; a linear one takes milliseconds. The bound
+  // sits orders of magnitude from both, so load cannot flip it, unlike a
+  // wall-clock ratio between two sizes.
+  it("accumulates 200,000 fragments without quadratic copying", () => {
+    const count = 200_000
+    let state = ToolStream.start(ToolStream.initial(), { callId: "call", name: "write" })
+    state = ToolStream.delta(state, "call", "{\"text\":\"")
+    const started = performance.now()
+    for (let index = 0; index < count; index++) {
+      state = ToolStream.delta(state, "call", index % 2 === 0 ? "a" : "b")
     }
-    measure(2_000)
-    // Best of three reduces interference from other workers and GC. Four times
-    // the input permits eight times the work, but rejects quadratic copying.
-    const small = Math.min(...Array.from({ length: 3 }, () => measure(10_000)))
-    const large = Math.min(...Array.from({ length: 3 }, () => measure(40_000)))
-    expect(large).toBeLessThan(small * 8 + 20)
+    const elapsed = performance.now() - started
+    state = ToolStream.delta(state, "call", "\"}")
+    const result = ToolStream.end(state, "call")
+    if (result instanceof ModelError) throw result
+    expect(result.completed.arguments).toBe("{\"text\":\"" + "ab".repeat(count / 2) + "\"}")
+    expect(elapsed).toBeLessThan(10_000)
   })
 
   it("preserves earlier states when tool arguments branch", () => {

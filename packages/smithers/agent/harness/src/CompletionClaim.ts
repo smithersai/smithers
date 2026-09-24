@@ -541,7 +541,10 @@ export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
  *
  * One code, `completion_unjudged`, and a message that opens with the reason
  * so a journal line, a `Transcript` projection and a test all read the same
- * word. `cause` carries the transport's own error where there was one.
+ * word. The message then quotes the completion through {@link refused}, as
+ * {@link unproven} does: a judge outage fails closed, and the person whose
+ * run did the work is still owed its answer. `cause` carries the transport's
+ * own error where there was one.
  *
  * @category constructors
  * @since 1.0.0-rc.0
@@ -549,11 +552,15 @@ export type UnjudgedReason = "unconfigured" | Evaluator.EvaluatorErrorCode
 export const unjudged = (
   reason: UnjudgedReason,
   detail: string,
+  claim: string,
   cause?: unknown
 ): HarnessError =>
   new HarnessError({
     code: "completion_unjudged",
-    message: `A completion no evaluator could judge (${reason}): ${detail}`,
+    message:
+      `A completion no evaluator could judge (${reason}): ${detail}\n\nThe completion this refused, word for word:\n\n${
+        refused(claim)
+      }`,
     ...(cause === undefined ? {} : { cause })
   })
 
@@ -647,7 +654,7 @@ export const read = (
     // the compiler, and the one that says `unconfigured`.
     const bound = yield* Effect.serviceOption(Evaluator.Evaluator)
     if (Option.isNone(bound)) {
-      return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host"))
+      return yield* Effect.fail(unjudged("unconfigured", "No evaluator is installed on this host", evidence.claim))
     }
     // The classifier returns answers. Keep the transport's accounting at
     // its service boundary so the durable reading can carry both. The
@@ -676,7 +683,7 @@ export const read = (
       // `ClassifierError.code` is `EvaluatorErrorCode` verbatim, so the
       // reason a journal reads is the transport's own.
       Effect.mapError((error) =>
-        unjudged(error.code, error.message, {
+        unjudged(error.code, error.message, evidence.claim, {
           code: error.code,
           ...(error.status === undefined ? {} : { status: error.status }),
           // Schema.Defect decodes any object with `message` to a bare Error,

@@ -155,7 +155,9 @@ const systemMessage = (request: ModelRequest): ReadonlyArray<ChatMessage> => {
 const assistantToolCalls = (
   message: Extract<Message, { readonly role: "assistant" }>
 ): ReadonlyArray<typeof ToolCallRef.Type> =>
-  message.content.flatMap((part) =>
+  // A truncated turn's calls never ran and have no results; see
+  // ToolStream.truncated.
+  ToolStream.truncated(message.stopReason) ? [] : message.content.flatMap((part) =>
     part.type === "tool-call"
       ? [{ id: part.id, type: "function" as const, function: { name: part.name, arguments: part.arguments } }]
       : []
@@ -437,11 +439,22 @@ const stepEvent = (
     events.push(...result.events)
   }
   if (choice.finish_reason !== undefined && choice.finish_reason !== null) {
-    // Every open tool call closes when the provider signals it stopped for
-    // tool calls: Chat Completions never sends a per-call "done" event the
-    // way Responses does, only the aggregate `finish_reason`.
-    for (const [index, callId] of Object.entries(current.callIdByIndex)) {
-      void index
+    // Every open tool call closes when the provider signals it stopped:
+    // Chat Completions never sends a per-call "done" event the way Responses
+    // does, only the aggregate `finish_reason`. A truncated turn closes its
+    // calls with what arrived (see ToolStream.truncated); any other validates.
+    const stopReason = stopReasonOf(choice.finish_reason)
+    if (ToolStream.truncated(stopReason)) {
+      const flushed = ToolStream.flushAborted(current.tools)
+      current = { ...current, tools: flushed.state }
+      for (const call of flushed.completed) {
+        events.push(
+          ModelEvent.ModelEvent.ToolCallEnd({ type: "tool-call-end", id: call.callId, arguments: call.arguments })
+        )
+      }
+    }
+    for (const callId of Object.values(current.callIdByIndex)) {
+      if (!current.tools.open.some((call) => call.callId === callId)) continue
       const ended = ToolStream.end(current.tools, callId)
       if (ended instanceof ModelError) return ended
       current = { ...current, tools: ended.state }
@@ -452,7 +465,6 @@ const stepEvent = (
     // Gemini finishes a successful tool turn with `stop`, so a completed call
     // normalizes that to `tool-calls`. A truncation or a refusal that follows a
     // completed call is still a truncation or a refusal.
-    const stopReason = stopReasonOf(choice.finish_reason)
     const terminal = settle(
       current,
       stopReason === "stop" && Object.keys(current.callIdByIndex).length > 0 ? "tool-calls" : stopReason,

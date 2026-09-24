@@ -211,22 +211,6 @@ export const drainRecord = (drain: Drain): DrainRecord => ({
   queued: drain.queued
 })
 
-/**
- * The close-frame facts required to admit one queued follow-up.
- *
- * @category models
- * @since 0.1.0
- * @slop
- */
-export interface PromotionState {
-  /** The immutable post-cutoff queue snapshot. */
-  readonly queue: Queue
-  /** Whether closing now would resolve the turn. */
-  readonly wouldIdle: boolean
-  /** Whether a steer-class insertion already continued this turn. */
-  readonly steerContinued: boolean
-}
-
 const immutable = (items: ReadonlyArray<Item>): Queue => Object.freeze({ items: Object.freeze([...items]) })
 
 const immutableItem = (item: Item): Item => Object.freeze({ ...item })
@@ -284,19 +268,6 @@ export const drainAtClose = (queue: Queue, cutoff: number): Drain => {
     // it has answered this boundary before.
     duplicate: false
   }
-}
-
-/**
- * Returns the oldest queued insertion only when the current turn would
- * otherwise resolve. Promotion persistence is owned by the queue source.
- *
- * @category operations
- * @since 0.1.0
- * @slop
- */
-export const promoteAtIdle = (state: PromotionState): QueueInsert | undefined => {
-  if (!state.wouldIdle || state.steerContinued) return undefined
-  return state.queue.items.find((item): item is QueueInsert => item._tag === "Insert" && item.delivery === "queue")
 }
 
 /**

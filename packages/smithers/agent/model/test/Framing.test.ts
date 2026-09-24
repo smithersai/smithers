@@ -149,55 +149,70 @@ describe("framing resource contracts", () => {
       })
     }
 
-    it(`${format} preserves the complete maximum-sized default record`, async () => {
+    it(`${format} defaults the record ceiling to 4 MiB`, () => {
+      expect(Framing.defaultMaxRecordBytes).toBe(4 * 1024 * 1024)
+    })
+
+    // The record ceiling logic is the same for any limit, so the boundary
+    // walks a 64 KiB record under an injected one instead of 4 MiB under the
+    // default, which timed out under coverage on a loaded host.
+    it(`${format} preserves the complete maximum-sized record`, async () => {
       const prefix = format === "sse" ? "data: " : ""
       const suffix = format === "sse" ? "\n" : ""
+      const maxRecordBytes = 64 * 1024
       for (const offset of [-1, 0, 1]) {
-        const text = "x".repeat(Framing.defaultMaxRecordBytes + offset - prefix.length - suffix.length)
+        const text = "x".repeat(maxRecordBytes + offset - prefix.length - suffix.length)
         const source = Stream.fromIterable(split(encoder.encode(prefix + text + suffix + "\n"), 4096))
         if (offset <= 0) {
-          expect(Array.from(await Effect.runPromise(Stream.runCollect(make().frame(source))))).toEqual([text])
+          expect(Array.from(await Effect.runPromise(Stream.runCollect(make({ maxRecordBytes }).frame(source)))))
+            .toEqual([text])
         } else {
-          expect(await failure(make(), source)).toMatchObject({ code: "invalid_provider_output" })
+          expect(await failure(make({ maxRecordBytes }), source)).toMatchObject({ code: "invalid_provider_output" })
         }
       }
     })
 
-    // Each boundary is an independent 64 MiB stream. Keep all three real
-    // default-limit checks without spending one case's deadline on three
-    // coverage-instrumented byte walks.
+    it(`${format} defaults the response ceiling to 64 MiB`, () => {
+      expect(Framing.defaultMaxResponseBytes).toBe(64 * 1024 * 1024)
+    })
+
+    // The ceiling logic is the same for any limit, so each boundary walks a
+    // 256 KiB stream under an injected one instead of 64 MiB under the
+    // default, which timed out under coverage on a loaded host.
     it.each([-1, 0, 1])(
-      `${format} checks the default response ceiling with bounded retained output (offset %i)`,
+      `${format} checks the response ceiling with bounded retained output (offset %i)`,
       async (offset) => {
         const prefix = format === "sse" ? "data: " : ""
         const suffix = format === "sse" ? "\n\n" : "\n"
-        const size = 1024 * 1024
+        const size = 64 * 1024
+        const count = 4
+        const maxResponseBytes = count * size
         const text = "x".repeat(size - prefix.length - suffix.length)
         const full = encoder.encode(prefix + text + suffix)
         const finalText = text + (offset > 0 ? "x" : "")
         const final = encoder.encode(prefix + (offset < 0 ? finalText.slice(1) : finalText) + suffix)
-        const source = Stream.fromIterable([...Array(63).fill(full) as Array<Uint8Array>, final])
+        const source = Stream.fromIterable([...Array(count - 1).fill(full) as Array<Uint8Array>, final])
         let records = 0
         const exit = await Effect.runPromise(
-          Effect.exit(Stream.runForEach(make().frame(source), (frame) =>
+          Effect.exit(Stream.runForEach(make({ maxResponseBytes }).frame(source), (frame) =>
             Effect.sync(() => {
-              expect(frame).toBe(records === 63 && offset < 0 ? text.slice(1) : text)
+              expect(frame).toBe(records === count - 1 && offset < 0 ? text.slice(1) : text)
               records++
             })))
         )
         if (offset <= 0) {
           expect(exit._tag).toBe("Success")
-          expect(records).toBe(64)
+          expect(records).toBe(count)
         } else {
           expect(exit._tag).toBe("Failure")
           if (exit._tag === "Failure") {
             expect(exit.cause.reasons.find((reason) => reason._tag === "Fail")?.error)
               .toMatchObject({
                 code: "invalid_provider_output",
-                message: `Model response exceeds ${Framing.defaultMaxResponseBytes} bytes`
+                message: `Model response exceeds ${maxResponseBytes} bytes`
               })
           }
-          expect(records).toBe(63)
+          expect(records).toBe(count - 1)
         }
       }
     )

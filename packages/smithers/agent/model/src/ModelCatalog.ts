@@ -16,10 +16,12 @@ const contextWindows: ReadonlyArray<readonly [RegExp, number]> = [
   [/claude.*haiku/i, 200_000],
   // Native 1M windows; older Claude and cloud-prefixed ids stay conservative.
   // https://platform.claude.com/docs/en/build-with-claude/context-windows
-  [/^claude-(?:opus-5|sonnet-5|opus-4-[678]|sonnet-4-6)$/i, 1_000_000],
+  // A numeric minor version (claude-opus-5-5) keeps its family's window.
+  [/^claude-(?:(?:opus|sonnet)-5(?:-[0-9]{1,2})?|opus-4-[678]|sonnet-4-6)$/i, 1_000_000],
   [/^claude-(?:fable|mythos)-5(?:-[0-9]+)*$/i, 1_000_000],
   [/claude/i, 200_000],
-  [/gpt-5/i, 400_000],
+  // Codex's own model catalog lists gpt-6-* and gpt-5.6-* with one window.
+  [/gpt-[56]/i, 400_000],
   [/gpt-4\.1/i, 1_000_000],
   [/gpt-4o/i, 128_000],
   [/^o[134]/i, 200_000]
@@ -39,4 +41,29 @@ export const contextWindowTokensFor = (modelId: string): number => {
     if (pattern.test(modelId)) return tokens
   }
   return unknownModelTokens
+}
+
+// Claude models whose documented output ceiling is 128K tokens.
+// https://platform.claude.com/docs/en/about-claude/models/overview
+const outputCeilings: ReadonlyArray<readonly [RegExp, number]> = [
+  [
+    /^claude-(?:(?:opus|sonnet)-5(?:-[0-9]{1,2})?|(?:fable|mythos)-5(?:-[0-9]+)*|opus-4-[678]|sonnet-4-6)$/i,
+    128_000
+  ]
+]
+
+/**
+ * The largest output budget, in tokens, a known model accepts, or `undefined`
+ * for a model the catalog has not met. A protocol that must state a budget
+ * (Anthropic Messages) sends this instead of a guess, so a turn is not cut off
+ * below what the model can write.
+ *
+ * @category resolvers
+ * @since 1.0.0-rc.1
+ */
+export const maxOutputTokensFor = (modelId: string): number | undefined => {
+  for (const [pattern, tokens] of outputCeilings) {
+    if (pattern.test(modelId)) return tokens
+  }
+  return undefined
 }

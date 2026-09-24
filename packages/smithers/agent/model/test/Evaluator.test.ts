@@ -404,7 +404,7 @@ describe("Evaluator.layerVercelGateway", () => {
     }
   }
 
-  it.each([503, 429])("asks again after a %s and answers what the next attempt answers", async (status) => {
+  it.each([503, 429, 502, 504])("asks again after a %s and answers what the next attempt answers", async (status) => {
     const sent: Array<Sent> = []
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
       Layer.provide(httpLayer(sent, () => sent.length === 1 ? json(shed, status) : json(recorded)))
@@ -515,6 +515,33 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(error.message).toContain("Expected number")
   })
 
+  it("asks again after a connection failure and answers what the next attempt answers", async () => {
+    const sent: Array<Sent> = []
+    const recordedLayer = httpLayer(sent, () => json(recorded))
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
+      Layer.provide(
+        Layer.effect(KernelHttpClient.HttpClient)(Effect.gen(function*() {
+          const real = yield* KernelHttpClient.HttpClient
+          let calls = 0
+          return HttpClient.make((request) =>
+            ++calls === 1
+              ? Effect.fail(
+                new HttpClientError.HttpClientError({
+                  reason: new HttpClientError.TransportError({ request, description: "ECONNRESET" })
+                })
+              )
+              : real.execute(request)
+          )
+        })).pipe(Layer.provide(recordedLayer))
+      )
+    )
+
+    const response = success(await evaluate(layer))
+
+    expect(response.answers).toEqual(recorded.answers)
+    expect(sent).toHaveLength(1)
+  })
+
   it("fails a transport that answers nothing as unreachable", async () => {
     const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k") }).pipe(
       Layer.provide(
@@ -536,6 +563,31 @@ describe("Evaluator.layerVercelGateway", () => {
     expect(error).toMatchObject({ code: "unreachable" })
     expect((error as Evaluator.EvaluatorError).status).toBeUndefined()
     expect(error.message).toContain("socket hung up")
+    expect(error.message).toContain(`on all ${Evaluator.defaultAttempts} attempts`)
+  })
+
+  it("fails a single-attempt transport that answers nothing as unreachable, without retry wording", async () => {
+    let calls = 0
+    const layer = Evaluator.layerVercelGateway({ apiKey: Redacted.make("k"), attempts: 1 }).pipe(
+      Layer.provide(
+        Layer.succeed(KernelHttpClient.HttpClient)(
+          HttpClient.make((request) => {
+            calls++
+            return Effect.fail(
+              new HttpClientError.HttpClientError({
+                reason: new HttpClientError.TransportError({ request, description: "socket hung up" })
+              })
+            )
+          })
+        )
+      )
+    )
+
+    const error = failure(await evaluate(layer))
+
+    expect(error).toMatchObject({ code: "unreachable" })
+    expect(error.message).not.toContain("attempts")
+    expect(calls).toBe(1)
   })
 
   it("fails on its own deadline as timeout and interrupts the request", async () => {

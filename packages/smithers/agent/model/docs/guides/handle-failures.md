@@ -16,8 +16,9 @@ failures arrive as their own classes (`PermissionRequired`,
 
 The `RequestExecutor` retried the request inside the call: at most two
 retries after the first attempt, starting at 500 ms, doubling, jittered,
-capped at 10 s per wait and 60 s in total, and only for a retryable code. A
-provider wait that exceeds the 60 s budget is not slept at all. After three
+capped at 10 s per computed wait and 60 s in total, and only for a retryable
+code. A provider `Retry-After` within the budget is slept in full; one that
+exceeds the 60 s budget is not slept at all. After three
 consecutive `transport` failures, the next attempt invokes the transport's
 `rebuild` effect. `RequestExecutor.make` and `RequestExecutor.layer` use
 `fixed(http)`, which returns the same client. Replacing a connection pool

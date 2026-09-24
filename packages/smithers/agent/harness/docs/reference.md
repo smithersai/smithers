@@ -22,7 +22,7 @@ importable as `@smthrs/harness/<Module>`.
 | `ContextWindow` | `TypeId`, `SegmentKind`, `SegmentZone`, `Content`, `ContextWindowErrorCode`, `ContextWindowError`, `Segment`, `ContextWindow`, `SegmentInput`, `MakeOptions`, `makeSegment`, `make`, `empty`, `appendTurn`, `prefixDigest`, `compactPrefix`, `compact`, `render` | The immutable, provider-neutral context assembled for one model request. |
 | `Transcript` | `TranscriptErrorCode`, `TranscriptError`, `ProjectedMessage`, `ProjectedState`, `CellEvidence`, `projectStateResult`, `projectResult` | Transcript projection from durable journal entries. |
 | `Compaction` | `summaryInstruction`, `InvalidStep`, `Summarizer`, `CompactionStep`, `TokenAccounting`, `shouldCompact`, `selectPrefix`, `declare`, `summaryRequest`, `apply` | Declarations for sealed transcript-summary steps. |
-| `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `PromotionState`, `empty`, `enqueue`, `drainAtClose`, `promoteAtIdle`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop` | Turn-boundary steering values and their source contract. |
+| `Steering` | `Delivery`, `SteerInsert`, `QueueInsert`, `Insert`, `SeatChange`, `ThinkingChange`, `Item`, `Queue`, `Drain`, `BoundaryInput`, `DrainRecord`, `drainRecord`, `empty`, `enqueue`, `drainAtClose`, `Source`, `SourceInput`, `make`, `makeNoop`, `layer`, `layerNoop` | Turn-boundary steering values and their source contract. |
 | `Notifications` | `Options`, `make`, `layer` | Adapter from the durable notification queue to harness turn boundaries. |
 | `Cell` | `Language`, `Source`, `digestOf`, `source`, `Continue`, `Complete`, `Park`, `Transition`, `renderText`, `RejectionCode`, `Settled`, `Raised`, `Rejected`, `Outcome`, `FlowProjection`, `project`, `CallFailureCode`, `defaultCallFailureCode`, `callFailureHint`, `CallIdentity`, `declarationDigest`, `Call`, `baseCheckpoint`, `checkpoint`, `checkpointOf`, `CallResult`, `CallSuccess`, `CallFailure`, `CallResultVariant`, `decodeCallResult`, `decodeOutcome`, `decodeTransition`, `callFailure`, `Extracted`, `extract` | The cell contract. |
 | `Sandbox` | `SandboxErrorCode`, `SandboxError`, `Invocation`, `Mint`, `Minter`, `mintUnavailable`, `Handler`, `Limits`, `Capabilities`, `defaultLimits`, `minimumSteps`, `minimumTimeMs`, `minimumMemoryBytes`, `printFrameBytes`, `printStatementFloor`, `printRetainedBytes`, `withDefaults`, `Intent`, `replTransition`, `RealmEvaluation`, `RealmFrame`, `Realm`, `RealmOptions`, `Sandbox`, `make`, `layer`, `makeNoop`, `layerNoop`, `realmUnsupported`, `callTimedOut`, `compile`, `PendingCall`, `driveCell`, `raisedOutcome` | The deterministic script sandbox port. |
@@ -257,11 +257,9 @@ Turn-boundary steering values and their source contract. Governing design:
 | `BoundaryInput` | interface | models | The boundary a drain is being attempted at, and whether the run would go idle if nothing were delivered. |
 | `DrainRecord` | const | schemas | The journaled record of one turn-boundary drain. |
 | `drainRecord` | const | conversions | Projects a `Drain` into its journaled record. |
-| `PromotionState` | interface | models | The close-frame facts required to admit one queued follow-up. |
 | `empty` | const | constructors | Creates an empty immutable steering queue. |
 | `enqueue` | const | operations | Appends an item without mutating the prior queue. |
 | `drainAtClose` | const | operations | Drains only items admitted at or before the turn's fixed cutoff. |
-| `promoteAtIdle` | const | operations | Returns the oldest queued insertion only when the current turn would otherwise resolve. |
 | `Source` | interface | services | Source of a serializable steering-queue snapshot. |
 | `SourceInput` | interface | models | The methods `make` needs to build a `Source`. |
 | `make` | const | constructors | Constructs a steering source service. |

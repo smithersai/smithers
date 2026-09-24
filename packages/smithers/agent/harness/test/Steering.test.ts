@@ -113,47 +113,6 @@ describe("Steering", () => {
     expect(queue.items).toHaveLength(2)
   })
 
-  it("promotes a queue insert only when the turn would otherwise idle", () => {
-    const queue = Steering.enqueue(Steering.empty(), {
-      _tag: "Insert",
-      delivery: "queue",
-      admittedAt: 1,
-      message: ModelRequest.Message.user("queued")
-    })
-
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: false, steerContinued: false })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: true, steerContinued: true })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: true, steerContinued: false })).toMatchObject({
-      delivery: "queue",
-      message: ModelRequest.Message.user("queued")
-    })
-  })
-
-  it("returns exactly the oldest eligible queue insert", () => {
-    const queue = Steering.enqueue(
-      Steering.enqueue(Steering.empty(), {
-        _tag: "Insert",
-        delivery: "queue",
-        admittedAt: 1,
-        message: ModelRequest.Message.user("one")
-      }),
-      {
-        _tag: "Insert",
-        delivery: "queue",
-        admittedAt: 2,
-        message: ModelRequest.Message.user("two")
-      }
-    )
-
-    expect(
-      Steering.promoteAtIdle({
-        queue,
-        wouldIdle: true,
-        steerContinued: false
-      })?.message
-    ).toEqual(ModelRequest.Message.user("one"))
-  })
-
   it("drains an empty queue into an empty result", () => {
     const drained = Steering.drainAtClose(Steering.empty(), 0)
 
@@ -217,39 +176,6 @@ describe("Steering", () => {
 
     expect(Object.isFrozen(queue.items[0])).toBe(true)
     expect(Object.isFrozen(item)).toBe(false)
-  })
-
-  it("holds a queued follow-up back in all three non-idle combinations", () => {
-    const queue = Steering.enqueue(Steering.empty(), {
-      _tag: "Insert",
-      delivery: "queue",
-      admittedAt: 1,
-      message: ModelRequest.Message.user("queued")
-    })
-
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: false, steerContinued: false })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: false, steerContinued: true })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue, wouldIdle: true, steerContinued: true })).toBeUndefined()
-  })
-
-  it("promotes nothing from an empty queue or one holding only steer items", () => {
-    const steerOnly = Steering.enqueue(Steering.empty(), {
-      _tag: "Insert",
-      delivery: "steer",
-      admittedAt: 1,
-      message: ModelRequest.Message.user("steer")
-    })
-    const seatOnly = Steering.enqueue(Steering.empty(), {
-      _tag: "SeatChange",
-      delivery: "steer",
-      admittedAt: 1,
-      seat: "sdk:fast"
-    })
-    const state = { wouldIdle: true, steerContinued: false }
-
-    expect(Steering.promoteAtIdle({ queue: Steering.empty(), ...state })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue: steerOnly, ...state })).toBeUndefined()
-    expect(Steering.promoteAtIdle({ queue: seatOnly, ...state })).toBeUndefined()
   })
 
   it("journals every folded value and deliberately drops the host's remaining queue", () => {

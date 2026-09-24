@@ -4,9 +4,10 @@
  *
  * One call makes at most three attempts by default (the first plus
  * `MAX_RETRIES`, or the `maxRetries` its executor was built with), with a
- * 500 ms exponential base, a 10 s delay cap, and a 60 s total retry budget.
- * `Retry-After` replaces the computed delay without jitter and is bounded by
- * the same 10 s cap. A provider wait beyond the total budget is surfaced to the
+ * 500 ms exponential base, a 10 s cap on that computed delay, and a 60 s total
+ * retry budget. `Retry-After` replaces the computed delay without jitter and
+ * is slept in full, so no retry reaches the provider before it said it would
+ * accept one. A provider wait beyond the total budget is surfaced to the
  * caller intact instead of being slept inside the executor.
  *
  * @since 0.1.0
@@ -710,17 +711,17 @@ const retryFailures = <A, R>(
 ): Effect.Effect<A, RequestError, R> => {
   const schedule = Schedule.exponential(Duration.millis(BASE_DELAY_MS)).pipe(
     Schedule.jittered,
+    // The cap bounds the computed backoff only. A provider's own Retry-After
+    // is slept in full: retrying before it spends quota on a certain refusal,
+    // and the `while` below already surfaces one beyond the total budget.
     Schedule.modifyDelay(({ duration, input }) =>
       Effect.succeed(
         Duration.millis(
           input instanceof ModelError && input.retryAfterMillis !== undefined
             ? input.retryAfterMillis
-            : Duration.toMillis(duration)
+            : Math.min(Duration.toMillis(duration), MAX_DELAY_MS)
         )
       )
-    ),
-    Schedule.modifyDelay(({ duration }) =>
-      Effect.succeed(Duration.millis(Math.min(Duration.toMillis(duration), MAX_DELAY_MS)))
     ),
     Schedule.upTo({ times, duration: Duration.millis(MAX_RETRY_DURATION_MS) })
   )

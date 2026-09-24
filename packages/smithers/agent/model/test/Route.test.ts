@@ -319,7 +319,7 @@ describe("Route.prepare", () => {
         })
       ],
       params: ModelRequest.GenerationParams.make({
-        maxTokens: 512,
+        maxTokens: 2048,
         temperature: 0.2,
         topP: 0.9,
         topK: 40,

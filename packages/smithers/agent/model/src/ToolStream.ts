@@ -5,7 +5,7 @@
  */
 import { Chunk, Option, Schema } from "effect"
 import { ModelError } from "./ModelError.ts"
-import { JsonObject } from "./ModelRequest.ts"
+import { JsonObject, type StopReason } from "./ModelRequest.ts"
 
 /**
  * An unfinished streamed tool call.
@@ -141,8 +141,9 @@ export const end = (state: State, callId: string): EndResult => {
  * preserved verbatim so the historical assistant turn records what arrived
  * instead of laundering malformed provider output into an empty object. This
  * is the non-executing half of the split documented on {@link end}: built-in
- * lowerings omit aborted turns from continuations, while a live completion
- * still passes through the strict validator above.
+ * lowerings omit aborted turns, and the tool calls of {@link truncated} turns,
+ * from continuations, while a live completion still passes through the strict
+ * validator above.
  *
  * @category operations
  * @since 0.1.0
@@ -156,3 +157,20 @@ export const flushAborted = (state: State): FlushResult => ({
     arguments: Chunk.toReadonlyArray(call.fragments).join("")
   }))
 })
+
+/**
+ * Whether a turn that settled with this reason was cut off before it finished:
+ * the output budget ran out (`length`) or the provider stopped it
+ * (`content-filter`).
+ *
+ * Every built-in protocol applies one policy to such a turn. A tool call still
+ * open when it settles closes through {@link flushAborted}, with the argument
+ * text that arrived, before the settle event, and the stream does not fail.
+ * Every built-in lowering then omits that turn's tool calls from the next
+ * request: they were never run, so they have no results to pair with.
+ *
+ * @category predicates
+ * @since 1.0.0-rc.1
+ */
+export const truncated = (stopReason: StopReason | undefined): boolean =>
+  stopReason === "length" || stopReason === "content-filter"

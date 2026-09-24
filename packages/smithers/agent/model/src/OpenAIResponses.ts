@@ -224,7 +224,9 @@ const assistantInput = (message: Extract<Message, { readonly role: "assistant" }
         referenced.add(part.signature)
       }
     }
-    if (part.type === "tool-call") {
+    // A truncated turn's calls never ran, so replaying one would send a
+    // function_call with no function_call_output. See ToolStream.truncated.
+    if (part.type === "tool-call" && !ToolStream.truncated(message.stopReason)) {
       result.push({ type: "function_call", call_id: part.id, name: part.name, arguments: part.arguments })
     }
   }
@@ -681,8 +683,16 @@ const stepEvent = (
       // The event says WHY it is incomplete. `content_filter` is a refusal, not a
       // token budget, and `StopReason` already distinguishes the two.
       const reason = record(response?.["incomplete_details"])?.["reason"]
-      const terminal = settle(identified, reason === "content_filter" ? "content-filter" : "length")
-      return { state: terminal.state, events: [...events, ...terminal.events] }
+      // A call the cut interrupted closes with what arrived, before the settle.
+      const flushed = ToolStream.flushAborted(identified.tools)
+      const closed = flushed.completed.map((call) =>
+        ModelEvent.ModelEvent.ToolCallEnd({ type: "tool-call-end", id: call.callId, arguments: call.arguments })
+      )
+      const terminal = settle(
+        { ...identified, tools: flushed.state },
+        reason === "content_filter" ? "content-filter" : "length"
+      )
+      return { state: terminal.state, events: [...events, ...closed, ...terminal.events] }
     }
     const closed = closeOpenCalls(identified, response)
     if (closed instanceof ModelError) return closed
