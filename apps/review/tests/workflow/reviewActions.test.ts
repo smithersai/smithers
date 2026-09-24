@@ -1,3 +1,5 @@
+import { WalkthroughUnwritable } from "../../src/workflow/reviewFailureSchema.ts";
+import * as renderer from "../../src/walkthrough/renderWalkthroughHtml.ts";
 import { afterEach, expect, spyOn, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -11,7 +13,7 @@ import { layerMemory } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
 
 const RenderTest = Flow.make("test/RenderWalkthrough", {
-  payload: RenderWalkthrough.payloadSchema, success: RenderWalkthrough.successSchema,
+  payload: RenderWalkthrough.payloadSchema, success: RenderWalkthrough.successSchema, error: RenderWalkthrough.errorSchema,
   body: (payload) => RenderWalkthrough.call(payload),
 });
 const VerifyTest = Flow.make("test/ApplyVerdicts", {
@@ -19,7 +21,7 @@ const VerifyTest = Flow.make("test/ApplyVerdicts", {
   body: (payload) => ApplyVerdicts.call(payload),
 });
 const PrepareTest = Flow.make("test/PrepareReview", {
-  payload: PrepareReview.payloadSchema, success: PrepareReview.successSchema,
+  payload: PrepareReview.payloadSchema, success: PrepareReview.successSchema, error: PrepareReview.errorSchema,
   body: (payload) => PrepareReview.call(payload),
 });
 const testLayer = () => Layer.merge(
@@ -104,7 +106,7 @@ test.each(["artifact", "output"])("a partial %s write leaves the previous user-f
     return original(...args);
   });
   try {
-    await expect(render(out)).rejects.toThrow("disk full");
+    await expect(render(out)).rejects.toMatchObject({ _tag: "smithers-review/WalkthroughUnwritable", path: out, message: "disk full" });
   } finally { write.mockRestore(); }
   expect(injected).toBe(true);
   expect(fs.readFileSync(out, "utf8")).toBe("previous complete artifact");
@@ -196,4 +198,14 @@ test("preparation derives preview, changes and prompts from one diff snapshot", 
     prepared.preview.entries.filter((entry) => entry.willReview).map((entry) => entry.path).sort(),
   );
   expect(prepared.changes.totalFiles).toBe(prepared.preview.totalFiles);
+});
+
+test("an unexpected renderer defect remains a defect", async () => {
+  const failure = new Error("renderer defect");
+  const renderHtml = spyOn(renderer, "renderWalkthroughHtml").mockRejectedValue(failure);
+  let caught: unknown;
+  try { await render(outputPath()); } catch (error) { caught = error; }
+  finally { renderHtml.mockRestore(); }
+  expect(caught).not.toBeInstanceOf(WalkthroughUnwritable);
+  expect((caught as Error).message).toContain("renderer defect");
 });

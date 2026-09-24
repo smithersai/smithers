@@ -24,6 +24,7 @@ const surface = [
   "../src/diffs/renderFallbackDiffHtml.ts",
   "../src/diffs/renderPierreFileDiff.ts",
   "../src/workflow/reviewFlow.ts",
+  "../src/workflow/reviewFailureSchema.ts",
   "../src/workflow/reviewLayer.ts",
   "../src/workflow/openCodeReviewInputSchema.ts",
   "../src/workflow/reviewModeSchema.ts",

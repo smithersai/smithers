@@ -1,3 +1,4 @@
+import { ReviewFailure } from "../workflow/reviewFailureSchema.ts";
 /**
  * The review run itself: compose the flow over the durable Node runtime,
  * execute it once, and report.
@@ -12,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Schema } from "effect";
 import { buildPullRequestReview } from "../github/buildPullRequestReview.ts";
 import { listPullRequestFiles } from "../github/listPullRequestFiles.ts";
 import { postReviewSupersedingPrior } from "../github/postReviewSupersedingPrior.ts";
@@ -219,6 +220,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
       ),
     );
   } catch (error) {
+    if (Schema.is(ReviewFailure)(error)) return failRun(`smithers-review: ${error.message}`);
     return failRun(`smithers-review: run ${runId} failed: ${(error as Error)?.message ?? String(error)}`);
   }
 

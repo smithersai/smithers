@@ -1,3 +1,4 @@
+import { ReviewFailure } from "./reviewFailureSchema.ts";
 /**
  * The review workflow, as four durable stages.
  *
@@ -18,7 +19,7 @@
  */
 import { Action, Flow } from "@smthrs/flow";
 import { Node } from "@smthrs/plan";
-import * as Schema from "effect/Schema";
+import type * as Schema from "effect/Schema";
 import { assessChangeImpact } from "../quiz/assessChangeImpact.ts";
 import { shouldAutoQuiz } from "../quiz/shouldAutoQuiz.ts";
 import { NarrateChanges, QuizChanges, ReviewFile, VerifyFindings } from "./reviewAgentActions.ts";
@@ -61,6 +62,7 @@ type FileReviewRequirement =
 export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
   payload: NarrateReviewPayload,
   success: ReviewResult,
+  error: ReviewFailure,
   body: ({ changes, input, review, target }) => {
     const impact = assessChangeImpact(changes.files, review.comments);
     const narrating = input.narrate && changes.files.length > 0;
@@ -131,6 +133,7 @@ export const NarrateReview = Flow.make("smithers-review/NarrateReview", {
 export const VerifyReview = Flow.make("smithers-review/VerifyReview", {
   payload: VerifyReviewPayload,
   success: ReviewResult,
+  error: ReviewFailure,
   body: ({ changes, input, review, target }) => {
     const verifying = input.verify &&
       review.comments.length >= 1 &&
@@ -175,11 +178,12 @@ export const ReviewFiles: Flow.Flow<
   "smithers-review/ReviewFiles",
   typeof ReviewFilesPayload,
   typeof ReviewResult,
-  typeof Schema.Never,
+  typeof ReviewFailure,
   FileReviewRequirement
 > = Flow.make("smithers-review/ReviewFiles", {
   payload: ReviewFilesPayload,
   success: ReviewResult,
+  error: ReviewFailure,
   body: ({ input, prepared, offset, outcomes }) => {
     const files = prepared.prompt.shouldReview ? prepared.prompt.files : [];
     const width = Number.isSafeInteger(input.concurrency) && input.concurrency > 0
@@ -224,6 +228,7 @@ export const ReviewFiles: Flow.Flow<
 export const Review = Flow.make("smithers-review/Review", {
   payload: ReviewInput,
   success: ReviewResult,
+  error: ReviewFailure,
   body: (input) =>
     PrepareReview.call({ input }).pipe(
       Node.bindPlanned((prepared) => ReviewFiles.to({ input, prepared })),

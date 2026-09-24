@@ -441,3 +441,26 @@ test("a quiz refusal reaches the result and walkthrough as a warning", async () 
   expect(result.quiz).toBeNull();
   expect(readFileSync(result.walkthrough.path, "utf8")).toContain("quiz_error");
 });
+
+test.each(["non-repo", "bad-ref", "unwritable-output"] as const)("typed failures: %s", async (kind) => {
+  const repo = kind === "non-repo" ? mkdtempSync(join(tmpdir(), "review-not-repo-")) : tempRepo(1);
+  if (kind === "non-repo") tempDirs.push(repo);
+  const blocker = join(repo, "blocker");
+  if (kind === "unwritable-output") writeFileSync(blocker, "file");
+  const input = {
+    repo, runReview: false, narrate: false, verify: false, quiz: "off" as const,
+    out: kind === "unwritable-output" ? join(blocker, "w.html") : join(repo, "w.html"),
+    ...(kind === "bad-ref" ? { from: "missing-review-ref", to: "HEAD" } : {}),
+  };
+  let failure: unknown;
+  try {
+    await Effect.runPromise(Review.execute(input, { executionId: `typed-${crypto.randomUUID()}` }).pipe(
+      Effect.provide(layerMemory(scriptedSeats(() => { throw new Error("unexpected model call"); }), process.env)),
+    ));
+  } catch (error) { failure = error; }
+  expect((failure as { _tag: string })._tag).toBe(
+    kind === "unwritable-output" ? "smithers-review/WalkthroughUnwritable" : "smithers-review/ChangeSetUnreadable",
+  );
+  expect(typeof (failure as Error).message).toBe("string");
+  if (kind === "bad-ref") expect((failure as Error).message).toContain("missing-review-ref");
+});

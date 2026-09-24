@@ -1,3 +1,4 @@
+import { ChangeSetUnreadable } from "../../src/workflow/reviewFailureSchema.ts";
 import { expect, spyOn, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -77,6 +78,31 @@ test("a run refused before it starts leaves its typed cause in the summary file"
   } finally {
     stderr.mockRestore(); exit.mockRestore();
     keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
+test.each([true, false])("CLI preserves the diagnostic for typed=%s failures", async (typed) => {
+  const dir = mkdtempSync(join(tmpdir(), "review-cli-failure-"));
+  const failure = typed ? new ChangeSetUnreadable({ repo: dir, message: "revision unavailable" }) : new Error("renderer defect");
+  const run = spyOn(Effect, "runPromise").mockRejectedValue(failure);
+  const lines: string[] = [];
+  const stderr = spyOn(console, "error").mockImplementation((...args) => { lines.push(args.join(" ")); });
+  const exit = spyOn(process, "exit").mockImplementation((() => {}) as typeof process.exit);
+  const previous = process.env.SMITHERS_REVIEW_SUMMARY_PATH;
+  const summary = join(dir, "summary.json");
+  process.env.SMITHERS_REVIEW_SUMMARY_PATH = summary;
+  try {
+    await runReview(parseReviewArgs([dir, "--no-review", "--no-narrate", "--quiz", "off", "--execution-id", "failure-test"]));
+    const message = typed ? "smithers-review: revision unavailable" : "smithers-review: run failure-test failed: renderer defect";
+    expect(lines).toContain(message);
+    expect(JSON.parse(readFileSync(summary, "utf8"))).toMatchObject({ status: "failed", error: message });
+    expect(exit).toHaveBeenCalledWith(1);
+  } finally {
+    run.mockRestore(); stderr.mockRestore(); exit.mockRestore();
+    if (previous === undefined) delete process.env.SMITHERS_REVIEW_SUMMARY_PATH;
+    else process.env.SMITHERS_REVIEW_SUMMARY_PATH = previous;
     rmSync(dir, { recursive: true, force: true });
   }
 });

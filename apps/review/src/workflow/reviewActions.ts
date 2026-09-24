@@ -1,3 +1,4 @@
+import { ChangeSetUnreadable, WalkthroughUnwritable, reasonOf } from "./reviewFailureSchema.ts";
 import { withDefault } from "../schema/withDefault.ts";
 /**
  * The review flow's non-model steps.
@@ -65,6 +66,7 @@ export const MAX_VERIFIABLE_FINDINGS = 40;
 export const PrepareReview = Action.make("smithers-review/PrepareReview", {
   payload: { input: ReviewInput },
   success: PreparedReview,
+  error: ChangeSetUnreadable,
 });
 
 /**
@@ -74,10 +76,13 @@ export const PrepareReview = Action.make("smithers-review/PrepareReview", {
  * @category layers
  */
 export const prepareReviewLayer = PrepareReview.toLayer(({ input }) =>
-  Effect.promise(async () => {
+  Effect.gen(function*() {
     // Without review seats the per-file steps never run, so the finalizer must
     // see `runReview: false` and report "skipped" rather than "failed".
-    const snapshot = await loadReviewSnapshot(input, { out: input.out, db: input.db });
+    const snapshot = yield* Effect.tryPromise({
+      try: () => loadReviewSnapshot(input, { out: input.out, db: input.db }),
+      catch: (cause) => new ChangeSetUnreadable({ repo: input.repo, message: reasonOf(cause) }),
+    });
     const preview = previewFromSnapshot(snapshot);
     const changes = changesFromDiffs(snapshot.diffs, preview);
     const prompt = nativeReviewPromptFromSnapshot(snapshot, preview);
@@ -224,6 +229,7 @@ export const applyVerdictsLayer = ApplyVerdicts.toLayer(({ review, verdicts, fai
  * @category actions
  */
 export const RenderWalkthrough = Action.make("smithers-review/RenderWalkthrough", {
+  error: WalkthroughUnwritable,
   payload: {
     input: ReviewInput,
     target: ReviewTarget,
@@ -250,7 +256,7 @@ export const RenderWalkthrough = Action.make("smithers-review/RenderWalkthrough"
  */
 export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
   ({ changes, input, quiz: rawQuiz, review: originalReview, story: rawStory, target, narrateFailure, quizFailure }) =>
-    Effect.promise(async () => {
+    Effect.gen(function*() {
       const warnings = [
         ...(narrateFailure ? [{ file: "", type: "narrator_error", message: narrateFailure }] : []),
         ...(quizFailure ? [{ file: "", type: "quiz_error", message: quizFailure }] : []),
@@ -265,7 +271,7 @@ export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
       const quiz = rawQuiz
         ? normalizeQuiz(rawQuiz, changes.files.map((file) => file.path))
         : null;
-      const html = await renderWalkthroughHtml({
+      const html = yield* Effect.promise(() => renderWalkthroughHtml({
         title: input.title,
         story,
         files: changes.files,
@@ -290,9 +296,12 @@ export const renderWalkthroughLayer = RenderWalkthrough.toLayer(
         diffStyle: (input.split ? "split" : "unified") as "split" | "unified",
         quiz,
         impact: { level: impact.level, reasons: impact.reasons },
-      });
+      }));
       const outPath = walkthroughPath(target.repoDir, input.out);
-      const artifactPath = writeWalkthroughArtifact(outPath, html);
+      const artifactPath = yield* Effect.try({
+        try: () => writeWalkthroughArtifact(outPath, html),
+        catch: (cause) => new WalkthroughUnwritable({ path: outPath, message: reasonOf(cause) }),
+      });
       return {
         review,
         walkthrough: {
