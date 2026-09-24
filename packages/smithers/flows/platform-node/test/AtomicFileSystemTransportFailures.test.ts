@@ -39,6 +39,48 @@ const invoke = async (events: (child: ChildProcessWithoutNullStreams) => void) =
 }
 
 describe("atomic helper transport event ordering", () => {
+  it.each(["error", "overflow", "deadline", "cancel"] as const)("waits for process close after %s", async (reason) => {
+    let reportKilled!: () => void
+    const killed = new Promise<void>((resolve) => {
+      reportKilled = resolve
+    })
+    const child = Object.assign(new EventEmitter(), {
+      stdin: new PassThrough(),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      kill: vi.fn(() => {
+        reportKilled()
+        return true
+      })
+    }) as unknown as ChildProcessWithoutNullStreams
+    vi.mocked(spawn).mockReturnValue(child)
+    const controller = new AbortController()
+    let completed = false
+    const result = Effect.runPromiseExit(
+      spawnHelper(
+        { operation: "exists", path: "/a" },
+        "/helper",
+        Buffer.from("request"),
+        { limits: { ...defaultLimits, response: 256 }, timeoutMs: reason === "deadline" ? 1 : 1000 }
+      ),
+      { signal: controller.signal }
+    ).then((exit) => {
+      completed = true
+      return exit
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    if (reason === "error") child.emit("error", new Error("launch failed"))
+    if (reason === "overflow") child.stdout.emit("data", Buffer.alloc(257 + frameHeaderBytes))
+    if (reason === "cancel") controller.abort()
+    await killed
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(completed).toBe(false)
+    child.emit("close", -1)
+    expect((await result)._tag).toBe("Failure")
+    expect(completed).toBe(true)
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL")
+  })
+
   it("settles once when an asynchronous launch failure is followed by close", async () => {
     const error = await invoke((child) => {
       child.emit("error", new Error("launch failed"))

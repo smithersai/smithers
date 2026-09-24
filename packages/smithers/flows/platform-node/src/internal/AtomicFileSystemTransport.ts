@@ -82,7 +82,8 @@ export const usableExecutable = (configured: string, boundaryRoot: string | unde
 
 /**
  * Runs one helper over one framed request and settles with its converted
- * answer. Every exit path kills the child and releases its pipes.
+ * answer. Every exit path kills the child, releases its pipes, and waits for
+ * the operating system to report that the process has closed.
  * @private
  * @since 1.0.0
  */
@@ -119,6 +120,7 @@ export const spawnHelper = <A>(
       resume(Effect.fail(failure(request, cause)))
       return Effect.void
     }
+    const closed = new Promise<void>((resolve) => child.once("close", () => resolve()))
     // `deadline` is armed below, after the completion it resumes through
     // exists. Reading it here is safe because nothing calls `cleanup` before
     // then: the one earlier exit, a spawn that threw, resumes and returns.
@@ -135,7 +137,7 @@ export const spawnHelper = <A>(
       // Every exit path drains and kills, so an overflowing, hung, or already
       // finished helper leaves no descriptor and no child behind.
       cleanup()
-      resume(effect)
+      resume(Effect.andThen(Effect.promise(() => closed), effect))
     }
     // A wall-clock backstop, independent of every byte ceiling. Those bound
     // what a helper may SAY; nothing bounds how long it may take to say it, and
@@ -237,5 +239,8 @@ export const spawnHelper = <A>(
       )))
     })
     child.stdin.end(payload)
-    return Effect.sync(cleanup)
+    return Effect.promise(async () => {
+      cleanup()
+      await closed
+    })
   })
