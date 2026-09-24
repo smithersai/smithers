@@ -8,6 +8,7 @@ import { Effect, Schema } from "effect"
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
 import { readFile, stat } from "node:fs/promises"
+import { execFile } from "node:child_process"
 import { resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
 
@@ -181,6 +182,74 @@ const states = async (cwd: string, paths: ReadonlyArray<string>): Promise<Map<st
   return found
 }
 
+interface FileStat {
+  readonly size: bigint
+  readonly mtimeNs: bigint
+  readonly ctimeNs: bigint
+  readonly ino: bigint
+  readonly mode: bigint
+}
+const fileStat = async (path: string): Promise<FileStat | null | undefined> => {
+  try {
+    const info = await stat(path, { bigint: true })
+    return { size: info.size, mtimeNs: info.mtimeNs, ctimeNs: info.ctimeNs, ino: info.ino, mode: info.mode }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return code === "ENOENT" || code === "ENOTDIR" ? null : undefined
+  }
+}
+const stats = async (cwd: string, paths: ReadonlyArray<string>): Promise<Map<string, FileStat | null | undefined>> => {
+  const found = new Map<string, FileStat | null | undefined>()
+  for (let at = 0; at < paths.length; at += 64) {
+    const batch = await Promise.all(paths.slice(at, at + 64).map(async (path) => [path, await fileStat(resolve(cwd, path))] as const))
+    for (const [path, info] of batch) found.set(path, info)
+  }
+  return found
+}
+const sameStat = (a: FileStat | null | undefined, b: FileStat | null | undefined): boolean =>
+  a === null && b === null || a !== null && b !== null && a !== undefined && b !== undefined &&
+  a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs && a.ino === b.ino && a.mode === b.mode
+
+/** Paths with pre-call bytes that differ from the index, including untracked files. */
+const dirtyPaths = async (cwd: string): Promise<string[] | undefined> => {
+  const output = await git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", "."])
+  if (output === undefined) return undefined
+  const entries = output.split("\0").filter(Boolean)
+  const paths: string[] = []
+  for (let at = 0; at < entries.length; at++) {
+    const entry = entries[at]!
+    paths.push(entry.slice(3))
+    if (entry[0] === "R" || entry[1] === "R" || entry[0] === "C" || entry[1] === "C") at++
+  }
+  return paths
+}
+
+const indexBlobs = async (cwd: string): Promise<Map<string, string> | undefined> => {
+  const output = await git(cwd, ["ls-files", "--stage", "-z", "--", "."])
+  if (output === undefined) return undefined
+  const blobs = new Map<string, string>()
+  for (const entry of output.split("\0").filter(Boolean)) {
+    const match = entry.match(/^\d+ ([a-f0-9]+) 0\t(.+)$/s)
+    if (match !== null) blobs.set(match[2]!, match[1]!)
+  }
+  return blobs
+}
+
+/** Recover a clean tracked file's pre-call bytes from the index only when its stat changed. */
+const indexState = async (cwd: string, blob: string, before: FileStat): Promise<FileState> => {
+  if (before.size > BigInt(maxBytes)) return { digest: `index:${blob}`, text: undefined, mode: Number(before.mode & 0o777n) }
+  const bytes = await new Promise<Buffer | undefined>((done) =>
+    execFile("git", ["cat-file", "blob", blob], { cwd, encoding: "buffer", maxBuffer: maxBytes + 1 },
+      (error, output) => done(error ? undefined : Buffer.isBuffer(output) ? output : Buffer.from(output)))
+  )
+  if (bytes === undefined) return { digest: undefined, text: undefined, mode: Number(before.mode & 0o777n) }
+  let text: string | undefined
+  try {
+    text = bytes.includes(0) ? undefined : new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+  } catch { text = undefined }
+  return { digest: createHash("sha256").update(bytes).digest("hex"), text, mode: Number(before.mode & 0o777n) }
+}
+
 /** A bash call's changes against pre-call files, relative to `cwd`; no receipt outside a repository. */
 const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
   Effect.gen(function*() {
@@ -196,16 +265,29 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
     }
     const candidates = yield* Effect.promise(() => gitPaths(cwd))
     if (candidates === undefined) return yield* binding.run(call)
-    const before = yield* Effect.promise(() => states(cwd, candidates))
+    const dirty = yield* Effect.promise(() => dirtyPaths(cwd))
+    const blobs = yield* Effect.promise(() => indexBlobs(cwd))
+    const beforeStats = yield* Effect.promise(() => stats(cwd, candidates))
+    const before = yield* Effect.promise(() => states(cwd, dirty ?? candidates))
     const result = yield* binding.run(call)
     const afterPaths = yield* Effect.promise(() => gitPaths(cwd))
     if (afterPaths === undefined) return result
-    const after = yield* Effect.promise(() => states(cwd, [...new Set([...candidates, ...afterPaths])]))
-    const patches = [...after].flatMap(([path, next]) => {
-      const old = before.get(path) ?? { digest: null, text: null, mode: undefined }
+    const allPaths = [...new Set([...candidates, ...afterPaths])]
+    const afterStats = yield* Effect.promise(() => stats(cwd, allPaths))
+    const patches: Patch[] = []
+    for (const path of allPaths) {
+      const pre = beforeStats.get(path) ?? null
+      const post = afterStats.get(path)
+      if (sameStat(pre, post)) continue
+      const old = before.get(path) ?? (pre === null
+        ? { digest: null, text: null, mode: undefined }
+        : pre === undefined || blobs?.get(path) === undefined
+        ? { digest: undefined, text: undefined, mode: undefined }
+        : yield* Effect.promise(() => indexState(cwd, blobs.get(path)!, pre)))
+      const next = yield* Effect.promise(() => fileState(resolve(cwd, path)))
       const diff = changedPatch(path, old, next)
-      return diff === undefined ? [] : [diff]
-    })
+      if (diff !== undefined) patches.push(diff)
+    }
     if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
     return result
   })

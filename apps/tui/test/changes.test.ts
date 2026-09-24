@@ -87,6 +87,17 @@ describe("bash capture under git", () => {
     expect(receipts[0]!.patches[0]!.patch).toContain("+edited by the call")
   }, 60_000)
 
+  it("uses the pre-call index when bash stages its edit", async () => {
+    const cwd = repository()
+    const receipts = await bash(cwd, () => {
+      writeFileSync(join(cwd, "root.ts"), "staged by the call\n")
+      sh(cwd, "git", "add", "root.ts")
+    })
+    expect(receipts[0]?.patches.map((patch) => patch.path)).toEqual(["root.ts"])
+    expect(receipts[0]?.patches[0]?.patch).toContain("-root")
+    expect(receipts[0]?.patches[0]?.patch).toContain("+staged by the call")
+  }, 20_000)
+
   it("captures a repository with no commit yet", async () => {
     const cwd = repository(false)
     const receipts = await bash(cwd, () => writeFileSync(join(cwd, "first.ts"), "hello\n"))
