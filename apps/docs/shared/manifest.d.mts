@@ -6,7 +6,6 @@ export interface DocumentationSite {
   title: string
   domain: string
   siteDir: string
-  envDomain: string
 }
 export const docsRoot: string
 export const repoRoot: string

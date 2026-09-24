@@ -14,12 +14,10 @@ import { sites } from "../../docs/shared/manifest.mjs"
 const root = resolve(import.meta.dirname, "../../..")
 const appEntries = ["review", "bug-worker", "status-site"].map((name) => join(root, "apps", name, "alchemy.run.ts"))
 
-const appOptions = [
-  "REVIEW_ENABLE_SMITHERS_SH_ROUTE",
-  "REVIEW_PUBLIC_BASE_URL",
-  "STATUS_SITE_DOMAIN",
-  "CLOUDFLARE_SMITHERS_ZONE_ID"
-]
+/** The smithers.sh zone on account dd3525a4132493566aeb38de533c8827. */
+const SMITHERS_ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14"
+
+const appOptions = ["STATUS_SITE_DOMAIN", "CLOUDFLARE_SMITHERS_ZONE_ID"]
 
 let mainSiteImport = 0
 const importMainSite = async (overrides = {}) => {
@@ -93,10 +91,7 @@ test("all deployment entry points import as Alchemy 2 stack effects", async (t) 
   set("SMITHERS_SITE_WORKER_NAME", undefined)
   for (const name of appOptions) set(name, undefined)
   const entryPoints = [join(root, "apps/site/alchemy.run.ts"), ...appEntries]
-  for (const site of sites) {
-    set(`${site.slug.toUpperCase().replaceAll("-", "_")}_WORKER_NAME`, `docs-test-${site.slug}`)
-    entryPoints.push(join(site.siteDir, "alchemy.run.ts"))
-  }
+  for (const site of sites) entryPoints.push(join(site.siteDir, "alchemy.run.ts"))
   for (const path of entryPoints) {
     const module = await import(pathToFileURL(path).href)
     assert.ok(Effect.isEffect(module.default), `${path}: the CLI needs a default-exported stack effect`)
@@ -139,10 +134,17 @@ test("stack properties and shared implementation typecheck against the declared 
 
 test("app stacks retain their Worker routing and defer required redacted credentials", async () => {
   const [review, bugs, status] = await Promise.all(appEntries.map((path) => import(pathToFileURL(path).href)))
-  assert.equal(review.workerProps.name, "smithers-review")
+  // The live Worker, bucket, database and hostname observed on Cloudflare
+  // 2026-09-23: Alchemy 1 names. Another name creates a second Worker and
+  // empty storage beside the live ones.
+  assert.equal(review.workerProps.name, "smithers-review-smithers-review-williamcory")
+  assert.equal(review.walkthroughsProps.name, "smithers-review-walkthroughs-williamcory")
+  assert.equal(review.reviewDbProps.name, "smithers-review-review-db-williamcory")
   assert.equal(review.workerProps.main, "src/server/worker.ts")
   assert.deepEqual(review.workerProps.domain, { name: "review.jjhub.tech", zoneId: "72854846f57d9e46794e7e6aae7e3328" })
   assert.deepEqual(review.workerProps.routes, [])
+  assert.equal(review.workerProps.workersDev, true)
+  assert.equal(review.workerProps.observability.enabled, true)
   assert.equal(review.workerProps.env.PUBLIC_BASE_URL, "https://review.jjhub.tech")
   assert.ok(Effect.isEffect(review.workerProps.env.WALKTHROUGHS))
   assert.ok(Effect.isEffect(review.workerProps.env.DB))
@@ -153,21 +155,12 @@ test("app stacks retain their Worker routing and defer required redacted credent
   assert.equal(bugs.workerProps.name, "smithers-bug-worker-smithers-bug-worker-williamcory")
   assert.equal(bugs.bugReportsProps.title, "smithers-bug-worker-bug-reports-williamcory")
   assert.equal(bugs.workerProps.main, "src/worker.ts")
-  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" })
+  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: SMITHERS_ZONE_ID })
   // A workers.dev origin would serve the same routes outside the smithers.sh zone's rules.
   assert.equal(bugs.workerProps.workersDev, false)
   assert.deepEqual(bugs.workerProps.crons, ["*/10 * * * *"])
   assert.equal(bugs.workerProps.env.PUBLIC_BASE_URL, "https://bug.smithers.sh")
   assert.ok(Effect.isEffect(bugs.workerProps.env.BUGS))
-  // Local state and the CLI's default dev_$USER stage give each machine its own view of production.
-  const bugStack = readFileSync(join(root, "apps/bug-worker/alchemy.run.ts"), "utf8")
-  assert.ok(bugStack.includes("state: Cloudflare.state()") && !bugStack.includes("localState"))
-  const bugScripts = JSON.parse(readFileSync(join(root, "apps/bug-worker/package.json"), "utf8")).scripts
-  assert.deepEqual(Object.values(bugScripts).filter((script) => script.startsWith("alchemy ")).sort(), [
-    "alchemy deploy --dry-run --stage prod",
-    "alchemy deploy --stage prod",
-    "alchemy destroy --stage prod"
-  ])
 
   // A deploy from a shell without a binding's variable must fail, not delete the binding.
   const sender = bugs.workerProps.env.NOTIFICATION_FROM
@@ -214,7 +207,7 @@ test("app stacks retain their Worker routing and defer required redacted credent
   assert.deepEqual(status.workerProps.observability, wrangler.config.observability)
 })
 
-test("app stack overrides preserve the optional route, bindings, domain and zone", async (t) => {
+test("the status stack's overrides preserve its domain and zone", async (t) => {
   const previous = new Map(appOptions.map((name) => [name, process.env[name]]))
   t.after(() => {
     for (const [name, value] of previous) {
@@ -223,30 +216,76 @@ test("app stack overrides preserve the optional route, bindings, domain and zone
     }
   })
   Object.assign(process.env, {
-    REVIEW_ENABLE_SMITHERS_SH_ROUTE: "1",
-    REVIEW_PUBLIC_BASE_URL: " https://review-preview.example ",
     STATUS_SITE_DOMAIN: " status-preview.example ",
     CLOUDFLARE_SMITHERS_ZONE_ID: " test-zone "
   })
-  const [review, , status] = await Promise.all(
-    appEntries.map((path) => import(`${pathToFileURL(path).href}?deployment-overrides`))
-  )
-  assert.deepEqual(review.workerProps.routes, [{
-    pattern: "review.smithers.sh/*",
-    zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14"
-  }])
-  assert.equal(review.workerProps.env.PUBLIC_BASE_URL, "https://review-preview.example")
+  const status = await import(`${pathToFileURL(join(root, "apps/status-site/alchemy.run.ts")).href}?deployment-overrides`)
   assert.deepEqual(status.workerProps.domain, { name: "status-preview.example", zoneId: "test-zone" })
 })
 
-test("package stacks require an explicit physical Worker identity", async () => {
-  const { makeDocsSiteStack } = await import("../../docs/shared/alchemy-site.mjs")
-  const key = "UNCONFIGURED_DOCS_TEST_WORKER_NAME"
-  const previous = process.env[key]
-  delete process.env[key]
-  try {
-    assert.throws(() => makeDocsSiteStack({ slug: "unconfigured-docs-test" }), /Set UNCONFIGURED_DOCS_TEST_WORKER_NAME/)
-  } finally {
-    if (previous !== undefined) process.env[key] = previous
+test("docs sites derive the live Alchemy 1 Worker name and hostname from the slug alone", async (t) => {
+  const { docsSiteProps } = await import("../../docs/shared/alchemy-site.mjs")
+  // A leftover override from an operator shell must not rename a live Worker.
+  const previous = new Map(["CORE_WORKER_NAME", "CORE_SITE_DOMAIN", "CLOUDFLARE_SMITHERS_ZONE_ID"].map((name) => [name, process.env[name]]))
+  t.after(() => {
+    for (const [name, value] of previous) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  })
+  Object.assign(process.env, { CORE_WORKER_NAME: "other", CORE_SITE_DOMAIN: "other.example", CLOUDFLARE_SMITHERS_ZONE_ID: "other-zone" })
+  // Two Workers observed on Cloudflare 2026-09-23, verbatim.
+  assert.equal(docsSiteProps("core").name, "smithers-docs-core-smithers-docs-core-williamcory")
+  assert.equal(docsSiteProps("platform-node").name, "smithers-docs-platform-node-smithers-docs-platform-node-williamcory")
+  for (const site of sites) {
+    const props = docsSiteProps(site.slug)
+    assert.equal(props.name, `smithers-docs-${site.slug}-smithers-docs-${site.slug}-williamcory`)
+    assert.deepEqual(props.domain, { name: site.domain, zoneId: SMITHERS_ZONE_ID })
+    assert.equal(props.workersDev, false)
+    assert.equal(props.command, "pnpm run build")
+    assert.equal(props.outdir, "dist")
+  }
+})
+
+test("every shared-state stack plans against one record under stage prod", () => {
+  const read = (path) => readFileSync(join(root, path), "utf8")
+  // Local state lives in a gitignored .alchemy/ on whichever machine deployed
+  // last, and the CLI's default stage is dev_$USER, so either one gives each
+  // machine its own view of production.
+  const stacks = [
+    { stack: "apps/review/alchemy.run.ts", pkg: "apps/review/package.json" },
+    { stack: "apps/bug-worker/alchemy.run.ts", pkg: "apps/bug-worker/package.json" },
+    ...sites.map((site) => ({ stack: "apps/docs/shared/alchemy-site.mjs", pkg: `apps/docs/${site.slug}/package.json` }))
+  ]
+  for (const { stack, pkg } of stacks) {
+    const source = read(stack)
+    assert.ok(source.includes("state: Cloudflare.state()"), `${stack}: state must live in the account's alchemy-state-store`)
+    assert.ok(!source.includes("localState"), `${stack}: local state is one machine's view`)
+    const scripts = Object.values(JSON.parse(read(pkg)).scripts).filter((script) => script.startsWith("alchemy "))
+    assert.deepEqual(scripts.sort(), [
+      "alchemy deploy --dry-run --stage prod",
+      "alchemy deploy --stage prod",
+      "alchemy destroy --stage prod"
+    ], pkg)
+  }
+  for (const site of sites) {
+    assert.match(read(`apps/docs/${site.slug}/alchemy.run.ts`), new RegExp(`makeDocsSiteStack\\(\\{ slug: "${site.slug}" \\}\\)`))
+  }
+})
+
+test("documented deploy commands hand Alchemy its flags directly", () => {
+  // pnpm 11 forwards a literal `--` to the script, and Alchemy's CLI reads
+  // every argument after `--` as the main file: `run deploy -- --adopt`
+  // looks for a file named --adopt and never adopts.
+  const docs = [
+    "apps/bug-worker/README.md",
+    "apps/bug-worker/alchemy.run.ts",
+    "apps/review/CONTRIBUTING.md",
+    "apps/review/alchemy.run.ts",
+    "apps/docs/README.md",
+    ...sites.map((site) => `apps/docs/${site.slug}/alchemy.run.ts`)
+  ]
+  for (const path of docs) {
+    assert.doesNotMatch(readFileSync(join(root, path), "utf8"), /(run (plan|deploy|destroy)|docs:deploy) -- /, path)
   }
 })

@@ -39,8 +39,9 @@ const packageJson = (site) =>
         preview: "astro preview",
         "sync:docs": `node ../shared/sync-content.mjs ${site.slug}`,
         "check:docs": `node ../shared/sync-content.mjs ${site.slug} --check`,
-        deploy: "alchemy deploy",
-        destroy: "alchemy destroy"
+        plan: "alchemy deploy --dry-run --stage prod",
+        deploy: "alchemy deploy --stage prod",
+        destroy: "alchemy destroy --stage prod"
       },
       devDependencies: {
         "@astrojs/check": "^0.9.10",
@@ -81,14 +82,11 @@ const alchemyRun = (site) => `/**
  * Alchemy infrastructure-as-code for ${site.domain}, the ${site.name} docs site.
  * ${header("alchemy.run.ts")}
  *
- * Deploy:   CLOUDFLARE_API_TOKEN=... ${site.slug.toUpperCase().replace(/-/g, "_")}_WORKER_NAME=... pnpm -C apps/docs/${site.slug} deploy
- * Destroy:  pnpm -C apps/docs/${site.slug} destroy
- *
- * Required: ${site.slug.toUpperCase().replace(/-/g, "_")}_WORKER_NAME, preserving the existing Worker name.
- * See apps/docs/README.md for Alchemy 1 state migration and explicit adoption.
- * Optional env: ${site.envDomain} (preview deploys, default ${site.domain}),
- * CLOUDFLARE_SMITHERS_ZONE_ID (alchemy resolves the zone from the domain when
- * omitted).
+ * Plan:     pnpm -C apps/docs/${site.slug} run plan
+ * Deploy:   pnpm -C apps/docs/${site.slug} run deploy
+ * Destroy:  pnpm -C apps/docs/${site.slug} run destroy
+ * Stage prod; state lives in the account's alchemy-state-store. The first
+ * Alchemy 2 plan and deploy of a live site add \`--adopt\`. See apps/docs/README.md.
  */
 import { makeDocsSiteStack } from "@smithers/docs-shared/alchemy-site"
 

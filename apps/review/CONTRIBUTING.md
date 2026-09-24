@@ -168,9 +168,17 @@ contract). Credentials come from
 `SMITHERS_REVIEW_PUBLISH_URL` / `SMITHERS_REVIEW_PUBLISH_TOKEN` or
 `~/.smithers-review.json`.
 
+Deploying needs `CLOUDFLARE_API_TOKEN`, `ALCHEMY_PASSWORD`,
+`REVIEW_PUBLISH_TOKEN`, `REVIEW_ADMIN_TOKEN`, `REVIEW_METRICS_TOKEN`, and
+`REVIEW_ANTHROPIC_API_KEY` from your secret store, never the command line.
+Both commands run stage `prod` against the account's shared
+`alchemy-state-store`. The first Alchemy 2 run adds `--adopt` to take over the
+live Worker, bucket, and database; later runs drop it:
+
 ```sh
-REVIEW_PUBLISH_TOKEN=... pnpm -C apps/review deploy   # alchemy deploy
-SMITHERS_REVIEW_E2E=1 pnpm -C apps/review test        # includes live publish e2e
+pnpm -C apps/review run plan --adopt
+pnpm -C apps/review run deploy --adopt
+SMITHERS_REVIEW_E2E=1 pnpm -C apps/review test   # includes live publish e2e
 ```
 
 ## Seats

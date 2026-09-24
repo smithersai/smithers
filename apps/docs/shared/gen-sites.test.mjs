@@ -18,7 +18,7 @@ const fixture = (t) => {
     export const repoRoot = ${JSON.stringify(root)}
     export const docsRoot = repoRoot + "/sites"
     export const sites = [{ slug: "fixture-site", name: "fixture", title: "Fixture", description: "Fixture docs",
-      dir: "packages/fixture", siteDir: docsRoot + "/fixture-site", domain: "fixture.example", envDomain: "FIXTURE_DOMAIN" }]
+      dir: "packages/fixture", siteDir: docsRoot + "/fixture-site", domain: "fixture.example" }]
     export const bySlug = new Map(sites.map((site) => [site.slug, site]))
   `)
   const run = (...args) =>

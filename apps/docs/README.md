@@ -76,46 +76,24 @@ declared in `apps/docs/<slug>` could never reach the package it documents.
 ## Deploying
 
 Each site declares an Alchemy 2 `Cloudflare.Website.StaticSite` stack serving
-its `dist/` directory. The CLI evaluates the default export to plan, deploy,
-or destroy it. Importing the configuration does not deploy anything.
-
-Set `<SLUG>_WORKER_NAME` to the existing physical Cloudflare Worker name. The
-slug is uppercased with dashes replaced by underscores, for example
-`PLATFORM_NODE_WORKER_NAME`. A new site also needs an explicit, unique name.
-Alchemy 1 and 2 derive names differently, so guessing the old name would
-create another Worker and orphan the original.
-
-For an existing Alchemy 1 deployment, do not archive its `.alchemy` state
-as is. The Alchemy 1 `os::Exec` build resource stored the deploying shell's
-entire environment, including every credential in it, in plaintext under
-`props.env` and `output.env` of each `*-build.json` file. Before using
-Alchemy 2, delete the old `.alchemy` directory, or strip `props.env` and
-`output.env` from every state file before archiving it. Then rotate every
-credential that was set in the deploying shell. `makeDocsSiteStack` refuses
-to deploy while any `.alchemy/**/*.json` file carries either field, and
-names the file and variable count, never a value.
-
-Alchemy 2 uses its own local state under `.alchemy/state`; do not treat the
-old state as an Alchemy 2 migration. From the site's directory, preserve the
-existing Worker name and review an adoption plan before deploying:
+its `dist/` directory. `makeDocsSiteStack` derives everything from the slug:
+Worker `smithers-docs-<slug>-smithers-docs-<slug>-williamcory` (the name
+Alchemy 1 gave every live site) and hostname `<slug>.smithers.sh`. State lives
+in the account's shared `alchemy-state-store`, and every script pins stage
+`prod`, so any machine plans against the same record. Deploying needs
+`CLOUDFLARE_API_TOKEN` and `ALCHEMY_PASSWORD` from your secret store.
 
 ```bash
-cd apps/docs/flow
-export FLOW_WORKER_NAME="existing-worker-name"
-# Configure CLOUDFLARE_API_TOKEN through your usual secret mechanism.
-pnpm exec alchemy deploy --dry-run --adopt
-pnpm run deploy --adopt
+pnpm --filter @smithers/docs-core run plan   # one site, read-only
+pnpm docs:deploy                             # every site
 ```
 
-The initial `--adopt` explicitly admits an existing Worker into the new state.
-Keep the resulting local state for future deploys and destroys. A hostname
-already attached to a different Worker is refused; transfers require a
-separate explicit operation. This includes `flows.smithers.sh`: the former
-Alchemy 1 `overrideExistingOrigin` shortcut is not part of this configuration.
+The first Alchemy 2 run takes over the Workers Alchemy 1 created with
+`pnpm docs:deploy --adopt`; a new manifest row gets a new Worker. Without the
+flag, a name or hostname held by another Worker fails the deploy. The release
+workflow runs `pnpm docs:deploy` on every release tag.
 
-`<SLUG>_SITE_DOMAIN` selects a preview domain and
-`CLOUDFLARE_SMITHERS_ZONE_ID` pins its zone. Use a separate Worker name for a
-preview. The main site defaults to the dedicated physical Worker
+The main site defaults to the dedicated physical Worker
 `smithers-site-v1`, matching `apps/site/wrangler.jsonc`. Its logical Alchemy
 stack and resource identifiers remain `smithers-site`. The existing physical
 `smithers-site` Worker serves `jjhub.tech` and must retain that separate site.
@@ -125,9 +103,8 @@ account-wide domain assignments before overriding a physical Worker name:
 Alchemy reconciles its complete domain list, including domains in other zones.
 Both configurations disable workers.dev URLs and use 404-page asset handling.
 
-Run `node --test apps/site/scripts/deployment.test.mjs` for offline import and
-type checks against the declared Alchemy dependency. These checks do not
-exercise credentials, Cloudflare APIs, or an actual deployment.
+`node --test apps/site/scripts/deployment.test.mjs` checks every stack offline:
+names, hostnames, state, and scripts.
 
 ## Slugs come from the manifest
 

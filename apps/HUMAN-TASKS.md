@@ -1,6 +1,6 @@
 # HUMAN-TASKS.md — Smithers UI alpha launch
 
-Five tasks remain before the closed alpha opens. Every one of them needs a
+Six tasks remain before the closed alpha opens. Every one of them needs a
 credential, a live target, or a product decision that no agent in this track
 was allowed to make. Everything else in the UI track is landed on `main`.
 
@@ -322,3 +322,34 @@ scoped-down user).
 
 Done when a `Canary` run's browser and `turn-seam first-frame latency` rows
 read `ok`, not `skip`.
+
+---
+
+## H6 — Adopt the Alchemy 1 Workers and add the docs deploy secrets
+
+`apps/bug-worker`, `apps/review` and every `apps/docs/<slug>` site pin their
+live Alchemy 1 names, keep state in the account's shared `alchemy-state-store`
+and run stage `prod`. Until the first adoption, each live Worker lacks the
+Alchemy 2 ownership tags and a plan without `--adopt` fails with
+`OwnedBySomeoneElse`. From a shell holding `CLOUDFLARE_API_TOKEN`,
+`ALCHEMY_PASSWORD` and each stack's secrets (listed in its `alchemy.run.ts`):
+
+```sh
+pnpm -C apps/bug-worker run plan --adopt     # read it, then:
+pnpm -C apps/bug-worker run deploy --adopt
+pnpm -C apps/review run plan --adopt         # read it, then:
+pnpm -C apps/review run deploy --adopt
+pnpm docs:deploy --adopt                     # 48 adoptions; plan-store is created
+```
+
+Pass flags straight after the script name: `-- --adopt` hands Alchemy a file
+named `--adopt`.
+
+Then add repository secrets `CLOUDFLARE_API_TOKEN` (Workers Scripts:Edit,
+Workers KV:Edit, Zone:Read on smithers.sh) and `ALCHEMY_PASSWORD` (the value
+used above). The Release workflow's `docs-deploy` job fails on a tag push
+without them.
+
+Done when the bug Worker's bindings in the Cloudflare dashboard list
+`REPO_COMPLETIONS`, `curl -sI https://plan-store.smithers.sh/` answers 200,
+and a second checkout's `pnpm -C apps/bug-worker run plan` shows no changes.

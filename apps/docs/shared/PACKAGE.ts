@@ -39,7 +39,7 @@ const sources = Smithers.Filegroup({
   cwd
 })
 
-/** The generator emits the declared edges, the content sync round-trips and the Alchemy factory refuses Alchemy 1 env state; all run against fixtures under a temp dir. */
+/** The generator emits the declared edges and the content sync round-trips against fixtures under a temp dir; the Alchemy factory derives every manifest site's identity from its slug. */
 const tests = Smithers.Shell.Test({
   shell: "node --test --test-concurrency=1 apps/docs/shared/gen-sites.test.mjs apps/docs/shared/sync-content.test.mjs apps/docs/shared/alchemy-site.test.mjs",
   data: [
@@ -49,6 +49,7 @@ const tests = Smithers.Shell.Test({
     Smithers.file("sync-content.test.mjs"),
     Smithers.file("alchemy-site.mjs"),
     Smithers.file("alchemy-site.test.mjs"),
+    Smithers.file("manifest.mjs"),
     Smithers.file("starlight.css"),
     Smithers.glob("assets/**/*")
   ]

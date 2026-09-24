@@ -10,12 +10,10 @@ export interface DocsSiteEntry {
   readonly description: string
   /** The site title (the npm name). */
   readonly title: string
-  /** The default deploy domain, `<slug>.smithers.sh`. */
+  /** The deploy domain, `<slug>.smithers.sh`. */
   readonly domain: string
   /** The absolute path of the site directory. */
   readonly siteDir: string
-  /** The environment variable overriding the deploy domain. */
-  readonly envDomain: string
 }
 
 export declare const docsRoot: string

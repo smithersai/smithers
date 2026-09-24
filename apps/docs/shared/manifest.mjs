@@ -82,14 +82,9 @@ const readDescription = (dir) => {
   return typeof manifest.description === "string" ? manifest.description.replace(/\s+/g, " ").trim() : ""
 }
 
-/** The environment variable that overrides a site's deploy domain. */
-const domainEnv = (slug) => `${slug.toUpperCase().replace(/-/g, "_")}_SITE_DOMAIN`
-
 /**
  * The site entries, in manifest order. `title` is the package's npm name,
- * which is also the index page's fallback title; `siteDir` is absolute;
- * `envDomain` names the deploy-domain override (PLATFORM_NODE_SITE_DOMAIN for
- * platform-node).
+ * which is also the index page's fallback title; `siteDir` is absolute.
  */
 export const sites = entries.map(([slug, name, dir]) => ({
   slug,
@@ -98,8 +93,7 @@ export const sites = entries.map(([slug, name, dir]) => ({
   description: readDescription(dir),
   title: name,
   domain: `${slug}.smithers.sh`,
-  siteDir: join(docsRoot, slug),
-  envDomain: domainEnv(slug)
+  siteDir: join(docsRoot, slug)
 }))
 
 /** The manifest keyed by slug. */

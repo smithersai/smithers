@@ -400,7 +400,13 @@ const docsRuntimeTests = Smithers.Shell.Test({
       Smithers.file(`//apps/${name}/alchemy.run.ts`),
       Smithers.file(`//apps/${name}/package.json`)
     ]),
-    ...docsSites.map((site) => Smithers.file(`//apps/docs/${site.slug}/alchemy.run.ts`)),
+    Smithers.file("//apps/docs/README.md"),
+    Smithers.file("//apps/bug-worker/README.md"),
+    Smithers.file("//apps/review/CONTRIBUTING.md"),
+    ...docsSites.flatMap((site) => [
+      Smithers.file(`//apps/docs/${site.slug}/alchemy.run.ts`),
+      Smithers.file(`//apps/docs/${site.slug}/package.json`)
+    ]),
     examplesPackage.docs,
     cliPackage.docsSources,
     flowPackage.docsSources,
