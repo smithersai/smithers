@@ -213,14 +213,13 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
             current.cloud.pageId,
             current.cloud.remoteRevision
           ).pipe(
+            Stream.takeUntil(event => event.deleted),
             Stream.runForEach((event) =>
               Effect.gen(function*() {
                 if (!handle.valid()) return
                 const row = read(id)!
                 if (event.revision <= row.cloud.remoteRevision) return
                 if (event.deleted) {
-                  active = false
-                  watches.delete(id)
                   yield* persist({
                     ...row,
                     cloud: {
@@ -229,6 +228,8 @@ export const createCloudWikiController = (ctx: ControllerContext, nextOrdinal: (
                       error: "This page was deleted. Pending edits were kept locally."
                     }
                   })
+                  active = false
+                  if (watches.get(id) === handle) watches.delete(id)
                   return
                 }
                 const incoming = yield* api.read(row.cloud.repo, event.slug)

@@ -326,6 +326,7 @@ describe("cloud Wiki controller", () => {
     await g.wiki.editCloudWiki(id, "# Local draft")
     g.emit("wiki.update", { id: 3, page_id: 42, revision: 3, deleted: true, slug: "home" }, 3)
     await until(() => g.store.collections.worldDocuments.get(id)?.cloud?.phase === "deleted")
+    await until(() => g.closed() === 1)
     expect(g.store.collections.worldDocuments.get(id)?.cloud?.pending).toHaveLength(1)
     expect(await g.wiki.editCloudWiki(id, "# Another draft")).toContain("Refresh")
     expect(g.posts).toHaveLength(1)
