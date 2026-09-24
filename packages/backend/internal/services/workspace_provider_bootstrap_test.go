@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 func bootstrapModel(env AgentEnvironmentProvisioningConfig) string {

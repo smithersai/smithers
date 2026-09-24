@@ -3,10 +3,11 @@ package services
 import (
 	"context"
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 )
 
 type failingBuilderCleanup struct {

@@ -10,14 +10,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
-	"github.com/smithersai/smithers/packages/backend/internal/services"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/services/alertregistry"
 )
 

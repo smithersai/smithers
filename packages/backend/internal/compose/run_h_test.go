@@ -18,10 +18,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/config"

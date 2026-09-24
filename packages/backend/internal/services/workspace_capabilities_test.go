@@ -14,10 +14,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/microsandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRepositoryJobsIntegrationMissingPrimaryRecovery(t *testing.T) {

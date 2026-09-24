@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 func TestCleanup_Cov_ListStaleRunnersError(t *testing.T) {

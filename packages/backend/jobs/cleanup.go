@@ -2,8 +2,9 @@ package jobs
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 const defaultSettlementTimeout = 5 * time.Second

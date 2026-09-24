@@ -14,6 +14,9 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 )
 
+// serveIssueStateBrokerSSE is the broker seam route tests replace.
+var serveIssueStateBrokerSSE = sse.ServeBrokerSSE
+
 type issueStateRouteService interface {
 	AuthorizeIssueState(context.Context, *db.User, string, string) (db.Repository, error)
 	ListIssueStateFacts(context.Context, *db.User, string, string, int64, int64, int) (services.IssueStateFactPage, error)
@@ -130,5 +133,5 @@ func (h *IssueEventHandler) IssueStateFactsStream(w http.ResponseWriter, r *http
 		principal.OrganizationID = repo.OrgID.Int64
 	}
 	attachRevocation(&cfg, req, principal)
-	sse.ServeBrokerSSE(w, req, cfg)
+	serveIssueStateBrokerSSE(w, req, cfg)
 }

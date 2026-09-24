@@ -6,14 +6,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 

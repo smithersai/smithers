@@ -3,14 +3,13 @@ package services
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
-
-	stdErrors "errors"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )

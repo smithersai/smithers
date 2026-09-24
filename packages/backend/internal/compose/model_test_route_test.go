@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
-	"github.com/stretchr/testify/require"
 )
 
 func TestComposedModelTestRouteRequiresAuthentication(t *testing.T) {

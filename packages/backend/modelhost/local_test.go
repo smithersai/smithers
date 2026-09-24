@@ -10,10 +10,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/process"
 	"github.com/smithersai/smithers/packages/backend/workspace"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLocalLauncherVerifiesBundleAndRunsOneTurn(t *testing.T) {

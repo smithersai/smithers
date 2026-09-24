@@ -8,17 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
-
-	"github.com/smithersai/smithers/packages/backend/internal/services"
-
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // getWorkflowTaskStatus retrieves the status of a workflow task by ID using raw SQL.

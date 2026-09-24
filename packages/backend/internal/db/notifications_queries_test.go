@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

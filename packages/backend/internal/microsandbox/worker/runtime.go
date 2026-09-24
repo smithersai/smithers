@@ -20,9 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/oauth2/google"
-
 	upstream "github.com/superradcompany/microsandbox/sdk/go"
+	"golang.org/x/oauth2/google"
 
 	msb "github.com/smithersai/smithers/packages/backend/internal/microsandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"

@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
-	"github.com/stretchr/testify/require"
 )
 
 // Uses the real gateway authenticator, PAT store, permission resolver and SQL

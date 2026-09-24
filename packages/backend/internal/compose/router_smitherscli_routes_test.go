@@ -6,8 +6,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/routes"
 )
 
 // The smithers CLI (internal/smitherscli) calls these routes. Its unit tests

@@ -8,8 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
 func TestRepositoryJobManualAuthorityNeverComesFromSource(t *testing.T) {

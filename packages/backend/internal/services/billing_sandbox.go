@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 

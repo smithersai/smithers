@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
-	"github.com/stretchr/testify/require"
 )
 
 type snapshotDeleteRetryRuntime struct {

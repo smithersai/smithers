@@ -7,9 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 // AdminRuntimeMetricsQuerier reads durable sandbox inventory and queue backlog.

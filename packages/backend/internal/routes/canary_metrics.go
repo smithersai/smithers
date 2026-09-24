@@ -6,10 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/smithersai/smithers/packages/backend/db/product"
 )
 

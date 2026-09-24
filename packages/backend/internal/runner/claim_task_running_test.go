@@ -4,12 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 

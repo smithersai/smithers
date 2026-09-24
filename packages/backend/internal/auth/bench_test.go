@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 )
 
 // buildTestKeyAuthFixture generates a valid EIP-4361 message, signature, and

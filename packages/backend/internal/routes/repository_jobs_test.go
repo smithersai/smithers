@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/stretchr/testify/require"
 )
 
 type repositoryJobRoutesStub struct {

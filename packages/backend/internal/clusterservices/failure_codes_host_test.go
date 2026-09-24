@@ -4,10 +4,11 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 func clusterAPIErrorOf(t *testing.T, err error) *pkgerrors.APIError {

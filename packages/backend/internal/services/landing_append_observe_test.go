@@ -7,9 +7,10 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
-	"github.com/stretchr/testify/require"
 )
 
 func TestLandingAppendObservationRequiresExactNativeReceipt(t *testing.T) {

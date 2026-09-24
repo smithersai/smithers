@@ -8,11 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 

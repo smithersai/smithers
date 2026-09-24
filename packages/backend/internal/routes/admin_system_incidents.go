@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
-
 	"github.com/go-chi/chi/v5"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 

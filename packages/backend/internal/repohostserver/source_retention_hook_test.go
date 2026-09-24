@@ -1,8 +1,9 @@
 package repohostserver
 
 import (
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"testing"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 func TestImmutableSourceRetentionEmitsNoPushAutomation(t *testing.T) {

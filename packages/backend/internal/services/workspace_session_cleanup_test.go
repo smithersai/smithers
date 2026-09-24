@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
-	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 )
 
 func TestDestroySessionReturnsAfterDurableStopWhileVMSuspensionRuns(t *testing.T) {

@@ -4,10 +4,8 @@ import (
 	"context"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
-	"github.com/smithersai/smithers/packages/backend/internal/services"
-
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 // validRunnerStatuses are the allowed values for the status filter.

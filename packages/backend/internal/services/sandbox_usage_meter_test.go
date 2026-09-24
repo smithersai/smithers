@@ -6,10 +6,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/stretchr/testify/require"
 )
 
 // Shared mocks default to successful writes, including when used by billing tests.

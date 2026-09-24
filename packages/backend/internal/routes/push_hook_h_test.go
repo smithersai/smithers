@@ -8,9 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/configsync"
 	"github.com/smithersai/smithers/packages/backend/internal/db"

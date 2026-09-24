@@ -2,7 +2,6 @@ package compose
 
 import (
 	"context"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"log/slog"
 	"net/http"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"

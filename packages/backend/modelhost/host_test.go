@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
 type testLauncher struct {

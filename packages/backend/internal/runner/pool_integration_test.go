@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
-
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 )
 
 const defaultRunnerTestDatabaseURL = "postgres://smithers:smithers@localhost:5432/smithers_test_runner?sslmode=disable"

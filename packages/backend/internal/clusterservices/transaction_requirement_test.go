@@ -2,8 +2,9 @@ package clusterservices
 
 import (
 	"context"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // These stores deliberately expose the domain surface without transaction

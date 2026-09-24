@@ -1,10 +1,12 @@
 package services
 
 import (
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 	"os"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
 )
 
 // newProductTestPool exercises the public product migration in an

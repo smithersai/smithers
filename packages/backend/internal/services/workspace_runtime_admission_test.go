@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/stretchr/testify/require"
+
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 type admissionWorkspaceRuntime struct {

@@ -1,9 +1,11 @@
 package repohostserver
 
 import (
-	"github.com/go-chi/chi/v5"
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"net/http"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 type appendPreparationFFI interface {

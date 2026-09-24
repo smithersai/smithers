@@ -3,9 +3,9 @@ package clusterservices
 import (
 	"context"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 // AdminSystemConsoleQuerier is the generated query surface the admin system

@@ -6,14 +6,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
-
-	"github.com/smithersai/smithers/packages/backend/internal/services"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
+	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
 
 func TestAdminManagementSQLFilters(t *testing.T) {

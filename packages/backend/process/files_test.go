@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/stretchr/testify/require"
+
+	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 
 func TestRuntimeReadFileRejectsNamedPipesWithoutWaitingForWriter(t *testing.T) {

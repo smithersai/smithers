@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	"github.com/stretchr/testify/assert"
+
+	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 func TestCanaryMetrics_H_CollectPersistedPlaywrightResults(t *testing.T) {

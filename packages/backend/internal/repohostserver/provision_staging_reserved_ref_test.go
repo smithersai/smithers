@@ -9,9 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 // stagedImportPushBody builds a stateless receive-pack request creating ref at

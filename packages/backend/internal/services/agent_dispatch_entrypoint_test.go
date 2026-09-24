@@ -4,9 +4,9 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-)
 
-import pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+)
 
 func TestDispatchAgentRun_RefusesByDefault(t *testing.T) {
 	t.Parallel()

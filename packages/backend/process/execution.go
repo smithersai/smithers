@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
 	workspaceapi "github.com/smithersai/smithers/packages/backend/workspace"
 )
 

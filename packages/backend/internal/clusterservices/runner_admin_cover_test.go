@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
