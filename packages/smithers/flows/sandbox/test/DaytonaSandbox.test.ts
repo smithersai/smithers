@@ -265,7 +265,7 @@ describe("DaytonaSandbox", () => {
         const fake = fakeSdk(operation === "remove" ? { removeWait: stall } : { releaseWait: stall })
         return acquired(DaytonaSandbox.make({ sdk: fake.sdk }), (session) =>
           output(session, "true", operation === "remove" ? { stdin: encoder.encode("input") } : {}))
-      }, operation === "remove" ? ".smthrs-stdin/" : "smthrs-"), { timeout: 10_000 })
+      }, operation === "remove" ? ".smthrs-stdin/" : "smthrs-"))
   }
 
   it.effect("reports failed staged stdin removal without claiming the file was removed", () =>

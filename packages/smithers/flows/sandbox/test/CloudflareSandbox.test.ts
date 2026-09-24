@@ -323,7 +323,7 @@ describe("CloudflareSandbox", () => {
               output
             ))
           }))
-      }, operation === "remove" ? ".smthrs-stdin/" : "cloudflare sandbox"), { timeout: 10_000 })
+      }, operation === "remove" ? ".smthrs-stdin/" : "cloudflare sandbox"))
   }
 
   it.effect("reports failed staged stdin removal without claiming the file was removed", () =>

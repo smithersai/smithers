@@ -281,13 +281,13 @@ describe("KubernetesSandbox", () => {
       const fake = cluster((args) => args.at(-1)?.includes("kill -s TERM") === true ? { wait: stall } : undefined)
       return acquired(KubernetesSandbox.make({ spawner: fake.spawner, image: "img", workdir }), (session) =>
         Effect.scoped(session.spawn("true", {})))
-    }, ".pid"), { timeout: 10_000 })
+    }, ".pid"))
 
   it.effect("bounds stalled session removal on the platform timer", () =>
     stalledFinalizer((stall) => {
       const fake = cluster((args) => args[0] === "delete" ? { wait: stall } : undefined)
       return acquired(KubernetesSandbox.make({ spawner: fake.spawner, image: "img", workdir }), Effect.succeed)
-    }, "smthrs-"), { timeout: 10_000 })
+    }, "smthrs-"))
 
   it.effect("rejects missing ownership and altered live or terminal Pod specifications", () =>
     Effect.gen(function*() {

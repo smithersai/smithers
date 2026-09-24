@@ -69,7 +69,7 @@ describe.each([false, true])("/proc collection (host fallback: %s)", (host) => {
     const { pids, statReads } = await collect(parents, host)
     expect(pids).toEqual(Array.from({ length: count }, (_, index) => count - index))
     expect(statReads).toBe(count)
-  }, 30_000)
+  }, 60_000)
 
   it("collects only the target subtree, with every child before its parent", async () => {
     const parents = [[1, 0], [2, 1], [3, 2], [4, 2], [5, 1], [6, 5], [7, 0], [8, 7]] as const

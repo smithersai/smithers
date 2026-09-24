@@ -55,22 +55,29 @@ const field = (fields: { readonly seq: number; readonly participantId: string })
 })
 
 describe("BranchProjection", () => {
-  it("rebuilds 10,000 ordered chat commands within 500 ms", () => {
+  // Throughput lives in BranchProjection.bench.ts; a wall-clock bound here
+  // fails on a loaded host with no code change.
+  it("rebuilds 10,000 ordered chat commands in one pass over the entries", () => {
     const entries = Array.from(
       { length: 10_000 },
       (_, seq) => command({ seq, commandId: `c-${seq}`, args: `message ${seq}` })
     )
-    // Warm schema decoding before measuring only the projection rebuild.
-    BranchProjection.project(branchId, entries.slice(0, 100))
-    const started = performance.now()
-    const state = BranchProjection.project(branchId, entries)
-    const elapsed = performance.now() - started
+    let reads = 0
+    const counted: Iterable<JournalEvent.Entry> = {
+      *[Symbol.iterator]() {
+        for (const entry of entries) {
+          reads++
+          yield entry
+        }
+      }
+    }
+    const state = BranchProjection.project(branchId, counted)
 
+    expect(reads).toBe(10_000)
     expect(state.seq).toBe(9_999)
     expect(state.commands).toHaveLength(10_000)
     expect(state.messages).toHaveLength(10_000)
     expect(state.messages[9_999]?.text).toBe("message 9999")
-    expect(elapsed).toBeLessThan(500)
   })
 
   it("matches incremental folding for shuffled, repeated, and uninterpretable entries", () => {

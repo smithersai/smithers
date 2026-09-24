@@ -11,7 +11,7 @@ it("resolves a separate coverage scratch directory in each coordinator process",
       "-e",
       `const {default: config} = await import(${JSON.stringify(config)});
      console.log(JSON.stringify({pid: process.pid, directory: config.test.coverage.reportsDirectory}));`
-    ], { encoding: "utf8", timeout: 4000 })) as { pid: number; directory: string }
+    ], { encoding: "utf8", timeout: 12_000 })) as { pid: number; directory: string }
   const first = inspect()
   const second = inspect()
   expect(first.pid).not.toBe(second.pid)

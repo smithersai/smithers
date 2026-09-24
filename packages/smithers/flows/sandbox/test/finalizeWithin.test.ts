@@ -30,8 +30,7 @@ describe("provider finalizer deadline", () => {
               )
             }))
             expect(continued).toBe(true)
-          }), "stuck transport"),
-      { timeout: 10_000 }
+          }), "stuck transport")
     )
   }
 })

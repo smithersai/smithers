@@ -485,7 +485,7 @@ describe("AwsSandbox", () => {
           operation === "remove"
             ? Effect.asVoid(output(session, "true", { stdin: encoder.encode("input") }))
             : Effect.asVoid(Effect.scoped(session.spawn("true", {}))))
-      }, operation === "remove" ? ".smthrs-stdin/" : ".pid"), { timeout: 10_000 })
+      }, operation === "remove" ? ".smthrs-stdin/" : ".pid"))
   }
 
   for (const operation of ["stop", "deregister"] as const) {
@@ -508,7 +508,7 @@ describe("AwsSandbox", () => {
           pollIntervalMs: 0
         })
         return acquired(provider, Effect.succeed)
-      }, operation === "stop" ? "aws task " : "aws task definition"), { timeout: 10_000 })
+      }, operation === "stop" ? "aws task " : "aws task definition"))
   }
 
   for (const removeResult of ["failed", "missing"] as const) {

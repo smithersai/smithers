@@ -266,13 +266,13 @@ describe("ContainerSandbox", () => {
       const fake = engine((args) => args.at(-1)?.includes("kill -s TERM") === true ? { wait: stall } : undefined)
       return acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), (session) =>
         Effect.scoped(session.spawn("true", {})))
-    }, ".pid"), { timeout: 10_000 })
+    }, ".pid"))
 
   it.effect("bounds stalled session removal on the platform timer", () =>
     stalledFinalizer((stall) => {
       const fake = engine((args) => args[0] === "rm" ? { wait: stall } : undefined)
       return acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), Effect.succeed)
-    }, "smthrs-"), { timeout: 10_000 })
+    }, "smthrs-"))
 
   it.effect("rejects unverifiable or altered inspected containers before start or cleanup", () =>
     Effect.gen(function*() {
