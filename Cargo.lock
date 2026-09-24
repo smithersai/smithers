@@ -2452,6 +2452,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml_edit",
+ "windows-sys",
  "yrs",
 ]
 

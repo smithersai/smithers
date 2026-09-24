@@ -43,6 +43,9 @@ use jj_lib::tree_builder::TreeBuilder;
 use jj_lib::working_copy::SnapshotOptions;
 use jj_lib::workspace::Workspace;
 mod append_prepare;
+// Run the Windows namespace boundary tests independently of the command host.
+#[cfg(all(test, windows))]
+mod atomic_windows_handle;
 pub mod jj_core;
 pub mod tree_export;
 mod wiki_document;
