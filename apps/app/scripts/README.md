@@ -23,8 +23,7 @@ E2E and live-check scripts. Unless a section says otherwise, run them from
 | `pnpm run test:e2e:probes` | Tests under `e2e/probes/` | Playwright Chromium; no server and no deployed host |
 | `pnpm run test:e2e:packaged` | Bridge, fixture lease and packaged-app tests named by `e2e/packaged/run.ts` | Packaged Electrobun app |
 
-`test:e2e:native` aliases the packaged runner. Native process probes are Bun
-tests, separate from Playwright specs. `lint/conformance/TestInventory.test.ts`
+Native process probes are Bun tests, separate from Playwright specs. `lint/conformance/TestInventory.test.ts`
 checks that each test file belongs to an executable runner. The `unitTests`
 target uses the same discovery as `pnpm test`; its inputs include scripts,
 E2E harnesses, configs and RPC fixtures. It depends on the RPC, gateway and
