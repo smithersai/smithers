@@ -6,6 +6,7 @@ import type * as Extension from "./extension.ts"
 import type * as Host from "./host.ts"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
+import * as Lifecycle from "./lifecycle.ts"
 import { delegateModels, type DelegateModel } from "./models.ts"
 import * as Panels from "./panels.ts"
 import * as Session from "./session.ts"
@@ -69,7 +70,14 @@ const contextAnswerChars = 1500
 /** Concurrent worker seats; later requests wait FIFO in `queued`. */
 export const seats = Math.max(1, Number.parseInt(process.env.SMITHERS_TUI_WORKERS ?? "6", 10) || 6)
 const active = (tab: Tab): boolean => tab.status === "running" || tab.status === "requested"
-const settled = (tab: Tab): boolean => tab.status === "done" || tab.status === "failed" || tab.status === "cancelled"
+const settled = (tab: Tab): boolean => Lifecycle.settled(tab.status)
+/** What a queued tab carries until it gets a seat: its launch, or a parked run's continuation. */
+interface Entry {
+  readonly writer?: Session.Writer
+  readonly history?: ReadonlyArray<Context.Entry>
+  readonly by?: "user" | "agent"
+  readonly resume?: () => void
+}
 /** Refusal returned by agent.delegate at the maximum supported depth. */
 export class AgentDepthExceeded extends Error {
   readonly _tag = "AgentDepthExceeded"
@@ -88,15 +96,13 @@ const resetAt = (error: unknown): number | undefined => {
   return undefined
 }
 export class Workspace {
-  private queue: Array<{ readonly id: string; readonly writer?: Session.Writer; readonly history?: ReadonlyArray<Context.Entry>; readonly by?: "user" | "agent"; readonly resume?: () => void }> = []
-  private tabs = new Map<string, Tab>()
+  private tabs: Lifecycle.Pool<Tab, Entry>
   private panels = new Map<string, Panels.Panel>()
   private cards = new Set<string>()
   private transcripts = new Map<string, Transcript.Transcript>()
   private handles = new Map<string, Host.Turn>()
   private cancelRequested = new Set<string>()
   private steering = new Map<string, { readonly queue: Steering.Queue; readonly writer: Session.Writer }>()
-  private listeners = new Set<() => void>()
   private closed = false
   constructor(
     private options: {
@@ -115,6 +121,22 @@ export class Workspace {
       contribute?: (owner: string, contribution: Extension.Contribution) => void
     }
   ) {
+    this.tabs = new Lifecycle.Pool<Tab, Entry>({
+      name: "worker",
+      seats,
+      holdsSeat: active,
+      persist: (tab) => options.persist({ type: "tab", tab }),
+      admit: (tab, next) => {
+        if (next.resume !== undefined) {
+          this.tabs.move(tab, "wake")
+          next.resume()
+          return
+        }
+        if (next.writer === undefined || tab.file !== next.writer.file) return
+        const requested = this.tabs.move(tab, "admit")!
+        queueMicrotask(() => this.start(requested, next.writer!, next.history ?? [], next.by ?? "user"))
+      }
+    })
     for (const saved of options.restored?.tabs ?? []) {
       // Older sessions predate recursive tabs.
       const tab = { ...saved, depth: saved.depth ?? (saved.id.split("/").length - 1) }
@@ -154,51 +176,23 @@ export class Workspace {
         )
       }
       if (transcript !== undefined) this.transcripts.set(tab.id, transcript)
-      if (settled === tab) this.tabs.set(tab.id, tab)
-      else this.save(settled)
-      if (settled.status === "queued") this.queue.push({ id: tab.id, writer: Session.reopen(tab.file), history: tab.history ?? [], by: "user" })
+      if (settled === tab) this.tabs.adopt(tab)
+      else this.tabs.move({ ...settled, status: tab.status }, Lifecycle.ending[settled.status as keyof typeof Lifecycle.ending])
+      if (settled.status === "queued") this.tabs.enqueue(tab.id, { writer: Session.reopen(tab.file), history: tab.history ?? [], by: "user" })
       if (settled === tab && (active(tab) || tab.status === "waiting" || tab.status === "parked")) this.scheduleResume(tab)
     }
     for (const panel of options.restored?.panels ?? []) Panels.keep(this.panels, panel)
     for (const id of options.restored?.cards ?? []) if (this.panels.has(id)) this.cards.add(id)
-    if (this.queue.length > 0) queueMicrotask(() => this.drain())
+    queueMicrotask(() => this.tabs.drain())
   }
-  subscribe = (listener: () => void): () => void => {
-    this.listeners.add(listener)
-    return () => {
-      this.listeners.delete(listener)
-    }
-  }
+  subscribe = (listener: () => void): () => void => this.tabs.subscribe(listener)
   private changed() {
-    for (const listener of this.listeners) listener()
+    this.tabs.changed()
   }
   has = (id: string): boolean => this.tabs.has(id)
-  snapshot = (): Snapshot => ({ tabs: [...this.tabs.values()], panels: [...this.panels.values()], cards: [...this.cards] })
+  snapshot = (): Snapshot => ({ tabs: this.tabs.values(), panels: [...this.panels.values()], cards: [...this.cards] })
   get busy(): boolean {
-    return [...this.tabs.values()].some((tab) => active(tab) || tab.status === "waiting" || tab.status === "queued" || tab.status === "parked")
-  }
-  private save(tab: Tab) {
-    this.options.persist({ type: "tab", tab })
-    this.tabs.set(tab.id, tab)
-    this.changed()
-    if (settled(tab) || tab.status === "parked") this.drain()
-  }
-  /** Starts queued requests, oldest first, while a seat is free. */
-  private drain() {
-    while (!this.closed && this.queue.length > 0 && [...this.tabs.values()].filter(active).length < seats) {
-      const next = this.queue.shift()!
-      const tab = this.tabs.get(next.id)
-      if (tab?.status !== "queued") continue
-      if (next.resume !== undefined) {
-        this.save({ ...tab, status: "running" })
-        next.resume()
-        continue
-      }
-      if (next.writer === undefined || tab.file !== next.writer.file) continue
-      const requested: Tab = { ...tab, status: "requested" }
-      this.save(requested)
-      queueMicrotask(() => this.start(requested, next.writer!, next.history ?? [], next.by ?? "user"))
-    }
+    return this.tabs.values().some((tab) => active(tab) || tab.status === "waiting" || tab.status === "queued" || tab.status === "parked")
   }
   /** Custom views kept; publishing one more replaces the least recently published. */
   static readonly maxPanels = Panels.limit
@@ -255,8 +249,8 @@ export class Workspace {
       if (child?.parent !== parentId) throw new Error(`Unknown child tab: ${id}`)
       return child.id
     })
-    this.save({ ...parent, status: "waiting" })
-    this.drain()
+    // Waiting frees the seat, so queued work may start.
+    this.tabs.move(parent, "block")
     return new Promise((resolve, reject) => {
       const cleanup = () => {
         unsubscribe()
@@ -265,7 +259,7 @@ export class Workspace {
       const aborted = () => {
         cleanup()
         const current = this.tabs.get(parentId)
-        if (!this.closed && current?.status === "waiting") this.save({ ...current, status: "running" })
+        if (!this.closed && current?.status === "waiting") this.tabs.move(current, "unblock")
         reject(new Error("Wait stopped"))
       }
       const check = () => {
@@ -276,9 +270,9 @@ export class Workspace {
           return
         }
         const tabs = children.map((id) => this.tabs.get(id)!)
-        if (!tabs.every(settled) || [...this.tabs.values()].filter(active).length >= seats) return
+        if (!tabs.every(settled) || this.tabs.full()) return
         cleanup()
-        this.save({ ...this.tabs.get(parentId)!, status: "running" })
+        this.tabs.move(this.tabs.get(parentId)!, "unblock")
         resolve(tabs.map(({ id, status, answer, message }) => ({ id, status, answer, message })))
       }
       const unsubscribe = this.subscribe(check)
@@ -317,7 +311,8 @@ export class Workspace {
       parent: prior.file, seed: records.filter((record) => record.type !== "outcome")
     })
     const history = this.boundedHistory([...this.options.history(), ...(prior === undefined ? [] : this.continuation(prior, records, prior.message))])
-    const tab: Tab = {
+    // Persist FIRST; a receipt here acknowledges only the request, not the launch.
+    const tab = this.tabs.create({
       id: request.id,
       title: request.title,
       prompt: request.prompt,
@@ -326,17 +321,14 @@ export class Workspace {
       seat: kept ?? (request.model === undefined ? declared ?? this.options.workerSeat : delegateModels[request.model]),
       history,
       file: writer.file,
-      status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
       startedAt: prior?.startedAt ?? Date.now(),
       ...(parks === undefined || parks === 0 ? {} : { parks }),
       ...(request.model === undefined ? {} : { model: request.model }),
       ...(request.agent === undefined ? {} : { agent: { name: request.agent } })
-    }
-    // Persist FIRST; a receipt here acknowledges only the request, not the launch.
-    this.save(tab)
+    })
     void this.describe(tab)
     const by = request.by ?? "agent"
-    if (tab.status === "queued") this.queue.push({ id: tab.id, writer, history, by })
+    if (tab.status === "queued") this.tabs.enqueue(tab.id, { writer, history, by })
     else queueMicrotask(() => this.start(tab, writer, history, by))
     return { id: tab.id, status: tab.status }
   }
@@ -374,7 +366,7 @@ export class Workspace {
   }
   private relaunch(tab: Tab): void {
     if (this.closed) return
-    this.tabs.delete(tab.id)
+    this.tabs.forget(tab.id)
     this.open({ id: tab.id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" }, tab.seat, tab.parent, tab.depth, tab, tab.parks)
   }
   private scheduleResume(tab: Tab): void {
@@ -410,7 +402,7 @@ export class Workspace {
     } catch (error) {
       const failure = Agents.unreadable(error)
       const now = current()
-      if (now !== undefined) this.save({ ...now, status: "failed", endedAt: Date.now(), message: failure.message, code: failure.code })
+      if (now !== undefined) this.tabs.move({ ...now, endedAt: Date.now(), message: failure.message, code: failure.code }, "fail")
       return
     }
     const now = current()
@@ -420,7 +412,7 @@ export class Workspace {
       seat: now.model === undefined ? profile.seat ?? this.options.workerSeat : delegateModels[now.model],
       agent: { name: profile.name, digest: profile.digest }
     }
-    this.save(ready)
+    this.tabs.put(ready)
     this.launch(ready, writer, history, profile)
   }
   private async describe(tab: Tab): Promise<void> {
@@ -434,7 +426,7 @@ export class Workspace {
     }
     const current = this.tabs.get(tab.id)
     if (current === undefined || current.file !== tab.file || this.closed) return
-    this.save({ ...current, description })
+    this.tabs.put({ ...current, description })
   }
   private launch(tab: Tab, writer: Session.Writer, history: ReadonlyArray<Context.Entry>, agent?: Agents.Profile) {
     if (this.closed || this.tabs.get(tab.id)?.status !== "requested") return
@@ -478,29 +470,28 @@ export class Workspace {
           const at = Date.now()
           if (event._tag !== "model-delta" && event._tag !== "aborted") writer.append({ type: "event", at, event })
           if (event._tag !== "aborted") this.transcripts.set(tab.id, Transcript.apply(this.transcript(tab.id), event, at))
-          if (event._tag === "seat-failed-over") this.save({ ...(this.tabs.get(tab.id) ?? tab), activeSeat: event.to })
+          if (event._tag === "seat-failed-over") this.tabs.put({ ...(this.tabs.get(tab.id) ?? tab), activeSeat: event.to })
           if (event._tag === "model-parked") {
             const current = this.tabs.get(tab.id) ?? tab
-            this.save({ ...current, status: "parked", wakeAt: event.wakeAt, activeSeat: event.seat, parks: (current.parks ?? 0) + 1 })
+            this.tabs.move({ ...current, wakeAt: event.wakeAt, activeSeat: event.seat, parks: (current.parks ?? 0) + 1 }, "park")
           }
-          if (event._tag === "model-settled" && (this.tabs.get(tab.id)?.parks ?? 0) > 0) this.save({ ...this.tabs.get(tab.id)!, parks: 0 })
+          if (event._tag === "model-settled" && (this.tabs.get(tab.id)?.parks ?? 0) > 0) this.tabs.put({ ...this.tabs.get(tab.id)!, parks: 0 })
           if (event._tag === "model-unparked") {
             const current = this.tabs.get(tab.id) ?? tab
-            if ([...this.tabs.values()].filter(active).length >= seats) {
-              this.save({ ...current, status: "queued", wakeAt: undefined, activeSeat: event.seat })
+            // With every seat taken it waits FIFO; the run continues when its entry is admitted.
+            if (this.tabs.move({ ...current, wakeAt: undefined, activeSeat: event.seat }, "wake")?.status === "queued") {
               return new Promise<void>((resolve) => {
-                this.queue.push({ id: tab.id, resume: resolve })
-                this.drain()
+                this.tabs.enqueue(tab.id, { resume: resolve })
+                this.tabs.drain()
               })
             }
-            this.save({ ...current, status: "running", wakeAt: undefined, activeSeat: event.seat })
           }
           this.changed()
         }
       })
       this.handles.set(tab.id, handle)
       this.steering.set(tab.id, { queue: steering, writer })
-      this.save({ ...(this.tabs.get(tab.id) ?? tab), status: this.tabs.get(tab.id)?.status === "parked" ? "parked" : "running", launchedAt: at })
+      this.tabs.move({ ...(this.tabs.get(tab.id) ?? tab), launchedAt: at }, "launch")
       void handle.done.then((outcome) => {
         this.handles.delete(tab.id)
         this.steering.delete(tab.id)
@@ -533,16 +524,15 @@ export class Workspace {
           transcript = Transcript.failure(transcript, outcome._tag === "failed" ? failure!.headline : "Stopped", at)
           this.transcripts.set(tab.id, transcript)
         }
-        this.save({
+        this.tabs.move({
           ...(this.tabs.get(tab.id) ?? tab),
-          status: outcome._tag,
           endedAt: at,
           ...(outcome._tag === "done"
             ? { answer: outcome.answer }
             : outcome._tag === "failed"
             ? { message: outcome.message, detail: outcome.detail, failure, wakeAt: resetAt(outcome.error) }
             : {})
-        })
+        }, Lifecycle.ending[outcome._tag])
       }).catch((error) => this.fail(tab, writer, error))
     } catch (error) {
       this.fail(tab, writer, error)
@@ -559,7 +549,7 @@ export class Workspace {
       writer.append({ type: "outcome", at, prompt: tab.prompt, outcome: { _tag: "failed", message, headline: failure.headline } })
     } catch (error) { Log.write("worker.persist", error) }
     this.transcripts.set(tab.id, Transcript.failure(this.transcript(tab.id), failure.headline, at))
-    this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "failed", endedAt: at, message, failure, detail: error instanceof Error ? error.stack : undefined })
+    this.tabs.move({ ...(this.tabs.get(tab.id) ?? tab), endedAt: at, message, failure, detail: error instanceof Error ? error.stack : undefined }, "fail")
   }
   /** Sends `text` to a running worker at its next cell boundary; false when it is not running. */
   steer = (id: string, text: string): boolean => {
@@ -627,17 +617,17 @@ export class Workspace {
     return { ...panel, summary }
   }
   /** Projects a root and descendants from current tab state. */
-  tree = (rootId: string): Panels.Panel => Tree.panel(rootId, [...this.tabs.values()], (id) => this.transcript(id))
+  tree = (rootId: string): Panels.Panel => Tree.panel(rootId, this.tabs.values(), (id) => this.transcript(id))
   /**
    * What every coordinator turn is told about the tabs: every unsettled tab,
    * and the newest settled ones with a bounded answer. Older tabs keep only
    * their status; `tab.read` returns any tab in full.
    */
   context = (): string => {
-    const settledTabs = [...this.tabs.values()].filter(settled).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
+    const settledTabs = this.tabs.values().filter(settled).sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0))
     const recent = new Set(settledTabs.slice(0, contextAnswers))
     return JSON.stringify(
-      [...this.tabs.values()].map((tab) => {
+      this.tabs.values().map((tab) => {
         const full = !settled(tab) || recent.has(tab)
         return {
           id: tab.id,
@@ -652,19 +642,18 @@ export class Workspace {
     )
   }
   cancel = (id: string): void => {
-    for (const child of [...this.tabs.values()].filter((entry) => entry.parent === id)) this.cancel(child.id)
-    const removed = this.queue.filter((entry) => entry.id === id)
-    this.queue = this.queue.filter((entry) => entry.id !== id)
+    for (const child of this.tabs.values().filter((entry) => entry.parent === id)) this.cancel(child.id)
+    const removed = this.tabs.dequeue(id)
     const tab = this.tabs.get(id)
     if (tab?.status === "requested" || tab?.status === "queued" || (tab?.status === "parked" && !this.handles.has(id))) {
-      this.save({ ...tab, status: "cancelled", endedAt: Date.now() })
+      this.tabs.move({ ...tab, endedAt: Date.now() }, "cancel")
       this.handles.get(id)?.cancel()
     }
     else if (this.handles.has(id)) {
       this.cancelRequested.add(id)
       this.handles.get(id)!.cancel()
     }
-    for (const entry of removed) entry.resume?.()
+    removed?.resume?.()
   }
   /** Runs a failed or stopped tab's task again, on the seat it asked for. */
   retry = (id: string, seat?: string): { id: string; status: Tab["status"] } => {
@@ -675,7 +664,7 @@ export class Workspace {
       this.cancelRequested.add(id)
       this.handles.get(id)?.cancel()
     }
-    this.tabs.delete(id)
+    this.tabs.forget(id)
     try {
       // Keeps the agent, the model and the seat; the agent's file is read again, so edits apply.
       return this.open(
@@ -686,7 +675,7 @@ export class Workspace {
         tab
       )
     } catch (error) {
-      this.tabs.set(id, tab)
+      this.tabs.adopt(tab)
       throw error
     }
   }
@@ -696,21 +685,20 @@ export class Workspace {
     if (tab?.status !== "failed") throw new Error("Only a failed tab can wait")
     const wakeAt = Math.max(Date.now(), tab.wakeAt ?? Date.now() + 15 * 60_000)
     // The user chose this wait, so the resumed run gets a fresh park budget.
-    const waiting: Tab = { ...tab, status: "parked", wakeAt, endedAt: undefined, parks: undefined }
-    this.save(waiting)
+    const waiting = this.tabs.move({ ...tab, wakeAt, endedAt: undefined, parks: undefined }, "sleep")!
     setTimeout(() => {
       if (this.tabs.get(id)?.status === "parked" && this.tabs.get(id)?.file === tab.file) this.relaunch(waiting)
     }, wakeAt - Date.now())
   }
   dispose = (): void => {
     this.closed = true
+    const queued = this.tabs.close()
     this.changed()
-    for (const [id, tab] of this.tabs) {
-      if (tab.status === "queued") this.save({ ...tab, status: "cancelled", endedAt: Date.now() })
-      this.handles.get(id)?.cancel()
+    for (const tab of this.tabs.values()) {
+      if (tab.status === "queued") this.tabs.move({ ...tab, endedAt: Date.now() }, "cancel")
+      this.handles.get(tab.id)?.cancel()
     }
-    for (const entry of this.queue) entry.resume?.()
-    this.queue = []
+    for (const entry of queued) entry.resume?.()
   }
 }
 /** A tab's toast text after its glyph. */

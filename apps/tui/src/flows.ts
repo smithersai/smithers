@@ -2,8 +2,9 @@ import * as Log from "./log.ts"
 /**
  * The user's own file flows (`flows/<name>/flow.ts`), run in background tabs.
  *
- * Mirrors `workspace.ts`: a request persists before any work, returns a
- * `requested` receipt, and settles only from the control plane's watch. The
+ * Shares `lifecycle.ts` with `workspace.ts`: a request persists before any
+ * work, returns a `requested` or `queued` receipt, and settles only from the
+ * control plane's watch. The
  * `Port` is the seam to the native control host (`flow-control.ts`).
  */
 import type { ControlSchema } from "@smthrs/control"
@@ -11,6 +12,7 @@ import * as NodeOutput from "@smthrs/cli/NodeOutput"
 import type { Schema } from "effect"
 import * as Extension from "./extension.ts"
 import * as Form from "./form.ts"
+import * as Lifecycle from "./lifecycle.ts"
 import type * as Panels from "./panels.ts"
 import type * as Session from "./session.ts"
 import * as Summary from "./summary.ts"
@@ -94,7 +96,7 @@ export interface Run {
   readonly input: Record<string, unknown>
   /** The original input as JSON, for deduplication. */
   readonly requested: string
-  readonly status: "queued" | "requested" | "input" | "running" | "waiting" | "done" | "failed" | "cancelled"
+  readonly status: Exclude<Lifecycle.Status, "parked">
   readonly runId?: string
   /** When the current attempt began: a retry or resume restarts it. */
   readonly startedAt: number
@@ -127,7 +129,7 @@ export const running = (run: Run): boolean =>
 const active = (run: Run) => running(run) || run.status === "input"
 
 export class FlowRuns {
-  private runs = new Map<string, Run>()
+  private runs: Lifecycle.Pool<Run>
   private events = new Map<string, Array<ControlEvent>>()
   private schemas = new Map<string, Schema.Top>()
   private watches = new Map<string, Watch>()
@@ -145,7 +147,6 @@ export class FlowRuns {
   /** Payload schemas read by a run's preparation, by flow; describing never imports a module. */
   private inputs = new Map<string, Schema.Top | undefined>()
   private discovery = 0
-  private listeners = new Set<() => void>()
   private warming: Promise<void> | undefined
   private opened = false
   private isOpening = false
@@ -159,10 +160,21 @@ export class FlowRuns {
       restored?: ReadonlyArray<Run> | undefined
     }
   ) {
+    this.runs = new Lifecycle.Pool<Run>({
+      name: "flow",
+      seats,
+      holdsSeat: active,
+      persist: (run) => options.persist({ type: "flow", run }),
+      admit: (run) => {
+        const attempt = this.attempt(run.id)
+        this.runs.move({ ...run, message: undefined }, "admit")
+        queueMicrotask(() => void this.prepare(run.id, attempt))
+      }
+    })
     for (const run of options.restored ?? []) {
       // Anything unsettled, including statuses older builds wrote, resumes as interrupted.
-      if (run.status !== "done" && run.status !== "failed" && run.status !== "cancelled") this.save({ ...run, status: "failed", message: interrupted, endedAt: Date.now() })
-      else this.runs.set(run.id, run)
+      if (!Lifecycle.settled(run.status)) this.runs.move({ ...run, message: interrupted, endedAt: Date.now() }, "fail")
+      else this.runs.adopt(run)
     }
   }
   /** Idempotent background host opening, independent of request acknowledgments. */
@@ -177,19 +189,14 @@ export class FlowRuns {
     })
   }
   get opening(): boolean { return this.isOpening }
-  subscribe = (listener: () => void): () => void => {
-    this.listeners.add(listener)
-    return () => {
-      this.listeners.delete(listener)
-    }
-  }
+  subscribe = (listener: () => void): () => void => this.runs.subscribe(listener)
   private changed() {
-    for (const listener of this.listeners) listener()
+    this.runs.changed()
   }
-  snapshot = (): ReadonlyArray<Run> => [...this.runs.values()]
+  snapshot = (): ReadonlyArray<Run> => this.runs.values()
   /** A run parked for input never counts: it waits on the user, not on work. */
   get busy(): boolean {
-    return [...this.runs.values()].some((run) => running(run) || run.status === "queued")
+    return this.runs.values().some((run) => running(run) || run.status === "queued")
   }
   has = (id: string): boolean => this.runs.has(id)
   get = (id: string): Run | undefined => this.runs.get(id)
@@ -254,44 +261,23 @@ export class FlowRuns {
       this.changed()
     }, (error) => Log.write("flow.runs", error))
   }
-  private save(run: Run) {
-    this.options.persist({ type: "flow", run })
-    this.runs.set(run.id, run)
-    this.changed()
-    if (!active(run) && run.status !== "queued") this.drain()
-  }
-  private full(): boolean {
-    return [...this.runs.values()].filter(active).length >= seats
-  }
-  /** Starts queued runs, oldest request first, while a seat is free. */
-  private drain() {
-    if (this.closed) return
-    const queued = [...this.runs.values()].filter((run) => run.status === "queued").sort((a, b) => a.startedAt - b.startedAt)
-    for (const run of queued) {
-      if (this.full()) return
-      const attempt = this.attempt(run.id)
-      this.save({ ...run, status: "requested", message: undefined })
-      queueMicrotask(() => void this.prepare(run.id, attempt))
-    }
-  }
-  private update(id: string, attempt: number, change: Partial<Run>) {
+  /** Writes a change to the current attempt; `event` moves the status. */
+  private update(id: string, attempt: number, change: Partial<Omit<Run, "status">>, event?: Lifecycle.Event) {
     const run = this.runs.get(id)
     if (run === undefined || this.closed || this.attempts.get(id) !== attempt) return undefined
     const next = { ...run, ...change }
-    this.save(next)
-    return next
+    return event === undefined ? this.runs.put(next) : this.runs.move(next, event)
   }
   private fail(id: string, attempt: number, error: unknown) {
     if (this.runs.get(id)?.stopRequested && error instanceof FlowError && error.code === "refused" && error.message === "Stopped") {
-      this.update(id, attempt, { status: "cancelled", endedAt: Date.now(), message: undefined })
+      this.update(id, attempt, { endedAt: Date.now(), message: undefined }, "cancel")
       return
     }
     Log.write("flow.run", error)
     this.update(id, attempt, {
-      status: "failed",
       endedAt: Date.now(),
       message: error instanceof Error ? error.message : String(error)
-    })
+    }, "fail")
   }
   private attempt(id: string): number {
     const next = (this.attempts.get(id) ?? 0) + 1
@@ -314,18 +300,19 @@ export class FlowRuns {
     }
     const id = request.id ?? `${request.flow}-${Date.now().toString(36)}`
     if (this.options.occupied?.(id)) throw new Error("Request id already belongs to a worker tab")
-    const run: Run = {
+    // Persist FIRST; the receipt acknowledges only the request.
+    const run = this.runs.create({
       id,
       flow: request.flow,
       by: request.by,
       input: request.input,
       requested,
-      status: this.full() ? "queued" : "requested",
       startedAt: Date.now()
+    })
+    if (run.status === "queued") {
+      this.runs.enqueue(id, undefined)
+      return { id, status: "queued" }
     }
-    // Persist FIRST; the receipt acknowledges only the request.
-    this.save(run)
-    if (run.status === "queued") return { id, status: "queued" }
     const attempt = this.attempt(id)
     queueMicrotask(() => void this.prepare(id, attempt))
     return { id, status: "requested" }
@@ -349,9 +336,8 @@ export class FlowRuns {
         const fields = Form.fields(schema)
         const missing = Form.missing(fields, Form.draft(fields, run.input))
         this.update(id, attempt, {
-          status: "input",
           message: missing.length === 0 ? "Invalid input" : `Needs: ${missing.join(", ")}`
-        })
+        }, "input")
         return
       }
       await this.plan(id, attempt)
@@ -380,9 +366,9 @@ export class FlowRuns {
       const run = this.runs.get(id)!
       if (this.closed) {
         // Preserve the receipt even after the UI detached; retry must target this run.
-        this.save({ ...run, runId, status: "failed", message: interrupted, endedAt: Date.now() })
+        this.runs.move({ ...run, runId, message: interrupted, endedAt: Date.now() }, "fail")
       } else {
-        if (this.update(id, attempt, { status: "running", runId, message: undefined, launchedAt: Date.now() }) === undefined) return
+        if (this.update(id, attempt, { runId, message: undefined, launchedAt: Date.now() }, "launch") === undefined) return
         this.follow(id, attempt, runId)
       }
       if (run.stopRequested) await this.stop(id, runId)
@@ -396,7 +382,7 @@ export class FlowRuns {
     } catch (error) {
       const current = this.runs.get(id)
       if (current !== undefined && (active(current) || this.closed)) {
-        this.save({ ...current, message: error instanceof Error ? error.message : String(error) })
+        this.runs.put({ ...current, message: error instanceof Error ? error.message : String(error) })
       }
     }
   }
@@ -407,8 +393,8 @@ export class FlowRuns {
       if (this.attempts.get(id) !== attempt) return
       this.events.get(id)?.push(event)
       const status = this.runs.get(id)?.status
-      if (event.kind === "control.run.waiting-approval" && status === "running") this.update(id, attempt, { status: "waiting" })
-      else if (status === "waiting" && event.kind !== "control.run.waiting-approval" && !terminal.has(event.kind)) this.update(id, attempt, { status: "running" })
+      if (event.kind === "control.run.waiting-approval" && status === "running") this.update(id, attempt, {}, "block")
+      else if (status === "waiting" && event.kind !== "control.run.waiting-approval" && !terminal.has(event.kind)) this.update(id, attempt, {}, "unblock")
       else this.changed()
     })
     this.watches.set(id, watch)
@@ -422,34 +408,34 @@ export class FlowRuns {
   }
   private settle(id: string, attempt: number, settled: Settled) {
     const endedAt = Date.now()
-    if (settled.kind === "done") this.update(id, attempt, { status: "done", answer: settled.answer, endedAt, message: undefined })
-    else if (settled.kind === "failed") this.update(id, attempt, { status: "failed", message: settled.message, endedAt })
-    else this.update(id, attempt, { status: "cancelled", endedAt, message: undefined })
+    if (settled.kind === "done") this.update(id, attempt, { answer: settled.answer, endedAt, message: undefined }, "done")
+    else if (settled.kind === "failed") this.update(id, attempt, { message: settled.message, endedAt }, "fail")
+    else this.update(id, attempt, { endedAt, message: undefined }, "cancel")
   }
   /** Supplies the input a run parked for, then plans it. */
   fill = (id: string, input: Record<string, unknown>): void => {
     const run = this.runs.get(id)
     if (run?.status !== "input" || this.closed) return
     const attempt = this.attempt(id)
-    this.save({ ...run, input, status: "requested", message: undefined })
+    this.runs.move({ ...run, input, message: undefined }, "fill")
     void this.plan(id, attempt).catch((error) => this.fail(id, attempt, error))
   }
   cancel = (id: string): void => {
     const run = this.runs.get(id)
     if (run === undefined || (!active(run) && run.status !== "queued")) return
     if (this.launching.has(id)) {
-      this.save({ ...run, stopRequested: true, message: "Stopping" })
+      this.runs.put({ ...run, stopRequested: true, message: "Stopping" })
       this.launching.get(id)!.abort()
       return
     }
     if (run.runId !== undefined && (run.status === "running" || run.status === "waiting")) {
       // The watch settles the status; a refused cancel keeps it running.
-      this.save({ ...run, stopRequested: true })
+      this.runs.put({ ...run, stopRequested: true })
       void this.stop(id, run.runId)
       return
     }
     this.attempt(id)
-    this.save({ ...run, status: "cancelled", endedAt: Date.now() })
+    this.runs.move({ ...run, endedAt: Date.now() }, "cancel")
   }
   /** Runs a failed or stopped run again; the receipt says whether it waits for a seat. */
   retry = (id: string): { id: string; status: Run["status"] } => {
@@ -463,21 +449,22 @@ export class FlowRuns {
     const { endedAt: _ended, answer: _answer, launchedAt: _launched, ...previous } = run
     // Each retry is new work with its own clock, so it is estimated and scored on its own.
     const rest = { ...previous, attempt: (run.attempt ?? 1) + 1, startedAt: Date.now() }
-    if (this.full()) {
+    if (this.runs.full()) {
       const { runId: _runId, stopRequested: _stop, ...fresh } = rest
-      this.save({ ...fresh, status: "queued", message: undefined })
+      this.runs.move({ ...fresh, message: undefined }, "retry")
+      this.runs.enqueue(id, undefined)
       return { id, status: "queued" }
     }
     const attempt = this.attempt(id)
     if (run.runId !== undefined && run.stopRequested && run.status === "failed") {
-      this.save({ ...rest, status: "running", message: undefined })
+      this.runs.move({ ...rest, message: undefined }, "reattach")
       this.follow(id, attempt, run.runId)
       void this.stop(id, run.runId)
       return { id, status: "running" }
     }
     if (run.runId !== undefined && run.message === interrupted) {
       const runId = run.runId
-      this.save({ ...rest, status: "running", message: undefined, launchedAt: rest.startedAt })
+      this.runs.move({ ...rest, message: undefined, launchedAt: rest.startedAt }, "reattach")
       this.options.port.resume(runId).then((receipt) => {
         if ("runId" in receipt) {
           if (this.update(id, attempt, { runId: receipt.runId }) !== undefined) this.follow(id, attempt, receipt.runId)
@@ -486,7 +473,7 @@ export class FlowRuns {
       return { id, status: "running" }
     }
     const { runId: _runId, stopRequested: _stop, ...fresh } = rest
-    this.save({ ...fresh, status: "requested", message: undefined })
+    this.runs.move({ ...fresh, message: undefined }, "retry")
     queueMicrotask(() => void this.prepare(id, attempt))
     return { id, status: "requested" }
   }
@@ -557,9 +544,9 @@ export class FlowRuns {
     }
   }
   context = (): string => {
-    const own = new Set([...this.runs.values()].flatMap((run) => (run.runId === undefined ? [] : [run.runId])))
+    const own = new Set(this.runs.values().flatMap((run) => (run.runId === undefined ? [] : [run.runId])))
     return JSON.stringify([
-      ...[...this.runs.values()].map(({ id, flow, status, answer, message }) => ({
+      ...this.runs.values().map(({ id, flow, status, answer, message }) => ({
         id,
         flow,
         status,
@@ -576,6 +563,7 @@ export class FlowRuns {
   }
   dispose = async (): Promise<void> => {
     this.closed = true
+    this.runs.close()
     for (const controller of this.launching.values()) controller.abort()
     for (const watch of this.watches.values()) watch.close()
     this.watches.clear()
