@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jwksCache } from "../../src/server/sessions/jwksCache.ts";
 import { createReviewWorker } from "../../src/server/worker.ts";
@@ -12,6 +12,8 @@ import { signTestJwt } from "../server/helpers/signTestJwt.ts";
 
 const RUN_ACTION = fileURLToPath(new URL("../../action/src/runAction.ts", import.meta.url));
 const FAKE_GH = fileURLToPath(new URL("./fixtures/fake-gh", import.meta.url));
+// Prepended to PATH so the action's `node` spawn runs a fake review CLI.
+const REVIEW_BIN = fileURLToPath(new URL("./fixtures/review-bin", import.meta.url));
 // Package root so bun can resolve tsconfig paths from the correct base
 const PKG_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -265,6 +267,77 @@ describe("runAction (subprocess)", () => {
       expect(reviewed?.c).toBe(0);
       const sessions = await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>();
       expect(sessions?.c).toBe(0);
+    } finally {
+      service.stop();
+    }
+  }, 20_000);
+
+  test("a review whose CLI exits 0 with failed file reviews posts a partial status, not a pass", async () => {
+    const service = await startReviewService("auto");
+    try {
+      const payload = {
+        action: "opened",
+        pull_request: {
+          number: 42,
+          draft: false,
+          head: { sha: "deadbeef", repo: { full_name: "octo/widgets" } },
+          base: { repo: { full_name: "octo/widgets" } },
+        },
+      };
+      const eventPath = join(tmp, "event.json");
+      await writeFile(eventPath, JSON.stringify(payload));
+      const ghLog = join(tmp, "gh.log");
+      const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+      delete env.ANTHROPIC_API_KEY;
+      delete env.OPENAI_API_KEY;
+      // Async spawn: the worker answers from this process's event loop.
+      const child = Bun.spawn(["bun", RUN_ACTION], {
+        cwd: PKG_ROOT,
+        env: {
+          ...env,
+          PATH: `${REVIEW_BIN}${delimiter}${env.PATH ?? ""}`,
+          RUNNER_TEMP: tmp,
+          GITHUB_EVENT_NAME: "pull_request",
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_REPOSITORY: "octo/widgets",
+          GITHUB_WORKSPACE: PKG_ROOT,
+          GITHUB_RUN_ID: "",
+          ACTIONS_ID_TOKEN_REQUEST_URL: `http://127.0.0.1:${service.port}/oidc`,
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-token",
+          SMITHERS_REVIEW_SERVICE_URL: `http://127.0.0.1:${service.port}`,
+          SMITHERS_GH_BIN: FAKE_GH,
+          SMITHERS_FAKE_GH_LOG: ghLog,
+          SMITHERS_FAKE_GH_STDOUT: "",
+          SMITHERS_FAKE_GH_EXIT: "0",
+          // What the CLI writes when 7 of 8 file reviews failed: exit 0, not `failed`.
+          SMITHERS_FAKE_REVIEW_SUMMARY: JSON.stringify({
+            status: "completed_with_warnings",
+            reviewStatus: "completed_with_warnings",
+            files: 8,
+            findings: 2,
+            inline: 1,
+            failedFileReviews: 7,
+          }),
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, , stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+      const posts = (await readFile(ghLog, "utf8"))
+        .split("--- fake gh call ---\n")
+        .slice(1)
+        .map((call) => call.trim().split("\n"))
+        .filter((lines) => lines[2] === "POST");
+      const statuses = posts.map((lines) => (JSON.parse(lines.slice(6).join("\n")) as { body: string }).body);
+      expect(statuses).toEqual([
+        "<!-- smithers-review-status -->\n🔍 smithers review started",
+        "<!-- smithers-review-status -->\n⚠️ smithers review partial: 7 file reviews failed; reviewed 8 files, 2 findings (1 inline)",
+      ]);
     } finally {
       service.stop();
     }

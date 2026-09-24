@@ -8,7 +8,7 @@ import { fetchOidcToken } from "./fetchOidcToken.ts";
 import { gateEvent } from "./gateEvent.ts";
 import { materializeInferenceCredentials } from "./materializeInferenceCredentials.ts";
 import { resolveInferenceEnv } from "./resolveInferenceEnv.ts";
-import { failureDetail, readSummary, type ReviewSummary } from "./reviewSummary.ts";
+import { failureDetail, finishedStatus, readSummary, type ReviewSummary } from "./reviewSummary.ts";
 import { runReview } from "./runReview.ts";
 import { upsertStatusComment } from "./upsertStatusComment.ts";
 import { ghBin, runGh } from "../../src/github/runGh.ts";
@@ -203,17 +203,7 @@ async function main(): Promise<void> {
 
   const summary = readSummary(summaryPath);
   if (exitCode === 0) {
-    const files = summary?.files ?? 0;
-    const findings = summary?.findings ?? 0;
-    const inline = summary?.inline ?? 0;
-    const walkthrough = summary?.walkthroughUrl?.trim()
-      ? ` — [walkthrough](${summary.walkthroughUrl.trim()})`
-      : summary?.publishError
-        ? " — walkthrough publish failed; see the job log"
-        : "";
-    const outcome = summary
-      ? `✅ smithers review: reviewed ${files} file${files === 1 ? "" : "s"}, ${findings} finding${findings === 1 ? "" : "s"} (${inline} inline)${walkthrough}`
-      : `✅ smithers review finished${runLink}`;
+    const outcome = summary ? finishedStatus(summary) : `✅ smithers review finished${runLink}`;
     await setStatus(`${outcome}${quizNote(summary)}${quotaNote(session.quota)}`);
   } else {
     await setStatus(`❌ smithers review failed${failureDetail(summary, exitCode)}${runLink}`);

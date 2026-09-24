@@ -1,0 +1,11 @@
+#!/bin/sh
+# Test fixture: a fake `node` on PATH for apps/review/tests/action/runAction.test.ts.
+#
+# Checked in and executable (not written at test time) so spawning it never
+# races a fresh write-then-exec.
+#
+# Stands in for the review CLI: writes $SMITHERS_FAKE_REVIEW_SUMMARY to
+# $SMITHERS_REVIEW_SUMMARY_PATH, then exits with $SMITHERS_FAKE_REVIEW_EXIT
+# (default 0).
+printf '%s' "$SMITHERS_FAKE_REVIEW_SUMMARY" > "$SMITHERS_REVIEW_SUMMARY_PATH"
+exit "${SMITHERS_FAKE_REVIEW_EXIT:-0}"
