@@ -101,7 +101,6 @@ export const FLOW_NAMES = [
   "commits.read",
   "connect",
   "debug.backend",
-  "debug.chain",
   "debug.errors",
   "debug.events",
   "debug.net",

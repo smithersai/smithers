@@ -6,7 +6,7 @@ import { canonicalEventValue, encodeEventValue } from "./EventValue"
 import { freezeProjectionValue } from "./ImmutableProjection"
 import {
   appendAppEvent, appProjectionHash, createAppCheckpoint, initializeAppStream,
-  normalizeAppProjection, replayAppEvents, verifyAppProjection,
+  normalizeAppProjection, replayAppEvents, verifyAppProjection, StoredAppEventRecordSchema, AppEventRecordSchema,
   type AppEventRecord, type AppStreamState
 } from "./AppEventStream"
 
@@ -38,23 +38,11 @@ describe("authoritative app event stream", () => {
     expect(() => replayAppEvents(initial.checkpoint, events.slice(1), finished.head)).toThrow("gap")
   }, 30_000)
 
-  test("recorded retention budgets replay exactly while older events retain their original unbounded semantics", () => {
-    const initial = fixture()
-    const first = append(initial, { type: "chain.event.appended", actor: "system", lineageId: "old", seq: 0, event: { note: "x".repeat(200) } })
-    const second = append(first, { type: "chain.event.appended", actor: "system", lineageId: "newer", seq: 0, event: { note: "y".repeat(200) } })
-    expect(Object.hasOwn(first.event, "journalBudgetBytes")).toBe(false)
-    expect(second.snapshot.chainEvents).toHaveLength(2)
-    const retained = replayAppEvents(initial.checkpoint, wire([first.event, second.event]), second.head)
-    expect(retained.snapshot.chainEvents).toHaveLength(2)
-    const compacted = appendAppEvent(second, { kind: "transition", transition: {
-      type: "chain.event.appended", actor: "system", lineageId: "live", seq: 0, event: { note: "z".repeat(200) }
-    } }, { eventId: "compacting", createdAt: 103, persistenceMode: "localStorage", journalBudgetBytes: 400 })!
-    expect(compacted.snapshot.chainEvents.map(row => row.lineageId)).toEqual(["live"])
-    expect(compacted.snapshot.retiredChainLineages).toHaveLength(2)
-    expect(compacted.event.journalBudgetBytes).toBe(400)
-    const replayed = replayAppEvents(initial.checkpoint, wire([first.event, second.event, compacted.event]), compacted.head)
-    expect(verifyAppProjection(replayed, compacted.snapshot).valid).toBe(true)
-    expect(() => replayAppEvents(initial.checkpoint, [first.event, second.event, { ...compacted.event, journalBudgetBytes: 99999 }], compacted.head)).toThrow("event")
+  test("the upgrade reader accepts retired budgets but new events never emit them", () => {
+    const next = append(fixture(), { type: "composer.changed", actor: "user", draft: "kept" })
+    expect(Object.hasOwn(next.event, "journalBudgetBytes")).toBe(false)
+    expect(StoredAppEventRecordSchema.parse({ ...next.event, projectorVersion: 15, journalBudgetBytes: 400 }).journalBudgetBytes).toBe(400)
+    expect(AppEventRecordSchema.safeParse({ ...next.event, journalBudgetBytes: 400 }).success).toBe(false)
   })
 
   test("checkpoint plus suffix equals full replay, allowing duplicate delivery and unordered batches", () => {

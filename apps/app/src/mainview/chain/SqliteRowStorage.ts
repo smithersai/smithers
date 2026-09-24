@@ -473,7 +473,6 @@ export const openSqliteRowStorage = async (
       byCollection.set(row.collectionId, rows)
     }
     assertStoredRowsRecovery(options.collections,
-      new Map([...byCollection].map(([id, rows]) => [id, [...rows.values()].map(row => row.data)])),
       new Set([...(legacy?.rejected ?? []), ...invalid].map(row => row.collectionId)))
 
     for (const row of legacy?.rejected ?? []) {

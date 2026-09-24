@@ -30,7 +30,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
   ],
   /** Developer tooling, not a user journey. */
   diagnostics: [
-    "admin.reset", "debug.backend", "debug.chain", "debug.errors", "debug.events", "debug.net",
+    "admin.reset", "debug.backend", "debug.errors", "debug.events", "debug.net",
     "debug.reset", "debug.seams", "debug.snapshot", "debug.verbose", "model.fixture"
   ],
   /** Host-backed; a real scenario is owed. */

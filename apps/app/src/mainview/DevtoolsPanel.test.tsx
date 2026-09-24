@@ -1,16 +1,15 @@
 /*
  * The dev-tools panel's render cost (ui-cards-tabs performance/2, api-design/3).
  * The panel subscribes to transitions, so every dispatch re-renders it — every
- * streamed token, for the life of an admin session. These tests pin the three
- * reads that must NOT repeat with those renders: the chain journal fold, the
+ * streamed token, for the life of an admin session. These tests pin the two
+ * reads that must NOT repeat with those renders: the
  * per-collection row dumps, and the network tap.
  */
 import { GlobalRegistrator } from "@happy-dom/global-registrator"
 import type { StorageApi } from "@tanstack/db"
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test"
+import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import * as DebugFolds from "./chain/DebugFolds"
 import { ControllerTestProvider } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
 
@@ -107,19 +106,6 @@ const dumpFor = (host: HTMLElement, name: string): HTMLDetailsElement => {
 }
 
 describe("the dev-tools panel's per-dispatch render cost", () => {
-  test("the chain journal is folded once per journal change, not once per dispatch", async () => {
-    const fold = spyOn(DebugFolds, "foldLineages")
-    try {
-      const view = await mount()
-      const afterMount = fold.mock.calls.length
-      expect(afterMount).toBeGreaterThan(0)
-      await streamTokens(view, 5)
-      // Five re-renders over an unchanged chainEvents query: no replay of the journal.
-      expect(fold.mock.calls.length).toBe(afterMount)
-    } finally {
-      fold.mockRestore()
-    }
-  })
 
   test("a closed collection dump copies no rows, and opening it dumps them", async () => {
     let copies = 0

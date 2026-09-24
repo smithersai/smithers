@@ -297,8 +297,9 @@ The three-tier approval policy below, and the capability claims
 it on, are gone with it: capabilities are typed and injected, and approval is
 a host-injected decorator (a GrantStore) that arrives with the harness cell
 loop, never a string a flow declaration claims. What survives in `chain/` is
-app persistence — the storage, schema-version, journal and recovery modules —
-plus the read-only debug folds. Every paragraph below that describes the
+app persistence — storage, schema versions and recovery. The unused
+CollectionJournal, chain projections, debug folds and Chain panel are removed;
+application events and verified checkpoints own UI persistence. Every paragraph below that describes the
 in-webview loop, its relay seat, its catalog adapter or its approval tiers is
 history, not current behaviour.
 

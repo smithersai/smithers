@@ -68,13 +68,6 @@ export const debugFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
     handler: () => actions.debugEvents()
   }),
   flow({
-    /* Debug mode's chain x-ray (§14): the journal fold, as data. */
-    name: "debug.chain",
-    summary: "Read the chain journal x-ray",
-    input: NoPayload,
-    handler: () => actions.debugChain()
-  }),
-  flow({
     /* Debug mode's wire tap (§14): the controller's fetch ring. */
     name: "debug.net",
     summary: "Read the network tap",

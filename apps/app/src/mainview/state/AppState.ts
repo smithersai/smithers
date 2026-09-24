@@ -1017,29 +1017,6 @@ export const TransitionRecordSchema = z.object({
 })
 export type TransitionRecord = z.infer<typeof TransitionRecordSchema>
 
-/*
- * One chain journal event (DESIGN.md §14) — the durable evidence of a chain
- * turn. `event` is the @smthrs/chain Event as plain JSON: stored opaque here
- * because state schemas stay runtime-free, and schema-validated by the chain
- * journal layer on read. `seq` orders events within one lineage. This
- * collection is the app-layer stand-in for the Smithers engine journal; when the
- * engine mounts it becomes a sync-fed projection and readers do not change.
- */
-export const ChainEventRecordSchema = z.object({
-  id: z.string(),
-  lineageId: z.string(),
-  seq: z.number().int().nonnegative(),
-  event: z.unknown(),
-  createdAt: z.number()
-})
-export type ChainEventRecord = z.infer<typeof ChainEventRecordSchema>
-
-/** A permanent replay refusal after account data was scrubbed; no event content. */
-export const RetiredChainLineageSchema = z.object({
-  id: z.string().regex(/^[a-f0-9]{64}$/)
-})
-export type RetiredChainLineage = z.infer<typeof RetiredChainLineageSchema>
-
 export const WorldDocumentSchema = z.object({
   id: z.string(),
   path: z.string(),
@@ -1391,29 +1368,6 @@ export type AppTransition =
     name: string
     arguments: string
     result: string
-  }
-  | {
-    /* A failed background must remain dormant even if its journal is unreadable. */
-    type: "chain.lineage.retired"
-    actor: "system"
-    lineageId: string
-  }
-  | {
-    /* One chain journal event appended; seq is per lineage (DESIGN.md §14). */
-    type: "chain.event.appended"
-    actor: "smithers" | "system"
-    lineageId: string
-    seq: number
-    event: unknown
-  }
-  | {
-    /*
-     * A parked chain lineage resumes after an approval decision: the
-     * session re-enters responding for the same turn id (DESIGN.md §14).
-     */
-    type: "chain.turn.resumed"
-    actor: "system"
-    turnId: string
   }
   | {
     type: "composer.control.changed"

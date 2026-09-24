@@ -159,43 +159,16 @@ test("a newer physical OPFS store refuses the normal app boot without replacing 
     .toEqual([{ value: "2147483647" }])
 })
 
-test("verified OPFS application authority repairs malformed chain caches without displaying their private bytes", async ({ page: appPage }) => {
-  await trackDatabaseWorker(appPage)
-  await appPage.goto("/")
-  await expect(appPage.getByTestId("composer-input")).toBeAttached()
-  expect(await appPage.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
-  const page = await closeAppForPhysicalMutation(appPage)
-  const before = await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-event-heads'", true) as Array<{ value: string }>
-  await queryDatabase(
-    page,
-    "INSERT INTO smithers_collection_rows VALUES ('app-chain-events', 's:private-fixture', 'v1', 'private raw recovery fixture'), ('app-retired-chain-lineages', 's:private-fixture', 'v1', 'private raw retirement fixture')",
-    true
-  )
-  expect(await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE row_key = 's:private-fixture' ORDER BY collection_id", true))
-    .toEqual([{ value: "private raw recovery fixture" }, { value: "private raw retirement fixture" }])
-  await page.goto("/")
-  await expect(page.getByTestId("composer-input")).toBeAttached()
-  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toHaveCount(0)
-  await expect(page.locator("body")).not.toContainText("private raw recovery fixture")
-  await expect(page.locator("body")).not.toContainText("private raw retirement fixture")
-  expect(await queryDatabase(page, "SELECT collection_id FROM smithers_collection_rows WHERE collection_id IN ('app-chain-events', 'app-retired-chain-lineages')"))
-    .toEqual([])
-  const after = await queryDatabase(page, "SELECT value FROM smithers_collection_rows WHERE collection_id = 'app-event-heads'") as Array<{ value: string }>
-  expect(JSON.parse(after[0]!.value).streamId).toBe(JSON.parse(before[0]!.value).streamId)
-  expect(await queryDatabase(page, "SELECT value FROM smithers_row_quarantine WHERE row_key = 's:private-fixture' ORDER BY collection_id"))
-    .toEqual([{ value: "private raw recovery fixture" }, { value: "private raw retirement fixture" }])
-})
-
 for (const authority of ["corrupt", "missing"] as const) test(`${authority} OPFS application authority preserves damaged execution evidence through refused boot`, async ({ page: appPage }) => {
   await trackDatabaseWorker(appPage)
   await appPage.goto("/")
   await expect(appPage.getByTestId("composer-input")).toBeAttached()
   expect(await appPage.evaluate(() => localStorage.getItem("smithers-mvp.persistenceBackend"))).toBe("opfs")
   const page = await closeAppForPhysicalMutation(appPage)
-  await queryDatabase(page, "INSERT INTO smithers_collection_rows VALUES ('app-chain-events', 's:private-fixture', 'v1', 'private raw recovery fixture')", true)
+  await queryDatabase(page, "INSERT INTO smithers_collection_rows VALUES ('app-events', 's:private-fixture', 'v1', 'private raw recovery fixture')", true)
   await queryDatabase(page, authority === "corrupt"
     ? "UPDATE smithers_collection_rows SET value = 'private invalid authority fixture' WHERE collection_id = 'app-event-heads'"
-    : "DELETE FROM smithers_collection_rows WHERE collection_id IN ('app-events', 'app-event-heads', 'app-event-checkpoints', 'app-event-retirements')", true)
+    : "DELETE FROM smithers_collection_rows WHERE collection_id IN ('app-event-heads', 'app-event-checkpoints', 'app-event-retirements')", true)
   const original = await queryDatabase(page, "SELECT * FROM smithers_collection_rows ORDER BY collection_id, row_key", true)
   expect(JSON.stringify(original)).toContain("private raw recovery fixture")
   if (authority === "corrupt") expect(JSON.stringify(original)).toContain("private invalid authority fixture")
@@ -211,16 +184,15 @@ for (const authority of ["corrupt", "missing"] as const) test(`${authority} OPFS
   await expect(page.locator("body")).not.toContainText("private raw recovery fixture")
 })
 
-for (const authority of ["verified", "corrupt", "missing"] as const) test(`${authority} localStorage authority controls cache recovery without revealing private fixture bytes`, async ({ page }) => {
+for (const authority of ["corrupt", "missing"] as const) test(`${authority} localStorage authority refuses unreadable evidence without revealing private fixture bytes`, async ({ page }) => {
   await page.addInitScript(() => { localStorage.setItem("smithers-mvp.persistenceBackend", "localStorage") })
   await page.goto("/")
   await expect(page.getByTestId("composer-input")).toBeAttached()
   const original = await page.evaluate(authority => {
     const key = "smithers-mvp.store", envelope = JSON.parse(localStorage.getItem(key)!) as { version: number; entries: Record<string, string> }
-    envelope.entries["smithers-mvp.app-chain-events"] = "private local execution fixture"
-    envelope.entries["smithers-mvp.app-retired-chain-lineages"] = "private local retirement fixture"
+    envelope.entries["smithers-mvp.app-events"] = "private local execution fixture"
     if (authority === "corrupt") envelope.entries["smithers-mvp.app-event-heads"] = "private local authority fixture"
-    if (authority === "missing") for (const id of ["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
+    if (authority === "missing") for (const id of ["app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
       delete envelope.entries[`smithers-mvp.${id}`]
     }
     const raw = JSON.stringify(envelope)
@@ -228,21 +200,12 @@ for (const authority of ["verified", "corrupt", "missing"] as const) test(`${aut
     return raw
   }, authority)
   await page.reload()
-  if (authority === "verified") {
-    await expect(page.getByTestId("composer-input")).toBeAttached()
-    await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toHaveCount(0)
-    const repaired = await page.evaluate(() => JSON.parse(localStorage.getItem("smithers-mvp.store")!) as { entries: Record<string, string> })
-    expect(repaired.entries["smithers-mvp.app-chain-events"]).toBe("{}")
-    expect(repaired.entries["smithers-mvp.app-retired-chain-lineages"]).toBe("{}")
-    const head = (raw: string) => Object.values(JSON.parse(raw) as Record<string, { data: { streamId: string } }>)[0]!.data.streamId
-    expect(head(repaired.entries["smithers-mvp.app-event-heads"]!)).toBe(head(JSON.parse(original).entries["smithers-mvp.app-event-heads"]))
-  } else {
-    await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
-    await expect(page.getByTestId("composer-input")).toHaveCount(0)
-    expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.store"))).toBe(original)
-    expect((await downloadRecovery(page)).localStorage).toContainEqual({ key: "smithers-mvp.store", value: original })
-  }
-  for (const fixture of ["private local execution fixture", "private local retirement fixture", "private local authority fixture"]) {
+
+  await expect(page.getByRole("heading", { name: "Smithers failed to start" })).toBeVisible()
+  await expect(page.getByTestId("composer-input")).toHaveCount(0)
+  expect(await page.evaluate(() => localStorage.getItem("smithers-mvp.store"))).toBe(original)
+  expect((await downloadRecovery(page)).localStorage).toContainEqual({ key: "smithers-mvp.store", value: original })
+  for (const fixture of ["private local execution fixture", "private local authority fixture"]) {
     await expect(page.locator("body")).not.toContainText(fixture)
   }
 })

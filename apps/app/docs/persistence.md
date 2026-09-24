@@ -65,8 +65,7 @@ row, and defers when a prepared edit still requires the old prefix. Startup
 schedules the same maintenance for an existing long suffix; failures preserve
 the authoritative suffix and retry after a later committed write. Signout, account replacement and app
 reset rotate the journal to a checkpoint of permitted state, erase old live
-event bytes and retain retired identities. Chain execution tombstones survive
-reset, so erased execution bytes cannot become a new runnable lineage.
+event bytes and retain retired identities.
 
 Direct collection writes are refused. Draft keystrokes can replace one
 provisional event before its commit starts; after acceptance that fact is
@@ -501,8 +500,7 @@ envelope serializer. The complete staged/live bytes remain identical to
 `JSON.stringify({ version, entries })`, including numeric-looking keys and
 Unicode escaping. Only the current string/encoding per key is retained; removed
 keys are evicted. Every accepted transition still commits its full envelope.
-Projected chain caches use the verified-authority recovery exception described
-below; the four application-journal collections remain strict.
+The four application-journal collections remain strict.
 
 Legacy per-collection keys (or a historical version-zero envelope) are
 migrated through the same schema registry. Every known collection is also
@@ -679,26 +677,10 @@ download callback. Pending Blob URLs are revoked on same-document retirement
 and cross-document storage events. The browser's recovery path refuses if it
 cannot read the durable privacy fence.
 
-Boot validates the complete stored candidate before repairing chain-event or
-lineage-retirement materializations. Those two collections remain strict unless
-an independent proof finds exactly one application head and checkpoint, rejects
-a retired current stream, and verifies the checkpoint digest, complete event
-suffix, projection hashes and final head through `replayAppEvents`. The four
-application journal collections never opt into generic row recovery. Missing,
-malformed, future, inconsistent or incomplete authority refuses opening before
-cache repair; a legacy installation without a verified baseline cannot discard
-execution evidence or invent that baseline from damaged rows.
-
-SQLite performs this proof and cache quarantine/removal inside the same
-`BEGIN IMMEDIATE` transaction. The localStorage adapter verifies its captured
-source and rechecks all observed bytes immediately before synchronous repair;
-the production AppStore holds its origin writer lease across both adapter open
-and boot. Existing raw/quarantine copies remain governed by privacy retirement.
-AppStore then independently replays the journal and atomically reconstructs
-the projected caches before exposing the store. An interruption between adapter
-repair and AppStore reconstruction leaves the authority intact for the next
-boot. Unreadable physical row metadata and decoder exceptions still refuse;
-the recovery permission applies to explicitly rejected cache values/keys only.
+Boot validates execution authority before repairing projected rows. Missing,
+malformed, future, inconsistent or incomplete authority refuses opening with
+its source preserved. AppStore verifies the journal and reconstructs projections
+before exposing the store.
 
 This is logical erasure of app-addressable data, not forensic disk erasure.
 SQLite free pages/WAL remnants, browser internals, OS snapshots and backups are
@@ -824,26 +806,6 @@ diagnostic limit therefore does not bound the canonical event history;
 verified checkpoints and event compaction handle that history separately.
 The 64 MiB load budget is an admission ceiling, not a steady-state size target.
 
-`chainEvents` uses a 64 MiB retention target measured as UTF-8 stored key/value
-bytes. The pure projector retires whole lineages, oldest last activity first,
-and writes their retirement tombstones in the same app event transaction.
-`CollectionJournal.ts` refuses retired identities so they cannot replay as new
-work. The lineage being appended to always keeps its complete prefix, even if
-it alone exceeds the target; the bounded loader will then refuse a later boot.
-Other lineages can be retired regardless of whether they are terminal, so a
-subsequent resume of an evicted run explicitly refuses instead of repeating its
-effects. This is retention, not a guarantee that every old run remains resumable.
-
-The byte budget is sealed in each new event as `journalBudgetBytes`; replay
-uses that recorded input. Historical events without the field keep their
-original non-compacting semantics. Changing a host's current budget never
-reinterprets accepted events. App event compaction separately writes a verified
-checkpoint covering both surviving chain rows and retirement tombstones before
-removing its covered application event suffix. Clearing/archiving a chat still
-does not delete execution evidence.
-
-Drafts, settings, notes, the Wiki and every other entity collection are
-untouched by this bound.
 
 Account sign-out, expiry and replacement scrub private journal contents,
 transcript cards and snapshots, composer drafts, deferred commands,
@@ -859,30 +821,6 @@ publishes the new identity. Missing ownership on a legacy unavailable row is
 unknown, so the next definitive answer scrubs conservatively. Fresh anonymous
 sessions retain deferred sign-in intent until their first login.
 
-The same transaction now inserts permanent SHA-256 lineage-ID tombstones in
-`app-retired-chain-lineages`. Those IDs cannot be resumed or reused, including
-after reload or another sign-out; a new account needs new lineage IDs. The
-tombstone contains no goal, script, call data, account name or raw lineage label.
-It is a replay-safety key, not encryption/anonymization of a guessable label.
-Schema version 11 adds this collection; older compatible rows are preserved,
-and schema-aware older builds must refuse the newer store rather than ignore
-retirements. Do not downgrade through a build that resets unknown schemas.
-
-There is no ordinary chain-journal garbage collector in 1.0. A future archive operation
-must retain replay checkpoints/results and non-reusable lineage tombstones
-before removing events; a global row/age cap is not such a protocol. Until
-then journals consume storage. Quota/write failures reject appends rather than
-discarding old evidence. Missing prefixes, sequence gaps and duplicate
-positions fail journal reads/appends; data already completely lost by an old
-build cannot be reconstructed or distinguished from a new lineage here.
-
-CollectionJournal honors expected-position appends and shares a commit lock
-among adapters over one AppStore. Reads wait for its pending journal writes to
-commit or roll back. A started persistence commit is not cancellable, so its
-lock survives caller interruption until the receipt settles. Independent
-AppStores/tabs still need single-writer ownership of each lineage; the adapter
-does not claim a cross-tab/database lease or exactly-once external effects.
-
 ## Verification
 
 - `SqliteRowStorage.test.ts`: normalized rows, atomic commit/rollback,
@@ -892,9 +830,6 @@ does not claim a cross-tab/database lease or exactly-once external effects.
   stale optimistic state rejection, independent overlapping SQLite commits,
   direct collection writes, and query metadata during pending persistence.
 - `AppStore.test.ts` and controller suites: reducer projections and retention.
-- `AppStore.cacheRecovery.test.ts`: complete authority before chain-cache repair,
-  missing/corrupt/retired/future authority refusal, legacy import, interrupted
-  reconstruction, local source replacement and real SQLite writer exclusion.
 - `e2e/playwright/frames.spec.ts`: durable frame URL/history/reload behavior.
 - `StorageRecovery.test.ts`, `BrowserStorageRecovery.test.ts`, and
   `RecoveryIntegration.test.ts`: raw capture, host cleanup, actor refusal, and

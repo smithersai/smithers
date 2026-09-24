@@ -1,7 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db"
 import { Sparkles } from "lucide-react"
 import { useMemo, useState } from "react"
-import { foldLineages } from "./chain/DebugFolds"
 import { useController } from "./ControllerContext"
 import { SurfaceHeader } from "./SurfaceChrome"
 
@@ -37,7 +36,6 @@ function CollectionDump({ name, collection }: { readonly name: string; readonly 
 export function DevtoolsPanel() {
   const controller = useController()
   const { data: toolCallRows } = useLiveQuery(controller.store.collections.toolCalls)
-  const { data: chainEventRows } = useLiveQuery(controller.store.collections.chainEvents)
   const { data: transitionRows } = useLiveQuery(controller.store.collections.transitions)
   const toolCalls = useMemo(
     () => [...toolCallRows].sort((left, right) => left.createdAt - right.createdAt).slice(-30),
@@ -46,23 +44,6 @@ export function DevtoolsPanel() {
   const identity = controller.store.collections.identitySessions.get("identity")
   const billing = controller.store.collections.billingAccounts.get("billing")
   const registryState = controller.commands.state()
-  /*
-   * The journal scrubber (§14 debug mode): an empty cap shows the live fold;
-   * a number replays the fold to that offset — read-only time travel, honest
-   * by construction because the fold is pure over the recorded prefix.
-   */
-  const [seqCap, setSeqCap] = useState("")
-  const cap = seqCap.trim() === "" ? undefined : Number(seqCap)
-  /*
-   * The transitions live query below re-renders this panel on every dispatch
-   * — every streamed token. The fold is the panel's one expensive read, so it
-   * is keyed on the chainEvents query's own array: it replays only when the
-   * journal itself grows or the scrubber moves, not once per token.
-   */
-  const lineages = useMemo(
-    () => foldLineages([...chainEventRows], cap !== undefined && Number.isFinite(cap) ? cap : undefined),
-    [chainEventRows, cap]
-  )
   const transitions = useMemo(
     () => [...transitionRows].sort((left, right) => right.revision - left.revision).slice(0, 100),
     [transitionRows]
@@ -80,71 +61,7 @@ export function DevtoolsPanel() {
         onClose={() => controller.runCommand("admin.devtools")}
       />
       <div className="devtools-sections">
-        <section className="devtools-section" aria-label="Chain x-ray">
-          <h3>Chain</h3>
-          {
-            /* The scrubber stays mounted even when the cap filters every
-					    event out; otherwise the only control that can clear the cap
-					    disappears behind a false empty state. */
-          }
-          <label className="devtools-scrubber">
-            replay to seq{" "}
-            <input
-              value={seqCap}
-              onChange={(event) => setSeqCap(event.target.value)}
-              placeholder="live"
-              inputMode="numeric"
-            />
-          </label>
-          {lineages.length === 0 ? <p className="devtools-empty">No chain turns yet.</p> : (
-            <>
-              <ul className="devtools-chain">
-                {lineages.map((lineage) => (
-                  <li key={lineage.lineageId}>
-                    <code>{lineage.lineageId}</code>
-                    {lineage.goal === undefined ? null : <span>— {lineage.goal}</span>}
-                    <span>· {lineage.seqCount} events</span>
-                    {Object.keys(lineage.children).length === 0 ?
-                      null :
-                      <span>· children: {Object.keys(lineage.children).join(", ")}</span>}
-                    <ul>
-                      {lineage.links.map((link) => (
-                        <li key={link.link}>
-                          <details>
-                            <summary>
-                              link {link.link} · {link.calls.length} calls
-                              {link.rejections.length > 0 ? ` · ${link.rejections.length} rejected` : ""}
-                              {link.outcome === undefined ? "" : ` · ${link.outcome}`}
-                            </summary>
-                            {link.script === undefined ? null : <pre className="devtools-json">{link.script}</pre>}
-                            {link.authorContexts.map((context, index) => (
-                              <pre key={index} className="devtools-json">
-																{`author context:\n${context.join("\n")}`}
-                              </pre>
-                            ))}
-                            {link.calls.map((call) => (
-                              <pre key={call.seq} className="devtools-json">
-																{`#${call.ordinal} ${call.name}\n→ ${JSON.stringify(call.payload)}\n← ${JSON.stringify(call.result)}`}
-                              </pre>
-                            ))}
-                            {link.rejections.map((rejection) => (
-                              <pre key={rejection.seq} className="devtools-json">
-																{`[${rejection.kind}] ${rejection.message}`}
-                              </pre>
-                            ))}
-                            {link.steering.length === 0 ?
-                              null :
-                              <pre className="devtools-json">{`steering:\n${link.steering.join("\n")}`}</pre>}
-                          </details>
-                        </li>
-                      ))}
-                    </ul>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </section>
+
         <section className="devtools-section" aria-label="Store collections">
           <h3>Store · {controller.store.persistenceMode}</h3>
           <ul className="devtools-transitions">

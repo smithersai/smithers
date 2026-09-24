@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite"
 import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
 import { openSqliteRowStorage, ROW_TABLE_NAME } from "../chain/SqliteRowStorage"
 import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
-import type { ChainEventRecord, ToolCallRecord, TransitionRecord } from "./AppState"
+import type {  ToolCallRecord, TransitionRecord } from "./AppState"
 import { createAppStore, MAX_TOOL_CALL_RECORDS, MAX_TRANSITION_RECORDS } from "./AppStore"
 import { DRAFT_RECOVERY_STORAGE_KEY, readDraftRecovery, writeDraftRecovery } from "./DraftRecovery"
 import { memoryStorage, writeLegacyCollection } from "./TestFixtures"
@@ -434,23 +434,5 @@ describe("retention bounds", () => {
     expect(remaining.length).toBe(MAX_TOOL_CALL_RECORDS)
     expect(remaining.some((record) => record.id === "toolcall-seed-0")).toBe(false)
     expect(remaining.some((record) => record.id === `toolcall-seed-${MAX_TOOL_CALL_RECORDS + 4}`)).toBe(true)
-  })
-
-  test("unrelated transitions never trim authoritative chain-event records", async () => {
-    const storage = memoryStorage()
-    const seeded: ChainEventRecord[] = Array.from({ length: 1_005 }, (_, index) => ({
-      id: `chain-seed-${index}`,
-      lineageId: "lineage",
-      seq: index,
-      event: { kind: "tick" },
-      createdAt: index + 1
-    }))
-    writeLegacyCollection(storage, "app-chain-events", seeded)
-    const store = await createAppStore({ kind: "localStorage", storage })
-    await store.dispatch({ type: "composer.changed", actor: "user", draft: "x" }).isPersisted.promise
-    const remaining = [...store.collections.chainEvents.values()]
-    expect(remaining.length).toBe(seeded.length)
-    expect(remaining.some((record) => record.id === "chain-seed-0")).toBe(true)
-    expect(remaining.some((record) => record.id === "chain-seed-1004")).toBe(true)
   })
 })

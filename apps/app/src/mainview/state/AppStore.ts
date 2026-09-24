@@ -26,7 +26,7 @@ import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
 import { openSqliteRowStorage } from "../chain/SqliteRowStorage"
 import type { EnumerableRecoveryStorage,RecoveryTable,StorageRecoverySnapshot } from "../chain/StorageRecovery"
 import { StorageRecoveryError,readSqliteRecovery } from "../chain/StorageRecovery"
-import type { TransactionalStorage,ValidatedStorageRows } from "../chain/TransactionalStorage"
+import type { TransactionalStorage } from "../chain/TransactionalStorage"
 import { ENVELOPE_STORAGE_KEY,STAGED_ENVELOPE_STORAGE_KEY,acquireLocalStorageWriter,matchesStoredStringId,openTransactionalStorage,parseStorageEnvelope } from "../chain/TransactionalStorage"
 import type { EraseRemoteTurn } from "../runtime/TurnErasure"
 import {
@@ -48,7 +48,7 @@ type AppStreamState
 } from "./AppEventStream"
 import {
 APP_PROJECTION_COLLECTION_NAMES,
-MAX_CHAIN_EVENT_BYTES,
+
 TRACE_MESSAGE_PREFIX,appProjectionKey,
 appTransitionErasesPrivateState,
 seedAppProjection,
@@ -70,7 +70,6 @@ BillingAccountSchema,
 BranchSchema,
 CardHistorySchema,
 CardSchema,
-ChainEventRecordSchema,
 ChangeRowSchema,
 CloudRepositorySchema,
 CloudSessionRowSchema,
@@ -90,7 +89,6 @@ RecommendationSchema,
 RepoSchema,
 RepoTreeRowSchema,
 RepositoryFlowsRowSchema,
-RetiredChainLineageSchema,
 SeatAssignmentSchema,
 SessionSchema,
 StarredTargetSchema,
@@ -137,7 +135,7 @@ const SESSION_ID = "main"
  * the newest records: the debuggable tail is the valuable end of a log.
  */
 export {
-MAX_CHAIN_EVENT_BYTES,MAX_TOOL_CALL_RECORDS,MAX_TRANSITION_RECORDS,THEME_PICKER_CARD_ID,
+MAX_TOOL_CALL_RECORDS,MAX_TRANSITION_RECORDS,THEME_PICKER_CARD_ID,
 TRACE_MESSAGE_PREFIX,VERBOSE_OFF_TEXT,VERBOSE_ON_TEXT,verboseTrace
 } from "./AppProjection"
 
@@ -797,8 +795,7 @@ const persistedCollection = <TSchema extends StandardSchemaV1>(
   id: string,
   schema: TSchema,
   getKey: (row: InferSchemaOutput<TSchema>) => string,
-  recovery: { readonly invalidRows?: "refuse"; readonly validateKey?: typeof matchesStoredStringId;
-    readonly verifyRecoveryAuthority?: (rows: ValidatedStorageRows) => boolean } = {}
+  recovery: { readonly invalidRows?: "refuse"; readonly validateKey?: typeof matchesStoredStringId } = {}
 ) => ({
   id,
   schema,
@@ -812,20 +809,6 @@ const persistedCollection = <TSchema extends StandardSchemaV1>(
 
 const byId = (row: { readonly id: string }): string => row.id
 const strictJournalRows = { invalidRows: "refuse" as const, validateKey: matchesStoredStringId }
-/** The old chain journals became projections only after an actual application
- * baseline was committed. Presence alone is never permission to discard them.
- * Adapters invoke this pure proof before repair under their snapshot/lease. */
-const verifyAppRecoveryAuthority = (rows: ValidatedStorageRows): boolean => {
-  const heads = rows.get("app-event-heads") ?? []
-  const checkpoints = rows.get("app-event-checkpoints") ?? []
-  if (heads.length !== 1 || checkpoints.length !== 1) return false
-  const head = AppEventHeadSchema.parse(heads[0])
-  const retirements = (rows.get("app-event-retirements") ?? []).map(row => AppEventRetirementSchema.parse(row))
-  if (retirements.some(row => row.id === retiredAppStreamKey(head.streamId))) throw new AppEventIntegrityError("scope")
-  replayAppEvents(checkpoints[0], rows.get("app-events") ?? [], head)
-  return true
-}
-const projectedJournalRows = { ...strictJournalRows, verifyRecoveryAuthority: verifyAppRecoveryAuthority }
 const refuseDirectMutation = async (): Promise<void> => {
   throw new Error("Application state changes must enter through the event dispatcher.")
 }
@@ -857,8 +840,6 @@ const COLLECTION_DEFINITIONS = {
   billingAccounts: persistedCollection("app-billing-accounts", BillingAccountSchema, byId),
   toasts: persistedCollection("app-toasts", ToastSchema, byId),
   toolCalls: persistedCollection("app-tool-calls", ToolCallRecordSchema, byId),
-  chainEvents: persistedCollection("app-chain-events", ChainEventRecordSchema, byId, projectedJournalRows),
-  retiredChainLineages: persistedCollection("app-retired-chain-lineages", RetiredChainLineageSchema, byId, projectedJournalRows),
   tabs: persistedCollection("app-tabs", TabSchema, byId),
   harnesses: persistedCollection("app-harnesses", HarnessSchema, byId),
   agents: persistedCollection("app-agents", AgentRoleSchema, byId),
@@ -970,19 +951,12 @@ const nextOrdinal = (collections: Pick<StoredCollections, "messages" | "cards">)
 export interface AppStoreOptions {
   readonly eraseTurn?: EraseRemoteTurn
   readonly seedWiki?: boolean | Promise<boolean>
-  /**
-   * Bytes the run-event journal may occupy before compaction evicts its oldest
-   * lineages (MAX_CHAIN_EVENT_BYTES). Tests pass a small one; the product uses
-   * the single documented budget.
-   */
-  readonly journalBudgetBytes?: number
 }
 
 export const createAppStore = async (
   persistence?: PersistenceBackend | ResolvedPersistence,
   options: AppStoreOptions = {}
 ): Promise<AppStore> => {
-  if (options.journalBudgetBytes !== undefined && (!Number.isSafeInteger(options.journalBudgetBytes) || options.journalBudgetBytes <= 0)) throw new Error("The journal budget must be a positive byte count.")
   // One origin owner covers BOTH backends, boot/migration, retirement and writes.
   // Explicit isolated injected hosts provide their own exclusion contract.
   const writer = persistence === undefined ? await acquireLocalStorageWriter(undefined, { steal: consumeWriterTakeover() }) : undefined
@@ -1512,7 +1486,7 @@ const initializeAppStore = async (
     if (transition.type === "composer.changed" && pendingDraft?.transaction.state === "pending") {
       const pending = pendingDraft
       const next = appendAppEvent(pending.previous, { kind: "transition", transition }, {
-        eventId: pending.eventId, createdAt: pending.createdAt, persistenceMode: resolved.mode, journalBudgetBytes: options.journalBudgetBytes ?? MAX_CHAIN_EVENT_BYTES
+        eventId: pending.eventId, createdAt: pending.createdAt, persistenceMode: resolved.mode
       })
       if (next === undefined) return pending.transaction
       if (!recoveringInputs && transition.actor === "user") pending.recoveryRaw = writeDraftRecovery(draftRecoveryStorage, next.head.revision, transition.draft,
@@ -1527,7 +1501,7 @@ const initializeAppStore = async (
     const previous = optimistic
     const createdAt = Date.now()
     const eventId = crypto.randomUUID()
-    const next = appendAppEvent(previous, { kind: "transition", transition }, { eventId, createdAt, persistenceMode: resolved.mode, journalBudgetBytes: options.journalBudgetBytes ?? MAX_CHAIN_EVENT_BYTES })
+    const next = appendAppEvent(previous, { kind: "transition", transition }, { eventId, createdAt, persistenceMode: resolved.mode })
     if (next === undefined) {
       const refused = createTransaction({ mutationFn: async () => {} })
       refused.mutate(() => {})

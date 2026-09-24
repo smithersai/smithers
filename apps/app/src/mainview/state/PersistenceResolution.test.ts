@@ -291,7 +291,7 @@ describe("the browser's persistence resolver", () => {
 
   for (const recorded of [undefined, "opfs"] as const) {
     for (
-      const corrupt of ["future-schema", "invalid-schema", "import-marker", "retired-lineage", "chain-event"] as const
+      const corrupt of ["future-schema", "invalid-schema", "import-marker", "event-head", "event"] as const
     ) {
       test(`${recorded ?? "unstamped"} / ${corrupt}: an opened database refuses unsafe state without selecting a new store`, async () => {
         const record = memory()
@@ -319,7 +319,7 @@ describe("the browser's persistence resolver", () => {
             database.run(`UPDATE ${METADATA_TABLE_NAME} SET value = '0' WHERE key = 'legacy-import-complete'`)
           } else {
             database.query(`INSERT INTO ${ROW_TABLE_NAME} VALUES (?, ?, ?, ?)`).run(
-              corrupt === "retired-lineage" ? "app-retired-chain-lineages" : "app-chain-events",
+              corrupt === "event-head" ? "app-event-heads" : "app-events",
               "s:private",
               "v1",
               "private original"

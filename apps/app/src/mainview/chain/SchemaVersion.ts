@@ -115,8 +115,6 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
   "app-billing-accounts",
   "app-toasts",
   "app-tool-calls",
-  "app-chain-events",
-  "app-retired-chain-lineages",
   "app-tabs",
   "app-harnesses",
   /* Agents as data (custom-agents.md): the mirror of `GET /api/agents`. */
@@ -143,6 +141,8 @@ export const PERSISTED_COLLECTION_IDS: ReadonlyArray<string> = [
    * checkout changes on disk, so nothing survives a relaunch). Retain its
    * historical cleanup key so a stray persisted tree is cleared on reset.
    */
+  "app-chain-events",
+  "app-retired-chain-lineages",
   "app-repo-tree"
 ]
 

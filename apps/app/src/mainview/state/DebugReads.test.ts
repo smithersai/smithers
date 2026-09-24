@@ -56,7 +56,6 @@ describe("the debug reads render for the human", () => {
   test.each([
     ["debug.snapshot", "App state snapshot"],
     ["debug.events", "Transition journal tail"],
-    ["debug.chain", "Chain journal x-ray"],
     ["debug.net", "Network tap"]
   ])("/%s appends its payload to the transcript", async (flow, title) => {
     const store = await adminStore()

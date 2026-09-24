@@ -5,8 +5,6 @@ import { StatusRollupSchema } from "@smthrs/rpc/Health"
 import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import { z } from "zod"
 import { approvalQuestionKey } from "../cards/ApprovalQuestion"
-import { retiredLineageKey } from "../chain/LineageRetirement"
-import { PERSISTED_COLLECTION_BUDGET_BYTES } from "../chain/PersistenceBudget"
 import { framePath } from "../runtime/FrameHistory"
 import { accountOwnerOf } from "./AccountOwner"
 import { sameApproval } from "./ApprovalReference"
@@ -39,7 +37,6 @@ BranchSchema,
 CardHistorySchema,
 CardPatchSchema,
 CardSchema,
-ChainEventRecordSchema,
 ChangeRowSchema,
 CloudRepositorySchema,
 CloudSessionRowSchema,
@@ -60,7 +57,6 @@ RecommendationSchema,
 RepoSchema,
 RepoTreeRowSchema,
 RepositoryFlowsRowSchema,
-RetiredChainLineageSchema,
 SeatAssignmentSchema,
 SessionSchema,
 StarredTargetSchema,
@@ -140,8 +136,6 @@ export const APP_PROJECTION_SCHEMAS = {
   billingAccounts: BillingAccountSchema,
   toasts: ToastSchema,
   toolCalls: ToolCallRecordSchema,
-  chainEvents: ChainEventRecordSchema,
-  retiredChainLineages: RetiredChainLineageSchema,
   tabs: TabSchema,
   harnesses: HarnessSchema,
   agents: AgentRoleSchema,
@@ -222,9 +216,6 @@ export const APP_TRANSITION_TYPES = {
   "approvals.inbox.settled": true,
   "command.ran": true,
   "toolcall.recorded": true,
-  "chain.lineage.retired": true,
-  "chain.event.appended": true,
-  "chain.turn.resumed": true,
   "hint.dismissed": true,
   "first-run.dismissed": true,
   "signup.changed": true,
@@ -329,7 +320,6 @@ export interface AppProjectionEventContext {
   readonly createdAt: number
   readonly persistenceMode: AppProjectionPersistenceMode
   /** Recorded event input; absent on historical events, which never compacted. */
-  readonly journalBudgetBytes?: number | undefined
 }
 export interface AppProjectionSeedContext {
   readonly createdAt: number
@@ -746,13 +736,6 @@ const rewriteModel = (collections: ProjectionCollections, existing: StoredModel,
  * is not undoable.
  */
 const forgetAccountState = (collections: ProjectionCollections, createdAt: number): void => {
-  // Private journal contents leave with the account, but their identities
-  // cannot become executable again. Refusal and deletion are one transaction.
-  const lineages = new Set([...collections.chainEvents.values()].map((event) => event.lineageId))
-  for (const lineage of lineages) {
-    const id = retiredLineageKey(lineage)
-    if (!collections.retiredChainLineages.has(id)) collections.retiredChainLineages.insert({ id })
-  }
   for (
     const collection of [
       collections.messages,
@@ -769,7 +752,6 @@ const forgetAccountState = (collections: ProjectionCollections, createdAt: numbe
       collections.approvalRequests,
       collections.toasts,
       collections.toolCalls,
-      collections.chainEvents,
       collections.transitions,
       collections.recommendations,
       collections.repositories,
@@ -1099,41 +1081,6 @@ export const seedAppProjection = (previous: AppProjectionSnapshot, context: AppP
  * A refused transition returns the original snapshot; successful transitions
  * include their legacy bounded diagnostic row as a derived projection.
  */
-/** Half the load budget: the checkpoint carries this journal and every other
- * projection in one row, and each event records the budget it retained under. */
-export const MAX_CHAIN_EVENT_BYTES = PERSISTED_COLLECTION_BUDGET_BYTES / 2
-
-/** The same UTF-8 key/value bytes admitted by the normalized row loader. */
-const chainEventBytes = (record: AppProjectionRow<"chainEvents">): number =>
-  new TextEncoder().encode(`s:${record.id}`).byteLength + new TextEncoder().encode(JSON.stringify(record)).byteLength
-
-const compactChainEvents = (collections: ProjectionCollections, appendedLineageId: string, budget: number): void => {
-  let total = 0
-  const lineages = new Map<string, { newest: number; oldest: number; bytes: number; ids: string[] }>()
-  for (const record of collections.chainEvents.values()) {
-    const size = chainEventBytes(record)
-    total += size
-    const entry = lineages.get(record.lineageId) ?? { newest: record.createdAt, oldest: record.createdAt, bytes: 0, ids: [] }
-    entry.newest = Math.max(entry.newest, record.createdAt)
-    entry.oldest = Math.min(entry.oldest, record.createdAt)
-    entry.bytes += size
-    entry.ids.push(record.id)
-    lineages.set(record.lineageId, entry)
-  }
-  if (total <= budget) return
-  const evictable = [...lineages].filter(([lineageId]) => lineageId !== appendedLineageId).sort((left, right) =>
-    left[1].newest - right[1].newest || left[1].oldest - right[1].oldest || left[0].localeCompare(right[0]))
-  for (const [lineageId, entry] of evictable) {
-    if (total <= budget) break
-    collections.chainEvents.delete(entry.ids)
-    const id = retiredLineageKey(lineageId)
-    if (!collections.retiredChainLineages.has(id)) collections.retiredChainLineages.insert({ id })
-    total -= entry.bytes
-  }
-  // A live lineage can exceed the budget. Its intact prefix is required; the
-  // bounded loader will refuse it rather than silently discard its evidence.
-}
-
 export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppProjectionEventContext): AppProjectionSnapshot => {
   let { transition } = context
   const { revision, createdAt, persistenceMode } = context
@@ -1605,13 +1552,8 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         }
 
         case "app.reset": {
-          // Removing execution history must not make an old lineage executable again.
-          for (const lineage of new Set([...collections.chainEvents.values()].map(event => event.lineageId))) {
-            const id = retiredLineageKey(lineage)
-            if (!collections.retiredChainLineages.has(id)) collections.retiredChainLineages.insert({ id })
-          }
           for (const name of APP_PROJECTION_COLLECTION_NAMES) {
-            if (name === "sessions" || name === "retiredChainLineages") continue
+            if (name === "sessions") continue
             const collection = collections[name]
             const keys = [...collection.keys()]
             if (keys.length > 0) collection.delete(keys)
@@ -1981,31 +1923,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           })
           break
         }
-
-        case "chain.lineage.retired": {
-          const id = retiredLineageKey(transition.lineageId)
-          if (!collections.retiredChainLineages.has(id)) collections.retiredChainLineages.insert({ id })
-          break
-        }
-
-        case "chain.event.appended":
-          if (collections.retiredChainLineages.has(retiredLineageKey(transition.lineageId))) return
-          collections.chainEvents.insert({
-            id: `chain-${transition.lineageId}-${transition.seq}`,
-            lineageId: transition.lineageId,
-            seq: transition.seq,
-            event: transition.event,
-            createdAt
-          })
-          break
-
-        case "chain.turn.resumed":
-          if (current.phase !== "idle") return
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.phase = "responding"
-            draft.turnId = transition.turnId
-          })
-          break
 
         case "hint.dismissed": {
           collections.sessions.update(SESSION_ID, draft => {
@@ -3639,12 +3556,6 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
         (record) => record.createdAt
       )
       if (staleToolCalls.length > 0) collections.toolCalls.delete(staleToolCalls)
-      // Whole lineages retire atomically with their tombstones. The budget is
-      // recorded in the event, so replay never depends on today's settings.
-      if (transition.type === "chain.event.appended" && context.journalBudgetBytes !== undefined) {
-        compactChainEvents(collections, transition.lineageId, context.journalBudgetBytes)
-      }
-
       applied = true
 
   }

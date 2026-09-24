@@ -3,7 +3,6 @@ import { browserWriteRefusal, lostActRefusal } from "../BrowserWriteFailure"
 import { decideFormFieldInput } from "./forms"
 import { reserveBrowserCommandGesture } from "../../flows/CommandGesture"
 import { digest } from "@smthrs/core/Digest"
-import { retiredLineageKey } from "../../chain/LineageRetirement"
 import type { CommandLifecycle, CommandRequest, PendingCommandInput } from "../../flows/CommandLifecycle"
 import { canonicalEventValue } from "../EventValue"
 import type { ControllerContext } from "./context"
@@ -45,9 +44,6 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
   accept: async (request, pendingFormInput) => {
     if (ctx.disposed || request.invocation?.signal?.aborted) return { refusal: "The command's controller or turn is closed.", persistenceFailed: true }
     const lineage = request.invocation?.lineage
-    if (lineage !== undefined && ctx.store.collections.retiredChainLineages.has(retiredLineageKey(lineage))) {
-      return { refusal: "This command belongs to retired execution history." }
-    }
     const epoch = ctx.accountEpoch
     const owner = ctx.accountOwner() ?? null
     if (!currentHttpCall(ctx, request.httpCall)) {

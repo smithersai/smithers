@@ -17,7 +17,7 @@ Neither event stores command arguments, form values, credentials, capability gra
 
 ## Identity and attribution
 
-Explicit user requests receive fresh IDs: pressing a command again is a new request, not an implicit retry. Chain calls use a digest over account owner, actor, durable lineage, the durable call-slot fields (chain, link, ordinal, replay key), and flow name. Live AbortSignals are excluded from identity and persistence. HTTP tool calls now supply both the active turn ID and native tool-call ID; their digest includes owner, actor, turn, call, and name. The HTTP path checks that the same turn is still responding before and after the acceptance receipt. Retired chain lineages cannot accept another call.
+Explicit user requests receive fresh IDs: pressing a command again is a new request, not an implicit retry. Chain calls use a digest over account owner, actor, durable lineage, the durable call-slot fields (chain, link, ordinal, replay key), and flow name. Live AbortSignals are excluded from identity and persistence. HTTP tool calls now supply both the active turn ID and native tool-call ID; their digest includes owner, actor, turn, call, and name. The HTTP path checks that the same turn is still responding before and after the acceptance receipt.
 
 A duplicate stable call is refused when its original row is accepted or has an ordinary settlement. An accepted duplicate explicitly reports an unknown outcome; a settled duplicate reports that a saved outcome exists. The boundary does not return invented cached output or repeat external work. The chain's own durable result replay remains its result authority.
 

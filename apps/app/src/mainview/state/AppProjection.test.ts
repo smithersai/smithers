@@ -71,7 +71,7 @@ describe("pure app event projection", () => {
   })
 
   test("owns exactly the domain roster and its stable keys", () => {
-    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(44)
+    expect(APP_PROJECTION_COLLECTION_NAMES).toHaveLength(42)
     expect(Object.keys(emptyAppProjection())).toEqual(Object.keys(APP_PROJECTION_SCHEMAS))
     expect(APP_PROJECTION_COLLECTION_NAMES).not.toContain("appEvents")
     expect(appProjectionKey("githubAppStatuses", { repo: "org/repo" })).toBe("org/repo")
@@ -236,13 +236,11 @@ describe("pure app event projection", () => {
     let state = apply(boot(), observed)
     state = apply(state, { type: "card.upsert", actor: "system", card: fileCard })
     state = apply(state, { type: "card.navigated", actor: "user", card: { ...fileCard, title: "Private second view" } })
-    state = apply(state, { type: "chain.event.appended", actor: "system", lineageId: "old-lineage", seq: 0, event: { type: "started" } })
     const old = state
     state = apply(state, { type: "identity.session.cleared", actor: "user" }, 900)
-    for (const name of ["cards", "messages", "cardHistories", "repositoryContexts", "repositoryNotifications", "chainEvents"] as const) {
+    for (const name of ["cards", "messages", "cardHistories", "repositoryContexts", "repositoryNotifications"] as const) {
       expect(state[name]).toEqual([])
     }
-    expect(state.retiredChainLineages).toHaveLength(1)
     expect(state.cloudSessions[0]!.updatedAt).toBe(900)
     expect(state.worldDocuments).toEqual(old.worldDocuments)
     expect(state.transitions).toHaveLength(1)
@@ -307,17 +305,6 @@ describe("pure app event projection", () => {
     expect(state.toasts[0]!.answeredAction).toBeUndefined()
   })
 
-  test("reset preserves lineage retirement evidence and refuses old execution events", () => {
-    let state = apply(boot(), { type: "chain.lineage.retired", actor: "system", lineageId: "already-retired" })
-    state = apply(state, { type: "chain.event.appended", actor: "system", lineageId: "existing", seq: 0, event: { type: "started" } })
-    expect(appTransitionErasesPrivateState(state, { type: "app.reset", actor: "user" })).toBe(true)
-    state = apply(state, { type: "app.reset", actor: "user" })
-    expect(state.retiredChainLineages).toHaveLength(2)
-    expect(state.chainEvents).toEqual([])
-    state = seedAppProjection(state, { createdAt: 900, theme: "light", seedWiki: false })
-    expect(apply(state, { type: "chain.event.appended", actor: "system", lineageId: "existing", seq: 1, event: { type: "again" } })).toBe(state)
-  })
-
   test("boot expires process-lifetime observations, while retained state and migration stay deterministic", () => {
     let state = apply(boot(), { type: "repo-tree.loaded", actor: "system", copyId: "local:/repo", path: "", entries: [], truncated: false })
     state = apply(state, { type: "repository-flows.loaded", actor: "system", repo: "org/repo", flows: [
@@ -347,12 +334,12 @@ describe("pure app event projection", () => {
   })
 
   test("bounded diagnostics retain the latest event revisions without dropping execution authority", () => {
-    let state = apply(boot(), { type: "chain.event.appended", actor: "system", lineageId: "retained", seq: 0, event: { type: "started" } })
+    let state = apply(boot(), { type: "card.upsert", actor: "system", card: fileCard })
     for (let index = 0; index < 505; index++) state = apply(state, { type: "composer.changed", actor: "user", draft: String(index) }, 1000 + index)
     expect(state.transitions).toHaveLength(500)
     expect(Math.min(...state.transitions.map(row => row.revision))).toBe(7)
     expect(Math.max(...state.transitions.map(row => row.revision))).toBe(506)
-    expect(state.chainEvents).toHaveLength(1)
+    expect(state.cards).toHaveLength(1)
     expect(state.sessions[0]!.draft).toBe("504")
   })
 

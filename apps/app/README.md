@@ -38,7 +38,7 @@ platform/network requirements.
 ## Code ownership
 
 - `src/mainview/`: chat, embedded surfaces, Flow registry, controller and store.
-- `src/mainview/chain/`: browser persistence, replay journal and recovery.
+- `src/mainview/chain/`: browser persistence and recovery.
 - `src/bun/`: native host, authenticated local server, repositories, PTYs and LSP.
 - `packages/rpc/src/`: shared `@smthrs/rpc` wire contracts.
 - `packages/smithers/`: the new Flow, Harness, Journal and related runtime packages.

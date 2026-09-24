@@ -24,7 +24,8 @@ export const APP_EVENT_FORMAT_VERSION = 1
  * AppStore.events.test.ts pins per field.
  */
 // v14 associates tool acts with their turn; v15 clears dismissed card navigation.
-export const APP_PROJECTOR_VERSION = 15
+// v16 removes the unused chain journal projections.
+export const APP_PROJECTOR_VERSION = 16
 
 const JsonSchema: z.ZodType<EventJson> = z.lazy(() => z.union([
   z.null(), z.boolean(), z.number().finite(), z.string(), z.array(JsonSchema), z.record(z.string(), JsonSchema)
@@ -45,7 +46,6 @@ export const AppEventRecordSchema = z.object({
   id: z.string().min(1), streamId: z.string().min(1), sequence: PositionSchema.positive(),
   kind: z.enum(["transition", "boot"]), type: z.string().min(1), actor: z.enum(["user", "smithers", "system"]),
   createdAt: z.number().finite(), revision: PositionSchema, persistenceMode: ModeSchema,
-  journalBudgetBytes: PositionSchema.positive().optional(),
   input: EncodedValueSchema,
   previousEventHash: HashSchema, previousStateHash: HashSchema, stateHash: HashSchema, hash: HashSchema
 }).strict()
@@ -75,7 +75,9 @@ const StoredProjectorVersion = z.number().int().positive().max(Number.MAX_SAFE_I
 })
 export const StoredAppEventHeadSchema = AppEventHeadSchema.extend({ projectorVersion: StoredProjectorVersion })
 export const StoredAppEventCheckpointSchema = AppEventCheckpointSchema.extend({ projectorVersion: StoredProjectorVersion })
-export const StoredAppEventRecordSchema = AppEventRecordSchema.extend({ projectorVersion: StoredProjectorVersion })
+export const StoredAppEventRecordSchema = AppEventRecordSchema.extend({ projectorVersion: StoredProjectorVersion,
+  // Retired events must parse before the projector-upgrade checkpoint replaces them.
+  journalBudgetBytes: PositionSchema.positive().optional() })
 
 export class AppProjectorVersionError extends Error {
   constructor(readonly savedVersion: number) {
@@ -243,10 +245,9 @@ export type AppEventInput =
 export const appendAppEvent = (
   previous: AppStreamState,
   input: AppEventInput,
-  context: { readonly eventId: string; readonly createdAt: number; readonly persistenceMode: AppProjectionPersistenceMode; readonly journalBudgetBytes?: number | undefined }
+  context: { readonly eventId: string; readonly createdAt: number; readonly persistenceMode: AppProjectionPersistenceMode }
 ): (AppStreamState & { readonly event: AppEventRecord }) | undefined => {
   if (!context.eventId || !Number.isFinite(context.createdAt) || !ModeSchema.safeParse(context.persistenceMode).success ||
-    (context.journalBudgetBytes !== undefined && (!Number.isSafeInteger(context.journalBudgetBytes) || context.journalBudgetBytes <= 0)) ||
     previous.head.sequence >= Number.MAX_SAFE_INTEGER || (input.kind !== "boot" && input.kind !== "transition")) return fail("event")
   if (appProjectionHash(previous.snapshot) !== previous.head.stateHash || revisionOf(previous.snapshot) !== previous.head.revision) return fail("projection")
   const seed = input.kind === "boot" ? BootSchema.safeParse(decodeEventValue(encodeEventValue(input.seed))) : undefined
@@ -257,7 +258,7 @@ export const appendAppEvent = (
   const snapshot = input.kind === "boot"
     ? seedAppProjection(previous.snapshot, value as AppProjectionSeedContext)
     : projectAppEvent(previous.snapshot, { transition: transition!, revision: previous.head.revision + 1,
-      createdAt: context.createdAt, persistenceMode: context.persistenceMode, journalBudgetBytes: context.journalBudgetBytes })
+      createdAt: context.createdAt, persistenceMode: context.persistenceMode })
   if (snapshot === previous.snapshot || (input.kind === "boot" && appProjectionHash(snapshot) === previous.head.stateHash)) return undefined
   if (isImmutableProjectionValue(previous.snapshot)) freezeProjectionValue(snapshot)
   const stateHash = appProjectionHash(snapshot)
@@ -265,7 +266,6 @@ export const appendAppEvent = (
     ...VersionFieldsValue, id: context.eventId, streamId: previous.head.streamId, sequence: previous.head.sequence + 1,
     kind: input.kind, type: transition?.type ?? "app.boot", actor: transition?.actor ?? "system",
     createdAt: context.createdAt, revision: revisionOf(snapshot), persistenceMode: context.persistenceMode,
-    ...(context.journalBudgetBytes === undefined ? {} : { journalBudgetBytes: context.journalBudgetBytes }),
     input: { value: encoded.value, undefinedPaths: encoded.undefinedPaths.map(path => [...path]) }, previousEventHash: previous.head.eventHash, previousStateHash: previous.head.stateHash, stateHash
   })
   const head: AppEventHead = { ...previous.head, sequence: event.sequence, revision: event.revision, eventHash: event.hash, stateHash }
@@ -297,7 +297,7 @@ const replayEvent = (previous: AppStreamState, event: AppEventRecord): AppStream
     const transition = prepareAppTransition(previous.snapshot, value as AppTransition)
     if (canonicalEventValue(transition) !== canonicalEventValue(value)) return fail("event")
     snapshot = projectAppEvent(previous.snapshot, { transition, revision: event.revision,
-      createdAt: event.createdAt, persistenceMode: event.persistenceMode, journalBudgetBytes: event.journalBudgetBytes })
+      createdAt: event.createdAt, persistenceMode: event.persistenceMode })
     if (snapshot === previous.snapshot) return fail("event")
   }
   freezeProjectionValue(snapshot)

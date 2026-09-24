@@ -1,5 +1,4 @@
 import { TOOLS_BROWSER_FETCH_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { foldLineages } from "../../chain/DebugFolds"
 import type { Card,Palette } from "../AppState"
 import { DEFAULT_PALETTE,isPalette,PALETTES,WIKI_DISPLAY_NAME } from "../AppState"
 import { THEME_PICKER_CARD_ID } from "../AppStore"
@@ -23,7 +22,6 @@ export interface PresentationController {
   readonly debugSnapshot: () => { readonly value: string }
   readonly debugEvents: () => { readonly value: string }
   readonly debugErrors: (query?: string) => string | { readonly value: string }
-  readonly debugChain: () => { readonly value: string }
   readonly netTapEntries: () => ReadonlyArray<NetEntry>
   readonly netTap: () => string
   readonly debugNet: () => { readonly value: string }
@@ -244,17 +242,6 @@ export const createPresentationController = (
         at: new Date(record.createdAt).toISOString()
       }))
     return surfaceDebugRead("Transition journal tail", JSON.stringify(tail))
-  }
-
-  const debugChain = (): { readonly value: string } => {
-    // The journal fold, whole: every lineage (turns and backgrounds), each
-    // link's script, calls, rejections, steering, outcome, and the author
-    // contexts — the two-histories view. Full payloads by design: the
-    // admin panel is the raw-payload surface the transcript never is.
-    return surfaceDebugRead(
-      "Chain journal x-ray",
-      JSON.stringify(foldLineages([...ctx.store.collections.chainEvents.values()]))
-    )
   }
 
   const debugErrors = (query?: string): string | { readonly value: string } => {
@@ -525,7 +512,6 @@ export const createPresentationController = (
     debugSnapshot,
     debugEvents,
     debugErrors,
-    debugChain,
     netTapEntries,
     netTap,
     debugNet,

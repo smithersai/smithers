@@ -406,8 +406,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly debugEvents: () => { readonly value: string }
   readonly debugErrors: (query?: string) => string | { readonly value: string }
   readonly debugSeams: () => Promise<string | void | { readonly value: string }>
-  /** The chain x-ray (DESIGN.md §14 debug mode): the journal fold, as data. */
-  readonly debugChain: () => { readonly value: string }
   /** The wire tap: the controller's fetch ring, newest first. */
   readonly debugNet: () => { readonly value: string }
   /**
@@ -1016,7 +1014,6 @@ export const createAppController = (
     debugSnapshot,
     debugEvents,
     debugErrors,
-    debugChain,
     netTap,
     netTapEntries,
     debugNet,
@@ -1759,7 +1756,6 @@ export const createAppController = (
     debugSnapshot,
     debugEvents,
     debugErrors,
-    debugChain,
     debugNet,
     netTap,
     netTapEntries,

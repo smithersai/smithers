@@ -7,7 +7,6 @@ import { PERSISTED_COLLECTION_BUDGET_BYTES, PERSISTED_JOURNAL_COMPACTION_BYTES }
 import { APP_SCHEMA_VERSION } from "../chain/SchemaVersion"
 import { OversizedSqliteCollectionError, ROW_TABLE_NAME, openSqliteRowStorage } from "../chain/SqliteRowStorage"
 import type { SqliteRowDatabase } from "../chain/SqliteRowStorage"
-import { MAX_CHAIN_EVENT_BYTES } from "./AppProjection"
 import { createAppStore, PERSISTED_COLLECTION_SPECS, type AppStore } from "./AppStore"
 
 const opened: AppStore[] = []
@@ -171,10 +170,6 @@ test("a checkpoint past the 64 MiB budget boots, and the next one is back under 
   opened.splice(opened.indexOf(reopened), 1)
   expect(storedBytes(path).get("app-event-checkpoints")!).toBeLessThan(PERSISTED_COLLECTION_BUDGET_BYTES)
 }, 120_000)
-
-test("the chain journal cannot claim the whole budget the checkpoint is charged", () => {
-  expect(MAX_CHAIN_EVENT_BYTES).toBeLessThan(PERSISTED_COLLECTION_BUDGET_BYTES)
-})
 
 test("an event suffix past the compaction threshold is checkpointed before 64 events", async () => {
   const store = await open(temporaryPath(), PERSISTED_COLLECTION_BUDGET_BYTES)

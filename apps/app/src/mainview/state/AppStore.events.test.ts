@@ -385,6 +385,28 @@ describe("the live store's authoritative event path", () => {
     expect((await restored.verifyState()).valid).toBe(true)
   })
 
+  test("version 15 chain projections retire while account data stays readable", async () => {
+    const storage = memoryStorage()
+    await installProjectorFixture(storage, 15)
+    editEnvelope(storage, entries => {
+      const checkpointRows = JSON.parse(entries["smithers-mvp.app-event-checkpoints"]!)
+      const checkpoint = checkpointRows["s:current"].data
+      checkpoint.snapshot.chainEvents = []
+      checkpoint.snapshot.retiredChainLineages = []
+      const { hash: _, ...body } = checkpoint
+      checkpoint.hash = digest("smithers-app/checkpoint/v1:" + canonicalEventValue(body))
+      entries["smithers-mvp.app-event-checkpoints"] = JSON.stringify(checkpointRows)
+    })
+    const restored = await open(storage)
+    expect((await restored.eventHistory()).checkpoint.reason).toBe("projector-upgrade")
+    expect((await restored.eventHistory()).head.projectorVersion).toBe(16)
+    expect(restored.collections.cards.get("kept")?.title).toBe("kept.ts")
+    expect(restored.collections.identitySessions.get("identity")?.login).toBe("alice")
+    expect((await restored.verifyState()).valid).toBe(true)
+    expect(Object.keys(restored.collections)).not.toContain("chainEvents")
+    expect(Object.keys(restored.collections)).not.toContain("retiredChainLineages")
+  })
+
   test("the collection roster is pinned to the projector version", () => {
     /*
      * A checkpoint naming another roster is refused at boot, so a collection
@@ -392,12 +414,12 @@ describe("the live store's authoritative event path", () => {
      * out. Changing this list owes a bump and an upgrade test like the ones
      * below.
      */
-    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 15, roster: [
-      "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "chainEvents", "changes",
+    expect({ version: APP_PROJECTOR_VERSION, roster: [...APP_PROJECTION_COLLECTION_NAMES].sort() }).toEqual({ version: 16, roster: [
+      "agents", "approvalRequests", "billingAccounts", "branches", "cardHistories", "cards", "changes",
       "cloudSessions", "cloudWorkspaces", "commandIntents", "connectorOperations", "connectors", "flowDurations", "frames",
       "githubAppStatuses", "harnesses", "httpTurnLegs", "httpTurns", "identitySessions", "messages", "models",
       "notificationReceipts", "pinnedRepos", "recommendations", "repoTree", "repos", "repositories",
-      "repositoryContexts", "repositoryFlows", "repositoryNotifications", "retiredChainLineages", "runtimeApprovals",
+      "repositoryContexts", "repositoryFlows", "repositoryNotifications", "runtimeApprovals",
       "runtimeRuns", "seats", "sessions", "starredTargets", "tabs", "toasts", "toolCalls", "transitions", "workingCopies",
       "workspaces", "worldDocuments"
     ] })

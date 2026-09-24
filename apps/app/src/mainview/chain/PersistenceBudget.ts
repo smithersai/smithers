@@ -23,11 +23,7 @@
  * authority or snapshots refuse before repair, never become a partial baseline.
  * Generic disposable collections may leave older rows on disk with a report.
  *
- * Chain retention targets half this count with whole-lineage tombstones, so the
- * one byte-bounded projection cannot claim the budget the checkpoint holding all
- * of them is charged. A live lineage can exceed it and must then refuse bounded
- * boot. Application event history has separate explicit verified checkpoint
- * compaction; it has no automatic timer. This is a per-collection load bound,
+ * Application event history uses verified checkpoints. This load bound is
  * not a promise of bounded total browser memory or that every written store can
  * reopen.
  */

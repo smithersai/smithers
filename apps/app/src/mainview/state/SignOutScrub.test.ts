@@ -80,13 +80,6 @@ const seedAccountState = (store: AppStore): void => {
     arguments: JSON.stringify({ repo: "alice/private" }),
     result: JSON.stringify({ title: "private issue" })
   })
-  store.dispatch({
-    type: "chain.event.appended",
-    actor: "smithers",
-    lineageId: "alice-chain",
-    seq: 0,
-    event: { _tag: "ChainStarted", goal: "read alice/private", envelope: null }
-  })
 }
 
 const leftovers = (store: AppStore) => ({
@@ -95,7 +88,6 @@ const leftovers = (store: AppStore) => ({
   billing: store.collections.billingAccounts.get("billing")?.totalUsd ?? null,
   billingState: store.collections.billingAccounts.get("billing")?.state ?? null,
   toolCalls: store.collections.toolCalls.size,
-  chainEvents: store.collections.chainEvents.size
 })
 
 describe("signing out leaves nothing of the account behind", () => {
@@ -118,7 +110,6 @@ describe("signing out leaves nothing of the account behind", () => {
       billing: null,
       billingState: "unknown",
       toolCalls: 0,
-      chainEvents: 0
     })
     expect(store.collections.identitySessions.get("identity")?.state).toBe("signed-out")
   })
@@ -141,7 +132,6 @@ describe("signing out leaves nothing of the account behind", () => {
       billing: null,
       billingState: "unknown",
       toolCalls: 0,
-      chainEvents: 0
     })
   })
 
@@ -168,7 +158,6 @@ describe("signing out leaves nothing of the account behind", () => {
       billing: null,
       billingState: "unknown",
       toolCalls: 0,
-      chainEvents: 0
     })
     expect([...store.collections.transitions.values()].every((row) => !row.payload.includes("alice"))).toBe(true)
   })
@@ -244,9 +233,8 @@ describe("retained account ownership", () => {
         }
         await loadIdentity(store, next, next === "signed-in" ? "bob" : null)
         expect(leftovers(store)).toEqual({
-          messages: 0, cards: 0, billing: null, billingState: "unknown", toolCalls: 0, chainEvents: 0
+          messages: 0, cards: 0, billing: null, billingState: "unknown", toolCalls: 0
         })
-        expect(store.collections.retiredChainLineages.size).toBe(1)
         expect([...store.collections.transitions.values()].every((row) => !row.payload.includes("alice"))).toBe(true)
         await store.dispose?.()
         const reopened = await createAppStore({ kind: "localStorage", storage })

@@ -74,9 +74,9 @@ describe("the persisted collection inventory the gate clears", () => {
     const durableIds = [...reads]
       .filter((key) => key.startsWith(PERSISTED_KEY_PREFIX) && !bookkeeping.has(key))
       .map((key) => key.slice(PERSISTED_KEY_PREFIX.length))
-    // The file tree and removed Linear collection retain historical cleanup keys.
+    // Removed collections retain historical cleanup keys.
     expect(durableIds).not.toContain(store.collections.repoTree.id)
-    expect([...PERSISTED_COLLECTION_IDS].sort()).toEqual([...durableIds, store.collections.repoTree.id, "app-linear-integrations"].sort())
+    expect([...PERSISTED_COLLECTION_IDS].sort()).toEqual([...durableIds, store.collections.repoTree.id, "app-linear-integrations", "app-chain-events", "app-retired-chain-lineages"].sort())
     expect(durableIds).not.toContain(store.collections.cards.id)
     expect(durableIds).not.toContain(store.collections.workingCopies.id)
     await store.dispose?.()

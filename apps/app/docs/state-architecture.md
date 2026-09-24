@@ -72,11 +72,7 @@ The old `transitions` and `toolCalls` tails remain bounded diagnostics. A transi
 
 Normalized SQLite loads first admit metadata against a 64 MiB UTF-8 key/value budget
 per collection, then fetch admitted values in bounded pages. Every app collection requires complete admission; oversized
-state refuses with its source preserved. Chain retention retires whole
-lineages with durable tombstones, while the currently appending lineage keeps
-its prefix. Its budget is recorded in events, so historical replay never uses
-today's configuration. App event compaction remains an explicit verified
-checkpoint operation; a checkpoint whose domain state exceeds the load budget
+state refuses with its source preserved. App event compaction uses verified checkpoints; a checkpoint whose domain state exceeds the load budget
 requires recovery rather than silent truncation. The human reset flow closes
 the dispatcher and holds the same cross-tab writer lease during erasure.
 

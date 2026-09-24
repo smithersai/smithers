@@ -120,12 +120,7 @@ export interface LegacyCollectionSpec {
   /** Never admit an incomplete authority or snapshot as a new baseline. */
   readonly partialLoad?: "refuse"
   readonly validateKey?: (key: string, data: unknown) => boolean
-  /** Only projected caches may opt in. Verify complete independent authority;
-   * absence, invalid authority or an exception must never authorize recovery. */
-  readonly verifyRecoveryAuthority?: (rows: ValidatedStorageRows) => boolean
 }
-
-export type ValidatedStorageRows = ReadonlyMap<string, ReadonlyArray<unknown>>
 
 export class AuthoritativeStorageError extends Error {
   constructor(readonly collectionId: string) {
@@ -137,25 +132,9 @@ export const assertRowRecoveryPolicy = (collection: LegacyCollectionSpec, reject
   if (rejected > 0 && collection.invalidRows === "refuse") throw new AuthoritativeStorageError(collection.id)
 }
 
-/** Run before any repair writes, against the exact candidate snapshot. Strict
- * evidence always wins over a cache's optional, pure authority verifier. */
-export const assertStoredRowsRecovery = (
-  collections: ReadonlyArray<LegacyCollectionSpec>,
-  rows: ValidatedStorageRows,
-  rejected: ReadonlySet<string>
-): void => {
-  for (const collection of collections) {
-    if (rejected.has(collection.id) && collection.verifyRecoveryAuthority === undefined) {
-      assertRowRecoveryPolicy(collection, 1)
-    }
-  }
-  const verified = new Map<NonNullable<LegacyCollectionSpec["verifyRecoveryAuthority"]>, boolean>()
-  for (const collection of collections) {
-    if (!rejected.has(collection.id) || collection.invalidRows !== "refuse") continue
-    const verify = collection.verifyRecoveryAuthority
-    if (verify !== undefined && !verified.has(verify)) verified.set(verify, verify(rows))
-    if (verify === undefined || verified.get(verify) !== true) assertRowRecoveryPolicy(collection, 1)
-  }
+/** Refuse unreadable execution evidence before any repair writes. */
+export const assertStoredRowsRecovery = (collections: ReadonlyArray<LegacyCollectionSpec>, rejected: ReadonlySet<string>): void => {
+  for (const collection of collections) if (rejected.has(collection.id)) assertRowRecoveryPolicy(collection, 1)
 }
 
 /** App entities use string IDs; historical keys may omit TanStack's prefix. */
@@ -326,14 +305,12 @@ export const openTransactionalStorage = async (
   // or unsupported envelope is authoritative: never resurrect older host keys.
   const adoptLegacy = raw === null || parseStorageEnvelope(raw)?.version === 0
   let normalized = false
-  const decodedRows = new Map<string, ReadonlyArray<unknown>>()
   const rejectedCollections = new Set<string>()
   for (const collection of options.collections) {
     const key = `smithers-mvp.${collection.id}`
     const collectionRaw = entries[key] ?? (adoptLegacy ? readSource(key) : null)
     if (collectionRaw === null || collectionRaw === undefined) continue
     const validated = await validateStoredRows(collectionRaw, collection.schema, collection.validateKey)
-    decodedRows.set(collection.id, [...validated.rows.values()].map(row => row.data))
     if (validated.rejected.length > 0) rejectedCollections.add(collection.id)
     normalized ||= validated.normalized
     entries[key] = JSON.stringify(Object.fromEntries(validated.rows))
@@ -344,7 +321,7 @@ export const openTransactionalStorage = async (
       quarantineWrites.push({ key: quarantineKey, raw: rejected.raw })
     }
   }
-  assertStoredRowsRecovery(options.collections, decodedRows, rejectedCollections)
+  assertStoredRowsRecovery(options.collections, rejectedCollections)
   // Legacy keys remain untouched as recovery copies. The committed envelope
   // records adoption, including empty collections, so deletion stays deleted.
   if (normalized && raw !== null) {

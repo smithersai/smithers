@@ -1,9 +1,8 @@
 import type { StorageApi } from "@tanstack/db"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
-import { RetiredChainLineageSchema } from "../state/AppState"
+import { StoredAppEventRecordSchema } from "../state/AppEventStream"
 import { createAppStore } from "../state/AppStore"
-import { retiredLineageKey } from "./LineageRetirement"
 import { APP_SCHEMA_VERSION } from "./SchemaVersion"
 import { openSqliteRowStorage, QUARANTINE_TABLE_NAME, ROW_TABLE_NAME } from "./SqliteRowStorage"
 import type { SqliteRowDatabase } from "./SqliteRowStorage"
@@ -29,36 +28,18 @@ const memory = (): StorageApi & { readonly bytes: Map<string, string> } => {
 }
 
 describe("localStorage recovery cannot discard execution authority", () => {
-  for (const collection of ["app-chain-events", "app-retired-chain-lineages"]) {
+  for (const collection of ["app-events", "app-event-heads"]) {
     for (const corruption of ["invalid-row", "mismatched-key"] as const) {
       test(`${collection}: ${corruption} refuses boot before any cleanup or quarantine writes`, async () => {
         const storage = memory()
         const store = await createAppStore({ kind: "localStorage", storage })
-        await store.dispatch({
-          type: "chain.event.appended",
-          actor: "system",
-          lineageId: "private-lineage",
-          seq: 0,
-          event: { _tag: "ChainStarted", goal: "private goal", envelope: null }
-        }).isPersisted.promise
-        if (collection === "app-retired-chain-lineages") {
-          await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
-        }
+        await store.dispatch({ type: "composer.changed", actor: "user", draft: "private draft" }).isPersisted.promise
         await store.dispose?.()
         const envelope = JSON.parse(storage.getItem(ENVELOPE_STORAGE_KEY)!)
-        // This fixture represents legacy execution authority. A current store's
-        // verified app journal can rebuild these two projected caches; removing
-        // its four authority collections keeps this refusal test about the
-        // older store whose chain evidence is its only accepted source.
-        for (const id of ["app-events", "app-event-heads", "app-event-checkpoints", "app-event-retirements"]) {
-          delete envelope.entries[`smithers-mvp.${id}`]
-        }
         const key = `smithers-mvp.${collection}`
         const rows = JSON.parse(envelope.entries[key]) as Record<string, { versionKey: unknown; data: { id: string } }>
         if (corruption === "invalid-row") Object.values(rows)[0]!.versionKey = 123
-        else {Object.values(rows)[0]!.data.id = collection === "app-chain-events"
-            ? "different-id"
-            : retiredLineageKey("different")}
+        else Object.values(rows)[0]!.data.id = "different-id"
         envelope.entries[key] = JSON.stringify(rows)
         storage.setItem(ENVELOPE_STORAGE_KEY, JSON.stringify(envelope))
         // Even recovery of an unrelated unfinished stage waits for validation.
@@ -83,7 +64,7 @@ describe("localStorage recovery cannot discard execution authority", () => {
 
 describe("SQLite recovery cannot discard execution authority", () => {
   for (const legacy of [false, true]) {
-    test(`${legacy ? "legacy" : "normalized"} corrupt retirement refuses recovery and retains the source`, async () => {
+    test(`${legacy ? "legacy" : "normalized"} corrupt event refuses recovery and retains the source`, async () => {
       const database = new Database(":memory:")
       const host: SqliteRowDatabase = {
         execute: async <TRow>(sql: string, params: ReadonlyArray<unknown> = []): Promise<ReadonlyArray<TRow>> => {
@@ -93,11 +74,11 @@ describe("SQLite recovery cannot discard execution authority", () => {
           return []
         }
       }
-      const id = "app-retired-chain-lineages"
-      const rowKey = `s:${retiredLineageKey("private-lineage")}`
+      const id = "app-events"
+      const rowKey = "s:private-event"
       const collections = [{
         id,
-        schema: RetiredChainLineageSchema,
+        schema: StoredAppEventRecordSchema,
         invalidRows: "refuse" as const,
         validateKey: matchesStoredStringId
       }]
