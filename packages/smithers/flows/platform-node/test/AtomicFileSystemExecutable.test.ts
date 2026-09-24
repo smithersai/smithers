@@ -1,7 +1,7 @@
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, sep } from "node:path"
-import { afterEach, describe, expect, it } from "vitest"
+import { basename, dirname, join, sep } from "node:path"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   outsideWorkspace,
   resolveDefaultExecutable,
@@ -84,6 +84,30 @@ describe("default atomic helper resolution", () => {
     const selected = resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent"))
     expect(selected).not.toBe(binary)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+  })
+
+  it("stages the correct executable name on the other operating-system family", async () => {
+    const { packageRoot, root } = await fixture()
+    const originalProcess = process
+    const platform = process.platform === "win32" ? "linux" : "win32"
+    const filename = platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
+    await helper(join(packageRoot, "bin", `${platform}-${process.arch}`, filename))
+    vi.stubGlobal(
+      "process",
+      new Proxy(originalProcess, {
+        get: (target, key, receiver) => key === "platform" ? platform : Reflect.get(target, key, receiver)
+      })
+    )
+    vi.resetModules()
+    try {
+      const host = await import("../src/internal/AtomicFileSystemExecutable.ts")
+      const selected = host.resolveDefaultExecutable(packageRoot, root, join(root, "absent"))
+      expect(basename(selected)).toBe(filename)
+      expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+    } finally {
+      vi.unstubAllGlobals()
+      vi.resetModules()
+    }
   })
 
   it("executes the helper staged at layer build, not bytes written after it", async () => {

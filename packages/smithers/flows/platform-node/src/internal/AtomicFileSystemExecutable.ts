@@ -66,8 +66,7 @@ export const outsideWorkspace = (
 }
 
 /** The helper an installed package ships for this platform. */
-const packagedHelper = (root: string): string =>
-  join(root, "bin", `${process.platform}-${process.arch}`, helperName)
+const packagedHelper = (root: string): string => join(root, "bin", `${process.platform}-${process.arch}`, helperName)
 
 /**
  * Stages the packaged helper now, when the host layer is built, so the bytes

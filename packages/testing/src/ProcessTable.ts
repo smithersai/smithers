@@ -71,6 +71,7 @@ export const query = (input: Query, spawn: Spawn = spawnSync): string => {
 /**
  * Windows has no `ps`; query the operating system's process records directly.
  *
+ * @category getters
  * @since 1.0.0
  */
 export const queryWindows = ({ columns, pid, timeoutMs }: Query, spawn: Spawn = spawnSync): string => {
