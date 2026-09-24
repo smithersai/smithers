@@ -34,6 +34,7 @@ const program = (killSignal: string, escaped = true, platform = "linux") => {
     kill: (pid: number, signal: string) => signals.push([pid, signal])
   })
   const modules: Record<string, unknown> = {
+    "node:os": { devNull: platform === "win32" ? "\\\\.\\nul" : "/dev/null" },
     "node:fs": {
       closeSync: (fd: number) => released.push(fd),
       openSync: (path: string, flags: string) => {
@@ -73,7 +74,7 @@ describe("supervisor stop policy", () => {
     it(`releases inherited pipes into the native null device on ${platform}`, () => {
       const helper = program("SIGTERM", false, platform)
       helper.target.emit("spawn")
-      const device = platform === "win32" ? "NUL" : "/dev/null"
+      const device = platform === "win32" ? "\\\\.\\nul" : "/dev/null"
       expect(helper.released).toEqual([0, 1, 2])
       expect(helper.replacements).toEqual([[device, "r"], [device, "w"], [device, "w"]])
     })

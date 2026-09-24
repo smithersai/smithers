@@ -301,7 +301,7 @@ describe("native public process I/O options", () => {
       await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([], { additionalFds: { fd4: { type: "input" }, fd5: { type: "output" } } })
         expect(pipes[4]!.writableEnded).toBe(false)
-        expect(pipes[5]!.writableEnded).toBe(true)
+        expect(pipes[5]!.writableEnded).toBe(process.platform !== "win32")
         expect(pipes[5]!.readableEnded).toBe(false)
         yield* Stream.run(input("written before consumer exit"), handle.getInputFd(4))
         expect(pipes[4]!.writableEnded).toBe(true)

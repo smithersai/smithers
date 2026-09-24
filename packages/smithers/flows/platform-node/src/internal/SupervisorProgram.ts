@@ -186,7 +186,7 @@ requests.on('data', (data) => {
         // valid so a later internal allocation cannot reuse a closed 0/1/2.
         for (const fd of [0, 1, 2]) {
           fs.closeSync(fd);
-          const replacement = fs.openSync(process.platform === 'win32' ? 'NUL' : '/dev/null', fd === 0 ? 'r' : 'w');
+          const replacement = fs.openSync(require('node:os').devNull, fd === 0 ? 'r' : 'w');
           if (replacement !== fd) throw new Error('Could not detach supervisor standard streams');
         }
         for (const fd of config.userFds) fs.closeSync(fd);
