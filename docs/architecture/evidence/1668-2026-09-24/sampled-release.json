@@ -1,0 +1,109 @@
+{
+  "conclusion": "failure",
+  "createdAt": "2026-09-24T17:22:00Z",
+  "databaseId": 36033793252,
+  "event": "workflow_dispatch",
+  "headBranch": "main",
+  "headSha": "b9756427bd4ccddf8e1235802097edeab3d884f1",
+  "status": "completed",
+  "updatedAt": "2026-09-24T18:20:03Z",
+  "url": "https://github.com/smithersai/smithers/actions/runs/36033793252",
+  "jobs": [
+    {
+      "name": "packaged native topology and persistence",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Prove native owned and Plue process topology",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Prove native matrix launcher and capabilities",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Product native modes",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Upload native mode receipts",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "native helper (darwin-x64)",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "name": "native helper (darwin-arm64)",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "name": "native helper (linux-arm64)",
+      "conclusion": "success",
+      "steps": []
+    },
+    {
+      "name": "validate, build, and publish",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Workspace targets",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Real PostgreSQL backup and restore",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Build distribution image",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Test distribution image",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Product deployment mode matrix",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "Upload product deployment mode matrix receipt",
+          "conclusion": "failure"
+        },
+        {
+          "name": "Archive tested release artifacts",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    {
+      "name": "deploy package docs sites",
+      "conclusion": "skipped",
+      "steps": []
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 10824736629,
+      "name": "native-helper-darwin-x64",
+      "digest": "sha256:ca810b7a4f991a88d8cd15ef7c6f8cd643b823fcf81e40b1fcd97c482e27b915",
+      "expired": false
+    },
+    {
+      "id": 10824590712,
+      "name": "native-helper-darwin-arm64",
+      "digest": "sha256:88ad8ee9319067d370e158353076a8fab1f380437e104a19e97e6c3eccab891a",
+      "expired": false
+    },
+    {
+      "id": 10824275080,
+      "name": "native-helper-linux-arm64",
+      "digest": "sha256:852a1a7bc5bb465c79f069844af43c1eaa02746766873dc7aec53dafa107c4e8",
+      "expired": false
+    }
+  ]
+}

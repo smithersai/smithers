@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "kind": "release-plue-preflight",
+  "observedAt": "2026-09-24T20:34:08.329Z",
+  "status": "failed",
+  "checks": [
+    {
+      "path": "/api/bootstrap",
+      "status": "passed",
+      "httpStatus": 200
+    },
+    {
+      "path": "/api/user",
+      "status": "failed",
+      "httpStatus": 404
+    }
+  ],
+  "reasons": [
+    "/api/user returned HTTP 404"
+  ],
+  "requestedSourceRef": "19c97074b05d3727b87283d5f4c8223eddcaeb2a",
+  "workflowSha": "b98a2507c8739dc29ca2ffc405ae5ebe5695c2a4",
+  "origin": "https://canary.smithers.sh",
+  "observedBuildSha": "19c97074b05d3727b87283d5f4c8223eddcaeb2a"
+}
