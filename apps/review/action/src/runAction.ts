@@ -136,6 +136,16 @@ async function main(): Promise<void> {
     await setStatus(`⏭️ smithers review skipped: this repo's monthly PR quota is spent${runLink}`);
     return;
   }
+  if (session.status === "repo-spend-exhausted" || session.status === "key-spend-exhausted" ||
+      session.status === "payment-required" || session.status === "unavailable") {
+    const reason = session.status === "repo-spend-exhausted" ? "repository inference budget exhausted"
+      : session.status === "key-spend-exhausted" ? "API key inference budget exhausted"
+      : session.status === "unavailable" ? "review service unavailable; retry later"
+      : "review service payment required";
+    console.log(`::notice::smithers review skipped: ${reason}`);
+    await setStatus(`⏭️ smithers review skipped: ${reason}${runLink}`);
+    return;
+  }
   if (session.status === "not-registered") {
     console.log(
       `::notice::smithers review skipped: this repository is not registered. Open an issue titled "review access: <org>/<repo>" at https://github.com/smithersai/smithers/issues to request access (${session.message})`,

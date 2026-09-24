@@ -1,7 +1,8 @@
 /**
  * Client for POST /api/sessions. Returns a tagged outcome:
  *   - `ok`              200 — destructured session payload
- *   - `quota-exhausted` 402 — neutral skip in the action
+ *   - quota/spend/payment outcomes: 402 — neutral skip in the action
+ *   - `unavailable`     503 after bounded retries — neutral infrastructure skip
  *   - `not-registered`  403 — neutral skip with a registration hint
  *   - `comment-mode`    409 — the repo reviews only on the magic-phrase comment
  *   - `error`           anything else (network, 5xx, …) — surfaces upstream
@@ -33,6 +34,10 @@ export interface SessionPayload {
 export type SessionOutcome =
   | ({ status: "ok" } & SessionPayload)
   | { status: "quota-exhausted"; message: string }
+  | { status: "repo-spend-exhausted"; message: string }
+  | { status: "key-spend-exhausted"; message: string }
+  | { status: "payment-required"; message: string }
+  | { status: "unavailable"; message: string }
   | { status: "not-registered"; message: string }
   | { status: "comment-mode" }
   | { status: "error"; message: string };
@@ -54,20 +59,36 @@ export async function createSession(input: CreateSessionInput): Promise<SessionO
 
   let res: Response;
   try {
-    res = await f(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
+    for (let attempt = 0; ; attempt++) {
+      res = await f(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      if (res.status !== 503 || attempt === 2) break;
+      await res.body?.cancel();
+      await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+    }
   } catch (error) {
-    return {
-      status: "error",
-      message: `request failed: ${(error as Error).message}`,
-    };
+    return { status: "error", message: `request failed: ${(error as Error).message}` };
   }
 
+  if (res.status === 503) {
+    await res.body?.cancel();
+    return { status: "unavailable", message: "review service unavailable; retry later" };
+  }
   if (res.status === 402) {
-    return { status: "quota-exhausted", message: (await bodyText(res)) || "monthly PR quota exhausted" };
+    const raw = await bodyText(res);
+    let message = raw;
+    try {
+      const body = JSON.parse(raw) as { error?: unknown };
+      if (typeof body.error === "string") message = body.error;
+    } catch { /* Older services may return plain text. */ }
+    const status = message === "api key spend cap exhausted" ? "key-spend-exhausted"
+      : message === "repo monthly spend cap exhausted" ? "repo-spend-exhausted"
+      : /^(?:monthly )?PR quota exhausted$/.test(message) ? "quota-exhausted"
+      : "payment-required";
+    return { status, message: message || "review service payment required" };
   }
   if (res.status === 403) {
     return { status: "not-registered", message: (await bodyText(res)) || "repository not registered" };

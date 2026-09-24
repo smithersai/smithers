@@ -67,6 +67,34 @@ describe("createSession", () => {
     }
   });
 
+  test.each([
+    ["repo monthly spend cap exhausted", "repo-spend-exhausted"],
+    ["api key spend cap exhausted", "key-spend-exhausted"],
+  ] as const)("402: distinguishes %s", async (error, status) => {
+    svc = serveSession(() => Response.json({ error }, { status: 402 }));
+    expect((await createSession({ serviceUrl: svc.url, oidcToken: "x" })).status).toBe(status);
+  });
+
+  test("retries a JWKS outage and recovers", async () => {
+    let calls = 0;
+    svc = serveSession(() => ++calls < 3
+      ? Response.json({ error: "jwks-unavailable" }, { status: 503 })
+      : Response.json({ token: "recovered" }));
+    expect((await createSession({ serviceUrl: svc.url, oidcToken: "x" })).status).toBe("ok");
+    expect(calls).toBe(3);
+  });
+
+  test("a persistent JWKS outage has a neutral infrastructure outcome", async () => {
+    let calls = 0;
+    svc = serveSession(() => {
+      calls++;
+      return Response.json({ error: "jwks-unavailable" }, { status: 503 });
+    });
+    const result = await createSession({ serviceUrl: svc.url, oidcToken: "x" });
+    expect(result.status).toBe("unavailable");
+    expect(calls).toBe(3);
+  });
+
   test("403: maps to not-registered", async () => {
     svc = serveSession(() => new Response("repo not registered", { status: 403 }));
     const outcome = await createSession({ serviceUrl: svc.url, oidcToken: "x" });
