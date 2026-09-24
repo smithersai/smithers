@@ -86,3 +86,20 @@ test("malformed replay success is an integrity refusal while unavailable transpo
   try { await unavailable.journal!.read({ runId: "turn", journal: request.journal }); throw new Error("Expected transport refusal") }
   catch (error) { expect(error).toBeInstanceOf(Error); expect(error).not.toBeInstanceOf(AgentJournalIntegrityError) }
 })
+
+test.each([
+  [500, "<html><body>Internal Server Error</body></html>", "text/html"],
+  [500, "Internal Server Error", "text/plain"],
+  [502, "Bad Gateway", "text/plain"],
+  [507, "", "text/plain"]
+] as const)("an unparsed HTTP %s replay answer is retryable transport, never an integrity refusal", async (status, text, type) => {
+  const agent = createWebAgent({ fetchImpl: async () => new Response(text, { status, headers: { "content-type": type } }) })
+  const error = await agent.journal!.read({ runId: "turn", journal: request.journal }).then(() => undefined, (caught: unknown) => caught)
+  expect(error).toBeInstanceOf(Error)
+  expect(error).not.toBeInstanceOf(AgentJournalIntegrityError)
+})
+
+test("a 5xx carrying a non-error journal reply stays an integrity refusal", async () => {
+  const agent = createWebAgent({ fetchImpl: async () => Response.json({ status: "retired" }, { status: 500 }) })
+  await expect(agent.journal!.read({ runId: "turn", journal: request.journal })).rejects.toBeInstanceOf(AgentJournalIntegrityError)
+})

@@ -226,7 +226,8 @@ export const createWebAgent = (options: WebAgentOptions = {}): AgentPort => {
         if (!parsed.success && response.status === 410) return { status: "error", code: "retired" }
         if (!parsed.success && response.status === 409) return { status: "error", code: "cursor" }
         if (!parsed.success && response.status === 400) return { status: "error", code: "request_invalid" }
-        if (!parsed.success && [408, 429, 502, 503, 504].includes(response.status)) throw new Error("HTTP journal replay is temporarily unavailable")
+        // A relay without its backend or a panicking server answers 5xx with HTML or text: transport, not corruption.
+        if (!parsed.success && (response.status === 408 || response.status === 429 || response.status >= 500)) throw new Error("HTTP journal replay is temporarily unavailable")
         if (!parsed.success || (!response.ok && parsed.data.status !== "error")) throw new AgentJournalIntegrityError("Invalid HTTP journal replay response")
         return parsed.data
       },
