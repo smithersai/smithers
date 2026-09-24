@@ -164,7 +164,6 @@ func buildRouter(
 	repoAPIQuota := middleware.PerRepoAPIRequests(quotaStore)
 	repoStackQuota := middleware.PerRepoStackSubmits(quotaStore)
 	repoWorkflowQuota := middleware.PerRepoWorkflowRuns(quotaStore)
-	repoSandboxHoursQuota := middleware.PerRepoSandboxHours(quotaStore)
 	var quotaCounters interface {
 		middleware.ConnectedRepoCounter
 		middleware.ConcurrentWorkflowRunCounter
@@ -562,7 +561,7 @@ func buildRouter(
 			vmProvision = append(vmProvision, repoAPIQuota)
 			vmProvision = append(vmProvision, gateWorkspaces)
 			vmProvisionSandbox := append([]func(http.Handler) http.Handler{}, vmProvision...)
-			vmProvisionSandbox = append(vmProvisionSandbox, gateSandboxes, repoSandboxHoursQuota, userSandboxesQuota)
+			vmProvisionSandbox = append(vmProvisionSandbox, gateSandboxes, userSandboxesQuota)
 			// Session create deliberately does NOT take userSandboxesQuota on the
 			// no-workspace_id path: the service REUSES the repo's existing primary
 			// workspace (findOrCreatePrimaryWorkspace) and only creates one when
@@ -584,8 +583,8 @@ func buildRouter(
 				gateSandboxes,
 				workspaceSessionSandboxQuota(
 					workspaceSessionStore,
-					[]func(http.Handler) http.Handler{repoSandboxHoursQuota},
-					[]func(http.Handler) http.Handler{repoSandboxHoursQuota, userSandboxesQuota},
+					nil,
+					[]func(http.Handler) http.Handler{userSandboxesQuota},
 				),
 			)
 			r.With(vmProvisionSandbox...).Post("/api/repos/{owner}/{repo}/workspaces", workspaceHandler.CreateWorkspace)
@@ -615,10 +614,11 @@ func buildRouter(
 			// AND resumes, so the per-user concurrency middleware (userSandboxesQuota)
 			// would wrongly 429 a resume of an existing gateway (which consumes no new
 			// capacity). The provision-only cap is enforced inside RepoGatewayService;
-			// the feature gate + per-repo sandbox-hours budget still apply here.
+			// the feature gate still applies here, and the service meters plan
+			// sandbox-hours through BillingService.AuthorizeSandboxStart.
 			if repoGatewayHandler != nil {
 				gatewayProvision := append([]func(http.Handler) http.Handler{}, vmProvision...)
-				gatewayProvision = append(gatewayProvision, gateSandboxes, repoSandboxHoursQuota)
+				gatewayProvision = append(gatewayProvision, gateSandboxes)
 				r.With(gatewayProvision...).Post("/api/repos/{owner}/{repo}/gateway", repoGatewayHandler.PostRepoGateway)
 			}
 		})

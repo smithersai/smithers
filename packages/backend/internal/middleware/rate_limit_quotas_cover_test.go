@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -24,21 +23,17 @@ func TestRateLimitQuotas_Cov_TokenBucketStoreEdges(t *testing.T) {
 	require.NotNil(t, NewTokenBucketStore())
 
 	nilClockStore := NewTokenBucketStoreWithClock(nil)
-	allowed, retryAfter := nilClockStore.TakeN(context.Background(), "disabled", 1, 0, time.Hour)
+	allowed, retryAfter := nilClockStore.Take(context.Background(), "disabled", 0, time.Hour)
 	assert.True(t, allowed)
 	assert.Equal(t, time.Duration(0), retryAfter)
 
 	clock := NewFakeClock(time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC))
 	store := NewTokenBucketStoreWithClock(clock)
-	allowed, retryAfter = store.TakeN(context.Background(), "n-defaults-to-one", 0, 1, time.Hour)
+	allowed, retryAfter = store.Take(context.Background(), "single", 1, time.Hour)
 	require.True(t, allowed)
 	assert.Equal(t, time.Duration(0), retryAfter)
 
-	allowed, retryAfter = store.TakeN(context.Background(), "n-defaults-to-one", 1, 1, time.Hour)
-	assert.False(t, allowed)
-	assert.Greater(t, retryAfter, time.Duration(0))
-
-	allowed, retryAfter = store.TakeN(context.Background(), "non-finite-charge", math.Inf(1), 10, time.Hour)
+	allowed, retryAfter = store.Take(context.Background(), "single", 1, time.Hour)
 	assert.False(t, allowed)
 	assert.Equal(t, time.Hour, retryAfter)
 }

@@ -257,3 +257,35 @@ func TestAgentWorkspaceAdmissionDoesNotCountOwnReservation(t *testing.T) {
 	require.ErrorIs(t, authorizeSandboxStartForUser(ctx, policy, 8), denied)
 	require.ErrorIs(t, authorizeSandboxStartForUser(context.Background(), policy, 7), denied)
 }
+
+// Sandbox runtime is metered per user by AuthorizeSandboxStart; no request
+// middleware charges hours. Eleven awake hours today exhaust the Free cap
+// until the next UTC midnight, and paid plans stay uncapped.
+func TestBillingService_ElevenAwakeHoursExhaustFreeSandboxHours(t *testing.T) {
+	const elevenHours = 11 * 60 * 60
+	for _, tc := range []struct {
+		plan    string
+		refused bool
+	}{
+		{plan: BillingPlanFree, refused: true},
+		{plan: BillingPlanPro},
+	} {
+		t.Run(tc.plan, func(t *testing.T) {
+			svc, q := sandboxTestBilling(tc.plan)
+			q.countActiveSandboxesFn = func(context.Context, int64) (int, error) { return 0, nil }
+			q.countActiveAgentsFn = func(context.Context, int64) (int64, error) { return 0, nil }
+			q.sumSandboxSecondsFn = func(context.Context, int64, time.Time) (int64, error) { return elevenHours, nil }
+			err := svc.AuthorizeSandboxStart(context.Background(), 7)
+			if !tc.refused {
+				require.NoError(t, err)
+				return
+			}
+			var api *pkgerrors.APIError
+			require.ErrorAs(t, err, &api)
+			assert.Equal(t, pkgerrors.CodePlanLimitExceeded, api.Code)
+			assert.Equal(t, "sandbox_hours_per_day", api.LimitKind)
+			require.NotNil(t, api.ResetAt)
+			assert.Equal(t, time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC), api.ResetAt.UTC())
+		})
+	}
+}

@@ -64,20 +64,6 @@ func TestRateLimitTokenBucket_RefillsAfterDuration(t *testing.T) {
 	require.True(t, allowed)
 }
 
-func TestRateLimitTokenBucket_TakeNCharges(t *testing.T) {
-	t.Parallel()
-
-	clock := NewFakeClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
-	store := NewTokenBucketStoreWithClock(clock)
-
-	allowed, _ := store.TakeN(context.Background(), "k", 5, 10, time.Hour)
-	require.True(t, allowed)
-	allowed, _ = store.TakeN(context.Background(), "k", 6, 10, time.Hour)
-	require.False(t, allowed, "should not allow drawing more than remaining")
-	allowed, _ = store.TakeN(context.Background(), "k", 5, 10, time.Hour)
-	require.True(t, allowed, "exactly remaining is allowed")
-}
-
 func TestPerRepoRateLimits_TableDriven(t *testing.T) {
 	t.Parallel()
 
@@ -116,15 +102,6 @@ func TestPerRepoRateLimits_TableDriven(t *testing.T) {
 			method:   http.MethodGet,
 			pattern:  "/api/repos/{owner}/{repo}/info",
 			url:      "/api/repos/alice/myrepo/info",
-		},
-		{
-			name:     "sandbox seconds 36000/24hr",
-			mw:       PerRepoSandboxHours,
-			capacity: 10 * 60 * 60,
-			window:   24 * time.Hour,
-			method:   http.MethodPost,
-			pattern:  "/api/repos/{owner}/{repo}/sandboxes",
-			url:      "/api/repos/alice/myrepo/sandboxes",
 		},
 	}
 

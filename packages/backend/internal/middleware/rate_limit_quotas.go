@@ -1,10 +1,12 @@
 // Package middleware — per-repo and per-user quota rate limiters (ticket 17).
 //
 // These middlewares enforce the Smithers product quotas:
-//   - Per-repo: stack submits 30/hr, workflow runs 60/hr, sandbox hours 10/day.
+//   - Per-repo: stack submits 30/hr, workflow runs 60/hr.
 //   - Per-caller per-repo: API requests 1000/hr.
 //   - Per-user: connected repos 10 (count), concurrent workflow runs 5 (count),
 //     concurrent sandboxes 3 (count).
+//
+// Sandbox runtime is metered per user by BillingService.AuthorizeSandboxStart, not here.
 //
 // The token-bucket store here is intentionally process-local (in-memory). Each
 // API replica enforces its own quota; this is acceptable for the MVP because
@@ -76,24 +78,12 @@ func NewTokenBucketStoreWithClock(clock Clock) *TokenBucketStore {
 // bucket size; refillPer is the duration over which capacity refills (so 30
 // requests per hour → capacity=30, refillPer=time.Hour). Returns whether the
 // caller may proceed and, if not, how long to wait before retrying.
-func (s *TokenBucketStore) Take(ctx context.Context, key string, capacity int, refillPer time.Duration) (allowed bool, retryAfter time.Duration) {
-	return s.TakeN(ctx, key, 1, capacity, refillPer)
-}
-
-// TakeN is like Take but consumes n tokens at once. Useful for charging
-// sandbox-hour buckets where each request costs N seconds of runtime. The ctx
-// arg is accepted for symmetry with future Postgres-backed stores; the in-
-// memory implementation does not use it.
 //
 //nolint:revive // ctx kept for interface symmetry; in-memory store ignores it.
-func (s *TokenBucketStore) TakeN(_ context.Context, key string, n float64, capacity int, refillPer time.Duration) (allowed bool, retryAfter time.Duration) {
+func (s *TokenBucketStore) Take(_ context.Context, key string, capacity int, refillPer time.Duration) (allowed bool, retryAfter time.Duration) {
 	if capacity <= 0 || refillPer <= 0 {
 		return true, 0
 	}
-	if n <= 0 {
-		n = 1
-	}
-
 	refillPerSecond := float64(capacity) / refillPer.Seconds()
 
 	s.mu.Lock()
@@ -128,17 +118,13 @@ func (s *TokenBucketStore) TakeN(_ context.Context, key string, n float64, capac
 	// Lazy cleanup avoids retaining every missing repo/workspace route forever.
 	entry.expiresAt = now.Add(refillPer)
 
-	if entry.tokens >= n {
-		entry.tokens -= n
+	if entry.tokens >= 1 {
+		entry.tokens--
 		return true, 0
 	}
 
-	// Not enough tokens — compute time until enough have refilled.
-	deficit := n - entry.tokens
-	secondsUntil := deficit / refillPerSecond
-	if math.IsInf(secondsUntil, 0) || math.IsNaN(secondsUntil) {
-		return false, refillPer
-	}
+	// Not enough tokens — compute time until one has refilled.
+	secondsUntil := (1 - entry.tokens) / refillPerSecond
 	return false, time.Duration(math.Ceil(secondsUntil) * float64(time.Second))
 }
 
@@ -220,21 +206,6 @@ func PerRepoAPIRequests(store *TokenBucketStore) func(http.Handler) http.Handler
 	return perRepoBucketMiddlewareKeyed(store, capacity, window, func(r *http.Request) string {
 		return repoBucketKey(r, scope) + "|" + searchRateLimitKey(r)
 	})
-}
-
-// PerRepoSandboxHours enforces 10 sandbox-hours per day per repo. The bucket
-// is sized in seconds (10h = 36000s) to allow charging variable-length
-// sandbox usage. The middleware itself charges 1 second on each request — the
-// scheduler should call store.TakeN directly with the actual duration when a
-// sandbox completes. Applied at the sandbox creation route to fail fast on
-// overdrawn repos.
-func PerRepoSandboxHours(store *TokenBucketStore) func(http.Handler) http.Handler {
-	const (
-		capacity = 10 * 60 * 60 // 36000 seconds = 10 hours
-		window   = 24 * time.Hour
-		scope    = "repo_sandbox_seconds"
-	)
-	return perRepoBucketMiddleware(store, scope, capacity, window)
 }
 
 // PerWorkspaceDesktopControl enforces 1800 desktop observe/input requests per

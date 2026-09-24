@@ -28,20 +28,26 @@ func TestReviewQuotaStoreReclaimsIdleRouteKeysWithoutResettingDebt(t *testing.T)
 		router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/repos/alice/missing-"+strconv.Itoa(i)+"/lfs", nil))
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	}
-	allowed, _ := store.TakeN(context.Background(), "sandbox-day", 24, 24, 24*time.Hour)
-	require.True(t, allowed)
+	for i := 0; i < 24; i++ {
+		allowed, _ := store.Take(context.Background(), "daily", 24, 24*time.Hour)
+		require.True(t, allowed)
+	}
 	require.Len(t, store.buckets, 101)
 
 	clock.Advance(time.Hour)
-	allowed, retry := store.TakeN(context.Background(), "sandbox-day", 2, 24, 24*time.Hour)
+	allowed, _ := store.Take(context.Background(), "daily", 24, 24*time.Hour)
+	require.True(t, allowed, "one hour refills one of 24 daily tokens")
+	assert.Len(t, store.buckets, 1, "fully refilled idle route keys should be reclaimed on traffic")
+	allowed, retry := store.Take(context.Background(), "daily", 24, 24*time.Hour)
 	assert.False(t, allowed, "the partially refilled daily budget must survive cleanup")
 	assert.Equal(t, time.Hour, retry)
-	assert.Len(t, store.buckets, 1, "fully refilled idle route keys should be reclaimed on traffic")
 
 	// Removing a full bucket changes no quota: revisiting its key starts with
 	// exactly the budget it would have had without reclamation.
-	allowed, _ = store.TakeN(context.Background(), "repo_api_requests|repo:alice/missing-0|ip:192.0.2.1", 1000, 1000, time.Hour)
-	require.True(t, allowed)
+	for i := 0; i < 1000; i++ {
+		allowed, _ = store.Take(context.Background(), "repo_api_requests|repo:alice/missing-0|ip:192.0.2.1", 1000, time.Hour)
+		require.True(t, allowed)
+	}
 	allowed, _ = store.Take(context.Background(), "repo_api_requests|repo:alice/missing-0|ip:192.0.2.1", 1000, time.Hour)
 	assert.False(t, allowed)
 }
