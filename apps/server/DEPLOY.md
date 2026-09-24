@@ -287,6 +287,11 @@ registry mints the Cloud token and provisions the workspace inside the object
 `UPSTREAM_TIMEOUT_MS` are read by `GatewaySessionRegistry`'s own
 `ServerConfig`, built from the `env` workerd hands the class.
 
+`SMITHERS_CLOUD_API_BASE_URL` also pins every gateway relay address to
+`<its origin>/api/gateways/<gateway_id>`. Changing it retires every stored
+gateway record: each one logs a `worker_seam_failure` line with seam
+`gateway record` and re-provisions on next use.
+
 ## Scripted deploy (this repo's one repeatable path)
 
 The app's loading shell says that the session is starting until identity has

@@ -43,6 +43,11 @@ import { advanceRepositorySetup } from "./repositorySetupExecution"
  * browser response body. The browser talks to /api/workflow/*; the Worker
  * holds the token and sets the Authorization header the relay requires.
  *
+ * The relay address is pinned: a record's baseUrl is exactly
+ * `<Cloud origin>/api/gateways/<gatewayId>` (`gatewayBaseUrl`). A provision
+ * answer or stored row naming any other address is refused before the bearer
+ * and the user's relayed frame can leave for it (`gatewayRecordFrom`).
+ *
  * Every call out of this seam is bounded (`ServerConfig.upstreamTimeoutMs`,
  * headers only). Smithers Cloud accepts the provision POST and can then take
  * an unbounded time to build a sandbox: on canary the route never answered at
@@ -103,7 +108,7 @@ const workspaceRecordKey = (repo: string, workspaceId?: string): string =>
   workspaceId === undefined ? repo : `${repo}\u0000${workspaceId}`
 
 /** The Durable Object storage key: a persisted identity, never changed. */
-const storageKey = (repo: string, workspaceId?: string): string => `gateway:${workspaceRecordKey(repo, workspaceId)}`
+export const gatewayStorageKey = (repo: string, workspaceId?: string): string => `gateway:${workspaceRecordKey(repo, workspaceId)}`
 
 /*
  * Canonical non-nil lowercase UUID text; matches the Plue route. Upstream
@@ -118,15 +123,60 @@ export const isGatewayWorkspaceId = (value: unknown): value is string =>
 const answer = (body: unknown): Response =>
   new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } })
 
-/*
- * The record as the registry reads it back: a row written before
- * `provisionedAt` existed is old by definition, so it has already earned the
- * right to be re-provisioned on a tunnel failure.
+/**
+ * The one relay address a gateway may have: `<Cloud origin>/api/gateways/<id>`,
+ * which is what Smithers Cloud mints. `candidate` must name exactly that
+ * address (same scheme, host and port as the configured Cloud origin; no
+ * credentials, query, fragment or other path), else undefined. The gateway
+ * bearer never leaves for another host, the rule src/proxies.ts applies to
+ * the Cloud token.
  */
-const recordFromRow = (row: GatewayRecordRow | null | undefined): GatewayRecord | undefined =>
-  row === undefined || row === null
-    ? undefined
-    : { ...row, provisionedAt: typeof row.provisionedAt === "number" ? row.provisionedAt : 0 }
+export const gatewayBaseUrl = (cloudApiBaseUrl: string, gatewayId: string, candidate: string): string | undefined => {
+  if (!/^[A-Za-z0-9._-]+$/.test(gatewayId)) return undefined
+  try {
+    const origin = new URL(cloudApiBaseUrl).origin
+    const url = new URL(candidate)
+    const expected = `/api/gateways/${gatewayId}`
+    return origin !== "null" && url.origin === origin && url.username === "" && url.password === "" &&
+        url.search === "" && url.hash === "" && url.pathname === expected
+      ? origin + expected
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The one place a stored row or provision answer becomes a record: the fields
+ * the relay reads must have their types and the address must be the pinned
+ * one, else undefined. A row written before `provisionedAt` existed is old by
+ * definition, so it has already earned the right to be re-provisioned on a
+ * tunnel failure.
+ */
+export const gatewayRecordFrom = (cloudApiBaseUrl: string, row: unknown): GatewayRecord | undefined => {
+  if (typeof row !== "object" || row === null) return undefined
+  const fields = row as { readonly [K in keyof GatewayRecordRow]?: unknown }
+  if (
+    typeof fields.gatewayId !== "string" || typeof fields.baseUrl !== "string" || typeof fields.token !== "string" ||
+    typeof fields.expiresAt !== "number" || typeof fields.renewAfter !== "number" ||
+    (fields.vmId !== null && typeof fields.vmId !== "string") ||
+    (fields.workspaceId !== undefined && !isGatewayWorkspaceId(fields.workspaceId))
+  ) return undefined
+  const baseUrl = gatewayBaseUrl(cloudApiBaseUrl, fields.gatewayId, fields.baseUrl)
+  if (baseUrl === undefined) return undefined
+  const stored = row as GatewayRecordRow
+  return { ...stored, baseUrl, provisionedAt: typeof stored.provisionedAt === "number" ? stored.provisionedAt : 0 }
+}
+
+/** A stored row as a record, or undefined with one log line naming its key (never its token). */
+const decodeStored = (key: string, row: unknown): Effect.Effect<GatewayRecord | undefined, never, ServerConfig> =>
+  Effect.gen(function* () {
+    if (row === undefined || row === null) return undefined
+    const config = yield* ServerConfig
+    const record = gatewayRecordFrom(config.cloudApiBaseUrl, row)
+    if (record === undefined) logSeamFailure("gateway record", `${key} is not a gateway record under the Cloud origin; it is treated as cold`)
+    return record
+  })
 
 /**
  * The resolutions one registry object has in flight, keyed exactly like the
@@ -157,9 +207,9 @@ export const gatewayRegistryLayers = (storage: NativeStorage, env: ServerEnvVars
   Layer.mergeAll(storageLayer(storage), configLayer(env), TransportLive, gatewayResolutionsLayer(makeGatewayResolutions()), setupStorageMutexLayer())
 
 /** A record the object holds, or undefined: a store that cannot answer a read is cold, as the Worker side treats it. */
-const readStored = (repo: string, workspaceId: string | undefined): Effect.Effect<GatewayRecord | undefined, never, DurableStorage> =>
-  DurableStorage.use((storage) => storage.get<GatewayRecordRow>(storageKey(repo, workspaceId))).pipe(
-    Effect.map(recordFromRow),
+const readStored = (repo: string, workspaceId: string | undefined): Effect.Effect<GatewayRecord | undefined, never, DurableStorage | ServerConfig> =>
+  DurableStorage.use((storage) => storage.get<unknown>(gatewayStorageKey(repo, workspaceId))).pipe(
+    Effect.flatMap((row) => decodeStored(gatewayStorageKey(repo, workspaceId), row)),
     Effect.catch(() => Effect.succeed(undefined))
   )
 
@@ -195,7 +245,7 @@ const provisionAndStore = (
     // must not let each sleeping poll spend another token-door/provision call.
     // A refreshed host must prove its capabilities again before setup can use it.
     if ((force || sleepingResume) && previous !== undefined) {
-      const marked = yield* Effect.result(storage.put(storageKey(repo, workspaceId), {
+      const marked = yield* Effect.result(storage.put(gatewayStorageKey(repo, workspaceId), {
         ...previous, resumeAttemptedAt, verifiedCapabilities: undefined,
         resumeOutcome: sleepingResume ? resuming : undefined
       }))
@@ -206,7 +256,7 @@ const provisionAndStore = (
       if (sleepingResume && previous !== undefined) {
         const resumeOutcome = outcome.status === "provisioning" || (outcome.status === "unavailable" && outcome.retryable === true)
           ? { status: outcome.status, detail: outcome.detail } : undefined
-        const retained = yield* Effect.result(storage.put(storageKey(repo, workspaceId), {
+        const retained = yield* Effect.result(storage.put(gatewayStorageKey(repo, workspaceId), {
           ...previous, resumeAttemptedAt, verifiedCapabilities: undefined, resumeOutcome
         }))
         if (Result.isFailure(retained)) return { status: "unavailable", detail: "The gateway resume result could not be persisted." } as const
@@ -214,7 +264,7 @@ const provisionAndStore = (
       return outcome
     }
     const record = { ...outcome.record, ...(resumeAttemptedAt === undefined ? {} : { resumeAttemptedAt }) }
-    const stored = yield* Effect.result(storage.put(storageKey(repo, workspaceId), record))
+    const stored = yield* Effect.result(storage.put(gatewayStorageKey(repo, workspaceId), record))
     if (Result.isFailure(stored)) {
       return {
         status: "unavailable",
@@ -251,7 +301,7 @@ const resolveRecord = (
       if (cached !== undefined && cached.resumeOutcome === undefined && now < cached.renewAfter &&
         (requiredCapability === undefined || cached.verifiedCapabilities?.includes(requiredCapability))) return { status: "ready", record: cached } as const
     }
-    const key = storageKey(repo, workspaceId) + (requiredCapability === undefined ? "" : `\u0000capability:${requiredCapability}`)
+    const key = gatewayStorageKey(repo, workspaceId) + (requiredCapability === undefined ? "" : `\u0000capability:${requiredCapability}`)
     const resolutions = yield* GatewayResolutions
     const pending = resolutions.get(key)
     if (pending !== undefined) {
@@ -303,21 +353,9 @@ export const gatewaySessionRequest = (request: Request): Effect.Effect<Response,
     const url = new URL(request.url)
     if (url.pathname === "/repository-setup" && request.method === "POST") return yield* repositorySetupStorageRequest(request)
     if (url.pathname === "/record" && request.method === "GET") {
-      const repo = url.searchParams.get("repo") ?? ""
-      const record = yield* storage.get<GatewayRecordRow>(storageKey(repo, url.searchParams.get("workspace_id") ?? undefined))
+      const key = gatewayStorageKey(url.searchParams.get("repo") ?? "", url.searchParams.get("workspace_id") ?? undefined)
+      const record = yield* decodeStored(key, yield* storage.get<unknown>(key))
       return answer({ record: record ?? null })
-    }
-    if (url.pathname === "/record" && request.method === "PUT") {
-      const body = (yield* readJsonOrUndefined(request)) as
-        | { repo?: unknown; workspaceId?: unknown; record?: unknown }
-        | undefined
-      if (
-        typeof body?.repo !== "string" || body.repo === "" || typeof body.record !== "object" || body.record === null
-      ) {
-        return new Response("bad request", { status: 400 })
-      }
-      yield* storage.put(storageKey(body.repo, typeof body.workspaceId === "string" ? body.workspaceId : undefined), body.record)
-      return answer({ ok: true })
     }
     if (url.pathname === "/resolve" && request.method === "POST") {
       const body = (yield* readJsonOrUndefined(request)) as
@@ -448,10 +486,11 @@ const durableGatewaySessions = (namespace: NativeNamespace): GatewaySessionsShap
           }`
         )
       )
-      const body = (yield* readJsonOrUndefined(response)) as { record?: GatewayRecordRow | null } | undefined
+      // The registry answers only records its decoder admitted.
+      const body = (yield* readJsonOrUndefined(response)) as { record?: GatewayRecord | null } | undefined
       const record = body?.record
       if (record === undefined || record === null || record.workspaceId !== workspaceId) return undefined
-      return recordFromRow(record)
+      return record
     }).pipe(Effect.catch(() => Effect.succeed(undefined))),
   resolve: (login, repo, workspaceId, force, requiredCapability) =>
     Effect.gen(function* () {
@@ -825,7 +864,7 @@ const provisionGateway = (
     }
     const expiresAt = Date.parse(body.expires_at)
     const now = yield* Clock.currentTimeMillis
-    const record: GatewayRecord = {
+    const row: GatewayRecordRow = {
       gatewayId: body.gateway_id,
       ...(workspaceId === undefined ? {} : { workspaceId }),
       baseUrl: body.base_url,
@@ -838,6 +877,14 @@ const provisionGateway = (
       renewAfter: Number.isFinite(expiresAt) ? now + Math.max((expiresAt - now) / 2, 60 * 1000) : now + 30 * 60 * 1000,
       provisionedAt: now,
       ...(requiredCapability === undefined ? {} : { verifiedCapabilities: [requiredCapability] })
+    }
+    const record = gatewayRecordFrom(config.cloudApiBaseUrl, row)
+    if (record === undefined) {
+      const address = URL.canParse(body.base_url) ? new URL(body.base_url) : undefined
+      logSeamFailure("gateway provision", `gateway ${JSON.stringify(body.gateway_id)} answered base_url ${
+        address === undefined ? "that is not a URL" : JSON.stringify(address.origin + address.pathname)
+      }, outside ${new URL(config.cloudApiBaseUrl).origin}/api/gateways/<gateway_id>`)
+      return { status: "unavailable", detail: "Smithers Cloud answered with a gateway address outside its own origin." } as const
     }
     return { status: "ready", record } as const
   })
@@ -982,11 +1029,10 @@ const relayAttempt = (
 ): Effect.Effect<Result.Result<Response, string>, never, Transport | ServerConfig> =>
   Effect.gen(function* () {
     const config = yield* ServerConfig
-    // The relay base_url is a PATH base (…/api/gateways/<id>): URL-joining
-    // an absolute path would drop it, so concatenate instead.
+    // The address is a path base: URL-joining an absolute path would drop it.
     return yield* fetchWithDeadline(
       "The workspace gateway",
-      `${record.baseUrl.replace(/\/+$/, "")}${path}`,
+      `${record.baseUrl}${path}`,
       {
         method: init.method,
         headers: {
@@ -1153,7 +1199,7 @@ const gatewayIsServing = (record: GatewayRecord): Effect.Effect<GatewayLiveness,
     const config = yield* ServerConfig
     const answered = yield* Effect.result(fetchWithDeadline(
       "The workspace gateway",
-      `${record.baseUrl.replace(/\/+$/, "")}/health`,
+      `${record.baseUrl}/health`,
       { method: "GET", headers: { authorization: `Bearer ${record.token}` } },
       Math.min(config.upstreamTimeoutMs, GATEWAY_LIVENESS_DEADLINE_MS)
     ))

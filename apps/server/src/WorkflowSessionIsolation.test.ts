@@ -5,7 +5,8 @@ import { memoryDurableObjects } from "./memoryDurableObjects"
 const SETTINGS = {
   ASSETS: { fetch: async () => new Response("SPA") },
   IDENTITY_UPSTREAM_URL: "https://identity.test",
-  IDENTITY_SERVICE_TOKEN: "synthetic-identity-service"
+  IDENTITY_SERVICE_TOKEN: "synthetic-identity-service",
+  SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
 }
 const durable = memoryDurableObjects({ env: SETTINGS })
 
@@ -19,7 +20,7 @@ describe("supported per-user workflow relay", () => {
         for (const login of ["alice", "bob"]) {
           await durable.seedGatewayRecord(login, "org/repo", {
             gatewayId: `gateway-${login}`,
-            baseUrl: `https://gateway.test/${login}`,
+            baseUrl: `https://cloud.test/api/gateways/gateway-${login}`,
             token: `synthetic-${login}-token`,
             vmId: null,
             expiresAt: now + 3_600_000,
@@ -41,7 +42,7 @@ describe("supported per-user workflow relay", () => {
             if (login === undefined || login === "expired") return Response.json({}, { status: 401 })
             return Response.json({ login, allowlisted: login !== "not-allowlisted", admin: false })
           }
-          if (url.hostname !== "gateway.test") throw new Error("Unexpected upstream in isolation test")
+          if (url.hostname !== "cloud.test" || !url.pathname.startsWith("/api/gateways/")) throw new Error("Unexpected upstream in isolation test")
           seen.push({ url: request.url, authorization: request.headers.get("authorization") })
           return new Response(
             JSON.stringify({ _tag: "Exit", requestId: 1, exit: { _tag: "Success", value: { runs: [] } } }) + "\n"
@@ -75,7 +76,7 @@ describe("supported per-user workflow relay", () => {
             expect(response.status).toBe(200)
             if (path.endsWith("/rpc")) {
               expect(seen).toEqual([{
-                url: `https://gateway.test/${caller}/rpc`,
+                url: `https://cloud.test/api/gateways/gateway-${caller}/rpc`,
                 authorization: `Bearer synthetic-${caller}-token`
               }])
             } else {
@@ -84,7 +85,7 @@ describe("supported per-user workflow relay", () => {
               // on the caller's box, with the caller's credential, never the
               // forged login's.
               expect(seen).toEqual([{
-                url: `https://gateway.test/${caller}/health`,
+                url: `https://cloud.test/api/gateways/gateway-${caller}/health`,
                 authorization: `Bearer synthetic-${caller}-token`
               }])
             }

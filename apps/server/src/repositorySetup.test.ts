@@ -14,7 +14,7 @@ async function fixture() {
   const durable = memoryDurableObjects({ env: settings, nativeAlarms: true })
   const env = { ...settings, GATEWAY_SESSIONS: durable.GATEWAY_SESSIONS, TURN_CANCELS: durable.TURN_CANCELS }
   const workspaceIds = { alice: "11111111-1111-4111-8111-111111111111", bob: "22222222-2222-4222-8222-222222222222" }
-  for (const login of ["alice", "bob"] as const) await durable.seedGatewayRecord(login, "org/repo", { gatewayId: `gateway-${login}`, baseUrl: `https://gateway.test/${login}`, token: `synthetic-${login}`, vmId: null, workspaceId: workspaceIds[login],
+  for (const login of ["alice", "bob"] as const) await durable.seedGatewayRecord(login, "org/repo", { gatewayId: `gateway-${login}`, baseUrl: `https://cloud.test/api/gateways/gateway-${login}`, token: `synthetic-${login}`, vmId: null, workspaceId: workspaceIds[login],
     expiresAt: Date.now() + 3_600_000, renewAfter: Date.now() + 1_800_000, provisionedAt: Date.now() })
   const setup = initialSetup("org/repo", "issues", "alice")
   const input = { requestId: "setup-test", repo: setup.repo, job: setup.job, revision: setup.revision, draft: setup.draft, digest: setupCandidate(setup) }
@@ -36,7 +36,8 @@ async function fixture() {
       const login = request.headers.get("cookie")?.split("=")[1]
       return !login || login === "expired" ? Response.json({}, { status: 401 }) : Response.json({ login, allowlisted: login !== "visitor", admin: false })
     }
-    if (url.hostname === "cloud.test") {
+    const relayed = url.hostname === "cloud.test" && url.pathname.startsWith("/api/gateways/")
+    if (url.hostname === "cloud.test" && !relayed) {
       if (url.pathname === "/api/user") return Response.json(options.userError ? {} : { id: request.headers.get("authorization") === "Bearer cloud-alice" ? 1 : 2 }, { status: options.userError ? 503 : 200 })
       if (url.pathname.endsWith("/repository-jobs")) {
         if (options.holdRegistrations) await options.holdRegistrations
@@ -53,7 +54,7 @@ async function fixture() {
         if (options.lostGateway && body.workspace_id === options.lostGateway) return Response.json({ code: "not_found", fault: "user", message: "workspace not found" }, { status: 404 })
         expect(body).toEqual({ workspace_id: options.newWorkspace ?? workspaceIds[login], required_capability: "repository-jobs/v1" })
         if (options.incompatibleHost) return Response.json({ code: "coding_host_upgrade_required", message: "This workspace needs a compatible coding host." }, { status: 409 })
-        return Response.json({ gateway_id: `gateway-${login}`, workspace_id: body.workspace_id, base_url: `https://gateway.test/${login}`,
+        return Response.json({ gateway_id: `gateway-${login}`, workspace_id: body.workspace_id, base_url: `https://cloud.test/api/gateways/gateway-${login}`,
           token: `synthetic-${login}`, expires_at: new Date(Date.now() + 3_600_000).toISOString() })
       }
       workspaceCalls.push({ method: request.method, path: url.pathname, ...(request.method === "POST" ? { body: await request.json() } : {}) })
@@ -66,8 +67,8 @@ async function fixture() {
       return Response.json({ id: request.method === "POST" ? options.newWorkspace ?? workspaceIds[login] : url.pathname.split("/").pop(),
         status: options.workspaceState, kind: "vm", repo_full_name: "org/repo" })
     }
-    if (url.hostname !== "gateway.test") throw Error("Unexpected upstream")
-    const login = url.pathname.split("/")[1]!
+    if (!relayed) throw Error("Unexpected upstream")
+    const login = url.pathname.split("/")[3]!.replace(/^gateway-/, "")
     expect(request.headers.get("authorization")).toBe(`Bearer synthetic-${login}`)
     const body = JSON.parse(await request.text()) as { tag: string; payload: Record<string, unknown> }
     calls.push({ login, ...body })

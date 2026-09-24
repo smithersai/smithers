@@ -33,7 +33,9 @@ import {
   ensureGateway,
   ensureGatewayReady,
   fetchCloudToken,
+  gatewayBaseUrl,
   GatewaySessionRegistry,
+  gatewayStorageKey,
   gatewayResolutionsLayer,
   gatewaySessionRequest,
   gatewaySessionsLayer,
@@ -159,7 +161,7 @@ const seam = (
   return Layer.mergeAll(services, gatewaySessionsLayer(options.namespace ?? durable.GATEWAY_SESSIONS))
 }
 
-/** An aged record, written through the registry's own PUT route: `seam()` must have been called first. */
+/** An aged record, written into the registry's storage: `seam()` must have been called first. */
 const seed = (login: string, repo: string, record: GatewayRecord): Promise<void> => durable!.seedGatewayRecord(login, repo, record)
 
 /** One registry object over `storage`, running under the seam's transport and config: a Durable Object double a test controls. */
@@ -1280,18 +1282,10 @@ describe("the GatewaySessionRegistry Durable Object", () => {
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(2)
   })
 
-  test("answers its own routes: a missing record is null, a bad write is 400, anything else 404", async () => {
+  test("answers its own routes: a missing record is null, an unnamed resolve is 400, anything else 404", async () => {
     const registry = new GatewaySessionRegistry({ storage: memoryStorage() })
     const missing = await registry.fetch(new Request("https://gateway-sessions.internal/record?repo=o%2Fr"))
     expect(await missing.json()).toEqual({ record: null })
-    const bad = await registry.fetch(
-      new Request("https://gateway-sessions.internal/record", { method: "PUT", body: JSON.stringify({ repo: "", record: {} }) })
-    )
-    expect(bad.status).toBe(400)
-    const unreadable = await registry.fetch(
-      new Request("https://gateway-sessions.internal/record", { method: "PUT", body: "not json" })
-    )
-    expect(unreadable.status).toBe(400)
     const unnamed = await registry.fetch(
       new Request("https://gateway-sessions.internal/resolve", { method: "POST", body: JSON.stringify({ repo: "o/r" }) })
     )
@@ -1332,13 +1326,16 @@ describe("the gateway session registry", () => {
   const retainedNamespace = (fetch: FetchImplementation) => {
     const stores = new Map<string, Map<string, unknown>>()
     const failures = { get: false, put: false }
-    const storageFor = (login: string): NativeStorage => {
+    const rowsOf = (login: string): Map<string, unknown> => {
       let data = stores.get(login)
       if (data === undefined) {
         data = new Map()
         stores.set(login, data)
       }
-      const rows = data
+      return data
+    }
+    const storageFor = (login: string): NativeStorage => {
+      const rows = rowsOf(login)
       return {
         get: async <T>(key: string): Promise<T | undefined> => {
           if (failures.get) throw new Error("read failed")
@@ -1363,7 +1360,7 @@ describe("the gateway session registry", () => {
         return registry
       }
     }
-    return { namespace, stores, failures, restart: () => instances.clear() }
+    return { namespace, stores, rowsOf, failures, restart: () => instances.clear() }
   }
 
   const provisionEach = (call: RelayCall, attempt: number): Response => {
@@ -1386,14 +1383,10 @@ describe("the gateway session registry", () => {
     return outcome.record
   }
 
-  const age = (namespace: NativeNamespace, login: string, repo: string, record: GatewayRecord): Promise<Response> =>
-    namespace.get(namespace.idFromName(login)).fetch(
-      new Request("https://gateway-sessions.internal/record", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ repo, record: { ...record, renewAfter: Date.now() - 1 } })
-      })
-    )
+  /** Expires a stored record in place, as the clock would. */
+  const age = (rowsOf: (login: string) => Map<string, unknown>, login: string, repo: string, record: GatewayRecord): void => {
+    rowsOf(login).set(gatewayStorageKey(repo, record.workspaceId), { ...record, renewAfter: Date.now() - 1 })
+  }
 
   test("round-trips exact credentials per login and repository across restarts, provision and renewal", async () => {
     const { calls, fetch } = relay({ cloudToken: tokenEach, provision: provisionEach })
@@ -1422,7 +1415,7 @@ describe("the gateway session registry", () => {
 
     // Renewal replaces exactly the expired record and adopts what came back.
     const aged = minted.get("alice org/one")!
-    await age(retained.namespace, "alice", "org/one", aged)
+    age(retained.rowsOf, "alice", "org/one", aged)
     const renewed = await ready(layer, "alice", "org/one")
     expect(renewed.gatewayId).not.toBe(aged.gatewayId)
     expect(renewed.gatewayId).toMatch(/^alice-org-one-\d+$/)
@@ -1448,11 +1441,7 @@ describe("the gateway session registry", () => {
       gatewayId: "legacy", baseUrl: "https://api.smithers-cloud.test/api/gateways/legacy",
       token: `${GATEWAY_TOKEN}-legacy`, vmId: null, expiresAt: now + 3_600_000, renewAfter: now + 1_800_000
     }
-    await retained.namespace.get("alice").fetch(new Request("https://gateway-sessions.internal/record", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ repo: "org/legacy", record: legacy })
-    }))
+    retained.rowsOf("alice").set(gatewayStorageKey("org/legacy"), legacy)
     expect(await ready(layer, "alice", "org/legacy")).toEqual({ ...legacy, provisionedAt: 0 })
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(0)
 
@@ -1475,7 +1464,7 @@ describe("the gateway session registry", () => {
       const layer = seam(fetch, { namespace: retained.namespace })
       if (state === "expired") {
         const stale = await ready(layer, "alice", "org/one")
-        await age(retained.namespace, "alice", "org/one", stale)
+        age(retained.rowsOf, "alice", "org/one", stale)
         calls.length = 0
       }
       const records = await Promise.all(Array.from({ length: 8 }, () => ready(layer, "alice", "org/one")))
@@ -1501,5 +1490,141 @@ describe("the gateway session registry", () => {
     expect(outcomes[0]?.status).toBe("no_capacity")
     expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
     expect(retained.stores.get("alice")?.size ?? 0).toBe(0)
+  })
+})
+
+/*
+ * The relay address: a record's baseUrl is exactly
+ * `<Cloud origin>/api/gateways/<gatewayId>`. The gateway bearer and the
+ * user's relayed frame go nowhere else, whatever Cloud answers or storage
+ * holds.
+ */
+describe("the relay address", () => {
+  const CLOUD = "https://api.smithers-cloud.test"
+  const REFUSED = [
+    "https://attacker.test/api/gateways/gw-1",
+    "http://api.smithers-cloud.test/api/gateways/gw-1",
+    "https://api.smithers-cloud.test:8443/api/gateways/gw-1",
+    "https://u:p@api.smithers-cloud.test/api/gateways/gw-1",
+    "https://api.smithers-cloud.test/api/gateways/gw-2",
+    "https://api.smithers-cloud.test/api/gateways/gw-1?x=1",
+    "https://api.smithers-cloud.test/api/gateways/gw-1#f",
+    "https://api.smithers-cloud.test/api/gateways/gw-1/",
+    "https://api.smithers-cloud.test/api/gateways/gw-1/../../admin",
+    "https://api.smithers-cloud.test/admin",
+    "https://api.smithers-cloud.test.attacker.test/api/gateways/gw-1",
+    "not a url",
+    ""
+  ]
+  const REFUSAL = { status: "unavailable", detail: "Smithers Cloud answered with a gateway address outside its own origin." } as const
+
+  const answering = (baseUrl: string) => relay({
+    provision: () => json(200, {
+      base_url: baseUrl, token: GATEWAY_TOKEN, gateway_id: "gw-1",
+      expires_at: new Date(Date.now() + 3_600_000).toISOString()
+    })
+  })
+  const captureErrors = () => {
+    const lines: Array<string> = []
+    const spy = spyOn(console, "error").mockImplementation((...args: Array<unknown>) => { lines.push(args.map(String).join(" ")) })
+    return { lines, restore: () => spy.mockRestore() }
+  }
+
+  test("gatewayBaseUrl accepts only the canonical address under the Cloud origin", () => {
+    expect(gatewayBaseUrl(CLOUD, "gw-1", `${CLOUD}/api/gateways/gw-1`)).toBe(`${CLOUD}/api/gateways/gw-1`)
+    expect(gatewayBaseUrl(`${CLOUD}/some/path`, "gw-1", `${CLOUD}/api/gateways/gw-1`)).toBe(`${CLOUD}/api/gateways/gw-1`)
+    expect(gatewayBaseUrl(CLOUD, "83e75ae5-0920-4000-8000-000000000003", `${CLOUD}/api/gateways/83e75ae5-0920-4000-8000-000000000003`))
+      .toBe(`${CLOUD}/api/gateways/83e75ae5-0920-4000-8000-000000000003`)
+    for (const candidate of REFUSED) expect(gatewayBaseUrl(CLOUD, "gw-1", candidate)).toBeUndefined()
+    expect(gatewayBaseUrl(CLOUD, "../admin", `${CLOUD}/admin`)).toBeUndefined()
+    expect(gatewayBaseUrl(CLOUD, "gw/1", `${CLOUD}/api/gateways/gw/1`)).toBeUndefined()
+    expect(gatewayBaseUrl("invalid origin", "gw-1", `${CLOUD}/api/gateways/gw-1`)).toBeUndefined()
+    expect(gatewayBaseUrl("foo:/x", "gw-1", "foo:/api/gateways/gw-1")).toBeUndefined()
+  })
+
+  test("a provision answer outside the Cloud origin is refused before the bearer leaves, and logged without it", async () => {
+    const { calls, fetch } = answering("https://attacker.test/api/gateways/gw-1")
+    const errors = captureErrors()
+    try {
+      const outcome = await run(callGateway("will", "will/mvp", "/rpc", { method: "POST", body: {} }).pipe(Effect.provide(seam(fetch))))
+      expect(outcome).toEqual(REFUSAL)
+    } finally { errors.restore() }
+    expect(calls.filter((call) => call.url.includes("/api/gateways/"))).toEqual([])
+    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+    expect(durable!.gatewayRows("will").size).toBe(0)
+    expect(errors.lines).toHaveLength(1)
+    expect(errors.lines[0]).toContain("gw-1")
+    expect(errors.lines[0]).toContain("https://attacker.test")
+    expect(errors.lines.join("\n")).not.toContain(GATEWAY_TOKEN)
+  })
+
+  for (const candidate of REFUSED) {
+    test(`provision refuses base_url ${JSON.stringify(candidate)}`, async () => {
+      durable = undefined
+      const { calls, fetch } = answering(candidate)
+      const errors = captureErrors()
+      try {
+        expect(await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(seam(fetch))))).toEqual(REFUSAL)
+      } finally { errors.restore() }
+      expect(calls.filter((call) => call.url.includes("/api/gateways/"))).toEqual([])
+      expect(durable!.gatewayRows("will").size).toBe(0)
+      expect(errors.lines.join("\n")).not.toContain(GATEWAY_TOKEN)
+      expect(errors.lines.join("\n")).not.toContain("u:p@")
+    })
+  }
+
+  test("a stored record outside the Cloud origin is cold: reads refuse it and the next resolution re-provisions", async () => {
+    const { calls, fetch } = relay()
+    const layer = seam(fetch)
+    const now = Date.now()
+    await seed("will", "will/mvp", {
+      gatewayId: "gw-old", baseUrl: "https://old-cloud.test/api/gateways/gw-old", token: `${GATEWAY_TOKEN}-old`,
+      vmId: null, expiresAt: now + 3_600_000, renewAfter: now + 1_800_000, provisionedAt: now
+    })
+    const errors = captureErrors()
+    try {
+      const read = await run(callGateway("will", "will/mvp", "/rpc", { method: "POST", text: "{}", provision: false }).pipe(Effect.provide(layer)))
+      expect(read).toEqual({ status: "unavailable", detail: "No live workspace holds an answer for this read." })
+      expect(calls).toEqual([])
+      const resolved = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(layer)))
+      expect(resolved.status === "ready" && resolved.record.baseUrl).toBe(`${CLOUD}/api/gateways/gw-1`)
+    } finally { errors.restore() }
+    expect(calls.some((call) => call.url.includes("old-cloud.test"))).toBe(false)
+    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+    expect(errors.lines.some((line) => line.includes("gateway:will/mvp"))).toBe(true)
+    expect(errors.lines.join("\n")).not.toContain(GATEWAY_TOKEN)
+  })
+
+  test("a malformed stored row is cold, not a defect", async () => {
+    const { calls, fetch } = relay()
+    const layer = seam(fetch)
+    const now = Date.now()
+    durable!.gatewayRows("will").set("gateway:will/mvp", { gatewayId: "gw-0", vmId: null, expiresAt: now + 3_600_000, renewAfter: now + 1_800_000 })
+    const errors = captureErrors()
+    try {
+      const resolved = await run(ensureGateway("will", "will/mvp").pipe(Effect.provide(layer)))
+      expect(resolved.status === "ready" && resolved.record.gatewayId).toBe("gw-1")
+    } finally { errors.restore() }
+    expect(calls.filter((call) => call.url.endsWith("/gateway"))).toHaveLength(1)
+    expect(errors.lines.some((line) => line.includes("gateway resolution"))).toBe(false)
+  })
+
+  test("the registry answers an off-origin row as no record and has no write route", async () => {
+    const storage = memoryStorage()
+    const now = Date.now()
+    await storage.put("gateway:o/r", {
+      gatewayId: "gw-1", baseUrl: "https://attacker.test/api/gateways/gw-1", token: GATEWAY_TOKEN,
+      vmId: null, expiresAt: now + 3_600_000, renewAfter: now + 1_800_000, provisionedAt: now
+    })
+    const registry = registryOver(storage, relay().fetch)
+    const errors = captureErrors()
+    try {
+      const read = await registry.fetch(new Request("https://gateway-sessions.internal/record?repo=o%2Fr"))
+      expect(await read.json()).toEqual({ record: null })
+    } finally { errors.restore() }
+    const write = await registry.fetch(new Request("https://gateway-sessions.internal/record", {
+      method: "PUT", body: JSON.stringify({ repo: "o/r", record: { baseUrl: "https://attacker.test" } })
+    }))
+    expect(write.status).toBe(404)
   })
 })

@@ -16,3 +16,12 @@ can retry once because the relay rejected the credentials. Run calls use
 `replayable: false`; a lost response does not establish that a run failed.
 
 `provision: false` calls send at most once and never refresh the record.
+
+## Relay address
+
+A gateway record's `baseUrl` is exactly
+`<SMITHERS_CLOUD_API_BASE_URL origin>/api/gateways/<gateway_id>`. A provision
+answer naming any other scheme, host, port, path, query, fragment or
+credentials is refused as `unavailable` before the bearer is sent, and logs
+one `worker_seam_failure` line with seam `gateway provision`. A stored row
+outside that address is treated as cold and re-provisioned.

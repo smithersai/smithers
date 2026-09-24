@@ -6,7 +6,7 @@ import type { ServerConfig, ServerEnvVars } from "./Config"
 import { storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { memoryStorage } from "./DurableStorage"
-import { GatewaySessionRegistry, gatewayResolutionsLayer, gatewaySessionRequest, makeGatewayResolutions } from "./gateway"
+import { GatewaySessionRegistry, gatewayResolutionsLayer, gatewaySessionRequest, gatewayStorageKey, makeGatewayResolutions } from "./gateway"
 import type { GatewayRecord } from "./gateway"
 import { TransportLive } from "./Http"
 import type { Transport } from "./Http"
@@ -116,25 +116,14 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
     /** The rows one login's registry holds, by storage key, for a test to inspect. */
     gatewayRows: (login: string): Map<string, unknown> => retained(gatewayData, login),
     /**
-     * Writes an aged record through the registry's own PUT route — the state a
-     * real deployment is in most of the time, which tests cannot wait out.
+     * Writes a record straight into the login's storage under its persisted
+     * key: the state a real deployment is in most of the time, which tests
+     * cannot wait out. The registry decodes it on read like any stored row.
      */
-    seedGatewayRecord: (login: string, repo: string, record: GatewayRecord): Promise<void> =>
-      runDurable(
-        Effect.gen(function* () {
-          const stub = GATEWAY_SESSIONS.get(GATEWAY_SESSIONS.idFromName(login))
-          const response = yield* Effect.promise(() =>
-            stub.fetch(
-              new Request("https://gateway-sessions.internal/record", {
-                method: "PUT",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ repo, workspaceId: record.workspaceId, record })
-              })
-            )
-          )
-          if (!response.ok) return yield* Effect.die(new Error(`Seeding a gateway record failed: HTTP ${response.status}`))
-        })
-      ),
+    seedGatewayRecord: (login: string, repo: string, record: GatewayRecord): Promise<void> => {
+      retained(gatewayData, login).set(gatewayStorageKey(repo, record.workspaceId), structuredClone(record))
+      return Promise.resolve()
+    },
     /** Forgets every object AND its rows: the next test starts cold. */
     reset: (): void => {
       gatewayData.clear()
