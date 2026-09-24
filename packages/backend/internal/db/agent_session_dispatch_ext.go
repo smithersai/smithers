@@ -8,14 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// txBeginner is satisfied by *pgxpool.Pool, *pgx.Conn, and pgx.Tx (as a
-// savepoint), letting hand-written extension methods run multi-statement
-// transactions when the underlying DBTX supports it. All production DBTX
-// implementations do.
-type txBeginner interface {
-	Begin(ctx context.Context) (pgx.Tx, error)
-}
-
 // ClaimAgentSessionForDispatch atomically re-points an agent session at a new
 // workflow run — but only when the session has no live (queued/running) run.
 //
@@ -36,13 +28,9 @@ type txBeginner interface {
 //
 // Returns false when the session is missing/tombstoned or another run is live.
 func (q *Queries) ClaimAgentSessionForDispatch(ctx context.Context, sessionID string, workflowRunID int64) (bool, error) {
-	beginner, ok := q.db.(txBeginner)
-	if !ok {
-		return false, fmt.Errorf("claim agent session for dispatch: underlying DBTX cannot begin a transaction")
-	}
-	tx, err := beginner.Begin(ctx)
+	tx, err := q.BeginTx(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("claim agent session for dispatch: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -107,13 +95,9 @@ WHERE id = $1 AND deleted_at IS NULL
 // Returns false when the fleet is at capacity; an error when the session is not
 // in a reservable state (missing, tombstoned, or not active).
 func (q *Queries) ReserveAgentSessionVMSlot(ctx context.Context, sessionID string, maxActive int) (bool, error) {
-	beginner, ok := q.db.(txBeginner)
-	if !ok {
-		return false, fmt.Errorf("reserve agent session vm slot: underlying DBTX cannot begin a transaction")
-	}
-	tx, err := beginner.Begin(ctx)
+	tx, err := q.BeginTx(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("reserve agent session vm slot: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
