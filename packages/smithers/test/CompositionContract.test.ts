@@ -81,7 +81,8 @@ const composition = (
     requestExecutor: executor,
     // Proves the recorder's floor: explicitly declining to park must not make
     // a provider-capacity refusal recordable again.
-    quotaPolicy: QuotaPolicy.layerUnclassified()
+    quotaPolicy: QuotaPolicy.layerUnclassified(),
+    capacity: { park: false }
   })
   return Application.layer({ root }, registry, engine, runs) as Layer.Layer<Control.Control>
 }

@@ -116,7 +116,7 @@ export interface Options {
   /** Resolved seats attempted in order after `seat` on a capacity refusal. */
   readonly fallbackSeats?: ReadonlyArray<Seat.Seat>
   /** Capacity policy for this run; parking is enabled by default. */
-  readonly capacity?: { readonly park: boolean; readonly maxParkMillis?: number }
+  readonly capacity?: { readonly park: boolean; readonly maxParkMillis?: number } | undefined
   /** Resolves context budgets after a steer, using the host seat vocabulary. */
   readonly contextWindowTokensFor?: CellTurn.Input["contextWindowTokensFor"]
   /** The task the run was admitted with. */

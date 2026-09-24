@@ -151,6 +151,8 @@ export interface ExecutorOptions {
   readonly grants?: Layer.Layer<GrantStore.GrantStore> | undefined
   readonly requestExecutor?: Layer.Layer<RequestExecutor.RequestExecutor> | undefined
   readonly quotaPolicy?: Layer.Layer<QuotaPolicy.QuotaClassifier> | undefined
+  /** Seat-capacity parking policy forwarded to every agent run. */
+  readonly capacity?: Agent.Options["capacity"]
   /** The checkout runs execute in, when it is not the project root. */
   readonly executionRoot?: string | undefined
   /** Where `engine.db` lives, when that is not the project root. */
@@ -1124,6 +1126,7 @@ export const make = (
           flows: sources,
           limits: cellLimits,
           quotaPolicy,
+          capacity: options.capacity,
           budget: Budget.layerFromEnvelope,
           orderTerminalStatus: supervisor.awaitSettled,
           approvalChannel: options.approvalChannel,

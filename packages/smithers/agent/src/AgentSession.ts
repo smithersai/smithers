@@ -155,6 +155,8 @@ export interface Options {
   readonly limits: Sandbox.Limits
   /** Required quota park/retry policy for every model call in the run. */
   readonly quotaPolicy: Layer.Layer<QuotaPolicy.QuotaClassifier>
+  /** Whether the seat-capacity controller may park after a provider refusal. */
+  readonly capacity?: AgentOptions["capacity"]
   /** Builds the run-local spending policy from the plan that was approved. */
   readonly budget: (envelope: Envelope) => Layer.Layer<Budget.Budget, Budget.ConfigurationError>
   /** Stable system teaching placed ahead of the cell contract. */
@@ -2539,6 +2541,7 @@ export const make = (
           modelParams: ModelRequest.GenerationParams.make({
             reasoningEffort: effortFor(descriptor, options.reasoningEffort)
           }),
+          capacity: options.capacity,
           prompt: rendered.text,
           system: options.system,
           registry,
