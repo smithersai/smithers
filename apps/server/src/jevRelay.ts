@@ -1,8 +1,9 @@
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { ServerConfig } from "./Config"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { routeRefusalStatus } from "./Responses"
+import type { RouteRefusalCode } from "./Responses"
 import type { BodyFailure } from "./Failures"
 import { readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
@@ -188,8 +189,8 @@ export const parseJevRequest = (request: Request): Effect.Effect<ParsedJevReques
 const jsonWith = (status: number, body: unknown, headers: Record<string, string>): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
-const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
-  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+const refusal = (code: RouteRefusalCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(routeRefusalStatus(code), { status: "error", code, message }, headers)
 
 /**
  * POST /api/jev. `login` is the validated session's login when the caller has

@@ -126,8 +126,8 @@ with `transportLayer(fakeFetch)` instead of patching `globalThis.fetch` and
 There is no BYOK. `jevEvaluate` and `cerebrasChat` read `ModelPayer`: a
 signed-in turn, Recommend, Jev relay or model Test posts to
 `{cloudApiBaseUrl}/api/model/{cerebras|vercel}/...` with the login's Cloud
-token, and Plue's 402 `out_of_credit` becomes the Worker's `out_of_credit`
-refusal. `AccountModelVault` stays exported only as deployment identity and
+token, and Plue's 402 `out_of_credit` is relayed under Plue's own code (it
+lives in `PlueFailureCodes`, not the Worker's table). `AccountModelVault` stays exported only as deployment identity and
 answers 410.
 
 Failures are typed in `src/Failures.ts` (`UpstreamTimeout`,

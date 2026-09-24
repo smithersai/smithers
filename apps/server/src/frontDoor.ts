@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect"
 import { AGENT_TURN_FRONT_DOOR_CALL_PREFIX } from "@smthrs/rpc/NativeAgent"
 import type { AgentChatMessage, AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
-import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { routeRefusalStatus } from "./Responses"
+import type { RouteRefusalCode } from "./Responses"
 import type { TurnRequest } from "./cloudRoleTurn"
 import { modelRefusal, planDecisionModel } from "./configuredModel"
 import { ServerConfig } from "./Config"
@@ -427,9 +427,9 @@ const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, s
   })
 
 /* This route's own refusal: the code names the status, and the caller's headers ride along. */
-const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
+const refusal = (code: RouteRefusalCode, message: string, headers: Record<string, string>): Response =>
   new Response(JSON.stringify({ status: "error", code, message }), {
-    status: WORKER_FAILURES[code].status,
+    status: routeRefusalStatus(code),
     headers: { "content-type": "application/json", ...headers }
   })
 

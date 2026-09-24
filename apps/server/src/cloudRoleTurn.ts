@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
-import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { routeRefusalStatus } from "./Responses"
+import type { RouteRefusalCode } from "./Responses"
 /**
  * The cloud roles: turns the Worker answers itself, on Cerebras.
  *
@@ -131,8 +131,8 @@ const jsonWith = (status: number, body: unknown, headers: Record<string, string>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
 /* This route's own refusal: the code names the status, and the caller's headers ride along. */
-const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
-  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+const refusal = (code: RouteRefusalCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(routeRefusalStatus(code), { status: "error", code, message }, headers)
 
 const ndjson = (frames: ReadonlyArray<AgentTurnFrame>, headers: Record<string, string>): Response =>
   new Response(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""), {

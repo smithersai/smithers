@@ -9,8 +9,9 @@ import { ServerConfig } from "./Config"
 import { answeredJson, namespaceCall } from "./DurableStorage"
 import type { NativeNamespace } from "./DurableStorage"
 import { StorageFailure } from "./Failures"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { routeRefusalStatus } from "./Responses"
+import type { RouteRefusalCode } from "./Responses"
 import type { BodyFailure } from "./Failures"
 import { discardBody, fetchWithDeadline, readBoundedJson, readJsonOrUndefined } from "./Http"
 import type { Transport } from "./Http"
@@ -801,8 +802,8 @@ const jsonWith = (status: number, body: unknown, headers: Record<string, string>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
 /* This route's own refusal: the code names the status, and the caller's headers ride along. */
-const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
-  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+const refusal = (code: RouteRefusalCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(routeRefusalStatus(code), { status: "error", code, message }, headers)
 
 /**
  * POST /api/recommend. `login` is the validated session's login when the

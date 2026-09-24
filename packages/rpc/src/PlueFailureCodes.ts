@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:0f38622d0cd7d826260f9b56fef21e8c7b12f5b52eedf908a711f8e89c3e3078"
+export const PLUE_FAILURE_DIGEST = "sha256:3369fd6c63afd7d41bbb5d73050556eadf1ee511eb93d6632a47f4e6c62e3f96"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -145,6 +145,7 @@ export const PLUE_FAILURE_CODES = [
   "not_implemented",
   "operation_in_progress",
   "org_membership_required",
+  "out_of_credit",
   "peer_identity_denied",
   "plan_limit_exceeded",
   "preview_unavailable",
@@ -378,6 +379,8 @@ export const PLUE_FAILURES = {
   "operation_in_progress": { fault: "wait", status: 409, retryAfter: 1 },
   /** The requested owner is an organization on this deployment and the caller does not belong to it. Join the organization, or fork the repository into your own namespace. */
   "org_membership_required": { fault: "user", status: 403, retryAfter: 0 },
+  /** The account's credit balance cannot cover the next model call; upgrade or top up, then retry. */
+  "out_of_credit": { fault: "user", status: 402, retryAfter: 0 },
   /** The calling peer's mTLS identity is not one this worker accepts. */
   "peer_identity_denied": { fault: "user", status: 403, retryAfter: 0 },
   /** The user has exhausted a sandbox limit included in their plan. */

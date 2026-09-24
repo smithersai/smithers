@@ -189,6 +189,7 @@ const (
 	CodeLandingRequestConflict    Code = "landing_request_conflict"
 	CodeGitHubImportAlreadyActive Code = "github_import_already_active"
 	CodeOrgMembershipRequired     Code = "org_membership_required"
+	CodeOutOfCredit               Code = "out_of_credit"
 	CodeGitHubImportTooLarge      Code = "github_import_too_large"
 	CodeGitHubPullDiffTooLarge    Code = "github_pull_diff_too_large"
 	CodeGitHubUnavailable         Code = "github_unavailable"
@@ -474,6 +475,9 @@ var registry = map[Code]Entry{
 	// caller does not belong to it. Imports never silently fall back to the
 	// caller's own namespace; join the organization or fork the repository.
 	CodeOrgMembershipRequired: {Status: http.StatusForbidden, Fault: FaultUser, RetryAfter: 0, Doc: "The requested owner is an organization on this deployment and the caller does not belong to it. Join the organization, or fork the repository into your own namespace."},
+	// The account's credit cannot cover the next metered model call. Plue's
+	// model proxy answers it; the Worker relays it unchanged.
+	CodeOutOfCredit: {Status: http.StatusPaymentRequired, Fault: FaultUser, RetryAfter: 0, Doc: "The account's credit balance cannot cover the next model call; upgrade or top up, then retry."},
 	// The GitHub repository is larger than plue's import limit. Refused
 	// before the mirror clone, so nothing was written.
 	CodeGitHubImportTooLarge: {Status: http.StatusRequestEntityTooLarge, Fault: FaultUser, RetryAfter: 0, Doc: "The GitHub repository is larger than plue's import limit. It is refused before the clone, so nothing was written."},

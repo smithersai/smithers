@@ -256,6 +256,12 @@ const BY_CODE: Partial<Record<PlueFailureCode, Partial<RefusalCopyRow>>> = {
       "fault=user: THIS ACCOUNT is at a per-resource cap (for example, how many boxes it may keep running) — this is not the fleet being full. Tell them what to free up. Never tell them it is not their fault and never mention buying more infra.",
     doors: []
   },
+  /* Plue's model proxy refused a metered call; the Worker relays the code unchanged. */
+  out_of_credit: {
+    lead: "Out of credit.",
+    agent: "fault=user: the account's model credit is spent. Offer billing.plans so the human can add credit. Do not retry.",
+    doors: ["upgrade"]
+  },
   rate_limit_exceeded: { lead: "You're going faster than Smithers allows. Give it a minute.", doors: ["retry"] },
   /*
    * `infra`, like a full fleet, and it must NOT read like one. This box booted
@@ -566,11 +572,6 @@ export const WORKER_REFUSAL_COPY = {
     agent:
       "fault=dependency: the model provider is rate-limiting THIS DEPLOYMENT, not the user's account and not their request. Nothing was charged. Say it is worth trying again shortly, and never suggest they change what they asked for.",
     doors: ["retry"]
-  },
-  out_of_credit: {
-    lead: "Out of credit.",
-    agent: "fault=user: the account's model credit is spent. Offer billing.plans so the human can add credit. Do not retry.",
-    doors: ["upgrade"]
   },
   procedure_not_relayed: { lead: "Smithers doesn't relay that call.", doors: [] },
   request_body_not_json: { lead: "Smithers couldn't read that request as JSON.", doors: ["retry"] },

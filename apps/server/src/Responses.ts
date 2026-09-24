@@ -3,6 +3,9 @@ import * as Effect from "effect/Effect"
 import { upstreamProse } from "@smthrs/rpc/UpstreamProse"
 import { workerRefusalEnvelope } from "@smthrs/rpc/Refusal"
 import type { WorkerRefusalEnvelope } from "@smthrs/rpc/Refusal"
+import { PLUE_FAILURES } from "@smthrs/rpc/PlueFailureCodes"
+import type { PlueFailureCode } from "@smthrs/rpc/PlueFailureCodes"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import type { BodyFailure, UpstreamFailure } from "./Failures"
 import { readBoundedJson } from "./Http"
@@ -84,6 +87,21 @@ const coded = (envelope: WorkerRefusalEnvelope): Response => {
   for (const [name, value] of Object.entries(envelope.headers)) response.headers.set(name, value)
   return markRefusal(response, envelope.body.code)
 }
+
+/**
+ * A plue refusal this Worker passes on under plue's own code and status, such
+ * as the model proxy's `out_of_credit`. The code is plue's, so the envelope
+ * carries no Worker origin and the client reads it back against plue's table.
+ */
+/** A code a route answers with: its own, or Plue's `out_of_credit` relayed from the model proxy. */
+export type RouteRefusalCode = WorkerFailureCode | "out_of_credit"
+
+/** The registry status for a route refusal code, read from whichever table owns it. */
+export const routeRefusalStatus = (code: RouteRefusalCode): number =>
+  code === "out_of_credit" ? PLUE_FAILURES[code].status : WORKER_FAILURES[code].status
+
+export const relayPlue = (code: PlueFailureCode, message: string): Response =>
+  json(PLUE_FAILURES[code].status, { status: "error", code, message })
 
 /*
  * The canonical unknown-route answer. The admin surface is non-enumerable

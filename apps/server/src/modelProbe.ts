@@ -34,7 +34,7 @@ import type { ServerConfigShape } from "./Config"
 import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, JEV_EVALUATE_URL, jevEvaluate } from "./jev"
-import { bodyRefusal, json, refuse } from "./Responses"
+import { bodyRefusal, json, refuse, relayPlue } from "./Responses"
 import { isOutOfCredit, modelRoute, paidBy } from "./modelPayer"
 import { deploymentModelSecret, workerModelCredentials } from "./modelVault"
 export { workerModelCredentials } from "./modelVault"
@@ -159,7 +159,7 @@ const chatProbe = (
         ]
       })
     }, MODEL_TEST_DEADLINE_MS)
-    if (route.metered && response.status === 402 && (yield* isOutOfCredit(response))) return refuse("out_of_credit", "Out of credit.")
+    if (route.metered && response.status === 402 && (yield* isOutOfCredit(response))) return relayPlue("out_of_credit", "Out of credit.")
     if (!response.ok) {
       yield* discardBody(response)
       return refused(response.status)
@@ -202,7 +202,7 @@ const decisionProbe = (
             case "empty":
               return UNDECODABLE
             case "out_of_credit":
-              return refuse("out_of_credit", "Out of credit.")
+              return relayPlue("out_of_credit", "Out of credit.")
           }
         }
         // Decoded against the questions asked, as the classifier decodes on the local host: an answer that fits no question is the protocol's failure.

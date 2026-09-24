@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:0f38622d0cd7d826260f9b56fef21e8c7b12f5b52eedf908a711f8e89c3e3078",
+  "digest": "sha256:3369fd6c63afd7d41bbb5d73050556eadf1ee511eb93d6632a47f4e6c62e3f96",
   "faults": [
     "user",
     "wait",
@@ -554,6 +554,13 @@
       "status": 403,
       "retry_after": 0,
       "doc": "The requested owner is an organization on this deployment and the caller does not belong to it. Join the organization, or fork the repository into your own namespace."
+    },
+    {
+      "code": "out_of_credit",
+      "fault": "user",
+      "status": 402,
+      "retry_after": 0,
+      "doc": "The account's credit balance cannot cover the next model call; upgrade or top up, then retry."
     },
     {
       "code": "peer_identity_denied",

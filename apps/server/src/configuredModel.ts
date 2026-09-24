@@ -3,8 +3,8 @@ import * as Redacted from "effect/Redacted"
 import { cutModelCredential, modelFailureRefusalCode, planModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelBinding, ModelTestFailure } from "@smthrs/rpc/ConfiguredModel"
 import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
-import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
-import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { routeRefusalStatus } from "./Responses"
+import type { RouteRefusalCode } from "./Responses"
 import {
   CLOUD_ROLE_MAX_TOKENS,
   CLOUD_ROLE_REASONING_EFFORT,
@@ -82,8 +82,8 @@ const jsonWith = (status: number, body: unknown, headers: Record<string, string>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } })
 
 /* This route's own refusal: the code names the status, and the caller's headers ride along. */
-const refusal = (code: WorkerFailureCode, message: string, headers: Record<string, string>): Response =>
-  jsonWith(WORKER_FAILURES[code].status, { status: "error", code, message }, headers)
+const refusal = (code: RouteRefusalCode, message: string, headers: Record<string, string>): Response =>
+  jsonWith(routeRefusalStatus(code), { status: "error", code, message }, headers)
 
 /** A refused binding, in the Worker's failure vocabulary. */
 export const modelRefusal = (failure: ModelTestFailure, headers: Record<string, string>): Response =>
