@@ -141,6 +141,22 @@ jobs:
           else
             echo "dry_run=true" >> "$GITHUB_OUTPUT"
           fi
+      # CN-23 reads the allowlist back with the identity service token and the
+      # roster variable. With neither configured it can assert nothing, so it
+      # does not run and a warning says so. With either one it runs, and a
+      # missing half fails it as `CN-23 ASSERTED NOTHING`. Decided here, before
+      # any probe, so a red CN-1 cannot leave both CN-23 steps skipped.
+      - name: Decide whether CN-23 can read the allowlist
+        id: invite
+        env:
+          HAS_SERVICE_TOKEN: ${{ secrets.IDENTITY_SERVICE_TOKEN != '' }}
+          HAS_ROSTER: ${{ vars.CANARY_ALLOWLIST_LOGINS != '' }}
+        run: |
+          if [ "$HAS_SERVICE_TOKEN" = "true" ] || [ "$HAS_ROSTER" = "true" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Deploy (dry-run)
         id: deploy_dry
         if: steps.mode.outputs.dry_run == 'true'
@@ -226,28 +242,25 @@ jobs:
         if: ${{ !cancelled() && (steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success') }}
         working-directory: apps/server
         run: bun scripts/canary/workers-health.ts
-      # Read-only half only: the roster reads back as allowlisted. The write
-      # half (--admit-probe-login, IDENTITY_ADMIN_TOKEN) mutates the production
-      # allowlist and stays a human drill in apps/server/INVITES.md, so the
-      # admin token is deliberately not passed here.
-      #
-      # This step goes red until IDENTITY_SERVICE_TOKEN and
-      # CANARY_ALLOWLIST_LOGINS are configured. That is the probe's own ruling,
-      # not this file's: inviteRunSummary in scripts/canary/invite-verdict.ts
-      # exits 1 on a run that asserted nothing and refuses --allow-inconclusive
-      # under CI. Configure the secret and the variable; do not add
-      # continue-on-error.
-      #
-      # IDENTITY_UPSTREAM_URL is not set here. An unset repository variable
-      # expands to the empty string, which would override the probe's default
-      # identity origin with a URL base that cannot resolve.
+      # Read-only half only; the write half mutates the production allowlist
+      # and stays a human drill in apps/server/INVITES.md. Runs when the
+      # `invite` step found the service token or the roster; a missing half is
+      # red, the probe's own ruling (invite-verdict.ts). Do not add
+      # continue-on-error. IDENTITY_UPSTREAM_URL is not set: an unset variable
+      # expands to "" and would override the probe's default origin.
       - name: CN-23 — the closed-alpha entry path
-        if: ${{ !cancelled() && (steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success') }}
+        if: ${{ !cancelled() && (steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success') && steps.invite.outputs.configured == 'true' }}
         working-directory: apps/server
         env:
           IDENTITY_SERVICE_TOKEN: ${{ secrets.IDENTITY_SERVICE_TOKEN }}
           CANARY_ALLOWLIST_LOGINS: ${{ vars.CANARY_ALLOWLIST_LOGINS }}
         run: bun scripts/canary/invite-probe.ts
+      - name: CN-23 not run (no identity credential or roster)
+        if: ${{ !cancelled() && (steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success') && steps.invite.outputs.configured == 'false' }}
+        run: |
+          set -euo pipefail
+          echo "::warning title=CN-23 not run::Neither the IDENTITY_SERVICE_TOKEN secret nor the CANARY_ALLOWLIST_LOGINS variable is set, so the allowlist seed was not read back."
+          echo "- CN-23 allowlist seed probe: NOT RUN — IDENTITY_SERVICE_TOKEN and CANARY_ALLOWLIST_LOGINS are unset (apps/server/INVITES.md)." >> "$GITHUB_STEP_SUMMARY"
       # Reads the receipt the deploy step just wrote (deploy-receipts/latest.json),
       # so it means something only on the real-deploy path. The probe exits 0
       # when it verified nothing, so that becomes a warning here.

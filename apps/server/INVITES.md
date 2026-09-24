@@ -74,6 +74,10 @@ Pass `--allow-inconclusive` to exit 0 on a run that verified nothing. It is
 there so a contributor without production credentials is not blocked by a
 failure they cannot act on. CI refuses the flag: with `CI=true` the probe exits
 1 regardless, so an unconfigured pipeline step can never report green.
+`apps-deploy.yml` runs the probe after every deploy when the repository has
+the `IDENTITY_SERVICE_TOKEN` secret or the `CANARY_ALLOWLIST_LOGINS` variable.
+With neither, it skips the probe and posts a `CN-23 not run` warning and a
+`NOT RUN` line in the run summary. With only one, the probe runs and fails.
 `IDENTITY_UPSTREAM_URL` defaults to the canary value in `wrangler.jsonc`. Keep
 the roster in a repository **variable**, not a secret — GitHub logins are
 public and a variable is diffable.

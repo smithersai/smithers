@@ -13,7 +13,9 @@
  * passing after someone adds probe six.
  */
 import { describe, expect, it } from "bun:test"
-import { readdirSync, readFileSync } from "node:fs"
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const canaryDir = fileURLToPath(new URL(".", import.meta.url))
@@ -24,6 +26,7 @@ const readWorkflow = (name: string): string => readFileSync(`${workflowsDir}${na
 const workflowNames = readdirSync(workflowsDir).filter((name) => name.endsWith(".yml")).sort()
 
 interface WorkflowStep {
+  readonly id?: string
   readonly name?: string
   readonly if?: unknown
   readonly uses?: string
@@ -173,6 +176,59 @@ describe("canary probes are wired into a gate", () => {
     expect(appsE2e.filter((target) => !gate.includes(target))).toEqual([])
     for (const target of ["//apps/server/...", "//apps/site/..."]) expect(gate).toContain(target)
     expect(JSON.stringify(deploy)).not.toContain("continue-on-error")
+  })
+
+  /*
+   * Neither IDENTITY_SERVICE_TOKEN nor CANARY_ALLOWLIST_LOGINS exists on the
+   * repository, so an unconditional CN-23 step exited `ASSERTED NOTHING` and
+   * finished every deploy red, dry runs included. With both absent the step
+   * does not run and a warning says so; with either one present the probe
+   * runs, so a half-configured roster or token still fails the job.
+   */
+  it("runs CN-23 when its credential or roster exists, and warns when neither does", () => {
+    const deploy = Bun.YAML.parse(readWorkflow("apps-deploy.yml")) as DeployWorkflow
+    const steps = deploy.jobs.deploy.steps
+    const decide = steps.find((step) => step.id === "invite")
+    expect(decide?.env).toEqual({
+      HAS_SERVICE_TOKEN: "${{ secrets.IDENTITY_SERVICE_TOKEN != '' }}",
+      HAS_ROSTER: "${{ vars.CANARY_ALLOWLIST_LOGINS != '' }}"
+    })
+    // Before the deploy, with no condition: a red CN-1 must not leave the
+    // decision unmade and both CN-23 steps skipped.
+    expect(decide?.if).toBeUndefined()
+    expect(steps.indexOf(decide!)).toBeLessThan(steps.findIndex((step) => step.id === "deploy_real"))
+
+    const temp = mkdtempSync(join(tmpdir(), "cn23-wiring-"))
+    let runs = 0
+    const shell = (run: string, env: Record<string, string>) => {
+      const output = join(temp, `out-${(runs += 1)}`)
+      writeFileSync(output, "")
+      const result = Bun.spawnSync(["bash", "-c", run], {
+        env: { PATH: process.env.PATH ?? "", GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: output, ...env }
+      })
+      return { exitCode: result.exitCode, stdout: result.stdout.toString(), file: readFileSync(output, "utf8") }
+    }
+    try {
+      const configured = (token: string, roster: string) =>
+        shell(decide!.run!, { HAS_SERVICE_TOKEN: token, HAS_ROSTER: roster }).file.trim()
+      expect(configured("false", "false")).toBe("configured=false")
+      expect(configured("true", "false")).toBe("configured=true")
+      expect(configured("false", "true")).toBe("configured=true")
+      expect(configured("true", "true")).toBe("configured=true")
+
+      const ran = "(steps.deploy_real.outcome == 'success' || steps.deploy_dry.outcome == 'success')"
+      const probe = steps.find((step) => step.run?.includes("scripts/canary/invite-probe.ts") === true)
+      expect(probe?.if).toBe(`\${{ !cancelled() && ${ran} && steps.invite.outputs.configured == 'true' }}`)
+      const notRun = steps.find((step) => step.name === "CN-23 not run (no identity credential or roster)")
+      expect(notRun?.if).toBe(`\${{ !cancelled() && ${ran} && steps.invite.outputs.configured == 'false' }}`)
+
+      const warned = shell(notRun!.run!, {})
+      expect(warned.exitCode).toBe(0)
+      expect(warned.stdout).toStartWith("::warning title=CN-23 not run::")
+      expect(warned.file).toContain("- CN-23 allowlist seed probe: NOT RUN")
+    } finally {
+      rmSync(temp, { recursive: true, force: true })
+    }
   })
 
   it("reports every post-deploy probe in one run", () => {
