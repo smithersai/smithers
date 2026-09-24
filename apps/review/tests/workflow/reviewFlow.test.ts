@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { Effect, Fiber } from "effect";
 import { TestClock } from "effect/testing";
 import { Review } from "../../src/workflow/reviewFlow.ts";
-import { layerMemory, scriptedEvaluator } from "../../src/workflow/reviewLayer.ts";
+import { layerMemory } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
 
 const tempDirs: string[] = [];
@@ -105,7 +105,7 @@ const runReview = (
     Review.execute({ repo, ...input } as Parameters<typeof Review.execute>[0], {
       executionId: `review-test-${Math.random()}`,
     }).pipe(
-      Effect.provide(layerMemory(scriptedSeats(answer), process.env, scriptedEvaluator())),
+      Effect.provide(layerMemory(scriptedSeats(answer), process.env)),
       Effect.orDie,
     ),
   );
@@ -129,6 +129,26 @@ describe("the review flow", () => {
     ]);
     expect(result.walkthrough.findings).toBe(3);
     expect(readFileSync(out, "utf8")).toContain("<!doctype html>");
+  }, 120_000);
+
+  test("a finding that reports a failing command is a finding, not an invented claim", async () => {
+    const repo = tempRepo(2);
+    const content = "Running `pnpm test` fails on this branch because the export was renamed.";
+    let asks = 0;
+    const result = await runReview(
+      repo,
+      { narrate: false, quiz: "off", verify: false, out: join(repo, "w.html") },
+      (ask) => {
+        const answer = answerFor()(ask) as { comments: Array<{ content: string }> };
+        asks += 1;
+        return { ...answer, comments: answer.comments.map((comment) => ({ ...comment, content })) };
+      },
+    );
+
+    expect(result.review.status).toBe("success");
+    expect(result.review.warnings).toEqual([]);
+    expect(result.review.comments.map((comment) => comment.content)).toEqual([content, content]);
+    expect(asks).toBe(2);
   }, 120_000);
 
   test.each([1, 2, 8])("bounds file-review calls at concurrency %i", async (concurrency) => {
@@ -220,7 +240,7 @@ describe("the review flow", () => {
           signal.addEventListener("abort", () => { active -= 1; interrupted += 1; }, { once: true });
           started();
           return new Promise<never>(() => {});
-        }), process.env, scriptedEvaluator())),
+        }), process.env)),
         Effect.forkScoped,
       );
       yield* Effect.promise(() => entered);

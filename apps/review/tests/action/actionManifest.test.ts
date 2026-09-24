@@ -79,4 +79,16 @@ describe("review action manifest", () => {
     expect(checkout).toBeGreaterThan(gate);
     expect(review).toBeGreaterThan(checkout);
   });
+
+  // pr-review.yml runs this action from the checkout it reviews, so the
+  // install lands inside the caller's workspace. actions/checkout cleans an
+  // existing checkout with `git clean -ffdx`, which deletes ignored files, so a
+  // checkout after the install would leave the review with no node_modules.
+  test("checks the caller's repository out before installing the action's dependencies", () => {
+    const steps = readSteps();
+    const checkout = steps.findIndex((step) => step.uses?.startsWith("actions/checkout"));
+    const install = steps.findIndex((step) => step.name === "Install smithers dependencies");
+    expect(install).toBeGreaterThan(checkout);
+    expect(checkout).toBeGreaterThanOrEqual(0);
+  });
 });

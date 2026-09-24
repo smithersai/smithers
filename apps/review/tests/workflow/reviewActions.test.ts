@@ -7,7 +7,7 @@ import { Flow, Interpreter } from "@smthrs/flow";
 import { Effect, Layer, Schema } from "effect";
 import { ApplyVerdicts, PrepareReview, RenderWalkthrough } from "../../src/workflow/reviewActions.ts";
 import { ReviewRunOutput } from "../../src/workflow/reviewRunOutputSchema.ts";
-import { layerMemory, scriptedEvaluator } from "../../src/workflow/reviewLayer.ts";
+import { layerMemory } from "../../src/workflow/reviewLayer.ts";
 import { scriptedSeats } from "./scriptedSeats.ts";
 
 const RenderTest = Flow.make("test/RenderWalkthrough", {
@@ -26,7 +26,7 @@ const testLayer = () => Layer.merge(
   Layer.merge(Interpreter.layer(RenderTest), Interpreter.layer(VerifyTest)),
   Interpreter.layer(PrepareTest),
 ).pipe(
-  Layer.provideMerge(layerMemory(scriptedSeats(() => undefined), process.env, scriptedEvaluator())),
+  Layer.provideMerge(layerMemory(scriptedSeats(() => undefined), process.env)),
 );
 const dirs: string[] = [];
 afterEach(() => { for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); });

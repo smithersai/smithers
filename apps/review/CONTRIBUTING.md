@@ -57,8 +57,9 @@ branch or fetch it first).
 ## CI
 
 `.github/workflows/pr-review.yml` dogfoods the action in `action/` on this
-repo. It is the README's workflow with the action pinned to a commit and one
-job variable, the repository's `ANTHROPIC_API_KEY` secret. It stays on
+repo. It is the README's workflow with a checkout step, the action referenced
+as `./apps/review/action` so every PR runs its own action code, and one job
+variable, the repository's `ANTHROPIC_API_KEY` secret. It stays on
 `pull_request` and `issue_comment` (never `pull_request_target`) with
 `id-token: write`, `contents: read`, and `pull-requests: write`.
 
@@ -219,6 +220,13 @@ permission that an unattended run has nobody to answer, and the CLI dies with
 "All fibers interrupted without error". Scripted seats build no HTTP request
 and never meet the check, so `tests/workflow/reviewLayerNode.test.ts` drives a
 real route against a local fixture provider to cover it.
+
+The review host binds no completion judge. `agentHost` sets `claimCap: 0`
+because its seats have no tools and no workspace: a finding that names a
+failing command is a finding, not an invented claim. The run needs no
+credential beyond the seats' own, and
+`tests/action/binUnderActionEnv.test.ts` runs the bin under exactly the
+environment the action passes.
 
 ## Documentation of exports
 

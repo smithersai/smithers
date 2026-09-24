@@ -8,29 +8,10 @@ import { fetchOidcToken } from "./fetchOidcToken.ts";
 import { gateEvent } from "./gateEvent.ts";
 import { materializeInferenceCredentials } from "./materializeInferenceCredentials.ts";
 import { resolveInferenceEnv } from "./resolveInferenceEnv.ts";
+import { failureDetail, readSummary, type ReviewSummary } from "./reviewSummary.ts";
 import { runReview } from "./runReview.ts";
 import { upsertStatusComment } from "./upsertStatusComment.ts";
 import { ghBin, runGh } from "../../src/github/runGh.ts";
-
-interface ReviewSummary {
-  files?: number;
-  findings?: number;
-  inline?: number;
-  walkthroughUrl?: string;
-  publishError?: string;
-  failedFileReviews?: number;
-  /** Reviewer-quiz outcome; absent when the CLI ran without a quiz. */
-  questions?: number;
-  impact?: string;
-}
-
-function readSummary(path: string): ReviewSummary | null {
-  try {
-    return JSON.parse(readFileSync(path, "utf8")) as ReviewSummary;
-  } catch {
-    return null;
-  }
-}
 
 const QUIZ_MODES = new Set(["off", "auto", "on"]);
 
@@ -236,10 +217,7 @@ async function main(): Promise<void> {
       : `✅ smithers review finished${runLink}`;
     await setStatus(`${outcome}${quizNote(summary)}${quotaNote(session.quota)}`);
   } else {
-    const detail = summary?.failedFileReviews
-      ? `: ${summary.failedFileReviews} file review${summary.failedFileReviews === 1 ? "" : "s"} failed`
-      : ` (exit ${exitCode})`;
-    await setStatus(`❌ smithers review failed${detail}${runLink}`);
+    await setStatus(`❌ smithers review failed${failureDetail(summary, exitCode)}${runLink}`);
     process.exit(exitCode);
   }
 }

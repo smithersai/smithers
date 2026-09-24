@@ -25,5 +25,11 @@ jobs:
     # falls back to the service's metered proxy.
     env:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # The action runs from this checkout, so a pull request is reviewed by its
+    # own action code: a break in the action turns this repository's PR red
+    # before `@main` users get it.
     steps:
-      - uses: smithersai/smithers/apps/review/action@d55bf6343f79324825c61b079bf11acd89bc0e54
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: ./apps/review/action

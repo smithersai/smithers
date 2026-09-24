@@ -82,6 +82,25 @@ function untrustedPullRequestBackground(pr: PullRequestTarget): string {
 }
 
 /**
+ * Ends a run that never reached a review and leaves its cause where the
+ * GitHub action's status comment reads it.
+ *
+ * The summary file is best-effort by design, as on the success path.
+ */
+function failRun(error: string): void {
+  console.error(error);
+  const summaryPath = process.env.SMITHERS_REVIEW_SUMMARY_PATH?.trim();
+  if (summaryPath) {
+    try {
+      writeFileSync(summaryPath, JSON.stringify({ status: "failed", reviewStatus: "failed", error }));
+    } catch (writeError) {
+      console.error(`smithers-review: could not write summary file: ${(writeError as Error).message}`);
+    }
+  }
+  process.exit(1);
+}
+
+/**
  * Reviews a change set and reports.
  *
  * @since 1.0.0
@@ -97,39 +116,24 @@ export async function runReview(args: ReviewArgs): Promise<void> {
   if (needsAgents) {
     const missing = missingSeatCredential(seats.review) ?? missingSeatCredential(seats.narrate);
     if (missing) {
-      console.error(
+      return failRun(
         `smithers-review: ${missing} — set it, or pass --no-review --no-narrate (and --quiz off) for a walkthrough-only run`,
       );
-      process.exit(1);
-      return;
     }
   }
 
   // Compose before git/gh processes, artifact directories or the database.
-  let runtime: ReturnType<typeof layerNode>;
-  try {
-    runtime = layerNode({ filename: dbPath, seats: reviewSeatResolver(seats), agents: needsAgents });
-  } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exitCode = 1;
-    return;
-  }
+  const runtime = layerNode({ filename: dbPath, seats: reviewSeatResolver(seats), agents: needsAgents });
 
   let pr: PullRequestTarget | null = null;
   if (args.pr) {
     if (!whichBinary(ghBin())) {
-      console.error(
-        "smithers-review: --pr needs the `gh` CLI — install https://cli.github.com and run `gh auth login`",
-      );
-      process.exit(1);
-      return;
+      return failRun("smithers-review: --pr needs the `gh` CLI — install https://cli.github.com and run `gh auth login`");
     }
     try {
       pr = await resolvePullRequest(repoDir, args.pr);
     } catch (error) {
-      console.error(`smithers-review: could not resolve --pr ${args.pr}: ${(error as Error).message.split("\n")[0]}`);
-      process.exit(1);
-      return;
+      return failRun(`smithers-review: could not resolve --pr ${args.pr}: ${(error as Error).message.split("\n")[0]}`);
     }
     if (!refExists(repoDir, pr.headSha)) {
       // The PR head may not exist locally (reviewing someone else's PR);
@@ -214,9 +218,7 @@ export async function runReview(args: ReviewArgs): Promise<void> {
       ),
     );
   } catch (error) {
-    console.error(`smithers-review: run ${runId} failed: ${(error as Error)?.message ?? String(error)}`);
-    process.exit(1);
-    return;
+    return failRun(`smithers-review: run ${runId} failed: ${(error as Error)?.message ?? String(error)}`);
   }
 
   const walkthrough = result.walkthrough;

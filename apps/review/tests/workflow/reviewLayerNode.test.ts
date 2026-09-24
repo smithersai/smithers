@@ -27,6 +27,15 @@ import { fileURLToPath } from "node:url";
 
 const driver = fileURLToPath(new URL("./fixtures/runNodeReview.ts", import.meta.url));
 
+/**
+ * The only variables a spawned review sees beyond the ones each case names.
+ * `process.env` would hand the child a developer's exported keys, which could
+ * satisfy a credential the shipped composition must not need.
+ */
+const hostEnv = Object.fromEntries(
+  (["PATH", "HOME", "TMPDIR", "NODE_OPTIONS"] as const).flatMap((key) => process.env[key] === undefined ? [] : [[key, process.env[key]!]]),
+);
+
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -62,7 +71,7 @@ describe("the durable composition against a real provider route", () => {
     const repo = tempRepo();
     const result = spawnSync("node", [driver, repo, join(repo, ".smithers-review", "review.db")], {
       encoding: "utf8",
-      env: process.env,
+      env: hostEnv,
       timeout: 180_000,
     });
 
@@ -97,7 +106,7 @@ test("restarts the same execution after a settled file round without rereading t
   const executionId = "review-node-restart";
   const run = (id: string) => {
     const result = spawnSync("node", [driver, repo, db, id], {
-      encoding: "utf8", env: process.env, timeout: 180_000,
+      encoding: "utf8", env: hostEnv, timeout: 180_000,
     });
     expect(result.status, result.stderr).toBe(0);
     const line = result.stdout.trim().split("\n").filter((text) => text.startsWith("{")).at(-1);
@@ -116,7 +125,7 @@ test("restarts the same execution after a settled file round without rereading t
     existingCode: "", suggestionCode: "", thinking: "",
   })));
   const child = spawn("node", [driver, repo, db, executionId, "src/file1.ts"], {
-    env: process.env, stdio: ["ignore", "pipe", "pipe"],
+    env: hostEnv, stdio: ["ignore", "pipe", "pipe"],
   });
   let stdout = "";
   let stderr = "";
@@ -166,7 +175,7 @@ test("CLI resumes its printed execution ID and refuses changed input in the same
     bin, repo, "--db", db, "--no-review", "--no-narrate", "--quiz", "off", ...extra,
   ], {
     encoding: "utf8", timeout: 180_000,
-    env: { ...process.env, SMITHERS_REVIEW_SUMMARY_PATH: summary },
+    env: { ...hostEnv, SMITHERS_REVIEW_SUMMARY_PATH: summary },
   });
   const first = run();
   expect(first.status, first.stderr).toBe(0);

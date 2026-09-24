@@ -51,3 +51,30 @@ test.each(["completed_with_warnings", "failed"] as const)("CLI reports warnings 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a run refused before it starts leaves its typed cause in the summary file", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "review-cli-refused-"));
+  const summary = join(dir, "summary.json");
+  const keys = [
+    "SMITHERS_REVIEW_SEAT", "SMITHERS_REVIEW_CHEAP_SEAT", "SMITHERS_REVIEW_NARRATE_SEAT", "ANTHROPIC_API_KEY",
+    "SMITHERS_REVIEW_SUMMARY_PATH",
+  ] as const;
+  const previous = keys.map((key) => process.env[key]);
+  for (const key of keys) delete process.env[key];
+  process.env.SMITHERS_REVIEW_SEAT = "anthropic:claude-sonnet-4-5";
+  process.env.SMITHERS_REVIEW_SUMMARY_PATH = summary;
+  const stderr = spyOn(console, "error").mockImplementation(() => {});
+  const exit = spyOn(process, "exit").mockImplementation((() => {}) as typeof process.exit);
+  try {
+    await runReview(parseReviewArgs([dir, "--quiz", "off"]));
+    expect(exit).toHaveBeenCalledWith(1);
+    const written = JSON.parse(readFileSync(summary, "utf8"));
+    expect(written.status).toBe("failed");
+    expect(written.reviewStatus).toBe("failed");
+    expect(written.error).toContain("ANTHROPIC_API_KEY");
+  } finally {
+    stderr.mockRestore(); exit.mockRestore();
+    keys.forEach((key, index) => { if (previous[index] === undefined) delete process.env[key]; else process.env[key] = previous[index]; });
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

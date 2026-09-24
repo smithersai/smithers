@@ -39,9 +39,14 @@ const workflow = parse(
 };
 
 describe("pr-review.yml", () => {
-  test("calls this repository's own action at an immutable commit", () => {
-    const step = workflow.jobs.review.steps.find((entry) => entry.uses?.includes("apps/review/action"));
-    expect(step?.uses).toBe("smithersai/smithers/apps/review/action@d55bf6343f79324825c61b079bf11acd89bc0e54");
+  test("runs the action from the checkout under review, not a pinned commit", () => {
+    const steps = workflow.jobs.review.steps;
+    const action = steps.findIndex((entry) => entry.uses === "./apps/review/action");
+    const checkout = steps.findIndex((entry) => entry.uses?.startsWith("actions/checkout@"));
+    expect(action).toBeGreaterThanOrEqual(0);
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(checkout).toBeLessThan(action);
+    expect(steps.filter((entry) => entry.uses?.includes("apps/review/action"))).toHaveLength(1);
   });
 
   test("asks for exactly the three permissions the action needs", () => {

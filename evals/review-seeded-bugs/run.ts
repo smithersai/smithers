@@ -34,7 +34,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { Review } from "../../apps/review/src/workflow/reviewFlow.ts";
-import { layerMemory, scriptedEvaluator } from "../../apps/review/src/workflow/reviewLayer.ts";
+import { layerMemory } from "../../apps/review/src/workflow/reviewLayer.ts";
 import { reviewSeatResolver } from "../../apps/review/src/workflow/reviewSeatResolver.ts";
 import { resolveReviewSeats } from "../../apps/review/src/workflow/reviewSeats.ts";
 import { type Baseline, baselineFrom, drift, type FixtureOutcome } from "./baseline.ts";
@@ -182,9 +182,9 @@ function renderScorecard(labels: readonly PlantedBugLabel[], score: CorpusScore,
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
   const live = argv.includes("--live");
   const update = argv.includes("--update");
-  // Decide the judge before any fixture directory or Git process exists.
+  // Compose before any fixture directory or Git process exists.
   const seats = live ? reviewSeatResolver(resolveReviewSeats()) : scriptedSeats(answerReview);
-  const layer = live ? layerMemory(seats) : layerMemory(seats, {}, scriptedEvaluator());
+  const layer = live ? layerMemory(seats) : layerMemory(seats, {});
   const labels = loadCorpus();
 
   const runs: FixtureRun[] = [];

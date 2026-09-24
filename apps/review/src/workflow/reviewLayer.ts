@@ -8,7 +8,6 @@
  *
  * @since 1.0.0
  */
-import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
 import * as AgentAction from "@smthrs/agent/AgentAction"
@@ -20,7 +19,6 @@ import { Action, Interpreter } from "@smthrs/flow"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Evaluator from "@smthrs/model/Evaluator"
-import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as Registry from "@smthrs/registry/Registry"
 import type * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
@@ -112,10 +110,17 @@ export const declarations = Layer.mergeAll(walkthroughDeclarations,
  * no tool flows. A cell that tries to reach for one finds an empty registry
  * rather than an unbounded surface on the repository under review.
  *
+ * The same absence of tools and workspace is why the host disarms the
+ * completion claim brake (`claimCap: 0`). A cell here has no command record for
+ * a judge to read, so a finding that says "`pnpm test` fails" is a finding, not
+ * an invented claim, and a brake would only refuse honest reviews and bill a
+ * judge outside the seats' own route.
+ *
  * The envelope is the run's complete authority claim, so it names the model
- * hosts the seats can dial and nothing else. It is derived from the same
- * environment the seat resolver reads, which keeps the claim and the grant
- * rules in {@link layerNode} describing one set of origins.
+ * hosts the seats can dial and nothing else: no judge call leaves this host.
+ * It is derived from the same environment the seat resolver reads, which keeps
+ * the claim and the grant rules in {@link layerNode} describing one set of
+ * origins.
  *
  * @since 1.0.0
  * @category layers
@@ -129,7 +134,8 @@ export const agentHost = (environment: Readonly<Record<string, string | undefine
     }),
     limits: { calls: 8 },
     capabilityEnvelope: modelCallEnvelope(environment),
-    maxFrames: 4
+    maxFrames: 4,
+    claimCap: 0
   })
 
 /**
@@ -141,27 +147,10 @@ export const agentHost = (environment: Readonly<Record<string, string | undefine
 const agentPolicy = Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())
 
 /**
- * The judge behind the completion brake, read from the same environment the
- * seats and the envelope read.
- *
- * The brake never falls back, so a claim nothing could judge fails the run
- * rather than standing. Without `AI_GATEWAY_API_KEY` this is
- * a startup refusal before a database, socket or child process opens. The
- * gateway is reached over the egress proxy `environment` names.
+ * Nothing on this host asks: {@link agentHost} disarms the claim brake and the
+ * supervisor journals an unjudged reading.
  */
-const evaluator = (environment: Readonly<Record<string, string | undefined>>) =>
-  Evaluator.layerFromEnvironment(environment, "smithers-review").pipe(Layer.provide(EgressHttpClient.layer(environment)))
-
-/**
- * The judge an offline case binds: a reading of recorded commands, so a
- * scripted seat's completion is judged by the same brake without reaching a
- * gateway. A case about the brake itself binds `Evaluator.layerUnavailable()`.
- *
- * @since 1.0.0
- * @category layers
- */
-export const scriptedEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
-  ScriptedJudge.layer
+const judge = Evaluator.layerUnavailable()
 
 /**
  * Builds the review workflow over a caller-supplied seat resolver and the
@@ -176,8 +165,7 @@ export const scriptedEvaluator = (): Layer.Layer<Evaluator.Evaluator> =>
  */
 export const layerMemory = (
   seats: Layer.Layer<SeatResolver.SeatResolver>,
-  environment: Readonly<Record<string, string | undefined>> = process.env,
-  judge: Layer.Layer<Evaluator.Evaluator> = evaluator(environment)
+  environment: Readonly<Record<string, string | undefined>> = process.env
 ) =>
   declarations.pipe(
     Layer.provideMerge(Layer.mergeAll(agentHost(environment), seats, Agent.layer)),
@@ -214,8 +202,6 @@ export interface NodeOptions {
   readonly seats: Layer.Layer<SeatResolver.SeatResolver>
   /** The environment the reachable model hosts are read from. */
   readonly environment?: Readonly<Record<string, string | undefined>>
-  /** The completion brake's judge; read from `environment` when omitted. */
-  readonly evaluator?: Layer.Layer<Evaluator.Evaluator>
 }
 
 const nodeHost = (options: NodeOptions) => ({
@@ -232,7 +218,7 @@ const layerNodeAgents = (options: NodeOptions) => {
     Layer.provideMerge(agentPolicy),
     Layer.provideMerge(Agent.layerDefaults),
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(options.evaluator ?? evaluator(environment))
+    Layer.provideMerge(judge)
   ))
 }
 
@@ -241,7 +227,7 @@ const layerNodeWalkthrough = (options: NodeOptions) =>
 
 /** A walkthrough exports no agent implementations; a normal host exports all of them. */
 export function layerNode(options: NodeOptions & { readonly agents: false }): ReturnType<typeof layerNodeWalkthrough>
-/** Compose every agent action after choosing the host judge. */
+/** Compose every agent action. */
 export function layerNode(options: NodeOptions & { readonly agents?: true }): ReturnType<typeof layerNodeAgents>
 /** Preserve the runtime choice when the caller holds general options. */
 export function layerNode(options: NodeOptions): ReturnType<typeof layerNodeAgents> | ReturnType<typeof layerNodeWalkthrough>

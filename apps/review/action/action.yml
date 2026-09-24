@@ -46,18 +46,21 @@ runs:
       with:
         node-version: 26.4.0
 
+    # Check out before installing: when this action runs from the caller's own
+    # checkout (`uses: ./apps/review/action`), the install lands in that
+    # checkout, and checkout's clean would delete its ignored node_modules.
+    - name: Check out the user's repository
+      if: steps.gate.outputs.should-run == 'true'
+      uses: actions/checkout@v6.0.2
+      with:
+        fetch-depth: 0
+
     - name: Install smithers dependencies
       if: steps.gate.outputs.should-run == 'true'
       shell: bash
       env:
         SMITHERS_ACTION_PATH: ${{ github.action_path }}
       run: pnpm -C "$SMITHERS_ACTION_PATH/../../.." install --frozen-lockfile
-
-    - name: Check out the user's repository
-      if: steps.gate.outputs.should-run == 'true'
-      uses: actions/checkout@v6.0.2
-      with:
-        fetch-depth: 0
 
     - name: Authenticate and review
       if: steps.gate.outputs.should-run == 'true'
