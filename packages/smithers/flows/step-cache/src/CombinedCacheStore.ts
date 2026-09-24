@@ -88,6 +88,7 @@ export const make = (options: Options): CacheStore.Service => {
 
   const get: CacheStore.Service["get"] = Effect.fn("CombinedCacheStore.get")((keyDigest, options) =>
     Effect.gen(function*() {
+      yield* CacheAdmission.validateKey(keyDigest)
       yield* Effect.annotateCurrentSpan({ keyDigest })
       // The provenance fence travels with the lookup: each tier answers with
       // its recorded version when it holds one and its head otherwise.
@@ -182,7 +183,10 @@ export const make = (options: Options): CacheStore.Service => {
     // hold the artifacts this one lost. Reclaiming shared entries is an
     // explicit retention operation, never a side effect of one host's failed
     // replay.
-    Effect.annotateCurrentSpan({ keyDigest }).pipe(Effect.andThen(local.evict(keyDigest, evictOptions)))
+    CacheAdmission.validateKey(keyDigest).pipe(
+      Effect.andThen(Effect.annotateCurrentSpan({ keyDigest })),
+      Effect.andThen(local.evict(keyDigest, evictOptions))
+    )
   )
 
   const sweepExpired: CacheStore.Service["sweepExpired"] = Effect.fn("CombinedCacheStore.sweepExpired")(

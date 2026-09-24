@@ -130,6 +130,11 @@ no tier attribute. Read them as local artifact store traffic:
 - Missing and corrupt reads count nothing. They are error evidence, not
   throughput.
 
+A third counter, `flows_artifact_remote_failures`, counts the shared uploads
+(`operation: put`) and local write-backs (`operation: write_back`) a combined
+store dropped. Neither fails the caller, so this counter and its warning are
+the only evidence that the shared tier stopped filling.
+
 No exporter ships in this package; provide one, for example
 [`@smthrs/observability`](https://observability.smithers.sh/reference/api/), and the counters appear in it.
 

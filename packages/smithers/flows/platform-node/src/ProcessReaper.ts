@@ -52,6 +52,7 @@ import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
@@ -450,14 +451,67 @@ const refuseWindowsTarget = (record: ProcessLedger.ProcessRecord): Refusal | und
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const posixSystemWith = (options?: SystemOptions): System => {
-  const readOwnGroup = ownGroup(options?.psExecutable ?? defaultPsExecutable)
-  const ownerPid = options?.ownerPid ?? process.pid
+export const posixSystemWith = (options?: SystemOptions): System =>
+  posixSystemFrom({
+    startedAtMs: startedAtMs(options?.psExecutable ?? defaultPsExecutable),
+    ownGroup: ownGroup(options?.psExecutable ?? defaultPsExecutable),
+    bootedAtMs
+  }, options?.ownerPid ?? process.pid)
+
+/**
+ * Where a Linux {@link System} reads the process table, and whose identity it
+ * must never signal.
+ *
+ * @category models
+ * @since 1.0.0-rc.1
+ */
+export interface ProcSystemOptions {
+  /** The `/proc` mount the probes read. Default `/proc`. */
+  readonly procRoot?: string | undefined
+  /** The pid this system must never signal, nor signal the group of. Default `process.pid`. */
+  readonly ownerPid?: number | undefined
+}
+
+/**
+ * Reaping on Linux, with every identity question read from `/proc` rather
+ * than from `ps`.
+ *
+ * `procps` is not in `debian:bookworm-slim` (Cloud CI run 11727), and a
+ * `ps`-based reaper on such a host can read neither its own group nor any
+ * start time, so it refuses every orphan as `own-group-unknown` on every
+ * restart. The live-cleanup observation ({@link groupSnapshotFor}) already
+ * reads `/proc` for the same reason; this is the crash-recovery half.
+ *
+ * A pid with no `/proc/<pid>/stat` is `gone` only when the kernel also says so,
+ * because a `hidepid` mount hides another user's live process the same way.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.1
+ */
+export const procSystemWith = (options?: ProcSystemOptions): System => {
+  const root = options?.procRoot ?? ProcSnapshot.defaultProcRoot
+  const readStart = ProcSnapshot.startedAtMs(root)
+  return posixSystemFrom({
+    startedAtMs: (pid) => {
+      const answer = readStart(pid)
+      return answer._tag === "gone" && liveness(pid) !== "dead" ? { _tag: "unavailable" } : answer
+    },
+    ownGroup: ProcSnapshot.ownGroup(root),
+    bootedAtMs: () => ProcSnapshot.bootMs(root) ?? bootedAtMs()
+  }, options?.ownerPid ?? process.pid)
+}
+
+/** The POSIX kill path over whichever probes the platform answers with. */
+const posixSystemFrom = (
+  probes: Pick<System, "startedAtMs" | "ownGroup" | "bootedAtMs">,
+  ownerPid: number
+): System => {
+  const readOwnGroup = probes.ownGroup
   return {
     isAlive: liveness,
-    startedAtMs: startedAtMs(options?.psExecutable ?? defaultPsExecutable),
+    startedAtMs: probes.startedAtMs,
     ownGroup: readOwnGroup,
-    bootedAtMs,
+    bootedAtMs: probes.bootedAtMs,
     refuseTarget: refusePosixTarget,
     killTree: (record) => {
       // Repeated here and not only in `refuse`: this function is exported, and
@@ -545,12 +599,21 @@ export const windowsSystemWith = (options?: SystemOptions): System => {
 export const windowsSystem: System = windowsSystemWith()
 
 /**
+ * Reaping on Linux from the kernel's own `/proc`.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.1
+ */
+export const procSystem: System = procSystemWith()
+
+/**
  * Selects the reaping implementation a platform needs.
  *
  * @category constructors
  * @since 0.1.0
  */
-export const systemFor = (platform: string): System => platform === "win32" ? windowsSystem : posixSystem
+export const systemFor = (platform: string): System =>
+  platform === "win32" ? windowsSystem : platform === "linux" ? procSystem : posixSystem
 
 /**
  * How far apart a recorded start time and the operating system's may be and
@@ -767,13 +830,60 @@ const retire = (
   )
 
 /**
+ * Refusals that leave a dead incarnation's process running with no live owner
+ * to contain it: the host could not ask, or its signal failed.
+ */
+const unreaped: ReadonlySet<Refusal> = new Set<Refusal>(["identity-unverified", "own-group-unknown", "kill-failed"])
+
+/**
+ * Counter over inherited records the reaper did not kill, with a `refusal`
+ * attribute naming why.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const refusals = Metric.counter("flows_process_reaper_refusals", {
+  description: "Inherited process records the reaper did not kill, by refusal"
+})
+
+/**
+ * Reports one sweep: a counter update per refusal and one summary line. The
+ * line is a warning when a record stays inherited (a retained refusal) or a
+ * signal failed, because either leaves a crashed incarnation's processes
+ * running with nothing else to say so.
+ *
+ * @category layers
+ * @since 1.0.0-rc.1
+ */
+export const report = (decided: ReadonlyArray<Reaped>): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    if (decided.length === 0) return
+    const counts: Partial<Record<Refusal, number>> = {}
+    let killed = 0
+    for (const entry of decided) {
+      if (entry.killed) {
+        killed += 1
+        continue
+      }
+      counts[entry.refusal] = (counts[entry.refusal] ?? 0) + 1
+    }
+    for (const [refusal, count] of Object.entries(counts)) {
+      yield* Metric.update(Metric.withAttributes(refusals, { refusal }), count)
+    }
+    const annotations = { killed, ...counts }
+    const alarming = decided.some((entry) => !entry.killed && unreaped.has(entry.refusal))
+    const line = "process reaper swept inherited records"
+    yield* (alarming ? Effect.logWarning(line) : Effect.logInfo(line)).pipe(Effect.annotateLogs(annotations))
+  })
+
+/**
  * Runs {@link reap} once while the layer is built.
  *
  * Compose it into a host layer so standing a host up is also what cleans up
  * after the incarnation that crashed. A history that cannot be read refuses
  * the sweep with an error log and leaves every record inherited; the host
  * still starts, because the processes it will spawn are recorded and
- * contained regardless.
+ * contained regardless. Every decision is {@link report}ed.
  *
  * @category layers
  * @since 0.1.0
@@ -781,6 +891,7 @@ const retire = (
 export const layer = (options?: Options): Layer.Layer<never, never, ProcessLedger.ProcessLedger> =>
   Layer.effectDiscard(
     reap(options).pipe(
+      Effect.flatMap(report),
       Effect.catchTag(
         "@smthrs/kernel/ProcessLedgerReplayError",
         (error) => Effect.logError("process reaper refused to sweep: the ledger history is incomplete", error)

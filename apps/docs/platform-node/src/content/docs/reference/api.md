@@ -380,10 +380,17 @@ the JSDoc on `isAlive` names both inputs on which they disagree.
 `hostId` abandoned. It signals a record only when every guard holds: the numbers
 name something the platform can signal, the group is not this host's, the owner
 is gone, and the pid still names the process the record describes. Two of those
-guards are questions put to `ps`: this process's own group, and when the
-recorded pid started. Either can go unanswered on a host with no usable one, and
-an unanswered guard refuses, because a guard that did not run is not a guard
-that passed. No evidence never authorizes a `SIGKILL`.
+guards are identity questions: this process's own group, and when the
+recorded pid started. On Linux, `systemFor` answers both from `/proc`
+(`procSystem`), so an image without `procps` can still reap; other POSIX hosts
+ask `ps` (`posixSystem`). Either can go unanswered, and an unanswered guard
+refuses, because a guard that did not run is not a guard that passed. No
+evidence never authorizes a `SIGKILL`.
+
+`ProcessReaper.layer` reports every sweep: one log line with the kill count and
+the count per refusal, at `Warning` when `identity-unverified`,
+`own-group-unknown`, or `kill-failed` left a process running, and the
+`flows_process_reaper_refusals` counter with a `refusal` attribute.
 
 `reap` returns one `Reaped` per inherited record. The two outcomes are a union
 discriminated by `killed`: a killed entry carries no reason, and a kept entry

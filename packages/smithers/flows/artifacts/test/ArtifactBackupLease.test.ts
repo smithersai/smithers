@@ -369,9 +369,13 @@ describe("ArtifactBackupLease", () => {
       expect(Exit.isFailure(yield* Fiber.join(waiting))).toBe(true)
     }))
 
-  it.effect("does not heartbeat or remove a marker replaced by another owner", () =>
+  it.effect("does not heartbeat or remove a marker replaced by another owner, and warns", () =>
     Effect.gen(function*() {
       const fixture = host()
+      const logged: Array<unknown> = []
+      const capture = Logger.make<unknown, void>(({ message }) => {
+        logged.push(message)
+      })
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       const running = yield* ArtifactBackupLease.withLease(
@@ -379,7 +383,7 @@ describe("ArtifactBackupLease", () => {
         directory,
         Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(release))),
         failure
-      ).pipe(Effect.forkChild({ startImmediately: true }))
+      ).pipe(Effect.provide(Logger.layer([capture])), Effect.forkChild({ startImmediately: true }))
       yield* Deferred.await(entered)
       fixture.files.set(marker, "replacement")
       yield* TestClock.adjust("10 seconds")
@@ -388,6 +392,7 @@ describe("ArtifactBackupLease", () => {
       yield* Deferred.succeed(release, undefined)
       yield* Fiber.join(running)
       expect(fixture.files.get(marker)).toBe("replacement")
+      expect(logged.flat()).toContain("Artifact backup lease was reclaimed while its backup was still running")
     }))
 
   it.effect("releases without a warning when the marker was already reaped", () =>
@@ -412,8 +417,30 @@ describe("ArtifactBackupLease", () => {
       expect(logged).toEqual([])
     }))
 
-  it.effect("ignores heartbeat and release read refusals after acquisition", () =>
+  it.effect("warns when the heartbeat finds its marker already reaped", () =>
     Effect.gen(function*() {
+      const fixture = host()
+      const logged: Array<unknown> = []
+      const capture = Logger.make<unknown, void>(({ message }) => {
+        logged.push(message)
+      })
+      yield* ArtifactBackupLease.withLease(
+        fixture.fs,
+        directory,
+        Effect.sync(() => {
+          fixture.files.delete(marker)
+        }).pipe(Effect.andThen(TestClock.adjust("10 seconds"))),
+        failure
+      ).pipe(Effect.provide(Logger.layer([capture])))
+      expect(logged.flat()).toContain("Artifact backup lease was reclaimed while its backup was still running")
+    }))
+
+  it.effect("keeps the lease through heartbeat and release read refusals, and warns", () =>
+    Effect.gen(function*() {
+      const logged: Array<unknown> = []
+      const capture = Logger.make<unknown, void>(({ message }) => {
+        logged.push(message)
+      })
       let refuseReads = false
       const fixture = host({
         read: (path) =>
@@ -428,7 +455,8 @@ describe("ArtifactBackupLease", () => {
           refuseReads = true
         }).pipe(Effect.andThen(TestClock.adjust("10 seconds"))),
         failure
-      )
+      ).pipe(Effect.provide(Logger.layer([capture])))
       expect(fixture.files.has(marker)).toBe(true)
+      expect(logged.flat()).toContain("Artifact backup lease heartbeat failed")
     }))
 })

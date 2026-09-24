@@ -21,6 +21,12 @@ describe("Metric registry", () => {
     expect(result.parks.count).toBe(2)
   })
 
+  it("names every metric in the Prometheus-safe flows_<area>_<name> form the other flows packages use", () => {
+    for (const handle of Object.values(FlowsMetric.registry)) {
+      expect(handle.id).toMatch(/^flows_[a-z0-9]+(_[a-z0-9]+)+$/)
+    }
+  })
+
   /**
    * The identifiers are the dashboard contract: the handles are updated at
    * producer seams in `@smthrs/agent` and `@smthrs/run-store`, so a rename that
@@ -32,10 +38,10 @@ describe("Metric registry", () => {
         Object.entries(FlowsMetric.registry).map(([name, handle]) => [name, handle.id])
       )
     ).toEqual({
-      runThroughput: "flows/run/throughput",
-      activeSeats: "flows/seat/active",
-      quotaParks: "flows/quota/park",
-      droppedLogRecords: "flows/observability/log/dropped"
+      runThroughput: "flows_run_throughput",
+      activeSeats: "flows_seat_active",
+      quotaParks: "flows_quota_park",
+      droppedLogRecords: "flows_observability_log_dropped"
     })
     expect(Object.keys(FlowsMetric.registry)).toHaveLength(4)
   })

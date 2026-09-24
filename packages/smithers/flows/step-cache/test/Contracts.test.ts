@@ -145,7 +145,8 @@ describe("module layout", () => {
     // SQL tier's only importer, so the tiers depend on the contract instead.
     expect(modules().filter((module) => runtimeImports(module).some(isSqlStack)).sort()).toEqual([
       "internal/SqlCacheStore.ts",
-      "migrations/0001_initial.ts"
+      "migrations/0001_initial.ts",
+      "migrations/0002_created_at_index.ts"
     ])
     expect(modules().filter((module) => runtimeImports(module).includes("internal/SqlCacheStore.ts"))).toEqual([
       "CacheStore.ts"

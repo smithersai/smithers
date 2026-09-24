@@ -14,10 +14,10 @@ Smithers belongs to the package that owns the behavior it measures.
 
 | Handle              | Series name                       | Kind    | Advances when                                                                                                                                                      |
 | ------------------- | --------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `runThroughput`     | `flows/run/throughput`            | counter | A run's terminal transition commits in [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/).                                                                                      |
-| `activeSeats`       | `flows/seat/active`               | gauge   | Held for the lifetime of a production `Agent.run` stream in [`@smthrs/agent`](https://agent.smithers.sh/reference/api/), and released on success, failure, or interruption.                      |
-| `quotaParks`        | `flows/quota/park`                | counter | A sealed quota decision is first executed, and not when that decision is replayed after a wake or a process restart.                                               |
-| `droppedLogRecords` | `flows/observability/log/dropped` | counter | A log record is lost before durable delivery: once per queue overflow, once per journal delivery failure, and once per defect the forwarding worker recovers from. |
+| `runThroughput`     | `flows_run_throughput`            | counter | A run's terminal transition commits in [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/).                                                                                      |
+| `activeSeats`       | `flows_seat_active`               | gauge   | Held for the lifetime of a production `Agent.run` stream in [`@smthrs/agent`](https://agent.smithers.sh/reference/api/), and released on success, failure, or interruption.                      |
+| `quotaParks`        | `flows_quota_park`                | counter | A sealed quota decision is first executed, and not when that decision is replayed after a wake or a process restart.                                               |
+| `droppedLogRecords` | `flows_observability_log_dropped` | counter | A log record is lost before durable delivery: once per queue overflow, once per journal delivery failure, and once per defect the forwarding worker recovers from. |
 
 `Metric.registry` is the same four as one object, so a host can enumerate them.
 The series names are the dashboard contract; treat them as public API.

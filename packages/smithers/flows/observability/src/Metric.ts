@@ -5,7 +5,7 @@
  */
 import * as Metric from "effect/Metric"
 
-const prefix = "flows/"
+const prefix = "flows_"
 
 /**
  * Counts flow runs that reached a terminal state.
@@ -13,7 +13,7 @@ const prefix = "flows/"
  * @category metrics
  * @since 0.1.0
  */
-export const runThroughput = Metric.counter(`${prefix}run/throughput`, {
+export const runThroughput = Metric.counter(`${prefix}run_throughput`, {
   description: "Completed flow runs"
 })
 
@@ -23,7 +23,7 @@ export const runThroughput = Metric.counter(`${prefix}run/throughput`, {
  * @category metrics
  * @since 0.1.0
  */
-export const activeSeats = Metric.gauge(`${prefix}seat/active`, {
+export const activeSeats = Metric.gauge(`${prefix}seat_active`, {
   description: "Currently active execution seats"
 })
 
@@ -33,7 +33,7 @@ export const activeSeats = Metric.gauge(`${prefix}seat/active`, {
  * @category metrics
  * @since 0.1.0
  */
-export const quotaParks = Metric.counter(`${prefix}quota/park`, {
+export const quotaParks = Metric.counter(`${prefix}quota_park`, {
   description: "Runs parked by quota enforcement"
 })
 
@@ -47,7 +47,7 @@ export const quotaParks = Metric.counter(`${prefix}quota/park`, {
  * @category metrics
  * @since 1.0.0-rc.0
  */
-export const droppedLogRecords = Metric.counter(`${prefix}observability/log/dropped`, {
+export const droppedLogRecords = Metric.counter(`${prefix}observability_log_dropped`, {
   description: "Operational log records dropped before durable delivery"
 })
 

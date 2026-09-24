@@ -129,8 +129,21 @@ export const withLease = <A, E, R, E2>(
                     fs,
                     directory,
                     fs.readFileString(marker).pipe(
+                      Effect.map(Option.some),
+                      Effect.catch((cause) =>
+                        isReason(cause, "NotFound") ? Effect.succeed(Option.none<string>()) : Effect.fail(cause)
+                      ),
                       Effect.flatMap((found) => {
-                        if (found !== owner) return Effect.void
+                        // A missing or foreign marker means a sweep judged this
+                        // lease stale and reaped it: deletion is no longer
+                        // fenced while the backup still copies. The sibling
+                        // `internal/ArtifactLocks.ts` heartbeat reports the same
+                        // loss the same way.
+                        if (Option.getOrUndefined(found) !== owner) {
+                          return Effect.logWarning(
+                            "Artifact backup lease was reclaimed while its backup was still running"
+                          )
+                        }
                         return Effect.flatMap(Clock.currentTimeMillis, (now) => {
                           const timestamp = new Date(now)
                           return fs.utimes(marker, timestamp, timestamp)
@@ -140,7 +153,10 @@ export const withLease = <A, E, R, E2>(
                     ),
                     failure
                   )),
-                  Effect.ignore
+                  // A failed heartbeat is retried on the next tick, but a
+                  // minute of them lets the marker go stale, so each one is
+                  // reported rather than dropped.
+                  Effect.catch((cause) => Effect.logWarning("Artifact backup lease heartbeat failed", cause))
                 )
               )
             )

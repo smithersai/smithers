@@ -179,3 +179,55 @@ describe("ProcessReaper.groupSnapshotFor", () => {
     expect(chosen?.ownGroup).toBeGreaterThan(0)
   })
 })
+
+describe("ProcSnapshot identity readers", () => {
+  it("reads /proc on Linux and nowhere else", () => {
+    expect(ProcSnapshot.rootFor("linux")).toBe("/proc")
+    expect(ProcSnapshot.rootFor("darwin")).toBeUndefined()
+  })
+
+  it("reads this process's own group from /proc/self/stat", () => {
+    const root = procRoot([{ pid: 10, pgid: 7 }], 10)
+    expect(ProcSnapshot.ownGroup(root)()).toBe(7)
+  })
+
+  it("answers no group when /proc/self/stat is missing or not a stat line", () => {
+    const root = procRoot([], 0)
+    expect(ProcSnapshot.ownGroup(root)()).toBeNull()
+    mkdirSync(join(root, "self"))
+    writeFileSync(join(root, "self", "stat"), "garbage")
+    expect(ProcSnapshot.ownGroup(root)()).toBeNull()
+  })
+
+  it("reads a start time from btime, and says gone only when the pid has no entry", () => {
+    const root = procRoot([{ pid: 12, pgid: 12, startTicks: 250 }], 0)
+    expect(ProcSnapshot.startedAtMs(root)(12)).toEqual({
+      _tag: "started",
+      startedAtMs: bootSeconds * 1000 + 2_500
+    })
+    expect(ProcSnapshot.startedAtMs(root)(13)).toEqual({ _tag: "gone" })
+    expect(ProcSnapshot.startedAtMs(root)(0)).toEqual({ _tag: "unavailable" })
+  })
+
+  it("answers unavailable, never gone, when the table itself cannot be read", () => {
+    const missingRoot = join(tmpdir(), "proc-snapshot-absent-root")
+    expect(ProcSnapshot.startedAtMs(missingRoot)(12)).toEqual({ _tag: "unavailable" })
+    expect(ProcSnapshot.startedAtMs(procRoot([{ pid: 12, pgid: 12 }], 0, "not-a-number"))(12)).toEqual({
+      _tag: "unavailable"
+    })
+    const unreadable = procRoot([{ pid: 12, pgid: 12 }], 0)
+    rmSync(join(unreadable, "12", "stat"))
+    mkdirSync(join(unreadable, "12", "stat"))
+    expect(ProcSnapshot.startedAtMs(unreadable)(12)).toEqual({ _tag: "unavailable" })
+    writeFileSync(join(unreadable, "stat"), "cpu 1\n")
+    expect(ProcSnapshot.startedAtMs(unreadable)(12)).toEqual({ _tag: "unavailable" })
+  })
+
+  it("refuses a stat line that names a different pid than the one asked for", () => {
+    const root = procRoot([{ pid: 12, pgid: 12 }], 0)
+    writeFileSync(join(root, "12", "stat"), statLine({ pid: 99, pgid: 12 }))
+    expect(ProcSnapshot.startedAtMs(root)(12)).toEqual({ _tag: "unavailable" })
+    writeFileSync(join(root, "12", "stat"), "garbage")
+    expect(ProcSnapshot.startedAtMs(root)(12)).toEqual({ _tag: "unavailable" })
+  })
+})

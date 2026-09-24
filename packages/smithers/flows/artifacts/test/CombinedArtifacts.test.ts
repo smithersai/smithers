@@ -7,8 +7,11 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
+import * as Logger from "effect/Logger"
+import * as Metric from "effect/Metric"
 import { TestClock } from "effect/testing"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
+import * as ArtifactStoreMetrics from "../src/ArtifactStoreMetrics.ts"
 import * as CombinedArtifacts from "../src/CombinedArtifacts.ts"
 import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
@@ -196,6 +199,34 @@ describe("writes", () => {
       const combined = yield* CombinedArtifacts.make({ local: local.store, remote: ArtifactStore.makeNoop() })
       expect(yield* withCrypto(combined.put(bytes(artifact)))).toBe(digest)
       expect(yield* withCrypto(local.store.has(digest))).toBe(true)
+    }))
+
+  it.effect("counts every dropped transfer and warns once per operation", () =>
+    Effect.gen(function*() {
+      const count = (operation: "put" | "write_back") =>
+        Effect.map(Metric.value(ArtifactStoreMetrics.remoteFailure[operation]), (state) => state.count)
+      const messages: Array<unknown> = []
+      const capture = Logger.layer([Logger.make<unknown, void>(({ message }) => messages.push(message))])
+      const putsBefore = yield* count("put")
+      const writeBacksBefore = yield* count("write_back")
+      const remote = countingMemory()
+      yield* withCrypto(remote.store.put(bytes(artifact)))
+      const refusingLocal = ArtifactStore.makeNoop({
+        get: () => Effect.fail(new ArtifactStore.ArtifactMissing({ code: "artifact_missing", digest })),
+        put: ArtifactStore.makeMemory().put
+      })
+      const refusingRemote = CombinedArtifacts.make({ local: countingMemory().store, remote: ArtifactStore.makeNoop() })
+      const uploads = yield* refusingRemote
+      yield* withCrypto(uploads.put(bytes(artifact))).pipe(Effect.provide(capture))
+      yield* withCrypto(uploads.put(bytes("another artifact"))).pipe(Effect.provide(capture))
+      const readsThrough = yield* CombinedArtifacts.make({
+        local: ArtifactStore.makeNoop({ get: refusingLocal.get }),
+        remote: remote.store
+      })
+      yield* withCrypto(readsThrough.get(digest)).pipe(Effect.provide(capture))
+      expect((yield* count("put")) - putsBefore).toBe(2)
+      expect((yield* count("write_back")) - writeBacksBefore).toBe(1)
+      expect(messages.flat().filter((message) => message === "Combined artifact transfer dropped")).toHaveLength(2)
     }))
 
   it.effect("deduplicates concurrent uploads of one digest", () =>

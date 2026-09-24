@@ -14,7 +14,7 @@ the network is involved at all.
 ## Before you start
 
 - A shared cache endpoint that speaks the artifact protocol. It must be HTTPS,
-  and it may carry no userinfo, query, or fragment. If you are standing one up,
+  unless its host is loopback, and it may carry no userinfo, query, or fragment. If you are standing one up,
   see [Serve the artifact protocol](/guides/serve-the-artifact-protocol/).
 - The credential the endpoint expects, as a header value.
 - An `HttpClient` in scope. `FetchHttpClient.layer` from `effect` is enough.

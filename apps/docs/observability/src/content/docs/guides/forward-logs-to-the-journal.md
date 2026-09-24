@@ -160,7 +160,7 @@ permanent row.
 
 Forwarding is lossy on purpose: a telemetry backlog must not become application
 backpressure. Each of these observed losses advances `Metric.droppedLogRecords`
-(`flows/observability/log/dropped`) once:
+(`flows_observability_log_dropped`) once:
 
 1. **Forwarder queue overflow.** The queue was full when the record arrived.
    Counted only.

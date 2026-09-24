@@ -76,7 +76,7 @@ describe("OTLP usable signal capacity", () => {
           group.resource = undefined
           expect(bytes(request.body)).toBeLessThanOrEqual(Otlp.maximumEnvelopeBytes)
         }
-        const dropped = yield* Metric.value(Metric.counter("flows/observability/otlp/dropped")).pipe(
+        const dropped = yield* Metric.value(Metric.counter("flows_observability_otlp_dropped")).pipe(
           Effect.provideService(Metric.MetricRegistry, registry)
         )
         expect(dropped.count).toBe(0)

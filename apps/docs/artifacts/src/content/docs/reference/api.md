@@ -380,10 +380,15 @@ these combinators stay usable from a tool with its own error channel. See
 `@smthrs/artifacts/ArtifactStoreMetrics`. Metric handles only; no exporter
 ships in this package.
 
-| Export | Counter               | Updated by                                                          |
-| ------ | --------------------- | ------------------------------------------------------------------- |
-| `puts` | `flows_artifact_puts` | Successful filesystem and memory puts, including deduplicated ones. |
-| `gets` | `flows_artifact_gets` | Successful filesystem and memory gets.                              |
+| Export           | Counter                          | Updated by                                                                                              |
+| ---------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `puts`           | `flows_artifact_puts`            | Successful filesystem and memory puts, including deduplicated ones.                                     |
+| `gets`           | `flows_artifact_gets`            | Successful filesystem and memory gets.                                                                  |
+| `remoteFailures` | `flows_artifact_remote_failures` | Shared uploads and local write-backs `CombinedArtifacts` dropped, by `operation` (`put`, `write_back`). |
+
+`remoteFailure.put` and `remoteFailure.write_back` are the attributed views.
+Drops also log a warning naming the operation and error code, at most once a
+minute per operation.
 
 `RemoteArtifacts` is deliberately uninstrumented and the counters carry no tier
 attribute, so read them as local artifact store traffic. A combined read the

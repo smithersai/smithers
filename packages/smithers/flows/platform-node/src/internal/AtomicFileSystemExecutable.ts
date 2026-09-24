@@ -64,6 +64,28 @@ export const outsideWorkspace = (
   throw new Error("no staging location for smithers-jj-export")
 }
 
+/** The helper an installed package ships for this platform. */
+const packagedHelper = (root: string): string =>
+  join(root, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+
+/**
+ * Stages the packaged helper now, when the host layer is built, so the bytes
+ * later requests execute are the ones present before any flow ran. A flow
+ * that rewrites a workspace-local install afterwards changes nothing that is
+ * executed. A missing or unusable helper is left for the first request to
+ * report.
+ * @private
+ * @since 1.0.0
+ */
+export const stagePackaged = (root: string): void => {
+  const candidate = packagedHelper(root)
+  try {
+    if (existsSync(candidate) && statSync(candidate).isFile()) outsideWorkspace(candidate, undefined)
+  } catch {
+    // The request path resolves again and reports the refusal it meets.
+  }
+}
+
 /**
  * Select only trusted package or checkout locations; never consult PATH or cwd.
  * @private
@@ -74,7 +96,7 @@ export const resolveDefaultExecutable = (
   boundaryRoot: string | undefined,
   fallback = "/usr/local/bin/smithers-jj-export"
 ): string => {
-  const candidates = [join(root, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")]
+  const candidates = [packagedHelper(root)]
   const checkout = resolve(root, "../../../..")
   if (existsSync(join(checkout, "pnpm-workspace.yaml"))) {
     candidates.push(join(checkout, "target/release/smithers-jj-export"))

@@ -880,6 +880,10 @@ describe("Node filesystem publication security", () => {
       const exit = yield* ArtifactStore.makeFileSystem(hostile, { directory: `${root}/objects` }).put(bytes(artifact))
         .pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
+      const reason = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
+      expect(reason?._tag === "Fail" && reason.error.message).toBe(
+        "artifact scratch creation exhausted collision retries"
+      )
       expect(paths).toHaveLength(16)
       for (const path of paths) expect(yield* fs.readFileString(path)).toBe("other writer")
     })).pipe(Effect.provide(NodeFileSystem.layer), withCrypto))

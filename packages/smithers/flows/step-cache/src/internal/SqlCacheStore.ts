@@ -110,8 +110,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
   const get: Service["get"] = Effect.fn("CacheStore.get")((keyDigest, options) =>
     Effect.gen(function*() {
-      yield* Effect.annotateCurrentSpan({ keyDigest })
       yield* validateKey(keyDigest)
+      yield* Effect.annotateCurrentSpan({ keyDigest })
       const maxAgeMs = yield* validateAge("maxAgeMs", options?.maxAgeMs)
       const recordedBy = yield* validateRecordedBy(options?.recordedBy)
       // The age floor is resolved once, from the injected clock, so both reads
@@ -236,8 +236,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
 
   const evict: Service["evict"] = Effect.fn("CacheStore.evict")((keyDigest, options) =>
     Effect.gen(function*() {
-      yield* Effect.annotateCurrentSpan({ keyDigest })
       yield* validateKey(keyDigest)
+      yield* Effect.annotateCurrentSpan({ keyDigest })
       const fenced = yield* validateFence(options?.ifRecordedBy)
       // The provenance predicate rides in the DELETE itself (issue #119):
       // a read-then-delete leaves a window in which another *process* records

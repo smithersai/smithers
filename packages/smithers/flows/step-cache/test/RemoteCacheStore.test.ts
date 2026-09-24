@@ -974,3 +974,28 @@ describe("layer", () => {
       expect(Option.isNone(found)).toBe(true)
     }))
 })
+
+describe("transport failures", () => {
+  it.effect("names the transport reason and errno code, never the request", () =>
+    Effect.gen(function*() {
+      const client = HttpClient.make((request) =>
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "https://user:secret@cache.example.com",
+              cause: Object.assign(new TypeError("fetch failed"), {
+                cause: Object.assign(new Error("connect ECONNREFUSED"), { code: "ECONNREFUSED" })
+              })
+            })
+          })
+        )
+      )
+      const store = yield* RemoteCacheStore.make({ endpoint: "https://cache.example.com" }).pipe(
+        Effect.provideService(HttpClient.HttpClient, client)
+      )
+      const failure = errorOf(yield* Effect.exit(store.get(entry.keyDigest)))
+      expect(failure.message).toBe("the remote cache tier refused a lookup (TransportError ECONNREFUSED)")
+      expect(failure.message).not.toContain("secret")
+    }))
+})

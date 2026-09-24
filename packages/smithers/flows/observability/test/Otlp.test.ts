@@ -268,7 +268,7 @@ describe("Otlp", () => {
           else init?.signal?.addEventListener("abort", abort, { once: true })
         })
       }
-      const dropped = Metric.counter("flows/observability/otlp/dropped")
+      const dropped = Metric.counter("flows_observability_otlp_dropped")
       const snapshots = yield* runExportingTimed(
         Effect.gen(function*() {
           for (let batch = 0; batch < 20; batch++) {
@@ -313,7 +313,7 @@ describe("Otlp", () => {
   it.effect("discards oversized serialized batches with a loss diagnostic", () =>
     Effect.gen(function*() {
       const collector = recordingFetch()
-      const dropped = Metric.counter("flows/observability/otlp/dropped")
+      const dropped = Metric.counter("flows_observability_otlp_dropped")
       yield* runExportingTimed(
         Effect.gen(function*() {
           yield* Effect.logInfo("x".repeat(1024 * 1024))
@@ -372,7 +372,7 @@ describe("Otlp", () => {
           yield* TestClock.adjust("1 millis")
           for (let i = 0; i < 1_000; i++) yield* Effect.void.pipe(Effect.withSpan("ordinary span"))
           yield* TestClock.adjust("1 millis")
-          expect((yield* Metric.value(Metric.counter("flows/observability/otlp/dropped"))).count).toBe(0)
+          expect((yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count).toBe(0)
         }),
         Otlp.layerFetch({
           baseUrl: "http://collector.invalid:4318",
@@ -425,7 +425,7 @@ describe("Otlp", () => {
             yield* flusher.flush
           }
           expect(warnings).toHaveLength(1)
-          expect((yield* Metric.value(Metric.counter("flows/observability/otlp/dropped"))).count).toBe(2)
+          expect((yield* Metric.value(Metric.counter("flows_observability_otlp_dropped"))).count).toBe(2)
           yield* TestClock.adjust("60 seconds")
           yield* Effect.logInfo("x".repeat(Otlp.maxRequestBytes))
           yield* flusher.flush

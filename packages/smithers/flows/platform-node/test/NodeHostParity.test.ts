@@ -6,6 +6,8 @@ import * as NodeHost from "../src/NodeHost.ts"
 
 it("identifies every host implementation", () => {
   expect(Object.keys(NodeHost.implementationIds).sort()).toEqual([...HostServiceIds].sort())
+  // Every bundle installs the proxy-aware egress client, not the raw Undici pool.
+  expect(NodeHost.implementationIds["effect/HttpClient"]).toBe("@smthrs/platform-node/EgressHttpClient")
 })
 it.effect("uses native path semantics for absolute filesystem paths", () =>
   Effect.gen(function*() {

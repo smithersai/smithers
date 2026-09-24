@@ -8,7 +8,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Layer, PlatformError, Semaphore } from "effect"
 import { availableParallelism } from "node:os"
-import { packageRoot, resolveDefaultExecutable } from "./internal/AtomicFileSystemExecutable.ts"
+import { packageRoot, resolveDefaultExecutable, stagePackaged } from "./internal/AtomicFileSystemExecutable.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 
@@ -306,7 +306,16 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
   return Layer.effect(
     FileSystem.FileSystem,
     Effect.map(
-      FileSystem.FileSystem,
+      // The packaged helper is pinned while the host is built, before any flow
+      // can rewrite a workspace-local install of this package.
+      Effect.andThen(
+        Effect.sync(() => {
+          if (options.executable === undefined && process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY === undefined) {
+            stagePackaged(packageRoot)
+          }
+        }),
+        FileSystem.FileSystem
+      ),
       (fileSystem) =>
         KernelFileSystem.withAtomicFileSystem(fileSystem, {
           execute: execute(options, settings),

@@ -190,25 +190,35 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
       }))
   }
   for (const detached of [true, false]) {
-    it.live(`does not spend the grace window on a completed command (detached=${detached})`, () =>
-      Effect.gen(function*() {
-        const ledger = yield* ProcessLedger.makeMemory({ hostId: "fast-exit", ownerPid: process.pid })
-        const started = Date.now()
-        const status = yield* Effect.gen(function*() {
-          const spawner = yield* ChildProcessSpawner
-          const handle = yield* spawner.spawn(
-            ChildProcess.make(process.execPath, ["-e", "process.exit(0)"], { detached })
+    it.live(
+      `does not spend the grace window on a completed command (detached=${detached})`,
+      () =>
+        Effect.gen(function*() {
+          // The property is "scope close after a completed command does not wait
+          // out the grace window", so only the exit-to-close span is measured, and
+          // the window is long enough that no load on the host reaches it. Layer
+          // build and the spawn itself are not the grace window.
+          const graceMs = 20_000
+          const ledger = yield* ProcessLedger.makeMemory({ hostId: "fast-exit", ownerPid: process.pid })
+          let exitedAt = 0
+          const status = yield* Effect.gen(function*() {
+            const spawner = yield* ChildProcessSpawner
+            const handle = yield* spawner.spawn(
+              ChildProcess.make(process.execPath, ["-e", "process.exit(0)"], { detached })
+            )
+            const code = yield* handle.exitCode
+            exitedAt = Date.now()
+            return code
+          }).pipe(
+            Effect.provide(NodeHost.layerContained({ graceMs })),
+            Effect.provideService(ProcessLedger.ProcessLedger, ledger),
+            Effect.scoped
           )
-          return yield* handle.exitCode
-        }).pipe(
-          Effect.provide(NodeHost.layerContained({ graceMs: 5000 })),
-          Effect.provideService(ProcessLedger.ProcessLedger, ledger),
-          Effect.scoped
-        )
-        expect(status).toBe(0)
-        // Allow scheduler contention while still ruling out the full 5 s grace wait.
-        expect(Date.now() - started).toBeLessThan(4000)
-        expect(yield* ledger.live).toEqual([])
-      }))
+          expect(status).toBe(0)
+          expect(Date.now() - exitedAt).toBeLessThan(graceMs / 2)
+          expect(yield* ledger.live).toEqual([])
+        }),
+      60_000
+    )
   }
 })

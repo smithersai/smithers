@@ -13,6 +13,13 @@ import type * as ProcessCleanup from "./ProcessCleanup.ts"
 export const defaultProcRoot = "/proc"
 
 /**
+ * The `/proc` root a platform publishes its process table under, if any.
+ * @private
+ * @since 1.0.0-rc.1
+ */
+export const rootFor = (platform: string): string | undefined => platform === "linux" ? defaultProcRoot : undefined
+
+/**
  * `/proc` reports `starttime` in USER_HZ, which Linux fixes at 100 for this
  * interface however the running kernel is configured.
  */
@@ -113,4 +120,73 @@ export const snapshot = (root: string) => (pgid: number): ProcessCleanup.Snapsho
     members.push(parsed.member)
   }
   return { ownGroup, members }
+}
+
+/**
+ * This machine's boot instant from `${root}/stat`, in epoch milliseconds, or
+ * `undefined` when the table cannot be read here.
+ * @private
+ * @since 1.0.0
+ */
+export const bootMs = (root: string): number | undefined => {
+  try {
+    const boot = bootLine.exec(readFileSync(`${root}/stat`, "utf8"))
+    if (boot === null) return undefined
+    const ms = Number(boot[1]) * 1000
+    return Number.isSafeInteger(ms) ? ms : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * This process's own process group, read from `/proc/self/stat`, or `null`
+ * when the file cannot be read or parsed.
+ *
+ * The reaper's own-group guard needs this number before it may signal any
+ * group. Reading it here instead of from `ps` keeps the guard working on a
+ * Linux image that ships no `procps`.
+ * @private
+ * @since 1.0.0
+ */
+export const ownGroup = (root: string) => (): number | null => {
+  try {
+    const self = parseStat(readFileSync(`${root}/self/stat`, "utf8"), 0)
+    return self === undefined || self.pgid <= 0 ? null : self.pgid
+  } catch {
+    return null
+  }
+}
+
+/**
+ * When `pid` started, in epoch milliseconds, read from `/proc/<pid>/stat` and
+ * `/proc/stat`'s `btime`.
+ *
+ * `gone` is the table having no entry for the pid (`ENOENT`). Every other
+ * failure is `unavailable`: the question could not be asked, so the caller
+ * keeps its record instead of acting on it.
+ * @private
+ * @since 1.0.0
+ */
+export const startedAtMs = (root: string) =>
+(
+  pid: number
+):
+  | { readonly _tag: "started"; readonly startedAtMs: number }
+  | { readonly _tag: "gone" }
+  | { readonly _tag: "unavailable" } =>
+{
+  if (!Number.isSafeInteger(pid) || pid <= 0) return { _tag: "unavailable" }
+  const boot = bootMs(root)
+  if (boot === undefined) return { _tag: "unavailable" }
+  let text: string
+  try {
+    text = readFileSync(`${root}/${pid}/stat`, "utf8")
+  } catch (cause) {
+    return missing(cause) ? { _tag: "gone" } : { _tag: "unavailable" }
+  }
+  const parsed = parseStat(text, boot)
+  return parsed === undefined || parsed.member.pid !== pid
+    ? { _tag: "unavailable" }
+    : { _tag: "started", startedAtMs: parsed.member.startedAtMs }
 }

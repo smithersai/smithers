@@ -19,6 +19,9 @@
  * Attributing operations per tier needs the tier in the metric, which would
  * change the published counter shape; until then this is what the numbers mean.
  *
+ * The one shared-tier signal is {@link remoteFailure}: a `CombinedArtifacts`
+ * upload or write-back that was refused, or abandoned at its deadline.
+ *
  * @since 1.0.0-rc.0
  */
 import * as Metric from "effect/Metric"
@@ -48,3 +51,32 @@ export const puts = Metric.counter("flows_artifact_puts", {
 export const gets = Metric.counter("flows_artifact_gets", {
   description: "Successful artifact gets"
 })
+
+/**
+ * Counter over opportunistic `CombinedArtifacts` transfers that failed or hit
+ * their deadline and were dropped: `put`'s upload to the shared tier and
+ * `get`'s write-back into the local tier.
+ *
+ * Read the attributed views on {@link remoteFailure}: every update carries an
+ * `operation` attribute, so this bare handle aggregates nothing and always
+ * reads zero.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const remoteFailures = Metric.counter("flows_artifact_remote_failures", {
+  description: "Dropped combined-artifact transfers by operation"
+})
+
+/**
+ * `remoteFailures` views keyed by the dropped transfer.
+ *
+ * @category metrics
+ * @since 1.0.0-rc.1
+ */
+export const remoteFailure: {
+  readonly [Operation in "put" | "write_back"]: Metric.Metric<number, Metric.CounterState<number>>
+} = {
+  put: Metric.withAttributes(remoteFailures, { operation: "put" }),
+  write_back: Metric.withAttributes(remoteFailures, { operation: "write_back" })
+}

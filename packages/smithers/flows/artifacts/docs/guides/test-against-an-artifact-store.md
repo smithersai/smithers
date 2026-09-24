@@ -108,9 +108,9 @@ tier's `has` to prove whether the download policy wrote back.
 
 ## Exercise the HTTP tier over a real socket
 
-`RemoteArtifacts` refuses any endpoint that is not HTTPS, and that guard is not
-weakened for tests. Run a loopback HTTP server and rewrite the declared
-authority onto its port instead, so the request, body, status code, and
+`RemoteArtifacts` accepts plain HTTP only for a loopback host. To exercise the
+HTTPS authority a deployment declares, run a loopback HTTP server and rewrite
+that authority onto its port, so the request, body, status code, and
 connection are all real and only TLS termination is missing:
 
 ```ts

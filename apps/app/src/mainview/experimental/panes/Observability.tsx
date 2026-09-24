@@ -14,11 +14,11 @@ import { pane, type ExperimentalPaneContext } from "../Pane"
 import { Badge, Code, Facts, Graph, Rail, Section, Split, Table } from "../Primitives"
 
 const METRICS = [
-  { id: "flows/run/throughput", kind: "counter", value: "412", tone: "ok" as const },
-  { id: "flows/seat/active", kind: "gauge", value: "3", tone: "info" as const },
-  { id: "flows/quota/park", kind: "counter", value: "7", tone: "warn" as const },
-  { id: "flows/observability/log/dropped", kind: "counter", value: "0", tone: "ok" as const },
-  { id: "flows/observability/otlp/dropped", kind: "counter", value: "2", tone: "bad" as const }
+  { id: "flows_run_throughput", kind: "counter", value: "412", tone: "ok" as const },
+  { id: "flows_seat_active", kind: "gauge", value: "3", tone: "info" as const },
+  { id: "flows_quota_park", kind: "counter", value: "7", tone: "warn" as const },
+  { id: "flows_observability_log_dropped", kind: "counter", value: "0", tone: "ok" as const },
+  { id: "flows_observability_otlp_dropped", kind: "counter", value: "2", tone: "bad" as const }
 ]
 
 const SIGNALS = [

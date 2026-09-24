@@ -637,7 +637,9 @@ intended production shape is `CombinedCacheStore` with this as its remote tier.
 ## Migrations
 
 This package owns two tables and nothing else: the mutable `flows_step_cache`
-head and the append-only `flows_step_cache_recorded` ledger.
+head and the append-only `flows_step_cache_recorded` ledger. Migration
+`0002_created_at_index` indexes `created_at_ms` on both, so `sweepExpired`
+reads only expired rows.
 
 ### set
 

@@ -145,11 +145,36 @@ const hasControlText = (value: string): boolean => {
   return false
 }
 
-const transportFailure = (operation: string, _cause: unknown): CacheStore.CacheStoreError =>
-  new CacheStore.CacheStoreError({
+/**
+ * The credential-free part of a transport failure: the HTTP client's reason
+ * tag and the first operating-system error code (`ECONNREFUSED`, `ENOTFOUND`,
+ * `CERT_HAS_EXPIRED`) in its cause chain. Never the request, the URL, the
+ * headers, or free-form text, any of which may carry a credential.
+ */
+const transportReason = (cause: unknown): string | undefined => {
+  const reason = (cause as { readonly reason?: { readonly _tag?: unknown } } | null)?.reason
+  const tag = typeof reason?._tag === "string" ? reason._tag : undefined
+  let code: string | undefined
+  let current: unknown = reason ?? cause
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    const candidate = (current as { readonly code?: unknown }).code
+    if (typeof candidate === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(candidate)) {
+      code = candidate
+      break
+    }
+    current = (current as { readonly cause?: unknown }).cause
+  }
+  const parts = [tag, code].filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(" ")
+}
+
+const transportFailure = (operation: string, cause: unknown): CacheStore.CacheStoreError => {
+  const reason = transportReason(cause)
+  return new CacheStore.CacheStoreError({
     code: "persistence_failed",
-    message: `the remote cache tier refused ${operation}`
+    message: `the remote cache tier refused ${operation}${reason === undefined ? "" : ` (${reason})`}`
   })
+}
 
 const unexpectedStatus = (operation: string, status: number): CacheStore.CacheStoreError =>
   new CacheStore.CacheStoreError({
@@ -352,8 +377,8 @@ export const make = (
 
     const get: CacheStore.Service["get"] = Effect.fn("RemoteCacheStore.get")((keyDigest, getOptions) =>
       withDeadline(Effect.gen(function*() {
-        yield* Effect.annotateCurrentSpan({ keyDigest })
         yield* CacheAdmission.validateKey(keyDigest)
+        yield* Effect.annotateCurrentSpan({ keyDigest })
         const recordedBy = yield* CacheAdmission.validateRecordedBy(getOptions?.recordedBy)
         const maxAgeMs = yield* CacheAdmission.validateAge("maxAgeMs", getOptions?.maxAgeMs)
         const floorMs = maxAgeMs === undefined
@@ -436,11 +461,11 @@ export const make = (
 
     const evict: CacheStore.Service["evict"] = Effect.fn("RemoteCacheStore.evict")((keyDigest, evictOptions) =>
       withDeadline(Effect.gen(function*() {
-        yield* Effect.annotateCurrentSpan({ keyDigest })
         // An empty key would aim the protocol's one destructive verb at the
         // `/ac/` collection root instead of a single entry, so the preflight
         // that guards `get` guards the DELETE all the more.
         yield* CacheAdmission.validateKey(keyDigest)
+        yield* Effect.annotateCurrentSpan({ keyDigest })
         const fenced = yield* CacheAdmission.validateFence(evictOptions?.ifRecordedBy)
         // The provenance fence rides in the request the same way it rides in
         // the SQL `DELETE`: the server compares before deleting, so a fresher

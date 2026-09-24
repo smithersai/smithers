@@ -63,7 +63,7 @@ and 888 KiB (`Otlp.reservedBatchBytes`) for signal batches: about 909 bytes per
 record in the upstream 1,000-record log or span batch. Large application records
 can still exceed the transport cap.
 
-Discarded batches increment `flows/observability/otlp/dropped` and emit a
+Discarded batches increment `flows_observability_otlp_dropped` and emit a
 `Warn` diagnostic with code `otlp_export_discarded` at most once per minute per
 transport through the loggers installed before exporter acquisition. Install
 an ambient logger that writes outside OTLP to observe loss independently; an

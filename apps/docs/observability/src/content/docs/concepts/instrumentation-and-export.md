@@ -43,9 +43,9 @@ host chooses `NodeOtel` or `BrowserOtel`.
 A metric handle belongs to the package that knows when to advance it. This
 package holds only the four cross-package runtime signals nobody else owns,
 and it holds them so the producers can share one identifier:
-`flows/run/throughput` is updated in [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/),
-`flows/seat/active` and `flows/quota/park` in [`@smthrs/agent`](https://agent.smithers.sh/reference/api/),
-and `flows/observability/log/dropped` here. Step-cache counters stay in
+`flows_run_throughput` is updated in [`@smthrs/run-store`](https://run-store.smithers.sh/reference/api/),
+`flows_seat_active` and `flows_quota_park` in [`@smthrs/agent`](https://agent.smithers.sh/reference/api/),
+and `flows_observability_log_dropped` here. Step-cache counters stay in
 [`@smthrs/step-cache`](https://step-cache.smithers.sh/reference/api/); this package does not duplicate them.
 
 The consequence for a reader: a metric's name tells you which package to open

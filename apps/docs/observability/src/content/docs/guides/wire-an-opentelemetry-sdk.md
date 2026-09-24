@@ -195,10 +195,10 @@ at 8 KiB and reserves `Otlp.reservedBatchBytes` (888 KiB) for signals: roughly
 in a 1,000-record log or span batch. Every layer validates these resource limits
 before allocating exporters, including injected SDK layers.
 
-The Effect counter `flows/observability/otlp/dropped` increments once per batch
+The Effect counter `flows_observability_otlp_dropped` increments once per batch
 discarded for saturation, payload size, or timeout. Discards are terminal and
 are not retried. Read the counter locally
-with `Metric.value(Metric.counter("flows/observability/otlp/dropped"))` during an
+with `Metric.value(Metric.counter("flows_observability_otlp_dropped"))` during an
 outage. Its exported value becomes available when the collector recovers.
 
 Because that counter shares the export path, each acquisition also emits at

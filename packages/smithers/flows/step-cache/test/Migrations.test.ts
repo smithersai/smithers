@@ -10,6 +10,7 @@ import * as Exit from "effect/Exit"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
 import * as Initial from "../src/migrations/0001_initial.ts"
+import * as CreatedAtIndex from "../src/migrations/0002_created_at_index.ts"
 
 interface SqliteMasterRow {
   readonly name: string
@@ -28,18 +29,21 @@ describe("step-cache migrations", () => {
   // set holds Effects however the package was built.
   it("holds an Effect under every migration id", () => {
     const entries = Object.entries(Migrations.set.migrations)
-    expect(entries.map(([id]) => id)).toEqual(["0001_initial"])
+    expect(entries.map(([id]) => id)).toEqual(["0001_initial", "0002_created_at_index"])
     for (const [, migration] of entries) {
       expect(Effect.isEffect(migration)).toBe(true)
       expect(typeof migration.pipe).toBe("function")
     }
     expect(Migrations.set.migrations["0001_initial"]).toBe(Initial.initial)
+    expect(Migrations.set.migrations["0002_created_at_index"]).toBe(CreatedAtIndex.createdAtIndex)
   })
 
   it("exports each migration as a named binding and never as a default", () => {
     expect("default" in Initial).toBe(false)
     expect(Object.keys(Initial)).toEqual(["initial"])
     expect(Effect.isEffect(Initial.initial)).toBe(true)
+    expect("default" in CreatedAtIndex).toBe(false)
+    expect(Object.keys(CreatedAtIndex)).toEqual(["createdAtIndex"])
   })
 
   it.effect("migrates a fresh database and reruns idempotently", () =>
@@ -50,7 +54,21 @@ describe("step-cache migrations", () => {
       }))
     }))
 
-  it.effect("creates the head table, the recorded ledger, and nothing else", () =>
+  it.effect("sweepExpired's age predicate reads an index on both tables", () =>
+    Effect.gen(function*() {
+      const plans = yield* migrated(Effect.gen(function*() {
+        const sql = yield* Effect.service(SqlClient.SqlClient)
+        const head = yield* sql<{ readonly detail: string }>`
+          EXPLAIN QUERY PLAN DELETE FROM flows_step_cache WHERE created_at_ms < ${10}`
+        const ledger = yield* sql<{ readonly detail: string }>`
+          EXPLAIN QUERY PLAN SELECT key_digest FROM flows_step_cache_recorded WHERE created_at_ms < ${10}`
+        return [head, ledger].map((rows) => rows.map((row) => row.detail).join("\n"))
+      }))
+      expect(plans[0]).toContain("flows_step_cache_created_at_ms")
+      expect(plans[1]).toContain("flows_step_cache_recorded_created_at_ms")
+    }))
+
+  it.effect("creates the head table, the recorded ledger, their expiry indexes, and nothing else", () =>
     Effect.gen(function*() {
       const master = yield* migrated(Effect.gen(function*() {
         const sql = yield* Effect.service(SqlClient.SqlClient)
@@ -73,12 +91,19 @@ describe("step-cache migrations", () => {
       }
       const ledgerSql = master.find((row) => row.name === "flows_step_cache_recorded")?.sql ?? ""
       expect(ledgerSql).toContain("PRIMARY KEY (key_digest, recorded_run_id, recorded_event_seq)")
+      expect(
+        master.filter((row) => row.type === "index" && row.sql !== null).map((row) => row.sql?.replace(/\s+/g, " "))
+          .sort()
+      ).toEqual([
+        "CREATE INDEX flows_step_cache_created_at_ms ON flows_step_cache (created_at_ms)",
+        "CREATE INDEX flows_step_cache_recorded_created_at_ms ON flows_step_cache_recorded (created_at_ms)"
+      ])
     }))
 
   it.effect("reserves its own migration id block so ids cannot collide", () =>
     Effect.gen(function*() {
       const applied = yield* (Migrations.run.pipe(Effect.provide(TestDatabase.layer)))
-      expect(applied).toEqual([[2001, "step-cache_initial"]])
+      expect(applied).toEqual([[2001, "step-cache_initial"], [2002, "step-cache_created_at_index"]])
     }))
 
   it.effect("enforces every cache row invariant at the schema boundary", () =>

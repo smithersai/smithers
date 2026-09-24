@@ -15,6 +15,7 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
 import { initial } from "./migrations/0001_initial.ts"
+import { createdAtIndex } from "./migrations/0002_created_at_index.ts"
 
 /**
  * The step cache's namespaced migration set, for composition with the other
@@ -27,7 +28,8 @@ export const set: DatabaseMigrations.MigrationSet = {
   namespace: "step-cache",
   idOffset: DatabaseMigrations.idBlock * 2,
   migrations: {
-    "0001_initial": initial
+    "0001_initial": initial,
+    "0002_created_at_index": createdAtIndex
   }
 }
 

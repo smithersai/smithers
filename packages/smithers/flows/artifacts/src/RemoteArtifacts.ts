@@ -126,7 +126,9 @@ export interface Options {
    * Four shapes are refused at construction as `invalid_configuration`, before
    * any request leaves and therefore before `headers` can reach a wire: a value
    * that is not a string, one no `URL` parser accepts, a scheme other than
-   * `https:`, and an endpoint carrying userinfo, a query, or a fragment. The
+   * `https:` (plain `http:` is accepted only for a loopback host: `localhost`,
+   * `*.localhost`, `127.0.0.1`, or `[::1]`), and an endpoint carrying
+   * userinfo, a query, or a fragment. The
    * last rule keeps a credential out of a place nothing here would redact: an
    * endpoint is interpolated into every request path and into span attributes.
    *
@@ -148,6 +150,10 @@ export interface Options {
    * uploads, including fallbacks, never carry `content-range`.
    * All configured header names are redacted in HTTP spans, in addition to
    * the host's existing redaction rules.
+   *
+   * A name that is not an HTTP token, or a value longer than 16 KiB or
+   * carrying a control character (CR and LF included), is refused at
+   * construction as `invalid_configuration`.
    */
   readonly headers?: Record<string, string> | undefined
   /**
@@ -242,11 +248,36 @@ const maxFindMissingBodyBytes = 256 * 1024
 const encoder = new TextEncoder()
 const decoder = new TextDecoder("utf-8", { fatal: true })
 
-const transportFailure = (operation: string): ArtifactStore.ArtifactStoreError =>
-  new ArtifactStore.ArtifactStoreError({
+/**
+ * The credential-free part of a transport failure: the HTTP client's reason
+ * tag and the first operating-system error code (`ECONNREFUSED`, `ENOTFOUND`,
+ * `CERT_HAS_EXPIRED`) in its cause chain. Never the request, the URL, the
+ * headers, or free-form text, any of which may carry a credential.
+ */
+const transportReason = (cause: unknown): string | undefined => {
+  const reason = (cause as { readonly reason?: { readonly _tag?: unknown } } | null)?.reason
+  const tag = typeof reason?._tag === "string" ? reason._tag : undefined
+  let code: string | undefined
+  let current: unknown = reason ?? cause
+  for (let depth = 0; depth < 8 && typeof current === "object" && current !== null; depth++) {
+    const candidate = (current as { readonly code?: unknown }).code
+    if (typeof candidate === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(candidate)) {
+      code = candidate
+      break
+    }
+    current = (current as { readonly cause?: unknown }).cause
+  }
+  const parts = [tag, code].filter((part): part is string => part !== undefined)
+  return parts.length === 0 ? undefined : parts.join(" ")
+}
+
+const transportFailure = (operation: string, cause?: unknown): ArtifactStore.ArtifactStoreError => {
+  const reason = transportReason(cause)
+  return new ArtifactStore.ArtifactStoreError({
     code: "transport_failed",
-    message: `the remote artifact tier refused ${operation}`
+    message: `the remote artifact tier refused ${operation}${reason === undefined ? "" : ` (${reason})`}`
   })
+}
 
 const unexpectedStatus = (operation: string, status: number): ArtifactStore.ArtifactStoreError =>
   new ArtifactStore.ArtifactStoreError({
@@ -262,6 +293,18 @@ const invalidOption = (name: string): ArtifactStore.ArtifactStoreError =>
 
 /** The batched-probe response body. */
 const FindMissingResponse = Schema.Struct({ missing: Schema.Array(Schema.String) })
+
+/** An RFC 9110 field-name token. */
+const headerName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
+
+/** Whether a header value carries a C0 control character or DEL, CR and LF included. */
+const hasControlText = (value: string): boolean => {
+  for (let index = 0; index < value.length; index++) {
+    const unit = value.charCodeAt(index)
+    if (unit <= 0x1f || unit === 0x7f) return true
+  }
+  return false
+}
 
 const configurationFailure = (message: string): ArtifactStore.ArtifactStoreError =>
   new ArtifactStore.ArtifactStoreError({ code: "invalid_configuration", message })
@@ -292,7 +335,13 @@ export const make = (
           ? undefined
           : Object.freeze(Object.fromEntries(
             Object.entries(options.headers).map(([name, value]) => {
-              if (typeof value !== "string") throw new TypeError("header value")
+              // Refused here, once, rather than on every request as an opaque
+              // transport failure: a CRLF in a value or a space in a name can
+              // never become a valid header.
+              if (typeof value !== "string" || value.length > 16 * 1024 || hasControlText(value)) {
+                throw new TypeError("header value")
+              }
+              if (!headerName.test(name)) throw new TypeError("header name")
               return [name, value]
             })
           ))
@@ -315,7 +364,12 @@ export const make = (
       try: () => new URL(configured.endpoint),
       catch: () => configurationFailure("invalid remote artifact endpoint")
     })
-    if (endpoint.protocol !== "https:") {
+    // The loopback exemption is the step cache's (`RemoteCacheStore`): a
+    // self-hosted cache on this machine is reachable over plain HTTP, and
+    // loopback traffic never leaves the host.
+    const loopback = endpoint.hostname === "localhost" || endpoint.hostname.endsWith(".localhost") ||
+      endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]"
+    if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && loopback)) {
       return yield* Effect.fail(configurationFailure("remote artifact endpoint must use HTTPS"))
     }
     if (endpoint.username !== "" || endpoint.password !== "" || endpoint.search !== "" || endpoint.hash !== "") {
@@ -355,7 +409,7 @@ export const make = (
       Effect.gen(function*() {
         const redactedNames = yield* Headers.CurrentRedactedNames
         return yield* scopedClient.execute(request).pipe(
-          Effect.mapError(() => transportFailure(operation)),
+          Effect.mapError((cause) => transportFailure(operation, cause)),
           Effect.flatMap(use),
           Effect.provideService(Headers.CurrentRedactedNames, [...redactedNames, ...credentialNames]),
           Effect.scoped

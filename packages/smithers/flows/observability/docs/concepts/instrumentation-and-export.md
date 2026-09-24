@@ -42,9 +42,9 @@ host chooses `NodeOtel` or `BrowserOtel`.
 A metric handle belongs to the package that knows when to advance it. This
 package holds only the four cross-package runtime signals nobody else owns,
 and it holds them so the producers can share one identifier:
-`flows/run/throughput` is updated in [`@smthrs/run-store`](/api/run-store),
-`flows/seat/active` and `flows/quota/park` in [`@smthrs/agent`](/api/agent),
-and `flows/observability/log/dropped` here. Step-cache counters stay in
+`flows_run_throughput` is updated in [`@smthrs/run-store`](/api/run-store),
+`flows_seat_active` and `flows_quota_park` in [`@smthrs/agent`](/api/agent),
+and `flows_observability_log_dropped` here. Step-cache counters stay in
 [`@smthrs/step-cache`](/api/step-cache); this package does not duplicate them.
 
 The consequence for a reader: a metric's name tells you which package to open

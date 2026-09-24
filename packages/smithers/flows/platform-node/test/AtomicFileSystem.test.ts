@@ -866,9 +866,23 @@ describe("Node atomic filesystem", () => {
           return rows
         })
 
-      expect(yield* matches((root, effect) => run(root, effect))).toEqual(
-        yield* matches((_root, effect) => effect.pipe(Effect.provide(NodeFileSystem.layer)))
+      // A `[.]` segment anywhere but last names an entry called `.`, which no
+      // directory holds. That is this helper's contract, asserted directly:
+      // Node 26.10's `fs.glob` began matching these rows as if the segment
+      // were absent, so they are not compared with whatever the running Node
+      // ships.
+      const pinned = new Set(["[.]/*", "nested/[.]/mid.txt", "nested/[.]/"])
+      const patternOf = (row: string) => row.split(" ")[1]!
+      const guarded = yield* matches((root, effect) => run(root, effect))
+      const native = yield* matches((_root, effect) => effect.pipe(Effect.provide(NodeFileSystem.layer)))
+      expect(guarded.filter((row) => !pinned.has(patternOf(row)))).toEqual(
+        native.filter((row) => !pinned.has(patternOf(row)))
       )
+      expect(guarded.filter((row) => pinned.has(patternOf(row))).map((row) => row.split(" -> ")[1])).toEqual([
+        "",
+        "",
+        ""
+      ])
     }), 120_000)
 
   /**

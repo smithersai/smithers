@@ -23,7 +23,7 @@ import { snapshotBytes } from "./snapshotBytes.ts"
 import { validateDigest } from "./validateDigest.ts"
 
 const hostFailure = (cause: unknown): ArtifactStoreError =>
-  new ArtifactStoreError({
+  cause instanceof ArtifactStoreError ? cause : new ArtifactStoreError({
     code: "unavailable",
     message: `the host filesystem refused an artifact operation: ${String(cause)}`,
     cause

@@ -79,7 +79,7 @@ by default.
 A `Warn` record with code `otlp_export_discarded` means the transport discarded
 a batch because it exceeded 1 MiB (`oversized`), stalled for ten seconds
 (`stalled`), or found all four request slots occupied (`saturated`). The
-`flows/observability/otlp/dropped` counter records every discarded batch. The
+`flows_observability_otlp_dropped` counter records every discarded batch. The
 warning carries the request byte size, limit and running drop count, and is
 limited to one per minute per transport.
 
@@ -135,7 +135,7 @@ as it is.
 
 ## `droppedLogRecords` keeps climbing
 
-**What happened.** `flows/observability/log/dropped` advances during a run,
+**What happened.** `flows_observability_log_dropped` advances during a run,
 which means log records are not reaching the journal.
 
 **What to change.** The counter advances for three distinct losses, and the

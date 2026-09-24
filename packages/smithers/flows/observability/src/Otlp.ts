@@ -119,7 +119,7 @@ const boundedClient = Layer.effect(
     const ambientLoggers = yield* Effect.withFiber((fiber) => Effect.succeed(fiber.getRef(Logger.CurrentLoggers)))
     const permits = Semaphore.makeUnsafe(maxInFlight)
     // The counter lives with the transport it describes.
-    const droppedExports = Metric.counter("flows/observability/otlp/dropped")
+    const droppedExports = Metric.counter("flows_observability_otlp_dropped")
     let nextDiagnosticAt = -Infinity
     // A local discard is terminal, so the upstream retry loop must not retain
     // or retry its payload, and the counter records batches, not records. The
@@ -206,7 +206,7 @@ export interface Options {
  * Creates the OTLP logs, metrics, and traces layer with flows resource
  * defaults, JSON-serialized. Exports share a four-request limit with no waiting
  * queue. Requests larger than 1 MiB or stalled for ten seconds are discarded;
- * `flows/observability/otlp/dropped` counts discarded batches, and at most
+ * `flows_observability_otlp_dropped` counts discarded batches, and at most
  * once a minute a `Warn` record with code `otlp_export_discarded` names the
  * reason, the request size, and the running total through the loggers that
  * were installed when the layer was acquired, never through this exporter.

@@ -305,6 +305,29 @@ describe("uploads", () => {
       expect(tier.calls).toEqual([])
     }))
 
+  it.effect.each(["http://127.0.0.1:8080", "http://localhost:8080/cache", "http://[::1]:8080"])(
+    "accepts plain HTTP to loopback %s, as the step cache does",
+    (endpoint) =>
+      Effect.gen(function*() {
+        const tier = remote(() => new Response(null, { status: 404 }), { endpoint })
+        const store = yield* tier.store
+        expect(yield* store.has(digest)).toBe(false)
+        expect(tier.calls).toHaveLength(1)
+      })
+  )
+
+  it.effect.each([
+    { authorization: "Bearer a\r\nx-injected: 1" },
+    { "bad name": "value" },
+    { "x-long": "v".repeat(16 * 1024 + 1) }
+  ])("refuses an unsendable header at construction", (headers) =>
+    Effect.gen(function*() {
+      const tier = remote(() => new Response(null, { status: 200 }), { headers })
+      const failure = errorOf(yield* tier.store.pipe(Effect.exit)) as ArtifactStore.ArtifactStoreError
+      expect(failure.code).toBe("invalid_configuration")
+      expect(tier.calls).toEqual([])
+    }))
+
   it.effect("PUTs the bytes to /cas/{digest} and returns the measured address", () =>
     Effect.gen(function*() {
       const tier = remote(() => new Response(null, { status: 201 }))
@@ -1162,4 +1185,30 @@ describe("the declared download policy", () => {
     expect(() => (RemoteArtifacts.downloadPolicies as Array<string>).push("everything")).toThrow()
     expect(RemoteArtifacts.downloadPolicies).toEqual(["all", "toplevel", "minimal"])
   })
+})
+
+describe("transport failures", () => {
+  it.effect("names the transport reason and errno code, never the request", () =>
+    Effect.gen(function*() {
+      const client = HttpClient.make((request) =>
+        Effect.fail(
+          new HttpClientError.HttpClientError({
+            reason: new HttpClientError.TransportError({
+              request,
+              description: "https://user:secret@cache.example.com",
+              cause: Object.assign(new TypeError("fetch failed"), {
+                cause: Object.assign(new Error("getaddrinfo ENOTFOUND"), { code: "ENOTFOUND" })
+              })
+            })
+          })
+        )
+      )
+      const store = yield* RemoteArtifacts.make({ endpoint: "https://cache.example.com" }).pipe(
+        Effect.provideService(HttpClient.HttpClient, client)
+      )
+      const failure = errorOf(yield* Effect.exit(store.has(digest))) as ArtifactStore.ArtifactStoreError
+      expect(failure.code).toBe("transport_failed")
+      expect(failure.message).toMatch(/\(TransportError ENOTFOUND\)$/)
+      expect(failure.message).not.toContain("secret")
+    }))
 })

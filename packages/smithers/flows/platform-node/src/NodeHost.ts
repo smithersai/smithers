@@ -110,7 +110,7 @@ export const implementationIds: Readonly<Record<(typeof HostServiceIds)[number],
   "effect/Path": "@effect/platform-node/NodePath",
   "effect/process/ChildProcessSpawner": "@effect/platform-node/NodeChildProcessSpawner",
   "@smthrs/jj/Jj": "@smthrs/jj/node/NodeJj",
-  "effect/HttpClient": "@effect/platform-node/NodeHttpClient"
+  "effect/HttpClient": "@smthrs/platform-node/EgressHttpClient"
 }
 
 /** The two services `NodeChildProcessSpawner` resolves paths and files with. */

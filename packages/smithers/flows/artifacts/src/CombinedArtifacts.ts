@@ -14,14 +14,18 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as ArtifactStore from "./ArtifactStore.ts"
+import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.ts"
 import * as RemoteArtifacts from "./RemoteArtifacts.ts"
 
 /**
@@ -75,6 +79,13 @@ export interface Options {
  * `--remote_timeout` default for its remote cache calls.
  */
 const defaultUploadTimeout = Duration.seconds(60)
+
+/** At most one dropped-transfer warning per operation in this window. */
+const droppedWarningIntervalMs = 60_000
+
+/** The credential-free reason a dropped transfer failed: its code, never its bytes. */
+const reasonOf = (error: ArtifactStore.ArtifactStoreError | Cause.TimeoutError): string =>
+  Cause.isTimeoutError(error) ? error._tag : error.code
 
 /**
  * What the local tier answered a read with. A miss and a corrupt address both
@@ -144,6 +155,24 @@ export const make = (
      * rather than replaying a stale outcome.
      */
     const uploads = new Map<string, Deferred.Deferred<ArtifactStore.Digest, ArtifactStore.ArtifactStoreError>>()
+    /**
+     * Counts a dropped opportunistic transfer and warns at most once per
+     * operation per {@link droppedWarningIntervalMs}, so a shared tier that
+     * refuses every request is visible without one log line per artifact.
+     */
+    const lastWarnedAt = new Map<"put" | "write_back", number>()
+    const dropped =
+      (operation: "put" | "write_back") => (error: ArtifactStore.ArtifactStoreError | Cause.TimeoutError) =>
+        Effect.gen(function*() {
+          yield* Metric.update(ArtifactStoreMetrics.remoteFailure[operation], 1)
+          const now = yield* Clock.currentTimeMillis
+          const last = lastWarnedAt.get(operation)
+          if (last !== undefined && now - last < droppedWarningIntervalMs) return
+          lastWarnedAt.set(operation, now)
+          yield* Effect.logWarning("Combined artifact transfer dropped").pipe(
+            Effect.annotateLogs({ operation, reason: reasonOf(error) })
+          )
+        })
     const uploadInterrupted = (): ArtifactStore.ArtifactStoreError =>
       new ArtifactStore.ArtifactStoreError({
         code: "unavailable",
@@ -202,7 +231,8 @@ export const make = (
           // interrupted after `uploadTimeout` and abandoned like any refusal.
           yield* uploadOnce(digest, snapshot).pipe(
             Effect.timeout(uploadTimeout),
-            Effect.ignore
+            Effect.asVoid,
+            Effect.catch(dropped("put"))
           )
           return digest
         }))
@@ -243,7 +273,8 @@ export const make = (
             // the verified remote answer indefinitely.
             yield* local.put(fetched).pipe(
               Effect.timeout(writeBackTimeout),
-              Effect.ignore
+              Effect.asVoid,
+              Effect.catch(dropped("write_back"))
             )
           }
           return fetched
@@ -256,8 +287,7 @@ export const make = (
           Effect.andThen(
             Effect.flatMap(
               local.has(validated),
-              (present) =>
-                present ? Effect.succeed(true) : remote.has(validated)
+              (present) => present ? Effect.succeed(true) : remote.has(validated)
             )
           )
         ))

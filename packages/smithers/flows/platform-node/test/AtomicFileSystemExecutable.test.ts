@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it } from "vitest"
 import {
   outsideWorkspace,
   resolveDefaultExecutable,
-  resolvePackageRoot
+  resolvePackageRoot,
+  stagePackaged
 } from "../src/internal/AtomicFileSystemExecutable.ts"
 
 const roots: Array<string> = []
@@ -82,6 +83,21 @@ describe("default atomic helper resolution", () => {
     const selected = resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent"))
     expect(selected).not.toBe(binary)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+  })
+
+  it("executes the helper staged at layer build, not bytes written after it", async () => {
+    const { packageRoot, root } = await fixture()
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    await helper(binary)
+    stagePackaged(packageRoot)
+    await writeFile(binary, "#!/bin/sh\necho planted\n")
+    const selected = resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent"))
+    expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
+  })
+
+  it("stages nothing and throws nothing when no helper is packaged", async () => {
+    const { packageRoot } = await fixture()
+    expect(() => stagePackaged(packageRoot)).not.toThrow()
   })
 
   it("rejects a packaged helper that is a directory", async () => {
