@@ -693,6 +693,16 @@ describe("Bash", () => {
     expect(() => Schema.decodeUnknownSync(Bash.Input)({ mode: "hermetic", command: "ls" })).toThrow()
   })
 
+  it("points a checkpoint cwd at the third ctx.call argument", () => {
+    expect(() => Schema.decodeUnknownSync(Bash.Input)({ command: "ls", cwd: { at: "base" } }))
+      .toThrow("{ at: ctx.base } as the third ctx.call argument")
+  })
+
+  it("names the numeric millisecond requirement for timeoutMs", () => {
+    expect(() => Schema.decodeUnknownSync(Bash.Input)({ command: "ls", timeoutMs: "1000" }))
+      .toThrow("timeoutMs must be a number of milliseconds")
+  })
+
   it("hands a script to its interpreter as data, never as a quoted line", async () => {
     const spawns: Array<Spawned> = []
     const script = "import sys\nprint('single ' + \"double\" + `back` + '''triple''')\n"

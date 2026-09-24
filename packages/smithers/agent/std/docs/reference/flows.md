@@ -224,9 +224,9 @@ envelope `bash` declares for every call.
 | `container`   | string, optional               | Run inside this container. Requires `unhermetic`. |
 | `reads`       | array of non-empty string      | Paths the command may read. Hermetic mode only.   |
 | `writes`      | array of non-empty string      | Paths the command may write. Hermetic mode only.  |
-| `cwd`         | string, optional               | Working directory.                                |
+| `cwd`         | string, optional               | Working directory; use `{ at: ctx.base }` as the third `ctx.call` argument for a checkpoint. |
 | `env`         | record of string, optional     | Environment variables.                            |
-| `timeoutMs`   | number, optional               | Wall-clock timeout. Defaults to 600,000.          |
+| `timeoutMs`   | number, optional               | Numeric wall-clock milliseconds. Defaults to 600,000. |
 
 | Output                                     | Type                           | Meaning                                                               |
 | ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------- |

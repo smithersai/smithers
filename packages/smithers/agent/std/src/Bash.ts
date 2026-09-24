@@ -84,13 +84,17 @@ const Stdin = Schema.optional(Schema.String.annotate({
 const ContainerName = Schema.optional(Schema.String.annotate({
   description: "Run inside this container through the host's container transport; requires mode:unhermetic"
 }))
-const Cwd = Schema.optional(Schema.String.annotate({ description: "Working directory for the command" }))
+const Cwd = Schema.optional(Schema.String).annotate({
+  description: "Working directory for the command",
+  message: "cwd must be a path string. For a checkpoint, pass { at: ctx.base } as the third ctx.call argument."
+})
 const Env = Schema.optional(
   Schema.Record(Schema.String, Schema.String).annotate({ description: "Environment variables for the command" })
 )
-const TimeoutMs = Schema.optional(
-  Schema.Number.annotate({ description: "Wall-clock timeout in milliseconds; defaults to 600000 ms" })
-)
+const TimeoutMs = Schema.optional(Schema.Number).annotate({
+  description: "Wall-clock timeout in milliseconds; defaults to 600000 ms",
+  message: "timeoutMs must be a number of milliseconds."
+})
 
 /**
  * Input schema for the bash flow.
