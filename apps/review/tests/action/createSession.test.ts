@@ -76,6 +76,12 @@ describe("createSession", () => {
     }
   });
 
+  test("409: maps to comment-mode", async () => {
+    svc = serveSession(() => Response.json({ error: "comment-mode", repo: "octo/widgets" }, { status: 409 }));
+    const outcome = await createSession({ serviceUrl: svc.url, oidcToken: "x" });
+    expect(outcome.status).toBe("comment-mode");
+  });
+
   test("500: maps to a generic error", async () => {
     svc = serveSession(() => new Response("boom", { status: 500 }));
     const outcome = await createSession({ serviceUrl: svc.url, oidcToken: "x" });

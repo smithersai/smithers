@@ -66,12 +66,16 @@ describe("POST /api/sessions (OIDC)", () => {
     )
       .bind(REPO, "comment", 5, 25, Date.now())
       .run();
-    const token = await signTestJwt(keypair, baseClaims(REPO, 42, Math.floor(Date.now() / 1000) + 600));
+    const token = await signTestJwt(keypair, {
+      ...baseClaims(REPO, 42, Math.floor(Date.now() / 1000) + 600),
+      event_name: "issue_comment",
+      ref: "refs/heads/main",
+    });
     const res = await worker.fetch(
       new Request("https://review.test/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ oidcToken: token }),
+        body: JSON.stringify({ oidcToken: token, pr: 42 }),
       }),
       env,
     );
@@ -88,6 +92,49 @@ describe("POST /api/sessions (OIDC)", () => {
     expect(new Date(quota.resetsAt).getTime()).toBeGreaterThan(Date.now());
     expect(body.anthropicBaseUrl).toBe("https://review.test/anthropic");
     expect(body.publishUrl).toBe("https://review.test");
+  });
+
+  test("refuses a pull_request token for a comment-mode repo without claiming quota or minting", async () => {
+    const env = await buildTestEnv();
+    const worker = makeWorker(jwks.url);
+    await env.DB.prepare(
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind(REPO, "comment", 1, 25, Date.now())
+      .run();
+    const exp = Math.floor(Date.now() / 1000) + 600;
+    const pullRequestToken = await signTestJwt(keypair, { ...baseClaims(REPO, 42, exp), event_name: "pull_request" });
+    const refused = await worker.fetch(
+      new Request("https://review.test/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ oidcToken: pullRequestToken }),
+      }),
+      env,
+    );
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({ error: "comment-mode", repo: REPO });
+    const reviewed = await env.DB.prepare("SELECT COUNT(*) AS c FROM reviewed_prs").first<{ c: number }>();
+    expect(reviewed?.c).toBe(0);
+    const sessions = await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>();
+    expect(sessions?.c).toBe(0);
+
+    // The one-PR plan is still unspent, so the magic-phrase comment reviews.
+    const commentToken = await signTestJwt(keypair, {
+      ...baseClaims(REPO, 42, exp),
+      event_name: "issue_comment",
+      ref: "refs/heads/main",
+    });
+    const accepted = await worker.fetch(
+      new Request("https://review.test/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ oidcToken: commentToken, pr: 42 }),
+      }),
+      env,
+    );
+    expect(accepted.status).toBe(200);
+    expect(((await accepted.json()) as { plan: unknown }).plan).toEqual({ prsPerMonth: 1, used: 1 });
   });
 
   test("mints a session after the issuer rotates its JWKS within the cache TTL", async () => {

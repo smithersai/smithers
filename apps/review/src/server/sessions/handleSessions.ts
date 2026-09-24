@@ -67,6 +67,7 @@ function resolveOidcPullRequestNumber(
  *  - 401 OIDC fails signature/issuer/audience/expiry, or unknown api key
  *  - 403 repo not registered, api key not authorized for repo, or unscoped api key
  *  - 402 plan quota for this calendar month is spent
+ *  - 409 a comment-mode repo's OIDC token is not from an issue_comment event
  *  - 503 the issuer's JWKS is unreachable, so the token cannot be judged yet
  */
 export async function handleSessions(
@@ -86,6 +87,7 @@ export async function handleSessions(
   let repo: string;
   let pr: number;
   let apiKey: ApiKeyRecord | null = null;
+  let oidcEventName: string | undefined;
 
   if (typeof body.oidcToken === "string" && body.oidcToken.length > 0) {
     const outcome = await verifyOidc(body.oidcToken, deps.jwksUrl, now, deps.fetchUpstream);
@@ -103,6 +105,7 @@ export async function handleSessions(
     const resolvedPr = resolveOidcPullRequestNumber(claims, body.pr);
     if (!resolvedPr.ok) return jsonError(400, resolvedPr.message);
     pr = resolvedPr.pr;
+    oidcEventName = claims.event_name;
   } else if (typeof body.apiKey === "string" && body.apiKey.length > 0) {
     const record = await lookupApiKey(env.DB, body.apiKey);
     if (!record) return jsonError(401, "unknown api key");
@@ -131,6 +134,12 @@ export async function handleSessions(
       hint: "operator must POST /api/admin/repos to register this repo",
       repo,
     });
+  }
+
+  // A comment-mode repo reviews only on the magic-phrase comment. Refuse every
+  // other Actions trigger before the quota claim, so a PR push spends no slot.
+  if (registration.mode === "comment" && !apiKey && oidcEventName !== "issue_comment") {
+    return jsonError(409, "comment-mode", { repo });
   }
 
   // Bound total monthly spend per repo BEFORE claiming a quota slot: the

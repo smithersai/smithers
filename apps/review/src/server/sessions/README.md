@@ -18,6 +18,8 @@ INSERT, race-safe) and `mintSession.ts` (hashed `srs_` token, 2h TTL).
 - `lookupApiKey.ts` / `lookupRepo.ts` — hashed-key and repo-registration
   lookups.
 
-Ordering invariant: spend-cap check, then quota claim, then mint — so a
-blocked request never consumes a quota slot, and a crash after claiming
-charges quota without leaking inference.
+Ordering invariant: comment-mode refusal, then spend-cap check, then quota
+claim, then mint — so a blocked request never consumes a quota slot, and a
+crash after claiming charges quota without leaking inference. A `comment`
+mode repo answers 409 `comment-mode` to any OIDC token whose `event_name` is
+not `issue_comment`.

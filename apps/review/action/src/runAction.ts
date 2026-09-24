@@ -55,17 +55,17 @@ const NOT_REGISTERED_HINT =
  * Composite step entrypoint that runs after the early gate has passed:
  *
  *   1. Re-gate (defence in depth + we still need the parsed decision).
- *   2. Post (or update) the sticky status comment on the PR.
- *   3. Mint an OIDC token, POST it to /api/sessions.
- *   4. Apply the server-side mode: a `pull_request` trigger on a `comment`
- *      mode repo skips with a notice naming the magic phrase.
- *   5. For `issue_comment`, resolve the PR (skipping fork PRs — the comment
+ *   2. For `issue_comment`, resolve the PR and skip fork PRs — the comment
  *      payload has no head-repo info, and checking out a fork tree with
- *      inference credentials in the env would leak secrets) and check out
- *      the PR head into the workspace so the agents and the CLI see its tree.
- *   6. Spawn the existing review CLI with proxy env so all inference and the
+ *      inference credentials in the env would leak secrets.
+ *   3. Mint an OIDC token, POST it to /api/sessions. The service refuses a
+ *      non-comment trigger on a `comment` mode repo before claiming quota;
+ *      the action then skips with a notice and no status comment.
+ *   4. Post (or update) the sticky status comment on the PR, and for
+ *      `issue_comment` check out the PR head so the CLI sees its tree.
+ *   5. Spawn the existing review CLI with proxy env so all inference and the
  *      walkthrough upload go through the session.
- *   7. Update the status comment with the outcome (reviewed / skipped /
+ *   6. Update the status comment with the outcome (reviewed / skipped /
  *      failed). Status-comment failures never fail the job.
  */
 async function main(): Promise<void> {
@@ -119,8 +119,6 @@ async function main(): Promise<void> {
     }
   }
 
-  await setStatus(`🔍 smithers review started${runLink}`);
-
   let oidcToken: string;
   let session: Awaited<ReturnType<typeof createSession>>;
   try {
@@ -152,15 +150,15 @@ async function main(): Promise<void> {
     throw new Error(`/api/sessions failed: ${session.message}`);
   }
 
-  if (decision.eventName === "pull_request" && session.mode === "comment") {
+  // `session.mode` covers a service deployed before it refused with 409.
+  if (session.status === "comment-mode" || (decision.eventName === "pull_request" && session.mode === "comment")) {
     console.log(
       `::notice::smithers review skipped: this repo is in comment mode — comment "@smithers review" on the PR to trigger a review.`,
     );
-    await setStatus(
-      '⏭️ smithers review skipped: this repo is in comment mode — comment "@smithers review" to trigger a review',
-    );
     return;
   }
+
+  await setStatus(`🔍 smithers review started${runLink}`);
 
   if (decision.eventName === "issue_comment") {
     // ghBin(), not a literal: every other GitHub call in this action honors

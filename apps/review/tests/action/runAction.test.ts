@@ -3,6 +3,12 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { jwksCache } from "../../src/server/sessions/jwksCache.ts";
+import { createReviewWorker } from "../../src/server/worker.ts";
+import { buildTestEnv } from "../server/helpers/buildTestEnv.ts";
+import { rsaKeypair } from "../server/helpers/rsaKeypair.ts";
+import { serveJwks } from "../server/helpers/serveJwks.ts";
+import { signTestJwt } from "../server/helpers/signTestJwt.ts";
 
 const RUN_ACTION = fileURLToPath(new URL("../../action/src/runAction.ts", import.meta.url));
 const FAKE_GH = fileURLToPath(new URL("./fixtures/fake-gh", import.meta.url));
@@ -167,6 +173,103 @@ describe("runAction (subprocess)", () => {
     expect(result.stderr).toContain("could not determine whether PR #7 is a fork PR");
   });
 
+  /** The real review worker for octo/widgets in `mode`, plus the runner's OIDC endpoint, on one local origin. */
+  async function startReviewService(mode: "auto" | "comment") {
+    jwksCache.clear();
+    const keypair = await rsaKeypair(`runaction-${mode}-mode`);
+    const jwks = serveJwks([keypair.publicJwk]);
+    const env = await buildTestEnv();
+    await env.DB.prepare(
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+    )
+      .bind("octo/widgets", mode, 5, 25, Date.now())
+      .run();
+    const worker = createReviewWorker({
+      jwksUrl: jwks.url,
+      fetchUpstream: fetch,
+      now: () => Date.now(),
+      anthropicBaseUrl: "http://unused",
+      waitUntil: () => undefined,
+    });
+    const oidcToken = await signTestJwt(keypair, {
+      iss: "https://token.actions.githubusercontent.com",
+      aud: "smithers-review",
+      exp: Math.floor(Date.now() / 1000) + 600,
+      iat: Math.floor(Date.now() / 1000),
+      repository: "octo/widgets",
+      repository_owner: "octo",
+      ref: "refs/pull/42/merge",
+      event_name: "pull_request",
+    });
+    const service = Bun.serve({
+      port: 0,
+      fetch: (request) =>
+        new URL(request.url).pathname === "/oidc" ? Response.json({ value: oidcToken }) : worker.fetch(request, env),
+    });
+    return {
+      env,
+      port: service.port,
+      stop: () => {
+        service.stop(true);
+        jwks.stop();
+      },
+    };
+  }
+
+  test("skips a comment-mode PR push without a status comment or a quota slot", async () => {
+    const service = await startReviewService("comment");
+    const env = service.env;
+    try {
+      const payload = {
+        action: "synchronize",
+        pull_request: {
+          number: 42,
+          draft: false,
+          head: { sha: "deadbeef", repo: { full_name: "octo/widgets" } },
+          base: { repo: { full_name: "octo/widgets" } },
+        },
+      };
+      const eventPath = join(tmp, "event.json");
+      await writeFile(eventPath, JSON.stringify(payload));
+      const ghLog = join(tmp, "gh.log");
+      // Async spawn: the worker answers from this process's event loop.
+      const child = Bun.spawn(["bun", RUN_ACTION], {
+        cwd: PKG_ROOT,
+        env: {
+          ...process.env,
+          GITHUB_EVENT_NAME: "pull_request",
+          GITHUB_EVENT_PATH: eventPath,
+          GITHUB_REPOSITORY: "octo/widgets",
+          GITHUB_WORKSPACE: PKG_ROOT,
+          GITHUB_RUN_ID: "",
+          ACTIONS_ID_TOKEN_REQUEST_URL: `http://127.0.0.1:${service.port}/oidc`,
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-token",
+          SMITHERS_REVIEW_SERVICE_URL: `http://127.0.0.1:${service.port}`,
+          SMITHERS_GH_BIN: FAKE_GH,
+          SMITHERS_FAKE_GH_LOG: ghLog,
+          SMITHERS_FAKE_GH_STDOUT: "",
+          SMITHERS_FAKE_GH_EXIT: "0",
+        },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [exitCode, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+      expect(stdout).toContain('::notice::smithers review skipped: this repo is in comment mode');
+      expect(await Bun.file(ghLog).exists()).toBe(false);
+      const reviewed = await env.DB.prepare("SELECT COUNT(*) AS c FROM reviewed_prs").first<{ c: number }>();
+      expect(reviewed?.c).toBe(0);
+      const sessions = await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>();
+      expect(sessions?.c).toBe(0);
+    } finally {
+      service.stop();
+    }
+  }, 20_000);
+
   test("throws and exits non-zero when OIDC vars are missing for a valid PR event", async () => {
     // When a valid PR event passes the gate, runAction calls fetchOidcToken
     // which throws if the OIDC env vars are not set.
@@ -213,25 +316,21 @@ describe("runAction (subprocess)", () => {
     expect(result.stderr.toString()).toContain("ACTIONS_ID_TOKEN_REQUEST_URL");
 
     const calls = (await readFile(ghLog, "utf8")).split("--- fake gh call ---\n").slice(1);
-    expect(calls).toHaveLength(4);
+    // "started" waits for a session, so the failure is the only status comment.
+    expect(calls).toHaveLength(2);
     const endpoint = "repos/octo/widgets/issues/42/comments";
-    const lookup = [
+    expect(calls[0]!.trim().split("\n")).toEqual([
       "api",
       "--paginate",
       endpoint,
       "--jq",
       '.[] | select(.body | startswith("<!-- smithers-review-status -->")) | .id',
-    ];
-    expect(calls[0]!.trim().split("\n")).toEqual(lookup);
-    expect(calls[2]!.trim().split("\n")).toEqual(lookup);
-    const statuses = [calls[1]!, calls[3]!].map((call) => {
-      const lines = call.trim().split("\n");
-      expect(lines.slice(0, 6)).toEqual(["api", "--method", "POST", endpoint, "--input", "-"]);
-      return (JSON.parse(lines.slice(6).join("\n")) as { body: string }).body;
-    });
-    expect(statuses[0]).toBe("<!-- smithers-review-status -->\n🔍 smithers review started");
-    expect(statuses[1]).toStartWith("<!-- smithers-review-status -->\n❌ smithers review failed before it could start:");
-    expect(statuses[1]).toContain("ACTIONS_ID_TOKEN_REQUEST_URL");
+    ]);
+    const lines = calls[1]!.trim().split("\n");
+    expect(lines.slice(0, 6)).toEqual(["api", "--method", "POST", endpoint, "--input", "-"]);
+    const status = (JSON.parse(lines.slice(6).join("\n")) as { body: string }).body;
+    expect(status).toStartWith("<!-- smithers-review-status -->\n❌ smithers review failed before it could start:");
+    expect(status).toContain("ACTIONS_ID_TOKEN_REQUEST_URL");
     // Not the 5s default: a cold bun subprocess boot runs 3-6s on loaded CI
     // runners.
   }, 20_000);

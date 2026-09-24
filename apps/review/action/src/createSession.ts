@@ -3,6 +3,7 @@
  *   - `ok`              200 — destructured session payload
  *   - `quota-exhausted` 402 — neutral skip in the action
  *   - `not-registered`  403 — neutral skip with a registration hint
+ *   - `comment-mode`    409 — the repo reviews only on the magic-phrase comment
  *   - `error`           anything else (network, 5xx, …) — surfaces upstream
  *
  * The caller decides how to react: the action turns the non-200 outcomes into
@@ -33,6 +34,7 @@ export type SessionOutcome =
   | ({ status: "ok" } & SessionPayload)
   | { status: "quota-exhausted"; message: string }
   | { status: "not-registered"; message: string }
+  | { status: "comment-mode" }
   | { status: "error"; message: string };
 
 async function bodyText(res: Response): Promise<string> {
@@ -70,6 +72,7 @@ export async function createSession(input: CreateSessionInput): Promise<SessionO
   if (res.status === 403) {
     return { status: "not-registered", message: (await bodyText(res)) || "repository not registered" };
   }
+  if (res.status === 409) return { status: "comment-mode" };
   if (!res.ok) {
     const detail = await bodyText(res);
     return {
