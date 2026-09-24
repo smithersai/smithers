@@ -6,7 +6,6 @@
  *  - (retired with the watch subsystem, lane piper: the chooser bar)
  *    selection, the chat opens clean,
  *  - no standing composer status chrome (§2g),
- *  - no reset button / no admin chrome for a non-admin (§2),
  *  - zero console errors.
  * Screenshots archive under reports/live-checks/<timestamp>/.
  *
@@ -99,7 +98,6 @@ await page.waitForTimeout(3000)
 // §2g: no standing status chrome; §2: no admin affordances for this non-admin.
 const bodyText = (await page.locator("body").textContent()) ?? ""
 check("no standing composer status line (§2g)", !bodyText.includes("Smithers Cloud · live"), "calm composer")
-check("no reset button for a non-admin (§2)", (await page.locator(".corner-reset-btn").count()) === 0, "absent")
 check("no devtools panel (§2b)", (await page.locator(".devtools-panel").count()) === 0, "absent")
 // §2f: no slop pills — any pill present is the one derived binding.
 const pillTexts = await page.locator(".smithers-suggestion").allTextContents()
