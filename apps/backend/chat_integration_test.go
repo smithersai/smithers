@@ -166,10 +166,9 @@ func TestOwnerChatHTTPIntegration(t *testing.T) {
 	require.NoError(t, json.Unmarshal(post("/api/auth/local/token", "", map[string]string{"username": "l3bowner", "password": "owner password for integration", "name": "chat-integration"}), &tokenResult))
 	require.NotEmpty(t, tokenResult.Token)
 	{
-		created := post("/api/user/repos", tokenResult.Token, map[string]any{
+		post("/api/user/repos", tokenResult.Token, map[string]any{
 			"name": "flow-http-integration", "private": true, "auto_init": true, "default_bookmark": "main",
 		})
-		_ = created
 		catalog := post("/api/workflow/rpc", tokenResult.Token, map[string]any{
 			"repo": "l3bowner/flow-http-integration", "procedure": "List", "payload": map[string]string{"_tag": "flows"},
 		})
