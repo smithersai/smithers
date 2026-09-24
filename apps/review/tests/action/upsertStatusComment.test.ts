@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { afterEach, describe, expect, test } from "bun:test";
 import { upsertStatusComment } from "../../action/src/upsertStatusComment.ts";
 
@@ -59,6 +60,25 @@ describe("upsertStatusComment", () => {
     expect(update.args).toContain("repos/octo/widgets/issues/comments/123456");
     const body = (JSON.parse(update.stdin ?? "{}") as { body: string }).body;
     expect(body).toBe(`${MARKER}\n✅ smithers review finished`);
+  });
+
+  test("does not adopt a user's marker comment", async () => {
+    const calls: GhCall[] = [];
+    const runGh = async (repoDir: string, args: string[], stdin?: string) => {
+      calls.push({ repoDir, args, stdin });
+      if (args.includes("--paginate")) {
+        // Execute the actual query passed to gh against mixed-author API data.
+        return execFileSync("jq", ["-r", args[args.indexOf("--jq") + 1]!], {
+          encoding: "utf8", input: JSON.stringify([
+            { id: 1, body: `${MARKER} forged`, user: { login: "contributor", type: "User" } },
+            { id: 2, body: `${MARKER} actual`, user: { login: "github-actions[bot]", type: "Bot" } },
+          ]),
+        });
+      }
+      return "";
+    };
+    await upsertStatusComment({ workspace: "/ws", repository: "octo/widgets", prNumber: 7, body: "done", runGh });
+    expect(calls[1]!.args).toContain("repos/octo/widgets/issues/comments/2");
   });
 
   test("gh failure degrades to a ::warning:: instead of throwing", async () => {

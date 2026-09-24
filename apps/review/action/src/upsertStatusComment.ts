@@ -26,7 +26,7 @@ export async function upsertStatusComment(args: {
       "--paginate",
       `repos/${args.repository}/issues/${args.prNumber}/comments`,
       "--jq",
-      `.[] | select(.body | startswith("${STATUS_MARKER}")) | .id`,
+      `.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | select(.body | startswith("${STATUS_MARKER}")) | .id`,
     ]);
     const existingId = raw
       .split("\n")
