@@ -4,10 +4,10 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "n
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { relayFetch } from "../e2e/graph/RelayFetch"
-import * as SourceRevision from "../../../packages/smithers/src/internal/SourceRevision.ts"
+import { relayFetch } from "../RelayFetch"
+import * as SourceRevision from "../../../../../packages/smithers/src/internal/SourceRevision.ts"
 
-const APP_DIR = fileURLToPath(new URL("../", import.meta.url))
+const APP_DIR = fileURLToPath(new URL("../../../", import.meta.url))
 
 /** The fixture flow's own file, repo-relative: what the contents route is asked for below. */
 const FIXTURE_SOURCE = "packages/smithers/test/BridgedEngineRun.ts"

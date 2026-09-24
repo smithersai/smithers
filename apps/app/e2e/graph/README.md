@@ -47,7 +47,7 @@ can name no revision, and a site without one shows no code (D-068).
 Ctrl-C, or `kill` the process. The gateway child dies with it, and the
 temporary home and both SQLite files are removed. The removal is a finalizer,
 so the gateway is interrupted under the signal rather than exited under it;
-`scripts/flow-graph-e2e-gateway.test.ts` holds that.
+`e2e/graph/lifecycle/gateway.test.ts` holds that.
 
 ## What is running
 

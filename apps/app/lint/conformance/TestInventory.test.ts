@@ -106,6 +106,7 @@ const owners = (path: string): string[] => {
   if (selected(path, bunPaths(scripts["lint:conformance"]))) result.push("conformance lint")
   if (selected(path, bunPaths(scripts["test:e2e:auth"]))) result.push("browser OAuth")
   if (selected(path, bunPaths(scripts["test:e2e:probes"]))) result.push("probe helpers")
+  if (selected(path, bunPaths(scripts["test:e2e:graph-lifecycle"]))) result.push("graph lifecycle")
   if (scripts["test:e2e"] === "playwright test" && playwrightOwns(path, playwright)) result.push("Playwright")
   if (scripts["test:e2e:site"] === "playwright test --config playwright.site.config.ts" && playwrightOwns(path, playwrightSite)) result.push("Playwright site")
   if (scripts["test:e2e:packaged"] === "bun e2e/packaged/run.ts" && packaged.includes(path)) result.push("packaged native")
@@ -142,6 +143,15 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/playwright/native/Unassigned.spec.ts")).toEqual([])
 })
 
+// A Bun test that boots the flow-graph host or gateway runs for minutes, binds
+// a fixed port and writes a probe into the checkout: never the hermetic unit gate.
+test("a test that boots a flow-graph server belongs to the graph lifecycle tier", () => {
+  const bootsGraphServer = /["'`]scripts\/flow-graph-e2e-(host\.ts|gateway\.mts)["'`]/
+  const booting = files.filter((path) => bootsGraphServer.test(read(path)))
+  expect([...booting].sort()).toEqual(["e2e/graph/lifecycle/gateway.test.ts", "e2e/graph/lifecycle/host.test.ts"])
+  for (const path of booting) expect(owners(path)).toEqual(["graph lifecycle"])
+})
+
 test("real runner ownership comes from executable argv, not prose or a different config", () => {
   expect(realRunner).toBe(true)
   expect(scripts["test:e2e:real"]).toBe("bun scripts/run-real-e2e.ts")
@@ -150,7 +160,7 @@ test("real runner ownership comes from executable argv, not prose or a different
   expect(invokesRealPlaywright('run("pnpm", ["exec", "playwright", "test", "--config", "playwright.real.config.ts", ...args])')).toBe(true)
 })
 
-test("the target unit gate matches package discovery and CI executes browser OAuth", () => {
+test("the target unit gate matches package discovery and CI executes the browser OAuth, probe and graph lifecycle lanes", () => {
   const paths = inspectTarget('console.log(JSON.stringify(unit.attrs.runner.paths))')
   expect(paths).toEqual(bunPaths(scripts.test))
   expect(paths).toContain("scripts")
@@ -158,6 +168,8 @@ test("the target unit gate matches package discovery and CI executes browser OAu
   expect(scripts["test:e2e:probes"]).toBe("bun test e2e/probes")
   expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:auth"]')
   expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:probes"]')
+  expect(scripts["test:e2e:graph-lifecycle"]).toBe("bun test e2e/graph/lifecycle")
+  expect(read("scripts/run-pr-e2e.mjs")).toContain('["run", "test:e2e:graph-lifecycle"]')
   expect(inspectTarget('console.log(JSON.stringify(metadata(Package.browserE2e).attrs.runner.entry.path))'))
     .toBe("scripts/run-pr-e2e.mjs")
 }, 240_000)

@@ -5,6 +5,7 @@ const steps = [
   ["exec", "playwright", "install", "--with-deps", "chromium"],
   ["run", "test:e2e:auth"],
   ["run", "test:e2e:probes"],
+  ["run", "test:e2e:graph-lifecycle"],
   ["exec", "playwright", "test"],
   ["exec", "playwright", "test", "--config", "playwright.graph.config.ts"]
 ]

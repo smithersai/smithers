@@ -141,7 +141,7 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
   },
   {
     literal: "smthrs-flow-graph-",
-    file: "scripts/flow-graph-e2e-gateway.test.ts",
+    file: "e2e/graph/lifecycle/gateway.test.ts",
     reason: "the scratch directory `BridgedEngineRun` mkdtemps its two SQLite files into, which this suite counts under its own TMPDIR and asserts removed when the host stops; a directory prefix, never a card id"
   },
   {

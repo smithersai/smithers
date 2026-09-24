@@ -6,7 +6,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-const APP_DIR = fileURLToPath(new URL("../", import.meta.url))
+const APP_DIR = fileURLToPath(new URL("../../../", import.meta.url))
 const port = Number(process.env.SMITHERS_FLOW_GRAPH_PORT ?? "47361")
 const closed = (port: number): Promise<boolean> => new Promise((resolve) => {
   const socket = createConnection({ host: "127.0.0.1", port })

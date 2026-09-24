@@ -756,7 +756,7 @@ lands while the catalog is being read),
 `flows/test/SourceRevisionOption.test.ts` (every recorded page carries it,
 including one a reader answered only after the runtime was built),
 `state/controller/graph.test.ts` (an edited working tree does not change what an
-old plan shows), `scripts/flow-graph-e2e-gateway.test.ts` (the route answers a
+old plan shows), `e2e/graph/lifecycle/gateway.test.ts` (the route answers a
 revision out of jj or git while the tree moves) and `e2e/graph/flow-graph.spec.ts`
 "shows the source the plan was built from, not the file on disk".
 
