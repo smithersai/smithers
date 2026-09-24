@@ -59,14 +59,19 @@ export const stagePackageProject = async (repositoryRoot = ROOT_DIRECTORY): Prom
     const workspace = join(root, "workspace")
     const app = join(workspace, "apps", "app")
     await mkdir(join(workspace, "apps"), { recursive: true })
-    const excluded = new Set([".hutch", "artifacts", "build", "node_modules", "test-results"])
+    // Inputs read by Electrobun and its Bun entrypoint; local evidence never enters the stage.
+    const inputs = new Set(["package.json", "electrobun.config.ts", "hutch.config.ts", "tsconfig.json", "src", "dist", ".native", "icon.iconset"])
+    const nativeInputs = new Set(["bin", "libexec", "share", "postgres", "licenses"])
     await cp(sourceApp, app, {
       recursive: true,
       mode: constants.COPYFILE_FICLONE,
       filter: (source) => {
         const path = relative(sourceApp, source)
         const top = path.split(sep)[0]
-        return path === "" || top === undefined || !excluded.has(top)
+        if (path === "") return true
+        if (top === undefined || !inputs.has(top)) return false
+        const child = path.split(sep)[1]
+        return top !== ".native" || child === undefined || nativeInputs.has(child)
       }
     })
     await symlink(join(sourceApp, "node_modules"), join(app, "node_modules"), "dir")

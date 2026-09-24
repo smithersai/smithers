@@ -54,6 +54,12 @@ test("staging creates one independent app package and links sibling apps", async
       await fs.writeFile(join(source, file), "{}")
     await fs.writeFile(join(source, "apps/app/package.json"), '{"name":"smithers-app"}')
     await fs.writeFile(join(source, "apps/app/build/stale"), "stale")
+    for (const file of ["report.json", "screenshot.png", "debug.log", "notes.md"])
+      await fs.writeFile(join(source, "apps/app", file), "private evidence")
+    for (const dir of ["src/bun", "dist/assets", ".native/bin", "icon.iconset"]) {
+      await fs.mkdir(join(source, "apps/app", dir), { recursive: true })
+      await fs.writeFile(join(source, "apps/app", dir, "input"), "package input")
+    }
     process.env.HUTCH_HOME = join(source, "hutch")
     stage = await stagePackageProject(source)
     expect(stage.app).toBe(join(stage.root, "workspace/apps/app"))
@@ -61,6 +67,10 @@ test("staging creates one independent app package and links sibling apps", async
     expect(await fs.realpath(join(stage.app, "../tui"))).toBe(await fs.realpath(join(source, "apps/tui")))
     expect(await fs.readdir(join(stage.app, ".."))).toEqual(["app", "tui"])
     expect(await fs.access(join(stage.app, "build")).then(() => true, () => false)).toBe(false)
+    for (const file of ["report.json", "screenshot.png", "debug.log", "notes.md"])
+      expect(await fs.access(join(stage.app, file)).then(() => true, () => false)).toBe(false)
+    for (const dir of ["src/bun", "dist/assets", ".native/bin", "icon.iconset"])
+      expect(await fs.readFile(join(stage.app, dir, "input"), "utf8")).toBe("package input")
   } finally {
     if (priorHome === undefined) delete process.env.HUTCH_HOME
     else process.env.HUTCH_HOME = priorHome
