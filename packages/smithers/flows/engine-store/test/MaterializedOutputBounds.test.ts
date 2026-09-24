@@ -16,6 +16,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Effect from "effect/Effect"
 import * as Encoding from "effect/Encoding"
 import type * as FileSystem from "effect/FileSystem"
@@ -27,8 +28,16 @@ import { sha256, withCrypto } from "./Sha256.ts"
 const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
-/** An in-memory host filesystem with directory-aware writes. */
-const memoryFs = memoryFileSystem
+/**
+ * An in-memory host filesystem with directory-aware writes. It cannot address
+ * the host at all, so it is attested isolated: replay confines its writes to
+ * an attested or descriptor-relative host and refuses any other.
+ */
+const memoryFs = (seed?: Record<string, string>) => {
+  const host = memoryFileSystem(seed)
+  KernelFileSystem.withIsolatedFileSystem(host.fs)
+  return host
+}
 
 /**
  * The blob mechanics moved to `@smthrs/artifacts`; the inline-versus-spill

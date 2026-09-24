@@ -366,6 +366,10 @@ export const makeNative = (platform: NativePlatform) => {
     // guarded surface, because a body is exactly what the capability check
     // exists for. That is why the engine is built over the kernel here and not
     // beside it: an action resolves its host services from the engine's context.
+    // The one exception is inside the machinery itself: cache replay and
+    // sandbox copy-back write what recorded evidence names, so each confines
+    // its own writes to the workspace root through the kernel's descriptor-
+    // relative `confined` view rather than trusting this raw host's pathnames.
     const raw = Layer.mergeAll(platform.host.layerAt(workspaceRoot), platform.crypto).pipe(
       Layer.provideMerge(RedactedLogger.layer())
     )

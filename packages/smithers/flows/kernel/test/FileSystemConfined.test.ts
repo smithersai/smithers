@@ -144,6 +144,8 @@ describe("FileSystem.confined", () => {
         Effect.provideService(GrantStore, allowAll)
       )
       expect(FileSystem.isConfinable(guarded)).toBe(true)
+      expect(FileSystem.confinedRoot(guarded)).toBe("/alias")
+      expect(FileSystem.confinedRoot(host)).toBeUndefined()
       expect(yield* FileSystem.confined(guarded, "/alias")).toBe(guarded)
       expect((yield* Effect.flip(FileSystem.confined(guarded, "/elsewhere"))).reason._tag).toBe("PermissionDenied")
     }).pipe(Effect.provide(EffectPath.layer)))
@@ -153,6 +155,7 @@ describe("FileSystem.confined", () => {
       const { host } = recordingHost()
       const view = yield* FileSystem.confined(host, "/alias")
       expect(FileSystem.isConfinable(view)).toBe(true)
+      expect(FileSystem.confinedRoot(view)).toBe("/alias")
       expect(yield* FileSystem.confined(view, "/alias/")).toBe(view)
     }).pipe(Effect.provide(EffectPath.layer)))
 

@@ -114,6 +114,14 @@ It is the catch-all host refusal, and it carries the original failure whole in
 composition provided `StepSandbox.layerNoop`, which fails closed on purpose for
 a host that cannot sandbox, such as a browser.
 
+If the message reads `cache replay needs a confined host filesystem`, the
+boundary's `FileSystem` carries neither `@smthrs/platform-node`'s
+`AtomicFileSystem` executor nor an isolation attestation, so cache replay
+refuses and the step re-executes. Provide `AtomicFileSystem.layer` instead of
+a bare `NodeFileSystem.layer`. A replay refused with a `PlatformError` cause
+naming a symlink loop means a replayed path runs through a symlink; replay
+never follows one, so remove the link or accept the re-execution.
+
 ## BoundaryCorruption
 
 **What happened.** Recorded boundary evidence's bytes no longer match their

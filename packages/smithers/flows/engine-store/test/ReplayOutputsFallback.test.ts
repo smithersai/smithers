@@ -21,9 +21,11 @@ import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
+import * as Encoding from "effect/Encoding"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -107,6 +109,42 @@ const unreplayable = (options: { readonly onPrepare?: () => void } = {}) =>
     })
   )
 
+/**
+ * Verifies the read set and settles admissible evidence naming a real output,
+ * but replays through the production boundary over a path-based host, which
+ * cannot confine replay's writes and so refuses before touching anything.
+ */
+const unconfined = (hostWrites: Array<string>) => {
+  const bytes = new TextEncoder().encode("{}")
+  const host = FileSystem.makeNoop({
+    writeFile: ((path: string) => Effect.sync(() => void hostWrites.push(path))) as never,
+    makeDirectory: ((path: string) => Effect.sync(() => void hostWrites.push(path))) as never,
+    remove: ((path: string) => Effect.sync(() => void hostWrites.push(path))) as never
+  })
+  const production = StepBoundary.makeFileSystem(host, ArtifactStore.makeMemory())
+  return Layer.succeed(
+    StepBoundary.StepBoundary,
+    StepBoundary.make({
+      prepare: (descriptor) => Effect.succeed({ descriptor, readSnapshot: StepBoundary.exactReads(descriptor) }),
+      settle: () =>
+        Effect.succeed({
+          declaredOutputs: {
+            outputs: [{
+              path: "dist/manifest.json",
+              digest: sha256(bytes),
+              sizeBytes: bytes.length,
+              content: Encoding.encodeBase64(bytes)
+            }]
+          },
+          diffIdentity: "replay-fallback-unconfined",
+          wholeTreeWritesVerified: true,
+          hermeticReadsVerified: true
+        }),
+      replayOutputs: production.replayOutputs
+    })
+  )
+}
+
 const provenance = (runId: string) =>
   Effect.gen(function*() {
     const journal = yield* Journal.Journal
@@ -146,6 +184,34 @@ describe("unreplayable evidence on a verified cache hit (issue #107)", () => {
       expect(outcome.executions).toBe(3)
       // The refusal is visible, not silent.
       expect(outcome.records.map((record) => record.action)).toContain("replay_failed")
+    }))
+
+  it.effect("re-executes when the host cannot confine replay, and never writes through it", () =>
+    Effect.gen(function*() {
+      const key = "replay-fallback/unconfined"
+      const hostWrites: Array<string> = []
+      const outcome = yield* withCrypto(
+        Effect.gen(function*() {
+          let executions = 0
+          const body = () =>
+            Effect.sync(() => {
+              executions++
+              return "recorded"
+            })
+          yield* activate("replay-fallback-unconfined-first")
+          yield* dispatch("replay-fallback-unconfined-first", key, body).pipe(Effect.provide(unconfined(hostWrites)))
+          yield* activate("replay-fallback-unconfined-second")
+          const second = yield* dispatch("replay-fallback-unconfined-second", key, body).pipe(
+            Effect.provide(unconfined(hostWrites))
+          )
+          const records = yield* provenance("replay-fallback-unconfined-second")
+          return { executions, second, records }
+        }).pipe(Effect.provide(Layer.mergeAll(TestStores.layer(), jjLayer)), Effect.scoped)
+      )
+      expect(outcome.second).toBe("recorded")
+      expect(outcome.executions).toBe(2)
+      expect(outcome.records.map((record) => record.action)).toContain("replay_failed")
+      expect(hostWrites).toEqual([])
     }))
 
   it.effect("returns the durable outcome when a succeeded attempt's evidence cannot re-materialize", () =>
@@ -215,6 +281,8 @@ describe("the production replayOutputs creates parent directories (issue #107)",
           files.delete(path)
         })) as never
     })
+    // Attested isolated: replay confines its writes and refuses a path-based host.
+    KernelFileSystem.withIsolatedFileSystem(fs)
     return { files, layer: StepBoundary.layer.pipe(Layer.provide(hostLayer(fs))) }
   }
 

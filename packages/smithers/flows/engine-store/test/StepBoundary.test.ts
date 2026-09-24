@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as ByteSize from "effect/ByteSize"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -294,7 +295,8 @@ describe("StepBoundary.layer (filesystem-backed)", () => {
       removals,
       vanishAfterStat,
       writes,
-      layer: StepBoundary.layer.pipe(Layer.provide(hostLayer(fs)))
+      // Attested isolated: replay confines its writes and refuses a path-based host.
+      layer: StepBoundary.layer.pipe(Layer.provide(hostLayer(KernelFileSystem.withIsolatedFileSystem(fs))))
     }
   }
 

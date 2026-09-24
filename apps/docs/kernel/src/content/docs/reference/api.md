@@ -707,6 +707,8 @@ const confined: (
 const isConfinable: (fileSystem: FileSystem.FileSystem) => boolean
 
 const requireConfinable: (fileSystem: FileSystem.FileSystem, root: string) => Effect.Effect<void, PlatformError>
+
+const confinedRoot: (fileSystem: FileSystem.FileSystem) => string | undefined
 ```
 
 A filesystem view confined to `root` without capability checks, for engine
@@ -723,6 +725,11 @@ workspace, is returned as it is. A path-based host fails with
 `watch`, `truncate`, `utimes`, `access`, and every `makeTemp*` call.
 `isConfinable` and `requireConfinable` answer the same question at composition
 time, before the root is known to exist.
+`confinedRoot` names the root a filesystem is already confined to (a
+`confined` view's pinned root, or the guarded `layer` service's workspace
+root), and is `undefined` for any other filesystem, so machinery sharing a
+filesystem with its caller confines to the root the caller's paths resolve
+against.
 
 ### FileSystem.canonicalResource
 

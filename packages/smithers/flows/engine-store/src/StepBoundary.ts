@@ -9,6 +9,7 @@ import { Sha256 } from "@smthrs/crypto"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { FileInput } from "@smthrs/flow/FileInput"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import { Workspace as KernelWorkspace } from "@smthrs/kernel/Workspace"
 import { DerivedKey } from "@smthrs/keys"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
@@ -17,6 +18,7 @@ import * as Effect from "effect/Effect"
 import * as Encoding from "effect/Encoding"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
+import * as Path from "effect/Path"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as FileBoundarySnapshot from "./internal/FileBoundarySnapshot.ts"
@@ -492,6 +494,15 @@ export interface FileSystemOptions {
    * {@link maxInlineBytes}. Defaults to 8 MiB.
    */
   readonly maxTotalInlineBytes?: number | undefined
+  /**
+   * The workspace root cache replay confines its writes, removals, and prune
+   * walk to. A filesystem already confined to a root (the kernel-guarded
+   * layer's service, or a `confined` view) keeps its own root and ignores
+   * this. Otherwise it defaults to the process working directory, the root a
+   * path-based host resolves `prepare` and `settle` against. {@link layer}
+   * passes the kernel `Workspace` root when one is in context.
+   */
+  readonly root?: string | undefined
 }
 
 const defaultMaxInlineBytes = 1024 * 1024
@@ -555,12 +566,12 @@ export const makeFileSystem = (
   const maxTotalInlineBytes = options.maxTotalInlineBytes ?? defaultMaxTotalInlineBytes
   // Stat tuples are not content identities: a same-size rewrite can preserve
   // mtime, device, and inode on every supported filesystem.
-  const readDigest = Effect.fn("StepBoundary.readDigest")(function*(path: string) {
-    const bytes = yield* fs.readFile(path)
+  const readDigestFrom = Effect.fn("StepBoundary.readDigest")(function*(host: FileSystem.FileSystem, path: string) {
+    const bytes = yield* host.readFile(path)
     const digest = yield* Schema.decodeUnknownEffect(Sha256)(bytes).pipe(Effect.orDie)
     return { digest, bytes } satisfies MeasuredDigest
   })
-  const digestOf = readDigest
+  const readDigest = (path: string) => readDigestFrom(fs, path)
   const batch = KernelFileSystem.batch(fs)
   const measurements = Effect.fn("StepBoundary.measurements")(
     function*(paths: ReadonlyArray<string>, content: boolean) {
@@ -608,8 +619,11 @@ export const makeFileSystem = (
    * operation, ~130 ms each), so the probe doubled the cost of every
    * `prepare`, every post-body change check, and every materialization.
    */
-  const measure = (path: string): Effect.Effect<string, UnsupportedBoundary, Crypto.Crypto> =>
-    digestOf(path).pipe(
+  const measure = (
+    path: string,
+    host: FileSystem.FileSystem = fs
+  ): Effect.Effect<string, UnsupportedBoundary, Crypto.Crypto> =>
+    readDigestFrom(host, path).pipe(
       Effect.map((measured) => measured.digest),
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(absentDigest)),
       Effect.mapError(hostFailure)
@@ -622,9 +636,26 @@ export const makeFileSystem = (
   const expandGlob = Effect.fn("StepBoundary.expandGlob")(function*(glob: FileSet.Glob) {
     return yield* FileEnumeration.expandGlob(fs, glob).pipe(Effect.mapError(hostFailure))
   })
-  const treeEntries = Effect.fn("StepBoundary.treeEntries")(function*(path: string) {
-    return yield* FileEnumeration.entriesUnder(fs, path).pipe(Effect.mapError(hostFailure))
+  const treeEntries = Effect.fn("StepBoundary.treeEntries")(function*(host: FileSystem.FileSystem, path: string) {
+    return yield* FileEnumeration.entriesUnder(host, path).pipe(Effect.mapError(hostFailure))
   })
+  // Replay writes and deletes what evidence names, so the lexical check alone
+  // is not a boundary: a symlink planted on a lexically valid path would carry
+  // the mutation outside the workspace. Every replay mutation, its probes, and
+  // its prune walk go through a view pinned to the root, where each call is
+  // one descriptor-relative, no-follow request and a symlink anywhere on the
+  // path is refused rather than followed. `prepare` and `settle` only read,
+  // and keep the caller's filesystem.
+  const replayRoot = KernelFileSystem.confinedRoot(fs) ?? options.root ?? "."
+  const replayHost: Effect.Effect<FileSystem.FileSystem, UnsupportedBoundary> = KernelFileSystem.isConfinable(fs)
+    ? KernelFileSystem.confined(fs, replayRoot).pipe(Effect.provide(Path.layer), Effect.mapError(hostFailure))
+    : Effect.fail(
+      new UnsupportedBoundary({
+        code: "unsupported_boundary",
+        message:
+          "cache replay needs a confined host filesystem; the host carries no descriptor-relative executor or isolation attestation"
+      })
+    )
   const capture = Effect.fn("StepBoundary.capture")(
     function*(path: string, inlineBudget: number, measured: BatchedDigest | undefined) {
       yield* Effect.annotateCurrentSpan({ path })
@@ -668,13 +699,16 @@ export const makeFileSystem = (
       return { output: { path, digest, sizeBytes: bytes.length } satisfies MaterializedOutput, inlinedBytes: 0 }
     }
   )
-  const materialize = Effect.fn("StepBoundary.materialize")(function*(output: MaterializedOutput) {
+  const materialize = Effect.fn("StepBoundary.materialize")(function*(
+    host: FileSystem.FileSystem,
+    output: MaterializedOutput
+  ) {
     yield* Effect.annotateCurrentSpan({ path: output.path })
     // The filesystem is the cheapest source of truth for a warm workspace.
     // Probe before decoding inline bytes or consulting the artifact store; a
     // transient probe refusal merely forfeits the optimization and the
     // ordinary materialization path retains its existing typed failures.
-    const current = yield* measure(output.path).pipe(
+    const current = yield* measure(output.path, host).pipe(
       Effect.map((digest) => digest !== absentDigest && digest === output.digest),
       Effect.catch(() => Effect.succeed(false))
     )
@@ -737,9 +771,9 @@ export const makeFileSystem = (
     // `writeFile` does not create parents (issue #107).
     const parent = parentDirectory(output.path)
     if (parent !== undefined) {
-      yield* fs.makeDirectory(parent, { recursive: true }).pipe(Effect.mapError(hostFailure))
+      yield* host.makeDirectory(parent, { recursive: true }).pipe(Effect.mapError(hostFailure))
     }
-    yield* fs.writeFile(output.path, bytes).pipe(Effect.mapError(hostFailure))
+    yield* host.writeFile(output.path, bytes).pipe(Effect.mapError(hostFailure))
   })
   return make({
     prepare: Effect.fn("StepBoundary.prepare")(function*(descriptor) {
@@ -810,7 +844,7 @@ export const makeFileSystem = (
         if (typeof entry === "string") outputPaths.push(entry)
         else if (entry._tag === "Glob") outputPaths.push(...yield* expandGlob(entry))
         else {
-          const files = (yield* treeEntries(entry.path)).files
+          const files = (yield* treeEntries(fs, entry.path)).files
           outputPaths.push(...files)
           treeMembers.push({ path: entry.path, files })
         }
@@ -957,6 +991,9 @@ export const makeFileSystem = (
           })
         )
       }
+      // Before any mutation: a host that cannot be confined refuses the whole
+      // replay, and the caller falls back to a real execution.
+      const host = yield* replayHost
       const emptyDirectoryCandidates = new Set<string>()
       for (const tree of decoded.success.trees ?? []) {
         const prefix = `${tree.path}/`.replace(/\/{2,}$/g, "/")
@@ -965,9 +1002,9 @@ export const makeFileSystem = (
             .map((output) => output.path)
             .filter((path) => path.startsWith(prefix))
         )
-        const entries = yield* treeEntries(tree.path)
+        const entries = yield* treeEntries(host, tree.path)
         for (const path of entries.files) {
-          if (!recorded.has(path)) yield* fs.remove(path).pipe(Effect.mapError(hostFailure))
+          if (!recorded.has(path)) yield* host.remove(path).pipe(Effect.mapError(hostFailure))
         }
         for (const directory of entries.directories) emptyDirectoryCandidates.add(directory)
       }
@@ -977,9 +1014,9 @@ export const makeFileSystem = (
           // and a removal that finds it already gone has done its job. The
           // `exists` call that used to precede it was a second host call — a
           // second process on the confined host — for the same answer.
-          yield* fs.remove(output.path, { force: true }).pipe(Effect.mapError(hostFailure))
+          yield* host.remove(output.path, { force: true }).pipe(Effect.mapError(hostFailure))
         } else {
-          yield* materialize(output)
+          yield* materialize(host, output)
         }
       }
       // Remove only directories proven empty after pruning and
@@ -989,8 +1026,8 @@ export const makeFileSystem = (
         right.length - left.length || compareText(left, right)
       )
       for (const directory of directories) {
-        const entries = yield* fs.readDirectory(directory).pipe(Effect.mapError(hostFailure))
-        if (entries.length === 0) yield* fs.remove(directory).pipe(Effect.mapError(hostFailure))
+        const entries = yield* host.readDirectory(directory).pipe(Effect.mapError(hostFailure))
+        if (entries.length === 0) yield* host.remove(directory).pipe(Effect.mapError(hostFailure))
       }
     })
   })
@@ -1008,6 +1045,14 @@ export const makeFileSystem = (
  * `@smthrs/artifacts`, so the same boundary runs over a purely local store or
  * over a local-plus-shared composition without knowing which it got.
  *
+ * Replay confines its own mutations rather than trusting the composition:
+ * they run through `@smthrs/kernel/FileSystem`'s `confined` view, rooted at
+ * the kernel `Workspace` when one is in context. A symlink on a replayed path
+ * (a parent, the final component, or a member of a replayed tree) and a host
+ * with no descriptor-relative executor or isolation attestation both refuse
+ * with {@link UnsupportedBoundary}, which the caller journals as
+ * `replay_failed` before executing the step for real.
+ *
  * @since 0.1.0
  * @category layers
  */
@@ -1016,7 +1061,8 @@ export const layer: Layer.Layer<Service, never, FileSystem.FileSystem | Artifact
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const artifacts = yield* ArtifactStore.ArtifactStore
-    return makeFileSystem(fs, artifacts)
+    const workspace = yield* Effect.serviceOption(KernelWorkspace)
+    return makeFileSystem(fs, artifacts, workspace._tag === "Some" ? { root: workspace.value.root } : {})
   })
 )
 

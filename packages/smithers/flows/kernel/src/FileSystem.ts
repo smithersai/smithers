@@ -373,6 +373,19 @@ export const isConfinable = (fileSystem: EffectFileSystem.FileSystem): boolean =
   ConfinedFileSystemTypeId in fileSystem || AtomicFileSystemTypeId in fileSystem
 
 /**
+ * The logical root a filesystem is already confined to: a {@link confined}
+ * view's pinned root, or the guarded {@link layer} service's workspace root.
+ * `undefined` for any other filesystem, including a host that is merely
+ * confinable. Machinery that shares a filesystem with its caller confines to
+ * this root, so its paths resolve exactly where the caller's do.
+ *
+ * @since 1.0.0-rc.1
+ * @category security
+ */
+export const confinedRoot = (fileSystem: EffectFileSystem.FileSystem): string | undefined =>
+  (fileSystem as { readonly [ConfinedFileSystemTypeId]?: string })[ConfinedFileSystemTypeId]
+
+/**
  * Fails with the typed `PermissionDenied` refusal unless {@link confined} can
  * build a view over this filesystem. Composition-time check for layers that
  * pin their root later, when it is known to exist.
@@ -421,8 +434,7 @@ export const confined = (
   Effect.gen(function*() {
     const path = yield* EffectPath.Path
     const logicalRoot = path.resolve(root === "" ? "." : root)
-    const existing = (fileSystem as { readonly [ConfinedFileSystemTypeId]?: string })[ConfinedFileSystemTypeId]
-    if (existing === logicalRoot) return fileSystem
+    if (confinedRoot(fileSystem) === logicalRoot) return fileSystem
     const atomic = (fileSystem as Partial<AtomicHostFileSystem>)[AtomicFileSystemTypeId]
     if (atomic === undefined) return yield* Effect.fail(unconfined("confined", logicalRoot))
     if (atomic.isolated !== undefined) return fileSystem

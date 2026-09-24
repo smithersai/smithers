@@ -314,7 +314,7 @@ interface Service {
 | `StepBoundary`      | `Context.Service<Service>`                                                                   | Service tag.                                                                                                           |
 | `make`              | `(service: Service) => Service`                                                              | Brands an implementation, so a wrong shape is reported where it is written.                                            |
 | `makeFileSystem`    | `(fs: FileSystem, artifacts: ArtifactStore.Service, options?: FileSystemOptions) => Service` | The production boundary.                                                                                               |
-| `layer`             | `Layer<Service, never, FileSystem \| ArtifactStore>`                                         | Provides it.                                                                                                           |
+| `layer`             | `Layer<Service, never, FileSystem \| ArtifactStore>`                                         | Provides it, confining replay to the kernel `Workspace` root when one is in context.                                   |
 | `layerTest`         | `(options?: TestOptions) => Layer<Service>`                                                  | Deterministic in-memory boundary.                                                                                      |
 | `exactReads`        | `(descriptor: FileBoundary) => ReadonlyArray<FileInput>`                                     | Exact read inputs, ignoring declarations that still need expansion.                                                    |
 | `readSetMatches`    | `(prepared: PreparedBoundary) => boolean`                                                    | Whether the measured snapshot still matches the declaration.                                                           |
@@ -337,6 +337,16 @@ interface Service {
 | --------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `maxInlineBytes`      | 1 MiB   | The largest single output inlined into the evidence. Anything larger is stored by digest reference.                          |
 | `maxTotalInlineBytes` | 8 MiB   | The largest aggregate inline payload one settle may fold in. Past it, an output is spilled even though it individually fits. |
+| `root`                | cwd     | The root replay confines writes and removals to. A filesystem already confined to a root keeps its own.                      |
+
+`replayOutputs` writes and deletes what the evidence names, so it confines its
+own mutations instead of trusting the composition. Every write, removal, probe,
+and tree prune goes through `@smthrs/kernel/FileSystem`'s `confined` view:
+one descriptor-relative, no-follow request per call against the pinned root. A
+symlink on a replayed path (a parent, the final component, or a member of a
+replayed tree) refuses with `UnsupportedBoundary`, and so does a host with no
+descriptor-relative executor or isolation attestation, before any host call.
+`prepare` and `settle` only read and keep the caller's filesystem.
 
 ### TestOptions
 
@@ -1275,6 +1285,9 @@ changed declaration, not a stale one.
 A verified hit calls `replayOutputs` before returning the stored result. When
 that refuses with `MissingArtifact`, the dispatch hydrates from the shared tier
 and retries the replay exactly once before falling through to a real execution.
+A replay refused for confinement (a symlink on a replayed path, or a host that
+cannot be confined) journals `replay_failed` and executes the step for real;
+it never writes through the link.
 
 Replaying a succeeded attempt row also converges the cache: if a crash landed
 between `attempts.finish` and `cache.put`, the restarted executor re-records the
