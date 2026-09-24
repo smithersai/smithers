@@ -16,8 +16,10 @@ PR integration via the `gh` CLI.
   inline comments into the body so a review is never lost. Returns the created
   review's id alongside its URL.
 - `supersedePriorReviews.ts` — best-effort prefixing of older smithers reviews
-  as superseded. Takes the replacement's id, skips it, and skips bodies that
-  already carry the prefix, so re-running adds nothing twice.
+  as superseded. Takes the replacement's id, matches older reviews by the
+  replacement's author (never `GET /user`, which refuses installation tokens),
+  skips the replacement, and skips bodies that already carry the prefix, so
+  re-running adds nothing twice.
 - `postReviewSupersedingPrior.ts` — the ordered pair: post, then supersede.
   Superseding first would leave the PR carrying only "superseded" notes when
   every post attempt fails or the run dies in between.

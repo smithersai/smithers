@@ -53,9 +53,11 @@ describe("postReviewSupersedingPrior", () => {
     ghResponses.push(
       // 1. create the new review
       JSON.stringify({ id: 99, html_url: "https://github.com/smithersai/smithers/pull/306#pullrequestreview-99" }),
-      // 2. supersede: whoami, list, then one update
-      "smithers-bot\n",
-      JSON.stringify({ id: 1, body: `${MARKER}\nOld review`, login: "smithers-bot" }),
+      // 2. supersede: list (which carries the new review and its author), then one update
+      [
+        JSON.stringify({ id: 1, body: `${MARKER}\nOld review`, login: "smithers-bot" }),
+        JSON.stringify({ id: 99, body: `${MARKER}\nReview body`, login: "smithers-bot" }),
+      ].join("\n"),
       "{}",
     );
 
@@ -111,7 +113,6 @@ describe("postReviewSupersedingPrior", () => {
   test("the review it just posted is never marked superseded by itself", async () => {
     ghResponses.push(
       JSON.stringify({ id: 42, html_url: "https://github.com/smithersai/smithers/pull/306#new" }),
-      "smithers-bot\n",
       [
         JSON.stringify({ id: 7, body: `${MARKER}\nOlder`, login: "smithers-bot" }),
         // The list is read after the POST, so it contains the new review too.
