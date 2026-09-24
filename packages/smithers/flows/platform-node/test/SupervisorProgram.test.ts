@@ -11,7 +11,9 @@ const schedules = ["target exit", "status EOF", "request EOF"] as const
 
 // Execute the shipped source with manual event/timer delivery. No OS signals
 // occur here; recorded calls expose escalation before the grace timer runs.
-const program = (killSignal: string, escaped = true) => {
+const program = (killSignal: string, escaped = true, platform = "linux") => {
+  const released: Array<number> = []
+  const replacements: Array<readonly [string, string]> = []
   const signals: Array<readonly [number, string]> = []
   const timers: Array<{ run: () => void; millis: number }> = []
   const socket = () =>
@@ -26,12 +28,19 @@ const program = (killSignal: string, escaped = true) => {
   const target = Object.assign(new EventEmitter(), { pid: 4102 })
   const runtime = Object.assign(new EventEmitter(), {
     pid: 4101,
+    platform,
     env: {},
     argv: ["/fixture/s", "group"],
     kill: (pid: number, signal: string) => signals.push([pid, signal])
   })
   const modules: Record<string, unknown> = {
-    "node:fs": {},
+    "node:fs": {
+      closeSync: (fd: number) => released.push(fd),
+      openSync: (path: string, flags: string) => {
+        replacements.push([path, flags])
+        return replacements.length - 1
+      }
+    },
     "node:net": { connect: (path: string) => path.endsWith("/s") ? status : requests },
     "node:child_process": {
       spawn: () => target,
@@ -56,10 +65,20 @@ const program = (killSignal: string, escaped = true) => {
   const send = (message: unknown) => requests.emit("data", JSON.stringify(message) + "\n")
   send({ type: "configure", command: "fixture", args: [], userFds: [], killSignal, graceMs: 25 })
   send({ type: "start" })
-  return { signals, timers, status, requests, target, send }
+  return { signals, timers, status, requests, target, send, released, replacements }
 }
 
 describe("supervisor stop policy", () => {
+  for (const platform of ["linux", "darwin", "win32"]) {
+    it(`releases inherited pipes into the native null device on ${platform}`, () => {
+      const helper = program("SIGTERM", false, platform)
+      helper.target.emit("spawn")
+      const device = platform === "win32" ? "NUL" : "/dev/null"
+      expect(helper.released).toEqual([0, 1, 2])
+      expect(helper.replacements).toEqual([[device, "r"], [device, "w"], [device, "w"]])
+    })
+  }
+
   for (const defaultSignal of ["SIGTERM", "SIGKILL"]) {
     for (const schedule of [...schedules, "status error", "request error", "repeated stop", "fast stop"] as const) {
       it(`preserves explicit TERM/5000 after ${schedule} with default ${defaultSignal}`, () => {
