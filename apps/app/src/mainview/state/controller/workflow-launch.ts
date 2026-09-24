@@ -91,8 +91,27 @@ export const createWorkflowLaunchController = (
             if (result.status === "ok") {
               request = { ...request, runId: result.value.runId, retryAt: undefined, error: undefined }
               const plan = planCardSnapshot(result.value)
-              await publish(request, { runId: result.value.runId, phase: "running", error: undefined,
-                ...(plan === undefined ? {} : { plan }) })
+              // The remote job already exists. Retain its identity and retry
+              // the local receipt without relaunching or settling its toast.
+              let reported = false
+              while (current()) {
+                try {
+                  await publish(request, { runId: result.value.runId, phase: "running", error: undefined,
+                    ...(plan === undefined ? {} : { plan }) })
+                  break
+                } catch (error) {
+                  if (!reported) {
+                    reported = true
+                    try {
+                      void store.dispatch({ type: "message.appended", actor: "system",
+                        text: "The run started, but this browser could not save its reference. Retrying the save." }).isPersisted.promise
+                        .catch(failure => ctx.failures.report("toast.work", failure, id))
+                    } catch (failure) { ctx.failures.report("toast.work", failure, id) }
+                    ctx.failures.report("toast.work", error, id)
+                  }
+                  await pause(ctx.workflowPollMs, controller.signal)
+                }
+              }
               break
             }
             if (result.code === "workspace_starting") {
