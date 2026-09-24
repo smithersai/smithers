@@ -100,14 +100,15 @@ the interrupted call itself.
 any single ceiling; the others keep their defaults, so a partial override cannot
 disable them.
 
-| Limit         | Default | Scope       | What it bounds                                                                                                                         |
-| ------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `calls`       | 64      | per frame   | Flow calls one cell may make. A `ctx.checkpoint()` mint settles on the same channel and counts.                                        |
-| `memoryBytes` | 128 MiB | per **run** | What the realm's own names hold, weighed by the panel probe at each frame's close.                                                     |
-| `steps`       | 1,000   | per frame   | Interrupt checks, not bytecode operations. At least `Sandbox.minimumSteps`.                                                            |
-| `timeMs`      | 30,000  | per frame   | The cell's own JavaScript time. Time suspended in a `ctx.call` or `ctx.checkpoint()` does not count. At least `Sandbox.minimumTimeMs`. |
-| `totalMs`     | 900,000 | per frame   | Whole-evaluation time, host calls included. The backstop for a call that never settles.                                                |
-| `callMs`      | 120,000 | per call    | Wall-clock time one flow call may take before it settles as a resolved timeout.                                                        |
+| Limit             | Default | Scope       | What it bounds                                                                                                                         |
+| ----------------- | ------- | ----------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `calls`           | 64      | per frame   | Flow calls one cell may make. A `ctx.checkpoint()` mint settles on the same channel and counts.                                        |
+| `memoryBytes`     | 128 MiB | per **run** | What the realm's own names hold, weighed by the panel probe at each frame's close.                                                     |
+| `steps`           | 1,000   | per frame   | Interrupt checks, not bytecode operations. At least `Sandbox.minimumSteps`.                                                            |
+| `timeMs`          | 30,000  | per frame   | The cell's own JavaScript time. Time suspended in a `ctx.call` or `ctx.checkpoint()` does not count. At least `Sandbox.minimumTimeMs`. |
+| `totalMs`         | 900,000 | per frame   | Whole-evaluation time, host calls included. The backstop for a call that never settles.                                                |
+| `pauseTotalMsFor` | none    | per frame   | Flow names whose pending calls pause `totalMs`; the host must bound or settle these calls separately.                                  |
+| `callMs`          | 120,000 | per call    | Wall-clock time one flow call may take before it settles as a resolved timeout.                                                        |
 
 `memoryBytes` is a run budget rather than a frame budget because a realm outlives
 its frames. `runtime.setMemoryLimit` covers the object graph but does not count

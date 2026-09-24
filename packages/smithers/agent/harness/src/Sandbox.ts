@@ -215,6 +215,8 @@ export interface Limits {
    * cell awaiting a ten-minute test suite is working, not stuck.
    */
   readonly totalMs?: number | undefined
+  /** Flow names whose pending call time does not spend the frame backstop. */
+  readonly pauseTotalMsFor?: ReadonlyArray<string> | undefined
   /**
    * Maximum wall-clock time one flow call may take, in milliseconds; a
    * non-negative safe integer.
@@ -400,6 +402,7 @@ export const evaluationLimits = (
     steps: overrides?.steps ?? defaults.steps,
     timeMs: overrides?.timeMs ?? defaults.timeMs,
     totalMs: overrides?.totalMs ?? defaults.totalMs,
+    pauseTotalMsFor: overrides?.pauseTotalMsFor ?? defaults.pauseTotalMsFor,
     callMs: overrides?.callMs ?? defaults.callMs
   }
   const invalid = validateLimits(limits)

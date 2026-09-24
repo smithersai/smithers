@@ -28,7 +28,7 @@
  * @since 0.1.0
  */
 import singlefile from "@jitl/quickjs-singlefile-browser-release-sync"
-import { Context, Effect, Layer, Option, Schema, type Scope } from "effect"
+import { Context, Duration, Effect, Layer, Option, Schema, type Scope } from "effect"
 import type {
   QuickJSContext,
   QuickJSHandle,
@@ -1213,6 +1213,9 @@ const openRealm = (
     ): Effect.Effect<Sandbox.RealmFrame, Sandbox.SandboxError | HarnessError> => {
       /* v8 ignore next -- the validated frame inherits the opening totalMs default */
       const totalMs = limits.totalMs ?? Sandbox.defaultLimits.totalMs
+      const frameStarted = clock.now()
+      let pausedAtForFrame: number | undefined
+      let pausedMs = 0
       return Effect.gen(function*() {
         /* v8 ignore next -- the validated frame inherits the opening timeMs default */
         timeMs = limits.timeMs ?? Sandbox.defaultLimits.timeMs
@@ -1367,10 +1370,16 @@ const openRealm = (
           handler: (call) =>
             Effect.suspend(() => {
               const pausedAt = clock.now()
+              const pausesFrame = limits.pauseTotalMsFor?.includes(call.flow) === true
+              if (pausesFrame) pausedAtForFrame = pausedAt
               return evaluation.call(call).pipe(
                 Effect.onExit(() =>
                   Effect.sync(() => {
                     clockBase += clock.now() - pausedAt
+                    if (pausesFrame) {
+                      pausedMs += clock.now() - pausedAt
+                      pausedAtForFrame = undefined
+                    }
                   })
                 )
               )
@@ -1425,17 +1434,35 @@ const openRealm = (
         }
         return frameOf(outcome)
       }).pipe(
-        Effect.timeoutOrElse({
-          // Replay is stopped by its recorded boundary, not a second clock.
-          duration: evaluation.replay === undefined ? totalMs : Infinity,
-          orElse: () =>
-            Effect.succeed<Sandbox.RealmFrame>({
-              outcome: timeLimitExceeded(totalMs),
-              boundary,
-              prints: "",
-              bindings
-            })
-        })
+        limits.pauseTotalMsFor?.length && evaluation.replay === undefined
+          ? Effect.raceFirst(Effect.gen(function*() {
+            for (;;) {
+              const now = clock.now()
+              const elapsed = now - frameStarted - pausedMs -
+                (pausedAtForFrame === undefined ? 0 : now - pausedAtForFrame)
+              const remaining = totalMs - elapsed
+              if (remaining <= 0) {
+                return {
+                  outcome: timeLimitExceeded(totalMs),
+                  boundary,
+                  prints: "",
+                  bindings
+                } satisfies Sandbox.RealmFrame
+              }
+              yield* Effect.sleep(Duration.millis(Math.max(1, remaining)))
+            }
+          }))
+          : Effect.timeoutOrElse({
+            // Replay is stopped by its recorded boundary, not a second clock.
+            duration: evaluation.replay === undefined ? totalMs : Infinity,
+            orElse: () =>
+              Effect.succeed<Sandbox.RealmFrame>({
+                outcome: timeLimitExceeded(totalMs),
+                boundary,
+                prints: "",
+                bindings
+              })
+          })
       )
     }
 

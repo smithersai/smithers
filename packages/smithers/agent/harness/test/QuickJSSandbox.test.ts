@@ -186,6 +186,34 @@ describe("QuickJSSandbox limits", () => {
     ])
   })
 
+  it("pauses only the frame backstop during a named long wait", async () => {
+    const cell = `await ctx.call("fs/list", {}); ctx.done("child done")`
+    const call: Sandbox.Handler = () =>
+      Effect.sleep("80 millis").pipe(
+        Effect.as(new Cell.CallResult({ outcome: "success", value: null }))
+      )
+    const normal = await outcomeOf(cell, { call, limits: { totalMs: 30, callMs: 1000 } })
+    const unmatched = await outcomeOf(cell, {
+      call,
+      limits: {
+        totalMs: 30,
+        callMs: 1000,
+        pauseTotalMsFor: ["other"]
+      }
+    })
+    const paused = await outcomeOf(cell, {
+      call,
+      limits: {
+        totalMs: 30,
+        callMs: 1000,
+        pauseTotalMsFor: ["fs/list"]
+      }
+    })
+    expect(normal).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(unmatched).toMatchObject({ _tag: "rejected", code: "limit_exceeded" })
+    expect(paused).toMatchObject({ _tag: "settled", transition: { _tag: "complete", output: "child done" } })
+  })
+
   it("retries a rejected cached module load instead of poisoning the cache", async () => {
     let attempts = 0
     const load = QuickJSSandbox.cacheSuccessful(() => {
