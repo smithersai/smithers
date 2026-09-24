@@ -174,10 +174,11 @@ describe("native public process I/O options", () => {
           output(handle.getOutputFd(9)),
           output(handle.stdout),
           handle.exitCode,
-          Stream.run(input("manual é"), handle.getInputFd(3))
+          Stream.run(input("manual é"), handle.getInputFd(3)),
+          output(handle.stderr)
         ], { concurrency: "unbounded" })
       })))
-      expect(result).toEqual(["manual é", "auto:configured 🙂", "finished", 0, undefined])
+      expect(result).toEqual(["manual é", "auto:configured 🙂", "finished", 0, undefined, ""])
       expect(native.mock.calls[0]?.[2]?.stdio).toEqual([
         "pipe",
         "pipe",
