@@ -5,7 +5,7 @@ import { memoryStorage, storageLayer } from "./DurableStorage"
 import type { NativeStorage } from "./DurableStorage"
 import { TurnCancelRegistry } from "./turns"
 import { memoryDurableObjects } from "./memoryDurableObjects"
-import { TURN_JOURNAL_HEAD_KEY, turnJournalBatchKey, verifyTurnJournal } from "./TurnJournal"
+import { TURN_JOURNAL_HEAD_KEY, TURN_JOURNAL_RETENTION_MS, turnJournalBatchKey, verifyTurnJournal } from "./TurnJournal"
 
 const auth = { ownerHash: "1".repeat(64), accessHash: "2".repeat(64) }
 const writerHash = "3".repeat(64)
@@ -184,6 +184,20 @@ describe("durable turn output", () => {
     // Missing/corrupt output must remain erasable through the authenticated head.
     expect((await call(reopened, { operation: "retire", ...auth })).body.status).toBe("retired")
     expect([...storage.data.keys()]).toEqual([TURN_JOURNAL_HEAD_KEY])
+  })
+
+  test("acceptance schedules retention before its first write; the alarm deletes every batch page, then the head", async () => {
+    const storage = memoryStorage()
+    const events: string[] = []
+    const alarmed: NativeStorage = { ...storage,
+      setAlarm: async time => { events.push(`alarm ${time >= Date.now() + TURN_JOURNAL_RETENTION_MS - 60_000}`) },
+      put: async (key, value) => { events.push(`put ${String(key)}`); await storage.put(key, value) } }
+    await create(alarmed)
+    expect(events).toEqual(["alarm true", `put ${TURN_JOURNAL_HEAD_KEY}`])
+    for (let batch = 1; batch <= 300; batch++) storage.data.set(turnJournalBatchKey(batch), { private: batch })
+    await new TurnCancelRegistry({ storage: alarmed }).alarm()
+    expect([...storage.data.keys()]).toEqual([])
+    expect((await call(new TurnCancelRegistry({ storage: alarmed }), acceptance)).body.status).toBe("accepted")
   })
 
   test("the Worker namespace fixture keeps the native dispatch, serialization, restart and erasure contract", async () => {

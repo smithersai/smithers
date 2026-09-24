@@ -43,6 +43,7 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
   const gatewayAlarms = new Map<string, number>()
   const cancelData = new Map<string, Map<string, unknown>>()
   const cancelObjects = new Map<string, TurnCancelRegistry>()
+  const cancelAlarms = new Map<string, number>()
   const retained = (maps: Map<string, Map<string, unknown>>, name: string): Map<string, unknown> => {
     let data = maps.get(name)
     if (data === undefined) {
@@ -84,7 +85,8 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
       const name = String(id)
       let object = cancelObjects.get(name)
       if (object === undefined) {
-        object = new TurnCancelRegistry({ storage: nativeStorageOver(retained(cancelData, name)) })
+        object = new TurnCancelRegistry({ storage: { ...nativeStorageOver(retained(cancelData, name)),
+          setAlarm: time => { cancelAlarms.set(name, time); return Promise.resolve() } } })
         cancelObjects.set(name, object)
       }
       const registry = object
@@ -100,6 +102,17 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
         yield* Effect.promise(() => (GATEWAY_SESSIONS.get(login) as GatewaySessionRegistry).alarm())
     }), { discard: true })),
     pendingGatewayAlarms: () => [...gatewayAlarms.keys()],
+    /** Deliver every turn-object alarm due by `now`, as the platform would. */
+    runTurnAlarms: (now: number): Promise<void> => runDurable(Effect.forEach([...cancelAlarms].filter(([, time]) => time <= now), ([name]) => Effect.gen(function* () {
+        cancelAlarms.delete(name)
+        TURN_CANCELS.get(name)
+        yield* Effect.promise(() => cancelObjects.get(name)!.alarm())
+    }), { discard: true })),
+    /** Each turn object's scheduled alarm time, by object name. */
+    turnAlarms: (): ReadonlyMap<string, number> => new Map(cancelAlarms),
+    /** The turn journal objects that hold any stored row. */
+    storedJournalObjects: (): ReadonlyArray<string> =>
+      [...cancelData].filter(([name, rows]) => name.startsWith("turn-journal/") && rows.size > 0).map(([name]) => name),
     /** The rows one login's registry holds, by storage key, for a test to inspect. */
     gatewayRows: (login: string): Map<string, unknown> => retained(gatewayData, login),
     /**
@@ -130,6 +143,7 @@ export const memoryDurableObjects = (options: MemoryDurableObjectsOptions = {}) 
       gatewayAlarms.clear()
       cancelData.clear()
       cancelObjects.clear()
+      cancelAlarms.clear()
     },
     /** Forgets the objects but keeps their rows: a Worker restart. */
     restart: (): void => {

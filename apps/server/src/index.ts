@@ -74,6 +74,8 @@ import {
   ANONYMOUS_ALL_KEY,
   ANONYMOUS_CEILING,
   anonymousTurnKey,
+  ERASE_CEILING,
+  eraseTurnKey,
   TurnLimits,
   turnLimitResponse,
   TurnRateLimiter
@@ -243,6 +245,18 @@ const anonymousCatalogTurn = (request: Request, refusal: Response): Effect.Effec
     return yield* handleTurn(request, undefined, body, admission)
   })
 
+/**
+ * Erasure works after sign-out, so its address bucket is spent before the
+ * journal object is reached: a refused caller writes no tombstone.
+ */
+const erasureBudget = (request: Request): Effect.Effect<Response | undefined, never, ServerConfig | TurnLimits> =>
+  Effect.gen(function* () {
+    const config = yield* ServerConfig
+    const key = yield* eraseTurnKey(request, config.anonymousTurnSalt === undefined ? undefined : Redacted.value(config.anonymousTurnSalt))
+    const budget = yield* TurnLimits.use((limits) => limits.spend(key, ERASE_CEILING))
+    return budget.allowed ? undefined : turnLimitResponse(budget, ISOLATION_HEADERS, ERASE_CEILING)
+  })
+
 /** The login's turn ceiling, spent before a model credential is. */
 const loginBudget = (login: string): Effect.Effect<Response | undefined, never, TurnLimits> =>
   TurnLimits.use((limits) =>
@@ -351,6 +365,8 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     }
     if (url.pathname === TURN_ERASE_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
+      const refused = yield* erasureBudget(request)
+      if (refused !== undefined) return refused
       return yield* handleTurnJournalErasure(request)
     }
     if (url.pathname === TURN_REPLAY_PATH || url.pathname === TURN_RETIRE_PATH) {
@@ -380,7 +396,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (request.method !== "POST") return methodNotAllowed()
       const gate = yield* requireTurnSession(request)
       if (gate instanceof Response) return gate.status === 401 ? yield* anonymousCatalogTurn(request, gate) : gate
-      // Durable acceptance grants the one producer before spending capacity;
+      // A fresh durable leg spends capacity before its acceptance is written;
       // a repeated POST only observes existing acceptance and spends nothing.
       return yield* handleTurn(request, gate, undefined, gate === undefined ? Effect.succeed(undefined) : loginBudget(gate.login))
     }

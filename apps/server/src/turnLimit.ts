@@ -65,9 +65,10 @@ export interface TurnCeiling {
    * `recommend` is the command recommender's ceiling (recommend.ts): the
    * same counter, spent on a route that costs a small model call and that
    * chat never depends on, so its refusal says suggestions paused and
-   * nothing else.
+   * nothing else. `erase` is the deletion outbox's address bucket, which a
+   * browser retries on its own.
    */
-  readonly kind: "login" | "anonymous" | "anonymous-all" | "recommend"
+  readonly kind: "login" | "anonymous" | "anonymous-all" | "recommend" | "erase"
   readonly max: number
   readonly windowMs: number
 }
@@ -121,6 +122,18 @@ export const ANONYMOUS_ALL_CEILING: TurnCeiling = {
   max: ANONYMOUS_ALL_TURN_MAX,
   windowMs: ANONYMOUS_TURN_WINDOW_MS
 }
+
+/**
+ * Turn erasures one address may request per hour. Erasure needs no session,
+ * and an unseen leg is fenced with a new tombstone object, so this bucket is
+ * what bounds the objects a caller can create. The browser outbox sends at
+ * most 32 per pass and keeps any refused obligation for its next pass.
+ */
+export const ERASE_CEILING: TurnCeiling = { kind: "erase", max: 600, windowMs: TURN_WINDOW_MS }
+
+/** The erasure bucket: the anonymous address digest under its own prefix. */
+export const eraseTurnKey = (request: Request, salt: string | undefined): Effect.Effect<string> =>
+  Effect.map(anonymousTurnKey(request, salt), key => `erase:${key}`)
 
 interface TurnLimitWindow {
   /** When the current window opened. */
@@ -336,7 +349,9 @@ export const turnLimitResponse = (
     JSON.stringify({
       status: "error",
       code: "turn_rate_limited" satisfies WorkerFailureCode,
-      message: ceiling.kind === "recommend"
+      message: ceiling.kind === "erase"
+        ? `Saved turn cleanup resumes in about ${waitLabel(seconds)}.`
+        : ceiling.kind === "recommend"
         ? `Command suggestions have reached their daily limit. Chat keeps working; suggestions come back in about ${
           waitLabel(seconds)
         }. Nothing was charged.`

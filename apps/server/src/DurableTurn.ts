@@ -75,21 +75,30 @@ class OutputFailure extends Error {
 const encoded = (delivery: AgentTurnJournalDelivery): Uint8Array => new TextEncoder().encode(`${JSON.stringify(delivery)}\n`)
 
 /**
- * Grant one producer before invoking start, then publish only committed output.
- * The native host can provide its own start Effect and the same storage client.
- * A duplicate POST returns existing metadata; its head is NOT an applied cursor.
+ * Admit a fresh leg, grant one producer, then publish only committed output.
+ * Admission runs only when a read finds no saved leg, and before any storage
+ * write, so a refused caller creates no journal object. A duplicate POST
+ * returns existing metadata and spends nothing; its head is NOT an applied
+ * cursor. The native host provides its own start Effect and storage client
+ * and admits every local leg.
  */
-export const withDurableAgentTurn = <R>(
+export const withDurableAgentTurn = <R, A>(
   body: TurnRequest & { readonly journal: AgentTurnJournalRequest },
   owner: string | undefined,
   client: TurnJournalClient,
-  start: () => Effect.Effect<Response, never, R>
-): Effect.Effect<Response, never, R | ExecutionContext> => Effect.gen(function* () {
+  start: () => Effect.Effect<Response, never, R>,
+  admission: Effect.Effect<Response | undefined, never, A> = Effect.succeed(undefined)
+): Effect.Effect<Response, never, R | A | ExecutionContext> => Effect.gen(function* () {
   const journal = body.journal
   const auth = yield* privateAuth(owner, journal)
   const { journal: _journal, ...input } = body
   const requestHash = yield* sha256Hex(agentTurnJournalDigestInput("request", input))
   const writerHash = yield* sha256Hex(agentTurnJournalDigestInput("writer", crypto.randomUUID()))
+  const saved = yield* client.request(body.runId, journal.legId, { operation: "read", ...auth, after: null, limit: 1 })
+  if (saved.body.status === "error" && saved.body.code === "not-found") {
+    const refusal = yield* admission
+    if (refusal !== undefined) return refusal
+  }
   const registration = yield* client.request(body.runId, journal.legId, {
     operation: "accept", runId: body.runId, legId: journal.legId, ...auth, requestHash, writerHash
   })

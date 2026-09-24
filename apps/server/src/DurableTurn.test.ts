@@ -11,6 +11,7 @@ import { ExecutionContext, executionContextFrom, layersFromEnv } from "./Environ
 import { Transport, transportFrom } from "./Http"
 import { handleRequest } from "./index"
 import { memoryDurableObjects } from "./memoryDurableObjects"
+import { TURN_JOURNAL_RETENTION_MS } from "./TurnJournal"
 import { sha256Hex, TurnRateLimiter } from "./turnLimit"
 
 const journal = { version: 1 as const, legId: "leg-1", token: "private_replay_capability_12345678901234567890" }
@@ -20,11 +21,18 @@ const done = { type: "done" as const, reason: "stop" as const }
 const wire = (...frames: unknown[]): Response => new Response(frames.map(frame => `${JSON.stringify(frame)}\n`).join(""), {
   headers: { "content-type": "application/x-ndjson" }
 })
+const intercept = (run: (request: Request, next: () => Promise<Response>) => Promise<Response>) => (namespace: NativeNamespace): NativeNamespace => ({
+  idFromName: name => namespace.idFromName(name),
+  get: id => ({ fetch: request => run(request, () => namespace.get(id).fetch(request)) })
+})
 const makeHost = (upstream: () => Response = () => wire(delta("answer"), done), namespace?: (inner: NativeNamespace) => NativeNamespace) => {
   const objects = memoryDurableObjects()
   const budgets = new Map<string, TurnRateLimiter>()
+  const spent: string[] = []
+  const journalOperations: string[] = []
   let modelCalls = 0
   let budgetCalls = 0
+  let budgetRefused = false
   let validations = 0
   let revoked = false
   const transport = transportFrom(async (input, init) => {
@@ -39,12 +47,17 @@ const makeHost = (upstream: () => Response = () => wire(delta("answer"), done), 
   })
   const env = {
     ...objects,
-    TURN_CANCELS: namespace?.(objects.TURN_CANCELS) ?? objects.TURN_CANCELS,
+    TURN_CANCELS: intercept(async (request, next) => {
+      if (new URL(request.url).pathname === "/journal") journalOperations.push((await request.clone().json() as any).operation)
+      return next()
+    })(namespace?.(objects.TURN_CANCELS) ?? objects.TURN_CANCELS),
     TURN_LIMITS: {
       idFromName: (name: string) => name,
       get: (id: unknown) => ({ fetch: (request: Request) => {
         budgetCalls++
         const key = String(id)
+        spent.push(key)
+        if (budgetRefused) return Promise.resolve(Response.json({ allowed: false, remaining: 0, retryAt: Date.now() + 60_000 }))
         let limiter = budgets.get(key)
         if (limiter === undefined) { limiter = new TurnRateLimiter({ storage: memoryStorage() }); budgets.set(key, limiter) }
         return limiter.fetch(request)
@@ -61,19 +74,68 @@ const makeHost = (upstream: () => Response = () => wire(delta("answer"), done), 
     })
     return runRequest(handleRequest(request).pipe(Effect.provideService(Transport, transport), Effect.provide(layers)), request.signal)
   }
-  return { post, objects, modelCalls: () => modelCalls, budgetCalls: () => budgetCalls, validations: () => validations, revoke: () => { revoked = true } }
+  return {
+    post, objects, modelCalls: () => modelCalls, budgetCalls: () => budgetCalls, validations: () => validations,
+    spent: () => [...spent], journalOperations: () => [...journalOperations],
+    revoke: () => { revoked = true }, refuseBudget: (refused: boolean) => { budgetRefused = refused }
+  }
 }
 const deliveries = async (response: Response): Promise<AgentTurnJournalDelivery[]> => {
   expect(response.status).toBe(200)
   return (await response.text()).trim().split("\n").filter(Boolean).map(line => AgentTurnJournalDeliverySchema.parse(JSON.parse(line)))
 }
 const output = (frames: AgentTurnJournalDelivery[]) => frames.flatMap(frame => frame.type === "batch" ? frame.batch.frames : [])
-const intercept = (run: (request: Request, next: () => Promise<Response>) => Promise<Response>) => (namespace: NativeNamespace): NativeNamespace => ({
-  idFromName: name => namespace.idFromName(name),
-  get: id => ({ fetch: request => run(request, () => namespace.get(id).fetch(request)) })
-})
 
 describe("the public durable turn transport", () => {
+  test("a refused fresh leg answers its budget refusal and writes no journal object", async () => {
+    const host = makeHost()
+    host.refuseBudget(true)
+    const refused = await host.post(TURN_PATH, turn)
+    expect(refused.status).toBe(429)
+    expect(await refused.json()).toMatchObject({ code: "turn_rate_limited" })
+    expect(host.journalOperations()).toEqual(["read"])
+    expect(host.objects.storedJournalObjects()).toEqual([])
+    expect(host.modelCalls()).toBe(0)
+    host.refuseBudget(false)
+    await deliveries(await host.post(TURN_PATH, turn))
+    host.refuseBudget(true)
+    // An accepted leg is only observed: no admission, no second inference.
+    expect(await (await host.post(TURN_PATH, turn)).json()).toMatchObject({ status: "existing", terminal: true })
+    expect(host.budgetCalls()).toBe(2)
+    expect(host.modelCalls()).toBe(1)
+  })
+
+  test("signed-out erasure spends its address bucket before any tombstone is written", async () => {
+    const retirementProof = await Effect.runPromise(sha256Hex(agentTurnJournalDigestInput("access", journal.token)))
+    const erase = { runId: turn.runId, legId: journal.legId, retirementProof }
+    const host = makeHost()
+    host.refuseBudget(true)
+    expect((await host.post(TURN_ERASE_PATH, erase, "")).status).toBe(429)
+    expect(host.spent()).toEqual([expect.stringMatching(/^erase:anonymous:[0-9a-f]{64}$/)])
+    expect(host.journalOperations()).toEqual([])
+    expect(host.objects.storedJournalObjects()).toEqual([])
+    host.refuseBudget(false)
+    expect((await host.post(TURN_ERASE_PATH, erase, "")).status).toBe(200)
+    expect(host.objects.storedJournalObjects()).toHaveLength(1)
+  })
+
+  test("every journal object, output or tombstone, is deleted by its retention alarm", async () => {
+    const retirementProof = await Effect.runPromise(sha256Hex(agentTurnJournalDigestInput("access", journal.token)))
+    const host = makeHost()
+    const before = Date.now()
+    await deliveries(await host.post(TURN_PATH, turn))
+    expect((await host.post(TURN_ERASE_PATH, { runId: "unseen-turn", legId: journal.legId, retirementProof })).status).toBe(200)
+    expect(host.objects.storedJournalObjects()).toHaveLength(2)
+    const alarms = [...host.objects.turnAlarms().values()]
+    expect(alarms).toHaveLength(2)
+    for (const time of alarms) expect(time).toBeGreaterThanOrEqual(before + TURN_JOURNAL_RETENTION_MS)
+    await host.objects.runTurnAlarms(before + TURN_JOURNAL_RETENTION_MS - 1)
+    expect(host.objects.storedJournalObjects()).toHaveLength(2)
+    await host.objects.runTurnAlarms(Math.max(...alarms))
+    expect(host.objects.storedJournalObjects()).toEqual([])
+    expect((await host.post(TURN_REPLAY_PATH, { runId: turn.runId, journal })).status).toBe(404)
+  })
+
   test("delete-only proof cannot read, works after sign-out, and preemptively fences a delayed acceptance", async () => {
     const retirementProof = await Effect.runPromise(sha256Hex(agentTurnJournalDigestInput("access", journal.token)))
     const erase = { runId: turn.runId, legId: journal.legId, retirementProof }
@@ -145,7 +207,8 @@ describe("the public durable turn transport", () => {
     }))
     expect((await refusing.post(TURN_PATH, turn)).status).toBe(503)
     expect(refusing.modelCalls()).toBe(0)
-    expect(refusing.budgetCalls()).toBe(0)
+    // Admission precedes the acceptance write, so a failed write follows one spend.
+    expect(refusing.budgetCalls()).toBe(1)
     const host = makeHost()
     await deliveries(await host.post(TURN_PATH, turn))
     expect((await host.post(TURN_PATH, { ...turn, instructions: "different request" })).status).toBe(409)

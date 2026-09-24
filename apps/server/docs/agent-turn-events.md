@@ -77,6 +77,13 @@ remain separate retention/recovery concerns.
 
 ## Platform and retention bounds
 
+Every Worker journal object schedules a Durable Object alarm seven days
+after its first write, before that write: acceptance for output, the
+tombstone for an erasure that found no leg. The alarm deletes every batch,
+then the head, so saved output and tombstones never outlive that window.
+Retiring a live leg keeps its acceptance alarm. The native SQLite host has no
+alarms; its device-local output lives until the browser retires it.
+
 The native object's lifetime mutex covers both its legacy cancellation
 protocol and the new journal. Production relies on the platform's unique
 object ownership; a test that constructs two independent objects over one
@@ -107,9 +114,10 @@ eight batches plus `after`, `next`, `head`, `more`, and `terminal`. Each bounded
 Worker read checks current account identity and replay capability. Anonymous
 output is bound to its capability. Native reads additionally require the
 current authenticated loopback session; local ownership is device-based.
-Neither replay nor repeated acceptance spends model capacity. Fresh admission
-spends the existing abuse budget before invoking the model; budget refusal is
-a recorded terminal response for the accepted durable leg.
+Neither replay nor repeated acceptance spends model capacity. The Worker reads
+the leg first; only a leg with no saved head spends the existing abuse budget,
+and it spends it before the acceptance write. A budget refusal is the ordinary
+429 `turn_rate_limited` answer and leaves no journal object behind.
 
 `POST /api/agent/turn/retire` remains the authenticated raw-capability route.
 The deletion outbox uses `POST /api/agent/turn/erase` with
@@ -119,6 +127,9 @@ erasure, works after account sign-out, and cannot authorize replay: replay
 requires the original token and, for an owned Worker leg, its current account.
 Both paths retain public origin checks. The native host also retains its
 local session check. Only `{status: "retired"}` acknowledges completed erasure.
+The Worker erase route needs no session, so it first spends a per-address
+bucket (`erase:` plus the anonymous address digest, 600 per hour); a refusal
+writes no tombstone, and the outbox keeps the obligation for its next pass.
 
 Output batches commit before HTTP publication. Disconnect, malformed output,
 truncation, and retention exhaustion record terminal observations when storage

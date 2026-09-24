@@ -18,8 +18,11 @@ import { sha256Hex } from "./turnLimit"
 export const TURN_JOURNAL_BATCH_BYTES = 96 * 1024
 export const TURN_JOURNAL_OUTPUT_BYTES = 8 * 1024 * 1024
 export const TURN_JOURNAL_MAX_BATCHES = 8192
+/** Every leg object, output and tombstone alike, is deleted this long after it was first written. */
+export const TURN_JOURNAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 export const TURN_JOURNAL_HEAD_KEY = "turn-journal:v1:head"
-export const turnJournalBatchKey = (batch: number): string => `turn-journal:v1:batch:${batch}`
+const TURN_JOURNAL_BATCH_PREFIX = "turn-journal:v1:batch:"
+export const turnJournalBatchKey = (batch: number): string => `${TURN_JOURNAL_BATCH_PREFIX}${batch}`
 
 /**
  * One private object's verification cache, guarded by its request mutex.
@@ -56,6 +59,18 @@ const initial = (acceptance: AgentTurnAcceptance) => seal("head", {
   cursor: { version: 1 as const, runId: acceptance.runId, legId: acceptance.legId, batch: 0, position: 0, hash: acceptance.hash },
   bytes: 0, terminal: false
 })
+
+const noErasure = () => new StorageFailure({ operation: "turn journal erasure", cause: new Error("The storage host cannot erase saved output.") })
+
+/**
+ * Schedule the object's retention alarm before its first write, so no Worker
+ * head exists without its deletion. The native SQLite host has no alarms; its
+ * device-local output lives until the browser retires it.
+ */
+const scheduleRetention = (storage: DurableStorageShape): Effect.Effect<void, StorageFailure> => {
+  const setAlarm = storage.setAlarm
+  return setAlarm === undefined ? Effect.void : Effect.flatMap(Clock.currentTimeMillis, now => setAlarm(now + TURN_JOURNAL_RETENTION_MS))
+}
 
 const load = (storage: DurableStorageShape): Effect.Effect<Saved | undefined, StorageFailure | JournalRefusal> =>
   Effect.gen(function* () {
@@ -131,7 +146,8 @@ export const executeTurnJournal = (command: AgentTurnJournalCommand, audit?: Tur
     if (command.operation === "erase" && current === undefined) {
       // A privacy request can race a POST whose acceptance receipt was lost.
       // Persist absence as retired so a delayed producer cannot recreate it.
-      if (storage.delete === undefined) return yield* Effect.fail(new StorageFailure({ operation: "turn journal erasure", cause: new Error("The storage host cannot erase saved output.") }))
+      if (storage.delete === undefined) return yield* Effect.fail(noErasure())
+      yield* scheduleRetention(storage)
       yield* storage.put(TURN_JOURNAL_HEAD_KEY, yield* seal("retirement", {
         version: 1 as const, retired: true as const, runId: command.runId, legId: command.legId,
         ownerHash: null, accessHash: command.accessHash, acceptanceHash: null,
@@ -157,6 +173,7 @@ export const executeTurnJournal = (command: AgentTurnJournalCommand, audit?: Tur
         acceptedAt: yield* Clock.currentTimeMillis
       })
       const head = yield* initial(acceptance)
+      yield* scheduleRetention(storage)
       yield* storage.put(TURN_JOURNAL_HEAD_KEY, head)
       if (audit !== undefined) audit.verifiedHeadHash = head.hash
       return { status: "accepted", cursor: head.cursor, terminal: false }
@@ -169,9 +186,7 @@ export const executeTurnJournal = (command: AgentTurnJournalCommand, audit?: Tur
         if (identity.runId !== command.runId || identity.legId !== command.legId || identity.accessHash !== command.accessHash) return yield* refuse("forbidden")
       }
       // Check erasure support before accepting the privacy operation.
-      if (storage.delete === undefined) return yield* Effect.fail(new StorageFailure({
-        operation: "turn journal erasure", cause: new Error("The storage host cannot erase saved output.")
-      }))
+      if (storage.delete === undefined) return yield* Effect.fail(noErasure())
       let tombstone = retired(current) ? current : yield* seal("retirement", {
         version: 1 as const, retired: true as const, runId: current.acceptance.runId, legId: current.acceptance.legId,
         ownerHash: current.acceptance.ownerHash, accessHash: current.acceptance.accessHash,
@@ -244,6 +259,24 @@ export const executeTurnJournal = (command: AgentTurnJournalCommand, audit?: Tur
     if (audit !== undefined) audit.verifiedHeadHash = next.hash
     return { status: "committed", batch, cursor: next.cursor }
   })
+
+/**
+ * The retention alarm: batches first, then the head, so an interrupted pass
+ * leaves a head that refuses reads as corrupt and the platform retries the
+ * alarm. Removing the head first would let a new acceptance write batch keys
+ * that the retried alarm then deletes.
+ */
+export const expireTurnJournal: Effect.Effect<void, StorageFailure, DurableStorage> = Effect.gen(function* () {
+  const storage = yield* DurableStorage
+  const erase = storage.delete
+  if (erase === undefined) return yield* Effect.fail(noErasure())
+  for (;;) {
+    const batches = yield* storage.list<unknown>({ prefix: TURN_JOURNAL_BATCH_PREFIX, limit: 128 })
+    if (batches.size === 0) break
+    yield* Effect.forEach(batches.keys(), erase, { discard: true })
+  }
+  yield* erase(TURN_JOURNAL_HEAD_KEY)
+})
 
 /** Full replay audit against the served head; it cannot adopt corrupt materialized state. */
 export const verifyTurnJournal: Effect.Effect<AgentTurnJournalHead, StorageFailure | JournalRefusal, DurableStorage> =

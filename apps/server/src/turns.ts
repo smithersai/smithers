@@ -28,7 +28,7 @@ import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { ExecutionContext } from "./Environment"
 import type { ExecutionContextShape } from "./Environment"
 import { StorageFailure, UpstreamUnreachable } from "./Failures"
-import { turnJournalRequest } from "./TurnJournal"
+import { expireTurnJournal, turnJournalRequest } from "./TurnJournal"
 import type { TurnJournalAudit } from "./TurnJournal"
 import { createTurnJournalClient } from "./TurnJournalClient"
 import type { TurnJournalClient } from "./TurnJournalClient"
@@ -218,6 +218,14 @@ export class TurnCancelRegistry {
     return runDurable(this.writes.withPermit(Effect.suspend(() =>
       new URL(request.url).pathname === "/journal" ? turnJournalRequest(request, this.journalAudit) : turnCancelRequest(request)
     )).pipe(Effect.provide(storageLayer(this.ctx.storage))))
+  }
+
+  /** Journal retention (TurnJournal.ts); a rejected alarm is retried by the platform. */
+  alarm(): Promise<void> {
+    return runDurable(this.writes.withPermit(Effect.suspend(() => {
+      delete this.journalAudit.verifiedHeadHash
+      return expireTurnJournal
+    })).pipe(Effect.provide(storageLayer(this.ctx.storage)), Effect.orDie))
   }
 }
 
@@ -837,14 +845,13 @@ export const handleTurn = <R = never>(
   Effect.gen(function* () {
     const body = parsed ?? (yield* readStartTurn(request))
     if (body instanceof Response) return body
-    const start = () => Effect.gen(function* () {
+    if (body.journal === undefined) {
       const refusal = yield* admission
       return refusal ?? (yield* handleTransientTurn(request, session, body))
-    })
-    if (body.journal === undefined) return yield* start()
+    }
     const cancels = yield* TurnCancels
     return yield* withDurableAgentTurn({ ...body, journal: body.journal }, session?.login, cancels.journals,
-      start)
+      () => handleTransientTurn(request, session, body), admission)
   })
 
 /** Replay and retirement use the same validated owner as initial acceptance. */
