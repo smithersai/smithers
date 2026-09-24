@@ -181,7 +181,7 @@ const DELEGATED_HANDLERS: Readonly<Record<string, readonly string[]>> = {
   // stays in the boot adapter; its credential must never enter a command journal.
   "../StartupError.tsx": [
     "onClick={useSmithersHere}", "onClick={() => window.location.reload()}",
-    "onClick={() => setChoosing(true)}", "switchBackendTarget("
+    "onClick={() => setChoosing(true)}", "await switchBackend(origin, token)"
   ],
   "../ToastAction.tsx": ["onAction(action)"], // ToastStack/App bind the typed action to runCommand(action.flow, action.args)
   "../HelpBubble.tsx": ["onClick={dismiss}"], // restores focus, then onDismiss() dismisses transient help

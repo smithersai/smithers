@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import type { Root } from "react-dom/client"
-import { createStartupErrorElement, StartupErrorPanel } from "./StartupError"
+import { createStartupErrorElement, StartupErrorPanel, webBackendSwitch } from "./StartupError"
 
 import { WriterHeldByAnotherTabError, WriterMovedToAnotherTabError } from "./state/StorageRecoveryContract"
 import { BootstrapFailure } from "./runtime/Runtime"
@@ -111,25 +111,78 @@ for (const [reason, heading, buttons] of [
   })
 }
 
+const renderBootstrapFailure = (kind: "unreachable" | "missing" | "server" | "invalid"): HTMLElement => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.add(root)
+  flushSync(() => root.render(<StartupErrorPanel reason={new BootstrapFailure(kind, 404)} />))
+  return host
+}
+
+const buttonLabels = (host: HTMLElement): Array<string | null> =>
+  [...host.querySelectorAll("button")].map(button => button.textContent)
+
 for (const kind of ["unreachable", "missing", "server", "invalid"] as const) {
-  test(`bootstrap ${kind} shows a typed recovery on web and native`, () => {
-    for (const native of [false, true]) {
-      if (native) window.__electrobun = {} as NonNullable<typeof window.__electrobun>
-      const host = document.createElement("div")
-      document.body.append(host)
-      const root = createRoot(host)
-      roots.add(root)
-      flushSync(() => root.render(<StartupErrorPanel reason={new BootstrapFailure(kind, 404)} />))
-      expect(host.querySelector("h1")?.textContent).toBe("Backend unavailable")
-      expect(host.textContent).not.toContain("404")
-      expect([...host.querySelectorAll("button")].map(button => button.textContent)).toEqual(["Retry", "Switch backend"])
+  /*
+   * The defect this pins: every hosted user saw a developer "Switch backend"
+   * form during an outage, and nothing said the outage was not theirs.
+   */
+  test(`bootstrap ${kind} on the hosted web offers Retry and blames the backend`, () => {
+    const host = renderBootstrapFailure(kind)
+    expect(host.querySelector("h1")?.textContent).toBe("Backend unavailable")
+    expect(host.textContent).not.toContain("404")
+    expect(host.textContent).toContain("Not your fault.")
+    expect(buttonLabels(host)).toEqual(["Retry"])
+    expect(host.querySelector("form")).toBeNull()
+  })
+
+  test(`bootstrap ${kind} in the native shell keeps backend switching`, () => {
+    window.__electrobun = {} as NonNullable<typeof window.__electrobun>
+    try {
+      const host = renderBootstrapFailure(kind)
+      expect(host.textContent).toContain("Not your fault.")
+      expect(buttonLabels(host)).toEqual(["Retry", "Switch backend"])
       flushSync(() => host.querySelector<HTMLButtonElement>("button:last-of-type")!.click())
       expect(host.querySelector('input[name="origin"]')).not.toBeNull()
       expect(host.querySelector('input[name="token"]')).not.toBeNull()
+    } finally {
       delete window.__electrobun
     }
   })
 }
+
+/*
+ * The defect this pins: any throw rendered "Invalid backend URL." and the
+ * alert never cleared. The real web switch rejects each input with its own
+ * reason, and each submit shows only the reason it produced.
+ */
+test("a failed backend switch reports its real error, fresh on every submit", async () => {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const root = createRoot(host)
+  roots.add(root)
+  flushSync(() => root.render(
+    <StartupErrorPanel reason={new BootstrapFailure("unreachable")} switchBackend={webBackendSwitch} />
+  ))
+  flushSync(() => host.querySelector<HTMLButtonElement>("button:last-of-type")!.click())
+  const submit = async (origin: string, token: string): Promise<string | null | undefined> => {
+    host.querySelector<HTMLInputElement>('input[name="origin"]')!.value = origin
+    host.querySelector<HTMLInputElement>('input[name="token"]')!.value = token
+    const before = host.querySelector('[role="alert"]')?.textContent
+    const alert = () => host.querySelector('[role="alert"]')?.textContent
+    flushSync(() => host.querySelector("form")!.requestSubmit())
+    for (let turn = 0; turn < 50 && (alert() === undefined || alert() === before); turn += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    return alert()
+  }
+  expect(await submit("https://backend.example/path", "")).toBe("Backend URL must be an http(s) origin.")
+  expect(await submit("ftp://backend.example", "secret"))
+    .toBe("Application API origin must use HTTP(S).")
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1)
+  expect(host.textContent).not.toContain("Invalid backend URL")
+})
 
 /*
  * Every startup panel is legible in every theme the page can be in.

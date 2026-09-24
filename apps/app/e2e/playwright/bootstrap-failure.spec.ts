@@ -10,15 +10,11 @@ for (const [kind, fulfill] of [
     await page.route("**/api/bootstrap", fulfill)
     await page.goto("/")
     await expect(page.getByRole("heading", { name: "Backend unavailable" })).toBeVisible()
-    await expect(page.getByRole("button", { name: "Retry" })).toBeVisible()
-    await page.getByRole("button", { name: "Switch backend" }).click()
-    await expect(page.getByRole("textbox", { name: "Backend URL" })).toBeVisible()
+    await expect(page.locator("main")).toContainText("Not your fault.")
     await expect(page.locator("main")).not.toContainText("404")
-    if (kind === "missing") {
-      await page.unroute("**/api/bootstrap", fulfill)
-      await page.getByRole("textbox", { name: "Backend URL" }).fill(new URL(page.url()).origin)
-      await page.getByRole("button", { name: "Connect" }).click()
-      await expect(page.getByRole("heading", { name: "Backend unavailable" })).toHaveCount(0)
-    }
+    await expect(page.locator("main").getByRole("button")).toHaveText(["Retry"])
+    await page.unroute("**/api/bootstrap", fulfill)
+    await page.getByRole("button", { name: "Retry" }).click()
+    await expect(page.getByRole("heading", { name: "Backend unavailable" })).toHaveCount(0)
   })
 }
