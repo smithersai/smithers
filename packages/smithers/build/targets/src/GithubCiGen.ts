@@ -866,23 +866,25 @@ export const toolchainSteps = (attrs: Attrs, job: Job): ReadonlyArray<RenderedSt
   if (needs.cargoBinaries !== undefined && needs.cargoBinaries.length > 0) {
     if (!needs.rust?.cache) steps.push({ uses: actions.rustCache })
     for (const binary of needs.cargoBinaries) {
-      const platforms = binary.platforms.map((platform) => platform === "darwin" ? "Darwin" : "Linux").join("|")
+      const platforms = binary.platforms.map((platform) =>
+        platform === "darwin" ? "Darwin" : platform === "win32" ? "MINGW*|MSYS*" : "Linux"
+      ).join("|")
       steps.push({
         name: `Install native ${binary.binary}`,
         shell: "bash",
         run: [
           `case "$(uname -s)" in ${platforms})`,
+          "  native_suffix=''",
+          "  case \"$(uname -s)\" in MINGW*|MSYS*) native_suffix='.exe';; esac",
           `  rustup toolchain install ${shellWord(binary.toolchain)} --profile minimal`,
           `  cargo +${binary.toolchain} build --locked -p ${shellWord(binary.package)} --bin ${
             shellWord(binary.binary)
           }`,
           "  mkdir -p \"$RUNNER_TEMP/smithers-native\"",
-          `  install -m 755 ${
-            shellWord(`target/debug/${binary.binary}`)
-          } "$RUNNER_TEMP/smithers-native/${binary.binary}"`,
-          `  printf '%s=%s\\n' ${
-            shellWord(binary.environment)
-          } "$RUNNER_TEMP/smithers-native/${binary.binary}" >> "$GITHUB_ENV"`,
+          `  native_path="$RUNNER_TEMP/smithers-native/${binary.binary}$native_suffix"`,
+          `  install -m 755 "target/debug/${binary.binary}$native_suffix" "$native_path"`,
+          "  if [ \"$native_suffix\" = '.exe' ]; then native_path=\"$(cygpath -w \"$native_path\")\"; fi",
+          `  printf '%s=%s\\n' ${shellWord(binary.environment)} "$native_path" >> "$GITHUB_ENV"`,
           "esac"
         ].join("\n")
       })

@@ -301,7 +301,7 @@ const nativeFilesystem = [{
   binary: "smithers-jj-export",
   toolchain: "1.98.0",
   environment: "SMITHERS_WORKSPACE_JJ_EXPORT_BINARY",
-  platforms: ["linux", "darwin"]
+  platforms: ["linux", "darwin", "win32"]
 }] as const
 
 const ci = Smithers.GithubCiGen({

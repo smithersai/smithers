@@ -62,9 +62,9 @@ describe("CiToolchain.Needs", () => {
     expect(CiToolchain.Needs({ ripgrep }).ripgrep).toEqual(ripgrep)
   })
 
-  it.skipIf(process.platform === "win32")(
-    "installs declared native tools outside the checkout and exports their absolute paths",
-    async () => {
+  it.skipIf(process.platform === "win32").each(["Linux", "Darwin", "MINGW64_NT-10.0", "MSYS_NT-10.0"])(
+    "installs declared native tools outside the checkout and exports their absolute paths on %s",
+    async (platform) => {
       const root = await Fs.mkdtemp(NodePath.join(tmpdir(), "ci native tools "))
       try {
         const bin = NodePath.join(root, "bin")
@@ -72,12 +72,18 @@ describe("CiToolchain.Needs", () => {
         await Fs.mkdir(bin)
         await Fs.mkdir(runnerTemp)
         await Fs.writeFile(NodePath.join(root, "env"), "")
+        await Fs.writeFile(NodePath.join(bin, "uname"), `#!/bin/sh\nprintf '%s\\n' '${platform}'\n`, { mode: 0o755 })
+        await Fs.writeFile(
+          NodePath.join(bin, "cygpath"),
+          "#!/bin/sh\nprintf '%s\\n' \"$*\" > cygpath-args\nprintf 'C:/native helper/native-helper.exe\\n'\n",
+          { mode: 0o755 }
+        )
         await Fs.writeFile(NodePath.join(bin, "rustup"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> rustup-args\n", {
           mode: 0o755
         })
         await Fs.writeFile(
           NodePath.join(bin, "cargo"),
-          "#!/bin/sh\nprintf '%s\\n' \"$*\" >> cargo-args\nmkdir -p target/debug\nprintf '#!/bin/sh\\nexit 0\\n' > target/debug/native-helper\n",
+          "#!/bin/sh\nprintf '%s\\n' \"$*\" >> cargo-args\nmkdir -p target/debug\nprintf '#!/bin/sh\\nexit 0\\n' > target/debug/native-helper\ncp target/debug/native-helper target/debug/native-helper.exe\n",
           { mode: 0o755 }
         )
         const job = {
@@ -88,7 +94,7 @@ describe("CiToolchain.Needs", () => {
               binary: "native-helper",
               toolchain: "1.98.0",
               environment: "NATIVE_HELPER",
-              platforms: ["linux", "darwin"]
+              platforms: ["linux", "darwin", "win32"]
             }]
           })
         }
@@ -106,8 +112,12 @@ describe("CiToolchain.Needs", () => {
         })
         expect(result.stderr).toBe("")
         expect(result.status).toBe(0)
-        const installed = NodePath.join(runnerTemp, "smithers-native/native-helper")
-        expect(await Fs.readFile(NodePath.join(root, "env"), "utf8")).toBe(`NATIVE_HELPER=${installed}\n`)
+        const windows = platform.startsWith("MINGW") || platform.startsWith("MSYS")
+        const installed = NodePath.join(runnerTemp, `smithers-native/native-helper${windows ? ".exe" : ""}`)
+        expect(await Fs.readFile(NodePath.join(root, "env"), "utf8")).toBe(
+          `NATIVE_HELPER=${windows ? "C:/native helper/native-helper.exe" : installed}\n`
+        )
+        if (windows) expect(await Fs.readFile(NodePath.join(root, "cygpath-args"), "utf8")).toBe(`-w ${installed}\n`)
         expect(spawnSync(installed).status).toBe(0)
         expect(await Fs.readFile(NodePath.join(root, "rustup-args"), "utf8")).toBe(
           "toolchain install 1.98.0 --profile minimal\n"

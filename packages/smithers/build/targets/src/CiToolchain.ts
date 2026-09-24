@@ -874,7 +874,7 @@ export const CargoBinary = Schema.Struct({
   binary: Schema.String.check(Schema.isPattern(/^[A-Za-z0-9][A-Za-z0-9_-]*$/)),
   toolchain: Schema.Literal("1.98.0"),
   environment: Schema.String.check(Schema.isPattern(/^[A-Z][A-Z0-9_]*$/)),
-  platforms: Schema.NonEmptyArray(Schema.Literals(["linux", "darwin"]))
+  platforms: Schema.NonEmptyArray(Schema.Literals(["linux", "darwin", "win32"]))
 })
 
 /**
