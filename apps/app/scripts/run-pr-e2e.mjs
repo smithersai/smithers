@@ -2,7 +2,7 @@
 import { spawnSync } from "node:child_process"
 
 const steps = [
-  ["exec", "playwright", "install", "--with-deps", "chromium"],
+  ["exec", "playwright", "install", "--with-deps", "chromium", "webkit"],
   ["run", "test:e2e:auth"],
   ["run", "test:e2e:probes"],
   ["run", "test:e2e:graph-lifecycle"],
