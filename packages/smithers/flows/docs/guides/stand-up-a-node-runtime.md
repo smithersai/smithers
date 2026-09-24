@@ -96,7 +96,10 @@ foreign-host owners, refusing takeover even after their lease expires.
 
 `layer` composes storage and the engine and leaves the host to you: `Crypto`,
 `FileSystem`, and `Jj` stay requirements, and the step boundary and workspace
-sandbox are arguments.
+sandbox are arguments. `WorkspaceSandbox.layerFileSystem()` needs a
+`FileSystem` that makes descriptor-relative, no-follow requests, such as
+`AtomicFileSystem.layer` from [`@smthrs/platform-node`](/api/platform-node);
+over a plain `NodeFileSystem.layer` it fails to build with `host_unavailable`.
 
 ```ts
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"

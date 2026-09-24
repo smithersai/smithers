@@ -15,7 +15,6 @@
  * the provider boundary.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Control, ControlLive, ControlRuntime, ControlSchema, SqlControlRuntime } from "@smthrs/control"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -28,6 +27,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { NotificationQueue } from "@smthrs/notifications"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
@@ -199,7 +199,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string) => {
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([NodeFileSystem.layer, NodeCrypto.layer, jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
   return ControlLive.layer.pipe(
     Layer.provide(engine),
     Layer.provideMerge(

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- `FileSystem.confined(fileSystem, root)` returns a filesystem view whose every
+  path operation is one descriptor-relative, no-follow request against `root`,
+  pinned by canonical path and `device:inode` identity, without a grant check.
+  Engine machinery uses it so its own writes cannot be redirected by a symlink
+  swap. It refuses a plain path-based host with `PermissionDenied`, returns an
+  isolated volume or the guarded `FileSystem.layer` service for the same root
+  as it is, and refuses operations that are not one atomic request.
+  `isConfinable` and `requireConfinable` check a host at composition time.
+
 ### Fixed
 
 - `HttpClient.layer` forces `RequestInit { redirect: "manual" }` below its

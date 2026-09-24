@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as Jj from "@smthrs/jj/Jj"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { appendFileSync, readFileSync } from "node:fs"
 import { join } from "node:path"
@@ -35,7 +35,7 @@ const register = Interpreter.layer(flow).pipe(
   Layer.provideMerge(Action.layerImplementations)
 )
 const host = Layer.mergeAll(
-  NodeFileSystem.layer,
+  AtomicFileSystem.layer,
   NodeCrypto.layer,
   Jj.layerNoop({})
 )

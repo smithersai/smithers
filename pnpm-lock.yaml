@@ -3179,6 +3179,9 @@ importers:
       '@smthrs/kernel':
         specifier: 1.0.0-rc.1
         version: link:../../flows/kernel
+      '@smthrs/platform-node':
+        specifier: 1.0.0-rc.1
+        version: link:../../flows/platform-node
       '@smthrs/run-store':
         specifier: 1.0.0-rc.1
         version: link:../../flows/run-store

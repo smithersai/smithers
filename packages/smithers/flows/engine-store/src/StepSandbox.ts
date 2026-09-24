@@ -3,12 +3,12 @@
  *
  * @since 0.1.0
  */
-import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import * as KernelWorkspace from "@smthrs/kernel/Workspace"
+import type * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import type * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
-import * as FileSystem from "effect/FileSystem"
+import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as StepBoundary from "./StepBoundary.ts"
@@ -63,24 +63,20 @@ export const make = (workspace: WorkspaceSandbox.Service): Service =>
 /**
  * Filesystem-backed sandbox layer. The workspace transaction seeds only the
  * declared reads, exposes its scoped FileSystem to the body, observes every
- * mutation, and performs atomic copy-back on release.
+ * mutation, and performs atomic copy-back on release. Built from
+ * `WorkspaceSandbox.layerFileSystem`, so it refuses a path-based host the same way.
  *
  * @category layers
  * @since 0.1.0
  */
 export const layer: Layer.Layer<
   Service,
-  never,
+  WorkspaceSandbox.WorkspaceError,
   FileSystem.FileSystem | ArtifactStore.ArtifactStore | KernelWorkspace.Workspace
 > = Layer.effect(
   StepSandbox,
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const artifacts = yield* ArtifactStore.ArtifactStore
-    const workspace = yield* KernelWorkspace.Workspace
-    return make(WorkspaceSandbox.makeFileSystem(fs, artifacts, workspace.root))
-  })
-)
+  Effect.map(WorkspaceSandbox.WorkspaceSandbox, make)
+).pipe(Layer.provide(WorkspaceSandbox.layerFileSystem()))
 
 /**
  * Deterministic in-memory sandbox layer for tests.

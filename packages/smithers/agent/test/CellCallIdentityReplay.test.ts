@@ -1,5 +1,4 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
@@ -9,6 +8,7 @@ import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Jj from "@smthrs/jj"
 import * as Model from "@smthrs/model/Model"
 import { Node } from "@smthrs/plan"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { RunStore } from "@smthrs/run-store"
 import { Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -107,7 +107,7 @@ it("resumes a prior wire declaration from reopened SQLite under the same Effect 
     ).pipe(
       Layer.provide([
         NodeCrypto.layer,
-        NodeFileSystem.layer,
+        AtomicFileSystem.layer,
         Jj.layerNoop({ snapshot: () => Effect.die("sealed calls take no snapshot") })
       ])
     )

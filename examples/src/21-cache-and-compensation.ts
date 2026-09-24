@@ -12,13 +12,13 @@
  * hard file boundary, and a complete cache environment.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import * as NodeRuntime from "@smthrs/flows/NodeRuntime"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -161,7 +161,7 @@ const engine = (filename: string, hostId: string, jj: Layer.Layer<Jj.Jj>) =>
       Layer.mergeAll(jj, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
     ),
     Layer.provideMerge(NodeCrypto.layer),
-    Layer.provideMerge(NodeFileSystem.layer)
+    Layer.provideMerge(AtomicFileSystem.layer)
   )
 
 /** The declared atom the caching flow's body names. */

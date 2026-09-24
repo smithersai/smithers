@@ -156,17 +156,21 @@ persisted failure retains the schema tag but not the class prototype.
 **What happened.** A body could not execute inside an isolated workspace, or its
 result could not be moved through one. The `code` says which:
 
-| Code                     | Meaning                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| `invalid_path`           | A path was absolute, outside the workspace, or contained `..`.                          |
-| `not_found`              | A path the transaction needed was absent.                                               |
-| `host_unavailable`       | The host filesystem or artifact store refused.                                          |
-| `path_escapes_workspace` | A change's canonical location, after resolving symlinks, is outside the workspace root. |
+| Code                     | Meaning                                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `invalid_path`           | A path was absolute, outside the workspace, or contained `..`.                                            |
+| `not_found`              | A path the transaction needed was absent.                                                                 |
+| `host_unavailable`       | The host filesystem or artifact store refused, or the host cannot make descriptor-relative requests.     |
+| `path_escapes_workspace` | A change's path crosses a symlink or a hard-linked file, or the workspace root was replaced mid-commit. |
 
-**What to change.** For `path_escapes_workspace`, remove the symlink or move the
-target inside the root: the confinement check is what keeps the one host write
-this module performs inside the tree. For `host_unavailable`, read `cause`,
-which carries the refusing failure whole.
+**What to change.** For `path_escapes_workspace`, replace the symlink with the
+real file or directory, or have the body write the referent path: copy-back
+never follows a link, even one that stays inside the root. For
+`host_unavailable`, read `cause`, which carries the refusing failure whole. A
+cause saying the host "does not provide descriptor-relative, no-follow
+filesystem isolation" means the sandbox was composed over a path-based
+filesystem such as `NodeFileSystem.layer`; compose it over
+`@smthrs/platform-node`'s `AtomicFileSystem.layer` instead.
 
 ## UndeclaredRead
 

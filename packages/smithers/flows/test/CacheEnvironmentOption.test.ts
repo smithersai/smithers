@@ -17,8 +17,8 @@
  * The body's own counter decides, not a label.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { afterAll, expect, it } from "@effect/vitest"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -47,7 +47,7 @@ const stubJj = Layer.succeed(
   })
 )
 
-const host = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, stubJj)
+const host = Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, stubJj)
 
 /**
  * Cache-eligible by the engine's own rule and by no other: the `sealed` tier

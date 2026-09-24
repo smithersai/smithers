@@ -60,16 +60,21 @@ copy-back a conflict the engine could only rebase into the same refusal.
 
 Two more properties bind the write:
 
-- Every change whose canonical location, after resolving symlinks, escapes the
-  workspace root is refused, so a pre-existing link inside the tree cannot
-  redirect the one host write this module performs.
-- Confinement, digest checks, and retained-byte resolution finish before any
-  file change. The apply loop journals each target's pre-image before touching
+- Every copy-back host call (the lock, the preflight reads, each write,
+  directory creation, and removal, and every rollback call) is one
+  descriptor-relative request against the workspace root pinned when the
+  commit starts. The host resolves each path component with `O_NOFOLLOW`
+  from that root, so there is no gap between a check and a write for another
+  process to swap a symlink into. A symlink anywhere on a change's path, a
+  hard-linked file, or a root replaced mid-commit fails `materialize` with
+  `path_escapes_workspace`. That includes a symlink that stays inside the
+  root: the body writes the referent path itself.
+- Digest checks and retained-byte resolution finish before any file change. The apply loop journals each target's pre-image before touching
   it, including the target of a write that fails partway through. An apply
   failure triggers an attempt to restore those files. Empty parent directories
   can remain after rollback.
 
-The filesystem host serializes confinement, preflight, apply, and rollback with
+The filesystem host serializes preflight, apply, and rollback with
 other cooperating commits. A semaphore is shared by workspace root in the
 process. An exclusively created `.smithers-workspace-lock` directory under the
 root coordinates separate processes, including callers using symlink aliases
@@ -78,10 +83,21 @@ children. The `.flows` engine state directory is reserved the same way, so no
 write set, `**` glob, or `expected` boundary mode lets a step body replace the
 engine database, its `-wal` and `-shm` siblings, or artifact objects kept
 there. Add other state paths under the root with the `reservedPaths` option.
-A write, removal, or symlink alias that targets a reserved path or lies
-beneath one fails `materialize` with `host_unavailable` before any file
-changes. Filesystem hosts must support exclusive non-recursive directory
-creation and removal. Writers that ignore the advisory lock are not serialized.
+A write or removal that targets a reserved path or lies beneath one fails
+`materialize` with `host_unavailable` before any file changes; a symlink alias
+of one is refused with `path_escapes_workspace` like any other symlink.
+Filesystem hosts must support exclusive non-recursive directory creation and
+removal.
+
+Copy-back needs a host that can make those descriptor-relative requests. On
+Node and Bun that is `@smthrs/platform-node`'s `AtomicFileSystem.layer`, which
+`NodeHost` and `BunHost` already provide; an in-memory volume attests
+isolation with `@smthrs/kernel/FileSystem`'s `withIsolatedFileSystem`; the
+kernel-guarded `FileSystem.layer` rooted at the same workspace also qualifies.
+`WorkspaceSandbox.layerFileSystem` and `StepSandbox.layer` fail to build with
+`host_unavailable` over a plain path-based host such as
+`NodeFileSystem.layer`, because a path-based check cannot keep a concurrent
+symlink swap out of the write. Writers that ignore the advisory lock are not serialized.
 
 The undo journal exists only in memory. A process crash can leave partial file
 changes and the lock directory behind. Rollback can also fail: the returned

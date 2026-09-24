@@ -97,6 +97,16 @@ host cannot be assembled that way. Layering over an executor a caller has read
 and delegates to is still allowed, because that replacement is the caller's
 own decision.
 
+## Engine machinery uses a confined view
+
+The engine's own copy-back writes files a body produced; asking a grant store
+for them would make the engine ask permission for its own bookkeeping. It still
+must not follow a symlink a concurrent process swapped into the workspace.
+`confined(fileSystem, root)` gives it the same descriptor-relative requests the
+guarded layer sends, pinned to `root`, with no grant check. A path-based host
+gets no such view: `confined` refuses it rather than fall back to a
+check-then-write that a swap could beat.
+
 ## Temporary directories are outside the workspace
 
 `makeTempDirectory`, `makeTempDirectoryScoped`, `makeTempFile`, and

@@ -2,7 +2,9 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as KernelWorkspace from "@smthrs/kernel/Workspace"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -29,6 +31,30 @@ const read = (path: string, content: string) => ({ path, digest: sha256(content)
 const text = (files: ReadonlyArray<WorkspaceSandbox.HostFile>, path: string): string | undefined => {
   const file = files.find((candidate) => candidate.path === path)
   return file === undefined ? undefined : decoder.decode(file.content)
+}
+
+/**
+ * In-memory hosts cannot represent a symlink, so they attest whole-volume
+ * isolation, which is what copy-back requires of a host.
+ */
+const isolated = KernelFileSystem.withIsolatedFileSystem
+
+/**
+ * A descriptor-relative host whose every request runs through `around`, so a
+ * test can hold, observe, or fail the exact call copy-back issues.
+ */
+const intercept = (
+  fs: FileSystem.FileSystem,
+  around: (
+    request: KernelFileSystem.AtomicRequest,
+    proceed: Effect.Effect<unknown, PlatformError.PlatformError>
+  ) => Effect.Effect<unknown, PlatformError.PlatformError>
+): FileSystem.FileSystem => {
+  const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
+  return KernelFileSystem.withAtomicFileSystem({ ...fs }, {
+    ...atomic,
+    execute: (request) => around(request, atomic.execute(request)) as never
+  })
 }
 
 const injected = (path: string) =>
@@ -702,7 +728,7 @@ describe("WorkspaceSandbox filesystem host", () => {
           ? Effect.succeed({ type: "File" })
           : Effect.succeed({ type: "Directory" })) as never
     })
-    return ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(fs)))
+    return ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(isolated(fs))))
   }
 
   for (const root of ["C:\\work\\repo", "\\\\server\\share\\repo"]) {
@@ -929,7 +955,9 @@ describe("WorkspaceSandbox filesystem host", () => {
           workflow: Effect.succeed(null)
         }))
       }).pipe(
-        Effect.provide(ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(fs))))
+        Effect.provide(
+          ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(isolated(fs))))
+        )
       )
 
       expect(yield* withCrypto(program)).toMatchObject({ code: "host_unavailable" })
@@ -947,7 +975,9 @@ describe("WorkspaceSandbox filesystem host", () => {
       const program = Effect.gen(function*() {
         // An unrooted host: a workspace root of "" leaves boundary paths as the
         // host paths they already are.
-        const sandbox = WorkspaceSandbox.makeFileSystem(fs, ArtifactStore.makeNoop(), "", { maxInlineBytes: 0 })
+        const sandbox = WorkspaceSandbox.makeFileSystem(isolated(fs), ArtifactStore.makeNoop(), "", {
+          maxInlineBytes: 0
+        })
         const refused = yield* Effect.flip(sandbox.execute({
           descriptor: descriptor({ writeSet: ["root.txt"] }),
           workflow: Effect.gen(function*() {
@@ -1154,8 +1184,9 @@ describe("WorkspaceSandbox filesystem host atomicity", () => {
               content = value.slice()
             })
         })
-        const a = WorkspaceSandbox.makeFileSystem(fs, ArtifactStore.makeNoop(), "")
-        const b = WorkspaceSandbox.makeFileSystem(fs, ArtifactStore.makeNoop(), "")
+        const host = isolated(fs)
+        const a = WorkspaceSandbox.makeFileSystem(host, ArtifactStore.makeNoop(), "")
+        const b = WorkspaceSandbox.makeFileSystem(host, ArtifactStore.makeNoop(), "")
         const execute = (sandbox: WorkspaceSandbox.Service, value: string) =>
           sandbox.execute({
             descriptor: descriptor({ readSet: [read("nested/file", "base")], writeSet: ["nested/file"] }),
@@ -1203,7 +1234,7 @@ describe("WorkspaceSandbox filesystem host atomicity", () => {
       remove: (path) => Effect.sync(() => void files.delete(String(path))),
       makeDirectory: () => Effect.void
     })
-    return ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(fs)))
+    return ArtifactStore.layerMemory.pipe(Layer.provideMerge(Layer.succeed(FileSystem.FileSystem)(isolated(fs))))
   }
 
   it.effect("restores every applied change when the host refuses the Nth write", () =>
@@ -1340,7 +1371,7 @@ describe("WorkspaceSandbox filesystem host atomicity", () => {
  * only exist here, and so does the directory tree the journal must restore.
  */
 describe("WorkspaceSandbox filesystem host confinement", () => {
-  const nodeLayer = ArtifactStore.layerMemory.pipe(Layer.provideMerge(NodeFileSystem.layer))
+  const nodeLayer = ArtifactStore.layerMemory.pipe(Layer.provideMerge(AtomicFileSystem.layer))
 
   const temp = Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
@@ -1369,88 +1400,6 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       return accepted
     })
 
-  const windowsHost = (prefix: string) =>
-    Effect.gen(function*() {
-      const fs = yield* FileSystem.FileSystem
-      const temporary = yield* fs.makeTempDirectoryScoped({ prefix: "wsx-windows-" })
-      const base = (yield* fs.realPath(temporary)).replaceAll("\\", "/")
-      const native = (path: string) => path.replaceAll("\\", "/").replace(prefix, base)
-      const windows = (path: string) => path.replaceAll("\\", "/").replace(base, prefix).replaceAll("/", "\\")
-      const root = `${base}/root`
-      const outside = `${base}/outside`
-      yield* fs.makeDirectory(root)
-      yield* fs.makeDirectory(outside)
-      // Real files and symlinks, with a host adapter that returns native Windows
-      // path spellings on every OS where this regression suite runs.
-      const host: FileSystem.FileSystem = {
-        ...fs,
-        readFile: (path) => fs.readFile(native(path)),
-        writeFile: (path, data, options) => fs.writeFile(native(path), data, options),
-        makeDirectory: (path, options) => fs.makeDirectory(native(path), options),
-        remove: (path, options) => fs.remove(native(path), options),
-        realPath: (path) => fs.realPath(native(path)).pipe(Effect.map(windows)),
-        readLink: (path) => fs.readLink(native(path)).pipe(Effect.map(windows))
-      }
-      const sandbox = WorkspaceSandbox.makeFileSystem(host, yield* ArtifactStore.ArtifactStore, windows(root), {
-        reservedPaths: ["objects"]
-      })
-      return { fs, root, outside, sandbox }
-    })
-
-  for (const prefix of ["C:/host", "//server/share/host"]) {
-    it.effect(`copies back confined links with Windows canonical paths under ${prefix}`, () =>
-      withCrypto(
-        Effect.scoped(Effect.gen(function*() {
-          const { fs, root, sandbox } = yield* windowsHost(prefix)
-          yield* fs.writeFileString(`${root}/real.txt`, "old")
-          yield* fs.makeDirectory(`${root}/sub`)
-          yield* fs.symlink("real.txt", `${root}/existing.txt`)
-          yield* fs.symlink("./sub/../fresh.txt", `${root}/relative.txt`)
-          yield* fs.symlink(`${root}/absolute.txt`, `${root}/absolute-link.txt`)
-          const accepted = yield* write(sandbox, [
-            ["existing.txt", "existing"],
-            ["relative.txt", "relative"],
-            ["absolute-link.txt", "absolute"]
-          ], ["*.txt"])
-          yield* sandbox.materialize(accepted)
-          expect(yield* fs.readFileString(`${root}/real.txt`)).toBe("existing")
-          expect(yield* fs.readFileString(`${root}/fresh.txt`)).toBe("relative")
-          expect(yield* fs.readFileString(`${root}/absolute.txt`)).toBe("absolute")
-        })).pipe(Effect.provide(nodeLayer))
-      ))
-
-    it.effect(`reserves aliases with Windows canonical paths under ${prefix}`, () =>
-      withCrypto(
-        Effect.scoped(Effect.gen(function*() {
-          const { fs, root, sandbox } = yield* windowsHost(prefix)
-          yield* fs.makeDirectory(`${root}/objects`)
-          yield* fs.writeFileString(`${root}/objects/blob`, "LIVE")
-          yield* fs.symlink(`${root}/objects`, `${root}/alias`)
-          const accepted = yield* write(sandbox, [["alias/blob", "changed"]], ["alias/**"])
-          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
-          expect(yield* fs.readFileString(`${root}/objects/blob`)).toBe("LIVE")
-        })).pipe(Effect.provide(nodeLayer))
-      ))
-
-    it.effect(`refuses escaping links with Windows canonical paths under ${prefix}`, () =>
-      withCrypto(
-        Effect.scoped(Effect.gen(function*() {
-          const { fs, root, outside, sandbox } = yield* windowsHost(prefix)
-          yield* fs.writeFileString(`${outside}/existing.txt`, "OUTSIDE")
-          yield* fs.symlink(`${outside}/existing.txt`, `${root}/existing.txt`)
-          yield* fs.symlink(`${outside}/fresh.txt`, `${root}/absolute.txt`)
-          yield* fs.symlink("../outside/fresh.txt", `${root}/relative.txt`)
-          yield* fs.symlink(`${"../".repeat(40)}escape.txt`, `${root}/up.txt`)
-          for (const path of ["existing.txt", "absolute.txt", "relative.txt", "up.txt"]) {
-            const accepted = yield* write(sandbox, [[path, "PWNED"]], ["*.txt"])
-            expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "path_escapes_workspace" })
-          }
-          expect(yield* fs.readDirectory(outside)).toEqual(["existing.txt"])
-          expect(yield* fs.readFileString(`${outside}/existing.txt`)).toBe("OUTSIDE")
-        })).pipe(Effect.provide(nodeLayer))
-      ))
-  }
-
   it.effect("interrupts a lock wait without removing another owner's lock or leaking a permit", () =>
     withCrypto(
       Effect.scoped(Effect.gen(function*() {
@@ -1458,13 +1407,10 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         const lock = `${root}/.smithers-workspace-lock`
         yield* fs.makeDirectory(lock)
         const attempted = yield* Deferred.make<void>()
-        const waitingFs: FileSystem.FileSystem = {
-          ...fs,
-          makeDirectory: (path, options) =>
-            fs.makeDirectory(path, options).pipe(
-              Effect.tapError(() => Deferred.succeed(attempted, undefined))
-            )
-        }
+        const waitingFs = intercept(fs, (request, proceed) =>
+          request.operation === "makeDirectory"
+            ? proceed.pipe(Effect.tapError(() => Deferred.succeed(attempted, undefined)))
+            : proceed)
         const sandbox = WorkspaceSandbox.makeFileSystem(waitingFs, yield* ArtifactStore.ArtifactStore, root)
         const accepted = yield* write(sandbox, [["file", "new"]], ["file"])
         const waiting = yield* Effect.forkChild(sandbox.materialize(accepted))
@@ -1488,7 +1434,11 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
           yield* fs.symlink(lock, `${root}/alias`)
           const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
           const accepted = yield* write(sandbox, [[path, "new"]], [path])
-          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
+          // The literal name is reserved; an alias is a symlink on the path,
+          // which the confined host refuses before it could reach the lock.
+          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({
+            code: path === ".smithers-workspace-lock" ? "host_unavailable" : "path_escapes_workspace"
+          })
           expect(yield* fs.exists(lock)).toBe(false)
         })).pipe(Effect.provide(nodeLayer))
       ))
@@ -1562,7 +1512,9 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
             reservedPaths: ["./engine.db", "engine.db-wal", "engine.db-shm", "objects/"]
           })
           const accepted = yield* write(sandbox, [[path, "new"]], [path])
-          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
+          expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({
+            code: path.startsWith("alias/") ? "path_escapes_workspace" : "host_unavailable"
+          })
           expect(yield* fs.readFileString(`${root}/engine.db`)).toBe("LIVE")
           expect(yield* fs.exists(`${root}/objects/blob`)).toBe(false)
           expect(yield* fs.exists(`${root}/engine.db-wal`)).toBe(false)
@@ -1581,32 +1533,6 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       })).pipe(Effect.provide(nodeLayer))
     ))
 
-  it.effect("reserves lock aliases on unrooted hosts without confining their other symlinks", () =>
-    withCrypto(
-      Effect.scoped(Effect.gen(function*() {
-        const { fs, outside, root } = yield* temp
-        const target = (path: string) => path.startsWith("/") ? path : `${root}/${path}`
-        const unrooted: FileSystem.FileSystem = {
-          ...fs,
-          realPath: (path) => fs.realPath(target(path)),
-          readFile: (path) => fs.readFile(target(path)),
-          readLink: (path) => fs.readLink(target(path)),
-          makeDirectory: (path, options) => fs.makeDirectory(target(path), options),
-          remove: (path, options) => fs.remove(target(path), options),
-          writeFile: (path, data, options) => fs.writeFile(target(path), data, options)
-        }
-        yield* fs.symlink(`${root}/.smithers-workspace-lock/nested`, `${root}/alias`)
-        yield* fs.symlink(`${outside}/file`, `${root}/external`)
-        const sandbox = WorkspaceSandbox.makeFileSystem(unrooted, yield* ArtifactStore.ArtifactStore, "")
-        const accepted = yield* write(sandbox, [["alias", "new"]], ["alias"])
-        expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "host_unavailable" })
-        const external = yield* write(sandbox, [["external", "allowed"]], ["external"])
-        yield* sandbox.materialize(external)
-        expect(yield* fs.readFileString(`${outside}/file`)).toBe("allowed")
-        expect(yield* fs.exists(`${root}/.smithers-workspace-lock`)).toBe(false)
-      })).pipe(Effect.provide(nodeLayer))
-    ))
-
   it.live("serializes copy-back with a separate process and a root alias", () =>
     withCrypto(
       Effect.scoped(Effect.gen(function*() {
@@ -1615,19 +1541,17 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         const alias = `${outside}/alias`
         yield* fs.symlink(root, alias)
         const contended = yield* Deferred.make<void>()
-        const waitingFs: FileSystem.FileSystem = {
-          ...fs,
-          makeDirectory: (path, options) =>
-            fs.makeDirectory(path, options).pipe(
-              Effect.tapError(() => Deferred.succeed(contended, undefined))
-            )
-        }
+        const waitingFs = intercept(fs, (request, proceed) =>
+          request.operation === "makeDirectory"
+            ? proceed.pipe(Effect.tapError(() => Deferred.succeed(contended, undefined)))
+            : proceed)
         const sandbox = WorkspaceSandbox.makeFileSystem(waitingFs, yield* ArtifactStore.ArtifactStore, alias)
         const accepted = yield* write(sandbox, [["file", "B"]], ["file"])
         // The child holds its first data write after acquiring the advisory lock.
         const script = `
         import * as Effect from "effect/Effect";
-        import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem";
+        import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem";
+        import * as KernelFileSystem from "@smthrs/kernel/FileSystem";
         import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
         import * as FileSystem from "effect/FileSystem";
         import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore";
@@ -1637,18 +1561,21 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         const bytes = new TextEncoder().encode("A");
         await Effect.runPromise(Effect.gen(function* () {
           const fs = yield* FileSystem.FileSystem;
-          const sandbox = Sandbox.makeFileSystem({ ...fs, writeFile: (path, data, options) =>
+          const atomic = fs[KernelFileSystem.AtomicFileSystemTypeId];
+          const held = KernelFileSystem.withAtomicFileSystem({ ...fs }, { ...atomic, execute: (request) =>
+            request.operation !== "writeFile" ? atomic.execute(request) :
             Effect.promise(() => new Promise(resolve => {
               process.stdin.once("data", resolve);
               process.stdout.write("applying\\n");
-            })).pipe(Effect.andThen(fs.writeFile(path, data, options)))
-          }, ArtifactStore.makeNoop(), root);
+            })).pipe(Effect.andThen(atomic.execute(request)))
+          });
+          const sandbox = Sandbox.makeFileSystem(held, ArtifactStore.makeNoop(), root);
           yield* sandbox.materialize({ _tag: "Accepted", cache: { status: "disabled" }, violations: [], result: {
             output: null, effects: [], provenance: { baseRevision: "base", inputs: [], outputs: [] },
             files: [{ path: "file", beforeDigest: createHash("sha256").update("base").digest("hex"),
               afterDigest: createHash("sha256").update(bytes).digest("hex"), after: bytes }]
           }});
-        }).pipe(Effect.provide(NodeFileSystem.layer), Effect.provide(NodeCrypto.layer)));
+        }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(NodeCrypto.layer)));
         process.stdin.destroy();
       `
         const child = yield* Effect.acquireRelease(
@@ -1777,45 +1704,6 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       expect(yield* withCrypto(program)).toMatchObject({ code: "path_escapes_workspace" })
     }))
 
-  it.effect("materializes through symlinks that stay inside the root", () =>
-    Effect.gen(function*() {
-      const program = Effect.scoped(Effect.gen(function*() {
-        const { fs, root } = yield* temp
-        yield* fs.writeFileString(`${root}/real.txt`, "old")
-        yield* fs.symlink("real.txt", `${root}/link.txt`)
-        // A dangling link whose referent normalizes to a path inside the root:
-        // writing through it creates the referent, still inside the tree.
-        yield* fs.makeDirectory(`${root}/sub`)
-        yield* fs.symlink("./sub/../fresh.txt", `${root}/l2.txt`)
-        const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
-        const accepted = yield* write(
-          sandbox,
-          [
-            ["link.txt", "via-link"],
-            ["l2.txt", "via-dangle"],
-            ["sub/inside.txt", "inside"],
-            ["plain/new.txt", "plain"]
-          ],
-          ["link.txt", "l2.txt", "sub/**", "plain/**"]
-        )
-        yield* sandbox.materialize(accepted)
-        return {
-          real: yield* fs.readFileString(`${root}/real.txt`),
-          stillLink: yield* fs.readLink(`${root}/link.txt`),
-          fresh: yield* fs.readFileString(`${root}/fresh.txt`),
-          inside: yield* fs.readFileString(`${root}/sub/inside.txt`),
-          plain: yield* fs.readFileString(`${root}/plain/new.txt`)
-        }
-      })).pipe(Effect.provide(nodeLayer))
-
-      const { fresh, inside, plain, real, stillLink } = yield* withCrypto(program)
-      expect(real).toBe("via-link")
-      expect(stillLink).toBe("real.txt")
-      expect(fresh).toBe("via-dangle")
-      expect(inside).toBe("inside")
-      expect(plain).toBe("plain")
-    }))
-
   it.effect("rolls back files without recursively deleting directories a concurrent writer may own", () =>
     Effect.gen(function*() {
       const program = Effect.scoped(Effect.gen(function*() {
@@ -1823,15 +1711,15 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
         yield* fs.writeFileString(`${root}/a.txt`, "old-a")
         yield* fs.makeDirectory(`${root}/sub`)
         yield* fs.writeFileString(`${root}/sub/keep.txt`, "keep")
-        const failing: FileSystem.FileSystem = {
-          ...fs,
-          writeFile: (path, data, options) =>
-            path.endsWith("poison.txt")
+        const failing = intercept(
+          fs,
+          (request, proceed) =>
+            request.operation === "writeFile" && request.path.endsWith("poison.txt")
               ? fs.writeFileString(`${root}/q/concurrent.txt`, "concurrent").pipe(
-                Effect.andThen(Effect.fail(injected(path)))
+                Effect.andThen(Effect.fail(injected(request.path)))
               )
-              : fs.writeFile(path, data, options)
-        }
+              : proceed
+        )
         const sandbox = WorkspaceSandbox.makeFileSystem(failing, yield* ArtifactStore.ArtifactStore, root)
         const accepted = yield* write(
           sandbox,
@@ -1865,4 +1753,196 @@ describe("WorkspaceSandbox filesystem host confinement", () => {
       expect(keep).toBe("keep")
       expect(insideExists).toBe(false)
     }))
+})
+
+describe("WorkspaceSandbox copy-back symlink swaps", () => {
+  const atomicLayer = ArtifactStore.layerMemory.pipe(Layer.provideMerge(AtomicFileSystem.layer))
+
+  /**
+   * A host that runs `plant` once, right before the first host call matching
+   * `when` reaches the filesystem: after every earlier check passed and before
+   * the call resolves its path. It intercepts both the path-based method and
+   * the descriptor-relative request, so it opens the window whichever one the
+   * sandbox issues.
+   */
+  const swapping = (
+    fs: FileSystem.FileSystem,
+    when: (operation: string, path: string, recursive: boolean) => boolean,
+    plant: Effect.Effect<void, PlatformError.PlatformError>
+  ): FileSystem.FileSystem => {
+    let planted = false
+    const once = (operation: string, path: string, recursive = false) =>
+      Effect.suspend(() => {
+        if (planted || !when(operation, path, recursive)) return Effect.void
+        planted = true
+        return plant
+      })
+    const atomic = (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
+    return KernelFileSystem.withAtomicFileSystem({
+      ...fs,
+      writeFile: (path, data, options) =>
+        once("writeFile", path).pipe(Effect.andThen(fs.writeFile(path, data, options))),
+      makeDirectory: (path, options) =>
+        once("makeDirectory", path, options?.recursive === true).pipe(
+          Effect.andThen(fs.makeDirectory(path, options))
+        )
+    }, {
+      ...atomic,
+      execute: (request) =>
+        once(
+          request.operation,
+          "path" in request ? request.path : "",
+          request.operation === "makeDirectory" && request.options?.recursive === true
+        ).pipe(Effect.andThen(atomic.execute(request))) as never
+    })
+  }
+
+  const temp = Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "wsx-swap-root-" }))
+    const outside = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "wsx-swap-out-" }))
+    return { fs, root, outside }
+  })
+
+  const accept = (
+    sandbox: WorkspaceSandbox.Service,
+    writes: ReadonlyArray<readonly [path: string, content: string]>,
+    writeSet: ReadonlyArray<string>
+  ) =>
+    Effect.gen(function*() {
+      const accepted = yield* sandbox.execute({
+        descriptor: descriptor({ writeSet: [...writeSet] }),
+        workflow: Effect.gen(function*() {
+          const workspace = yield* WorkspaceSandbox.Workspace
+          for (const [path, content] of writes) yield* workspace.writeFile(path, encoder.encode(content))
+          return null
+        })
+      })
+      if (accepted._tag !== "Accepted") throw new Error("expected accepted execution")
+      return accepted
+    })
+
+  it.effect("refuses a file swapped for an outside symlink after confinement checks passed", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, outside, root } = yield* temp
+        yield* fs.writeFileString(`${outside}/victim.txt`, "OUTSIDE-ORIGINAL")
+        yield* fs.writeFileString(`${root}/target.txt`, "base")
+        const host = swapping(
+          fs,
+          (operation, path) => operation === "writeFile" && path.endsWith("target.txt"),
+          fs.remove(`${root}/target.txt`).pipe(
+            Effect.andThen(fs.symlink(`${outside}/victim.txt`, `${root}/target.txt`))
+          )
+        )
+        const sandbox = WorkspaceSandbox.makeFileSystem(host, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["target.txt", "PWNED"]], ["target.txt"])
+        const refused = yield* Effect.flip(sandbox.materialize(accepted))
+        expect(refused).toMatchObject({ code: "path_escapes_workspace" })
+        expect(yield* fs.readFileString(`${outside}/victim.txt`)).toBe("OUTSIDE-ORIGINAL")
+      })).pipe(Effect.provide(atomicLayer))
+    ))
+
+  it.effect("refuses a parent directory swapped for an outside symlink before it is created", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, outside, root } = yield* temp
+        yield* fs.makeDirectory(`${outside}/dir`)
+        const host = swapping(
+          fs,
+          (operation, path, recursive) => operation === "makeDirectory" && recursive && path.endsWith("/out/deep"),
+          fs.symlink(`${outside}/dir`, `${root}/out`)
+        )
+        const sandbox = WorkspaceSandbox.makeFileSystem(host, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["out/deep/planted.txt", "PWNED"]], ["out/**"])
+        const refused = yield* Effect.flip(sandbox.materialize(accepted))
+        expect(refused).toMatchObject({ code: "path_escapes_workspace" })
+        expect(yield* fs.readDirectory(`${outside}/dir`)).toEqual([])
+      })).pipe(Effect.provide(atomicLayer))
+    ))
+
+  it.effect("refuses a rollback target swapped for an outside symlink", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, outside, root } = yield* temp
+        yield* fs.writeFileString(`${outside}/victim.txt`, "OUTSIDE-ORIGINAL")
+        yield* fs.writeFileString(`${root}/a.txt`, "old-a")
+        // The second write fails, so rollback restores a.txt; the swap lands
+        // between the failed apply and the restoring write.
+        const failing = swapping(
+          fs,
+          (operation, path) => operation === "writeFile" && path.endsWith("poison.txt"),
+          fs.remove(`${root}/a.txt`).pipe(
+            Effect.andThen(fs.symlink(`${outside}/victim.txt`, `${root}/a.txt`)),
+            Effect.andThen(Effect.fail(injected("poison.txt")))
+          )
+        )
+        const sandbox = WorkspaceSandbox.makeFileSystem(failing, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["a.txt", "new-a"], ["poison.txt", "never"]], ["a.txt", "poison.txt"])
+        const exit = yield* Effect.exit(sandbox.materialize(accepted))
+        expect(exit._tag).toBe("Failure")
+        if (exit._tag === "Failure") {
+          const codes = exit.cause.reasons.filter(Cause.isFailReason).map((reason) => reason.error)
+          expect(codes).toMatchObject([{ code: "host_unavailable" }, { code: "host_unavailable" }])
+          expect(String((codes[1] as WorkspaceSandbox.WorkspaceError).message)).toContain("rollback")
+        }
+        expect(yield* fs.readFileString(`${outside}/victim.txt`)).toBe("OUTSIDE-ORIGINAL")
+      })).pipe(Effect.provide(atomicLayer))
+    ))
+
+  it.effect("refuses a workspace root replaced between execution and copy-back", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, outside, root } = yield* temp
+        const host = swapping(
+          fs,
+          (operation, path) => operation === "writeFile" && path.endsWith("file.txt"),
+          fs.rename(root, `${outside}/moved`).pipe(Effect.andThen(fs.makeDirectory(root)))
+        )
+        const sandbox = WorkspaceSandbox.makeFileSystem(host, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["file.txt", "new"]], ["file.txt"])
+        expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "path_escapes_workspace" })
+        expect(yield* fs.exists(`${root}/file.txt`)).toBe(false)
+      })).pipe(Effect.provide(atomicLayer))
+    ))
+
+  it.effect("refuses copy-back through a symlink even when it stays inside the root", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, root } = yield* temp
+        yield* fs.writeFileString(`${root}/real.txt`, "old")
+        yield* fs.symlink("real.txt", `${root}/link.txt`)
+        const sandbox = WorkspaceSandbox.makeFileSystem(fs, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["link.txt", "via-link"]], ["link.txt"])
+        expect(yield* Effect.flip(sandbox.materialize(accepted))).toMatchObject({ code: "path_escapes_workspace" })
+        expect(yield* fs.readFileString(`${root}/real.txt`)).toBe("old")
+      })).pipe(Effect.provide(atomicLayer))
+    ))
+
+  it.effect("refuses a path-based host with no descriptor-relative isolation", () =>
+    withCrypto(
+      Effect.scoped(Effect.gen(function*() {
+        const { fs, root } = yield* temp
+        // The same Node methods without the descriptor-relative executor.
+        const { [KernelFileSystem.AtomicFileSystemTypeId]: _executor, ...pathBased } =
+          fs as KernelFileSystem.AtomicHostFileSystem
+        const sandbox = WorkspaceSandbox.makeFileSystem(pathBased, yield* ArtifactStore.ArtifactStore, root)
+        const accepted = yield* accept(sandbox, [["file.txt", "new"]], ["file.txt"])
+        const refused = yield* Effect.flip(sandbox.materialize(accepted))
+        expect(refused).toMatchObject({ code: "host_unavailable" })
+        expect(String(refused.cause)).toContain("descriptor-relative")
+        expect(yield* fs.exists(`${root}/file.txt`)).toBe(false)
+        const built = yield* Effect.flip(
+          Effect.gen(function*() {
+            return yield* WorkspaceSandbox.WorkspaceSandbox
+          }).pipe(
+            Effect.provide(WorkspaceSandbox.layerFileSystem()),
+            Effect.provide(KernelWorkspace.layer(root)),
+            Effect.provide(ArtifactStore.layerMemory),
+            Effect.provideService(FileSystem.FileSystem, pathBased)
+          )
+        )
+        expect(built).toMatchObject({ code: "host_unavailable" })
+      })).pipe(Effect.provide(atomicLayer))
+    ))
 })

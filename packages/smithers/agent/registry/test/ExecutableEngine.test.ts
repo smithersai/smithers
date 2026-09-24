@@ -14,7 +14,6 @@
  * envelope the delegate a host spawns reads.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
@@ -29,6 +28,7 @@ import { Journal, type JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import * as Workspace from "@smthrs/kernel/Workspace"
 import { Node, Plan } from "@smthrs/plan"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -48,7 +48,7 @@ import standalone, { Shout } from "./fixtures/executable/flows/standalone/flow.t
 
 const flowsRoot = fileURLToPath(new URL("./fixtures/executable/flows", import.meta.url))
 const projectRoot = fileURLToPath(new URL("./fixtures/executable", import.meta.url))
-const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(AtomicFileSystem.layer, NodePath.layer)
 
 /** What the delegate was handed, in call order. */
 const spawned: Array<Executable.Invocation> = []

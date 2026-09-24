@@ -10,9 +10,9 @@
  * reader must see rather than code it cannot bind (D-068).
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { afterAll, expect, it } from "@effect/vitest"
 import { Journal, JournalEvent } from "@smthrs/journal"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -40,7 +40,7 @@ const stubJj = Layer.succeed(
   })
 )
 
-const host = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, stubJj)
+const host = Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, stubJj)
 
 const Step = Action.make("source-revision/step", {
   payload: { label: Schema.String },

@@ -192,6 +192,7 @@
     "@smthrs/engine-store": "1.0.0-rc.1",
     "@smthrs/journal": "1.0.0-rc.1",
     "@smthrs/kernel": "1.0.0-rc.1",
+    "@smthrs/platform-node": "1.0.0-rc.1",
     "@smthrs/run-store": "1.0.0-rc.1",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",

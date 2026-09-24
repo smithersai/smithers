@@ -696,6 +696,34 @@ guarantee, and a path-delegating attestation would route `access`, `copy`,
 `chmod`, `link`, `symlink`, `open`, `watch`, `sink`, `stream`, and every
 `makeTemp*` call back through pathnames after the capability check.
 
+### FileSystem.confined
+
+```ts
+const confined: (
+  fileSystem: FileSystem.FileSystem,
+  root: string
+) => Effect.Effect<FileSystem.FileSystem, PlatformError, Path.Path>
+
+const isConfinable: (fileSystem: FileSystem.FileSystem) => boolean
+
+const requireConfinable: (fileSystem: FileSystem.FileSystem, root: string) => Effect.Effect<void, PlatformError>
+```
+
+A filesystem view confined to `root` without capability checks, for engine
+machinery that must not ask a grant store about its own bookkeeping but must
+never be redirected outside the workspace. Every path operation is one
+`AtomicRequest` against `root`, pinned when the view is built by canonical path
+and `device:inode` identity: the same request the guarded `layer` sends, minus
+the grant check. A symlink on the path, a hard-linked file, `..` traversal, or
+a replaced root is refused by the host, never followed. The root must exist.
+
+An isolated volume, or the guarded `layer` service rooted at the same
+workspace, is returned as it is. A path-based host fails with
+`PermissionDenied`, as do `open`, `stream`, `sink`, `copy`, `link`, `symlink`,
+`watch`, `truncate`, `utimes`, `access`, and every `makeTemp*` call.
+`isConfinable` and `requireConfinable` answer the same question at composition
+time, before the root is known to exist.
+
 ### FileSystem.canonicalResource
 
 ```ts

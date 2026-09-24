@@ -16,7 +16,6 @@
  * from a recording, and that the recording is consumed in full.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, ControlSchema } from "@smthrs/control"
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -36,6 +35,7 @@ import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
@@ -351,7 +351,7 @@ const stack = (options: StackOptions) => {
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([NodeFileSystem.layer, NodeCrypto.layer, jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
   return ControlLive.layer.pipe(
     Layer.provideMerge(engine),
     Layer.provideMerge(

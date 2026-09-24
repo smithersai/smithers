@@ -19,7 +19,6 @@
  * with `node:sqlite` because the pin is about what the next process finds.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { Control, ControlLive, type ControlRuntime, type ControlSchema, SqlControlRuntime } from "@smthrs/control"
 import * as CoreFlow from "@smthrs/core/Flow"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
@@ -35,6 +34,7 @@ import * as Model from "@smthrs/model/Model"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import { NotificationQueue } from "@smthrs/notifications"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
@@ -210,7 +210,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, onSwee
     WorkspaceSandbox.layerFileSystem(),
     registration
   ).pipe(
-    Layer.provide([NodeFileSystem.layer, NodeCrypto.layer, jj]),
+    Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]),
     Layer.tap((context) =>
       Effect.sync(() => {
         if (onSweep === undefined) return

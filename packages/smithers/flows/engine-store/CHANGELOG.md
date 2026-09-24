@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Security
+
+- Workspace copy-back can no longer be redirected outside the workspace by a
+  symlink swapped in between its confinement check and its write. Every
+  copy-back host call (lock, preflight, apply, rollback) now goes through
+  `@smthrs/kernel/FileSystem`'s `confined` view: one descriptor-relative,
+  no-follow request against the root pinned for that commit. The path-based
+  `realPath`/`readLink` confinement pre-check is gone. Breaking: a copy-back
+  through a symlink that stays inside the root is refused with
+  `path_escapes_workspace` instead of followed, and
+  `WorkspaceSandbox.layerFileSystem` and `StepSandbox.layer` fail to build with
+  `host_unavailable` over a plain path-based `FileSystem`. Compose them over
+  `@smthrs/platform-node`'s `AtomicFileSystem.layer` (which `NodeHost` and
+  `BunHost` already provide), the kernel-guarded `FileSystem.layer`, or an
+  in-memory volume wrapped in `withIsolatedFileSystem`.
+
 ### Added
 
 - `EngineStore.Options.requestResume` reports every wake this engine itself

@@ -39,6 +39,7 @@
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Sha256 } from "@smthrs/crypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Workspace as KernelWorkspace } from "@smthrs/kernel/Workspace"
 import { DerivedKey } from "@smthrs/keys"
 import * as FileSet from "@smthrs/plan/FileSet"
@@ -50,6 +51,7 @@ import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
+import * as Path from "effect/Path"
 import * as PlatformError from "effect/PlatformError"
 import * as RcMap from "effect/RcMap"
 import * as Ref from "effect/Ref"
@@ -611,34 +613,6 @@ const digestOf = (bytes: Uint8Array): Effect.Effect<string, never, Crypto.Crypto
 const parentDirectory = (path: string): string | undefined => {
   const index = path.lastIndexOf("/")
   return index <= 0 ? undefined : path.slice(0, index)
-}
-
-/** Whether `path` is `root` itself or lies beneath it. Both sides canonical. */
-const contained = (root: string, path: string): boolean => `${path}/`.startsWith(`${root}/`)
-
-/** Native drive and UNC paths use either separator; POSIX names stay literal. */
-const isWindowsPath = (path: string): boolean => /^(?:[A-Za-z]:[/\\]|[/\\]{2})/.test(path)
-const slashHostPath = (path: string): string => isWindowsPath(path) ? path.replaceAll("\\", "/") : path
-
-/**
- * Collapses `.` and `..` segments in an absolute slash path without touching
- * the filesystem. `undefined` when the path climbs above the filesystem root —
- * a symlink referent that does so cannot be inside any workspace.
- */
-const collapseDots = (path: string): string | undefined => {
-  const volume = /^(?:[A-Za-z]:|\/\/[^/]+\/[^/]+)(?=\/|$)/.exec(path)
-  const prefix = volume === null ? "" : volume[0]
-  const segments: Array<string> = []
-  for (const segment of path.slice(prefix.length).split("/")) {
-    if (segment === "" || segment === ".") continue
-    if (segment === "..") {
-      if (segments.length === 0) return undefined
-      segments.pop()
-      continue
-    }
-    segments.push(segment)
-  }
-  return `${prefix}/${segments.join("/")}`
 }
 
 // -----------------------------------------------------------------------------
@@ -1244,11 +1218,32 @@ const artifactFailure = (cause: { readonly message: string }): WorkspaceError =>
     cause
   })
 
-const escapesWorkspace = (path: string, resolved: string): WorkspaceError =>
-  new WorkspaceError({
-    code: "path_escapes_workspace",
-    message: `materializing ${path} would write outside the workspace root, at ${resolved}`
-  })
+/**
+ * The errno names the descriptor-relative host reports when it refuses to
+ * resolve a path inside its pinned root: a symlink at the final component
+ * (`ELOOP`); a symlink at an intermediate component (`ELOOP` on Linux,
+ * `ENOTDIR` on Darwin, which also covers a file standing where a directory
+ * must be); or `..` traversal, a path outside the root, a hard-linked file, or
+ * a root whose identity changed (`EPERM`). Each means the change does not
+ * name a workspace entry reachable without following a link.
+ */
+const confinementCodes: ReadonlySet<unknown> = new Set(["ELOOP", "ENOTDIR", "EPERM"])
+
+const refusedByConfinement = (error: PlatformError.PlatformError): boolean =>
+  error.reason._tag !== "BadArgument" &&
+  typeof error.reason.cause === "object" && error.reason.cause !== null &&
+  confinementCodes.has((error.reason.cause as { readonly code?: unknown }).code)
+
+/** Maps one copy-back host failure onto the sandbox's typed error codes. */
+const copyBackFailure = (path: string) => (error: PlatformError.PlatformError): WorkspaceError =>
+  refusedByConfinement(error)
+    ? new WorkspaceError({
+      code: "path_escapes_workspace",
+      message:
+        `materializing ${path} was refused: it does not name a workspace entry reachable without following a link (${error.message})`,
+      cause: error
+    })
+    : hostFailure(error)
 
 /**
  * Builds the filesystem-backed workspace sandbox.
@@ -1263,10 +1258,20 @@ const escapesWorkspace = (path: string, resolved: string): WorkspaceError =>
  * reachable through Effect's `FileSystem` tag, so it could not run in a
  * browser. Seeding costs a copy of the declared reads and buys both.
  *
- * **Copy-back is confined and journaled.** Materialization refuses any change
- * whose canonical location — after resolving symlinks — escapes the workspace
- * root, so a pre-existing link inside the tree cannot redirect the one host
- * write this module performs to a path outside it. A root-keyed semaphore and
+ * **Copy-back is confined and journaled.** Every copy-back host call (the
+ * lock, preflight, apply, and rollback) goes through
+ * `@smthrs/kernel/FileSystem`'s `confined` view: one descriptor-relative,
+ * no-follow request against the workspace root pinned when the commit starts.
+ * A symlink anywhere on a change's path, a hard-linked file, or a root
+ * replaced mid-commit is refused with `path_escapes_workspace`, never
+ * followed, and no check-then-write window exists for a concurrent process to
+ * swap a link into. A copy-back through a symlink that stays inside the root
+ * is refused too: the body writes the referent path itself. `fs` must
+ * therefore carry the kernel's descriptor-relative executor (Node and Bun
+ * hosts use `@smthrs/platform-node`'s `AtomicFileSystem`) or a
+ * whole-filesystem isolation attestation (`withIsolatedFileSystem`, for an
+ * in-memory volume); a plain path-based host is refused at copy-back with
+ * `host_unavailable`. Snapshot reads use `fs` as given. A root-keyed semaphore and
  * an exclusively created advisory lock directory serialize cooperating
  * callers, including separate processes. Preconditions run before file
  * changes, and the apply loop keeps each target's pre-image for in-process
@@ -1294,121 +1299,52 @@ export const makeFileSystem = (
     engineStateName,
     ...(options.reservedPaths ?? []).map((path) => path.replace(/^(\.\/)+/, "").replaceAll(/\/+$/g, ""))
   ].filter((path) => path !== "" && path !== ".")
-  // The reserved entry `path` targets or lies beneath, if any; `prefix` is
-  // "" for root-relative paths or the canonical root plus "/" for resolved ones.
-  const reservedAt = (prefix: string, path: string): string | undefined =>
-    reserved.find((name) => path === `${prefix}${name}` || path.startsWith(`${prefix}${name}/`))
+  // The reserved entry the root-relative `path` targets or lies beneath, if
+  // any. Lexical comparison is exact: the confined host refuses every symlink
+  // on a path, so no alias can name a reserved entry under another spelling.
+  const reservedAt = (path: string): string | undefined =>
+    reserved.find((name) => path === name || path.startsWith(`${name}/`))
   const refuseReserved = (name: string): WorkspaceError => hostFailure(`the workspace path ${name} is reserved`)
   const hostPath = (path: string) => root === "" ? path : `${root}/${path}`
-  // One host call, not two: the read reports an absent path itself, exactly
-  // as `realPathIfPresent` below reads its own refusal. On the confined host
+  // One host call, not two: the read reports an absent path itself. On the
+  // confined host
   // the `exists` probe that used to precede every read was a second CPython
   // fork (`@smthrs/platform-node/AtomicFileSystem`) for an answer the read
   // was about to give.
+  const readFrom = (
+    host: FileSystem.FileSystem,
+    path: string,
+    onError: (error: PlatformError.PlatformError) => WorkspaceError
+  ) =>
+    host.readFile(path).pipe(
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
+      Effect.mapError(onError)
+    )
   const readIfPresent = Effect.fn("WorkspaceSandbox.readIfPresent")(function*(path: string) {
-    return yield* fs.readFile(path).pipe(
-      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
-      Effect.mapError(hostFailure)
-    )
+    return yield* readFrom(fs, path, hostFailure)
   })
-  const realPathIfPresent = (path: string): Effect.Effect<string | undefined, WorkspaceError> =>
-    fs.realPath(path).pipe(
-      Effect.map(slashHostPath),
-      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
-      Effect.mapError(hostFailure)
-    )
-  // `readLink` succeeds exactly when the path is a symlink; every refusal —
-  // a regular file, a missing path, a host without links at all — is the
-  // same "nothing to resolve" answer.
-  const symlinkTarget = (path: string): Effect.Effect<string | undefined> =>
-    fs.readLink(path).pipe(Effect.catch(() => Effect.succeed(undefined)))
   const canonicalRoot = fs.realPath(root === "" ? "." : root).pipe(
-    Effect.map((resolved) => slashHostPath(resolved).replaceAll(/\/+$/g, "")),
     Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)),
     Effect.mapError(hostFailure)
   )
-  /**
-   * Fully resolves one change path and refuses it unless its canonical
-   * location stays inside the workspace root.
-   *
-   * `realPath` resolves every symlink in an existing path; a target that does
-   * not exist yet is anchored on its deepest existing ancestor instead, which
-   * is exactly where a directory symlink would redirect the write. The one
-   * shape `realPath` cannot see is a dangling symlink at the final component —
-   * its referent does not exist — so that is probed with `readLink` and the
-   * referent resolved recursively, fuel-bounded against link cycles. The check
-   * and the write are separate host calls, so a symlink planted between them
-   * is not excluded; closing that window needs an O_NOFOLLOW open, which
-   * Effect's `FileSystem` surface does not carry.
-   */
-  const confine = (
-    canonical: string,
-    path: string,
-    fuel: number
-  ): Effect.Effect<void, WorkspaceError> =>
-    Effect.gen(function*() {
-      const target = hostPath(path)
-      const resolved = yield* realPathIfPresent(target)
-      if (resolved !== undefined) {
-        const hit = reservedAt(`${canonical}/`, resolved)
-        if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
-        if (root !== "" && !contained(canonical, resolved)) return yield* Effect.fail(escapesWorkspace(path, resolved))
-        return
-      }
-      const segments = path.split("/")
-      let anchor = canonical
-      let remaining = path
-      for (let index = segments.length - 1; index >= 1; index--) {
-        const ancestor = yield* realPathIfPresent(hostPath(segments.slice(0, index).join("/")))
-        if (ancestor !== undefined) {
-          anchor = ancestor
-          remaining = segments.slice(index).join("/")
-          break
-        }
-      }
-      const speculative = `${anchor}/${remaining}`
-      const hit = reservedAt(`${canonical}/`, speculative)
-      if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
-      if (root !== "" && !contained(canonical, speculative)) {
-        return yield* Effect.fail(escapesWorkspace(path, speculative))
-      }
-      const nativeLink = yield* symlinkTarget(target)
-      if (nativeLink === undefined) return
-      const windows = isWindowsPath(canonical)
-      const link = windows ? nativeLink.replaceAll("\\", "/") : nativeLink
-      if (fuel <= 0) return yield* Effect.fail(escapesWorkspace(path, link))
-      // `speculative` is absolute, so the final component always has a parent.
-      const absolute = link.startsWith("/") || (windows && /^[A-Za-z]:/.test(link))
-      const referent = collapseDots(absolute ? link : `${parentDirectory(speculative)!}/${link}`)
-      if (referent === undefined || (root !== "" && !contained(canonical, referent))) {
-        return yield* Effect.fail(escapesWorkspace(path, referent ?? link))
-      }
-      return yield* confine(canonical, root === "" ? referent : referent.slice(canonical.length + 1), fuel - 1)
-    })
-  const assertConfined = Effect.fn("WorkspaceSandbox.assertConfined")(function*(
-    changes: ReadonlyArray<FileChange>
-  ) {
-    // Unrooted hosts have no confinement boundary, but still reserve aliases
-    // of the coordination directory rooted at their current directory.
-    const resolvedRoot = yield* canonicalRoot
-    // A root that does not resolve holds nothing beneath it, so no symlink
-    // can redirect a write. Hosts without `realPath` at all — the in-memory
-    // conformance hosts, a browser filesystem — land here too, and for them
-    // lexical confinement is exact because they cannot represent a symlink.
-    if (resolvedRoot === undefined) return
-    for (const change of changes) {
-      yield* confine(resolvedRoot, change.path, 8)
-    }
-  })
-  const withCommitLock = <E, R>(effect: Effect.Effect<void, E, R>, changes: ReadonlyArray<FileChange>) =>
+  const withCommitLock = <E, R>(
+    changes: ReadonlyArray<FileChange>,
+    effect: (host: FileSystem.FileSystem) => Effect.Effect<void, E, R>
+  ) =>
     Effect.gen(function*() {
       for (const change of changes) {
-        const hit = reservedAt("", change.path)
+        const hit = reservedAt(change.path)
         if (hit !== undefined) return yield* Effect.fail(refuseReserved(hit))
       }
       // mkdir without recursive is an exclusive create on filesystem hosts.
       // Unlike a file write, acquisition cannot leave a partly written lock.
       yield* fs.makeDirectory(root === "" ? "." : root, { recursive: true }).pipe(Effect.mapError(hostFailure))
+      // Pinned once per commit, after the root exists: every lock, preflight,
+      // apply, and rollback call below resolves against this root identity.
+      const host = yield* KernelFileSystem.confined(fs, root).pipe(
+        Effect.provide(Path.layer),
+        Effect.mapError(hostFailure)
+      )
       const canonical = yield* canonicalRoot
       const lockPath = hostPath(commitLockName)
       return yield* coordinateCommit(
@@ -1416,15 +1352,15 @@ export const makeFileSystem = (
         Effect.gen(function*() {
           while (true) {
             const committed = yield* Effect.acquireUseRelease(
-              fs.makeDirectory(lockPath).pipe(
+              host.makeDirectory(lockPath).pipe(
                 Effect.as(true),
                 Effect.catchReason("PlatformError", "AlreadyExists", () => Effect.succeed(false)),
-                Effect.mapError(hostFailure)
+                Effect.mapError(copyBackFailure(commitLockName))
               ),
-              (acquired) => acquired ? effect.pipe(Effect.as(true)) : Effect.succeed(false),
+              (acquired) => acquired ? effect(host).pipe(Effect.as(true)) : Effect.succeed(false),
               (acquired) =>
                 acquired
-                  ? fs.remove(lockPath, { recursive: true }).pipe(Effect.mapError(hostFailure))
+                  ? host.remove(lockPath, { recursive: true }).pipe(Effect.mapError(copyBackFailure(commitLockName)))
                   : Effect.void
             )
             if (committed) return
@@ -1436,6 +1372,106 @@ export const makeFileSystem = (
         })
       )
     })
+  const commitWith = Effect.fn("WorkspaceSandbox.commit")(function*(
+    host: FileSystem.FileSystem,
+    changes: ReadonlyArray<FileChange>
+  ) {
+    yield* Effect.annotateCurrentSpan({ changes: changes.length })
+    // The advisory lock and process semaphore cover preflight, apply, and
+    // rollback. Preconditions run only after both are acquired.
+    const { before, conflict } = yield* preflight(
+      changes,
+      (path) => readFrom(host, hostPath(path), copyBackFailure(path))
+    )
+    if (conflict !== undefined) {
+      yield* Metric.update(EngineStoreMetrics.materializationConflicts, 1)
+      return yield* Effect.fail(conflict)
+    }
+    const resolved = new Map<string, Uint8Array>()
+    for (const change of changes) {
+      if (change.afterDigest === undefined) continue
+      const bytes = change.after ?? (yield* artifacts.get(`${change.afterDigest}`).pipe(
+        Effect.mapError((error) =>
+          error._tag === "@smthrs/artifacts/ArtifactStoreError"
+            ? artifactFailure(error)
+            : new WorkspaceError({
+              code: "not_found",
+              message: `the retained bytes for ${change.path} are unavailable: ${error.message}`,
+              cause: error
+            })
+        )
+      ))
+      resolved.set(change.path, bytes)
+    }
+    const applied: Array<FileChange> = []
+    const apply = Effect.gen(function*() {
+      for (const change of changes) {
+        // Journal the change before touching its target: a write that
+        // fails halfway may still have mutated the file it was writing.
+        applied.push(change)
+        const target = hostPath(change.path)
+        if (change.afterDigest === undefined) {
+          yield* host.remove(target).pipe(Effect.mapError(copyBackFailure(change.path)))
+          continue
+        }
+        const parent = parentDirectory(target)
+        if (parent !== undefined) {
+          yield* host.makeDirectory(parent, { recursive: true }).pipe(
+            Effect.mapError(copyBackFailure(change.path))
+          )
+        }
+        yield* host.writeFile(target, resolved.get(change.path)!).pipe(
+          Effect.mapError(copyBackFailure(change.path))
+        )
+      }
+    })
+    const rollback = Effect.gen(function*() {
+      for (const change of [...applied].reverse()) {
+        const target = hostPath(change.path)
+        const previous = before.get(change.path)
+        if (previous === undefined) {
+          yield* host.remove(target, { force: true }).pipe(Effect.mapError(copyBackFailure(change.path)))
+        } else {
+          yield* host.writeFile(target, previous).pipe(Effect.mapError(copyBackFailure(change.path)))
+        }
+      }
+      // Keep empty parent directories. Effect's portable FileSystem has no
+      // atomic, non-recursive rmdir; recursively deleting a directory after
+      // a separate emptiness check could erase a concurrent writer's file.
+    })
+    yield* apply.pipe(
+      Effect.catchCause((cause) =>
+        Effect.gen(function*() {
+          const restored = yield* Effect.exit(rollback)
+          if (Exit.isSuccess(restored)) return yield* Effect.failCause(cause)
+          const reasons = restored.cause.reasons
+            .filter(Cause.isFailReason)
+            .map((reason) => reason.error.message)
+          // Both failures travel: the apply cause that opened the window and
+          // the rollback cause that could not close it, composed the way
+          // `acquireUseRelease` composes a failed use with a failed release.
+          return yield* Effect.failCause(
+            Cause.combine(
+              cause,
+              Cause.fail(
+                new WorkspaceError({
+                  code: "host_unavailable",
+                  message: `copy-back failed mid-apply and rollback could not restore the workspace: ${
+                    reasons.join("; ")
+                  }`,
+                  cause: restored.cause
+                })
+              )
+            )
+          )
+        })
+      ),
+      // Interruption inside the apply window is a mid-sequence abort the
+      // journal exists to prevent; the window is bounded local work, so it
+      // closes before the fiber answers the interrupt.
+      Effect.uninterruptible
+    )
+  })
   return makeHosted({
     root,
     snapshot: Effect.fn("WorkspaceSandbox.snapshot")(function*(descriptor) {
@@ -1483,97 +1519,7 @@ export const makeFileSystem = (
       bytes.length <= maxInlineBytes
         ? Effect.succeed(bytes)
         : artifacts.put(bytes).pipe(Effect.mapError(artifactFailure), Effect.as(undefined)),
-    commit: Effect.fn("WorkspaceSandbox.commit")(function*(changes) {
-      yield* Effect.annotateCurrentSpan({ changes: changes.length })
-      // The advisory lock and process semaphore cover confinement, preflight,
-      // apply, and rollback. Preconditions run only after both are acquired.
-      yield* assertConfined(changes)
-      const { before, conflict } = yield* preflight(changes, (path) => readIfPresent(hostPath(path)))
-      if (conflict !== undefined) {
-        yield* Metric.update(EngineStoreMetrics.materializationConflicts, 1)
-        return yield* Effect.fail(conflict)
-      }
-      const resolved = new Map<string, Uint8Array>()
-      for (const change of changes) {
-        if (change.afterDigest === undefined) continue
-        const bytes = change.after ?? (yield* artifacts.get(`${change.afterDigest}`).pipe(
-          Effect.mapError((error) =>
-            error._tag === "@smthrs/artifacts/ArtifactStoreError"
-              ? artifactFailure(error)
-              : new WorkspaceError({
-                code: "not_found",
-                message: `the retained bytes for ${change.path} are unavailable: ${error.message}`,
-                cause: error
-              })
-          )
-        ))
-        resolved.set(change.path, bytes)
-      }
-      const applied: Array<FileChange> = []
-      const apply = Effect.gen(function*() {
-        for (const change of changes) {
-          // Journal the change before touching its target: a write that
-          // fails halfway may still have mutated the file it was writing.
-          applied.push(change)
-          const target = hostPath(change.path)
-          if (change.afterDigest === undefined) {
-            yield* fs.remove(target).pipe(Effect.mapError(hostFailure))
-            continue
-          }
-          const parent = parentDirectory(target)
-          if (parent !== undefined) {
-            yield* fs.makeDirectory(parent, { recursive: true }).pipe(Effect.mapError(hostFailure))
-          }
-          yield* fs.writeFile(target, resolved.get(change.path)!).pipe(Effect.mapError(hostFailure))
-        }
-      })
-      const rollback = Effect.gen(function*() {
-        for (const change of [...applied].reverse()) {
-          const target = hostPath(change.path)
-          const previous = before.get(change.path)
-          if (previous === undefined) {
-            yield* fs.remove(target, { force: true }).pipe(Effect.mapError(hostFailure))
-          } else {
-            yield* fs.writeFile(target, previous).pipe(Effect.mapError(hostFailure))
-          }
-        }
-        // Keep empty parent directories. Effect's portable FileSystem has no
-        // atomic, non-recursive rmdir; recursively deleting a directory after
-        // a separate emptiness check could erase a concurrent writer's file.
-      })
-      yield* apply.pipe(
-        Effect.catchCause((cause) =>
-          Effect.gen(function*() {
-            const restored = yield* Effect.exit(rollback)
-            if (Exit.isSuccess(restored)) return yield* Effect.failCause(cause)
-            const reasons = restored.cause.reasons
-              .filter(Cause.isFailReason)
-              .map((reason) => reason.error.message)
-            // Both failures travel: the apply cause that opened the window and
-            // the rollback cause that could not close it, composed the way
-            // `acquireUseRelease` composes a failed use with a failed release.
-            return yield* Effect.failCause(
-              Cause.combine(
-                cause,
-                Cause.fail(
-                  new WorkspaceError({
-                    code: "host_unavailable",
-                    message: `copy-back failed mid-apply and rollback could not restore the workspace: ${
-                      reasons.join("; ")
-                    }`,
-                    cause: restored.cause
-                  })
-                )
-              )
-            )
-          })
-        ),
-        // Interruption inside the apply window is a mid-sequence abort the
-        // journal exists to prevent; the window is bounded local work, so it
-        // closes before the fiber answers the interrupt.
-        Effect.uninterruptible
-      )
-    }, withCommitLock)
+    commit: (changes) => withCommitLock(changes, (host) => commitWith(host, changes))
   })
 }
 
@@ -1587,18 +1533,24 @@ export const makeFileSystem = (
  * root arrives through the kernel's `Workspace` service, so absolute paths a
  * body resolved for itself still land inside the transaction.
  *
+ * The layer refuses to build over a host that {@link makeFileSystem} could
+ * not confine (a plain path-based `FileSystem`), failing with
+ * `host_unavailable`, so a composition that could never copy back safely is
+ * rejected at startup rather than at its first commit.
+ *
  * @category layers
  * @since 0.1.0
  */
 export const layerFileSystem = (
   options: FileSystemOptions = {}
-): Layer.Layer<Service, never, FileSystem.FileSystem | ArtifactStore.ArtifactStore | KernelWorkspace> =>
+): Layer.Layer<Service, WorkspaceError, FileSystem.FileSystem | ArtifactStore.ArtifactStore | KernelWorkspace> =>
   Layer.effect(
     WorkspaceSandbox,
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const artifacts = yield* ArtifactStore.ArtifactStore
       const workspace = yield* KernelWorkspace
+      yield* KernelFileSystem.requireConfinable(fs, workspace.root).pipe(Effect.mapError(hostFailure))
       return makeFileSystem(fs, artifacts, workspace.root, options)
     })
   )

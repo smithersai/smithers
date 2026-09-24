@@ -373,7 +373,7 @@ Scope-safe acquisition of one isolated workspace per step.
 | `StepSandbox`    | `Context.Service<Service>`                                                 | Service tag.                                                             |
 | `Service`        | `{ open: Effect<WorkspaceSandbox.Service, UnsupportedBoundary> }`          | Acquires the workspace.                                                  |
 | `make`           | `(workspace: WorkspaceSandbox.Service) => Service`                         | Wraps a transaction backend.                                             |
-| `layer`          | `Layer<Service, never, FileSystem \| ArtifactStore \| Workspace>`          | The filesystem-backed sandbox.                                           |
+| `layer`          | `Layer<Service, WorkspaceError, FileSystem \| ArtifactStore \| Workspace>` | The filesystem-backed sandbox. Refuses a path-based host at build.       |
 | `layerTest`      | `(initialFiles?: InitialFiles) => Layer<Service, WorkspaceError, Crypto>`  | Deterministic in-memory sandbox.                                         |
 | `layerNoop`      | `Layer<Service>`                                                           | Fails closed with `UnsupportedBoundary`, for a host that cannot sandbox. |
 | `UndeclaredRead` | tagged error, `code: "undeclared_read"`, fields `paths` and `diffIdentity` | A hermetic body read outside its declared read set.                      |
@@ -396,8 +396,13 @@ interface Service {
 }
 ```
 
-`materialize` checks confinement, digests, and retained bytes before changing
-files. The filesystem host serializes cooperating commits through preflight,
+`materialize` checks digests and retained bytes before changing files. Every
+copy-back host call is one descriptor-relative, no-follow request against the
+root pinned for that commit (`@smthrs/kernel/FileSystem`'s `confined`), so a
+symlink on a change's path, including one swapped in mid-commit, fails with
+`path_escapes_workspace` and is never followed. The host must carry the
+kernel's atomic executor (`@smthrs/platform-node`'s `AtomicFileSystem`), an
+isolation attestation, or be the kernel-guarded filesystem for the same root. The filesystem host serializes cooperating commits through preflight,
 apply, and rollback, using a workspace-root semaphore and the exclusively
 created `.smithers-workspace-lock` advisory directory. The directory and its
 children are reserved, as are the `.flows` engine state directory and every
@@ -420,7 +425,7 @@ stopped and reconciling the workspace. Lock waits are interruptible.
 | `makeHosted`                | `(host: Host) => Service`                                                                                                          | The transaction itself, over a `Host`.                                                                                      |
 | `makeMemory`                | `(initialFiles?: InitialFiles) => Effect<MemorySandbox, WorkspaceError, Crypto>`                                                   | Deterministic, browser-safe, and the conformance implementation. Seeds the whole tree, so an undeclared read is observable. |
 | `makeFileSystem`            | `(fs: FileSystem, artifacts: ArtifactStore.Service, workspaceRoot: string, options?: FileSystemOptions) => Service`                | The production host.                                                                                                        |
-| `layerFileSystem`           | `(options?: FileSystemOptions) => Layer<Service, never, FileSystem \| ArtifactStore \| Workspace>`                                 | Provides it, taking the root from the kernel `Workspace`.                                                                   |
+| `layerFileSystem`           | `(options?: FileSystemOptions) => Layer<Service, WorkspaceError, FileSystem \| ArtifactStore \| Workspace>`                        | Provides it, taking the root from the kernel `Workspace`. Fails with `host_unavailable` over a path-based host.             |
 | `Workspace`                 | `Context.Service<Workspace>`                                                                                                       | The in-transaction filesystem and effect outbox, available only inside `execute`.                                           |
 | `EffectDispatcher`          | `Context.Service<Dispatcher>`                                                                                                      | The post-copy-back dispatch stage. Optional.                                                                                |
 | `layerDispatcher`           | `(dispatcher: Dispatcher) => Layer<Dispatcher>`                                                                                    | Provides one.                                                                                                               |

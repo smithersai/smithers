@@ -6,6 +6,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj/Jj"
+import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import { Migrations as RunMigrations, RunStore } from "@smthrs/run-store"
 import { Context, Effect, Exit, Layer } from "effect"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -80,7 +81,7 @@ it("uses the caller's SQL instance for every migrated store without opening a se
       }).pipe(
         Effect.provide(Layer.mergeAll(
           NodeDatabase.layer({ filename: ":memory:" }),
-          NodeFileSystem.layer,
+          AtomicFileSystem.layer,
           NodeCrypto.layer,
           NodePath.layer,
           Jj.layerNoop({})

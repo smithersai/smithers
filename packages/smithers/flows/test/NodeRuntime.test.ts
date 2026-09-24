@@ -33,6 +33,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Crypto from "effect/Crypto"
@@ -107,15 +108,19 @@ const hostCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(
   })
 )
 
-/** The composition itself only needs to create the configured database parent. */
+/**
+ * The composition itself only needs to create the configured database parent.
+ * The stub addresses nothing else, so it attests whole-volume isolation, which
+ * the workspace sandbox requires of any host it copies back onto.
+ */
 const hostFileSystem: Layer.Layer<FileSystem.FileSystem> = Layer.succeed(
   FileSystem.FileSystem,
-  FileSystem.makeNoop({
+  KernelFileSystem.withIsolatedFileSystem(FileSystem.makeNoop({
     makeDirectory: (path, options) =>
       Effect.sync(() => {
         mkdirSync(path, { recursive: options?.recursive })
       })
-  })
+  }))
 )
 
 /** The three services the composition leaves to the host program. */

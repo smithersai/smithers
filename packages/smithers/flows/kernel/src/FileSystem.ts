@@ -327,6 +327,192 @@ const dispatch = (handlers: AtomicHandlers): AtomicFileSystem["execute"] => {
   }
 }
 
+/** The root a descriptor-relative request is resolved against, captured once. */
+interface PinnedRoot {
+  readonly boundaryRoot: string
+  readonly logicalRoot: string
+  readonly rootIdentity: string | undefined
+}
+
+/**
+ * Stamps a request with its pinned root and runs it through the executor. The
+ * one place both the guarded layer and {@link confined} build the wire request,
+ * so the two surfaces cannot drift apart.
+ */
+const pinned =
+  (atomic: AtomicFileSystem, root: PinnedRoot) =>
+  <R extends AtomicRequest>(request: R): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
+    atomic.execute<R>({ ...request, ...root })
+
+const unconfinedDescription = "host does not provide descriptor-relative, no-follow filesystem isolation"
+
+const unconfined = (method: string, pathOrDescriptor: string): PlatformError.PlatformError =>
+  PlatformError.systemError({
+    _tag: "PermissionDenied",
+    module: "FileSystem",
+    method,
+    pathOrDescriptor,
+    description: unconfinedDescription
+  })
+
+/**
+ * Brands a {@link confined} view with the logical root it is pinned to, so a
+ * caller handed an already-confined view does not wrap it a second time.
+ */
+const ConfinedFileSystemTypeId = Symbol.for("@smthrs/kernel/ConfinedFileSystem")
+
+/**
+ * Whether {@link confined} can build a view over this filesystem: it carries a
+ * descriptor-relative executor, or a whole-filesystem isolation attestation.
+ * A plain path-based host answers `false`.
+ *
+ * @since 1.0.0-rc.1
+ * @category security
+ */
+export const isConfinable = (fileSystem: EffectFileSystem.FileSystem): boolean =>
+  ConfinedFileSystemTypeId in fileSystem || AtomicFileSystemTypeId in fileSystem
+
+/**
+ * Fails with the typed `PermissionDenied` refusal unless {@link confined} can
+ * build a view over this filesystem. Composition-time check for layers that
+ * pin their root later, when it is known to exist.
+ *
+ * @since 1.0.0-rc.1
+ * @category security
+ */
+export const requireConfinable = (
+  fileSystem: EffectFileSystem.FileSystem,
+  root: string
+): Effect.Effect<void, PlatformError.PlatformError> =>
+  isConfinable(fileSystem) ? Effect.void : Effect.fail(unconfined("confined", root))
+
+/**
+ * A filesystem view confined to `root` without capability checks: engine
+ * machinery that must not ask a grant store for its own bookkeeping, but must
+ * still never be redirected outside the workspace.
+ *
+ * Every operation is one descriptor-relative request against the root pinned
+ * here (its canonical path and `device:inode` identity), resolved by the host
+ * helper with `O_NOFOLLOW` at each component, so there is no window between a
+ * check and a write for a symlink to be swapped into. A symlink anywhere on the
+ * path, a hard-linked file, `..` traversal, or a root whose identity changed is
+ * refused by the host, never followed. The requests are exactly the ones the
+ * guarded {@link layer} sends, minus the grant check.
+ *
+ * A host carrying a whole-filesystem isolation attestation
+ * ({@link withIsolatedFileSystem}) is returned as it is: its attestation is
+ * the boundary. So is the guarded {@link layer}'s own service when it is
+ * rooted at the same workspace, since each of its path operations is already
+ * one such request. A plain path-based host is refused with `PermissionDenied`, so
+ * there is no path-based fallback that claims confinement. Operations that
+ * cannot be expressed as one atomic request (`open`, `stream`, `sink`, `copy`,
+ * `link`, `symlink`, `watch`, `truncate`, `utimes`, `access`, and every
+ * `makeTemp*`) fail with the same refusal.
+ *
+ * The root must exist when the view is built.
+ *
+ * @since 1.0.0-rc.1
+ * @category security
+ */
+export const confined = (
+  fileSystem: EffectFileSystem.FileSystem,
+  root: string
+): Effect.Effect<EffectFileSystem.FileSystem, PlatformError.PlatformError, EffectPath.Path> =>
+  Effect.gen(function*() {
+    const path = yield* EffectPath.Path
+    const logicalRoot = path.resolve(root === "" ? "." : root)
+    const existing = (fileSystem as { readonly [ConfinedFileSystemTypeId]?: string })[ConfinedFileSystemTypeId]
+    if (existing === logicalRoot) return fileSystem
+    const atomic = (fileSystem as Partial<AtomicHostFileSystem>)[AtomicFileSystemTypeId]
+    if (atomic === undefined) return yield* Effect.fail(unconfined("confined", logicalRoot))
+    if (atomic.isolated !== undefined) return fileSystem
+    const boundaryRoot = yield* fileSystem.realPath(logicalRoot)
+    const info = yield* fileSystem.stat(boundaryRoot)
+    if (Option.isNone(info.ino)) return yield* Effect.fail(unconfined("confined", logicalRoot))
+    const run = pinned(atomic, { boundaryRoot, logicalRoot, rootIdentity: `${info.dev}:${info.ino.value}` })
+    const normalize = (value: string): string => path.resolve(logicalRoot, value)
+    const refuse = (method: string, value: string): Effect.Effect<never, PlatformError.PlatformError> =>
+      Effect.fail(unconfined(method, normalize(value)))
+    const view: EffectFileSystem.FileSystem = {
+      ...EffectFileSystem.make({
+        access: (value) => refuse("access", value),
+        copy: (from) => refuse("copy", from),
+        copyFile: (from) => refuse("copyFile", from),
+        chmod: (value, mode) => run({ operation: "chmod", path: normalize(value), options: { mode } }),
+        chown: (value, uid, gid) => run({ operation: "chown", path: normalize(value), options: { uid, gid } }),
+        glob: (pattern, options) => {
+          const base = options?.root === undefined ? logicalRoot : normalize(options.root)
+          return run({
+            operation: "glob",
+            pattern: path.resolve(base, pattern),
+            root: base,
+            options: options === undefined ? undefined : { exclude: options.exclude ?? [] }
+          })
+        },
+        link: (from) => refuse("link", from),
+        makeDirectory: (value, options) =>
+          run({
+            operation: "makeDirectory",
+            path: normalize(value),
+            options
+          }),
+        makeTempDirectory: () => refuse("makeTempDirectory", logicalRoot),
+        makeTempDirectoryScoped: () => refuse("makeTempDirectoryScoped", logicalRoot),
+        makeTempFile: () => refuse("makeTempFile", logicalRoot),
+        makeTempFileScoped: () => refuse("makeTempFileScoped", logicalRoot),
+        open: (value) => refuse("open", value),
+        readDirectory: (value, options) =>
+          run({
+            operation: "readDirectory",
+            path: normalize(value),
+            options
+          }),
+        readFile: (value) => run({ operation: "readFile", path: normalize(value) }),
+        readLink: (value) => run({ operation: "readLink", path: normalize(value) }),
+        realPath: (value) => run({ operation: "realPath", path: normalize(value) }),
+        remove: (value, options) =>
+          run({
+            operation: "remove",
+            path: normalize(value),
+            options
+          }),
+        rename: (from, to) => run({ operation: "rename", from: normalize(from), to: normalize(to) }),
+        stat: (value) => run({ operation: "stat", path: normalize(value) }),
+        symlink: (_from, to) => refuse("symlink", to),
+        truncate: (value) => refuse("truncate", value),
+        utimes: (value) => refuse("utimes", value),
+        watch: (value) => Stream.fail(unconfined("watch", normalize(value))),
+        writeFile: (value, data, options) => {
+          const limit = atomic.contentLimit
+          if (limit !== undefined && data.byteLength > limit) {
+            return Effect.fail(PlatformError.badArgument({
+              module: "FileSystem",
+              method: "writeFile",
+              description:
+                `writeFile payload of ${data.byteLength} bytes exceeds the ${limit} byte limit advertised by the host`
+            }))
+          }
+          return run({
+            operation: "writeFile",
+            path: normalize(value),
+            data: Encoding.encodeBase64(data),
+            options
+          })
+        }
+      }),
+      exists: (value) => run({ operation: "exists", path: normalize(value) }),
+      readFileString: (value, encoding) => run({ operation: "readFileString", path: normalize(value), encoding }),
+      writeFileString: (value, data, options) =>
+        run({
+          operation: "writeFileString",
+          path: normalize(value),
+          data,
+          options
+        })
+    }
+    return Object.assign(view, { [ConfinedFileSystemTypeId]: logicalRoot })
+  })
+
 const readableOpenFlags: ReadonlySet<EffectFileSystem.OpenFlag> = new Set([
   "r",
   "r+",
@@ -474,6 +660,7 @@ export const layer: Layer.Layer<
     const rootIdentity = boundaryInfo === undefined
       ? Option.none<string>()
       : Option.map(boundaryInfo.ino, (ino) => `${boundaryInfo.dev}:${ino}`)
+    const root: PinnedRoot = { boundaryRoot, logicalRoot, rootIdentity: Option.getOrUndefined(rootIdentity) }
     const refuse = (method: string, resource: string) => (error: PermissionError): PlatformError.PlatformError =>
       toPlatformError({ module: "FileSystem", method, pathOrDescriptor: resource, error })
     const deny = (action: "fs:read" | "fs:write", method: string, resource: string, reason: string) =>
@@ -545,7 +732,7 @@ export const layer: Layer.Layer<
         action,
         method,
         normalize(value),
-        "host does not provide descriptor-relative, no-follow filesystem isolation"
+        unconfinedDescription
       )
     const atomicOne = <R extends AtomicRequest>(
       action: "fs:read" | "fs:write",
@@ -555,16 +742,7 @@ export const layer: Layer.Layer<
     ): Effect.Effect<AtomicResult<R>, PlatformError.PlatformError> =>
       atomic === undefined
         ? atomicUnavailable(action, value, method)
-        : guard(action, value).pipe(
-          Effect.andThen(
-            atomic.execute<R>({
-              ...request,
-              boundaryRoot,
-              logicalRoot,
-              rootIdentity: Option.getOrUndefined(rootIdentity)
-            })
-          )
-        )
+        : guard(action, value).pipe(Effect.andThen(pinned(atomic, root)(request)))
     const atomicTwo = <R extends AtomicRequest>(
       first: readonly ["fs:read" | "fs:write", string],
       second: readonly ["fs:read" | "fs:write", string],
@@ -575,14 +753,7 @@ export const layer: Layer.Layer<
         ? atomicUnavailable(first[0], first[1], method)
         : guard(first[0], first[1]).pipe(
           Effect.andThen(guard(second[0], second[1])),
-          Effect.andThen(
-            atomic.execute<R>({
-              ...request,
-              boundaryRoot,
-              logicalRoot,
-              rootIdentity: Option.getOrUndefined(rootIdentity)
-            })
-          )
+          Effect.andThen(pinned(atomic, root)(request))
         )
     const isolatedOne = <A>(
       action: "fs:read" | "fs:write",
@@ -988,6 +1159,10 @@ export const layer: Layer.Layer<
         })
       })
     }
+    // Every path operation of the guarded surface is already one
+    // descriptor-relative request against this root (or refuses), so machinery
+    // composed over it may use it as its confined view.
+    Object.assign(guarded, { [ConfinedFileSystemTypeId]: logicalRoot })
     if (atomic === undefined || atomic.batchLimits === undefined) {
       return guarded
     } else {
