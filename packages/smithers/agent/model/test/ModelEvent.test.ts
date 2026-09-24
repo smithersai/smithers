@@ -89,6 +89,16 @@ describe("ModelEvent", () => {
     expect(settled.message.content).toEqual([{ type: "text", text: "complete" }])
   })
 
+  it("settles usage from the successful attempt after a retry", () => {
+    const settled = Events.settledMessage([
+      { type: "usage", inputTokens: 100, outputTokens: 20, reasoningTokens: 10, totalTokens: 120 },
+      { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+      { type: "usage", inputTokens: 8, outputTokens: 4, totalTokens: 12 },
+      { type: "settle", stopReason: "stop" }
+    ])
+    expect(settled.usage).toEqual({ inputTokens: 8, outputTokens: 4, totalTokens: 12 })
+  })
+
   it("keeps two concurrently open text blocks separate and in order", () => {
     const settled = Events.settledMessage([
       { type: "text-start", id: "first" },
