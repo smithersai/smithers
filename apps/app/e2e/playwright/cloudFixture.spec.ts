@@ -2,6 +2,7 @@ import { expect, test, type Page } from "@playwright/test"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { ReposResponseSchema } from "@smthrs/rpc/LocalApp"
 import { CloudSessionSchema } from "@smthrs/rpc/CloudTunnel"
+import { arrayOf, bookmarkPage, parseOrg, parseBookmark, parseRepo, parseWorkspace } from "../../src/mainview/state/seams/RepositoriesSeam"
 import { installCloudFixture } from "./cloudFixture.ts"
 
 const read = (page: Page, path: string) => page.evaluate(async (path) => {
@@ -22,15 +23,14 @@ test("cloud fixture uses the shared local contracts and current cloud list envel
   expect(CloudSessionSchema.parse((await read(page, "/api/cloud-auth/session")).body).state).toBe("signed-in")
   expect((await read(page, "/api/auth/session")).body).toMatchObject({ login: "codeplanesmithers", admin: false })
   for (const query of ["", "?limit=100&cursor=next"]) {
-    expect((await read(page, `/api/user/repos${query}`)).body).toEqual([
-      expect.objectContaining({ full_name: "smithersai/smithers", owner_type: "Organization" })
+    expect(arrayOf((await read(page, `/api/user/repos${query}`)).body, "repos").map(parseRepo)).toEqual([
+      expect.objectContaining({ id: "smithersai/smithers", ownerType: "org", defaultBookmark: "main" })
     ])
-    expect((await read(page, `/api/user/orgs${query}`)).body).toEqual([{ name: "smithersai" }])
-    expect((await read(page, `/api/user/workspaces${query}`)).body).toEqual([])
-    expect((await read(page, `/api/repos/smithersai/smithers/bookmarks${query}`)).body).toEqual({
-      items: [{ name: "main", target_change_id: "kxyzqrpv", target_commit_id: "c0ffee123456", is_tracking_remote: false }],
-      next_cursor: ""
-    })
+    expect(arrayOf((await read(page, `/api/user/orgs${query}`)).body, "orgs").map(parseOrg)).toEqual(["smithersai"])
+    expect(arrayOf((await read(page, `/api/user/workspaces${query}`)).body, "workspaces").map(parseWorkspace)).toEqual([])
+    const bookmarks = bookmarkPage((await read(page, `/api/repos/smithersai/smithers/bookmarks${query}`)).body)
+    expect(bookmarks.next).toBeNull()
+    expect(bookmarks.rows.map(parseBookmark)).toEqual([{ name: "main", changeId: "kxyzqrpv", commitId: "c0ffee123456" }])
   }
 })
 
@@ -52,21 +52,21 @@ test("cloud fixture overrides stay isolated and match repository pathnames liter
   expect((await read(page, "/api/repos")).body).toEqual({ repos: [localRepo] })
   expect((await read(page, "/api/bootstrap")).body.capabilities).toEqual(["cloud"])
   expect((await read(page, "/api/cloud-auth/session")).body.scopes).toBe("degraded")
-  expect((await read(page, "/api/user/orgs")).body).toEqual([])
-  expect((await read(page, "/api/user/workspaces?limit=100")).body).toEqual([workspace])
+  expect(arrayOf((await read(page, "/api/user/orgs")).body, "orgs").map(parseOrg)).toEqual([])
+  expect(arrayOf((await read(page, "/api/user/workspaces?limit=100")).body, "workspaces").map(parseWorkspace)).toEqual([{ id: "ws-9", repoId: "visitor/demo.v2", label: "review", state: "running" }])
   const path = "/api/repos/visitor/demo.v2/bookmarks"
-  expect((await read(page, `${path}?limit=1`)).body.items).toEqual([
-    { name: "review", target_change_id: "change-9", target_commit_id: "commit-9", is_tracking_remote: true }
+  expect(bookmarkPage((await read(page, `${path}?limit=1`)).body).rows.map(parseBookmark)).toEqual([
+    { name: "review", changeId: "change-9", commitId: "commit-9" }
   ])
   expect((await read(page, path.replace("demo.v2", "demoXv2"))).status).toBe(404)
   await page.route((url) => url.pathname === path, (route) => route.fulfill({ json: { items: [], next_cursor: "" } }))
-  expect((await read(page, path)).body).toEqual({ items: [], next_cursor: "" })
+  expect(bookmarkPage((await read(page, path)).body)).toEqual({ rows: [], next: null })
 
   const other = await context.newPage()
   await installCloudFixture(other)
   await other.route("**/fixture", (route) => route.fulfill({ contentType: "text/html", body: "<title>Other fixture</title>" }))
   await other.goto("/fixture")
   expect((await read(other, "/api/cloud-auth/session")).body.scopes).toBeUndefined()
-  expect((await read(other, "/api/user/workspaces")).body).toEqual([])
-  expect((await read(other, "/api/user/repos")).body[0].full_name).toBe("smithersai/smithers")
+  expect(arrayOf((await read(other, "/api/user/workspaces")).body, "workspaces").map(parseWorkspace)).toEqual([])
+  expect(arrayOf((await read(other, "/api/user/repos")).body, "repos").map(parseRepo)[0]?.id).toBe("smithersai/smithers")
 })

@@ -80,7 +80,7 @@ const backend = (path: string): Response => {
     case "api/user/repos":
       return json(200, REPOS)
     case "api/user/orgs":
-      return json(200, [{ login: "plue" }])
+      return json(200, [{ name: "plue" }])
     case "api/repos/will/smithers/bookmarks":
       return json(200, BOOKMARK_WIRE.page([
         BOOKMARK_WIRE.row("main", "qupxosqw", "c0ffee1"),

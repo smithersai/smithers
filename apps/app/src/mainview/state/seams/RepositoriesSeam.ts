@@ -58,7 +58,7 @@ const MAX_INVENTORY_PAGES = 100
 const str = (value: unknown): string | null => typeof value === "string" && value !== "" ? value : null
 
 /** User lists use arrays; bookmarks use a cursor envelope. Accept legacy named lists too. */
-const arrayOf = (body: unknown, key: string): ReadonlyArray<unknown> => {
+export const arrayOf = (body: unknown, key: string): ReadonlyArray<unknown> => {
   if (Array.isArray(body)) return body
   if (isRecord(body) && Array.isArray(body[key])) return body[key]
   if (isRecord(body) && Array.isArray(body.items)) return body.items
@@ -71,8 +71,12 @@ const ownerLogin = (value: unknown): string | null => {
   return null
 }
 
+/** Organization inventories use name; older identity proxies used login. */
+export const parseOrg = (value: unknown): string | null =>
+  isRecord(value) ? str(value.name) ?? ownerLogin(value) : ownerLogin(value)
+
 /** One repo row off the wire; malformed rows drop. */
-const parseRepo = (value: unknown): RepoWire | null => {
+export const parseRepo = (value: unknown): RepoWire | null => {
   if (!isRecord(value)) return null
   const fullName = typeof value.full_name === "string" ? value.full_name : null
   const org = ownerLogin(value.owner) ?? fullName?.split("/")[0] ?? null
@@ -103,7 +107,7 @@ const parseRepo = (value: unknown): RepoWire | null => {
  * One page of the bookmarks route: plue's `{ items, next_cursor }` envelope
  * (an empty cursor closes the list), or the bare list an older proxy answered.
  */
-const bookmarkPage = (body: unknown): { readonly rows: ReadonlyArray<unknown>; readonly next: string | null } => {
+export const bookmarkPage = (body: unknown): { readonly rows: ReadonlyArray<unknown>; readonly next: string | null } => {
   if (Array.isArray(body)) return { rows: body, next: null }
   if (!isRecord(body)) return { rows: [], next: null }
   const rows = Array.isArray(body.items) ? body.items : Array.isArray(body.bookmarks) ? body.bookmarks : []
@@ -111,7 +115,7 @@ const bookmarkPage = (body: unknown): { readonly rows: ReadonlyArray<unknown>; r
 }
 
 /** One bookmark row off the wire; malformed rows drop. */
-const parseBookmark = (value: unknown): { readonly name: string; readonly changeId: string | null; readonly commitId: string | null } | null => {
+export const parseBookmark = (value: unknown): { readonly name: string; readonly changeId: string | null; readonly commitId: string | null } | null => {
   if (!isRecord(value) || typeof value.name !== "string" || value.name === "") return null
   return {
     name: value.name,
@@ -127,7 +131,7 @@ const parseBookmark = (value: unknown): { readonly name: string; readonly change
  * ADR 0002's per-repo DTO (id, repo_full_name, name, status) is still read
  * for a proxy that answered it.
  */
-const parseWorkspace = (value: unknown): { readonly id: string; readonly repoId: string; readonly label: string; readonly state: string | null } | null => {
+export const parseWorkspace = (value: unknown): { readonly id: string; readonly repoId: string; readonly label: string; readonly state: string | null } | null => {
   if (!isRecord(value)) return null
   const switcherId = str(value.workspace_id)
   const owner = str(value.repository_owner)
@@ -271,7 +275,7 @@ export const createRepositoriesSeam = (ctx: SeamContext): RepositoriesSeam => {
         "error" in orgsAnswer
           ? []
           : orgsAnswer.rows.flatMap((entry) => {
-            const login = isRecord(entry) ? ownerLogin(entry) : ownerLogin(entry)
+            const login = parseOrg(entry)
             return login === null ? [] : [login]
           })
       )
