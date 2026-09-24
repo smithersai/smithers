@@ -286,6 +286,29 @@ describe("bug worker", () => {
     expect(nextHour.status).toBe(201);
   });
 
+  test("rejected posts never spend the IP's hourly budget", async () => {
+    const clock = Date.parse("2026-07-02T10:00:00Z");
+    const worker = createBugWorker({ now: () => clock });
+    const env = makeEnv(() => clock);
+    const ip = "203.0.113.77";
+    const rejected = [
+      { request: postBug("not json", ip), status: 400 },
+      { request: postBug({ detail: "no summary" }, ip), status: 400 },
+      { request: postDeclared(bodyOfExactBytes(MAX_PAYLOAD_BYTES + 1), ip), status: 413 },
+    ];
+    for (let i = 0; i < 25; i++) {
+      const { request, status } = rejected[i % rejected.length]!;
+      const res = await worker.fetch(request.clone(), env);
+      expect(res.status).toBe(status);
+    }
+    for (let i = 0; i < 20; i++) {
+      const res = await worker.fetch(postBug({ summary: `real bug ${i}` }, ip), env);
+      expect(res.status).toBe(201);
+    }
+    const blocked = await worker.fetch(postBug({ summary: "real bug 21" }, ip), env);
+    expect(blocked.status).toBe(429);
+  });
+
   test("admin GET requires x-bug-admin and returns the stored record", async () => {
     const worker = createBugWorker();
     const env = makeEnv();

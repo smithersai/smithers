@@ -74,8 +74,8 @@ title-only report.
 - `POST /api/bugs` — zod-validated report: a non-blank `summary` or `title` is
   required, every other key is optional, and the object stays loose. 256KB cap
   (stream-counted, so a missing/spoofed content-length can't buffer past the
-  cap), per-IP rate limit of 20/hour via a
-  KV counter. The KV counter is **best-effort/advisory** — KV has no atomic
+  cap), per-IP rate limit of 20 valid reports/hour via a KV counter; a 400 or
+  413 never spends the budget. The KV counter is **best-effort/advisory** — KV has no atomic
   increment, so a concurrent burst from one IP can race past the limit; use a
   Durable Object or a Rate Limiting binding if a hard cap is ever needed.
   Stores `bug:<id>` and returns `{ id, url }`. No auth: reporting must be

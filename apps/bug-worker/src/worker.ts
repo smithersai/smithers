@@ -36,19 +36,6 @@ async function handlePostBug(request: Request, env: BugWorkerEnv, now: number): 
     return json(413, { error: "payload too large", maxBytes: MAX_PAYLOAD_BYTES });
   }
 
-  const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "unknown";
-  // A KV exception escaping the fetch handler becomes workerd's 1101 HTML
-  // page; answer a clean JSON error instead.
-  let allowed: boolean;
-  try {
-    allowed = await checkRateLimit(env, ip, now);
-  } catch {
-    return json(503, { error: "storage unavailable" });
-  }
-  if (!allowed) {
-    return json(429, { error: `rate limit exceeded (${RATE_LIMIT_PER_HOUR} reports per hour per IP)` });
-  }
-
   const raw = await readBodyBounded(request, MAX_PAYLOAD_BYTES);
   if (raw === null) {
     return json(413, { error: "payload too large", maxBytes: MAX_PAYLOAD_BYTES });
@@ -63,6 +50,20 @@ async function handlePostBug(request: Request, env: BugWorkerEnv, now: number): 
   const result = bugReportSchema.safeParse(parsed);
   if (!result.success) {
     return json(400, { error: "invalid bug report", issues: result.error.issues });
+  }
+
+  const ip = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for") ?? "unknown";
+  // The budget counts valid reports only, so rejected requests never spend a
+  // reporter's hourly quota. A KV exception escaping the fetch handler becomes
+  // workerd's 1101 HTML page; answer a clean JSON error instead.
+  let allowed: boolean;
+  try {
+    allowed = await checkRateLimit(env, ip, now);
+  } catch {
+    return json(503, { error: "storage unavailable" });
+  }
+  if (!allowed) {
+    return json(429, { error: `rate limit exceeded (${RATE_LIMIT_PER_HOUR} reports per hour per IP)` });
   }
 
   const id = newBugId(now);
