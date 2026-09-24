@@ -534,7 +534,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
           if (terminal && receipt.phase !== "completed") next = { ...next,
             previousReceipts: [...next.previousReceipts.filter(item => item.requestId !== receipt.requestId), receipt].slice(-50) }
           if (receipt.phase === "completed" && intent.operation === "apply" && !observing()) {
-            if (!receipt.registrationId || !receipt.sourceRevision || !receipt.evidence.length) throw Error("The host did not confirm the saved workflow and active registration.")
+            if (!receipt.registrationId || !receipt.sourceRevision || !receipt.evidence.length) throw Error("The host did not confirm the saved flow and active registration.")
             next = { ...next, active: { revision: intent.revision, digest: intent.digest, registrationId: receipt.registrationId, sourceRevision: receipt.sourceRevision, enabled: true, draft: latest.payload.draft } }
           }
           if (receipt.phase === "completed" && intent.operation === "pause" && !observing()) {
