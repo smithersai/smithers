@@ -26,6 +26,35 @@ never a deletion: the gitignored census holds every ignored file's bytes in a
 stash before the body runs, and a tree it cannot hold whole refuses the target
 before it runs at all.
 
+### Another writer during a guarded run
+
+The census covers the whole tree, so it also sees what an editor, an agent, or
+a second build process changed while the body ran. The guard judges only the
+changes the body could have made:
+
+- A confined tool can write only where its sandbox binds the tree writable: the
+  directories of its declared outputs and write set, and the parent directory
+  of each declared output file. A change anywhere else was made by someone
+  else, and the guard neither reverts nor reports it.
+- An in-process body (an agent candidate, `Github.CiGen`) writes paths it names
+  before it writes them, so only those paths are judged.
+- A tool that runs unconfined (`sandbox: "none"`, or a host with no mechanism)
+  could have written anywhere, so every change is judged.
+
+A revert never destroys bytes. Before it restores or removes a path, the guard
+copies what stands there into `<cache directory>/reverted/<target>-<time>/`,
+at the same relative path, and the failure names that directory:
+
+```text
+wrote outside its declared write-set (reverted): lib/user.ts; the reverted bytes are kept at .flows/reverted/fmt-2026-09-24T17-01-02-003Z-9f2a1c
+```
+
+The residual case is a foreign change inside a directory the tool may write,
+for example a sibling of a declared output file at the workspace root. It is
+reverted and the target fails, and the edit is recoverable from the quarantine.
+Nothing removes a quarantine: `cache clear` removes action results only, so
+delete `reverted/` by hand once you have what you need.
+
 Dirty-file and escaping-symlink snapshots retain full file permission bits.
 Rollback restores those bits with the bytes, including private modes such as
 `0600` and `0640`; permission-only changes also count as writes. If either

@@ -177,6 +177,17 @@ explicit, or declare `sandbox: "none"` to opt out of confinement; listing a serv
 That is the guard working. The target mutated a path its declaration does not
 cover. Add the path to the declared write set, or stop writing it.
 
+The failure ends with `the reverted bytes are kept at <cache directory>/reverted/…`.
+That directory holds whatever the revert removed, at the same relative paths.
+
+**The reverted path is one you edited yourself while the target ran.**
+
+The guard cannot tell your edit from the tool's when the tool could write that
+path, such as a file beside a declared output at the workspace root, or any
+path when the target runs with `sandbox: "none"`. Copy your edit back from the
+quarantine directory the failure names. Changes outside the tool's writable
+directories are never judged, so an edit elsewhere in the tree is left alone.
+
 **A change is reported `not restored`.**
 
 The write landed inside a nested repository, a directory git does not enter.

@@ -508,13 +508,82 @@ export const resolveChangedPath = (root: string, path: string): string | undefin
 }
 
 /**
- * Restores one path to its snapshot state.
+ * The changes a guarded body could have made: those whose resolved location
+ * lies inside one of the workspace-relative `admitted` locations (`""` is the
+ * whole workspace). Anything else was written by someone else while the body
+ * ran, because the body could not write there, and the guard leaves it alone.
+ * `undefined` admits every change: nothing bounds where the body wrote.
+ *
+ * @category write sets
+ * @since 1.0.0
+ */
+export const judgedChanges = (
+  root: string,
+  changed: ReadonlyArray<string>,
+  admitted: ReadonlyArray<string> | undefined
+): ReadonlyArray<string> => {
+  if (admitted === undefined) return changed
+  return changed.filter((path) => {
+    const resolved = resolveChangedPath(root, path)
+    if (resolved === undefined) return false
+    return admitted.some((location) => location === "" || resolved === location || resolved.startsWith(`${location}/`))
+  })
+}
+
+/**
+ * Where the write-set guard keeps the bytes it removes from the tree: one
+ * directory per guarded body under `<cacheDirectory>/reverted/`, created on
+ * the first copy. The guard judges a whole-tree difference and cannot always
+ * tell the body's write from another writer's edit made while the body ran,
+ * so it never removes bytes it has not first copied here. The cache directory
+ * is outside both censuses, so a quarantine is never itself judged.
+ *
+ * @category write sets
+ * @since 1.0.0
+ */
+export interface Quarantine {
+  readonly root: string
+  /** Workspace-relative directory the copies land in, mirroring each path. */
+  readonly directory: string
+  /** Workspace-relative paths copied so far. */
+  readonly held: Array<string>
+}
+
+/**
+ * Names the quarantine for one guarded body. Nothing is created until a
+ * revert copies bytes into it.
+ *
+ * @category write sets
+ * @since 1.0.0
+ */
+export const openQuarantine = (root: string, cacheDirectory: string, label: string): Quarantine => {
+  const slug = label.replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[_.]+|_+$/g, "") || "body"
+  const stamp = `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`
+  return { root, directory: `${posix(cacheDirectory)}/reverted/${slug}-${stamp}`, held: [] }
+}
+
+/** Copies the current bytes at `path` into the quarantine before a revert removes them. */
+const quarantinePath = async (quarantine: Quarantine | undefined, path: string): Promise<void> => {
+  if (quarantine === undefined) return
+  const absolute = NodePath.join(quarantine.root, path)
+  const present = await Fs.lstat(absolute).then(() => true, () => false)
+  if (!present) return
+  const destination = NodePath.join(quarantine.root, quarantine.directory, path)
+  await Fs.mkdir(NodePath.dirname(destination), { recursive: true })
+  await Fs.cp(absolute, destination, { recursive: true, verbatimSymlinks: true, force: true, errorOnExist: false })
+  quarantine.held.push(path)
+}
+
+/**
+ * Restores one path to its snapshot state, first copying whatever stands at
+ * the path now into `quarantine`.
  *
  * @category write sets
  * @since 0.1.0
  */
-export const revertPath = async (snapshot: TreeSnapshot, path: string): Promise<void> => {
+export const revertPath = async (snapshot: TreeSnapshot, path: string, quarantine?: Quarantine): Promise<void> => {
   const absolute = NodePath.join(snapshot.root, path)
+  await quarantinePath(quarantine, path)
   const before = snapshot.states.get(path)
   if (before === undefined) {
     // The path was clean before the tool ran: a tracked file goes back to
@@ -991,7 +1060,8 @@ const insideUnmeasured = (snapshot: IgnoredSnapshot, path: string): boolean => {
 /**
  * Restores one gitignored path to its snapshot state and reports whether it
  * could. A created path is removed; an overwritten or deleted file gets its
- * stashed bytes and mode back; a replaced link gets its target back.
+ * stashed bytes and mode back; a replaced link gets its target back. What
+ * stands at the path now is first copied into `quarantine`.
  *
  * A path the census never measured, a directory git does not enter or
  * anything inside one, is left exactly as the tool left it and reported as
@@ -1001,12 +1071,17 @@ const insideUnmeasured = (snapshot: IgnoredSnapshot, path: string): boolean => {
  * @category write sets
  * @since 0.1.0
  */
-export const revertIgnored = async (snapshot: IgnoredSnapshot, path: string): Promise<boolean> => {
+export const revertIgnored = async (
+  snapshot: IgnoredSnapshot,
+  path: string,
+  quarantine?: Quarantine
+): Promise<boolean> => {
   const before = snapshot.entries.get(path)
   if (before?.kind === "dir" || insideUnmeasured(snapshot, path)) return false
   const absolute = NodePath.join(snapshot.root, path)
   const now = await identityOf(absolute)
   if (now?.kind === "dir") return false
+  if (now !== undefined) await quarantinePath(quarantine, path)
   if (now !== undefined) await Fs.rm(absolute, { force: true })
   if (before === undefined) return true
   await Fs.mkdir(NodePath.dirname(absolute), { recursive: true })

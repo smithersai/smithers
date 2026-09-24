@@ -1420,3 +1420,119 @@ describe("materialization publication ownership and cleanup", () => {
     })
   }
 })
+
+/**
+ * A revert removes the bytes the guard judged, and the guard cannot tell a
+ * write the body made from one another writer made while the body ran. So a
+ * revert never destroys: it first copies what it is about to remove into a
+ * quarantine named in the failure.
+ */
+describe("the write-set guard quarantines what it reverts", () => {
+  const git = (...args: ReadonlyArray<string>): void => {
+    ChildProcess.execFileSync("git", [...args], { cwd: root, stdio: "ignore" })
+  }
+  const exists = (path: string): Promise<boolean> => Fs.lstat(path).then(() => true, () => false)
+  const commit = (): void => {
+    git("add", "-A")
+    git("-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "init")
+  }
+
+  it("copies a tracked file's, an untracked file's, a link's and a tree's current bytes before restoring", async () => {
+    git("init", "--quiet", ".")
+    await Fs.writeFile(NodePath.join(root, "user.ts"), "original\n")
+    await Fs.writeFile(NodePath.join(root, ".gitignore"), ".flows/\n")
+    commit()
+    const snapshot = await PackageTree.snapshotTree(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "//pkg:fmt")
+    try {
+      await Fs.writeFile(NodePath.join(root, "user.ts"), "edited by someone else\n")
+      await Fs.mkdir(NodePath.join(root, "notes", "deep"), { recursive: true })
+      await Fs.writeFile(NodePath.join(root, "notes", "deep", "a.md"), "a note\n")
+      await Fs.writeFile(NodePath.join(root, "new-note.md"), "a new note\n")
+      await Fs.symlink("user.ts", NodePath.join(root, "alias"))
+      const changed = await PackageTree.changedSinceSnapshot(snapshot, ".flows")
+      expect(changed).toEqual(["alias", "new-note.md", "notes/deep/a.md", "user.ts"])
+      for (const path of changed) await PackageTree.revertPath(snapshot, path, quarantine)
+      expect(await Fs.readFile(NodePath.join(root, "user.ts"), "utf8")).toBe("original\n")
+      expect(await exists(NodePath.join(root, "new-note.md"))).toBe(false)
+      expect(quarantine.directory).toMatch(/^\.flows\/reverted\/pkg_fmt-/)
+      const kept = NodePath.join(root, quarantine.directory)
+      expect(await Fs.readFile(NodePath.join(kept, "user.ts"), "utf8")).toBe("edited by someone else\n")
+      expect(await Fs.readFile(NodePath.join(kept, "new-note.md"), "utf8")).toBe("a new note\n")
+      expect(await Fs.readFile(NodePath.join(kept, "notes", "deep", "a.md"), "utf8")).toBe("a note\n")
+      expect(await Fs.readlink(NodePath.join(kept, "alias"))).toBe("user.ts")
+      expect([...quarantine.held].sort()).toEqual(changed)
+    } finally {
+      await PackageTree.releaseSnapshot(snapshot)
+    }
+  })
+
+  it("copies a directory a body left where a file stood", async () => {
+    git("init", "--quiet", ".")
+    await Fs.writeFile(NodePath.join(root, "user.ts"), "original\n")
+    commit()
+    const snapshot = await PackageTree.snapshotTree(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "dir")
+    try {
+      await Fs.mkdir(NodePath.join(root, "tree", "sub"), { recursive: true })
+      await Fs.writeFile(NodePath.join(root, "tree", "sub", "x.txt"), "x")
+      await PackageTree.revertPath(snapshot, "tree", quarantine)
+      expect(await exists(NodePath.join(root, "tree"))).toBe(false)
+      expect(await Fs.readFile(NodePath.join(root, quarantine.directory, "tree", "sub", "x.txt"), "utf8")).toBe("x")
+    } finally {
+      await PackageTree.releaseSnapshot(snapshot)
+    }
+  })
+
+  it("copies a gitignored file's current bytes before restoring or removing it", async () => {
+    git("init", "--quiet", ".")
+    await Fs.writeFile(NodePath.join(root, ".gitignore"), ".env\ndist/\n.flows/\n")
+    await Fs.writeFile(NodePath.join(root, ".env"), "secret")
+    const snapshot = await PackageTree.snapshotIgnored(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "ignored")
+    try {
+      await Fs.writeFile(NodePath.join(root, ".env"), "rotated by the developer")
+      await Fs.mkdir(NodePath.join(root, "dist"))
+      await Fs.writeFile(NodePath.join(root, "dist", "out.js"), "built")
+      const changed = await PackageTree.changedIgnored(snapshot, ".flows")
+      expect(changed).toEqual([".env", "dist/out.js"])
+      for (const path of changed) expect(await PackageTree.revertIgnored(snapshot, path, quarantine)).toBe(true)
+      expect(await Fs.readFile(NodePath.join(root, ".env"), "utf8")).toBe("secret")
+      const kept = NodePath.join(root, quarantine.directory)
+      expect(await Fs.readFile(NodePath.join(kept, ".env"), "utf8")).toBe("rotated by the developer")
+      expect(await Fs.readFile(NodePath.join(kept, "dist", "out.js"), "utf8")).toBe("built")
+    } finally {
+      await PackageTree.releaseIgnored(snapshot)
+    }
+  })
+
+  it("creates nothing when nothing was reverted, and nothing for a path that is already gone", async () => {
+    git("init", "--quiet", ".")
+    await Fs.writeFile(NodePath.join(root, "user.ts"), "original\n")
+    commit()
+    const snapshot = await PackageTree.snapshotTree(root, ".flows")
+    const quarantine = PackageTree.openQuarantine(root, ".flows", "empty")
+    try {
+      await Fs.rm(NodePath.join(root, "user.ts"))
+      await PackageTree.revertPath(snapshot, "user.ts", quarantine)
+      expect(await Fs.readFile(NodePath.join(root, "user.ts"), "utf8")).toBe("original\n")
+      expect(quarantine.held).toEqual([])
+      expect(await exists(NodePath.join(root, ".flows", "reverted"))).toBe(false)
+    } finally {
+      await PackageTree.releaseSnapshot(snapshot)
+    }
+  })
+})
+
+describe("judgedChanges", () => {
+  it("keeps only the changes that resolve inside a location the body could write", async () => {
+    await Fs.mkdir(NodePath.join(root, "src"), { recursive: true })
+    await Fs.mkdir(NodePath.join(root, "notes"), { recursive: true })
+    await Fs.symlink("../notes", NodePath.join(root, "src", "portal"))
+    const changed = ["lib/user.ts", "notes/new.md", "src/out.txt", "srcfoo.txt", "src/portal/x.md"]
+    expect(PackageTree.judgedChanges(root, changed, undefined)).toEqual(changed)
+    expect(PackageTree.judgedChanges(root, changed, ["src"])).toEqual(["src/out.txt"])
+    expect(PackageTree.judgedChanges(root, changed, [""])).toEqual(changed)
+    expect(PackageTree.judgedChanges(root, changed, [])).toEqual([])
+  })
+})

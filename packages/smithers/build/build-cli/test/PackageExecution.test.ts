@@ -852,6 +852,115 @@ export const Package = S.Package({ targets: { alpha, build } })
   })
 })
 
+describe("write-set enforcement against a foreign writer", () => {
+  /**
+   * A tool that writes its output and then stays inside its body until the
+   * test drops a sentinel, so the test's own edits land after the guard's
+   * snapshot and before its judgement: exactly an editor saving a file while
+   * `--write` runs. The deadline keeps a broken rendezvous from hanging.
+   */
+  const waiting = (output: string, sentinel: string): string =>
+    `printf b > ${output} && i=0; while [ ! -f ${sentinel} ] && [ $i -lt 600 ]; do sleep 0.05; i=$((i+1)); done`
+
+  const exists = (path: string): Promise<boolean> => Fs.access(path).then(() => true, () => false)
+
+  const until = async (path: string): Promise<void> => {
+    const deadline = Date.now() + 60_000
+    while (!(await exists(path))) {
+      if (Date.now() > deadline) throw new Error(`timed out waiting for ${path}`)
+      await new Promise((resume) => setTimeout(resume, 20))
+    }
+  }
+
+  const fixture = async (target: string): Promise<string> => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const fmt = ${target}
+export const Package = S.Package({ targets: { fmt } })
+`
+    )
+    await write(root, "src/.keep", "")
+    await write(root, "lib/user.ts", "original\n")
+    await write(root, ".gitignore", ".flows/\n")
+    commitAll(root)
+    return root
+  }
+
+  /** Edits a tracked file and creates a note while the body runs, then releases the body. */
+  const editWhileRunning = async (root: string, output: string, sentinel: string): Promise<void> => {
+    await until(NodePath.join(root, output))
+    await write(root, "lib/user.ts", "edited by the developer\n")
+    await write(root, "notes/new-note.md", "a note\n")
+    await write(root, sentinel, "")
+  }
+
+  const keptAt = (logs: string): string => {
+    const match = logs.match(/the reverted bytes are kept at (\S+)/)
+    if (match === null) throw new Error(`no quarantine named in:\n${logs}`)
+    return match[1]!
+  }
+
+  it("leaves a change the confined tool could not have made exactly as its writer left it", async () => {
+    const root = await fixture(
+      `S.Shell.Diff({ shell: ${JSON.stringify(waiting("src/out.txt", "src/go"))}, changes: ["src/**"] })`
+    )
+    const [run] = await Promise.all([
+      serve(root, ["//:fmt", "--write"]),
+      editWhileRunning(root, "src/out.txt", "src/go")
+    ])
+    expect(run.logs).not.toContain("wrote outside its declared write-set")
+    expect(run.exitCode, run.logs).toBe(0)
+    expect(await Fs.readFile(NodePath.join(root, "src", "out.txt"), "utf8")).toBe("b")
+    expect(await Fs.readFile(NodePath.join(root, "lib", "user.ts"), "utf8")).toBe("edited by the developer\n")
+    expect(await Fs.readFile(NodePath.join(root, "notes", "new-note.md"), "utf8")).toBe("a note\n")
+    expect(await exists(NodePath.join(root, ".flows", "reverted"))).toBe(false)
+  })
+
+  it("keeps a change it reverts inside the tool's writable directory in the quarantine it names", async () => {
+    // A literal root file opens the workspace root for the tool, so the guard
+    // cannot tell the developer's edit from the tool's: it reverts it, and
+    // the edit survives in the quarantine.
+    const root = await fixture(
+      `S.Shell.Diff({ shell: ${JSON.stringify(waiting("out.txt", "go.txt"))}, changes: ["out.txt"] })`
+    )
+    const [run] = await Promise.all([
+      serve(root, ["//:fmt", "--write"]),
+      editWhileRunning(root, "out.txt", "go.txt")
+    ])
+    expect(run.exitCode).toBe(1)
+    expect(run.logs).toContain(
+      "wrote outside its declared write-set (reverted): go.txt, lib/user.ts, notes/new-note.md"
+    )
+    const kept = NodePath.join(root, keptAt(run.logs))
+    expect(keptAt(run.logs)).toMatch(/^\.flows\/reverted\/fmt-/)
+    expect(await Fs.readFile(NodePath.join(root, "lib", "user.ts"), "utf8")).toBe("original\n")
+    expect(await Fs.readFile(NodePath.join(kept, "lib", "user.ts"), "utf8")).toBe("edited by the developer\n")
+    expect(await Fs.readFile(NodePath.join(kept, "notes", "new-note.md"), "utf8")).toBe("a note\n")
+    expect(await Fs.readFile(NodePath.join(root, "out.txt"), "utf8")).toBe("b")
+  })
+
+  it("keeps every change it reverts for an unconfined tool, which nothing bounds", async () => {
+    const root = await fixture(
+      `S.Shell.Diff({ shell: ${
+        JSON.stringify(waiting("src/out.txt", "src/go"))
+      }, changes: ["src/**"], sandbox: "none" })`
+    )
+    const [run] = await Promise.all([
+      serve(root, ["//:fmt", "--write"]),
+      editWhileRunning(root, "src/out.txt", "src/go")
+    ])
+    expect(run.exitCode).toBe(1)
+    expect(run.logs).toContain("wrote outside its declared write-set (reverted): lib/user.ts, notes/new-note.md")
+    const kept = NodePath.join(root, keptAt(run.logs))
+    expect(await Fs.readFile(NodePath.join(kept, "lib", "user.ts"), "utf8")).toBe("edited by the developer\n")
+    expect(await Fs.readFile(NodePath.join(kept, "notes", "new-note.md"), "utf8")).toBe("a note\n")
+  })
+})
+
 describe("artifact store", () => {
   const buildFixture = async (): Promise<string> => {
     const root = await temporaryWorkspace()

@@ -228,6 +228,17 @@ export const sandboxRequest = (
   }
 }
 
+/**
+ * The directory one write-set pattern lets a body write in, workspace-relative
+ * with `""` for the root: a glob's static prefix, or a literal path's parent
+ * (a file is written beside its temporary and renamed into place).
+ */
+const writeSetDirectory = (pattern: string): string => {
+  const prefix = staticPrefixOf(pattern)
+  const directory = prefix === pattern ? NodePath.posix.dirname(prefix) : prefix
+  return directory === "." || directory === "/" ? "" : directory.replace(/\/+$/, "")
+}
+
 const isServiceError = (value: unknown): value is ServiceSupervisor.ServiceError =>
   typeof value === "object" && value !== null &&
   (value as { readonly _tag?: unknown })._tag === "smithers-build/ServiceError"
@@ -953,13 +964,25 @@ export const executeEffect = (
      * Runs one mutating body with mechanical write-set confinement: every
      * change the body makes to the tree is judged by its resolved location
      * against `writeSet`; out-of-set changes are reverted and fail the body,
-     * and a failed body reverts everything it touched. Shared by tool runs
+     * and a failed body reverts everything it touched.
+     *
+     * The census is of the whole tree, so it also sees what another writer
+     * (an editor, a second build process) changed while the body ran.
+     * `admitted` is where the body could write at all: the directories its
+     * sandbox binds writable, or the exact paths an in-process body writes. A
+     * change outside it is someone else's and is neither judged nor touched.
+     * `undefined` means nothing bounds the body (an unconfined tool), so every
+     * change is judged. Either way no revert destroys bytes: whatever a revert
+     * removes is first copied to a quarantine under `<cache>/reverted/` that
+     * the failure names. Shared by tool runs
      * (`runWriteEnforced`), agent candidate application, and CI-file
      * publishing. Declarative `runEmit` writes use their resolved output paths
      * directly and do not pass through this snapshot-and-revert guard.
      */
     const enforceWriteSet = (
+      label: string,
       writeSet: ReadonlyArray<string>,
+      admitted: ReadonlyArray<string> | undefined,
       body: Effect.Effect<ExecOutcome, unknown>
     ): Effect.Effect<ExecOutcome, unknown> =>
       Effect.scoped(Effect.uninterruptibleMask((restore) =>
@@ -1005,8 +1028,19 @@ export const executeEffect = (
           const ran: ExecOutcome = Exit.isSuccess(exit) ?
             exit.value
             : { ok: false, error: causeText(exit.cause, "write") }
-          const changed = yield* joined(() => PackageTree.changedSinceSnapshot(snapshot, cacheDirectory))
-          const changedIgnored = yield* joined(() => PackageTree.changedIgnored(ignored, cacheDirectory))
+          const changed = PackageTree.judgedChanges(
+            root,
+            yield* joined(() => PackageTree.changedSinceSnapshot(snapshot, cacheDirectory)),
+            admitted
+          )
+          const changedIgnored = PackageTree.judgedChanges(
+            root,
+            yield* joined(() => PackageTree.changedIgnored(ignored, cacheDirectory)),
+            admitted
+          )
+          const quarantine = PackageTree.openQuarantine(root, cacheDirectory, label)
+          const kept = (): string =>
+            quarantine.held.length === 0 ? "" : `; the reverted bytes are kept at ${quarantine.directory}`
           // Any write through an escaping-symlink portal is out of the workspace and
           // therefore out of any write-set; it is reverted whether the run passed
           // or failed.
@@ -1020,24 +1054,29 @@ export const executeEffect = (
             // in set or not: a partial write from a tool that then errored is not
             // a state anyone asked for, and the stash holds the prior bytes of
             // every gitignored file, so the revert is exact.
-            for (const path of changed) yield* joined(() => PackageTree.revertPath(snapshot, path))
+            for (const path of changed) yield* joined(() => PackageTree.revertPath(snapshot, path, quarantine))
             for (const path of changedIgnored) {
-              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path)))) unrestored.push(path)
+              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path, quarantine)))) unrestored.push(path)
             }
-            if (unrestored.length === 0) return ran
-            return { ok: false, error: `${ran.error}; gitignored paths not restored: ${unrestored.join(", ")}` }
+            if (unrestored.length === 0) {
+              return quarantine.held.length === 0 ? ran : { ok: false, error: `${ran.error}${kept()}` }
+            }
+            return {
+              ok: false,
+              error: `${ran.error}; gitignored paths not restored: ${unrestored.join(", ")}${kept()}`
+            }
           }
           const outOfSet: Array<string> = []
           for (const path of changed) {
             const resolved = PackageTree.resolveChangedPath(root, path)
             if (resolved === undefined || !matchesWriteSet(resolved, writeSet)) outOfSet.push(path)
           }
-          for (const path of outOfSet) yield* joined(() => PackageTree.revertPath(snapshot, path))
+          for (const path of outOfSet) yield* joined(() => PackageTree.revertPath(snapshot, path, quarantine))
           const ignoredOutOfSet: Array<string> = []
           for (const path of changedIgnored) {
             const resolved = PackageTree.resolveChangedPath(root, path)
             if (resolved === undefined || !matchesWriteSet(resolved, writeSet)) {
-              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path)))) unrestored.push(path)
+              if (!(yield* joined(() => PackageTree.revertIgnored(ignored, path, quarantine)))) unrestored.push(path)
               ignoredOutOfSet.push(path)
             }
           }
@@ -1046,21 +1085,72 @@ export const executeEffect = (
             if (unrestored.length === 0) {
               return {
                 ok: false,
-                error: `wrote outside its declared write-set (reverted): ${offenders.join(", ")}`
+                error: `wrote outside its declared write-set (reverted): ${offenders.join(", ")}${kept()}`
               }
             }
             const described = offenders.map((path) =>
               unrestored.includes(path) ? `${path} (not restored)` : `${path} (reverted)`
             )
-            return { ok: false, error: `wrote outside its declared write-set: ${described.join(", ")}` }
+            return { ok: false, error: `wrote outside its declared write-set: ${described.join(", ")}${kept()}` }
           }
           return ran
         })
       ))
 
+    /**
+     * Where a spawned tool can write: the directories its confinement binds
+     * writable, the same plan `Exec.run` enforces, workspace-relative, plus
+     * the directory of a captured stdout file this process writes itself.
+     * `undefined` when the node runs unconfined on this host, so nothing
+     * bounds where it wrote.
+     */
+    const spawnAdmitted = (node: PackageNode): ReadonlyArray<string> | undefined => {
+      const request = sandboxRequest(node, planned.nodes, index.workspace, cacheDirectory)
+      const host = ExecSandbox.host()
+      if (!ExecSandbox.enforceable(request, host)) return undefined
+      let workspaceRoot: string
+      try {
+        workspaceRoot = NodeFs.realpathSync(root)
+      } catch {
+        return undefined
+      }
+      const plan = ExecSandbox.plan(
+        request,
+        { workspaceRoot, cwd: workspaceRoot, tmp: NodePath.join(workspaceRoot, cacheDirectory, "sandbox") },
+        host
+      )
+      if (plan === undefined || ExecSandbox.isUnenforceable(plan)) return undefined
+      const admitted: Array<string> = []
+      for (const write of plan.writes) {
+        const relative = NodePath.relative(plan.workspaceRoot, write)
+        if (relative.startsWith("..") || NodePath.isAbsolute(relative)) continue
+        admitted.push(relative.split(NodePath.sep).join("/"))
+      }
+      if (node.stdoutPath !== undefined) {
+        const directory = NodePath.posix.dirname(node.stdoutPath)
+        admitted.push(directory === "." ? "" : directory)
+      }
+      return admitted
+    }
+
+    /**
+     * The exact paths an in-process body writes, as given and resolved through
+     * the symlinks of their parents, so a write that lands elsewhere through a
+     * link is still judged (and reverted as out of set).
+     */
+    const literalAdmitted = (paths: Iterable<string>): ReadonlyArray<string> => {
+      const admitted = new Set<string>()
+      for (const path of paths) {
+        admitted.add(path)
+        const resolved = PackageTree.resolveChangedPath(root, path)
+        if (resolved !== undefined) admitted.add(resolved)
+      }
+      return [...admitted]
+    }
+
     /** Runs one mutating tool with mechanical write-set confinement. */
     const runWriteEnforced = (node: PackageNode): Effect.Effect<ExecOutcome, unknown> =>
-      enforceWriteSet(node.writeSet, spawnNode(node, root))
+      enforceWriteSet(node.label, node.writeSet, spawnAdmitted(node), spawnNode(node, root))
 
     /** Scratch and portal restoration outlive cancellation of the consumer. */
     const inScratch = <A>(
@@ -1342,7 +1432,9 @@ export const executeEffect = (
           Effect.gen(function*() {
             const written: Array<string> = []
             const outcome = yield* enforceWriteSet(
+              node.label,
               patterns,
+              literalAdmitted(overlay.files.keys()),
               Effect.gen(function*() {
                 for (const [path, contents] of [...overlay.files.entries()].sort(([a], [b]) => a < b ? -1 : 1)) {
                   const absolute = NodePath.join(root, ...path.split("/"))
@@ -1824,7 +1916,12 @@ export const executeEffect = (
               }
               for (const command of node.lane.commands) {
                 const spawned = node.mode === "write"
-                  ? (yield* enforceWriteSet(node.writeSet, spawnNode(node, root, command)))
+                  ? (yield* enforceWriteSet(
+                    node.label,
+                    node.writeSet,
+                    spawnAdmitted(node),
+                    spawnNode(node, root, command)
+                  ))
                   : (yield* spawnNode(node, root, command))
                 if (!spawned.ok) return fail(spawned.error ?? "cargo run failed")
               }
@@ -2579,8 +2676,20 @@ export const executeEffect = (
               })
               if (node.mode === "write") {
                 let report: GithubRender.WriteReport | undefined
+                // The renderer writes its files (by a sibling temporary and a
+                // rename) and removes stale files inside the write set, so the
+                // body can touch the rendered files' directories and the
+                // write set's own static directories, and nothing else.
+                const renderedDirectories = rendered.files.map((file) => {
+                  const directory = NodePath.posix.dirname(
+                    NodePath.posix.join(rendered.packageDir, file.path)
+                  )
+                  return directory === "." ? "" : directory
+                })
                 const outcome = yield* enforceWriteSet(
+                  node.label,
                   node.writeSet,
+                  [...literalAdmitted(renderedDirectories), ...node.writeSet.map(writeSetDirectory)],
                   Effect.gen(function*() {
                     report = yield* joined(() => GithubRender.write(root, rendered))
                     return { ok: true }
