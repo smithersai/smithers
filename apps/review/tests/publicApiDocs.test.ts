@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
  * non-blank line does not close a block comment is undocumented.
  */
 
-/** The entry points in `package.json`'s `exports`, plus the modules the diffs and openCodeReview barrels re-export. */
+/** The entry points in `package.json`'s `exports`, plus the modules the diffs barrel re-export. */
 const surface = [
   "../src/cli/main.ts",
   "../src/diffs/index.ts",
@@ -25,7 +25,6 @@ const surface = [
   "../src/diffs/renderPierreFileDiff.ts",
   "../src/workflow/reviewFlow.ts",
   "../src/workflow/reviewLayer.ts",
-  "../src/workflow/openCodeReview.ts",
   "../src/workflow/openCodeReviewInputSchema.ts",
   "../src/workflow/reviewModeSchema.ts",
   "../src/workflow/reviewTargetSchema.ts",
@@ -55,10 +54,8 @@ const surface = [
   "../src/review/globMatch.ts",
   "../src/review/loadReviewSnapshot.ts",
   "../src/review/previewFromSnapshot.ts",
-  "../src/review/previewOpenCodeReview.ts",
   "../src/review/reviewFileTaskId.ts",
   "../src/review/nativeReviewPromptFromSnapshot.ts",
-  "../src/review/buildNativeReviewPrompt.ts",
   "../src/review/finalizeNativeReview.ts",
 ] as const;
 

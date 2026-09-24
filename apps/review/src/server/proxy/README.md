@@ -15,7 +15,7 @@ The metered Anthropic proxy (`POST /anthropic/v1/messages` only).
 - `proxyInFlightLimit.ts`: the per-repository outstanding-call limit, shared
   with the action's `--concurrency`.
 - `completedUsage.ts`: require final usage before settling a hold.
-- `parseUsageFromJson.ts` / `parseUsageFromSse.ts`: extract token usage.
+- `parseUsageFromJson.ts`: extract JSON token usage; `teeForMetering.ts` parses SSE.
 - `recordUsage.ts`: atomically debit, insert an idempotent usage event and
   release the reservation using a D1 batch.
 - `retryUsage.ts`: retry persisted settlements before further admission.

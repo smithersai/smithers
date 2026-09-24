@@ -4,7 +4,7 @@ import { gateEvent } from "./gateEvent.ts";
 
 /**
  * Composite step 1 entrypoint. Reads the event payload, decides run vs skip,
- * and writes `should-run`/`pr-number`/`head-sha` to GITHUB_OUTPUT so later
+ * and writes `should-run` to GITHUB_OUTPUT so later
  * steps can gate on it. Skips print `::notice::` so the reason is visible in
  * the workflow run summary instead of failing the job.
  */
@@ -31,9 +31,6 @@ if (eventPath) {
 const decision = gateEvent({ eventName, payload });
 if (decision.run) {
   setOutput("should-run", "true");
-  setOutput("pr-number", String(decision.prNumber));
-  setOutput("event-name", decision.eventName);
-  if (decision.headSha) setOutput("head-sha", decision.headSha);
   console.log(`smithers review: ${decision.eventName} #${decision.prNumber} eligible — continuing`);
 } else {
   setOutput("should-run", "false");

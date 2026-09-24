@@ -16,8 +16,7 @@
     "./cli": "./src/cli/main.ts",
     "./diffs": "./src/diffs/index.ts",
     "./workflow": "./src/workflow/reviewFlow.ts",
-    "./workflow/layer": "./src/workflow/reviewLayer.ts",
-    "./workflow/openCodeReview": "./src/workflow/openCodeReview.ts"
+    "./workflow/layer": "./src/workflow/reviewLayer.ts"
   },
   "files": [
     "bin/",

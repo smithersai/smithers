@@ -7,7 +7,7 @@ import { jwksCache } from "../../src/server/sessions/jwksCache.ts";
 import { lookupApiKey } from "../../src/server/sessions/lookupApiKey.ts";
 import { verifyOidc } from "../../src/server/sessions/verifyOidc.ts";
 import { parseUsageFromJson } from "../../src/server/proxy/parseUsageFromJson.ts";
-import { parseUsageFromSse } from "../../src/server/proxy/parseUsageFromSse.ts";
+import { teeForMetering } from "../../src/server/proxy/teeForMetering.ts";
 import { buildTestEnv } from "./helpers/buildTestEnv.ts";
 import { rsaKeypair } from "./helpers/rsaKeypair.ts";
 import { serveJwks } from "./helpers/serveJwks.ts";
@@ -395,7 +395,7 @@ describe("usage parsers", () => {
     expect(parseUsageFromJson("{not json")).toBeNull();
   });
 
-  test("parseUsageFromSse skips frames with unparseable data or no data line", () => {
+  test("streaming metering refuses malformed usage frames", async () => {
     const stream = [
       "event: message_delta",
       "data: {broken json",
@@ -406,9 +406,9 @@ describe("usage parsers", () => {
       'data: {"type":"message_start","message":{"id":"m","model":"claude-x","usage":{"input_tokens":3,"output_tokens":1}}}',
       "",
     ].join("\n");
-    const usage = parseUsageFromSse(stream);
-    expect(usage?.model).toBe("claude-x");
-    expect(usage?.inputTokens).toBe(3);
+    const { passthrough, collected } = teeForMetering(new Response(stream), true, new AbortController());
+    await new Response(passthrough).text();
+    expect(await collected).toEqual({ summary: null, complete: false });
   });
 });
 

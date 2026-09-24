@@ -2,7 +2,7 @@
 
 The `smithers-review` bin's implementation. `../../bin/smithers-review.mjs` is
 the entry point and `main.ts` starts nothing on import, so a test imports its
-exported helpers (`buildRunSummaryLine`, `parseQuizColumn`) without running a
+exported helpers (`buildRunSummaryLine`) without running a
 review.
 
 The command is split in two on purpose. `main.ts` is the light half: parsing,
@@ -17,8 +17,6 @@ nine seconds of module loading, and `--help` must not pay it;
 - `createProgressReporter.ts` — live stderr progress fed by the
   `@smthrs/agent/EventSink` seam, which hands a host every `AgentEvent` on its
   way past. 0.x polled the engine's output tables for this.
-- `parseJsonColumn.ts` — tolerant reader for a stored JSON array column, which
-  arrives as an array or a JSON string.
 - `whichBinary.ts` — `PATH` lookup for the `gh` binary. 0.x called `Bun.which`,
   which tied the command to one runtime.
 - `publishWalkthrough.ts` — uploads the walkthrough HTML to the share service;

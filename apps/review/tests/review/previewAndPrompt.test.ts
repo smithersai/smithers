@@ -1,15 +1,21 @@
 import { describe, expect, test } from "bun:test";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { buildNativeReviewPrompt } from "../../src/review/buildNativeReviewPrompt.ts";
-import { previewOpenCodeReview } from "../../src/review/previewOpenCodeReview.ts";
+import { nativeReviewPromptFromSnapshot } from "../../src/review/nativeReviewPromptFromSnapshot.ts";
+import { loadReviewSnapshot } from "../../src/review/loadReviewSnapshot.ts";
+import type { OpenCodeReviewInput } from "../../src/workflow/openCodeReviewInputSchema.ts";
+import { previewFromSnapshot } from "../../src/review/previewFromSnapshot.ts";
 import { normalizeOpenCodeReviewInput } from "../../src/workflow/normalizeOpenCodeReviewInput.ts";
 import type { PreviewOutput } from "../../src/workflow/previewOutputSchema.ts";
 import { tempRepos } from "../support/tempRepos.ts";
 
 const { git, write, track, initRepo } = tempRepos();
 
-describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
+const previewSnapshot = async (input: OpenCodeReviewInput) => previewFromSnapshot(await loadReviewSnapshot(input));
+const promptSnapshot = async (input: OpenCodeReviewInput, preview: PreviewOutput) => nativeReviewPromptFromSnapshot(await loadReviewSnapshot(input), preview);
+
+
+describe("previewSnapshot + promptSnapshot (real git)", () => {
   test("workspace mode: tracked modification, untracked files, filters, checklists, big diff", async () => {
     const dir = initRepo();
     write(join(dir, "src/app.ts"), "export const v = 1;\n");
@@ -32,7 +38,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     // node_modules provider-excluded path.
     write(join(dir, "node_modules/dep.js"), "module.exports = 1;\n");
 
-    const preview = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir });
+    const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir });
     expect(preview.totalFiles).toBeGreaterThan(0);
     expect(preview.reviewableCount).toBeGreaterThan(0);
     // notes.md is unsupported-ext excluded; node_modules is provider excluded.
@@ -45,7 +51,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     const testFile = preview.entries.find((e) => e.path === "src/app.test.ts");
     expect(testFile?.willReview).toBe(false);
 
-    const prompt = await buildNativeReviewPrompt({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview);
+    const prompt = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview);
     expect(prompt.shouldReview).toBe(true);
     expect(prompt.files.length).toBe(preview.reviewableCount);
     const appFile = prompt.files.find((f) => f.path === "src/app.ts");
@@ -69,7 +75,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     expect(e2e?.prompt).toContain("Test quality:");
   });
 
-  test("buildNativeReviewPrompt reports no reviewable files when a stale preview disagrees", async () => {
+  test("promptSnapshot reports no reviewable files when a stale preview disagrees", async () => {
     const dir = initRepo();
     write(join(dir, "README.md"), "# docs only\n");
     git(dir, ["add", "."]);
@@ -87,7 +93,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
       reviewableCount: 1,
       excludedCount: 0,
     };
-    const prompt = await buildNativeReviewPrompt({ ...normalizeOpenCodeReviewInput({}), repo: dir }, stalePreview);
+    const prompt = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, stalePreview);
     expect(prompt.shouldReview).toBe(false);
     expect(prompt.message).toContain("No supported files changed");
   });
@@ -99,7 +105,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     git(dir, ["commit", "-m", "init"]);
     // No tracked modification → `git diff HEAD` empty → staged-diff fallback.
     write(join(dir, "src/fresh.ts"), "export const fresh = 1;\n");
-    const preview = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir });
+    const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir });
     expect(preview.entries.some((e) => e.path === "src/fresh.ts")).toBe(true);
   });
 
@@ -113,14 +119,14 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     git(dir, ["add", "."]);
     git(dir, ["commit", "-m", "second"]);
 
-    const range = await previewOpenCodeReview({
+    const range = await previewSnapshot({
       ...normalizeOpenCodeReviewInput({}),
       repo: dir,
       from: "HEAD~1",
       to: "HEAD",
     });
     expect(range.totalFiles).toBeGreaterThan(0);
-    const commit = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir, commit: "HEAD" });
+    const commit = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir, commit: "HEAD" });
     expect(commit.totalFiles).toBeGreaterThan(0);
   });
 
@@ -141,7 +147,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
       JSON.stringify({ include: ["src/app.ts"], exclude: ["src/skip.ts"] }),
     );
 
-    const preview = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir, rule: badRule });
+    const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir, rule: badRule });
     const skip = preview.entries.find((e) => e.path === "src/skip.ts");
     expect(skip?.willReview).toBe(false);
     expect(skip?.excludeReason).toBe("user_exclude");
@@ -149,16 +155,16 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     expect(app?.willReview).toBe(true);
   });
 
-  test("buildNativeReviewPrompt short-circuits when runReview is false or nothing is reviewable", async () => {
+  test("promptSnapshot short-circuits when runReview is false or nothing is reviewable", async () => {
     const dir = initRepo();
     write(join(dir, "README.md"), "# only docs\n");
     git(dir, ["add", "."]);
     git(dir, ["commit", "-m", "init"]);
     write(join(dir, "README.md"), "# only docs\nmore\n");
 
-    const preview = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir });
+    const preview = await previewSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir });
     // runReview disabled → shouldReview false.
-    const disabled = await buildNativeReviewPrompt(
+    const disabled = await promptSnapshot(
       { ...normalizeOpenCodeReviewInput({}), repo: dir, runReview: false },
       preview,
     );
@@ -166,7 +172,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     expect(disabled.message).toContain("disabled");
 
     // Only an unsupported doc changed → reviewableCount 0.
-    const nothing = await buildNativeReviewPrompt({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview);
+    const nothing = await promptSnapshot({ ...normalizeOpenCodeReviewInput({}), repo: dir }, preview);
     expect(nothing.shouldReview).toBe(false);
     expect(nothing.message).toContain("No supported files changed");
   });

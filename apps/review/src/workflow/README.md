@@ -51,7 +51,7 @@ not exist until the verifying round has settled.
   `applyFindingVerdicts.ts` applies keep/drop/demote (demote never raises
   severity).
 - Input: `reviewInputSchema.ts` extends `openCodeReviewInputSchema.ts`;
-  `normalizeReviewInput.ts` and `normalizeOpenCodeReviewInput.ts` strip nulls
+  `normalizeOpenCodeReviewInput.ts` strips nulls
   so a caller that spells "not supplied" as `null` gets the declared defaults.
 - Review data, one schema per file: `reviewModeSchema.ts`,
   `reviewTargetSchema.ts`, `previewEntrySchema.ts`, `previewOutputSchema.ts`,
@@ -61,9 +61,6 @@ not exist until the verifying round has settled.
   `reviewRunStatusSchema.ts`, `reviewRunOutputSchema.ts`,
   `nativeReviewFileSchema.ts`, `nativeReviewPromptSchema.ts`,
   `nativeReviewAgentOutputSchema.ts`, `workflowSummarySchema.ts`.
-- `openCodeReview.ts` re-exports those schemas plus `../git` and `../review`
-  for one release, because `@smthrs/review/workflow/openCodeReview` is a
-  published entry point. New code imports the owning file.
 
 The steps call two sibling directories:
 

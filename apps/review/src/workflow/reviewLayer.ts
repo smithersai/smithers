@@ -106,7 +106,7 @@ export const declarations = Layer.mergeAll(walkthroughDeclarations,
  * capability a review actually exercises.
  *
  * The review seats answer from the prompt they were given — every diff a
- * reviewer needs is embedded by `buildNativeReviewPrompt` — so the host offers
+ * reviewer needs is embedded by `nativeReviewPromptFromSnapshot` — so the host offers
  * no tool flows. A cell that tries to reach for one finds an empty registry
  * rather than an unbounded surface on the repository under review.
  *

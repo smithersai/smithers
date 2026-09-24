@@ -28,7 +28,7 @@ import { VerifyVerdicts } from "./verifyVerdictsSchema.ts";
 /**
  * Reviews one file.
  *
- * The prompt is built by `buildNativeReviewPrompt` in the preparation step and
+ * The prompt is built by `nativeReviewPromptFromSnapshot` in the preparation step and
  * carried here whole, because it embeds the file's diff plus the list of the
  * other changed files. The seat therefore needs no repository access to answer,
  * and the prompt tells it so.

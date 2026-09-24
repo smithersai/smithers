@@ -13,7 +13,7 @@ import type { PreviewOutput } from "../workflow/previewOutputSchema.ts";
 const decodePrompt = Schema.decodeUnknownSync(NativeReviewPrompt);
 
 function reviewableDiffs(diffs: DiffRecord[], filter: FileFilter | null) {
-  // Mirrors previewOpenCodeReview: deletions with removed content are reviewable.
+  // Matches previewFromSnapshot: deletions with removed content are reviewable.
   return diffs.filter((diff) => whyExcluded(diff, filter) === "" && !(diff.isDeleted && diff.deletions === 0));
 }
 /**

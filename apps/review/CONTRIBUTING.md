@@ -241,7 +241,7 @@ environment the action passes.
 The workspace convention is JSDoc on every export, and the imported packages
 follow it throughout. Here it is scoped to the published surface: the entry
 points in `package.json`'s `exports` map (`./cli`, `./diffs`, `./workflow`,
-`./workflow/layer`, and `./workflow/openCodeReview`) plus the modules the
+and `./workflow/layer`) plus the modules the
 diffs barrel re-exports. Those are the names another workspace project can
 import, and `tests/publicApiDocs.test.ts` fails when one of them loses its doc
 block.

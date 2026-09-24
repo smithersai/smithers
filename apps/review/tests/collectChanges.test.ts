@@ -4,8 +4,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { normalizeOpenCodeReviewInput } from "../src/workflow/normalizeOpenCodeReviewInput.ts";
-import { previewOpenCodeReview } from "../src/review/previewOpenCodeReview.ts";
-import { collectChanges } from "../src/walkthrough/collectChanges.ts";
+import { loadReviewSnapshot } from "../src/review/loadReviewSnapshot.ts";
+import { previewFromSnapshot } from "../src/review/previewFromSnapshot.ts";
+import { changesFromDiffs } from "../src/walkthrough/changesFromDiffs.ts";
 
 const tempDirs: string[] = [];
 
@@ -36,7 +37,7 @@ function tempRepo() {
   return dir;
 }
 
-describe("collectChanges", () => {
+describe("snapshot changes", () => {
   test("includes review-excluded files with full diffs and review flags", async () => {
     const repo = tempRepo();
     write(join(repo, "src/app.ts"), "export const value = 1;\nexport const next = 2;\n");
@@ -44,8 +45,9 @@ describe("collectChanges", () => {
     write(join(repo, "notes.md"), "# Notes\n");
 
     const input = normalizeOpenCodeReviewInput({ repo });
-    const preview = await previewOpenCodeReview(input);
-    const changes = await collectChanges(input, preview);
+    const snapshot = await loadReviewSnapshot(input);
+    const preview = previewFromSnapshot(snapshot);
+    const changes = changesFromDiffs(snapshot.diffs, preview);
 
     const byPath = new Map(changes.files.map((file) => [file.path, file]));
     expect(changes.totalFiles).toBe(3);

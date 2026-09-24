@@ -11,7 +11,7 @@
  *
  * A review run dials exactly one endpoint: `@smthrs/model`'s Anthropic route
  * pins `POST /v1/messages` (see `src/workflow/reviewSeatResolver.ts`), which
- * is also the only response shape `parseUsageFromJson` / `parseUsageFromSse`
+ * is also the only response shape `parseUsageFromJson` / `teeForMetering`
  * can meter. Anything else is refused before the key is attached. Add an entry
  * here only with a justification for both cross-tenant isolation and metering.
  */

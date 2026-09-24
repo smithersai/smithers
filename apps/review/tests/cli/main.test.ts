@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildRunSummaryLine, parseQuizColumn, runReviewCli } from "../../src/cli/main.ts";
+import { buildRunSummaryLine, runReviewCli } from "../../src/cli/main.ts";
 
 const BIN = fileURLToPath(new URL("../../bin/smithers-review.mjs", import.meta.url));
 const PKG_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -139,45 +139,6 @@ describe("the start script", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout.toString()).toContain("Usage: smithers-review");
   }, 60_000);
-});
-
-describe("parseQuizColumn", () => {
-  test("non-string values return null", () => {
-    expect(parseQuizColumn(null)).toBeNull();
-    expect(parseQuizColumn(undefined)).toBeNull();
-    expect(parseQuizColumn(42)).toBeNull();
-    expect(parseQuizColumn({})).toBeNull();
-    expect(parseQuizColumn("")).toBeNull();
-    expect(parseQuizColumn("   ")).toBeNull();
-  });
-
-  test("invalid JSON returns null", () => {
-    expect(parseQuizColumn("{not json")).toBeNull();
-  });
-
-  test("JSON failing the quiz schema returns null", () => {
-    expect(parseQuizColumn(JSON.stringify({ impact: "very bad", questions: "none" }))).toBeNull();
-    expect(parseQuizColumn(JSON.stringify({ questions: [{ question: 42 }] }))).toBeNull();
-  });
-
-  test("valid quiz JSON parses", () => {
-    const quiz = {
-      impact: { level: "high", reasons: [{ signal: "security-sensitive path (auth)", path: "src/auth.ts" }] },
-      questions: [
-        {
-          question: "What breaks when the token is empty?",
-          options: ["A bypass", "Nothing"],
-          correctIndex: 0,
-          explanation: "The guard returns early.",
-          path: "src/auth.ts",
-        },
-      ],
-    };
-    const parsed = parseQuizColumn(JSON.stringify(quiz));
-    expect(parsed).not.toBeNull();
-    expect(parsed!.impact.level).toBe("high");
-    expect(parsed!.questions).toHaveLength(1);
-  });
 });
 
 describe("runReviewCli", () => {

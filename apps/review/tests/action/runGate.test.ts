@@ -67,7 +67,7 @@ describe("runGate (subprocess)", () => {
     expect(out["should-run"]).toBe("false");
   });
 
-  test("writes should-run=true and pr-number for a valid open PR event", async () => {
+  test("writes only should-run=true for a valid open PR event", async () => {
     const { outputFile, tmp } = await setup();
     const payload = {
       action: "synchronize",
@@ -89,9 +89,7 @@ describe("runGate (subprocess)", () => {
     expect(result.exitCode).toBe(0);
     const out = await readOutput(outputFile);
     expect(out["should-run"]).toBe("true");
-    expect(out["pr-number"]).toBe("42");
-    expect(out["head-sha"]).toBe("deadbeef");
-    expect(out["event-name"]).toBe("pull_request");
+    expect(out).toEqual({ "should-run": "true" });
   });
 
   test("writes should-run=false for a draft PR", async () => {

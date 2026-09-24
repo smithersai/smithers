@@ -10,30 +10,7 @@
  * @since 1.0.0
  */
 import { readFileSync } from "node:fs";
-import { Option, Schema } from "effect";
-import { Quiz as QuizSchema, type Quiz } from "../quiz/quizSchema.ts";
 import { parseReviewArgs, type ReviewArgs } from "./parseReviewArgs.ts";
-
-const decodeQuiz = Schema.decodeUnknownOption(QuizSchema);
-
-/**
- * Decodes a quiz out of the JSON column a run summary carries.
- *
- * Anything that is not a valid quiz answers `null` rather than throwing: the
- * column is written by a previous run and a summary line must still print when
- * it is absent, truncated, or from an older shape.
- *
- * @since 1.0.0
- * @category parsing
- */
-export function parseQuizColumn(value: unknown): Quiz | null {
-  if (typeof value !== "string" || !value.trim()) return null;
-  try {
-    return Option.getOrNull(decodeQuiz(JSON.parse(value)));
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Builds the one line a finished review prints to stderr.

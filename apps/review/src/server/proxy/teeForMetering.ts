@@ -116,7 +116,7 @@ export function teeForMetering(
     .then(
       () => {
         const complete = streaming ? input && output && stopped && !invalid : !invalid;
-        const summary = streaming ? (complete ? usage : null) : complete ? completedUsage(pending, false) : null;
+        const summary = streaming ? (complete ? usage : null) : complete ? completedUsage(pending) : null;
         pending = "";
         return { summary, complete: complete && summary !== null };
       },

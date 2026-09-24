@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { parseUsageFromSse } from "../../src/server/proxy/parseUsageFromSse.ts";
+import { teeForMetering } from "../../src/server/proxy/teeForMetering.ts";
+
+async function metered(stream: string) {
+  const { passthrough, collected } = teeForMetering(new Response(stream), true, new AbortController());
+  await new Response(passthrough).text();
+  return (await collected).summary;
+}
 
 function stream(lineEnding: "\n" | "\r\n"): string {
   return [
@@ -18,9 +24,9 @@ function stream(lineEnding: "\n" | "\r\n"): string {
   ].join(lineEnding);
 }
 
-describe("parseUsageFromSse", () => {
-  test("parses an LF-delimited stream", () => {
-    expect(parseUsageFromSse(stream("\n"))).toEqual({
+describe("streaming metering", () => {
+  test("parses an LF-delimited stream", async () => {
+    expect(await metered(stream("\n"))).toEqual({
       model: "claude-sonnet-4-6",
       inputTokens: 300,
       outputTokens: 42,
@@ -29,11 +35,11 @@ describe("parseUsageFromSse", () => {
     });
   });
 
-  test("parses a CRLF-delimited stream identically (an intermediary may rewrite line endings)", () => {
-    expect(parseUsageFromSse(stream("\r\n"))).toEqual(parseUsageFromSse(stream("\n")));
+  test("parses a CRLF-delimited stream identically (an intermediary may rewrite line endings)", async () => {
+    expect(await metered(stream("\r\n"))).toEqual(await metered(stream("\n")));
   });
 
-  test("returns null when no message frames appear", () => {
-    expect(parseUsageFromSse("event: ping\r\ndata: {}\r\n\r\n")).toBeNull();
+  test("returns null when no message frames appear", async () => {
+    expect(await metered("event: ping\r\ndata: {}\r\n\r\n")).toBeNull();
   });
 });
