@@ -1273,7 +1273,7 @@ func TestSplitScopes_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestPickEmail_Preferences(t *testing.T) {
+func TestPickVerifiedEmail_Preferences(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -1290,14 +1290,14 @@ func TestPickEmail_Preferences(t *testing.T) {
 			{Email: "unverified@example.com", Primary: true, Verified: false},
 			{Email: "verified@example.com", Primary: false, Verified: true},
 		}, "verified@example.com"},
-		{"falls back to first email", []GitHubEmail{
+		{"never returns an unverified email", []GitHubEmail{
 			{Email: "only@example.com", Primary: false, Verified: false},
-		}, "only@example.com"},
+		}, ""},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result := pickEmail(tc.emails)
+			result := pickVerifiedEmail(tc.emails)
 			assert.Equal(t, tc.expected, result)
 		})
 	}

@@ -67,8 +67,8 @@ func NewBudgetTrackerWithLimits(capacity int, window time.Duration) *BudgetTrack
 }
 
 // Allow returns true if the given installation has at least one request of
-// budget remaining and consumes it. Returns false (and the duration until the
-// bucket's full reset) if the bucket is empty.
+// budget remaining and consumes it. Returns false (and the duration until one
+// request refills) if the bucket is empty.
 func (t *BudgetTracker) Allow(installationID int64) (allowed bool, retryAfter time.Duration) {
 	allowed, retryAfter, _ = t.AllowWithStatus(installationID)
 	return allowed, retryAfter
@@ -76,7 +76,11 @@ func (t *BudgetTracker) Allow(installationID int64) (allowed bool, retryAfter ti
 
 // AllowWithStatus consumes one request from an installation's budget and
 // returns the resulting budget snapshot. When the request is refused,
-// retryAfter is the duration until ResetAt.
+// retryAfter is the duration until one request refills; ResetAt in the
+// snapshot stays the time the bucket is full again.
+//
+// The bucket is per process: N API replicas together allow N times the
+// budget. GitHub's own 403/429 still bounds the installation.
 func (t *BudgetTracker) AllowWithStatus(installationID int64) (allowed bool, retryAfter time.Duration, status GitHubRateLimit) {
 	if t == nil {
 		return true, 0, GitHubRateLimit{}
@@ -93,7 +97,12 @@ func (t *BudgetTracker) AllowWithStatus(installationID int64) (allowed bool, ret
 	}
 
 	status = t.statusLocked(entry.tokens, now)
-	return false, status.ResetAt.Sub(now), status
+	refillPerSecond := float64(t.capacity) / t.window.Seconds()
+	retryAfter = time.Duration(math.Ceil((1-entry.tokens)/refillPerSecond)) * time.Second
+	if retryAfter <= 0 {
+		retryAfter = time.Second
+	}
+	return false, retryAfter, status
 }
 
 // Remaining returns the current approximate remaining budget for an

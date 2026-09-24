@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -22,6 +23,14 @@ import (
 // statement so pgx infers text parameters for both.
 const githubRefreshLockSQL = "SELECT pg_advisory_xact_lock(hashtextextended('github_oauth_refresh:' || $1::text || ':' || $2::text, 0))"
 
+// maxHeldGitHubRefreshLocks bounds how many pool connections lock
+// transactions may hold at once. Each holder's fn needs a second pool
+// connection for its own queries, so if lock transactions could take every
+// connection (many users' tokens expiring together after a deploy), every fn
+// would wait on a connection that only another waiting fn can release. Kept
+// well under the default pool size of 25.
+const maxHeldGitHubRefreshLocks = 4
+
 // githubRefreshLockBeginner is the narrow slice of *pgxpool.Pool this needs.
 type githubRefreshLockBeginner interface {
 	Begin(ctx context.Context) (pgx.Tx, error)
@@ -32,10 +41,11 @@ type githubRefreshLockBeginner interface {
 // two pods cannot both spend the same single-use GitHub refresh token.
 type PgGitHubRefreshLocker struct {
 	pool githubRefreshLockBeginner
+	held chan struct{}
 }
 
 func NewPgGitHubRefreshLocker(pool githubRefreshLockBeginner) *PgGitHubRefreshLocker {
-	return &PgGitHubRefreshLocker{pool: pool}
+	return &PgGitHubRefreshLocker{pool: pool, held: make(chan struct{}, maxHeldGitHubRefreshLocks)}
 }
 
 // WithUserRefreshLock runs fn while holding the per-account advisory lock. The
@@ -48,6 +58,9 @@ func NewPgGitHubRefreshLocker(pool githubRefreshLockBeginner) *PgGitHubRefreshLo
 // heal-on-cleared-refresh path in refreshUserGitHubTokenLocked converge on the
 // correct row), whereas refusing to refresh would sign the user out. Correctness
 // never depends on this lock; it only avoids a wasted, doomed GitHub call.
+// It also degrades open when maxHeldGitHubRefreshLocks lock transactions are
+// already open, so lock holders can never exhaust the pool their fn needs.
+// Every degraded run logs a warning.
 func (l *PgGitHubRefreshLocker) WithUserRefreshLock(ctx context.Context, provider, providerUserID string, fn func(context.Context) error) error {
 	if l == nil || l.pool == nil || fn == nil {
 		if fn == nil {
@@ -55,13 +68,27 @@ func (l *PgGitHubRefreshLocker) WithUserRefreshLock(ctx context.Context, provide
 		}
 		return fn(ctx)
 	}
+	if l.held != nil {
+		select {
+		case l.held <- struct{}{}:
+			defer func() { <-l.held }()
+		default:
+			slog.Warn("github refresh running unserialized: lock slots busy",
+				"provider", provider, "provider_user_id", providerUserID, "max_held", cap(l.held))
+			return fn(ctx)
+		}
+	}
 	tx, err := l.pool.Begin(ctx)
 	if err != nil {
+		slog.Warn("github refresh running unserialized: begin lock transaction failed",
+			"provider", provider, "provider_user_id", providerUserID, "error", err)
 		return fn(ctx)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, githubRefreshLockSQL, provider, providerUserID); err != nil {
+		slog.Warn("github refresh running unserialized: advisory lock failed",
+			"provider", provider, "provider_user_id", providerUserID, "error", err)
 		return fn(ctx)
 	}
 	return fn(ctx)

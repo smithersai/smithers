@@ -221,12 +221,14 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 		return BranchLockResponse{}, pkgerrors.Internal("failed to take over branch lock")
 	}
 
-	// The lock is live and held by someone else. An approved join request is
-	// the membership that lets the caller share it.
+	// The lock is live and held by someone else. A join request the current
+	// holder approved for this lock generation is the membership that lets the
+	// caller share it; an approval from an earlier holder does not count.
 	approved, err := s.queries.HasApprovedBranchLockJoin(ctx, db.HasApprovedBranchLockJoinParams{
-		RepositoryID: input.RepositoryID,
-		Branch:       input.Branch,
-		RequesterID:  input.UserID,
+		RepositoryID:   input.RepositoryID,
+		Branch:         input.Branch,
+		RequesterID:    input.UserID,
+		LockGeneration: lock.Generation,
 	})
 	if err != nil {
 		return BranchLockResponse{}, pkgerrors.Internal("failed to check branch-lock membership")
@@ -254,9 +256,10 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 	}
 	pendingRequest := false
 	if latest, err := s.queries.GetBranchLockJoinRequestForRequester(ctx, db.GetBranchLockJoinRequestForRequesterParams{
-		RepositoryID: input.RepositoryID,
-		Branch:       input.Branch,
-		RequesterID:  input.UserID,
+		RepositoryID:   input.RepositoryID,
+		Branch:         input.Branch,
+		RequesterID:    input.UserID,
+		LockGeneration: lock.Generation,
 	}); err == nil {
 		pendingRequest = latest.Status == "pending"
 	}
@@ -273,9 +276,10 @@ func (s *BranchLockService) AcquireBranchLock(ctx context.Context, input Acquire
 	}
 }
 
-// HeartbeatBranchLock renews the caller's lock. NotFound when the caller no
-// longer holds it (released, or taken over after a stale window) so the
-// client stops beating and can re-acquire.
+// HeartbeatBranchLock renews the lock the caller holds or shares as a joiner
+// approved for the current lock generation. NotFound when the caller no
+// longer holds or shares it (released, or taken over after a stale window)
+// so the client stops beating and can re-acquire.
 func (s *BranchLockService) HeartbeatBranchLock(ctx context.Context, input AcquireBranchLockInput) error {
 	rows, err := s.queries.HeartbeatBranchLock(ctx, db.HeartbeatBranchLockParams{
 		RepositoryID: input.RepositoryID,
@@ -341,9 +345,10 @@ func (s *BranchLockService) RequestBranchLockJoin(ctx context.Context, input Req
 	}
 
 	if latest, err := s.queries.GetBranchLockJoinRequestForRequester(ctx, db.GetBranchLockJoinRequestForRequesterParams{
-		RepositoryID: input.RepositoryID,
-		Branch:       input.Branch,
-		RequesterID:  input.UserID,
+		RepositoryID:   input.RepositoryID,
+		Branch:         input.Branch,
+		RequesterID:    input.UserID,
+		LockGeneration: lock.Generation,
 	}); err == nil {
 		switch latest.Status {
 		case "pending":
@@ -354,16 +359,18 @@ func (s *BranchLockService) RequestBranchLockJoin(ctx context.Context, input Req
 	}
 
 	created, err := s.queries.CreateBranchLockJoinRequest(ctx, db.CreateBranchLockJoinRequestParams{
-		RepositoryID: input.RepositoryID,
-		Branch:       input.Branch,
-		RequesterID:  input.UserID,
+		RepositoryID:   input.RepositoryID,
+		Branch:         input.Branch,
+		RequesterID:    input.UserID,
+		LockGeneration: lock.Generation,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
 			latest, latestErr := s.queries.GetBranchLockJoinRequestForRequester(ctx, db.GetBranchLockJoinRequestForRequesterParams{
-				RepositoryID: input.RepositoryID,
-				Branch:       input.Branch,
-				RequesterID:  input.UserID,
+				RepositoryID:   input.RepositoryID,
+				Branch:         input.Branch,
+				RequesterID:    input.UserID,
+				LockGeneration: lock.Generation,
 			})
 			if latestErr == nil {
 				return mapBranchLockJoinRequest(latest, input.Username), nil
@@ -402,8 +409,9 @@ func (s *BranchLockService) ListPendingBranchLockJoinRequests(ctx context.Contex
 		return nil, pkgerrors.Forbidden("only the branch holder can list join requests")
 	}
 	rows, err := s.queries.ListPendingBranchLockJoinRequests(ctx, db.ListPendingBranchLockJoinRequestsParams{
-		RepositoryID: input.RepositoryID,
-		Branch:       input.Branch,
+		RepositoryID:   input.RepositoryID,
+		Branch:         input.Branch,
+		LockGeneration: lock.Generation,
 	})
 	if err != nil {
 		return nil, pkgerrors.Internal("failed to list join requests")
@@ -443,6 +451,12 @@ func (s *BranchLockService) DecideBranchLockJoin(ctx context.Context, input Deci
 	}
 	if lock.UserID != input.ResolverID {
 		return BranchLockJoinRequestResponse{}, pkgerrors.Forbidden("only the branch holder can decide join requests")
+	}
+	if request.LockGeneration != lock.Generation {
+		// The request was made to an earlier holder of this branch. The
+		// current holder never saw it, so it cannot be approved into their
+		// lock.
+		return BranchLockJoinRequestResponse{}, pkgerrors.Conflict("branch lock changed hands; the request is moot")
 	}
 
 	status := "denied"

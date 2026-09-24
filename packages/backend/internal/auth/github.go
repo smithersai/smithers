@@ -213,7 +213,7 @@ func (c *GitHubClient) FetchUser(ctx context.Context, accessToken string) (servi
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return services.GitHubUserProfile{}, fmt.Errorf("github user request failed with status %d", resp.StatusCode)
+		return services.GitHubUserProfile{}, githubStatusError("github user request", resp.StatusCode)
 	}
 
 	var profile services.GitHubUserProfile
@@ -241,7 +241,7 @@ func (c *GitHubClient) FetchEmails(ctx context.Context, accessToken string) ([]s
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("github emails request failed with status %d", resp.StatusCode)
+		return nil, githubStatusError("github emails request", resp.StatusCode)
 	}
 
 	var emails []services.GitHubEmail
@@ -250,6 +250,15 @@ func (c *GitHubClient) FetchEmails(ctx context.Context, accessToken string) ([]s
 	}
 
 	return emails, nil
+}
+
+// githubStatusError wraps services.ErrGitHubTokenRejected for 401 and 403 so
+// callers can tell a bad credential from a GitHub failure.
+func githubStatusError(label string, status int) error {
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return fmt.Errorf("%s failed with status %d: %w", label, status, services.ErrGitHubTokenRejected)
+	}
+	return fmt.Errorf("%s failed with status %d", label, status)
 }
 
 func setGitHubAPIHeaders(req *http.Request, accessToken string) {

@@ -180,9 +180,9 @@ func FuzzRandomHex(f *testing.F) {
 	})
 }
 
-// FuzzPickEmail fuzzes the email picker that selects the best email from a
+// FuzzPickVerifiedEmail fuzzes the picker that selects the best verified email from a
 // GitHub OAuth response.
-func FuzzPickEmail(f *testing.F) {
+func FuzzPickVerifiedEmail(f *testing.F) {
 	f.Add("user@example.com", true, true)
 	f.Add("", false, false)
 	f.Add("test@test.com", false, true)
@@ -194,7 +194,7 @@ func FuzzPickEmail(f *testing.F) {
 			{Email: email, Primary: primary, Verified: verified},
 		}
 		// Must never panic.
-		_ = pickEmail(emails)
+		_ = pickVerifiedEmail(emails)
 	})
 }
 

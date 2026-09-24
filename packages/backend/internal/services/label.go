@@ -4,7 +4,6 @@ import (
 	"context"
 	stdErrors "errors"
 	"log/slog"
-	"math"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -543,21 +542,7 @@ func normalizeLabelNames(names []string) ([]string, error) {
 		seen[name] = struct{}{}
 		result = append(result, name)
 	}
-	return mustNormalizedLabelNames(result), nil
-}
-
-func mustNormalizedLabelNames(names []string) []string {
-	if len(names) == 0 {
-		panic("normalizeLabelNames produced no labels after validating non-empty input")
-	}
-	return names
-}
-
-func mustInt32LabelPageSize(size int64) int32 {
-	if size > math.MaxInt32 {
-		panic("label page size exceeds int32")
-	}
-	return int32(size)
+	return result, nil
 }
 
 func (s *LabelService) listAllLabelsForIssue(ctx context.Context, issueID int64) ([]db.Label, error) {
@@ -572,12 +557,10 @@ func (s *LabelService) listAllLabelsForIssue(ctx context.Context, issueID int64)
 	labels := make([]db.Label, 0, total)
 	offset := int32(0)
 	for int64(len(labels)) < total {
-		pageSize64 := int64(maxPerPage)
-		remaining := total - int64(len(labels))
-		if remaining < pageSize64 {
-			pageSize64 = remaining
+		pageSize := int32(maxPerPage)
+		if remaining := total - int64(len(labels)); remaining < int64(pageSize) {
+			pageSize = int32(remaining)
 		}
-		pageSize := mustInt32LabelPageSize(pageSize64)
 
 		page, err := s.queries.ListLabelsForIssue(ctx, db.ListLabelsForIssueParams{
 			IssueID:    issueID,

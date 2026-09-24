@@ -176,6 +176,7 @@ func (s *AgentService) reapExpiredSession(ctx context.Context, session db.AgentS
 		return err
 	}
 
+	s.cancelAgentFlowRunBestEffort(ctx, timedOutSession, "timeout")
 	s.observeAgentSessionTimeout()
 	s.notifyAgentSessionStatus(ctx, timedOutSession)
 	s.finalizeAgentSession(ctx, timedOutSession, "timed_out", "agent session timed out")

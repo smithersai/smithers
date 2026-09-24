@@ -50,19 +50,26 @@ func (q *Queries) AcquireBranchLockInsert(ctx context.Context, arg AcquireBranch
 }
 
 const createBranchLockJoinRequest = `-- name: CreateBranchLockJoinRequest :one
-INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id)
-VALUES ($1, $2, $3)
+INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id, lock_generation)
+VALUES ($1, $2, $3, $4)
 RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation
 `
 
 type CreateBranchLockJoinRequestParams struct {
-	RepositoryID int64  `json:"repository_id"`
-	Branch       string `json:"branch"`
-	RequesterID  int64  `json:"requester_id"`
+	RepositoryID   int64  `json:"repository_id"`
+	Branch         string `json:"branch"`
+	RequesterID    int64  `json:"requester_id"`
+	LockGeneration string `json:"lock_generation"`
 }
 
+// lock_generation binds the request to the holder's current acquisition.
 func (q *Queries) CreateBranchLockJoinRequest(ctx context.Context, arg CreateBranchLockJoinRequestParams) (BranchLockJoinRequest, error) {
-	row := q.db.QueryRow(ctx, createBranchLockJoinRequest, arg.RepositoryID, arg.Branch, arg.RequesterID)
+	row := q.db.QueryRow(ctx, createBranchLockJoinRequest,
+		arg.RepositoryID,
+		arg.Branch,
+		arg.RequesterID,
+		arg.LockGeneration,
+	)
 	var i BranchLockJoinRequest
 	err := row.Scan(
 		&i.ID,
@@ -131,18 +138,26 @@ SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at,
 WHERE repository_id = $1
   AND branch = $2
   AND requester_id = $3
+  AND lock_generation = $4
 ORDER BY created_at DESC
 LIMIT 1
 `
 
 type GetBranchLockJoinRequestForRequesterParams struct {
-	RepositoryID int64  `json:"repository_id"`
-	Branch       string `json:"branch"`
-	RequesterID  int64  `json:"requester_id"`
+	RepositoryID   int64  `json:"repository_id"`
+	Branch         string `json:"branch"`
+	RequesterID    int64  `json:"requester_id"`
+	LockGeneration string `json:"lock_generation"`
 }
 
+// The requester's latest ask against the current lock generation.
 func (q *Queries) GetBranchLockJoinRequestForRequester(ctx context.Context, arg GetBranchLockJoinRequestForRequesterParams) (BranchLockJoinRequest, error) {
-	row := q.db.QueryRow(ctx, getBranchLockJoinRequestForRequester, arg.RepositoryID, arg.Branch, arg.RequesterID)
+	row := q.db.QueryRow(ctx, getBranchLockJoinRequestForRequester,
+		arg.RepositoryID,
+		arg.Branch,
+		arg.RequesterID,
+		arg.LockGeneration,
+	)
 	var i BranchLockJoinRequest
 	err := row.Scan(
 		&i.ID,
@@ -175,20 +190,28 @@ SELECT EXISTS (
     WHERE repository_id = $1
       AND branch = $2
       AND requester_id = $3
+      AND lock_generation = $4
       AND status = 'approved'
 ) AS approved
 `
 
 type HasApprovedBranchLockJoinParams struct {
-	RepositoryID int64  `json:"repository_id"`
-	Branch       string `json:"branch"`
-	RequesterID  int64  `json:"requester_id"`
+	RepositoryID   int64  `json:"repository_id"`
+	Branch         string `json:"branch"`
+	RequesterID    int64  `json:"requester_id"`
+	LockGeneration string `json:"lock_generation"`
 }
 
 // An approved request is the membership record that lets a second user
-// acquire (and heartbeat) the held branch.
+// acquire (and heartbeat) the held branch. It counts only for the lock
+// generation the holder approved it under, never for a later holder.
 func (q *Queries) HasApprovedBranchLockJoin(ctx context.Context, arg HasApprovedBranchLockJoinParams) (bool, error) {
-	row := q.db.QueryRow(ctx, hasApprovedBranchLockJoin, arg.RepositoryID, arg.Branch, arg.RequesterID)
+	row := q.db.QueryRow(ctx, hasApprovedBranchLockJoin,
+		arg.RepositoryID,
+		arg.Branch,
+		arg.RequesterID,
+		arg.LockGeneration,
+	)
 	var approved bool
 	err := row.Scan(&approved)
 	return approved, err
@@ -197,9 +220,19 @@ func (q *Queries) HasApprovedBranchLockJoin(ctx context.Context, arg HasApproved
 const heartbeatBranchLock = `-- name: HeartbeatBranchLock :execrows
 UPDATE branch_locks
 SET heartbeat_at = NOW(), updated_at = NOW()
-WHERE repository_id = $1
-  AND branch = $2
-  AND user_id = $3
+WHERE branch_locks.repository_id = $1
+  AND branch_locks.branch = $2
+  AND (
+    branch_locks.user_id = $3
+    OR EXISTS (
+        SELECT 1 FROM branch_lock_join_requests j
+        WHERE j.repository_id = branch_locks.repository_id
+          AND j.branch = branch_locks.branch
+          AND j.lock_generation = branch_locks.generation
+          AND j.requester_id = $3
+          AND j.status = 'approved'
+    )
+  )
 `
 
 type HeartbeatBranchLockParams struct {
@@ -208,7 +241,8 @@ type HeartbeatBranchLockParams struct {
 	UserID       int64  `json:"user_id"`
 }
 
-// Renew liveness. The holder and approved joiners may both heartbeat.
+// Renew liveness. The holder and joiners approved for the current lock
+// generation may both heartbeat.
 func (q *Queries) HeartbeatBranchLock(ctx context.Context, arg HeartbeatBranchLockParams) (int64, error) {
 	result, err := q.db.Exec(ctx, heartbeatBranchLock, arg.RepositoryID, arg.Branch, arg.UserID)
 	if err != nil {
@@ -221,18 +255,20 @@ const listPendingBranchLockJoinRequests = `-- name: ListPendingBranchLockJoinReq
 SELECT id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation FROM branch_lock_join_requests
 WHERE repository_id = $1
   AND branch = $2
+  AND lock_generation = $3
   AND status = 'pending'
 ORDER BY created_at ASC
 `
 
 type ListPendingBranchLockJoinRequestsParams struct {
-	RepositoryID int64  `json:"repository_id"`
-	Branch       string `json:"branch"`
+	RepositoryID   int64  `json:"repository_id"`
+	Branch         string `json:"branch"`
+	LockGeneration string `json:"lock_generation"`
 }
 
-// The holder's inbox for one branch.
+// The holder's inbox for one branch and lock generation.
 func (q *Queries) ListPendingBranchLockJoinRequests(ctx context.Context, arg ListPendingBranchLockJoinRequestsParams) ([]BranchLockJoinRequest, error) {
-	rows, err := q.db.Query(ctx, listPendingBranchLockJoinRequests, arg.RepositoryID, arg.Branch)
+	rows, err := q.db.Query(ctx, listPendingBranchLockJoinRequests, arg.RepositoryID, arg.Branch, arg.LockGeneration)
 	if err != nil {
 		return nil, err
 	}
@@ -264,7 +300,9 @@ func (q *Queries) ListPendingBranchLockJoinRequests(ctx context.Context, arg Lis
 const listPendingBranchLockJoinRequestsForHolder = `-- name: ListPendingBranchLockJoinRequestsForHolder :many
 SELECT j.id, j.repository_id, j.branch, j.requester_id, j.status, j.resolver_id, j.created_at, j.resolved_at, j.lock_generation FROM branch_lock_join_requests j
 JOIN branch_locks l
-  ON l.repository_id = j.repository_id AND l.branch = j.branch
+  ON l.repository_id = j.repository_id
+ AND l.branch = j.branch
+ AND l.generation = j.lock_generation
 WHERE l.user_id = $1
   AND j.status = 'pending'
 ORDER BY j.created_at ASC
@@ -359,6 +397,7 @@ const takeOverStaleBranchLock = `-- name: TakeOverStaleBranchLock :one
 UPDATE branch_locks
 SET user_id = $3,
     workspace_id = $4,
+    generation = gen_random_uuid(),
     heartbeat_at = NOW(),
     updated_at = NOW()
 WHERE repository_id = $1
@@ -376,7 +415,8 @@ type TakeOverStaleBranchLockParams struct {
 }
 
 // Steal a lock whose heartbeat has gone stale (holder crashed or left without
-// releasing). Returns no row when the lock is still live.
+// releasing). Returns no row when the lock is still live. The new holder
+// starts a new generation, so approvals granted by the old holder lapse.
 func (q *Queries) TakeOverStaleBranchLock(ctx context.Context, arg TakeOverStaleBranchLockParams) (BranchLock, error) {
 	row := q.db.QueryRow(ctx, takeOverStaleBranchLock,
 		arg.RepositoryID,

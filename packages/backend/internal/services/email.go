@@ -333,6 +333,9 @@ func (s *EmailService) VerifyEmail(ctx context.Context, rawToken string) (Verify
 		ID:     emailID,
 		UserID: token.UserID,
 	}); err != nil {
+		if isEmailUniqueViolation(err) {
+			return VerifyEmailResult{}, pkgerrors.Conflict("email address is already verified by another account")
+		}
 		return VerifyEmailResult{}, pkgerrors.Internal("failed to activate email")
 	}
 

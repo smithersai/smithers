@@ -335,9 +335,6 @@ func TestLabel_H_HelperBranches(t *testing.T) {
 	_, err := validateLabelName("bad\x00name")
 	require.Equal(t, 422, labelAPIStatus(t, err))
 
-	require.Panics(t, func() { mustNormalizedLabelNames(nil) })
-	require.Panics(t, func() { mustInt32LabelPageSize(int64(^uint32(0))) })
-
 	_, err = svc.resolveRepoByOwnerAndName(ctx, "", "repo")
 	require.Equal(t, 400, labelAPIStatus(t, err))
 	_, err = svc.resolveRepoByOwnerAndName(ctx, "owner", "")

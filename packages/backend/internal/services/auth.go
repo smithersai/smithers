@@ -231,6 +231,12 @@ var (
 // clears the stored refresh token so it stops retrying a dead credential.
 var ErrGitHubRefreshTokenInvalid = stdErrors.New("github refresh token is invalid")
 
+// ErrGitHubTokenRejected is wrapped by a GitHubClient's FetchUser and
+// FetchEmails when GitHub answers 401 or 403: the caller's access token is
+// expired, revoked, or lacks scope. resolveOAuthUser maps it to 401 so a bad
+// client credential is not reported as a server bug.
+var ErrGitHubTokenRejected = stdErrors.New("github access token was rejected")
+
 const (
 	defaultAuth0RedirectURL = "http://localhost:4000/api/auth/auth0/callback"
 	defaultAuth0Connection  = "github"
@@ -591,12 +597,12 @@ func (s *AuthService) completeOAuthWithClient(ctx context.Context, client GitHub
 func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient, provider, accessToken, refreshToken string, expiresIn int64) (db.User, error) {
 	profile, err := client.FetchUser(ctx, accessToken)
 	if err != nil {
-		return db.User{}, pkgerrors.Internal("failed to fetch oauth profile")
+		return db.User{}, oauthFetchError("profile", err)
 	}
 
 	emails, err := client.FetchEmails(ctx, accessToken)
 	if err != nil {
-		return db.User{}, pkgerrors.Internal("failed to fetch oauth emails")
+		return db.User{}, oauthFetchError("emails", err)
 	}
 
 	candidateIdentities := make([]closedAlphaIdentity, 0, len(emails)+1)
@@ -671,7 +677,10 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 				return db.User{}, accessErr
 			}
 
-			email := pickEmail(emails)
+			// Only a GitHub-verified address may become users.email: an
+			// unverified one would squat the real owner's address on
+			// uq_users_lower_email and block their signup.
+			email := pickVerifiedEmail(emails)
 			emailText := pgtype.Text{String: email, Valid: email != ""}
 			user, err = s.queries.CreateUser(ctx, db.CreateUserParams{
 				Username:      profile.Login,
@@ -752,14 +761,16 @@ func (s *AuthService) resolveOAuthUser(ctx context.Context, client GitHubClient,
 		return db.User{}, pkgerrors.Internal("failed to upsert oauth account")
 	}
 
-	if email := pickEmail(emails); email != "" {
-		_, _ = s.queries.UpsertEmailAddress(ctx, db.UpsertEmailAddressParams{
+	if email := pickVerifiedEmail(emails); email != "" {
+		if _, upsertErr := s.queries.UpsertEmailAddress(ctx, db.UpsertEmailAddressParams{
 			UserID:      user.ID,
 			Email:       email,
 			LowerEmail:  strings.ToLower(email),
 			IsActivated: true,
 			IsPrimary:   true,
-		})
+		}); upsertErr != nil {
+			slog.Warn("oauth login could not record verified email", "user_id", user.ID, "error", upsertErr)
+		}
 	}
 
 	return user, nil
@@ -881,12 +892,24 @@ func (s *AuthService) ExchangeGitHubToken(ctx context.Context, githubAccessToken
 		if token.Name != name || token.ID >= created.ID {
 			continue
 		}
-		if _, err := s.queries.DeleteAccessTokenByIDAndUserID(ctx, db.DeleteAccessTokenByIDAndUserIDParams{
+		rows, err := s.queries.DeleteAccessTokenByIDAndUserID(ctx, db.DeleteAccessTokenByIDAndUserIDParams{
 			ID:     token.ID,
 			UserID: user.ID,
-		}); err != nil {
+		})
+		if err != nil {
 			return ExchangeGitHubTokenResult{}, pkgerrors.Internal("failed to rotate access token")
 		}
+		if rows == 0 {
+			continue
+		}
+		revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+			Kind:      revocation.KindTokenRevoked,
+			UserID:    user.ID,
+			TokenID:   token.ID,
+			TokenHash: token.TokenHash,
+			Reason:    "token rotated",
+			ActorID:   user.ID,
+		})
 	}
 
 	return ExchangeGitHubTokenResult{
@@ -1146,7 +1169,7 @@ func (s *AuthService) enforceWorkOSWaitlistAccess(ctx context.Context, profile G
 	}
 
 	// Only a GitHub-verified email may satisfy the closed-alpha waitlist gate.
-	// pickEmail would fall back to an unverified address, letting an un-invited
+	// Falling back to an unverified address would let an un-invited
 	// attacker match a whitelisted/approved email they do not actually own (the
 	// same invariant already enforced when building candidateIdentities above).
 	email := pickVerifiedEmail(emails)
@@ -1431,27 +1454,20 @@ func containsPrivilegedScope(scopes []string) bool {
 	return false
 }
 
-func pickEmail(emails []GitHubEmail) string {
-	for _, email := range emails {
-		if email.Primary && email.Verified {
-			return email.Email
-		}
+// oauthFetchError maps a GitHub profile or emails fetch failure to an API
+// error: a rejected token is the caller's 401, anything else is a 500 that
+// keeps the cause for the server log.
+func oauthFetchError(what string, err error) error {
+	if stdErrors.Is(err, ErrGitHubTokenRejected) {
+		return pkgerrors.Unauthorized("github access token was rejected")
 	}
-	for _, email := range emails {
-		if email.Verified {
-			return email.Email
-		}
-	}
-	if len(emails) > 0 {
-		return emails[0].Email
-	}
-	return ""
+	return pkgerrors.Internal("failed to fetch oauth " + what + ": " + err.Error())
 }
 
 // pickVerifiedEmail returns a GitHub-verified email (primary first) or "" when
-// none is verified. Security-sensitive callers (the closed-alpha waitlist gate)
-// MUST use this instead of pickEmail: matching an unverified address would let an
-// un-invited attacker claim a whitelisted/approved email they do not own.
+// none is verified. Every caller that trusts an address (the closed-alpha
+// waitlist gate, users.email, activated email rows) uses it: an unverified
+// address would let an attacker claim or squat an email they do not own.
 func pickVerifiedEmail(emails []GitHubEmail) string {
 	for _, email := range emails {
 		if email.Primary && email.Verified {

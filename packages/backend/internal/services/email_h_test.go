@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -191,6 +192,22 @@ func TestEmail_H_VerifyEmailBranches(t *testing.T) {
 				activateEmailFn: func(context.Context, db.ActivateEmailParams) error { return errors.New("activate failed") },
 			},
 			want: http.StatusInternalServerError,
+		},
+		{
+			// Unverified claims no longer reserve an address, so the only
+			// way activation collides is another account that proved it.
+			name: "address verified by another account",
+			q: mockEmailQuerier{
+				getEmailVerificationTokenByHashFn: func(context.Context, string) (db.EmailVerificationToken, error) { return token, nil },
+				consumeEmailVerificationTokenFn:   func(context.Context, string) (int64, error) { return 1, nil },
+				listUserEmailsFn: func(context.Context, int64) ([]db.EmailAddress, error) {
+					return []db.EmailAddress{{ID: 9, Email: "user@example.com"}}, nil
+				},
+				activateEmailFn: func(context.Context, db.ActivateEmailParams) error {
+					return &pgconn.PgError{Code: "23505", ConstraintName: "uq_email_addresses_activated_lower_email"}
+				},
+			},
+			want: http.StatusConflict,
 		},
 	}
 

@@ -164,28 +164,6 @@ func (s *AnonSandboxService) Create(ctx context.Context, repoFullName, branch, c
 		return AnonSandboxCreation{}, pkgerrors.BadRequest("invalid branch name")
 	}
 
-	// Both caps FAIL CLOSED: a count error refuses creation rather than
-	// letting an outage disable the spend guard.
-	if s.cfg.MaxConcurrent > 0 {
-		active, err := s.q.CountActiveAnonSandboxes(ctx)
-		if err != nil {
-			return AnonSandboxCreation{}, err
-		}
-		if active >= int64(s.cfg.MaxConcurrent) {
-			return AnonSandboxCreation{}, pkgerrors.QuotaExceeded("anonymous sandbox capacity reached, try again shortly")
-		}
-	}
-	clientIP = strings.TrimSpace(clientIP)
-	if s.cfg.MaxPerIP > 0 && clientIP != "" {
-		perIP, err := s.q.CountActiveAnonSandboxesForIP(ctx, clientIP)
-		if err != nil {
-			return AnonSandboxCreation{}, err
-		}
-		if perIP >= int64(s.cfg.MaxPerIP) {
-			return AnonSandboxCreation{}, pkgerrors.QuotaExceeded("too many active anonymous sandboxes for this address")
-		}
-	}
-
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		return AnonSandboxCreation{}, pkgerrors.Internal("mint sandbox token: " + err.Error())
@@ -193,12 +171,18 @@ func (s *AnonSandboxService) Create(ctx context.Context, repoFullName, branch, c
 	token := hex.EncodeToString(tokenBytes)
 	tokenHash := sha256.Sum256([]byte(token))
 
-	row, err := s.q.CreateAnonSandbox(ctx, db.CreateAnonSandboxParams{
-		RepoFullName: repoFullName,
-		Branch:       branch,
-		TokenHash:    hex.EncodeToString(tokenHash[:]),
-		ClientIp:     clientIP,
-		ExpiresAt:    s.now().UTC().Add(s.cfg.TTL),
+	clientIP = strings.TrimSpace(clientIP)
+	var row db.AnonSandbox
+	err := s.withAdmission(ctx, func(q anonSandboxAdmissionStore) error {
+		var admitErr error
+		row, admitErr = s.admit(ctx, q, db.CreateAnonSandboxParams{
+			RepoFullName: repoFullName,
+			Branch:       branch,
+			TokenHash:    hex.EncodeToString(tokenHash[:]),
+			ClientIp:     clientIP,
+			ExpiresAt:    s.now().UTC().Add(s.cfg.TTL),
+		})
+		return admitErr
 	})
 	if err != nil {
 		return AnonSandboxCreation{}, err
@@ -206,6 +190,68 @@ func (s *AnonSandboxService) Create(ctx context.Context, repoFullName, branch, c
 
 	s.provisionAsync(ctx, row)
 	return AnonSandboxCreation{Sandbox: row, Token: token}, nil
+}
+
+// anonSandboxAdmissionStore is what one admission decision reads and writes.
+type anonSandboxAdmissionStore interface {
+	CountActiveAnonSandboxes(ctx context.Context) (int64, error)
+	CountActiveAnonSandboxesForIP(ctx context.Context, clientIP string) (int64, error)
+	CreateAnonSandbox(ctx context.Context, arg db.CreateAnonSandboxParams) (db.AnonSandbox, error)
+}
+
+// anonSandboxTxQuerier is satisfied by *db.Queries.
+type anonSandboxTxQuerier interface {
+	BeginTx(ctx context.Context) (pgx.Tx, error)
+	WithTx(tx pgx.Tx) *db.Queries
+}
+
+// withAdmission runs fn in a transaction that first takes the admission
+// advisory lock, so concurrent creates on any replica cannot all read a count
+// below the cap and then all insert. A store without transactions (unit-test
+// fakes) runs fn directly.
+func (s *AnonSandboxService) withAdmission(ctx context.Context, fn func(anonSandboxAdmissionStore) error) error {
+	txq, ok := s.q.(anonSandboxTxQuerier)
+	if !ok {
+		return fn(s.q)
+	}
+	tx, err := txq.BeginTx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := txq.WithTx(tx)
+	if err := q.LockAnonSandboxAdmission(ctx); err != nil {
+		return err
+	}
+	if err := fn(q); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// admit enforces both caps and inserts the row. Both caps FAIL CLOSED: a
+// count error refuses creation rather than letting an outage disable the
+// spend guard.
+func (s *AnonSandboxService) admit(ctx context.Context, q anonSandboxAdmissionStore, arg db.CreateAnonSandboxParams) (db.AnonSandbox, error) {
+	if s.cfg.MaxConcurrent > 0 {
+		active, err := q.CountActiveAnonSandboxes(ctx)
+		if err != nil {
+			return db.AnonSandbox{}, err
+		}
+		if active >= int64(s.cfg.MaxConcurrent) {
+			return db.AnonSandbox{}, pkgerrors.QuotaExceeded("anonymous sandbox capacity reached, try again shortly")
+		}
+	}
+	if s.cfg.MaxPerIP > 0 && arg.ClientIp != "" {
+		perIP, err := q.CountActiveAnonSandboxesForIP(ctx, arg.ClientIp)
+		if err != nil {
+			return db.AnonSandbox{}, err
+		}
+		if perIP >= int64(s.cfg.MaxPerIP) {
+			return db.AnonSandbox{}, pkgerrors.QuotaExceeded("too many active anonymous sandboxes for this address")
+		}
+	}
+	return q.CreateAnonSandbox(ctx, arg)
 }
 
 // verifyToken resolves a live sandbox by id and constant-time-checks the

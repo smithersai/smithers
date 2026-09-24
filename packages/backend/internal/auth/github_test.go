@@ -257,6 +257,7 @@ func TestGitHubClient_FetchUser(t *testing.T) {
 
 		_, err := client.FetchUser(context.Background(), "access-token")
 		require.Error(t, err)
+		require.ErrorIs(t, err, services.ErrGitHubTokenRejected, "a 401 must be typed so the caller answers 401, not 500")
 	})
 
 	t.Run("malformed non-json response returns error", func(t *testing.T) {
@@ -364,6 +365,22 @@ func TestGitHubClient_FetchEmails(t *testing.T) {
 
 		_, err := client.FetchEmails(context.Background(), "access-token")
 		require.Error(t, err)
+		require.NotErrorIs(t, err, services.ErrGitHubTokenRejected, "a 5xx is not a rejected credential")
+	})
+
+	t.Run("403 is a typed rejected-token error", func(t *testing.T) {
+		t.Parallel()
+
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+		}))
+		defer srv.Close()
+
+		client := NewGitHubClient("client-id", "client-secret", "http://localhost:4000/api/auth/github/callback", "", "")
+		client.apiBaseURL = srv.URL
+
+		_, err := client.FetchEmails(context.Background(), "access-token")
+		require.ErrorIs(t, err, services.ErrGitHubTokenRejected)
 	})
 
 	t.Run("malformed non-json response returns error", func(t *testing.T) {

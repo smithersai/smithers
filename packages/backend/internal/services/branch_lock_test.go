@@ -117,8 +117,10 @@ func uniqueViolation() error {
 }
 
 func liveLock(userID int64) db.BranchLock {
-	return db.BranchLock{RepositoryID: 1, Branch: "landing/app/main", UserID: userID, HeartbeatAt: time.Now()}
+	return db.BranchLock{RepositoryID: 1, Branch: "landing/app/main", UserID: userID, HeartbeatAt: time.Now(), Generation: testLockGeneration}
 }
+
+const testLockGeneration = "11111111-1111-1111-1111-111111111111"
 
 func TestAcquireBranchLock_FreeBranch(t *testing.T) {
 	q := &mockBranchLockQuerier{
@@ -330,7 +332,7 @@ func TestRequestBranchLockJoin_PendingIsIdempotent(t *testing.T) {
 func TestDecideBranchLockJoin_OnlyHolder(t *testing.T) {
 	q := &mockBranchLockQuerier{
 		getJoinFn: func(ctx context.Context, id int64) (db.BranchLockJoinRequest, error) {
-			return db.BranchLockJoinRequest{ID: id, RepositoryID: 1, Branch: "landing/app/main", RequesterID: 7, Status: "pending"}, nil
+			return db.BranchLockJoinRequest{ID: id, RepositoryID: 1, Branch: "landing/app/main", RequesterID: 7, Status: "pending", LockGeneration: testLockGeneration}, nil
 		},
 		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
 			return liveLock(9), nil
@@ -346,7 +348,7 @@ func TestDecideBranchLockJoin_OnlyHolder(t *testing.T) {
 func TestDecideBranchLockJoin_ApproveNotifiesRequester(t *testing.T) {
 	q := &mockBranchLockQuerier{
 		getJoinFn: func(ctx context.Context, id int64) (db.BranchLockJoinRequest, error) {
-			return db.BranchLockJoinRequest{ID: id, RepositoryID: 1, Branch: "landing/app/main", RequesterID: 7, Status: "pending"}, nil
+			return db.BranchLockJoinRequest{ID: id, RepositoryID: 1, Branch: "landing/app/main", RequesterID: 7, Status: "pending", LockGeneration: testLockGeneration}, nil
 		},
 		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
 			return liveLock(9), nil
@@ -376,4 +378,90 @@ func TestListPendingBranchLockJoinRequests_HolderOnly(t *testing.T) {
 	apiErr, ok := err.(*pkgerrors.APIError)
 	require.True(t, ok)
 	assert.Equal(t, 403, apiErr.Status)
+}
+
+// An approval belongs to the lock generation it was granted under. After Alice
+// releases and Carol acquires, Bob's old approval must not share Carol's lock.
+func TestAcquireBranchLock_ApprovalFromEarlierHolderDoesNotShare(t *testing.T) {
+	approvedUnder := "00000000-0000-0000-0000-00000000a11c"
+	q := &mockBranchLockQuerier{
+		acquireInsertFn: func(ctx context.Context, arg db.AcquireBranchLockInsertParams) (db.BranchLock, error) {
+			return db.BranchLock{}, uniqueViolation()
+		},
+		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
+			return liveLock(9), nil
+		},
+		takeOverFn: func(ctx context.Context, arg db.TakeOverStaleBranchLockParams) (db.BranchLock, error) {
+			return db.BranchLock{}, pgx.ErrNoRows
+		},
+		hasApprovedFn: func(ctx context.Context, arg db.HasApprovedBranchLockJoinParams) (bool, error) {
+			return arg.LockGeneration == approvedUnder, nil
+		},
+		getJoinForRequester: func(ctx context.Context, arg db.GetBranchLockJoinRequestForRequesterParams) (db.BranchLockJoinRequest, error) {
+			assert.Equal(t, testLockGeneration, arg.LockGeneration)
+			return db.BranchLockJoinRequest{}, pgx.ErrNoRows
+		},
+	}
+	svc := NewBranchLockService(q)
+	_, err := svc.AcquireBranchLock(context.Background(), AcquireBranchLockInput{RepositoryID: 1, Branch: "landing/app/main", UserID: 7})
+	apiErr, ok := err.(*pkgerrors.APIError)
+	require.True(t, ok)
+	assert.Equal(t, 409, apiErr.Status)
+	assert.Equal(t, pkgerrors.CodeBranchLockHeld, apiErr.Code)
+}
+
+func TestRequestBranchLockJoin_BindsRequestToLockGeneration(t *testing.T) {
+	var created db.CreateBranchLockJoinRequestParams
+	q := &mockBranchLockQuerier{
+		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
+			return liveLock(9), nil
+		},
+		getJoinForRequester: func(ctx context.Context, arg db.GetBranchLockJoinRequestForRequesterParams) (db.BranchLockJoinRequest, error) {
+			assert.Equal(t, testLockGeneration, arg.LockGeneration, "an approval from an earlier holder must not block a new ask")
+			return db.BranchLockJoinRequest{}, pgx.ErrNoRows
+		},
+		createJoinFn: func(ctx context.Context, arg db.CreateBranchLockJoinRequestParams) (db.BranchLockJoinRequest, error) {
+			created = arg
+			return db.BranchLockJoinRequest{ID: 42, RepositoryID: arg.RepositoryID, Branch: arg.Branch, RequesterID: arg.RequesterID, Status: "pending", CreatedAt: time.Now(), LockGeneration: arg.LockGeneration}, nil
+		},
+	}
+	svc := NewBranchLockService(q, WithBranchLockJoinAuthorizer(mockBranchLockAuthorizer{}))
+	_, err := svc.RequestBranchLockJoin(context.Background(), RequestBranchLockJoinInput{RepositoryID: 1, Branch: "landing/app/main", UserID: 7, Username: "bob"})
+	require.NoError(t, err)
+	assert.Equal(t, testLockGeneration, created.LockGeneration)
+}
+
+func TestDecideBranchLockJoin_RequestToEarlierHolderIsMoot(t *testing.T) {
+	q := &mockBranchLockQuerier{
+		getJoinFn: func(ctx context.Context, id int64) (db.BranchLockJoinRequest, error) {
+			return db.BranchLockJoinRequest{ID: id, RepositoryID: 1, Branch: "landing/app/main", RequesterID: 7, Status: "pending", LockGeneration: "00000000-0000-0000-0000-00000000a11c"}, nil
+		},
+		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
+			return liveLock(9), nil
+		},
+		resolveJoinFn: func(ctx context.Context, arg db.ResolveBranchLockJoinRequestParams) (db.BranchLockJoinRequest, error) {
+			t.Fatal("a request made to an earlier holder must not be resolved into the current lock")
+			return db.BranchLockJoinRequest{}, nil
+		},
+	}
+	svc := NewBranchLockService(q)
+	_, err := svc.DecideBranchLockJoin(context.Background(), DecideBranchLockJoinInput{JoinRequestID: 5, ResolverID: 9, Approve: true})
+	apiErr, ok := err.(*pkgerrors.APIError)
+	require.True(t, ok)
+	assert.Equal(t, 409, apiErr.Status)
+}
+
+func TestListPendingBranchLockJoinRequests_ScopedToLockGeneration(t *testing.T) {
+	q := &mockBranchLockQuerier{
+		getLockFn: func(ctx context.Context, arg db.GetBranchLockParams) (db.BranchLock, error) {
+			return liveLock(9), nil
+		},
+		listPendingFn: func(ctx context.Context, arg db.ListPendingBranchLockJoinRequestsParams) ([]db.BranchLockJoinRequest, error) {
+			assert.Equal(t, testLockGeneration, arg.LockGeneration)
+			return []db.BranchLockJoinRequest{}, nil
+		},
+	}
+	svc := NewBranchLockService(q)
+	_, err := svc.ListPendingBranchLockJoinRequests(context.Background(), AcquireBranchLockInput{RepositoryID: 1, Branch: "landing/app/main", UserID: 9})
+	require.NoError(t, err)
 }

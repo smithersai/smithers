@@ -38,7 +38,6 @@ func (q *Queries) CountActiveAnonSandboxesForIP(ctx context.Context, clientIp st
 }
 
 const createAnonSandbox = `-- name: CreateAnonSandbox :one
-
 INSERT INTO anon_sandboxes (repo_full_name, branch, token_hash, client_ip, expires_at)
 VALUES ($1, $2, $3, $4, $5)
 RETURNING id, repo_full_name, branch, vm_id, status, provisioning_stage, token_hash, client_ip, expires_at, created_at, updated_at, deleted_at
@@ -52,9 +51,6 @@ type CreateAnonSandboxParams struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 }
 
-// ---- Anonymous sandboxes (../multi SPEC.md §3 signed-out open) ----
-// See db/product/migrations/0001_product_baseline.sql. Rows carry no user
-// linkage by design; access is a token capability checked in the service.
 func (q *Queries) CreateAnonSandbox(ctx context.Context, arg CreateAnonSandboxParams) (AnonSandbox, error) {
 	row := q.db.QueryRow(ctx, createAnonSandbox,
 		arg.RepoFullName,
@@ -152,6 +148,22 @@ func (q *Queries) ListReapableAnonSandboxes(ctx context.Context, limit int32) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockAnonSandboxAdmission = `-- name: LockAnonSandboxAdmission :exec
+
+SELECT pg_advisory_xact_lock(hashtextextended('anon-sandbox-admission', 0))
+`
+
+// ---- Anonymous sandboxes (../multi SPEC.md §3 signed-out open) ----
+// See db/product/migrations/0001_product_baseline.sql. Rows carry no user
+// linkage by design; access is a token capability checked in the service.
+// Serializes anonymous-sandbox admission for the rest of the transaction so
+// the concurrency and per-IP cap counts and the insert that follows them are
+// one atomic decision across API replicas.
+func (q *Queries) LockAnonSandboxAdmission(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockAnonSandboxAdmission)
+	return err
 }
 
 const softDeleteAnonSandbox = `-- name: SoftDeleteAnonSandbox :one

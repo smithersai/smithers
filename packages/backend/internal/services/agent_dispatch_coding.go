@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -153,6 +154,39 @@ func (dispatch *agentDispatch) admitCodingTurn() error {
 	}
 	dispatch.flowOperationID = receipt.OperationID
 	return nil
+}
+
+// cancelAgentFlowRun cancels the canonical Flow request for a session's
+// workflow run. It reports false with no error when there is no dispatcher,
+// no run, or Flow has no such request.
+func (service *AgentService) cancelAgentFlowRun(ctx context.Context, session db.AgentSession) (bool, error) {
+	if service.flowDispatcher == nil || !session.WorkflowRunID.Valid {
+		return false, nil
+	}
+	_, err := service.flowDispatcher.CancelRequest(
+		ctx,
+		agentFlowScope(session.RepositoryID, session.UserID),
+		agentFlowRequestID(session.WorkflowRunID.Int64),
+	)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, jobs.ErrNotFound) {
+		return false, nil
+	}
+	return false, err
+}
+
+// cancelAgentFlowRunBestEffort is cancelAgentFlowRun for paths that must
+// finish tearing the session down even when Flow is unreachable.
+func (service *AgentService) cancelAgentFlowRunBestEffort(ctx context.Context, session db.AgentSession, cause string) {
+	if _, err := service.cancelAgentFlowRun(ctx, session); err != nil {
+		slog.Warn("cancel canonical agent Flow run failed",
+			"agent_session_id", session.ID,
+			"workflow_run_id", session.WorkflowRunID.Int64,
+			"cause", cause,
+			"error", err)
+	}
 }
 
 func (dispatch *agentDispatch) cancelCodingTurn(ctx context.Context) {

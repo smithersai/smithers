@@ -12,10 +12,12 @@ WHERE repository_id = $1 AND branch = $2;
 
 -- name: TakeOverStaleBranchLock :one
 -- Steal a lock whose heartbeat has gone stale (holder crashed or left without
--- releasing). Returns no row when the lock is still live.
+-- releasing). Returns no row when the lock is still live. The new holder
+-- starts a new generation, so approvals granted by the old holder lapse.
 UPDATE branch_locks
 SET user_id = $3,
     workspace_id = $4,
+    generation = gen_random_uuid(),
     heartbeat_at = NOW(),
     updated_at = NOW()
 WHERE repository_id = $1
@@ -24,12 +26,23 @@ WHERE repository_id = $1
 RETURNING *;
 
 -- name: HeartbeatBranchLock :execrows
--- Renew liveness. The holder and approved joiners may both heartbeat.
+-- Renew liveness. The holder and joiners approved for the current lock
+-- generation may both heartbeat.
 UPDATE branch_locks
 SET heartbeat_at = NOW(), updated_at = NOW()
-WHERE repository_id = $1
-  AND branch = $2
-  AND user_id = $3;
+WHERE branch_locks.repository_id = $1
+  AND branch_locks.branch = $2
+  AND (
+    branch_locks.user_id = $3
+    OR EXISTS (
+        SELECT 1 FROM branch_lock_join_requests j
+        WHERE j.repository_id = branch_locks.repository_id
+          AND j.branch = branch_locks.branch
+          AND j.lock_generation = branch_locks.generation
+          AND j.requester_id = $3
+          AND j.status = 'approved'
+    )
+  );
 
 -- name: ReleaseBranchLock :execrows
 DELETE FROM branch_locks
@@ -38,8 +51,9 @@ WHERE repository_id = $1
   AND user_id = $3;
 
 -- name: CreateBranchLockJoinRequest :one
-INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id)
-VALUES ($1, $2, $3)
+-- lock_generation binds the request to the holder's current acquisition.
+INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id, lock_generation)
+VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: GetBranchLockJoinRequest :one
@@ -47,29 +61,34 @@ SELECT * FROM branch_lock_join_requests
 WHERE id = $1;
 
 -- name: GetBranchLockJoinRequestForRequester :one
+-- The requester's latest ask against the current lock generation.
 SELECT * FROM branch_lock_join_requests
 WHERE repository_id = $1
   AND branch = $2
   AND requester_id = $3
+  AND lock_generation = $4
 ORDER BY created_at DESC
 LIMIT 1;
 
 -- name: HasApprovedBranchLockJoin :one
 -- An approved request is the membership record that lets a second user
--- acquire (and heartbeat) the held branch.
+-- acquire (and heartbeat) the held branch. It counts only for the lock
+-- generation the holder approved it under, never for a later holder.
 SELECT EXISTS (
     SELECT 1 FROM branch_lock_join_requests
     WHERE repository_id = $1
       AND branch = $2
       AND requester_id = $3
+      AND lock_generation = $4
       AND status = 'approved'
 ) AS approved;
 
 -- name: ListPendingBranchLockJoinRequests :many
--- The holder's inbox for one branch.
+-- The holder's inbox for one branch and lock generation.
 SELECT * FROM branch_lock_join_requests
 WHERE repository_id = $1
   AND branch = $2
+  AND lock_generation = $3
   AND status = 'pending'
 ORDER BY created_at ASC;
 
@@ -77,7 +96,9 @@ ORDER BY created_at ASC;
 -- Every pending ask across the branches the holder currently locks.
 SELECT j.* FROM branch_lock_join_requests j
 JOIN branch_locks l
-  ON l.repository_id = j.repository_id AND l.branch = j.branch
+  ON l.repository_id = j.repository_id
+ AND l.branch = j.branch
+ AND l.generation = j.lock_generation
 WHERE l.user_id = $1
   AND j.status = 'pending'
 ORDER BY j.created_at ASC;

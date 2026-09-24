@@ -2,6 +2,12 @@
 -- See db/product/migrations/0001_product_baseline.sql. Rows carry no user
 -- linkage by design; access is a token capability checked in the service.
 
+-- name: LockAnonSandboxAdmission :exec
+-- Serializes anonymous-sandbox admission for the rest of the transaction so
+-- the concurrency and per-IP cap counts and the insert that follows them are
+-- one atomic decision across API replicas.
+SELECT pg_advisory_xact_lock(hashtextextended('anon-sandbox-admission', 0));
+
 -- name: CreateAnonSandbox :one
 INSERT INTO anon_sandboxes (repo_full_name, branch, token_hash, client_ip, expires_at)
 VALUES ($1, $2, $3, $4, $5)

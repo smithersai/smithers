@@ -253,14 +253,13 @@ func (s *ApprovalsService) Create(ctx context.Context, input CreateApprovalInput
 	}
 	resp := toApprovalResponse(row)
 	s.logApprovalEvent(ctx, approvalAuditArgs{
-		EventType:  AuditEventApprovalRequested,
-		ActorID:    nil, // system actor: agent runtime, not a human
-		ActorName:  "system:agent-runtime",
-		IPAddress:  input.ForwarderIP,
-		Action:     "request",
-		Row:        row,
-		Decision:   "",
-		ExtraField: "",
+		EventType: AuditEventApprovalRequested,
+		ActorID:   nil, // system actor: agent runtime, not a human
+		ActorName: "system:agent-runtime",
+		IPAddress: input.ForwarderIP,
+		Action:    "request",
+		Row:       row,
+		Decision:  "",
 	})
 	if row.State == ApprovalStatePending && s.pushNotifier != nil {
 		s.pushNotifier.EnqueueApprovalPush(session.UserID, resp)
@@ -438,14 +437,13 @@ func (s *ApprovalsService) ListForRepo(ctx context.Context, repositoryID int64, 
 // approvalAuditArgs bundles the parameters for logApprovalEvent so the
 // call sites at Create / Decide stay readable.
 type approvalAuditArgs struct {
-	EventType  string
-	ActorID    *int64
-	ActorName  string
-	IPAddress  string
-	Action     string
-	Row        db.Approval
-	Decision   string
-	ExtraField string // reserved; used by the expiry path if/when added
+	EventType string
+	ActorID   *int64
+	ActorName string
+	IPAddress string
+	Action    string
+	Row       db.Approval
+	Decision  string
 }
 
 // logApprovalEvent writes a lifecycle audit row via the configured
@@ -505,8 +503,8 @@ func approvalPayloadSHA256(payload []byte) string {
 
 // GetForRepo fetches an approval scoped to a repository. Callers use this
 // from the decide-route preflight path when they want the row without
-// mutating it (e.g. for audit views). Not currently exposed via a route;
-// kept for future admin tooling.
+// mutating it. Served by GET on a single approval in
+// internal/routes/approvals.go.
 func (s *ApprovalsService) GetForRepo(ctx context.Context, approvalID string, repoID int64) (ApprovalResponse, error) {
 	row, err := s.q.GetApproval(ctx, approvalID)
 	if err != nil {

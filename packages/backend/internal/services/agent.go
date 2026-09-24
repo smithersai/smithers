@@ -25,7 +25,6 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
-	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
 // AgentSessionResponse is the API representation of an agent session.
@@ -1539,20 +1538,14 @@ func (s *AgentService) CancelSession(ctx context.Context, sessionID string, user
 	if session.Status != "active" {
 		return pkgerrors.Conflict("agent session is not active")
 	}
-	if s.flowDispatcher != nil && session.WorkflowRunID.Valid {
-		_, err := s.flowDispatcher.CancelRequest(
-			ctx,
-			agentFlowScope(session.RepositoryID, session.UserID),
-			agentFlowRequestID(session.WorkflowRunID.Int64),
-		)
-		if err == nil {
-			// Product state stays active until the canonical runtime receipt
-			// projector observes actual cancellation.
-			return nil
-		}
-		if !stdErrors.Is(err, jobs.ErrNotFound) {
-			return pkgerrors.Internal("cancel canonical agent Flow run")
-		}
+	cancelled, err := s.cancelAgentFlowRun(ctx, session)
+	if err != nil {
+		return pkgerrors.Internal("cancel canonical agent Flow run")
+	}
+	if cancelled {
+		// Product state stays active until the canonical runtime receipt
+		// projector observes actual cancellation.
+		return nil
 	}
 	terminal, updated, err := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "cancelled")
 	if err != nil {
@@ -1595,6 +1588,12 @@ func (s *AgentService) DeleteSession(ctx context.Context, sessionID string, user
 	// down the sandbox VM, terminalize the workflow task, or revoke the run's
 	// tokens. transitionAgentSessionTerminalStatus only matches status='active'
 	// rows, so already-terminal sessions skip finalize (it already ran).
+	// The canonical Flow run is stopped first: finalize tears down product
+	// state but never touches the durable Flow job, which would otherwise keep
+	// editing the workspace for a session nobody can see.
+	if session.Status == "active" {
+		s.cancelAgentFlowRunBestEffort(ctx, session, "delete")
+	}
 	if s.dispatchQ != nil {
 		terminal, updated, terr := s.transitionAgentSessionTerminalStatus(ctx, sessionID, "cancelled")
 		if terr != nil {
