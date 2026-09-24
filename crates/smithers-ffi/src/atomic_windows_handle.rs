@@ -27,11 +27,12 @@ use windows_sys::Win32::Security::Authorization::{
 };
 use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, PSID, TOKEN_QUERY, TOKEN_USER};
 use windows_sys::Win32::Storage::FileSystem::{
-    FileBasicInfo, GetFileInformationByHandle, GetFileInformationByHandleEx, GetFileType,
-    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_BASIC_INFO, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY,
-    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    FILE_TRAVERSE, FILE_TYPE_DISK, SYNCHRONIZE,
+    FileBasicInfo, FileStandardInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+    GetFileType, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
+    FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_TRAVERSE,
+    FILE_TYPE_DISK, SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
 use windows_sys::Win32::System::SystemServices::{
@@ -291,14 +292,68 @@ fn open_with(
 pub(super) struct Info {
     pub(super) file: BY_HANDLE_FILE_INFORMATION,
     pub(super) basic: FILE_BASIC_INFO,
+    pub(super) standard: FILE_STANDARD_INFO,
+}
+
+impl Info {
+    pub(super) fn fingerprint(&self) -> [i128; 9] {
+        [
+            self.file.dwVolumeSerialNumber as i128,
+            ((u64::from(self.file.nFileIndexHigh) << 32) | u64::from(self.file.nFileIndexLow))
+                as i128,
+            self.basic.FileAttributes as i128,
+            self.standard.NumberOfLinks as i128,
+            self.standard.EndOfFile as i128,
+            self.basic.LastWriteTime as i128,
+            self.basic.ChangeTime as i128,
+            self.basic.CreationTime as i128,
+            self.standard.AllocationSize as i128,
+        ]
+    }
+
+    /// Match the Node adapter's Windows stat fields. Its mode bits describe
+    /// the readonly attribute; the DACL, checked separately, controls access.
+    pub(super) fn stat_json(&self) -> io::Result<serde_json::Value> {
+        if self.basic.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(denied(BoundaryError::ReparsePoint));
+        }
+        let directory = self.basic.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
+        if !directory && self.standard.NumberOfLinks > 1 {
+            return Err(denied(BoundaryError::HardLink));
+        }
+        let mode = if directory { 0o040000 } else { 0o100000 }
+            | if self.basic.FileAttributes & FILE_ATTRIBUTE_READONLY != 0 {
+                0o444
+            } else {
+                0o666
+            };
+        // FILETIME is a count of 100 ns intervals since 1601-01-01. Subtract
+        // the epoch before converting to floating point to retain precision.
+        let millis = |ticks: i64| (ticks as i128 - 116_444_736_000_000_000i128) as f64 / 10_000.0;
+        Ok(serde_json::json!({
+            "type": if directory { "Directory" } else { "File" },
+            "mtime": millis(self.basic.LastWriteTime),
+            "atime": millis(self.basic.LastAccessTime),
+            "birthtime": millis(self.basic.CreationTime),
+            "dev": self.file.dwVolumeSerialNumber,
+            "ino": (u64::from(self.file.nFileIndexHigh) << 32) | u64::from(self.file.nFileIndexLow),
+            "mode": mode,
+            "nlink": self.standard.NumberOfLinks,
+            "uid": 0, "gid": 0, "rdev": 0,
+            "size": if directory { 0 } else { self.standard.EndOfFile }.to_string(),
+            "blksize": "4096",
+            "blocks": self.standard.AllocationSize / 512,
+        }))
+    }
 }
 
 pub(super) fn info(file: &File) -> io::Result<Info> {
     let mut value = Info {
         file: BY_HANDLE_FILE_INFORMATION::default(),
         basic: FILE_BASIC_INFO::default(),
+        standard: FILE_STANDARD_INFO::default(),
     };
-    // SAFETY: File owns a live handle; both output buffers have their declared
+    // SAFETY: File owns a live handle; all output buffers have their declared
     // layout and size and stay valid for these synchronous calls.
     if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut value.file) } == 0
         || unsafe {
@@ -307,6 +362,14 @@ pub(super) fn info(file: &File) -> io::Result<Info> {
                 FileBasicInfo,
                 (&mut value.basic as *mut FILE_BASIC_INFO).cast(),
                 size_of::<FILE_BASIC_INFO>() as u32,
+            )
+        } == 0
+        || unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FileStandardInfo,
+                (&mut value.standard as *mut FILE_STANDARD_INFO).cast(),
+                size_of::<FILE_STANDARD_INFO>() as u32,
             )
         } == 0
     {
@@ -1000,6 +1063,64 @@ mod tests {
             reparse_target(&payload(IO_REPARSE_TAG_MOUNT_POINT, r"\??\Volume{unknown}")).is_err()
         );
         assert!(reparse_target(&payload(0, "unknown")).is_err());
+    }
+
+    #[test]
+    fn stat_fields_match_node_and_fingerprints_detect_content_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("empty"), b"").unwrap();
+        fs::write(temp.path().join("content"), vec![1u8; 9000]).unwrap();
+        fs::write(temp.path().join("readonly"), b"retained").unwrap();
+        fs::create_dir(temp.path().join("directory")).unwrap();
+        let readonly = temp.path().join("readonly");
+        let original_permissions = fs::metadata(&readonly).unwrap().permissions();
+        let mut permissions = original_permissions.clone();
+        permissions.set_readonly(true);
+        fs::set_permissions(&readonly, permissions).unwrap();
+        let root = Directory::root(temp.path()).unwrap();
+        for name in ["empty", "content", "readonly", "directory"] {
+            let ours = root
+                .metadata(OsStr::new(name))
+                .unwrap()
+                .stat_json()
+                .unwrap();
+            let output = std::process::Command::new("node").arg("-e").arg(
+                "const s=require('node:fs').lstatSync(process.argv[1]);console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:s.mtimeMs,atime:s.atimeMs,birthtime:s.birthtimeMs,dev:s.dev,ino:s.ino,mode:s.mode,nlink:s.nlink,uid:s.uid,gid:s.gid,rdev:s.rdev,size:String(s.size),blksize:String(s.blksize),blocks:s.blocks}))"
+            ).arg(temp.path().join(name)).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let native: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            for (key, value) in ours.as_object().unwrap() {
+                if ["mtime", "atime", "birthtime"].contains(&key.as_str()) {
+                    assert!(
+                        (value.as_f64().unwrap() - native[key].as_f64().unwrap()).abs() <= 1.0,
+                        "{name}: {key}"
+                    );
+                } else {
+                    assert_eq!(value, &native[key], "{name}: {key}");
+                }
+            }
+        }
+        let before = root.metadata(OsStr::new("content")).unwrap().fingerprint();
+        fs::write(temp.path().join("content"), b"changed").unwrap();
+        let after = root.metadata(OsStr::new("content")).unwrap().fingerprint();
+        assert_ne!(before, after);
+        fs::set_permissions(&readonly, original_permissions).unwrap();
+        symlink_file("content", temp.path().join("link")).unwrap();
+        assert!(root
+            .metadata(OsStr::new("link"))
+            .unwrap()
+            .stat_json()
+            .is_err());
+        fs::hard_link(temp.path().join("content"), temp.path().join("hard")).unwrap();
+        assert!(root
+            .metadata(OsStr::new("hard"))
+            .unwrap()
+            .stat_json()
+            .is_err());
     }
 
     #[test]
