@@ -4,6 +4,10 @@
 
 ### Fixed
 
+- Every frame request sets `cacheBoundary` to the transcript before the state
+  section, so Anthropic's moving cache breakpoint lands on bytes the next
+  frame repeats instead of on the state section it replaces.
+
 - Every frame request of a run carries one `cacheKey`, hashed from the
   session and the system prefix, so a provider that routes its prompt cache by
   conversation finds the run's cached prefix. On the ChatGPT route the run

@@ -3805,6 +3805,50 @@ describe("CellTurn context ordering", () => {
     expect(JSON.stringify(wires[3]!.body.input)).toContain("opaque-2")
   })
 
+  /** One recorded request exactly as the Anthropic Messages route puts it on the wire. */
+  const anthropicWire = async (request: ModelRequest.ModelRequest | undefined) => {
+    const route = Result.getOrThrow(Route.anthropic({ apiKey: Redacted.make("key") }))
+    const prepared = await Effect.runPromise(Route.prepare(route, request!))
+    return JSON.parse(prepared.bodyText) as {
+      readonly system: ReadonlyArray<Record<string, unknown>>
+      readonly messages: ReadonlyArray<{ readonly content: ReadonlyArray<Record<string, unknown>> }>
+    }
+  }
+
+  it("moves frame N's Anthropic cache breakpoint to a prefix frame N+1 repeats byte for byte", async () => {
+    // Anthropic reads a cache entry only where an earlier request wrote a
+    // breakpoint, so frame N must mark its last stable message, never the
+    // trailing state section frame N+1 replaces.
+    const { model } = await run({
+      script: [
+        emits(`console.log("alpha")`),
+        emits(`console.log("beta")`),
+        emits(`console.log("gamma")`),
+        emits(`ctx.done("done")`)
+      ]
+    })
+    const wires = await Promise.all(model.recorder.requests.map(anthropicWire))
+    expect(wires.length).toBe(4)
+    const marked = (wire: (typeof wires)[number]) =>
+      wire.messages.flatMap((message, index) =>
+        message.content.some((block) => block.cache_control !== undefined) ? [index] : []
+      )
+    const unmarked = (value: unknown) =>
+      JSON.stringify(value, (key, item) => key === "cache_control" ? undefined : item)
+    for (let frame = 0; frame + 1 < wires.length; frame++) {
+      const current = wires[frame]!
+      const next = wires[frame + 1]!
+      expect(current.system.at(-1)?.cache_control).toEqual({ type: "ephemeral" })
+      const [breakpoint, ...others] = marked(current)
+      expect(others).toEqual([])
+      // Everything after the breakpoint is this frame's volatile tail.
+      expect(JSON.stringify(current.messages.slice(breakpoint! + 1))).toContain("realm")
+      expect(marked(next)[0]).toBeGreaterThan(breakpoint!)
+      expect(unmarked([next.system, next.messages.slice(0, breakpoint! + 1)]))
+        .toBe(unmarked([current.system, current.messages.slice(0, breakpoint! + 1)]))
+    }
+  })
+
   it("keys every request of a run to one prompt cache, and a different run to another", async () => {
     const script = [emits(`console.log("alpha")`), emits(`console.log("beta")`), emits(`ctx.done("done")`)]
     const { model } = await run({ script })

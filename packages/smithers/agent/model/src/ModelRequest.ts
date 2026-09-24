@@ -488,7 +488,20 @@ export class ModelRequest extends Schema.Class<ModelRequest>("flows/model/ModelR
    * shares a prefix, and it never reaches the model. Protocols without such a
    * field ignore it.
    */
-  cacheKey: Schema.optional(Schema.String)
+  cacheKey: Schema.optional(Schema.String),
+  /**
+   * How many leading messages the next request in this conversation repeats
+   * unchanged; unset means all of them.
+   *
+   * Anthropic Messages caches only at explicit breakpoints and reads a prior
+   * entry only where a previous request wrote one, so it puts its moving
+   * message breakpoint on the last of these messages. A caller that appends a
+   * volatile block after its transcript sets this to the transcript length so
+   * the breakpoint never lands on bytes the next request will not repeat.
+   * Protocols that cache automatically ignore it, and it never reaches the
+   * model.
+   */
+  cacheBoundary: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)))
 }) {
   /** @category constructors @since 0.1.0 */
   static override make(input: ModelRequest | ConstructorParameters<typeof ModelRequest>[0]): ModelRequest {

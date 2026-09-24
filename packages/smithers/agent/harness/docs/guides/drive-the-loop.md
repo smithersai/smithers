@@ -81,7 +81,9 @@ rebuilds from it.
 callable-flow catalog to the window as prefix segments, so the teaching is
 stable for the run and a provider's prefix cache covers it. Every frame
 request also carries one `cacheKey` for the run, which a provider that routes
-its cache by conversation (the ChatGPT route) needs to find that prefix at all:
+its cache by conversation (the ChatGPT route) needs to find that prefix at all,
+and a `cacheBoundary` at the end of the transcript, before the frame's state
+section, where Anthropic places its moving cache breakpoint:
 
 ```ts
 const taught = CellTurn.teach(window, flows)

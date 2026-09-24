@@ -1130,13 +1130,17 @@ const stateSection = (state: State): string => {
 const withStateSection = (
   messages: ReadonlyArray<ModelRequest.Message>,
   state: State
-): ReadonlyArray<ModelRequest.Message> => {
+): { readonly messages: ReadonlyArray<ModelRequest.Message>; readonly stable: number } => {
   const asks = Math.min(state.interventions, messages.length)
-  return [
-    ...messages.slice(0, messages.length - asks),
-    ModelRequest.Message.user(stateSection(state)),
-    ...messages.slice(messages.length - asks)
-  ]
+  const stable = messages.length - asks
+  return {
+    messages: [
+      ...messages.slice(0, stable),
+      ModelRequest.Message.user(stateSection(state)),
+      ...messages.slice(stable)
+    ],
+    stable
+  }
 }
 
 const requestFrom = (
@@ -1155,17 +1159,22 @@ const requestFrom = (
       })
     )
   }
+  const withState = withStateSection(rendered.messages, state)
   return Result.succeed(
     ModelRequest.ModelRequest.make({
       modelId: contextWindow.modelId,
       system: rendered.system,
-      messages: withStateSection(rendered.messages, state),
+      messages: withState.messages,
       // A cell-first frame never declares provider tools: the cell is the plan
       // and `ctx.call` is the only invocation path.
       tools: [],
       toolChoice: "none",
       params: state.modelParams,
-      cacheKey: cacheKey(state, rendered.system)
+      cacheKey: cacheKey(state, rendered.system),
+      // The state section is rebuilt every frame, so Anthropic's moving cache
+      // breakpoint stops at the transcript before it; the next frame repeats
+      // that transcript and reads its prefix back.
+      cacheBoundary: withState.stable
     })
   )
 }

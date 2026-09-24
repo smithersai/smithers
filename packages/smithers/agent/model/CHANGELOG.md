@@ -4,6 +4,14 @@
 
 ### Fixed
 
+- Anthropic Messages requests now carry prompt-cache breakpoints: one on the
+  last system block (or last immediate tool) and one on the last stable
+  message, set by the new optional `ModelRequest.cacheBoundary`. Requests
+  previously sent no `cache_control`, so every frame of a run paid full input
+  price for its whole prefix. Live on `claude-opus-5` on 2026-09-24, a
+  five-frame run read 4,378 to 4,493 cached tokens on each frame after the
+  first.
+
 - The ChatGPT-subscription route sends a request's new `cacheKey` as
   `prompt_cache_key` and as the `session-id` header, as the Codex CLI does
   with its conversation id. Without them the backend spread a run's frames

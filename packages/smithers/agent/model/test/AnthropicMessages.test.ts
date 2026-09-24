@@ -57,6 +57,10 @@ const step = (
   return Effect.runSync(AnthropicMessages.protocol.stream.step(state, event))
 }
 
+/** A wire value without its prompt-cache markers, for tests about other shape. */
+const withoutBreakpoints = (value: unknown): unknown =>
+  JSON.parse(JSON.stringify(value, (key, item) => key === "cache_control" ? undefined : item))
+
 const body = (request: ModelRequest, native = true): AnthropicMessages.Body =>
   Effect.runSync(AnthropicMessages.protocol.body.from(request, { native }))
 
@@ -323,7 +327,7 @@ describe("AnthropicMessages streaming", () => {
     )
     const wire = JSON.parse(prepared.bodyText) as { readonly messages: ReadonlyArray<{ readonly content: unknown }> }
 
-    expect(wire.messages[1]?.content).toEqual([
+    expect(withoutBreakpoints(wire.messages[1]?.content)).toEqual([
       { type: "redacted_thinking", data: redactedData },
       { type: "tool_use", id: "toolu_redacted", name: "weather", input: { city: "Paris" } }
     ])
@@ -716,7 +720,7 @@ describe("AnthropicMessages body lowering", () => {
         defer_loading: true
       }
     ])
-    expect(requestBody.messages[2]).toEqual({
+    expect(withoutBreakpoints(requestBody.messages[2])).toEqual({
       role: "user",
       content: [
         {
@@ -771,10 +775,10 @@ describe("AnthropicMessages body lowering", () => {
       ]
     }
 
-    expect(requestBody.messages[2]).toEqual(expected)
+    expect(withoutBreakpoints(requestBody.messages[2])).toEqual(expected)
     // The wire schema must preserve both references and text inside tool_result.
     const encoded = Schema.encodeSync(AnthropicMessages.Body)(requestBody)
-    expect(encoded.messages[2]).toEqual(expected)
+    expect(withoutBreakpoints(encoded.messages[2])).toEqual(expected)
     expect(Schema.decodeUnknownSync(AnthropicMessages.Body)(encoded)).toEqual(requestBody)
   })
 
@@ -792,7 +796,7 @@ describe("AnthropicMessages body lowering", () => {
       })
     )
 
-    expect(requestBody.tools).toEqual([
+    expect(withoutBreakpoints(requestBody.tools)).toEqual([
       {
         name: "search_tools",
         description: "search_tools description",
@@ -881,7 +885,7 @@ describe("AnthropicMessages body lowering", () => {
       params: GenerationParams.make()
     })
     const requestBody = body(request)
-    expect(requestBody.messages).toEqual([
+    expect(withoutBreakpoints(requestBody.messages)).toEqual([
       { role: "user", content: [{ type: "text", text: "before" }] },
       {
         role: "assistant",
@@ -1200,11 +1204,137 @@ describe("AnthropicMessages empty content", () => {
       params: GenerationParams.make()
     }))
 
-    expect(requestBody.messages).toEqual([
+    expect(withoutBreakpoints(requestBody.messages)).toEqual([
       { role: "user", content: [{ type: "text", text: "first" }] },
       { role: "user", content: [{ type: "text", text: "second" }] },
       { role: "assistant", content: [{ type: "tool_use", id: "toolu_1", name: "weather", input: {} }] },
       { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "sunny" }] }
     ])
+  })
+})
+
+describe("AnthropicMessages prompt caching", () => {
+  const ephemeral = { type: "ephemeral" }
+
+  /** Every `cache_control` marker in a body, as a JSON path. */
+  const breakpoints = (value: unknown, path = ""): ReadonlyArray<string> => {
+    if (Array.isArray(value)) return value.flatMap((item, index) => breakpoints(item, `${path}[${index}]`))
+    if (typeof value !== "object" || value === null) return []
+    return Object.entries(value).flatMap(([key, item]) =>
+      key === "cache_control" ? [path] : breakpoints(item, path === "" ? key : `${path}.${key}`)
+    )
+  }
+
+  /**
+   * The bytes a breakpoint caches: tools, then system, then messages up to
+   * and including the marked one, in Anthropic's render order. Markers are
+   * stripped because a moving marker is not part of the cache key.
+   */
+  const cachedPrefix = (wire: AnthropicMessages.Body, lastMessage: number): string =>
+    CanonicalJson.stringify(
+      withoutBreakpoints([wire.tools ?? [], wire.system ?? [], wire.messages.slice(0, lastMessage + 1)])
+    )
+
+  const markedMessage = (wire: AnthropicMessages.Body): number => {
+    const marked = breakpoints(wire).filter((path) => path.startsWith("messages["))
+    expect(marked).toHaveLength(1)
+    return Number(/^messages\[(\d+)\]/.exec(marked[0]!)![1])
+  }
+
+  const frameRequest = (messages: ReadonlyArray<Message>, cacheBoundary?: number) =>
+    ModelRequest.make({
+      modelId: "claude-opus-5",
+      system: [SystemPart.make({ text: "teaching" }), SystemPart.make({ text: "task" })],
+      messages,
+      tools: [],
+      toolChoice: "none",
+      params: GenerationParams.make(),
+      ...(cacheBoundary === undefined ? {} : { cacheBoundary })
+    })
+
+  it("marks the last system block and the last stable message, and nothing volatile", () => {
+    const wire = body(frameRequest([
+      Message.user("do the task"),
+      Message.assistant([{ type: "text", text: "cell one" }], { stopReason: "stop" }),
+      Message.user("frame 1 state"),
+      Message.user("answer the ask")
+    ], 2))
+    expect(breakpoints(wire)).toEqual(["system[1]", "messages[1].content[0]"])
+    expect(wire.system?.[1]).toEqual({ type: "text", text: "task", cache_control: ephemeral })
+    expect(wire.messages[2]).toEqual({ role: "user", content: [{ type: "text", text: "frame 1 state" }] })
+  })
+
+  it("marks the last message when the request states no boundary", () => {
+    const wire = body(frameRequest([Message.user("one"), Message.user("two")]))
+    expect(breakpoints(wire)).toEqual(["system[1]", "messages[1].content[0]"])
+  })
+
+  it("places no message breakpoint on a zero boundary", () => {
+    expect(breakpoints(body(frameRequest([Message.user("volatile")], 0)))).toEqual(["system[1]"])
+  })
+
+  it("counts the boundary in request messages even when lowering drops some", () => {
+    const wire = body(frameRequest([
+      Message.user("first"),
+      Message.assistant([{ type: "text", text: "cut" }], { stopReason: "aborted" }),
+      Message.user("state")
+    ], 2))
+    expect(wire.messages).toHaveLength(2)
+    expect(breakpoints(wire)).toEqual(["system[1]", "messages[0].content[0]"])
+  })
+
+  it("skips thinking blocks, which cannot carry a breakpoint", () => {
+    const wire = body(frameRequest([
+      Message.user("go"),
+      Message.assistant([
+        { type: "text", text: "plan" },
+        ThinkingPart.make({ text: "why", signature: "sig" })
+      ], { stopReason: "stop" }),
+      Message.user("state")
+    ], 2))
+    expect(breakpoints(wire)).toEqual(["system[1]", "messages[1].content[0]"])
+  })
+
+  it("marks a tool result, and the last immediate tool when there is no system prompt", () => {
+    const wire = body(ModelRequest.make({
+      modelId: "claude-opus-5",
+      system: [],
+      messages: [
+        Message.user("weather?"),
+        Message.assistant([ToolCallPart.make({ id: "toolu_1", name: "weather", arguments: "{}" })], {
+          stopReason: "tool-calls"
+        }),
+        Message.tool([ToolResultPart.make({ toolCallId: "toolu_1", content: "sunny" })])
+      ],
+      tools: [ToolDefinition.make({ name: "weather", description: "forecast", parameters: {} })],
+      params: GenerationParams.make()
+    }))
+    expect(breakpoints(wire)).toEqual(["messages[2].content[0]", "tools[0]"])
+  })
+
+  it("keeps frame N's cached prefix a byte-identical prefix of frame N+1's", () => {
+    // A cell-first run: each frame appends the model's cell and its
+    // observation, then a fresh volatile state block after the stable span.
+    const transcript: Array<Message> = [Message.user("do the task")]
+    const wires: Array<AnthropicMessages.Body> = []
+    for (let frame = 0; frame < 4; frame++) {
+      wires.push(body(frameRequest([...transcript, Message.user(`state at frame ${frame}`)], transcript.length)))
+      transcript.push(
+        Message.assistant([{ type: "text", text: `cell ${frame}` }], { stopReason: "stop" }),
+        Message.user(`observation ${frame}`)
+      )
+    }
+    for (let frame = 0; frame + 1 < wires.length; frame++) {
+      const current = wires[frame]!
+      const next = wires[frame + 1]!
+      const marked = markedMessage(current)
+      const nextMarked = markedMessage(next)
+      expect(breakpoints(current).filter((path) => !path.startsWith("messages["))).toEqual(["system[1]"])
+      expect(breakpoints(current).length).toBeLessThanOrEqual(4)
+      // The breakpoint moves forward, within the 20-block lookback.
+      expect(nextMarked).toBeGreaterThan(marked)
+      expect(nextMarked - marked).toBeLessThan(20)
+      expect(cachedPrefix(next, marked)).toBe(cachedPrefix(current, marked))
+    }
   })
 })

@@ -32,9 +32,18 @@ type Request = ModelRequest
 // Request Body Schema
 // =============================================================================
 
+/**
+ * A prompt-cache breakpoint. The default five-minute TTL fits a frame loop,
+ * where every read refreshes the entry; see "Prompt caching" in `docs/api.md`.
+ */
+const CacheControl = Schema.Struct({ type: Schema.Literal("ephemeral") })
+
+const cacheControl = { cache_control: { type: "ephemeral" as const } }
+
 const TextBlock = Schema.Struct({
   type: Schema.Literal("text"),
-  text: Schema.String
+  text: Schema.String,
+  cache_control: Schema.optional(CacheControl)
 })
 
 const ThinkingBlock = Schema.Struct({
@@ -64,7 +73,8 @@ const ToolUseBlock = Schema.Struct({
   type: Schema.Literal("tool_use"),
   id: Schema.String,
   name: Schema.String,
-  input: JsonObject
+  input: JsonObject,
+  cache_control: Schema.optional(CacheControl)
 })
 
 const ToolReferenceBlock = Schema.Struct({
@@ -75,7 +85,8 @@ const ToolReferenceBlock = Schema.Struct({
 const ToolResultBlock = Schema.Struct({
   type: Schema.Literal("tool_result"),
   tool_use_id: Schema.String,
-  content: Schema.Union([Schema.String, Schema.Array(Schema.Union([ToolReferenceBlock, TextBlock]))])
+  content: Schema.Union([Schema.String, Schema.Array(Schema.Union([ToolReferenceBlock, TextBlock]))]),
+  cache_control: Schema.optional(CacheControl)
 })
 
 const UserBlock = Schema.Union([TextBlock, ToolResultBlock])
@@ -96,7 +107,8 @@ const AnthropicTool = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
   input_schema: JsonObject,
-  defer_loading: Schema.optional(Schema.Boolean)
+  defer_loading: Schema.optional(Schema.Boolean),
+  cache_control: Schema.optional(CacheControl)
 })
 
 const ThinkingConfig = Schema.Union([
@@ -363,12 +375,16 @@ const lowerToolResults = (
 const lowerMessages = (
   request: Request,
   deferredNames: ReadonlyArray<string>
-): Result.Result<ReadonlyArray<WireMessage>, ModelError> =>
+): Result.Result<{ readonly messages: ReadonlyArray<WireMessage>; readonly stable: number }, ModelError> =>
   Result.gen(function*() {
     const deferred = new Map(deferredNames.map((name) => [name.trim().toLowerCase(), name] as const))
     const loaded = new Set<string>()
     const messages: Array<WireMessage> = []
-    for (const message of request.messages) {
+    const boundary = request.cacheBoundary ?? request.messages.length
+    // Lowering drops messages, so the boundary is re-counted on the wire.
+    let stable = 0
+    for (const [index, message] of request.messages.entries()) {
+      if (index === boundary) stable = messages.length
       if (message.role === "user") {
         const lowered = lowerUser(message)
         if (lowered !== undefined) messages.push(lowered)
@@ -381,8 +397,57 @@ const lowerMessages = (
       }
       messages.push(lowerToolResults(message, deferred, loaded))
     }
-    return messages
+    if (boundary >= request.messages.length) stable = messages.length
+    return { messages, stable }
   })
+
+const withLastBlockMarked = <B extends { readonly type: string }>(
+  content: ReadonlyArray<B>,
+  rebuild: (content: ReadonlyArray<B>) => WireMessage
+): WireMessage | undefined => {
+  for (let at = content.length - 1; at >= 0; at--) {
+    const type = content[at]!.type
+    if (type === "thinking" || type === "redacted_thinking") continue
+    return rebuild(content.map((block, index) => index === at ? { ...block, ...cacheControl } : block))
+  }
+  return undefined
+}
+
+/**
+ * Marks the last block of the first `stable` wire messages that can carry a
+ * breakpoint. Thinking blocks cannot, so the walk passes over them.
+ */
+const withMessageBreakpoint = (
+  messages: ReadonlyArray<WireMessage>,
+  stable: number
+): ReadonlyArray<WireMessage> => {
+  for (let index = stable - 1; index >= 0; index--) {
+    const message = messages[index]!
+    const marked: WireMessage | undefined = message.role === "user"
+      ? withLastBlockMarked(message.content, (content) => ({ role: "user", content }))
+      : withLastBlockMarked(message.content, (content) => ({ role: "assistant", content }))
+    if (marked !== undefined) {
+      return messages.map((original, originalIndex) => originalIndex === index ? marked : original)
+    }
+  }
+  return messages
+}
+
+/**
+ * Marks the end of the static prefix. Tools render before system, so a
+ * breakpoint on the last system block covers both; without a system prompt it
+ * goes on the last immediately loaded tool, since deferred ones sit after it.
+ */
+const withPrefixBreakpoint = (
+  system: ReadonlyArray<typeof TextBlock.Type>,
+  tools: ReadonlyArray<NonNullable<Body["tools"]>[number]>,
+  immediate: number
+): { readonly system: ReadonlyArray<typeof TextBlock.Type>; readonly tools: typeof tools } => {
+  const marking = <A>(items: ReadonlyArray<A>, at: number): ReadonlyArray<A> =>
+    items.map((item, index) => index === at ? { ...item, ...cacheControl } : item)
+  if (system.length > 0) return { system: marking(system, system.length - 1), tools }
+  return { system, tools: marking(tools, immediate - 1) }
+}
 
 type Effort = typeof Effort.Type
 
@@ -473,13 +538,19 @@ const buildBody = (
     const resolution = request.toolChoice === "none"
       ? { immediate: [], deferred: [], activatedNames: [] }
       : DeferredTools.resolve(request, native)
-    const tools = [
-      ...resolution.immediate.map((tool) => lowerTool(tool, false)),
-      ...resolution.deferred.map((tool) => lowerTool(tool, true))
-    ]
-    const system = request.system.map((part) => ({ type: "text" as const, text: part.text }))
+    // Two of Anthropic's four breakpoints: the static prefix, and the last
+    // message the next request repeats. See "Prompt caching" in docs/api.md.
+    const { system, tools } = withPrefixBreakpoint(
+      request.system.map((part) => ({ type: "text" as const, text: part.text })),
+      [
+        ...resolution.immediate.map((tool) => lowerTool(tool, false)),
+        ...resolution.deferred.map((tool) => lowerTool(tool, true))
+      ],
+      resolution.immediate.length
+    )
     const params = request.params
-    const messages = yield* lowerMessages(request, resolution.deferred.map((tool) => tool.name))
+    const lowered = yield* lowerMessages(request, resolution.deferred.map((tool) => tool.name))
+    const messages = withMessageBreakpoint(lowered.messages, lowered.stable)
     if (messages[0]?.role === "assistant") {
       return yield* Result.fail(
         new ModelError({

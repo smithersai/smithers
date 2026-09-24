@@ -82,7 +82,7 @@ serialization order a sealed model step keys on.
 
 | Export                 | Kind     | Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ---------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ModelRequest`         | class    | Fields: `modelId`, `system`, `messages`, `tools`, `params`, optional `toolChoice`, optional `cacheKey` (the conversation a provider routes its prefix cache by; OpenAI Responses sends it as `prompt_cache_key`, the ChatGPT backend also as the `session-id` header). `ModelRequest.make(input)` accepts a plain object.                                                                                                                                                                                                                                       |
+| `ModelRequest`         | class    | Fields: `modelId`, `system`, `messages`, `tools`, `params`, optional `toolChoice`, optional `cacheKey` (the conversation a provider routes its prefix cache by; OpenAI Responses sends it as `prompt_cache_key`, the ChatGPT backend also as the `session-id` header), optional `cacheBoundary` (how many leading messages the next request repeats unchanged; Anthropic Messages puts its moving cache breakpoint on the last of them, and unset means all of them). `ModelRequest.make(input)` accepts a plain object.                                        |
 | `Message`              | union    | `UserMessage \| AssistantMessage \| ToolMessage`, tagged by `role`. Constructors: `Message.user(text \| part \| parts)`, `Message.assistant(content, { stopReason?, responseId?, itemIds? })`, `Message.tool(part \| parts)`.                                                                                                                                                                                                                                                                                                                                   |
 | `UserMessage`          | class    | `role: "user"`, `content: TextPart[]`. Text only; tool output enters through a tool message.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `AssistantMessage`     | class    | `role: "assistant"`, `content: AssistantContentPart[]`, `stopReason`, optional `responseId` and `itemIds` (provider item ids a continuation replays).                                                                                                                                                                                                                                                                                                                                                                                                           |
@@ -386,6 +386,38 @@ Anthropic Messages request lowering and streaming event parsing.
 | ---------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Body`     | schema   | The deterministic `POST /v1/messages` body. `max_tokens` is required by the API; the lowering fills it from `params.maxTokens`, defaulting to `4096`. `stream` is always `true`. |
 | `protocol` | protocol | Id `anthropic-messages`. SSE framing, supports the native deferred-tool allowlist, and flushes unfinished parts on stream end.                                                   |
+
+### Prompt caching
+
+Anthropic caches only at explicit `cache_control` breakpoints, and a request
+reads an entry only where an earlier request wrote one. The lowering spends
+two of the four breakpoints a request allows, both with the default
+five-minute TTL:
+
+- The last system block, which also covers the tools rendered before it.
+  Without a system prompt, the last immediately loaded tool.
+- The last block that can carry one (not a thinking block) in the last of the
+  first `cacheBoundary` messages, or the last message when `cacheBoundary` is
+  unset. Messages the lowering drops are counted before they are dropped.
+
+A caller that appends a volatile block after its transcript sets
+`cacheBoundary` to the transcript length. `CellTurn` does this for its state
+section, so each frame's breakpoint lands on bytes the next frame repeats and
+moves forward a few blocks per frame, well inside Anthropic's 20-block
+lookback. Live on `claude-opus-5` (2026-09-24), a five-frame run with a
+4,378-token prefix wrote it once and read it back on every later frame:
+
+```text
+frame  cache_write  cache_read  input
+0      4378         0           16
+1      39           4378        16
+2      38           4417        16
+3      38           4455        16
+4      38           4493        16
+```
+
+A prefix shorter than the model's minimum cacheable length (512 to 4,096
+tokens depending on the model) is not cached and costs nothing extra.
 
 Lowering specifics: `stopSequences` are sent only when non-empty;
 `thinkingBudget` becomes `thinking: { type: "enabled", budget_tokens }`. An
