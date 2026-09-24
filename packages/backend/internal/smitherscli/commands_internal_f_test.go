@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func internalFServe(t *testing.T, argv ...string) error {
 func TestCommandsInternal_F_HandlerNonWorkerSpawnSuccess(t *testing.T) {
 	internalFSetXDG(t)
 	oldSpawn := internalSpawnWorker
-	internalSpawnWorker = func(string, string) error { return nil }
+	internalSpawnWorker = func(string, string) (int, error) { return os.Getpid(), nil }
 	t.Cleanup(func() { internalSpawnWorker = oldSpawn })
 	if err := internalFServe(t, "push-to-smithers"); err != nil {
 		t.Fatalf("handler non-worker spawn success = %v", err)
@@ -38,7 +39,7 @@ func TestCommandsInternal_F_HandlerNonWorkerSpawnSuccess(t *testing.T) {
 func TestCommandsInternal_F_HandlerNonWorkerSpawnError(t *testing.T) {
 	internalFSetXDG(t)
 	oldSpawn := internalSpawnWorker
-	internalSpawnWorker = func(string, string) error { return errors.New("spawn boom") }
+	internalSpawnWorker = func(string, string) (int, error) { return 0, errors.New("spawn boom") }
 	t.Cleanup(func() { internalSpawnWorker = oldSpawn })
 	// queuePushWorker returns the spawn error, which the handler logs.
 	if err := internalFServe(t, "push-to-smithers"); err != nil {
@@ -213,5 +214,39 @@ func TestCommandsInternal_F_RunPushWorkerBranches(t *testing.T) {
 	states := []*pushScheduleState{internalFSchedule(-time.Second, 1), internalFSchedule(-time.Second, 1), internalFSchedule(-time.Second, 2), nil}
 	if err := drive(states, func(string) error { return nil }); err != nil {
 		t.Fatalf("after sequence differs = %v", err)
+	}
+}
+
+// The hook process that queues a push exits at once, so the lock must name the
+// detached worker. Otherwise the next queue call sees a dead PID, deletes the
+// lock and starts a second worker beside the first.
+func TestCommandsInternal_F_LockNamesWorkerNotParent(t *testing.T) {
+	internalFSetXDG(t)
+	worker := exec.Command("sleep", "30")
+	if err := worker.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = worker.Process.Kill(); _ = worker.Wait() })
+	spawned := 0
+	oldSpawn := internalSpawnWorker
+	internalSpawnWorker = func(string, string) (int, error) {
+		spawned++
+		return worker.Process.Pid, nil
+	}
+	t.Cleanup(func() { internalSpawnWorker = oldSpawn })
+
+	cwd := t.TempDir()
+	if err := queuePushWorker(cwd); err != nil {
+		t.Fatalf("first queue = %v", err)
+	}
+	lock := parseWorkerLockState(lockPathForRepo(pushRepoKey(cwd)))
+	if lock == nil || lock.PID != worker.Process.Pid {
+		t.Fatalf("lock = %#v, want worker pid %d", lock, worker.Process.Pid)
+	}
+	if err := queuePushWorker(cwd); err != nil {
+		t.Fatalf("second queue = %v", err)
+	}
+	if spawned != 1 {
+		t.Fatalf("spawned %d workers while one was alive", spawned)
 	}
 }

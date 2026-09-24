@@ -219,7 +219,7 @@ func TestCommandsWorkspace_Cov_ScriptBuildersAuthAndExtraction(t *testing.T) {
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `not-json`)
+	setTestClaudeKeychainPayload(t, `not-json`)
 	if env := getClaudeAuthEnv(); env != nil {
 		t.Fatalf("getClaudeAuthEnv invalid keychain payload = %#v", env)
 	}
@@ -234,12 +234,12 @@ func TestCommandsWorkspace_Cov_ScriptBuildersAuthAndExtraction(t *testing.T) {
 	if got := claudeKeychainAccessToken(payload); got != "" {
 		t.Fatalf("claudeKeychainAccessToken expired = %q", got)
 	}
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"oauth-token","expiresAt":%d}}`, future))
+	setTestClaudeKeychainPayload(t, fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"oauth-token","expiresAt":%d}}`, future))
 	if got := loadClaudeOAuthAccessTokenFromKeychain(); got != "oauth-token" {
 		t.Fatalf("loadClaudeOAuthAccessTokenFromKeychain test payload = %q", got)
 	}
 
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", `{"tokens":{"id_token":"from-env"}}`)
+	setTestCodexAuthJSON(t, `{"tokens":{"id_token":"from-env"}}`)
 	if raw := readLocalCodexAuthFile(); !strings.Contains(raw, "from-env") {
 		t.Fatalf("readLocalCodexAuthFile env = %q", raw)
 	}
@@ -247,7 +247,7 @@ func TestCommandsWorkspace_Cov_ScriptBuildersAuthAndExtraction(t *testing.T) {
 	if !ok || !strings.Contains(content, "from-env") {
 		t.Fatalf("getCodexAuthContent env = (%q, %t)", content, ok)
 	}
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("OPENAI_API_KEY", "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -422,7 +422,7 @@ func TestCommandsWorkspace_Cov_RemoteShellAndAgentAuth(t *testing.T) {
 
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "anthropic-cov-token")
 	t.Setenv("OPENAI_API_KEY", "openai-cov-token")
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	if err := seedWorkspaceAgentAuth(sshCommand, []string{"claude", "codex"}); err != nil {
 		t.Fatalf("seedWorkspaceAgentAuth returned error: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestCommandsWorkspace_Cov_RemoteClaudeFailureAndRemoteAuthCheck(t *testing.
 	t.Setenv("SMITHERS_WORKSPACE_CLAUDE_TIMEOUT_MS", "5000")
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `not-json`)
+	setTestClaudeKeychainPayload(t, `not-json`)
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 
 	if err := ensureWorkspaceClaudeAuth(sshCommand); err != nil {

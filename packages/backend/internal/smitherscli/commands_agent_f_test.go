@@ -39,7 +39,7 @@ func agentFSetConfig(t *testing.T, apiURL, token string) {
 	t.Setenv("XDG_CACHE_HOME", filepath.Join(t.TempDir(), "cache"))
 	t.Setenv("SMITHERS_TOKEN", token)
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(t.TempDir(), "auth.json"))
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {
 		t.Fatal(err)

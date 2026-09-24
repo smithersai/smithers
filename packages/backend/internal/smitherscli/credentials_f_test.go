@@ -181,7 +181,7 @@ func TestCredentials_F_WindowsBackend(t *testing.T) {
 }
 
 func TestCredentials_F_ResolveBackendPerOS(t *testing.T) {
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "")
 
 	oldGOOS := cliGOOS

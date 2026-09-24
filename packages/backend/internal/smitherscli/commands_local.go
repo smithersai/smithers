@@ -32,10 +32,7 @@ func statusCommand() *incur.Cli {
 func bookmarkCommand() *incur.Cli {
 	cmd := incur.New("bookmark", incur.WithDescription("Manage bookmarks (branches)"))
 	cmd.Command("list", &incur.CommandDef{
-		Description: "List bookmarks",
-		OptionsSchema: objectSchema(nil, map[string]*incur.JSONSchema{
-			"repo": stringSchema("Repository (OWNER/REPO)"),
-		}),
+		Description: "List local bookmarks",
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			bookmarks, err := ListLocalBookmarks(nil, LocalReadOptions{})
 			if err != nil {

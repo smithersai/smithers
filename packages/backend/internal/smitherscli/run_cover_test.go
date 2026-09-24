@@ -59,7 +59,7 @@ func TestRun_Cov_RunAndServeCLIExitCodes(t *testing.T) {
 }
 
 func TestRun_Cov_NewCLIAndFeatureFlagFiltering(t *testing.T) {
-	cli := NewCLI()
+	cli := newCLIWithFeatureFlags(nil)
 	if err := cli.ServeWithOptions([]string{"--version"}, incur.ServeOptions{}); err != nil {
 		t.Fatalf("NewCLI version returned error: %v", err)
 	}

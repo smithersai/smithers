@@ -178,7 +178,8 @@ func TestCommandsMoreHttp_H_CommandSurfaceSuccess(t *testing.T) {
 	})
 	commandsMoreHTTPHServe(t, webhookCommand(), "delete", "11", "--repo", "alice/demo", "--json")
 	commandsMoreHTTPHServe(t, webhookCommand(), "deliveries", "11", "--repo", "alice/demo", "--json")
-	commandsMoreHTTPHServe(t, webhookCommand(), "deliveries", "11", "--replay", "delivery 1", "--repo", "alice/demo", "--json")
+	commandsMoreHTTPHServe(t, webhookCommand(), "deliveries", "11", "--replay", "21", "--repo", "alice/demo", "--json")
+	commandsMoreHTTPHServeWantErr(t, webhookCommand(), "numeric delivery ID", "deliveries", "11", "--replay", "delivery 1", "--repo", "alice/demo", "--json")
 
 	commandsMoreHTTPHWithStdin(t, `{"access_token":"linear-access","refresh_token":"linear-refresh"}`, func() {
 		commandsMoreHTTPHServe(t, extensionCommand(), "linear", "install", "--credentials-stdin", "--team-id", "team-1", "--team-name", "Platform", "--team-key", "PLAT", "--repo-owner", "alice", "--repo-name", "demo", "--repo-id", "42", "--expires-at", "2026-01-02T03:04:05Z", "--actor-id", "actor-1", "--json")
@@ -273,15 +274,15 @@ func TestCommandsMoreHttp_H_RequestAndTransferErrors(t *testing.T) {
 	}
 
 	commandsMoreHTTPHSetConfig(t, server.URL)
-	oldClient := http.DefaultClient
-	t.Cleanup(func() { http.DefaultClient = oldClient })
-	http.DefaultClient = &http.Client{Transport: commandsMoreHTTPHRoundTripFunc(func(*http.Request) (*http.Response, error) {
+	oldClient := apiHTTPClient
+	t.Cleanup(func() { apiHTTPClient = oldClient })
+	apiHTTPClient = &http.Client{Transport: commandsMoreHTTPHRoundTripFunc(func(*http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("forced transport error")
 	})}
 	if _, err := unauthenticatedJSONRequest(http.MethodGet, "/transport-error", nil); err == nil || !strings.Contains(err.Error(), "forced transport error") {
 		t.Fatalf("unauthenticatedJSONRequest transport error = %v", err)
 	}
-	http.DefaultClient = oldClient
+	apiHTTPClient = oldClient
 
 	if err := downloadFileLimit("://bad-url", filepath.Join(t.TempDir(), "out"), 10); err == nil {
 		t.Fatal("downloadFileLimit accepted invalid URL")

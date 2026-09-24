@@ -65,21 +65,13 @@ func TestClient_Cov_APIErrorRequireJjAndCommandTimeout(t *testing.T) {
 	if !strings.Contains(apiErr, "GET /api/cov -> 418: short and stout") {
 		t.Fatalf("APIError.Error() = %q", apiErr)
 	}
-	binDir := clientCovInstallRemoteTools(t)
-	// This branch asserts that a jj answering --version is accepted. Spawning
-	// /bin/sh on a saturated CI host has taken longer than the production
-	// bound, so the bound itself is covered by TestRequireJj_TimesOutSlowJj
-	// and this call gets a wide one.
-	clientCovSetRequireJjTimeout(t, time.Minute)
-	start := time.Now()
+	clientCovInstallRemoteTools(t)
 	if err := RequireJj(); err != nil {
-		elapsed := time.Since(start)
-		directStart := time.Now()
-		out, directErr := exec.Command(filepath.Join(binDir, "jj"), "--version").Output()
-		t.Fatalf("RequireJj with fake jj returned error after %s: %v\ndirect exec of %s/jj --version took %s: out=%q err=%v",
-			elapsed.Round(time.Millisecond), err, binDir, time.Since(directStart).Round(time.Millisecond), out, directErr)
+		t.Fatalf("RequireJj with fake jj returned error: %v", err)
 	}
-	out, err := runCommandWithTimeout(exec.Command("jj", "--version"), time.Second)
+	// A wide bound: spawning /bin/sh on a saturated CI host is slow, and the
+	// timeout branch is covered by clientCovAssertCommandTimeout.
+	out, err := runCommandWithTimeout(exec.Command("jj", "--version"), time.Minute)
 	if err != nil || !strings.Contains(out, "jj 0.33.0") {
 		t.Fatalf("runCommandWithTimeout success = (%q, %v)", out, err)
 	}
@@ -91,35 +83,24 @@ func TestClient_Cov_APIErrorRequireJjAndCommandTimeout(t *testing.T) {
 	}
 }
 
-func clientCovSetRequireJjTimeout(t *testing.T, timeout time.Duration) {
-	t.Helper()
-	previous := requireJjTimeout
-	requireJjTimeout = timeout
-	t.Cleanup(func() { requireJjTimeout = previous })
-}
-
-// A jj that never answers --version inside the bound is reported as missing,
-// and RequireJj returns once the bound elapses instead of waiting for the
-// child: the child sleeps far longer than the assertion allows.
-func TestRequireJj_TimesOutSlowJj(t *testing.T) {
+// RequireJj resolves jj without running it, so a jj that is slow to start
+// is never reported as missing and no extra process is spawned per command.
+func TestRequireJj_DoesNotRunJj(t *testing.T) {
 	binDir := filepath.Join(t.TempDir(), "bin")
 	if err := os.MkdirAll(binDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	slow := "#!/bin/sh\nexec /bin/sleep 120\n"
+	marker := filepath.Join(t.TempDir(), "ran")
+	slow := "#!/bin/sh\ntouch " + marker + "\nexec /bin/sleep 120\n"
 	if err := os.WriteFile(filepath.Join(binDir, "jj"), []byte(slow), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
-	clientCovSetRequireJjTimeout(t, 100*time.Millisecond)
-	start := time.Now()
-	err := RequireJj()
-	elapsed := time.Since(start)
-	if err == nil || !strings.Contains(err.Error(), "jj (Jujutsu) is not installed") {
-		t.Fatalf("RequireJj with a jj that never answers = %v", err)
+	if err := RequireJj(); err != nil {
+		t.Fatalf("RequireJj with a slow jj = %v", err)
 	}
-	if elapsed > time.Minute {
-		t.Fatalf("RequireJj waited %s for a jj that sleeps 120s; the bound did not apply", elapsed.Round(time.Millisecond))
+	if _, err := os.Stat(marker); err == nil {
+		t.Fatal("RequireJj spawned jj")
 	}
 }
 

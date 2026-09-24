@@ -12,7 +12,7 @@ import (
 func credentialsCovStorePath(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "credentials.json")
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", path)
+	setTestCredentialStoreFile(t, path)
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	return path
 }
@@ -23,7 +23,7 @@ func TestCredentials_Cov_TestStoreLifecycle(t *testing.T) {
 	if err := StoreToken(" Example.COM ", " token-value \n"); err != nil {
 		t.Fatalf("StoreToken returned error: %v", err)
 	}
-	if got := LoadStoredToken("EXAMPLE.com"); got != "token-value" {
+	if got, err := LoadStoredToken("EXAMPLE.com"); err != nil || got != "token-value" {
 		t.Fatalf("LoadStoredToken normalized host = %q", got)
 	}
 	data, err := readTestStore(path)
@@ -39,14 +39,14 @@ func TestCredentials_Cov_TestStoreLifecycle(t *testing.T) {
 	if deleted := DeleteStoredToken("example.com"); deleted {
 		t.Fatal("DeleteStoredToken reported deleting missing token")
 	}
-	if got := LoadStoredToken("example.com"); got != "" {
+	if got, err := LoadStoredToken("example.com"); err != nil || got != "" {
 		t.Fatalf("LoadStoredToken after delete = %q", got)
 	}
 
 	if err := StoreToken(" \t ", "x"); err == nil || !strings.Contains(err.Error(), "Hostname is required") {
 		t.Fatalf("StoreToken blank host error = %v", err)
 	}
-	if got := LoadStoredToken(""); got != "" {
+	if got, err := LoadStoredToken(""); err != nil || got != "" {
 		t.Fatalf("LoadStoredToken blank host = %q", got)
 	}
 	if deleted := DeleteStoredToken(""); deleted {
@@ -62,8 +62,8 @@ func TestCredentials_Cov_TestStoreLifecycle(t *testing.T) {
 	if err := StoreToken("example.com", "new"); err == nil || !strings.Contains(err.Error(), "Invalid credential store file") {
 		t.Fatalf("StoreToken invalid store error = %v", err)
 	}
-	if got := LoadStoredToken("example.com"); got != "" {
-		t.Fatalf("LoadStoredToken invalid store = %q", got)
+	if got, err := LoadStoredToken("example.com"); got != "" || err == nil || !strings.Contains(err.Error(), "secure storage unavailable") {
+		t.Fatalf("LoadStoredToken invalid store = (%q, %v)", got, err)
 	}
 }
 
@@ -111,7 +111,7 @@ func TestCredentials_Cov_ErrorClassificationAndUnavailableBackend(t *testing.T) 
 		t.Fatal("isMissingCredentialError misclassified generic error")
 	}
 
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	if backend := resolveCredentialBackend(); backend != nil {
 		t.Fatalf("resolveCredentialBackend disabled = %#v", backend)
@@ -124,7 +124,7 @@ func TestCredentials_Cov_ErrorClassificationAndUnavailableBackend(t *testing.T) 
 			t.Fatalf("StoreToken no backend error type = %T %v", err, err)
 		}
 	}
-	if got := LoadStoredToken("example.com"); got != "" {
+	if got, err := LoadStoredToken("example.com"); err != nil || got != "" {
 		t.Fatalf("LoadStoredToken no backend = %q", got)
 	}
 	if deleted := DeleteStoredToken("example.com"); deleted {

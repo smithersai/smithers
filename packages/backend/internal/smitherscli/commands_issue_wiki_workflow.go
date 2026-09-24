@@ -2,7 +2,6 @@ package smitherscli
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -183,23 +182,6 @@ func issueCommand() *incur.Cli {
 			return comment, nil
 		}
 		return fmt.Sprintf("Added a comment to issue #%d", number), nil
-	}))
-
-	cmd.Command("lock", issueNumberCommandWithOptions("Lock an issue", map[string]*incur.JSONSchema{
-		"reason": stringSchema("Lock reason (off-topic, too heated, resolved, spam)"),
-	}, func(owner, repo string, number int, ctx *incur.CommandContext) (any, error) {
-		body := map[string]any{}
-		if reason := stringValue(ctx.Options["reason"]); reason != "" {
-			body["reason"] = reason
-		}
-		issue, err := APIRequest("PUT", fmt.Sprintf("/api/repos/%s/%s/issues/%d/lock", owner, repo, number), body, nil)
-		if err != nil {
-			return nil, cleanAPIError(err)
-		}
-		if ctx.FormatExplicit {
-			return issue, nil
-		}
-		return fmt.Sprintf("Locked issue #%d", number), nil
 	}))
 
 	return cmd
@@ -613,20 +595,13 @@ func streamWorkflowRunEvents(owner, repo string, runID int) ([]map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(context.Background(), "GET", fmt.Sprintf("%s/api/repos/%s/%s/runs/%d/logs", auth.APIURL, owner, repo, runID), nil)
+	path := fmt.Sprintf("/api/repos/%s/%s/runs/%d/logs", owner, repo, runID)
+	resp, cancel, err := doAPI(apiCall{Method: http.MethodGet, URL: auth.APIURL + path, Path: path, Token: auth.Token, Accept: "text/event-stream", Stream: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to connect to run stream: %w", err)
 	}
-	req.Header.Set("Authorization", "token "+auth.Token)
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
+	defer cancel()
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Failed to connect to run stream: %d %s", resp.StatusCode, resp.Status)
-	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)

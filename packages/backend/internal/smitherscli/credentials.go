@@ -277,9 +277,13 @@ func (b windowsCredentialBackend) Set(host, token string) error {
 	return nil
 }
 
+// testCredentialStoreFile, when set by a test, replaces the system keyring
+// with a JSON file. Production code never sets it.
+var testCredentialStoreFile string
+
 func resolveCredentialBackend() credentialStoreBackend {
-	if path := strings.TrimSpace(os.Getenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE")); path != "" {
-		return testFileBackend{path: path}
+	if testCredentialStoreFile != "" {
+		return testFileBackend{path: testCredentialStoreFile}
 	}
 	if os.Getenv("SMITHERS_DISABLE_SYSTEM_KEYRING") == "1" {
 		return nil
@@ -304,20 +308,34 @@ func resolveCredentialBackend() credentialStoreBackend {
 	return nil
 }
 
-func LoadStoredToken(host string) string {
+// SecureStorageReadError means the keychain, Secret Service or Credential
+// Locker holds a token that the CLI could not read, for example a locked macOS
+// keychain over SSH or a stopped Secret Service daemon.
+type SecureStorageReadError struct {
+	Detail string
+}
+
+func (e *SecureStorageReadError) Error() string {
+	return "secure storage unavailable: " + e.Detail
+}
+
+// LoadStoredToken returns the token stored for host, or "" when none is
+// stored. A backend failure other than a missing item is a
+// *SecureStorageReadError.
+func LoadStoredToken(host string) (string, error) {
 	normalized, err := normalizeCredentialHost(host)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 	backend := resolveCredentialBackend()
 	if backend == nil {
-		return ""
+		return "", nil
 	}
 	token, err := backend.Get(normalized)
 	if err != nil {
-		return ""
+		return "", &SecureStorageReadError{Detail: err.Error()}
 	}
-	return token
+	return token, nil
 }
 
 func StoreToken(host, token string) error {

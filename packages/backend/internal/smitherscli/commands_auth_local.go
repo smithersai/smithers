@@ -2,7 +2,6 @@ package smitherscli
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -213,45 +212,25 @@ func runLocalOwnerLogin(ctx *incur.CommandContext, bootstrap bool) (any, error) 
 	return fmt.Sprintf("Logged in to %s as %s", persisted.Host, token.User.Username), nil
 }
 
+// localAuthRequest sends one unauthenticated JSON request to a local server
+// through the shared request path and decodes the body into output.
 func localAuthRequest(target AuthTarget, method, path string, body any, headers map[string]string, output any) error {
-	var reader io.Reader
-	if body != nil {
-		encoded, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		reader = bytes.NewReader(encoded)
+	response, cancel, err := doAPI(apiCall{
+		Method:  method,
+		URL:     target.APIURL + path,
+		Path:    path,
+		Body:    body,
+		Headers: headers,
+		Client:  localAuthHTTPClient,
+	})
+	if err != nil {
+		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, method, target.APIURL+path, reader)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	for name, value := range headers {
-		req.Header.Set(name, value)
-	}
-	response, err := localAuthHTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
 	defer func() { _ = response.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 	if err != nil {
 		return err
-	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		var failure struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(raw, &failure) == nil && failure.Message != "" {
-			return &APIError{Method: method, Path: path, Status: response.StatusCode, Detail: failure.Message}
-		}
-		return &APIError{Method: method, Path: path, Status: response.StatusCode, Detail: strings.TrimSpace(string(raw))}
 	}
 	if output == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil

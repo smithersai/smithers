@@ -161,7 +161,7 @@ func workspaceCommand() *incur.Cli {
 		return APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/fork", owner, repo, url.PathEscape(id)), map[string]any{"name": stringValue(ctx.Options["name"])}, nil)
 	}))
 	cmd.Command("snapshots", workspaceIDCommand("List workspace snapshots", func(owner, repo, id string, ctx *incur.CommandContext) (any, error) {
-		return APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/snapshots", owner, repo, url.PathEscape(id)), nil, nil)
+		return listWorkspaceSnapshots(owner, repo, id)
 	}))
 	cmd.Command("watch", workspaceIDCommand("Watch a workspace for real-time status updates", func(owner, repo, id string, ctx *incur.CommandContext) (any, error) {
 		ws, err := APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/workspaces/%s", owner, repo, url.PathEscape(id)), nil, nil)
@@ -642,25 +642,40 @@ func runSSHCommand(sshCommand string) error {
 	return nil
 }
 
+// listWorkspaceSnapshots returns the repository's snapshots taken from one
+// workspace. The server lists snapshots per repository only.
+func listWorkspaceSnapshots(owner, repo, workspaceID string) ([]any, error) {
+	all, err := APIListAll(func(cursor string) string {
+		path := fmt.Sprintf("/api/repos/%s/%s/workspace-snapshots?limit=100", owner, repo)
+		if cursor != "" {
+			path += "&cursor=" + url.QueryEscape(cursor)
+		}
+		return path
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	snapshots := []any{}
+	for _, item := range all {
+		if stringValue(objectValue(item)["workspace_id"]) == workspaceID {
+			snapshots = append(snapshots, item)
+		}
+	}
+	return snapshots, nil
+}
+
 func streamWorkspaceEvents(owner, repo, workspaceID string) ([]map[string]any, error) {
 	auth, err := RequireAuthToken(nil)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(context.Background(), "GET", fmt.Sprintf("%s/api/repos/%s/%s/workspaces/%s/stream", auth.APIURL, owner, repo, url.PathEscape(workspaceID)), nil)
+	path := fmt.Sprintf("/api/repos/%s/%s/workspaces/%s/stream", owner, repo, url.PathEscape(workspaceID))
+	resp, cancel, err := doAPI(apiCall{Method: http.MethodGet, URL: auth.APIURL + path, Path: path, Token: auth.Token, Accept: "text/event-stream", Stream: true})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to connect to workspace stream: %w", err)
 	}
-	req.Header.Set("Authorization", "token "+auth.Token)
-	req.Header.Set("Accept", "text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
+	defer cancel()
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("Failed to connect to workspace stream: %d %s", resp.StatusCode, resp.Status)
-	}
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 	events := []map[string]any{}
@@ -826,7 +841,8 @@ func getClaudeAuthEnv() map[string]string {
 	if token := strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN")); token != "" {
 		return map[string]string{"ANTHROPIC_AUTH_TOKEN": token}
 	}
-	if token := strings.TrimSpace(LoadStoredToken(claudeSetupTokenStorageKey)); token != "" {
+	if token, _ := LoadStoredToken(claudeSetupTokenStorageKey); strings.TrimSpace(token) != "" {
+		token = strings.TrimSpace(token)
 		return map[string]string{"ANTHROPIC_AUTH_TOKEN": token}
 	}
 	if token := loadClaudeOAuthAccessTokenFromKeychain(); token != "" {
@@ -862,8 +878,15 @@ func claudeKeychainAccessToken(parsed claudeCodeKeychainPayload) string {
 	return token
 }
 
+// Test-only replacements for the Claude keychain item and ~/.codex/auth.json.
+// Production code never sets them.
+var (
+	testClaudeKeychainPayload string
+	testCodexAuthJSON         string
+)
+
 func loadClaudeOAuthAccessTokenFromKeychain() string {
-	if payload := strings.TrimSpace(os.Getenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD")); payload != "" {
+	if payload := strings.TrimSpace(testClaudeKeychainPayload); payload != "" {
 		var parsed claudeCodeKeychainPayload
 		if json.Unmarshal([]byte(payload), &parsed) == nil {
 			return claudeKeychainAccessToken(parsed)
@@ -1010,7 +1033,7 @@ func getCodexAuthContent() (string, bool) {
 }
 
 func readLocalCodexAuthFile() string {
-	if raw := strings.TrimSpace(os.Getenv("SMITHERS_TEST_CODEX_AUTH_JSON")); raw != "" {
+	if raw := strings.TrimSpace(testCodexAuthJSON); raw != "" {
 		return raw
 	}
 	home, err := workspaceUserHomeDir()

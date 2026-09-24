@@ -17,7 +17,7 @@ func authCovSetConfig(t *testing.T, apiURL string) string {
 	configHome := filepath.Join(root, "config")
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(root, "auth.json"))
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(root, "credentials.json"))
+	setTestCredentialStoreFile(t, filepath.Join(root, "credentials.json"))
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	t.Setenv("SMITHERS_TOKEN", "")
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {
@@ -231,14 +231,14 @@ func TestAuth_Cov_PersistClearAndStatus(t *testing.T) {
 	if target.APIURL != server.URL || target.Host == "" {
 		t.Fatalf("PersistAuthToken target = %#v", target)
 	}
-	if got := LoadStoredToken(target.Host); got != "stored-token" {
+	if got, _ := LoadStoredToken(target.Host); got != "stored-token" {
 		t.Fatalf("PersistAuthToken keyring token = %q", got)
 	}
 	record, err := readSmithersAuthFile()
-	if err != nil || record == nil || record.Token != "stored-token" || record.Username != "stored-user" {
+	if err != nil || record == nil || record.Token != "" || record.Username != "stored-user" {
 		t.Fatalf("PersistAuthToken auth file = %#v, %v", record, err)
 	}
-	if cfg := LoadConfig(); cfg.APIURL != server.URL {
+	if cfg := mustLoadConfig(t); cfg.APIURL != server.URL {
 		t.Fatalf("PersistAuthToken saved config APIURL = %#v", cfg)
 	}
 

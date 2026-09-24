@@ -26,7 +26,6 @@ func TestConfig_Cov_BaseDirsAndConfigLifecycle(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("XDG_CACHE_HOME", cacheHome)
 	t.Setenv("XDG_STATE_HOME", stateHome)
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
 	t.Setenv("SMITHERS_API_ORIGIN", "")
 
 	if got := configBaseDir(); got != configHome {
@@ -45,43 +44,37 @@ func TestConfig_Cov_BaseDirsAndConfigLifecycle(t *testing.T) {
 		t.Fatalf("StateDir() = %q", got)
 	}
 
-	raw := LoadRawConfig()
+	raw := mustLoadRawConfig(t)
 	if raw.APIURL != defaultAPIURL || raw.GitProtocol != GitProtocolSSH {
 		t.Fatalf("missing config defaults = %#v", raw)
 	}
 
-	configCovWriteConfig(t, ":\n")
-	raw = LoadRawConfig()
-	if raw.APIURL != defaultAPIURL || raw.GitProtocol != GitProtocolSSH {
-		t.Fatalf("invalid config should return defaults, got %#v", raw)
+	configCovWriteConfig(t, "api_origin: [unclosed\n")
+	if _, err := LoadRawConfig(); err == nil || !strings.Contains(err.Error(), "is invalid") {
+		t.Fatalf("invalid config error = %v", err)
 	}
 
 	configCovWriteConfig(t, strings.Join([]string{
 		"api_url: https://api.example.com/api/",
 		"git_protocol: https",
-		"agent_issue_repo: owners/issues",
 		"token: legacy-token",
 		"",
 	}, "\n"))
-	raw = LoadRawConfig()
-	if raw.APIURL != "https://api.example.com" || raw.GitProtocol != GitProtocolHTTPS || raw.AgentIssueRepo != "owners/issues" || raw.Token != "legacy-token" {
+	raw = mustLoadRawConfig(t)
+	if raw.APIURL != "https://api.example.com" || raw.GitProtocol != GitProtocolHTTPS || raw.Token != "legacy-token" {
 		t.Fatalf("LoadRawConfig parsed %#v", raw)
 	}
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "env/issues")
-	if got := LoadConfig().AgentIssueRepo; got != "env/issues" {
-		t.Fatalf("LoadConfig env override = %q", got)
-	}
 	t.Setenv("SMITHERS_API_ORIGIN", "http://127.0.0.1:9090/api/")
-	if got := LoadConfig().APIURL; got != "http://127.0.0.1:9090" {
+	if got := mustLoadConfig(t).APIURL; got != "http://127.0.0.1:9090" {
 		t.Fatalf("LoadConfig API origin override = %q", got)
 	}
 	t.Setenv("SMITHERS_API_ORIGIN", "")
 
-	if err := SaveConfig(map[string]string{"api_url": " http://localhost:8080/api/ ", "git_protocol": "ssh", "agent_issue_repo": "new/issues"}); err != nil {
+	if err := SaveConfig(map[string]string{"api_url": " http://localhost:8080/api/ ", "git_protocol": "ssh"}); err != nil {
 		t.Fatalf("SaveConfig returned error: %v", err)
 	}
-	raw = LoadRawConfig()
-	if raw.APIURL != "http://localhost:8080" || raw.GitProtocol != GitProtocolSSH || raw.AgentIssueRepo != "new/issues" {
+	raw = mustLoadRawConfig(t)
+	if raw.APIURL != "http://localhost:8080" || raw.GitProtocol != GitProtocolSSH {
 		t.Fatalf("SaveConfig merged %#v", raw)
 	}
 
@@ -97,7 +90,7 @@ func TestConfig_Cov_BaseDirsAndConfigLifecycle(t *testing.T) {
 	if err != nil || !cleared {
 		t.Fatalf("ClearLegacyToken with token = (%t, %v)", cleared, err)
 	}
-	if token := LoadRawConfig().Token; token != "" {
+	if token := mustLoadRawConfig(t).Token; token != "" {
 		t.Fatalf("legacy token was not cleared: %q", token)
 	}
 }

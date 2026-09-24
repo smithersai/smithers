@@ -34,9 +34,9 @@ fi
 case "$1 $2" in
   "bookmark list")
     case "$JJF_BM" in
-      none) printf 'No bookmarks found\n' ;;
-      blank) printf 'main: c1 x1\nsolo:\n\nfeature: c2 x2\n' ;;
-      *) printf 'main: c1 x1\nfeature: c2 x2\n' ;;
+      none) ;;
+      blank) printf 'main\tc1\tx1\nsolo\t\t\n\nfeature\tc2\tx2\n' ;;
+      *) printf 'main\tc1\tx1\nfeature\tc2\tx2\n' ;;
     esac
     exit 0 ;;
   "bookmark create") exit 0 ;;
@@ -235,7 +235,7 @@ func TestJj_F_PushLocalBookmarkAuthError(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
 	t.Setenv("SMITHERS_TOKEN", "")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(configHome, "missing-auth.json"))
 	if err := PushLocalBookmark("feature"); err == nil {
 		t.Fatal("PushLocalBookmark should error without auth token")

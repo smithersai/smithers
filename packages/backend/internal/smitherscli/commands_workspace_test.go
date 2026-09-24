@@ -215,7 +215,7 @@ func TestSeedWorkspaceAgentAuth_UnknownAgent(t *testing.T) {
 func TestSeedWorkspaceAgentAuth_ClaudeMissingLocalAuth(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", "")
+	setTestClaudeKeychainPayload(t, "")
 	t.Setenv("HOME", t.TempDir())
 	err := seedWorkspaceAgentAuth("ssh fake-host", []string{"claude"})
 	if err == nil {
@@ -225,7 +225,7 @@ func TestSeedWorkspaceAgentAuth_ClaudeMissingLocalAuth(t *testing.T) {
 
 func TestSeedWorkspaceAgentAuth_CodexMissingLocalAuth(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("HOME", t.TempDir())
 	err := seedWorkspaceAgentAuth("ssh fake-host", []string{"codex"})
 	if err == nil {
@@ -236,7 +236,7 @@ func TestSeedWorkspaceAgentAuth_CodexMissingLocalAuth(t *testing.T) {
 func TestGetClaudeAuthEnv_PrefersKeychainOAuthOverAPIKey(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-fake-api-key-for-test")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test"}}`)
+	setTestClaudeKeychainPayload(t, `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test"}}`)
 	t.Setenv("HOME", t.TempDir())
 
 	env := getClaudeAuthEnv()
@@ -252,7 +252,7 @@ func TestGetClaudeAuthEnv_ExpiredKeychainOAuthFallsBackToAPIKey(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-fake-api-key-for-test")
 	// expiresAt in the past (epoch millis) — the keychain token is dead.
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test","expiresAt":1}}`)
+	setTestClaudeKeychainPayload(t, `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test","expiresAt":1}}`)
 	t.Setenv("HOME", t.TempDir())
 
 	env := getClaudeAuthEnv()
@@ -268,7 +268,7 @@ func TestGetClaudeAuthEnv_UnexpiredKeychainOAuthStillWins(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-fake-api-key-for-test")
 	future := time.Now().Add(time.Hour).UnixMilli()
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test","expiresAt":%d}}`, future))
+	setTestClaudeKeychainPayload(t, fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test","expiresAt":%d}}`, future))
 	t.Setenv("HOME", t.TempDir())
 
 	env := getClaudeAuthEnv()
@@ -283,7 +283,7 @@ func TestGetClaudeAuthEnv_UnexpiredKeychainOAuthStillWins(t *testing.T) {
 func TestGetClaudeAuthEnv_FallsBackToAPIKeyWhenNoKeychainOAuth(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-fake-api-key-for-test")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", "")
+	setTestClaudeKeychainPayload(t, "")
 	t.Setenv("HOME", t.TempDir())
 
 	env := getClaudeAuthEnv()
@@ -295,7 +295,7 @@ func TestGetClaudeAuthEnv_FallsBackToAPIKeyWhenNoKeychainOAuth(t *testing.T) {
 func TestGetClaudeAuthEnv_ExplicitAuthTokenEnvWins(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "sk-fake-explicit-token-for-test")
 	t.Setenv("ANTHROPIC_API_KEY", "sk-fake-api-key-for-test")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test"}}`)
+	setTestClaudeKeychainPayload(t, `{"claudeAiOauth":{"accessToken":"sk-fake-oauth-token-for-test"}}`)
 	t.Setenv("HOME", t.TempDir())
 
 	env := getClaudeAuthEnv()
@@ -305,7 +305,7 @@ func TestGetClaudeAuthEnv_ExplicitAuthTokenEnvWins(t *testing.T) {
 }
 
 func TestGetCodexAuthContent_PrefersLocalAuthFileOverAPIKey(t *testing.T) {
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", `{"OPENAI_API_KEY":null,"tokens":{"id_token":"sk-fake-codex-token-for-test"}}`)
+	setTestCodexAuthJSON(t, `{"OPENAI_API_KEY":null,"tokens":{"id_token":"sk-fake-codex-token-for-test"}}`)
 	t.Setenv("OPENAI_API_KEY", "sk-fake-should-not-be-used")
 	content, ok := getCodexAuthContent()
 	if !ok {
@@ -317,7 +317,7 @@ func TestGetCodexAuthContent_PrefersLocalAuthFileOverAPIKey(t *testing.T) {
 }
 
 func TestGetCodexAuthContent_FallsBackToAPIKey(t *testing.T) {
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("OPENAI_API_KEY", "sk-fake-codex-key-for-test")
 	content, ok := getCodexAuthContent()
@@ -330,7 +330,7 @@ func TestGetCodexAuthContent_FallsBackToAPIKey(t *testing.T) {
 }
 
 func TestGetCodexAuthContent_NoLocalCredentials(t *testing.T) {
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("HOME", t.TempDir())
 	if _, ok := getCodexAuthContent(); ok {

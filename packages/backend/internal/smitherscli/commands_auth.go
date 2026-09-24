@@ -28,7 +28,10 @@ var (
 	authRuntimeGOOS     = runtime.GOOS
 	authListen          = net.Listen
 	authOpenBrowser     = openBrowser
-	authShutdownServer  = func(server *http.Server) {
+	// authBrowserSynchronous is true when authOpenBrowser completes the whole
+	// login round trip before returning. Only tests set it.
+	authBrowserSynchronous = false
+	authShutdownServer     = func(server *http.Server) {
 		go func() { _ = server.Shutdown(context.Background()) }()
 	}
 )
@@ -61,7 +64,11 @@ func authCommand() *incur.Cli {
 			hostname := firstNonEmpty(stringValue(ctx.Options["hostname"]), stringValue(ctx.Options["host"]))
 			observe := ctx.Options["observe"] == true
 			admin := ctx.Options["admin"] == true || observe
-			observeURL := LoadConfig().ObserveURL
+			cfg, err := LoadConfig()
+			if err != nil {
+				return nil, err
+			}
+			observeURL := cfg.ObserveURL
 			if observe {
 				if err := validateObserveURL(observeURL); err != nil {
 					return nil, err
@@ -188,7 +195,7 @@ func authCommand() *incur.Cli {
 			"hostname": stringSchema("Hostname or API URL to inspect"),
 		}),
 		Handler: func(ctx *incur.CommandContext) (any, error) {
-			status := GetAuthStatus(http.DefaultClient, map[string]string{"hostname": stringValue(ctx.Options["hostname"])})
+			status := GetAuthStatus(nil, map[string]string{"hostname": stringValue(ctx.Options["hostname"])})
 			if ctx.FormatExplicit {
 				return status, nil
 			}
@@ -341,7 +348,8 @@ func claudeAuthCommand() *incur.Cli {
 		Description: "Show Claude Code authentication status",
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			resolved := resolveClaudeAuth()
-			stored := strings.TrimSpace(LoadStoredToken(claudeSetupTokenStorageKey)) != ""
+			storedToken, _ := LoadStoredToken(claudeSetupTokenStorageKey)
+			stored := strings.TrimSpace(storedToken) != ""
 			result := map[string]any{
 				"configured":       resolved != nil,
 				"stored_token_set": stored,
@@ -417,7 +425,8 @@ func resolveClaudeAuth() *resolvedClaudeToken {
 	if token := strings.TrimSpace(os.Getenv("ANTHROPIC_AUTH_TOKEN")); token != "" {
 		return &resolvedClaudeToken{EnvKey: "ANTHROPIC_AUTH_TOKEN", Source: "ANTHROPIC_AUTH_TOKEN env", Token: token}
 	}
-	if token := strings.TrimSpace(LoadStoredToken(claudeSetupTokenStorageKey)); token != "" {
+	if token, _ := LoadStoredToken(claudeSetupTokenStorageKey); strings.TrimSpace(token) != "" {
+		token = strings.TrimSpace(token)
 		return &resolvedClaudeToken{EnvKey: "ANTHROPIC_AUTH_TOKEN", Source: "stored Claude subscription token", Token: token}
 	}
 	if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
@@ -502,9 +511,6 @@ func browserCandidates(loginURL string) [][]string {
 }
 
 func openBrowser(loginURL string) error {
-	if os.Getenv("SMITHERS_TEST_BROWSER_MODE") == "fetch" {
-		return fetchBrowserLoginURL(loginURL)
-	}
 	for _, candidate := range browserCandidates(loginURL) {
 		if candidate[0] != "cmd.exe" {
 			if _, err := exec.LookPath(candidate[0]); err != nil {
@@ -520,77 +526,6 @@ func openBrowser(loginURL string) error {
 	return fmt.Errorf("no browser launcher is available")
 }
 
-func fetchBrowserLoginURL(loginURL string) error {
-	// One deadline covers the start request, redirect, and fragment POST. In
-	// fetch mode these run synchronously before runBrowserLogin can select.
-	ctx, cancel := context.WithTimeout(context.Background(), browserLoginTimeout)
-	defer cancel()
-	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		return http.ErrUseLastResponse
-	}}
-	loginReq, err := http.NewRequestWithContext(ctx, http.MethodGet, loginURL, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(loginReq)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	location := resp.Header.Get("Location")
-	if location != "" {
-		redirected, err := url.Parse(location)
-		if err != nil {
-			return err
-		}
-		base, _ := url.Parse(loginURL)
-		redirected = base.ResolveReference(redirected)
-		if redirected.Fragment != "" {
-			params, _ := url.ParseQuery(redirected.Fragment)
-			callbackURL := redirected.Scheme + "://" + redirected.Host + redirected.Path
-			body, _ := json.Marshal(map[string]string{
-				"token":          params.Get("token"),
-				"username":       params.Get("username"),
-				"email":          params.Get("email"),
-				"expires_at":     params.Get("expires_at"),
-				"callback_state": params.Get("callback_state"),
-			})
-			callbackReq, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackURL, strings.NewReader(string(body)))
-			if err != nil {
-				return err
-			}
-			callbackReq.Header.Set("Content-Type", "application/json")
-			callbackResp, err := http.DefaultClient.Do(callbackReq)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = callbackResp.Body.Close() }()
-			if callbackResp.StatusCode < 200 || callbackResp.StatusCode >= 300 {
-				detail, _ := io.ReadAll(io.LimitReader(callbackResp.Body, 4096))
-				return fmt.Errorf("browser test callback failed: %s: %s", callbackResp.Status, strings.TrimSpace(string(detail)))
-			}
-			return nil
-		}
-		followReq, err := http.NewRequestWithContext(ctx, http.MethodGet, redirected.String(), nil)
-		if err != nil {
-			return err
-		}
-		followed, err := http.DefaultClient.Do(followReq)
-		if err != nil {
-			return err
-		}
-		defer func() { _ = followed.Body.Close() }()
-		if followed.StatusCode < 200 || followed.StatusCode >= 300 {
-			return fmt.Errorf("browser test fetch failed: %s", followed.Status)
-		}
-		return nil
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("browser test fetch failed: %s", resp.Status)
-	}
-	return nil
-}
-
 func successHTML(host, username string) string {
 	title := "Logged in"
 	if username != "" {
@@ -598,7 +533,7 @@ func successHTML(host, username string) string {
 	}
 	return "<!doctype html><html><head><meta charset=\"utf-8\"><title>Smithers login complete</title></head><body><h1>" +
 		escapeHTML(title) + "</h1><p>Your Smithers CLI token for <code>" + escapeHTML(host) +
-		"</code> has been stored securely.</p><p>You can close this tab and return to the terminal.</p></body></html>"
+		"</code> was received.</p><p>You can close this tab and return to the terminal.</p></body></html>"
 }
 
 func callbackBridgeHTML(host string) string {
@@ -751,15 +686,15 @@ func runBrowserLogin(options map[string]string) (browserLoginResult, error) {
 	timer := time.NewTimer(browserLoginTimeout)
 	defer timer.Stop()
 	if err := authOpenBrowser(loginURL); err != nil {
-		// The fetch helper has already attempted the callback; there is no
-		// interactive browser left to complete a failed test handshake.
-		if os.Getenv("SMITHERS_TEST_BROWSER_MODE") == "fetch" {
+		// A synchronous opener has already attempted the callback; there is no
+		// interactive browser left to complete a failed handshake.
+		if authBrowserSynchronous {
 			_ = server.Close()
 			return browserLoginResult{}, fmt.Errorf("browser login failed: %w", err)
 		}
 		fmt.Fprintf(os.Stderr, "Browser could not be opened automatically: %s\n", err)
 	}
-	if os.Getenv("SMITHERS_TEST_BROWSER_MODE") == "fetch" {
+	if authBrowserSynchronous {
 		select {
 		case <-finished:
 		default:

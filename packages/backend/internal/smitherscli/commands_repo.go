@@ -2,7 +2,6 @@ package smitherscli
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -318,7 +317,10 @@ func repoCommand() *incur.Cli {
 			if repoArg == "" {
 				return nil, fmt.Errorf("required arguments were not provided: repo")
 			}
-			config := LoadConfig()
+			config, err := LoadConfig()
+			if err != nil {
+				return nil, err
+			}
 			protocol := config.GitProtocol
 			if value := stringValue(ctx.Options["protocol"]); value != "" {
 				protocol = GitProtocol(value)
@@ -600,27 +602,22 @@ func githubAPIBaseURL() string {
 }
 
 func fetchGithubRepo(owner, repo string) (map[string]any, error) {
-	req, err := http.NewRequestWithContext(context.Background(), "GET", githubAPIBaseURL()+"/repos/"+url.PathEscape(owner)+"/"+url.PathEscape(repo), nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "smithers-cli")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	path := "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
+	headers := map[string]string{"X-GitHub-Api-Version": "2022-11-28"}
 	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		headers["Authorization"] = "Bearer " + token
 	}
-	resp, err := http.DefaultClient.Do(req)
+	decoded, _, err := doAPIJSON(apiCall{Method: http.MethodGet, URL: githubAPIBaseURL() + path, Path: path, Accept: "application/vnd.github+json", Headers: headers})
 	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			return nil, fmt.Errorf("GitHub API request failed (%d): %s", apiErr.Status, apiErr.Detail)
+		}
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("GitHub API request failed (%d %s)", resp.StatusCode, resp.Status)
-	}
-	var out map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
+	out, ok := decoded.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("GitHub API returned an unexpected repository response")
 	}
 	return out, nil
 }

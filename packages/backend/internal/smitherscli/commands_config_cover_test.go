@@ -22,12 +22,14 @@ func commandsConfigCovSetConfigHome(t *testing.T) string {
 
 func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	commandsConfigCovSetConfigHome(t)
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
 
-	for _, key := range []string{"api_origin", "api_url", "git_protocol", "agent_issue_repo"} {
+	for _, key := range []string{"api_origin", "api_url", "observe_url", "git_protocol"} {
 		if err := validateConfigKey(key); err != nil {
 			t.Fatalf("validateConfigKey(%q) returned error: %v", key, err)
 		}
+	}
+	if err := validateConfigKey("agent_issue_repo"); err == nil {
+		t.Fatal("agent_issue_repo is no longer a config key")
 	}
 	if err := validateConfigKey("token"); err == nil || !strings.Contains(err.Error(), "Unknown config key") {
 		t.Fatalf("validateConfigKey unknown = %v", err)
@@ -44,10 +46,6 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	if err := configCommand().ServeWithOptions([]string{"set", "git_protocol", "https", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("config set git_protocol returned error: %v", err)
 	}
-	stdout.Reset()
-	if err := configCommand().ServeWithOptions([]string{"set", "agent_issue_repo", "alice/issues", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
-		t.Fatalf("config set agent_issue_repo returned error: %v", err)
-	}
 
 	stdout.Reset()
 	if err := configCommand().ServeWithOptions([]string{"get", "api_origin", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
@@ -61,19 +59,18 @@ func TestCommandsConfig_Cov_ValidateAndCommandLifecycle(t *testing.T) {
 	if err := configCommand().ServeWithOptions([]string{"list", "--json"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("config list returned error: %v", err)
 	}
-	for _, want := range []string{"api_origin", "git_protocol", "agent_issue_repo", "alice/issues"} {
+	for _, want := range []string{"api_origin", "git_protocol", "observe_url"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("config list missing %q:\n%s", want, stdout.String())
 		}
 	}
 
 	t.Setenv("SMITHERS_TOKEN", "commands_config_cov_token")
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "env/issues")
 	stdout.Reset()
 	if err := configCommand().ServeWithOptions([]string{"show"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("config show returned error: %v", err)
 	}
-	if !strings.Contains(stdout.String(), "env/issues") || !strings.Contains(stdout.String(), "SMITHERS_TOKEN:           (set)") {
+	if !strings.Contains(stdout.String(), "SMITHERS_TOKEN:      (set)") || strings.Contains(stdout.String(), "agent_issue_repo") {
 		t.Fatalf("config show missing effective env data:\n%s", stdout.String())
 	}
 

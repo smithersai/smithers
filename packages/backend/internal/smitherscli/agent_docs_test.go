@@ -116,7 +116,7 @@ func TestAgentAskStructuredLocalDocsResponse(t *testing.T) {
 	}
 	defer os.Chdir(oldwd)
 
-	cli := NewCLI()
+	cli := newCLIWithFeatureFlags(nil)
 	var stdout bytes.Buffer
 	err := cli.ServeWithOptions([]string{"--json", "agent", "ask", "browser login"}, incur.ServeOptions{Stdout: &stdout})
 	if err != nil {

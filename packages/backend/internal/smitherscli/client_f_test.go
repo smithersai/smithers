@@ -56,8 +56,8 @@ func TestClient_F_CloneTargetAndBuildURLDefaults(t *testing.T) {
 	if err != nil || owner != "alice" || repo != "demo" {
 		t.Fatalf("ResolveRepoCloneTarget = %q/%q %q %v", owner, repo, cloneURL, err)
 	}
-	if got := BuildCloneURL("alice", "demo", GitProtocolHTTPS, ""); got != "https://smithers.test/alice/demo.git" {
-		t.Fatalf("BuildCloneURL default apiURL = %q", got)
+	if cloneURL != "git@ssh.smithers.test:alice/demo.git" {
+		t.Fatalf("ResolveRepoCloneTarget default apiURL clone URL = %q", cloneURL)
 	}
 }
 
@@ -136,7 +136,7 @@ func TestClient_F_DetectRepoFromRemotesFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
-	owner, repo, ok := detectRepoFromRemotes()
+	owner, repo, ok := detectRepoFromRemotes("smithers.test")
 	if !ok || owner != "foo" || repo != "bar" {
 		t.Fatalf("detectRepoFromRemotes fallback = %q/%q ok=%v", owner, repo, ok)
 	}

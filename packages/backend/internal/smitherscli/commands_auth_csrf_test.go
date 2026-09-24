@@ -21,7 +21,7 @@ func TestCommandsAuth_RunBrowserLogin_RejectsQueryTokenFixation(t *testing.T) {
 	}))
 	defer server.Close()
 	commandsAuthCovSetConfig(t, server.URL)
-	t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+	setTestBrowserFetch(t, true)
 
 	prev := browserLoginTimeout
 	browserLoginTimeout = 750 * time.Millisecond

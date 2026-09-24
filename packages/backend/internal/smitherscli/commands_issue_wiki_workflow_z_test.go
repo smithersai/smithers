@@ -52,8 +52,6 @@ func commandsIWWZSuccessServer(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, `{"content":"heart"}`)
 		case path == "/api/repos/alice/demo/issues/7/pin":
 			fmt.Fprint(w, `{"number":7,"pinned":true}`)
-		case path == "/api/repos/alice/demo/issues/7/lock":
-			fmt.Fprint(w, `{"number":7,"locked":true}`)
 		case path == "/api/repos/alice/demo/issues/7/dependencies":
 			fmt.Fprint(w, `{"blocks":8}`)
 		case r.Method == http.MethodGet && path == "/api/repos/alice/demo/wiki":
@@ -100,7 +98,6 @@ func TestCommandsIssueWikiWorkflow_Z_IssueFormatAndErrorBranches(t *testing.T) {
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"reopen", "7", "--repo", "alice/demo", "--json"})
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"edit", "7", "--repo", "alice/demo", "--title", "X", "--json"})
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"comment", "7", "--repo", "alice/demo", "--body", "n", "--json"})
-	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"lock", "7", "--repo", "alice/demo", "--reason", "spam", "--json"})
 
 	// cleanAPIError error branches (err/err returns 500).
 	commandsIWWZServeErr(t, issueCommand(), "boom", "create", "--repo", "err/err", "--title", "X")
@@ -112,7 +109,6 @@ func TestCommandsIssueWikiWorkflow_Z_IssueFormatAndErrorBranches(t *testing.T) {
 	commandsIWWZServeErr(t, issueCommand(), "boom", "reopen", "7", "--repo", "err/err")
 	commandsIWWZServeErr(t, issueCommand(), "boom", "edit", "7", "--repo", "err/err", "--title", "X")
 	commandsIWWZServeErr(t, issueCommand(), "boom", "comment", "7", "--repo", "err/err", "--body", "n")
-	commandsIWWZServeErr(t, issueCommand(), "boom", "lock", "7", "--repo", "err/err")
 
 	// ResolveRepoRef error branches (bad repo ref).
 	commandsIWWZServeErr(t, issueCommand(), "Invalid repo format", "create", "--repo", "bad", "--title", "X")

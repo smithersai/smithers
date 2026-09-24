@@ -496,9 +496,8 @@ func TestCommandsStack_H_RestackStatusAndFormattingBranches(t *testing.T) {
 	if err != nil || len(arrayValue(active["changes"])) != 3 {
 		t.Fatalf("buildStackStatus local+unmatched = (%#v, %v)", active, err)
 	}
-	strict, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 2, "ci_status": "passing", "review_status": "approved"}, true)
-	if err != nil || strict["ci_status"] != "pending" || strict["review_status"] != "pending" {
-		t.Fatalf("strict enrichment failures = (%#v, %v)", strict, err)
+	if _, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 2, "ci_status": "passing", "review_status": "approved"}, true); err == nil || !strings.Contains(err.Error(), "could not read check runs for PR #2") {
+		t.Fatalf("strict enrichment failure = %v", err)
 	}
 	if noPR, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"change_id": "no-pr"}, true); err != nil || noPR["change_id"] != "no-pr" {
 		t.Fatalf("enrichStatusChangeWithGitHub no PR = (%#v, %v)", noPR, err)

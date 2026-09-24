@@ -1,12 +1,8 @@
 package smitherscli
 
 import (
-	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -368,63 +364,37 @@ func stackTarget(ctx *incur.CommandContext) string {
 	return target
 }
 
+// githubAPI calls GitHub directly with GITHUB_TOKEN, or through the Smithers
+// GitHub App proxy when no token is set.
 func githubAPI(method, path string, body any) (map[string]any, error) {
-	if strings.TrimSpace(os.Getenv("GITHUB_TOKEN")) == "" {
+	token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
+	if token == "" {
 		return githubAPIViaSmithersProxy(method, path, body)
 	}
-
-	var reader io.Reader
-	if body != nil {
-		raw, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(raw)
-	}
-	req, err := http.NewRequestWithContext(context.Background(), method, githubAPIBaseURL()+path, reader)
+	decoded, _, err := doAPIJSON(apiCall{
+		Method: method,
+		URL:    githubAPIBaseURL() + path,
+		Path:   path,
+		Body:   body,
+		Accept: "application/vnd.github+json",
+		Headers: map[string]string{
+			"Authorization":        "Bearer " + token,
+			"X-GitHub-Api-Version": "2022-11-28",
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("User-Agent", "smithers-cli")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if token := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusNoContent {
+	switch value := decoded.(type) {
+	case nil:
 		return nil, nil
+	case map[string]any:
+		return value, nil
+	case []any:
+		return map[string]any{"items": value}, nil
+	default:
+		return nil, fmt.Errorf("GitHub API returned unsupported response for %s %s", method, path)
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := resp.Status
-		var parsed struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(raw, &parsed) == nil && strings.TrimSpace(parsed.Message) != "" {
-			detail = strings.TrimSpace(parsed.Message)
-		}
-		return nil, &APIError{Method: method, Path: path, Status: resp.StatusCode, Detail: detail}
-	}
-	var out map[string]any
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		var arr []any
-		if err := json.Unmarshal(raw, &arr); err == nil {
-			return map[string]any{"items": arr}, nil
-		}
-		return nil, err
-	}
-	return out, nil
 }
 
 func githubAPIViaSmithersProxy(method, path string, body any) (map[string]any, error) {
@@ -1161,28 +1131,26 @@ func composeStatusChange(owner, repo string, local LocalStackChange, mapped map[
 	}
 }
 
+// enrichStatusChangeWithGitHub adds live PR state, checks and reviews from
+// GitHub. githubAPI reaches GitHub with GITHUB_TOKEN or through the Smithers
+// GitHub App proxy. In strict mode (stack land) any GitHub failure is returned,
+// because a PR whose review or CI state is unknown must not merge and must not
+// be reported as merely pending. Otherwise (stack status) the change keeps its
+// last known state.
 func enrichStatusChangeWithGitHub(owner, repo string, change map[string]any, strict bool) (map[string]any, error) {
 	prNumber := intValue(change["pr_number"], 0)
 	if prNumber <= 0 {
 		return change, nil
 	}
-	if strings.TrimSpace(os.Getenv("GITHUB_TOKEN")) == "" {
+	fail := func(what string, err error) (map[string]any, error) {
 		if strict {
-			change["checks"] = []any{}
-			change["ci_status"] = "pending"
-			change["mergeable"] = false
-			change["review_status"] = "pending"
-			change["reviewers"] = []any{}
+			return change, fmt.Errorf("could not read %s for PR #%d from GitHub: %w", what, prNumber, err)
 		}
 		return change, nil
 	}
 	pull, err := githubAPI("GET", fmt.Sprintf("/repos/%s/%s/pulls/%d", url.PathEscape(owner), url.PathEscape(repo), prNumber), nil)
 	if err != nil {
-		if strict {
-			change["ci_status"] = "pending"
-			change["review_status"] = "pending"
-		}
-		return change, nil
+		return fail("the pull request", err)
 	}
 	if mergeable, ok := pull["mergeable"].(bool); ok {
 		change["mergeable"] = mergeable
@@ -1196,35 +1164,32 @@ func enrichStatusChangeWithGitHub(owner, repo string, change map[string]any, str
 	headSHA := stringValue(objectValue(pull["head"])["sha"])
 	if headSHA != "" {
 		checkRuns, err := githubAPI("GET", fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(headSHA)), nil)
-		if err == nil {
-			runs := arrayValue(checkRuns["check_runs"])
-			checks := []any{}
-			statuses := []string{}
-			for _, run := range runs {
-				record := objectValue(run)
-				status := checkRunStatus(record)
-				statuses = append(statuses, status)
-				name := stringValue(record["name"])
-				if name == "" {
-					name = "unnamed check"
-				}
-				checks = append(checks, map[string]any{"name": name, "status": status})
-			}
-			change["checks"] = checks
-			change["ci_status"] = aggregateCheckStatus(statuses)
-		} else if strict {
-			change["ci_status"] = "pending"
+		if err != nil {
+			return fail("check runs", err)
 		}
+		runs := arrayValue(checkRuns["check_runs"])
+		checks := []any{}
+		statuses := []string{}
+		for _, run := range runs {
+			record := objectValue(run)
+			status := checkRunStatus(record)
+			statuses = append(statuses, status)
+			name := stringValue(record["name"])
+			if name == "" {
+				name = "unnamed check"
+			}
+			checks = append(checks, map[string]any{"name": name, "status": status})
+		}
+		change["checks"] = checks
+		change["ci_status"] = aggregateCheckStatus(statuses)
 	}
 	reviews, err := githubAPI("GET", fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews", url.PathEscape(owner), url.PathEscape(repo), prNumber), nil)
-	if err == nil {
-		status, reviewers := aggregateReviewStatus(arrayValue(reviews["items"]))
-		change["review_status"] = status
-		change["reviewers"] = reviewers
-	} else if strict {
-		change["review_status"] = "pending"
-		change["reviewers"] = []any{}
+	if err != nil {
+		return fail("reviews", err)
 	}
+	status, reviewers := aggregateReviewStatus(arrayValue(reviews["items"]))
+	change["review_status"] = status
+	change["reviewers"] = reviewers
 	return change, nil
 }
 

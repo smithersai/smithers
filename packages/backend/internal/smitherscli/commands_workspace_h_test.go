@@ -158,7 +158,7 @@ func TestCommandsWorkspace_H_CommandHandlersAndTerminal(t *testing.T) {
 	sshCommand := commandsWorkspaceHInstallFakeSSH(t)
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "anthropic-h-token")
 	t.Setenv("OPENAI_API_KEY", "openai-h-token")
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("SMITHERS_WORKSPACE_SSH_POLL_INTERVAL_MS", "1")
 	t.Setenv("SMITHERS_WORKSPACE_SSH_POLL_TIMEOUT_MS", "50")
 	t.Setenv("SMITHERS_WORKSPACE_REMOTE_COMMAND_TIMEOUT_MS", "5000")
@@ -189,8 +189,8 @@ func TestCommandsWorkspace_H_CommandHandlersAndTerminal(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/workspaces/ws-fork/fork":
 			fmt.Fprint(w, `{"id":"ws-forked"}`)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/demo/workspaces/ws-snap/snapshots":
-			fmt.Fprint(w, `[{"id":"snap-1"}]`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/demo/workspace-snapshots":
+			fmt.Fprint(w, `[{"id":"snap-1","workspace_id":"ws-snap"},{"id":"snap-2","workspace_id":"other"}]`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/demo/workspaces/ws-watch":
 			fmt.Fprint(w, `{"id":"ws-watch","name":"watch me","status":"running"}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/repos/alice/demo/workspaces/ws-watch/stream":
@@ -234,7 +234,9 @@ func TestCommandsWorkspace_H_CommandHandlersAndTerminal(t *testing.T) {
 	commandsWorkspaceHServe(t, "ssh", "ws-ssh", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHServeWantErr(t, "not become SSH-ready", "ssh", "ws-no-command", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHServe(t, "fork", "ws-fork", "--repo", "alice/demo", "--name", "forked", "--json")
-	commandsWorkspaceHServe(t, "snapshots", "ws-snap", "--repo", "alice/demo", "--json")
+	if out := commandsWorkspaceHServe(t, "snapshots", "ws-snap", "--repo", "alice/demo", "--json"); !strings.Contains(out, "snap-1") || strings.Contains(out, "snap-2") {
+		t.Fatalf("snapshots did not filter by workspace: %s", out)
+	}
 	commandsWorkspaceHServe(t, "watch", "ws-watch", "--repo", "alice/demo", "--json")
 	commandsWorkspaceHWithEmptyStdin(t, func() {
 		commandsWorkspaceHServe(t, "shell", "ws-shell", "--repo", "alice/demo", "--cols", "100", "--rows", "30", "--json")
@@ -259,8 +261,8 @@ func TestCommandsWorkspace_H_HelperBranchesAndErrors(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", `not-json`)
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestClaudeKeychainPayload(t, `not-json`)
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("HOME", t.TempDir())
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

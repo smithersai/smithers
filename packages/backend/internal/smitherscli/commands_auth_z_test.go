@@ -228,7 +228,7 @@ func TestCommandsAuth_Z_LoginWithTokenBranches(t *testing.T) {
 		if err := os.MkdirAll(storeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", storeDir)
+		setTestCredentialStoreFile(t, storeDir)
 		authZSetStdin(t, "smithers_store_error_z")
 		if _, err := authZServe(t, authCommand(), "login", "--with-token"); err == nil {
 			t.Fatal("expected persist error")
@@ -240,7 +240,7 @@ func TestCommandsAuth_Z_LoginBrowserBranches(t *testing.T) {
 	t.Run("explicit username success", func(t *testing.T) {
 		server := authZLoginServer(t, "zelda")
 		commandsAuthCovSetConfig(t, server.URL)
-		t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+		setTestBrowserFetch(t, true)
 		if _, err := authZServe(t, authCommand(), "login", "--json"); err != nil {
 			t.Fatalf("browser login --json = %v", err)
 		}
@@ -249,7 +249,7 @@ func TestCommandsAuth_Z_LoginBrowserBranches(t *testing.T) {
 	t.Run("plain no username success", func(t *testing.T) {
 		server := authZLoginServer(t, "")
 		commandsAuthCovSetConfig(t, server.URL)
-		t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+		setTestBrowserFetch(t, true)
 		if _, err := authZServe(t, authCommand(), "login"); err != nil {
 			t.Fatalf("browser login = %v", err)
 		}
@@ -269,12 +269,12 @@ func TestCommandsAuth_Z_LoginBrowserBranches(t *testing.T) {
 		server := authZLoginServer(t, "zelda")
 		root := t.TempDir()
 		commandsAuthCovSetConfig(t, server.URL)
-		t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+		setTestBrowserFetch(t, true)
 		storeDir := filepath.Join(root, "store-dir")
 		if err := os.MkdirAll(storeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", storeDir)
+		setTestCredentialStoreFile(t, storeDir)
 		if _, err := authZServe(t, authCommand(), "login"); err == nil {
 			t.Fatal("expected browser persist error")
 		}
@@ -371,7 +371,7 @@ func TestCommandsAuth_Z_ClaudeLoginHandlers(t *testing.T) {
 		if err := os.MkdirAll(storeDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", storeDir)
+		setTestCredentialStoreFile(t, storeDir)
 		authZSetStdin(t, "sk-ant-oat1-token")
 		if _, err := authZServe(t, claudeAuthCommand(), "login", "--json"); err == nil {
 			t.Fatal("expected claude login to surface StoreToken error")
@@ -547,7 +547,7 @@ func TestCommandsAuth_Z_BrowserCandidateAndOpenBranches(t *testing.T) {
 		t.Fatalf("linux candidates = %#v", got)
 	}
 
-	t.Setenv("SMITHERS_TEST_BROWSER_MODE", "")
+	setTestBrowserFetch(t, false)
 	t.Setenv("PATH", t.TempDir())
 	if err := openBrowser("https://login.example"); err == nil || !strings.Contains(err.Error(), "no browser launcher") {
 		t.Fatalf("no launcher error = %v", err)

@@ -16,7 +16,7 @@ import (
 )
 
 func TestRootHelpAndVersion(t *testing.T) {
-	cli := NewCLI()
+	cli := newCLIWithFeatureFlags(nil)
 	for _, argv := range [][]string{{"--help"}, {"--version"}} {
 		var stdout bytes.Buffer
 		if err := cli.ServeWithOptions(argv, incur.ServeOptions{Stdout: &stdout}); err != nil {
@@ -30,7 +30,7 @@ func TestRootHelpAndVersion(t *testing.T) {
 
 func TestRootHelpHidesInternalCommand(t *testing.T) {
 	var stdout bytes.Buffer
-	if err := NewCLI().ServeWithOptions([]string{"--help"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
+	if err := newCLIWithFeatureFlags(nil).ServeWithOptions([]string{"--help"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
 		t.Fatalf("ServeWithOptions(--help) returned error: %v", err)
 	}
 	if strings.Contains(stdout.String(), "_internal") {

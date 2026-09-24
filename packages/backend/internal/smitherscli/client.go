@@ -2,11 +2,8 @@ package smitherscli
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -14,28 +11,11 @@ import (
 	"time"
 )
 
-type APIError struct {
-	Method string
-	Path   string
-	Status int
-	Detail string
-}
-
-func (e *APIError) Error() string {
-	return fmt.Sprintf("%s %s -> %d: %s", e.Method, e.Path, e.Status, e.Detail)
-}
-
-// requireJjTimeout bounds the `jj --version` probe in RequireJj. A jj that
-// does not answer inside it is reported as missing. Tests swap it to exercise
-// the timeout branch without a five-second wait and to keep the success branch
-// independent of process-spawn latency on a saturated CI host.
-var requireJjTimeout = 5 * time.Second
-
+// RequireJj reports whether jj is on PATH. It resolves the binary without
+// running it: a `jj --version` probe before every jj command doubled process
+// spawns and reported a slow-starting jj as not installed.
 func RequireJj() error {
-	cmd := exec.Command("jj", "--version")
-	cmd.Stdin = nil
-	out, err := runCommandWithTimeout(cmd, requireJjTimeout)
-	if err != nil || strings.TrimSpace(out) == "" {
+	if _, err := exec.LookPath("jj"); err != nil {
 		return errors.New(strings.Join([]string{
 			"jj (Jujutsu) is not installed or not on your PATH.",
 			"",
@@ -80,15 +60,19 @@ func runCommandWithTimeout(cmd *exec.Cmd, timeout time.Duration) (string, error)
 }
 
 func ResolveRepoRef(repoOverride string) (owner, repo string, err error) {
+	cfg, err := LoadConfig()
+	if err != nil {
+		return "", "", err
+	}
+	host := hostFromURL(cfg.APIURL)
 	if strings.TrimSpace(repoOverride) != "" {
-		host := hostFromURL(LoadConfig().APIURL)
 		parsedOwner, parsedRepo, ok := parseRepoOverride(repoOverride, host)
 		if !ok {
 			return "", "", fmt.Errorf(`Invalid repo format: "%s". Expected OWNER/REPO or a clone URL on %s.`, repoOverride, host)
 		}
 		return parsedOwner, parsedRepo, nil
 	}
-	owner, repo, ok := detectRepoFromRemotes()
+	owner, repo, ok := detectRepoFromRemotes(host)
 	if ok {
 		return owner, repo, nil
 	}
@@ -97,7 +81,11 @@ func ResolveRepoRef(repoOverride string) (owner, repo string, err error) {
 
 func ResolveRepoCloneTarget(repoRef string, protocol GitProtocol, apiURL string) (owner, repo, cloneURL string, err error) {
 	if apiURL == "" {
-		apiURL = LoadConfig().APIURL
+		cfg, err := LoadConfig()
+		if err != nil {
+			return "", "", "", err
+		}
+		apiURL = cfg.APIURL
 	}
 	host := hostFromURL(apiURL)
 	owner, repo, parsedCloneURL, ok := parseRepoOverrideWithClone(repoRef, host)
@@ -111,9 +99,6 @@ func ResolveRepoCloneTarget(repoRef string, protocol GitProtocol, apiURL string)
 }
 
 func BuildCloneURL(owner, repo string, protocol GitProtocol, apiURL string) string {
-	if apiURL == "" {
-		apiURL = LoadConfig().APIURL
-	}
 	host := hostFromURL(apiURL)
 	if protocol == GitProtocolHTTPS {
 		return fmt.Sprintf("https://%s/%s/%s.git", host, owner, repo)
@@ -197,8 +182,7 @@ func parseRepoFromURL(raw, host string) (owner, repo string, ok bool) {
 	return "", "", false
 }
 
-func detectRepoFromRemotes() (owner, repo string, ok bool) {
-	host := hostFromURL(LoadConfig().APIURL)
+func detectRepoFromRemotes(host string) (owner, repo string, ok bool) {
 	outputs := []string{}
 	if err := RequireJj(); err == nil {
 		if out, err := exec.Command("jj", "git", "remote", "list").Output(); err == nil {
@@ -234,7 +218,7 @@ func detectRepoFromRemotes() (owner, repo string, ok bool) {
 }
 
 func APIRequest(method, path string, body any, options *ResolvedAuthToken) (any, error) {
-	result, err := apiRequestWithHeaders(method, path, body, options, nil, http.DefaultClient)
+	result, err := apiRequestWithHeaders(method, path, body, options, nil, nil)
 	if strings.HasPrefix(path, "/api/admin/") {
 		token := options
 		if token == nil {
@@ -245,68 +229,27 @@ func APIRequest(method, path string, body any, options *ResolvedAuthToken) (any,
 	return result, err
 }
 
+// apiRequestWithHeaders sends one authenticated JSON request. A nil client
+// uses apiHTTPClient.
 func apiRequestWithHeaders(method, path string, body any, options *ResolvedAuthToken, headers map[string]string, client *http.Client) (any, error) {
 	token := options
-	var err error
 	if token == nil {
-		token, err = RequireAuthToken(nil)
+		resolved, err := RequireAuthToken(nil)
 		if err != nil {
 			return nil, err
 		}
+		token = resolved
 	}
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(data)
-	}
-	req, err := http.NewRequestWithContext(context.Background(), method, token.APIURL+path, reader)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "token "+token.Token)
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := resp.Status
-		var parsed struct {
-			Message string `json:"message"`
-		}
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		if json.Unmarshal(raw, &parsed) == nil && parsed.Message != "" {
-			detail = parsed.Message
-		} else if strings.TrimSpace(string(raw)) != "" {
-			detail = strings.TrimSpace(string(raw))
-		}
-		return nil, &APIError{Method: method, Path: path, Status: resp.StatusCode, Detail: detail}
-	}
-	if resp.StatusCode == http.StatusNoContent {
-		return nil, nil
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(string(raw)) == "" {
-		return nil, nil
-	}
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return nil, err
-	}
-	return decoded, nil
+	result, _, err := doAPIJSON(apiCall{
+		Method:  method,
+		URL:     token.APIURL + path,
+		Path:    path,
+		Body:    body,
+		Token:   token.Token,
+		Headers: headers,
+		Client:  client,
+	})
+	return result, err
 }
 
 func escapePathSegment(value string) string {
@@ -321,44 +264,28 @@ func APIList(path string, options *ResolvedAuthToken) (data any, nextCursor stri
 			return nil, "", err
 		}
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, token.APIURL+path, nil)
+	decoded, header, err := doAPIJSON(apiCall{Method: http.MethodGet, URL: token.APIURL + path, Path: path, Token: token.Token})
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("Authorization", "token "+token.Token)
-	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, "", err
+	if decoded == nil {
+		decoded = []any{}
 	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := resp.Status
-		var parsed struct {
-			Message string `json:"message"`
-		}
-		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-		if json.Unmarshal(raw, &parsed) == nil && parsed.Message != "" {
-			detail = parsed.Message
-		} else if strings.TrimSpace(string(raw)) != "" {
-			detail = strings.TrimSpace(string(raw))
-		}
-		return nil, "", &APIError{Method: http.MethodGet, Path: path, Status: resp.StatusCode, Detail: detail}
-	}
-	if resp.StatusCode == http.StatusNoContent {
-		return []any{}, ParseNextCursor(resp.Header.Get("Link")), nil
-	}
-	var decoded any
-	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
-		return nil, "", err
-	}
-	return decoded, ParseNextCursor(resp.Header.Get("Link")), nil
+	return decoded, ParseNextCursor(header.Get("Link")), nil
 }
+
+// maxListPages caps how many pages APIListAll follows, so a server that
+// never ends its cursor chain cannot grow the result without bound.
+var maxListPages = 1000
 
 func APIListAll(buildPath func(cursor string) string, options *ResolvedAuthToken) ([]any, error) {
 	all := []any{}
 	cursor := ""
-	for {
+	seen := map[string]struct{}{}
+	for page := 0; ; page++ {
+		if page >= maxListPages {
+			return nil, fmt.Errorf("stopped listing after %d pages; the server kept returning a next cursor", maxListPages)
+		}
 		data, nextCursor, err := APIList(buildPath(cursor), options)
 		if err != nil {
 			return nil, err
@@ -369,6 +296,10 @@ func APIListAll(buildPath func(cursor string) string, options *ResolvedAuthToken
 		if nextCursor == "" {
 			break
 		}
+		if _, repeated := seen[nextCursor]; repeated {
+			return nil, fmt.Errorf("the server repeated pagination cursor %q; stopped to avoid an endless listing", nextCursor)
+		}
+		seen[nextCursor] = struct{}{}
 		cursor = nextCursor
 	}
 	return all, nil

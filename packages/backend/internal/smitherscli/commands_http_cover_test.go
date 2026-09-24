@@ -21,7 +21,7 @@ func commandsHTTPCovSetConfig(t *testing.T, apiURL string) {
 	configHome := filepath.Join(root, "config")
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(root, "auth.json"))
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(root, "credentials.json"))
+	setTestCredentialStoreFile(t, filepath.Join(root, "credentials.json"))
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	t.Setenv("SMITHERS_TOKEN", "commands_http_cov_token")
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {

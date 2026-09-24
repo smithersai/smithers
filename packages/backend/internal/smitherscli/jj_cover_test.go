@@ -35,15 +35,18 @@ if [ "$1" = "--ignore-working-copy" ]; then
 fi
 args="$*"
 if [ "$1" = "bookmark" ] && [ "$2" = "list" ]; then
-  if [ "$3" = "missing" ]; then
-    printf 'No bookmarks found\n'
+  if [ "$3" != "-T" ]; then
+    printf 'bookmark list must pass a template\n' >&2
+    exit 9
+  fi
+  if [ "$5" = "missing" ]; then
     exit 0
   fi
-  if [ "$3" = "feature" ]; then
-    printf 'feature: chg1 commit1\n'
+  if [ "$5" = "feature" ]; then
+    printf 'feature\tchg1\tcommit1\n'
     exit 0
   fi
-  printf 'main: base commit-base\nfeature: chg1 commit1\n\n'
+  printf 'main\tbase\tcommit-base\nfeature\tchg1\tcommit1\n\n'
   exit 0
 fi
 if [ "$1" = "bookmark" ] && [ "$2" = "create" ]; then
@@ -155,12 +158,17 @@ func TestJj_Cov_CommandWorkflowsAndParsers(t *testing.T) {
 		t.Fatalf("applyLocalReadOptions with option = %#v", got)
 	}
 
-	bookmark := parseBookmarkLine("topic: chg commit extra")
-	if bookmark.Name != "topic" || jjCovStringPtrValue(bookmark.TargetChangeID) != "chg" || jjCovStringPtrValue(bookmark.TargetCommitID) != "commit" {
+	bookmark, ok := parseBookmarkLine("topic\tchg\tcommit")
+	if !ok || bookmark.Name != "topic" || jjCovStringPtrValue(bookmark.TargetChangeID) != "chg" || jjCovStringPtrValue(bookmark.TargetCommitID) != "commit" {
 		t.Fatalf("parseBookmarkLine with target = %#v", bookmark)
 	}
-	if bare := parseBookmarkLine(" loose "); bare.Name != "loose" || bare.TargetChangeID != nil {
-		t.Fatalf("parseBookmarkLine bare = %#v", bare)
+	if conflicted, ok := parseBookmarkLine("loose\t\t"); !ok || conflicted.Name != "loose" || conflicted.TargetChangeID != nil || conflicted.TargetCommitID != nil {
+		t.Fatalf("parseBookmarkLine conflicted = %#v", conflicted)
+	}
+	for _, junk := range []string{"", "  @origin (behind by 2 commits): lwsrlprt 45d6485f first", "main: nypooxll f2da0f1f second"} {
+		if _, ok := parseBookmarkLine(junk); ok {
+			t.Fatalf("parseBookmarkLine accepted human-readable line %q", junk)
+		}
 	}
 	bookmarks, err := ListLocalBookmarks(nil, LocalReadOptions{IgnoreWorkingCopy: true})
 	if err != nil || len(bookmarks) != 2 || bookmarks[1].Name != "feature" {

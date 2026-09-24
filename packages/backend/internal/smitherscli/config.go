@@ -1,6 +1,7 @@
 package smitherscli
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -9,10 +10,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultObserveURL = "https://smithers-observe.up.railway.app"
-
 // No deployment is privileged. The CLI requires the same explicit origin the
-// application runtime uses, from config or SMITHERS_API_ORIGIN.
+// application runtime uses, from config or SMITHERS_API_ORIGIN, and an
+// explicit observe_url before it sends an admin token to an Observe console.
 const defaultAPIURL = ""
 
 // cliGOOS mirrors runtime.GOOS but is a package variable so platform-specific
@@ -35,10 +35,9 @@ const (
 )
 
 type Config struct {
-	ObserveURL     string      `json:"observe_url" yaml:"observe_url"`
-	APIURL         string      `json:"api_origin" yaml:"api_origin"`
-	GitProtocol    GitProtocol `json:"git_protocol" yaml:"git_protocol"`
-	AgentIssueRepo string      `json:"agent_issue_repo,omitempty" yaml:"agent_issue_repo,omitempty"`
+	ObserveURL  string      `json:"observe_url" yaml:"observe_url"`
+	APIURL      string      `json:"api_origin" yaml:"api_origin"`
+	GitProtocol GitProtocol `json:"git_protocol" yaml:"git_protocol"`
 }
 
 type RawConfig struct {
@@ -100,19 +99,29 @@ func StateDir() string {
 	return filepath.Join(stateBaseDir(), "smithers")
 }
 
-func LoadRawConfig() RawConfig {
+func defaultRawConfig() RawConfig {
+	return RawConfig{Config: Config{APIURL: defaultAPIURL, GitProtocol: GitProtocolSSH}}
+}
+
+// LoadRawConfig reads the config file. A missing file yields the defaults. A
+// file that exists but does not parse is an error: treating it as defaults
+// would hide the user's settings and let the next save erase them.
+func LoadRawConfig() (RawConfig, error) {
 	path := ConfigPath()
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return RawConfig{Config: Config{ObserveURL: defaultObserveURL, APIURL: defaultAPIURL, GitProtocol: GitProtocolSSH}}
+		if os.IsNotExist(err) {
+			return defaultRawConfig(), nil
+		}
+		return defaultRawConfig(), fmt.Errorf("config file %s could not be read: %w", path, err)
 	}
 
 	var parsed map[string]any
-	if err := yaml.Unmarshal(data, &parsed); err != nil || parsed == nil {
-		return RawConfig{Config: Config{ObserveURL: defaultObserveURL, APIURL: defaultAPIURL, GitProtocol: GitProtocolSSH}}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return defaultRawConfig(), fmt.Errorf("config file %s is invalid: %w", path, err)
 	}
 
-	raw := RawConfig{Config: Config{ObserveURL: defaultObserveURL, APIURL: defaultAPIURL, GitProtocol: GitProtocolSSH}}
+	raw := defaultRawConfig()
 	if value, ok := parsed["api_origin"].(string); ok {
 		raw.APIURL = normalizeAPIURL(value)
 	} else if value, ok := parsed["api_url"].(string); ok {
@@ -124,35 +133,34 @@ func LoadRawConfig() RawConfig {
 	if value, ok := parsed["token"].(string); ok {
 		raw.Token = value
 	}
-	if value, ok := parsed["agent_issue_repo"].(string); ok {
-		raw.AgentIssueRepo = value
-	}
 	if value, ok := parsed["git_protocol"].(string); ok && value == string(GitProtocolHTTPS) {
 		raw.GitProtocol = GitProtocolHTTPS
 	}
-	return raw
+	return raw, nil
 }
 
-func LoadConfig() Config {
-	raw := LoadRawConfig()
+// LoadConfig returns the config file merged with environment overrides.
+func LoadConfig() (Config, error) {
+	raw, err := LoadRawConfig()
 	cfg := raw.Config
 	if apiOrigin := strings.TrimSpace(os.Getenv("SMITHERS_API_ORIGIN")); apiOrigin != "" {
 		cfg.APIURL = normalizeAPIURL(apiOrigin)
 	}
-	if envIssueRepo := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_ISSUE_REPO")); envIssueRepo != "" {
-		cfg.AgentIssueRepo = envIssueRepo
-	}
-	return cfg
+	return cfg, err
 }
 
+// SaveConfig merges update into the config file. It refuses to write over a
+// file it cannot parse.
 func SaveConfig(update map[string]string) error {
-	existing := LoadRawConfig()
+	existing, err := LoadRawConfig()
+	if err != nil {
+		return err
+	}
 	merged := RawConfig{
 		Config: Config{
-			APIURL:         existing.APIURL,
-			ObserveURL:     existing.ObserveURL,
-			GitProtocol:    existing.GitProtocol,
-			AgentIssueRepo: existing.AgentIssueRepo,
+			APIURL:      existing.APIURL,
+			ObserveURL:  existing.ObserveURL,
+			GitProtocol: existing.GitProtocol,
 		},
 	}
 	if value, ok := update["api_origin"]; ok {
@@ -169,9 +177,6 @@ func SaveConfig(update map[string]string) error {
 	if value, ok := update["git_protocol"]; ok {
 		merged.GitProtocol = GitProtocol(value)
 	}
-	if value, ok := update["agent_issue_repo"]; ok {
-		merged.AgentIssueRepo = value
-	}
 
 	data, err := configMarshal(merged)
 	if err != nil {
@@ -185,7 +190,10 @@ func SaveConfig(update map[string]string) error {
 }
 
 func ClearLegacyToken() (bool, error) {
-	existing := LoadRawConfig()
+	existing, err := LoadRawConfig()
+	if err != nil {
+		return false, err
+	}
 	if strings.TrimSpace(existing.Token) == "" {
 		return false, nil
 	}

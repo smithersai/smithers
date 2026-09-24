@@ -510,14 +510,22 @@ func TestCommandsStack_Z_LandAndHelperBranches(t *testing.T) {
 		t.Fatalf("formatStackLandSummary inactive = %q", got)
 	}
 	t.Setenv("GITHUB_TOKEN", "")
-	strictNoToken, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 1}, true)
-	if err != nil || strictNoToken["ci_status"] != "pending" {
-		t.Fatalf("enrich no token strict = %#v %v", strictNoToken, err)
+	// With no GITHUB_TOKEN enrichment goes through the Smithers GitHub proxy,
+	// and strict mode reports a proxy failure instead of inventing "pending".
+	if proxied, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 1}, true); err != nil || proxied["pr_state"] != "open" {
+		t.Fatalf("enrich no token strict via proxy = %#v %v", proxied, err)
 	}
+	t.Setenv("COMMANDS_STACK_Z_PROXY", "error")
+	if _, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 1}, true); err == nil || !strings.Contains(err.Error(), "proxy failed") {
+		t.Fatalf("enrich no token strict proxy error = %v", err)
+	}
+	t.Setenv("COMMANDS_STACK_Z_PROXY", "")
 	t.Setenv("GITHUB_TOKEN", "stack-z-gh")
-	strictPullErr, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 500}, true)
-	if err != nil || strictPullErr["review_status"] != "pending" {
-		t.Fatalf("enrich pull err strict = %#v %v", strictPullErr, err)
+	if _, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 500}, true); err == nil || !strings.Contains(err.Error(), "could not read the pull request for PR #500") {
+		t.Fatalf("enrich pull err strict = %v", err)
+	}
+	if lenient, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 500, "review_status": "approved"}, false); err != nil || lenient["review_status"] != "approved" {
+		t.Fatalf("enrich pull err lenient = %#v %v", lenient, err)
 	}
 	reviewErrServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -530,9 +538,8 @@ func TestCommandsStack_Z_LandAndHelperBranches(t *testing.T) {
 	}))
 	defer reviewErrServer.Close()
 	t.Setenv("SMITHERS_GITHUB_API_URL", reviewErrServer.URL)
-	strictReviewErr, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 1}, true)
-	if err != nil || strictReviewErr["review_status"] != "pending" {
-		t.Fatalf("enrich review err strict = %#v %v", strictReviewErr, err)
+	if _, err := enrichStatusChangeWithGitHub("alice", "demo", map[string]any{"pr_number": 1}, true); err == nil || !strings.Contains(err.Error(), "reviews failed") {
+		t.Fatalf("enrich review err strict = %v", err)
 	}
 	status, reviewers := aggregateReviewStatus([]any{
 		map[string]any{"user": map[string]any{"login": ""}, "state": "APPROVED"},

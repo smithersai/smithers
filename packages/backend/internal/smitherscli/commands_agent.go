@@ -2,7 +2,6 @@ package smitherscli
 
 import (
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -285,7 +284,7 @@ func collectAgentRepoContext(repoOverride string) (map[string]any, error) {
 		warnings = append(warnings, "Failed to collect `jj status`: "+stringValue(jjStatus["error"]))
 	}
 
-	auth := GetAuthStatus(http.DefaultClient, nil)
+	auth := GetAuthStatus(nil, nil)
 	authMap := map[string]any{
 		"loggedIn": auth.LoggedIn,
 		"host":     auth.Host,
@@ -367,7 +366,10 @@ func detectAgentRepoSlugFromRemotes(output string) string {
 	if output == "" {
 		return ""
 	}
-	host := hostFromURL(LoadConfig().APIURL)
+	// Agent context is best effort; the auth status beside it reports a
+	// broken config file.
+	cfg, _ := LoadConfig()
+	host := hostFromURL(cfg.APIURL)
 	fallback := ""
 	for _, rawLine := range strings.Split(output, "\n") {
 		fields := strings.Fields(rawLine)

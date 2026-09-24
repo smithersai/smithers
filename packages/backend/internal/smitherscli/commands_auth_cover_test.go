@@ -20,7 +20,7 @@ func commandsAuthCovSetConfig(t *testing.T, apiURL string) {
 	root := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(root, "auth.json"))
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(root, "credentials.json"))
+	setTestCredentialStoreFile(t, filepath.Join(root, "credentials.json"))
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	if err := os.MkdirAll(filepath.Join(root, "config", "smithers"), 0o755); err != nil {
 		t.Fatal(err)
@@ -202,7 +202,7 @@ func TestCommandsAuth_Cov_PushClaudeSecretAndMaybePush(t *testing.T) {
 }
 
 func TestCommandsAuth_Cov_BrowserFetchHelpersAndHTML(t *testing.T) {
-	t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+	setTestBrowserFetch(t, true)
 	var posted map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -271,7 +271,7 @@ func TestCommandsAuth_Cov_RunBrowserLoginSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 	commandsAuthCovSetConfig(t, server.URL)
-	t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+	setTestBrowserFetch(t, true)
 
 	result, err := runBrowserLogin(nil)
 	if err != nil {

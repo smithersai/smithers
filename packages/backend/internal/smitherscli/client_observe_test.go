@@ -51,7 +51,8 @@ func TestObserveClientErrorsAndRedirects(t *testing.T) {
 
 func TestObserveURLConfig(t *testing.T) {
 	authFSetConfig(t, "http://127.0.0.1:4321")
-	require.Equal(t, "https://smithers-observe.up.railway.app", LoadConfig().ObserveURL)
+	require.Empty(t, mustLoadConfig(t).ObserveURL, "no Observe host is privileged by default")
+	require.ErrorContains(t, validateObserveURL(""), "observe_url is not configured")
 	for _, raw := range []string{"https://observe.example.com", "http://localhost:4321", "http://127.0.0.1:4321", "http://[::1]:4321"} {
 		require.NoError(t, validateObserveURL(raw))
 	}
@@ -60,10 +61,10 @@ func TestObserveURLConfig(t *testing.T) {
 		require.Error(t, SaveConfig(map[string]string{"observe_url": raw}))
 	}
 	commandsMoreHTTPHServe(t, configCommand(), "set", "observe_url", "https://observe.example.com", "--json")
-	require.Equal(t, "https://observe.example.com", LoadConfig().ObserveURL)
+	require.Equal(t, "https://observe.example.com", mustLoadConfig(t).ObserveURL)
 	require.Contains(t, commandsMoreHTTPHServe(t, configCommand(), "get", "observe_url", "--json"), "https://observe.example.com")
 	require.NoError(t, SaveConfig(map[string]string{"git_protocol": "https"}))
-	require.Equal(t, "https://observe.example.com", LoadConfig().ObserveURL)
+	require.Equal(t, "https://observe.example.com", mustLoadConfig(t).ObserveURL)
 }
 
 func TestAdminExpiredTokenHint(t *testing.T) {

@@ -86,18 +86,19 @@ var commandRegistrations = []commandRegistration{
 	{name: "workspace", command: workspaceCommand, featureFlag: "workspaces"},
 }
 
-func NewCLI() *incur.Cli {
-	return newCLIWithFeatureFlags(nil)
+// resolvedCLIVersion is the version the CLI reports in --version and in its
+// User-Agent.
+func resolvedCLIVersion() string {
+	if version := strings.TrimSpace(os.Getenv("SMITHERS_CLI_VERSION")); version != "" {
+		return version
+	}
+	return cliVersion
 }
 
 func newCLIWithFeatureFlags(flags featureFlags) *incur.Cli {
-	version := strings.TrimSpace(os.Getenv("SMITHERS_CLI_VERSION"))
-	if version == "" {
-		version = cliVersion
-	}
 	cli := incur.New("smithers",
 		incur.WithDescription("Smithers CLI - jj-native code hosting"),
-		incur.WithVersion(version),
+		incur.WithVersion(resolvedCLIVersion()),
 	)
 	for _, registration := range commandRegistrations {
 		if registration.featureFlag != "" && flags != nil {
@@ -128,14 +129,19 @@ func loadFeatureFlagsForRootHelp(argv []string) featureFlags {
 	if !shouldLoadFeatureFlagsForRootHelp(argv) {
 		return nil
 	}
-	baseURL := strings.TrimRight(LoadConfig().APIURL, "/")
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil
+	}
+	baseURL := strings.TrimRight(cfg.APIURL, "/")
 	ctx, cancel := context.WithTimeout(context.Background(), 750*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/feature-flags", nil)
 	if err != nil {
 		return nil
 	}
-	resp, err := http.DefaultClient.Do(req)
+	req.Header.Set("User-Agent", cliUserAgent())
+	resp, err := apiHTTPClient.Do(req)
 	if err != nil {
 		return nil
 	}

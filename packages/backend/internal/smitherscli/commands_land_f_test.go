@@ -17,7 +17,7 @@ func landFSetConfig(t *testing.T, apiURL string) {
 	configHome := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(configHome, "auth.json"))
 	t.Setenv("SMITHERS_TOKEN", "tok")
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {

@@ -17,7 +17,7 @@ func adminLoginError(err error, token *ResolvedAuthToken) error {
 		return err
 	}
 	record := readSmithersAuthRecordForTarget(token.AuthTarget)
-	if record == nil || record.Token != token.Token {
+	if !authRecordDescribes(record, token) {
 		return err
 	}
 	expires, parseErr := time.Parse(time.RFC3339, record.ExpiresAt)
@@ -28,6 +28,9 @@ func adminLoginError(err error, token *ResolvedAuthToken) error {
 }
 
 func validateObserveURL(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return fmt.Errorf("observe_url is not configured; run `smithers config set observe_url https://<your Observe console>`")
+	}
 	parsed, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return fmt.Errorf("observe_url must be an absolute HTTPS URL (HTTP is allowed on loopback)")
@@ -44,7 +47,11 @@ func ObserveRequest(method, path string, body any, target string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := LoadConfig().ObserveURL
+	cfg, err := LoadConfig()
+	if err != nil {
+		return nil, err
+	}
+	base := cfg.ObserveURL
 	if err := validateObserveURL(base); err != nil {
 		return nil, err
 	}

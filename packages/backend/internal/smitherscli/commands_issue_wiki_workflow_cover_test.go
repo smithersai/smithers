@@ -96,15 +96,6 @@ func TestCommandsIssueWikiWorkflow_Cov_IssueAndWikiCommands(t *testing.T) {
 			fmt.Fprint(w, `{"content":"heart"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/repos/alice/demo/issues/7/pin":
 			fmt.Fprint(w, `{"number":7,"pinned":true}`)
-		case r.Method == http.MethodPut && r.URL.Path == "/api/repos/alice/demo/issues/7/lock":
-			var body map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("invalid lock body: %v", err)
-			}
-			if body["reason"] != "resolved" {
-				t.Fatalf("lock body = %#v", body)
-			}
-			fmt.Fprint(w, `{"number":7,"locked":true}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/issues/7/dependencies":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -194,7 +185,6 @@ func TestCommandsIssueWikiWorkflow_Cov_IssueAndWikiCommands(t *testing.T) {
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"reopen", "7", "--repo", "alice/demo"})
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"edit", "7", "--repo", "alice/demo", "--title", "Updated", "--body", "new", "--assignee", "bob", "--label", "bug"})
 	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"comment", "7", "--repo", "alice/demo", "--body", "note"})
-	commandsIssueWikiWorkflowCovServe(t, issueCommand(), []string{"lock", "7", "--repo", "alice/demo", "--reason", "resolved"})
 
 	if _, err := parseIssueNumber("0", "issue number"); err == nil || !strings.Contains(err.Error(), "invalid issue number") {
 		t.Fatalf("parseIssueNumber zero error = %v", err)

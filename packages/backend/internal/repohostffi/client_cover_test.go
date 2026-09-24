@@ -10,7 +10,6 @@ import (
 	"runtime"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,6 @@ import (
 )
 
 func TestClient_Cov_LoadDecodeAndMethods(t *testing.T) {
-	require.Equal(t, "unknown cgo ffi error", lastCError())
 	require.NotPanics(t, func() { freeCString(nil) })
 
 	unloaded := New("unused")
@@ -32,16 +30,20 @@ func TestClient_Cov_LoadDecodeAndMethods(t *testing.T) {
 	err = New(missingLib).Load()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "load smithers ffi library "+missingLib)
-	clientCovClearLastCErrorBuffer()
-	assert.Equal(t, "unknown cgo ffi error", lastCError())
+
+	// A stale library missing one required symbol must fail Load, and so
+	// startup, instead of loading and failing every request that needs it.
+	stale := New(clientCovBuildFakeLibrary(t, "-DOMIT_LAND_APPEND"))
+	err = stale.Load()
+	require.ErrorContains(t, err, "missing required symbol smithers_land_append")
+	_, err = stale.InitRepo("store-ok")
+	require.EqualError(t, err, "smithers ffi library is not loaded")
 
 	client := New(clientCovBuildFakeLibrary(t))
 	require.NoError(t, client.Load())
+	require.NoError(t, client.Load(), "a second Load is a no-op")
 
-	// The old library has no append symbol. Never fall back to ordinary land.
-	_, appendErr := client.LandChanges("store-ok", `{"append":{"source_commit_id":"tip","source_base_commit_id":"base","description":"delivery"}}`)
-	require.ErrorContains(t, appendErr, "smithers_land_append")
-	clientCovClearLastCErrorBuffer()
+	clientCovAssertArgumentOrder(t, client)
 
 	initResult, err := client.InitRepo("store-ok")
 	require.NoError(t, err)
@@ -330,14 +332,7 @@ func TestClient_RejectsInteriorNULArguments(t *testing.T) {
 	requireInvalidArgument(t, client.DeleteRepo("store\x00path"))
 }
 
-func clientCovClearLastCErrorBuffer() {
-	msg := _Cfunc_smithers_last_error_message()
-	if msg != nil {
-		*(*byte)(unsafe.Pointer(msg)) = 0
-	}
-}
-
-func clientCovBuildFakeLibrary(t *testing.T) string {
+func clientCovBuildFakeLibrary(t *testing.T, defines ...string) string {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -345,7 +340,7 @@ func clientCovBuildFakeLibrary(t *testing.T) string {
 	require.NoError(t, os.WriteFile(sourcePath, []byte(clientCovFakeCSource), 0o600))
 
 	libPath := filepath.Join(dir, "libfake_repohostffi")
-	args := []string{"-fPIC"}
+	args := append([]string{"-fPIC"}, defines...)
 	switch runtime.GOOS {
 	case "darwin":
 		libPath += ".dylib"
@@ -605,6 +600,108 @@ char *smithers_get_working_tree_status(const char *store_path) {
 	char *special = special_response(store_path);
 	if (special != NULL) return special;
 	return copy_json("{\"backend\":\"jj\",\"branch\":\"main\",\"head\":\"head-1\",\"changes\":[{\"path\":\"README.md\",\"status\":\"modified\",\"staged\":true,\"add\":3,\"del\":1}]}");
+}
+
+static char *escape_json(const char *value) {
+	const char *in = safe_string(value);
+	char *out = (char *)malloc(strlen(in) * 2 + 1);
+	char *cursor = out;
+	if (out == NULL) return NULL;
+	for (; *in != '\0'; in++) {
+		if (*in == '"' || *in == '\\') *cursor++ = '\\';
+		*cursor++ = *in;
+	}
+	*cursor = '\0';
+	return out;
+}
+
+// echo4 formats up to four JSON-escaped arguments so tests can assert the
+// Go wrapper passed each argument in its declared position.
+static char *echo4(const char *format, const char *a, const char *b, const char *c, const char *d) {
+	char *ea = escape_json(a), *eb = escape_json(b), *ec = escape_json(c), *ed = escape_json(d);
+	int size = snprintf(NULL, 0, format, ea, eb, ec, ed);
+	char *out = (char *)malloc((size_t)size + 1);
+	if (out != NULL) {
+		snprintf(out, (size_t)size + 1, format, ea, eb, ec, ed);
+	}
+	free(ea); free(eb); free(ec); free(ed);
+	return out;
+}
+
+char *smithers_project_wiki_revision(const char *path, const char *json) {
+	char *special = special_response(path);
+	if (special != NULL) return special;
+	return echo4("{\"commit_sha\":\"%s|%s\"}", path, json, NULL, NULL);
+}
+
+char *smithers_wiki_document(const char *request_json) {
+	char *special = special_response(request_json);
+	if (special != NULL) return special;
+	return echo4("{\"state\":\"%s\",\"state_vector\":\"sv\",\"markdown\":\"md\"}", request_json, NULL, NULL, NULL);
+}
+
+char *smithers_backout_change(const char *store_path, const char *change_id, const char *revision, const char *target_bookmark) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"change_id\":\"%s\",\"commit_id\":\"%s\",\"description\":\"%s|%s\"}", change_id, revision, target_bookmark, store_path);
+}
+
+char *smithers_split_change(const char *store_path, const char *change_id, const char *paths_json, const char *description) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"original\":{\"change_id\":\"%s\",\"description\":\"%s\"},\"split\":{\"change_id\":\"%s\",\"description\":\"%s\"}}", change_id, paths_json, store_path, description);
+}
+
+char *smithers_get_revision_diff(const char *store_path, const char *from_commit_id, const char *to_commit_id, const char *path) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"change_id\":\"%s..%s\",\"file_diffs\":[{\"path\":\"%s\",\"old_path\":\"%s\",\"change_type\":\"modified\"}]}", from_commit_id, to_commit_id, path, store_path);
+}
+
+char *smithers_list_directory(const char *store_path, const char *change_id, const char *prefix, const char *after, unsigned int limit) {
+	char *special = special_response(store_path);
+	char limit_text[16];
+	if (special != NULL) return special;
+	snprintf(limit_text, sizeof limit_text, "%u", limit);
+	return echo4("[{\"path\":\"%s|%s|%s\",\"kind\":\"%s\"}]", change_id, prefix, after, limit_text);
+}
+
+char *smithers_land_changes(const char *store_path, const char *request_json) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"landed_count\":2,\"target_bookmark\":\"%s\",\"target_commit_id\":\"changes:%s\"}", request_json, store_path, NULL, NULL);
+}
+
+#ifndef OMIT_LAND_APPEND
+char *smithers_land_append(const char *store_path, const char *request_json) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"landed_count\":1,\"target_bookmark\":\"%s\",\"target_commit_id\":\"append:%s\"}", request_json, store_path, NULL, NULL);
+}
+#endif
+
+char *smithers_read_workspace_source(const char *path, const char *request) {
+	char *special = special_response(path);
+	if (special != NULL) return special;
+	return echo4("{\"status\":\"%s\",\"workspace_id\":\"%s\",\"ref\":\"ref\"}", path, request, NULL, NULL);
+}
+
+char *smithers_prepare_land_append(const char *path, const char *request) {
+	char *special = special_response(path);
+	if (special != NULL) return special;
+	return echo4("{\"status\":\"%s\",\"target_bookmark\":\"%s\"}", path, request, NULL, NULL);
+}
+
+char *smithers_compose_superproject(const char *store_path, const char *request_json) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"change_id\":\"%s\",\"description\":\"%s\"}", store_path, request_json, NULL, NULL);
+}
+
+char *smithers_read_superproject(const char *store_path, const char *revision) {
+	char *special = special_response(store_path);
+	if (special != NULL) return special;
+	return echo4("{\"change_id\":\"%s\",\"commit_id\":\"%s\"}", store_path, revision, NULL, NULL);
 }
 
 void smithers_free_string(char *ptr) {

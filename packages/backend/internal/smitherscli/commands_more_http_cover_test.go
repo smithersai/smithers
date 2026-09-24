@@ -63,7 +63,7 @@ func TestCommandsMoreHttp_Cov_CommandConstructorsAndHandlers(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/orgs/acme/teams/core/repos/alice/demo":
 			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/hooks/9/deliveries/delivery-1/replay":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/repos/alice/demo/hooks/9/deliveries/21/redeliver":
 			fmt.Fprint(w, `{"replayed":true}`)
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/integrations/linear/4":
 			w.WriteHeader(http.StatusNoContent)
@@ -114,7 +114,7 @@ func TestCommandsMoreHttp_Cov_CommandConstructorsAndHandlers(t *testing.T) {
 	commandsMoreHTTPCovServe(t, betaCommand(), []string{"waitlist", "join", "--email", " person@example.com ", "--note", "hello", "--source", " cov ", "--json"})
 	commandsMoreHTTPCovServe(t, orgCommand(), []string{"team", "member", "remove", "acme", "core", "bob", "--json"})
 	commandsMoreHTTPCovServe(t, orgCommand(), []string{"team", "repo", "add", "acme", "core", "alice/demo", "--json"})
-	commandsMoreHTTPCovServe(t, webhookCommand(), []string{"deliveries", "9", "--replay", "delivery-1", "--repo", "alice/demo", "--json"})
+	commandsMoreHTTPCovServe(t, webhookCommand(), []string{"deliveries", "9", "--replay", "21", "--repo", "alice/demo", "--json"})
 	commandsMoreHTTPCovServe(t, extensionCommand(), []string{"linear", "remove", "4", "--json"})
 	commandsMoreHTTPCovServe(t, artifactCommand(), []string{"list", "99", "--repo", "alice/demo", "--json"})
 
@@ -123,7 +123,7 @@ func TestCommandsMoreHttp_Cov_CommandConstructorsAndHandlers(t *testing.T) {
 		"POST /api/alpha/waitlist",
 		"DELETE /api/orgs/acme/teams/core/members/bob",
 		"PUT /api/orgs/acme/teams/core/repos/alice/demo",
-		"POST /api/repos/alice/demo/hooks/9/deliveries/delivery-1/replay",
+		"POST /api/repos/alice/demo/hooks/9/deliveries/21/redeliver",
 		"DELETE /api/integrations/linear/4",
 		"GET /api/repos/alice/demo/actions/runs/99/artifacts",
 	}

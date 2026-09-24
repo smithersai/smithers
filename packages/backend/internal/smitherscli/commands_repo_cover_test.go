@@ -22,7 +22,7 @@ func commandsRepoCovSetConfig(t *testing.T, apiURL string) {
 	configHome := filepath.Join(root, "config")
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(root, "auth.json"))
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(root, "credentials.json"))
+	setTestCredentialStoreFile(t, filepath.Join(root, "credentials.json"))
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	t.Setenv("SMITHERS_TOKEN", "commands_repo_cov_token")
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {
@@ -253,7 +253,7 @@ func TestCommandsRepo_Cov_ConnectStatusDisconnectWorkflow(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer gh-token" {
 			t.Fatalf("GitHub Authorization header = %q", got)
 		}
-		if got := r.Header.Get("User-Agent"); got != "smithers-cli" {
+		if got := r.Header.Get("User-Agent"); !strings.HasPrefix(got, "smithers-cli/") {
 			t.Fatalf("GitHub User-Agent = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")

@@ -98,7 +98,10 @@ func TestAuthObserveSingleCommand(t *testing.T) {
 	record := readSmithersAuthRecordForTarget(target)
 	require.NotNil(t, record)
 	require.True(t, record.Admin)
-	require.Equal(t, token, record.Token)
+	require.Empty(t, record.Token, "a keychain login leaves no plaintext token in auth.json")
+	stored, err := LoadStoredToken(target.Host)
+	require.NoError(t, err)
+	require.Equal(t, token, stored)
 }
 
 func TestObserveHandoffNoRedirectsOrErrorSecrets(t *testing.T) {

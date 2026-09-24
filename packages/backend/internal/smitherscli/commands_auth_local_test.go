@@ -119,7 +119,7 @@ func TestLocalOwnerAuthBootstrapPersistsSharedCredential(t *testing.T) {
 	if err != nil || resolved == nil || resolved.Token != "smithers_local_test" || resolved.APIURL != origin {
 		t.Fatalf("persisted credential = %#v, %v", resolved, err)
 	}
-	if got := LoadConfig().APIURL; got != origin {
+	if got := mustLoadConfig(t).APIURL; got != origin {
 		t.Fatalf("configured origin = %q", got)
 	}
 }

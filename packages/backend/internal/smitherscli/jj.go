@@ -90,46 +90,40 @@ func applyLocalReadOptions(args []string, options LocalReadOptions) []string {
 	return args
 }
 
-func parseBookmarkLine(line string) LocalBookmark {
-	separator := strings.Index(line, ":")
-	if separator == -1 {
-		return LocalBookmark{Name: strings.TrimSpace(line)}
+// bookmarkListTemplate prints one tab-separated line per local bookmark:
+// name, change id, commit id. Remote-tracking entries print nothing, and a
+// conflicted bookmark prints empty ids. jj's human-readable output is never
+// parsed, so commit descriptions and remote status lines cannot leak in.
+const bookmarkListTemplate = `if(!remote, name ++ "\t" ++ if(normal_target, normal_target.change_id() ++ "\t" ++ normal_target.commit_id(), "\t") ++ "\n")`
+
+func parseBookmarkLine(line string) (LocalBookmark, bool) {
+	fields := strings.Split(line, "\t")
+	if len(fields) != 3 || fields[0] == "" {
+		return LocalBookmark{}, false
 	}
-	name := strings.TrimSpace(line[:separator])
-	rest := strings.TrimSpace(line[separator+1:])
-	if rest == "" {
-		return LocalBookmark{Name: name}
+	bookmark := LocalBookmark{Name: fields[0]}
+	if fields[1] != "" {
+		changeID := fields[1]
+		bookmark.TargetChangeID = &changeID
 	}
-	tokens := strings.Fields(rest)
-	var targetChangeID, targetCommitID *string
-	if len(tokens) > 0 {
-		value := tokens[0]
-		targetChangeID = &value
+	if fields[2] != "" {
+		commitID := fields[2]
+		bookmark.TargetCommitID = &commitID
 	}
-	if len(tokens) > 1 {
-		value := tokens[1]
-		targetCommitID = &value
-	}
-	return LocalBookmark{Name: name, TargetChangeID: targetChangeID, TargetCommitID: targetCommitID}
+	return bookmark, true
 }
 
 func ListLocalBookmarks(names []string, options LocalReadOptions) ([]LocalBookmark, error) {
-	args := append([]string{"bookmark", "list"}, names...)
+	args := append([]string{"bookmark", "list", "-T", bookmarkListTemplate}, names...)
 	output, err := runJj(applyLocalReadOptions(args, options))
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(output) == "" || strings.Contains(strings.ToLower(output), "no bookmarks") {
-		return []LocalBookmark{}, nil
-	}
-	lines := strings.Split(output, "\n")
 	bookmarks := []LocalBookmark{}
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			continue
+	for _, line := range strings.Split(output, "\n") {
+		if bookmark, ok := parseBookmarkLine(line); ok {
+			bookmarks = append(bookmarks, bookmark)
 		}
-		bookmarks = append(bookmarks, parseBookmarkLine(trimmed))
 	}
 	return bookmarks, nil
 }

@@ -217,6 +217,14 @@ func tryAcquireWorkerLock(lockPath string) (bool, error) {
 	return err == nil, err
 }
 
+// handOffWorkerLock records the spawned worker's PID in the lock. The hook
+// process that took the lock exits right away, so a lock naming it would read
+// as stale while the worker still runs.
+func handOffWorkerLock(lockPath string, workerPID int) error {
+	raw, _ := json.Marshal(workerLockState{CreatedAtMS: time.Now().UnixMilli(), PID: workerPID})
+	return os.WriteFile(lockPath, append(raw, '\n'), 0o644)
+}
+
 func acquireWorkerLock(lockPath string) (bool, error) {
 	acquired, err := tryAcquireWorkerLock(lockPath)
 	if err != nil || acquired {
@@ -233,7 +241,7 @@ func releaseWorkerLock(lockPath string) {
 	_ = os.Remove(lockPath)
 }
 
-func spawnDetachedWorker(repoKey, repoCWD string) error {
+func spawnDetachedWorker(repoKey, repoCWD string) (int, error) {
 	args := []string{"_internal", "push-to-smithers", "--worker", "--repo-key", repoKey, "--repo-cwd", repoCWD}
 	cmd := exec.Command(os.Args[0], args...)
 	cmd.Dir = repoCWD
@@ -241,7 +249,11 @@ func spawnDetachedWorker(repoKey, repoCWD string) error {
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	return cmd.Start()
+	if err := cmd.Start(); err != nil {
+		return 0, err
+	}
+	pid := cmd.Process.Pid
+	return pid, cmd.Process.Release()
 }
 
 func pushRepoState(cwd string) error {
@@ -290,11 +302,12 @@ func queuePushWorker(cwd string) error {
 	if err != nil || !acquired {
 		return err
 	}
-	if err := internalSpawnWorker(repoKey, cwd); err != nil {
+	workerPID, err := internalSpawnWorker(repoKey, cwd)
+	if err != nil {
 		releaseWorkerLock(lockPath)
 		return err
 	}
-	return nil
+	return handOffWorkerLock(lockPath, workerPID)
 }
 
 func runPushWorker(repoKey, fallbackCWD string) error {

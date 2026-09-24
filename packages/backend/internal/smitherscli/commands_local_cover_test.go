@@ -43,10 +43,10 @@ if [ "$1" = "diff" ] && [ "$2" = "-r" ]; then
   exit 0
 fi
 if [ "$1" = "bookmark" ] && [ "$2" = "list" ]; then
-  if [ "$3" = "feature" ]; then
-    printf 'feature: chg1 commit1\n'
+  if [ "$5" = "feature" ]; then
+    printf 'feature\tchg1\tcommit1\n'
   else
-    printf 'main: base commit-base\nfeature: chg1 commit1\n'
+    printf 'main\tbase\tcommit-base\nfeature\tchg1\tcommit1\n'
   fi
   exit 0
 fi

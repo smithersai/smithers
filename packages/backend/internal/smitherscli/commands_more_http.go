@@ -1,9 +1,9 @@
 package smitherscli
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -587,8 +587,12 @@ func webhookCommand() *incur.Cli {
 				return nil, err
 			}
 			id := intValue(ctx.Args["id"], 0)
-			if replay := stringValue(ctx.Options["replay"]); replay != "" {
-				return APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/hooks/%d/deliveries/%s/replay", owner, repo, id, url.PathEscape(replay)), nil, nil)
+			if replay := strings.TrimSpace(stringValue(ctx.Options["replay"])); replay != "" {
+				deliveryID, err := strconv.ParseInt(replay, 10, 64)
+				if err != nil || deliveryID <= 0 {
+					return nil, fmt.Errorf("--replay takes a numeric delivery ID, got %q", replay)
+				}
+				return APIRequest("POST", fmt.Sprintf("/api/repos/%s/%s/hooks/%d/deliveries/%d/redeliver", owner, repo, id, deliveryID), nil, nil)
 			}
 			return APIRequest("GET", fmt.Sprintf("/api/repos/%s/%s/hooks/%d/deliveries", owner, repo, id), nil, nil)
 		},
@@ -752,49 +756,17 @@ func artifactOutputName(name string) (string, error) {
 }
 
 func unauthenticatedJSONRequest(method, path string, body any) (any, error) {
-	var reader io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		reader = bytes.NewReader(data)
-	}
-	baseURL := strings.TrimRight(LoadConfig().APIURL, "/")
-	req, err := http.NewRequestWithContext(context.Background(), method, baseURL+path, reader)
+	cfg, err := LoadConfig()
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	baseURL := strings.TrimRight(cfg.APIURL, "/")
+	result, _, err := doAPIJSON(apiCall{Method: method, URL: baseURL + path, Path: path, Body: body})
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return nil, rawAPIError{apiErr}
 	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := resp.Status
-		var parsed struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(raw, &parsed) == nil && parsed.Message != "" {
-			detail = parsed.Message
-		} else if strings.TrimSpace(string(raw)) != "" {
-			detail = strings.TrimSpace(string(raw))
-		}
-		return nil, fmt.Errorf("%s", detail)
-	}
-	if len(raw) == 0 {
-		return nil, nil
-	}
-	var decoded any
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return nil, err
-	}
-	return decoded, nil
+	return result, err
 }
 
 // maxArtifactBytes caps the size of a file downloaded via downloadFile to
@@ -820,7 +792,7 @@ func downloadFileLimit(downloadURL, path string, maxBytes int64) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 || resp.Body == nil {
-		return fmt.Errorf("failed to download artifact: %d %s", resp.StatusCode, resp.Status)
+		return fmt.Errorf("failed to download artifact: %s", resp.Status)
 	}
 	file, err := os.Create(path)
 	if err != nil {

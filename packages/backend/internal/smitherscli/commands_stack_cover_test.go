@@ -496,12 +496,8 @@ func TestCommandsStack_Cov_StatusAndEnrichment(t *testing.T) {
 	}
 
 	strict := map[string]any{"pr_number": 3, "ci_status": "passing", "review_status": "approved"}
-	strict, err = enrichStatusChangeWithGitHub("alice", "demo", strict, true)
-	if err != nil {
-		t.Fatalf("strict enrichment without token returned error: %v", err)
-	}
-	if strict["ci_status"] != "pending" || strict["review_status"] != "pending" || strict["mergeable"] != false {
-		t.Fatalf("strict no-token enrichment = %#v", strict)
+	if _, err := enrichStatusChangeWithGitHub("alice", "demo", strict, true); err == nil || !strings.Contains(err.Error(), "could not read the pull request for PR #3") {
+		t.Fatalf("strict enrichment without token or Smithers auth = %v", err)
 	}
 
 	commandsStackCovGitHubServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -531,8 +527,8 @@ func TestCommandsStack_Cov_StatusAndEnrichment(t *testing.T) {
 
 func TestCommandsStack_Cov_LandChangeBuildAndWorkflowErrorPaths(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "")
-	if _, err := buildStackLandChanges("alice", "demo", []map[string]any{{"change_id": "abc", "pr_number": 1}}); err != nil {
-		t.Fatalf("buildStackLandChanges should derive branch with no token: %v", err)
+	if _, err := buildStackLandChanges("alice", "demo", []map[string]any{{"change_id": "abc", "pr_number": 1}}); err == nil || !strings.Contains(err.Error(), "could not read the pull request for PR #1") {
+		t.Fatalf("buildStackLandChanges must refuse when PR state cannot be read: %v", err)
 	}
 	_, err := buildStackLandChanges("alice", "demo", []map[string]any{{"change_id": "abc"}})
 	if err == nil || !strings.Contains(err.Error(), "missing pr_number") {

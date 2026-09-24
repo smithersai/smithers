@@ -48,7 +48,7 @@ if [ "$1" = "--ignore-working-copy" ]; then
   shift
 fi
 if [ "$1" = "bookmark" ] && [ "$2" = "list" ]; then
-  printf 'main: parent1 commit-parent\nfeature: wc123 commit-wc\n'
+  printf 'main\tparent1\tcommit-parent\nfeature\twc123\tcommit-wc\n'
   exit 0
 fi
 if [ "$1" = "log" ] && [ "$2" = "-r" ]; then
@@ -241,7 +241,7 @@ func TestCommandsInternal_Cov_StatePathsSchedulesAndLocks(t *testing.T) {
 	if queued == nil || queued.CWD != queueCWD || queued.Sequence != 2 || queued.DueAtMS == 0 {
 		t.Fatalf("queued schedule = %#v", queued)
 	}
-	if err := spawnDetachedWorker("repo-key", filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+	if _, err := spawnDetachedWorker("repo-key", filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
 		t.Fatal("spawnDetachedWorker succeeded with invalid cwd")
 	}
 }

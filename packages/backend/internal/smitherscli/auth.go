@@ -2,11 +2,9 @@ package smitherscli
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -108,7 +106,10 @@ func ResolveAuthTarget(options map[string]string) (AuthTarget, error) {
 		normalized := normalizeAPIURL(apiURL)
 		return AuthTarget{APIURL: normalized, Host: hostFromURL(normalized)}, nil
 	}
-	cfg := LoadConfig()
+	cfg, err := LoadConfig()
+	if err != nil {
+		return AuthTarget{}, err
+	}
 	configuredAPIURL := normalizeAPIURL(cfg.APIURL)
 	configuredHost := hostFromURL(configuredAPIURL)
 
@@ -220,6 +221,19 @@ func readSmithersAuthRecordForTarget(target AuthTarget) *smithersAuthFileRecord 
 	return record
 }
 
+// authRecordDescribes reports whether record's metadata belongs to resolved.
+// A metadata-only record (written after a keychain save) describes the
+// keychain token for its host.
+func authRecordDescribes(record *smithersAuthFileRecord, resolved *ResolvedAuthToken) bool {
+	if record == nil || resolved == nil {
+		return false
+	}
+	if record.Token != "" {
+		return record.Token == resolved.Token
+	}
+	return resolved.Source == AuthTokenSourceKeyring
+}
+
 func readSmithersAuthTokenForTarget(target AuthTarget) string {
 	record := readSmithersAuthRecordForTarget(target)
 	if record == nil {
@@ -229,16 +243,16 @@ func readSmithersAuthTokenForTarget(target AuthTarget) string {
 }
 
 func readLegacyTokenForTarget(target AuthTarget) string {
-	raw := LoadRawConfig()
-	if hostFromURL(raw.APIURL) != target.Host {
+	raw, err := LoadRawConfig()
+	if err != nil || hostFromURL(raw.APIURL) != target.Host {
 		return ""
 	}
 	return strings.TrimSpace(raw.Token)
 }
 
 func scrubLegacyTokenIfCurrentHost(target AuthTarget) bool {
-	raw := LoadRawConfig()
-	if strings.TrimSpace(raw.Token) == "" || hostFromURL(raw.APIURL) != target.Host {
+	raw, err := LoadRawConfig()
+	if err != nil || strings.TrimSpace(raw.Token) == "" || hostFromURL(raw.APIURL) != target.Host {
 		return false
 	}
 	cleared, err := ClearLegacyToken()
@@ -253,7 +267,8 @@ func ResolveAuthToken(options map[string]string) (*ResolvedAuthToken, error) {
 	if envToken := strings.TrimSpace(os.Getenv("SMITHERS_TOKEN")); envToken != "" {
 		return &ResolvedAuthToken{AuthTarget: target, Source: AuthTokenSourceEnv, Token: envToken}, nil
 	}
-	if stored := strings.TrimSpace(LoadStoredToken(target.Host)); stored != "" {
+	stored, storageErr := LoadStoredToken(target.Host)
+	if stored = strings.TrimSpace(stored); stored != "" {
 		return &ResolvedAuthToken{AuthTarget: target, Source: AuthTokenSourceKeyring, Token: stored}, nil
 	}
 	if token := readSmithersAuthTokenForTarget(target); token != "" {
@@ -261,6 +276,11 @@ func ResolveAuthToken(options map[string]string) (*ResolvedAuthToken, error) {
 	}
 	if token := readLegacyTokenForTarget(target); token != "" {
 		return &ResolvedAuthToken{AuthTarget: target, Source: AuthTokenSourceConfig, Token: token}, nil
+	}
+	// No other source holds a token, so an unreadable keychain is the reason
+	// the user looks logged out. Say so instead of asking them to log in.
+	if storageErr != nil {
+		return nil, fmt.Errorf("could not read the stored token for %s: %w", target.Host, storageErr)
 	}
 	return nil, nil
 }
@@ -289,13 +309,18 @@ func PersistAuthToken(token string, options map[string]string) (AuthTarget, erro
 		return AuthTarget{}, err
 	}
 	trimmed := strings.TrimSpace(token)
+	// auth.json holds the token only when no secure store exists. After a
+	// keychain save it holds metadata alone, so no plaintext copy is left.
+	fileToken := ""
 	if err := StoreToken(target.Host, trimmed); err != nil {
 		var unavailable *SecureStorageUnavailableError
 		if !errors.As(err, &unavailable) {
 			return AuthTarget{}, err
 		}
+		fileToken = trimmed
+		fmt.Fprintf(os.Stderr, "Secure credential storage is unavailable; storing the token in plaintext at %s (mode 0600).\n", smithersAuthFilePath())
 	}
-	if err := writeSmithersAuthFile(target, trimmed, authTokenMetadata{
+	if err := writeSmithersAuthFile(target, fileToken, authTokenMetadata{
 		Username:  options["username"],
 		Email:     options["email"],
 		ExpiresAt: options["expiresAt"],
@@ -332,17 +357,17 @@ func ClearAuthToken(options map[string]string) (ClearAuthTokenResult, error) {
 }
 
 func GetAuthStatus(client *http.Client, options map[string]string) (status AuthStatusResult) {
-	if client == nil {
-		client = http.DefaultClient
-	}
 	target, err := authTargetResolver(options)
 	if err != nil {
 		return AuthStatusResult{Message: err.Error()}
 	}
-	resolved, _ := ResolveAuthToken(options)
+	resolved, resolveErr := ResolveAuthToken(options)
+	if resolveErr != nil {
+		return AuthStatusResult{APIURL: target.APIURL, Host: target.Host, Message: resolveErr.Error()}
+	}
 	record := readSmithersAuthRecordForTarget(target)
 	defer func() {
-		if resolved == nil || record == nil || record.Token != resolved.Token {
+		if !authRecordDescribes(record, resolved) {
 			return
 		}
 		status.Admin = record.Admin
@@ -370,58 +395,8 @@ func GetAuthStatus(client *http.Client, options map[string]string) (status AuthS
 		}
 	}
 	source := FormatTokenSource(resolved.Source)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, resolved.APIURL+"/api/user", nil)
-	if err != nil {
-		return AuthStatusResult{LoggedIn: true, APIURL: resolved.APIURL, Host: resolved.Host, TokenSet: true, TokenSource: resolved.Source}
-	}
-	req.Header.Set("Authorization", "token "+resolved.Token)
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return AuthStatusResult{
-			LoggedIn:    true,
-			APIURL:      resolved.APIURL,
-			Host:        resolved.Host,
-			TokenSet:    true,
-			Username:    storedUsername,
-			User:        storedUsername,
-			Email:       storedEmail,
-			ExpiresAt:   storedExpiresAt,
-			TokenSource: resolved.Source,
-			Message:     fmt.Sprintf("Logged in to %s via %s (could not verify token due to network error)", resolved.Host, source),
-		}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		var user struct {
-			Login    string `json:"login"`
-			Username string `json:"username"`
-			Email    string `json:"email"`
-		}
-		_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&user)
-		username := firstNonEmpty(user.Login, user.Username, storedUsername)
-		email := firstNonEmpty(user.Email, storedEmail)
-		message := fmt.Sprintf("Logged in to %s via %s", resolved.Host, source)
-		if username != "" && email != "" {
-			message = fmt.Sprintf("Logged in to %s as %s (%s) via %s", resolved.Host, username, email, source)
-		} else if username != "" {
-			message = fmt.Sprintf("Logged in to %s as %s via %s", resolved.Host, username, source)
-		}
-		return AuthStatusResult{
-			LoggedIn:    true,
-			APIURL:      resolved.APIURL,
-			Host:        resolved.Host,
-			TokenSet:    true,
-			Username:    username,
-			User:        username,
-			Email:       email,
-			ExpiresAt:   storedExpiresAt,
-			TokenSource: resolved.Source,
-			Message:     message,
-		}
-	}
-	return AuthStatusResult{
-		LoggedIn:    false,
+	stored := AuthStatusResult{
+		LoggedIn:    true,
 		APIURL:      resolved.APIURL,
 		Host:        resolved.Host,
 		TokenSet:    true,
@@ -430,8 +405,35 @@ func GetAuthStatus(client *http.Client, options map[string]string) (status AuthS
 		Email:       storedEmail,
 		ExpiresAt:   storedExpiresAt,
 		TokenSource: resolved.Source,
-		Message:     fmt.Sprintf("Stored token for %s from %s is invalid or expired", resolved.Host, source),
 	}
+	user, _, err := doAPIJSON(apiCall{Method: http.MethodGet, URL: resolved.APIURL + "/api/user", Path: "/api/user", Token: resolved.Token, Client: client})
+	if err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) {
+			stored.Message = fmt.Sprintf("Logged in to %s via %s (could not verify token due to network error)", resolved.Host, source)
+			return stored
+		}
+		// Only the server rejecting the token means the token is bad. An
+		// outage or rate limit says nothing about it.
+		if apiErr.Status == http.StatusUnauthorized || apiErr.Status == http.StatusForbidden {
+			stored.LoggedIn = false
+			stored.Message = fmt.Sprintf("Stored token for %s from %s is invalid or expired", resolved.Host, source)
+			return stored
+		}
+		stored.Message = fmt.Sprintf("Logged in to %s via %s (could not verify token: server returned %d)", resolved.Host, source, apiErr.Status)
+		return stored
+	}
+	fields := objectValue(user)
+	username := firstNonEmpty(stringValue(fields["login"]), stringValue(fields["username"]), storedUsername)
+	email := firstNonEmpty(stringValue(fields["email"]), storedEmail)
+	message := fmt.Sprintf("Logged in to %s via %s", resolved.Host, source)
+	if username != "" && email != "" {
+		message = fmt.Sprintf("Logged in to %s as %s (%s) via %s", resolved.Host, username, email, source)
+	} else if username != "" {
+		message = fmt.Sprintf("Logged in to %s as %s via %s", resolved.Host, username, source)
+	}
+	stored.Username, stored.User, stored.Email, stored.Message = username, username, email, message
+	return stored
 }
 
 func firstNonEmpty(values ...string) string {

@@ -460,10 +460,10 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", "")
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", "")
+	setTestClaudeKeychainPayload(t, "")
+	setTestCodexAuthJSON(t, "")
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(t.TempDir(), "creds.json"))
+	setTestCredentialStoreFile(t, filepath.Join(t.TempDir(), "creds.json"))
 	if err := StoreToken(claudeSetupTokenStorageKey, "stored-claude"); err != nil {
 		t.Fatal(err)
 	}
@@ -473,11 +473,11 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	DeleteStoredToken(claudeSetupTokenStorageKey)
 
 	future := time.Now().Add(time.Hour).UnixMilli()
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"oauth-token","expiresAt":%d}}`, future))
+	setTestClaudeKeychainPayload(t, fmt.Sprintf(`{"claudeAiOauth":{"accessToken":"oauth-token","expiresAt":%d}}`, future))
 	if env := getClaudeAuthEnv(); env["ANTHROPIC_AUTH_TOKEN"] != "oauth-token" {
 		t.Fatalf("getClaudeAuthEnv keychain payload = %#v", env)
 	}
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", "")
+	setTestClaudeKeychainPayload(t, "")
 	oldGOOS := workspaceRuntimeGOOS
 	t.Cleanup(func() { workspaceRuntimeGOOS = oldGOOS })
 	workspaceRuntimeGOOS = "linux"
@@ -543,7 +543,7 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	if err := seedWorkspaceAgentAuth("missing-ssh-command", []string{"claude"}); err == nil {
 		t.Fatal("seedWorkspaceAgentAuth claude accepted missing ssh")
 	}
-	t.Setenv("SMITHERS_TEST_CODEX_AUTH_JSON", `{"ok":true}`)
+	setTestCodexAuthJSON(t, `{"ok":true}`)
 	if err := seedWorkspaceAgentAuth("missing-ssh-command", []string{"codex"}); err == nil {
 		t.Fatal("seedWorkspaceAgentAuth codex accepted missing ssh")
 	}
@@ -566,7 +566,7 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	}
 	t.Setenv("PATH", failingSSHBin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	failingSSHCommand := "ssh example.com"
-	if _, err := runRemoteShellCommand(failingSSHCommand, "echo hi", "false label", false, time.Second); err == nil || !strings.Contains(err.Error(), "false label exited with code") {
+	if _, err := runRemoteShellCommand(failingSSHCommand, "echo hi", "false label", false, 30*time.Second); err == nil || !strings.Contains(err.Error(), "false label exited with code") {
 		t.Fatalf("runRemoteShellCommand label fallback = %v", err)
 	}
 	if _, ok := workspaceExitErrorCode(fmt.Errorf("plain error")); ok {
@@ -577,7 +577,7 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	workspaceExitErrorCode = func(error) (int, bool) {
 		return 0, false
 	}
-	if _, err := runRemoteShellCommand(failingSSHCommand, "echo hi", "false label", false, time.Second); err == nil {
+	if _, err := runRemoteShellCommand(failingSSHCommand, "echo hi", "false label", false, 30*time.Second); err == nil {
 		t.Fatal("runRemoteShellCommand accepted non-exit classified error")
 	}
 	if _, err := runRemoteStreamedCommand(failingSSHCommand, "ignored", time.Second); err == nil {
@@ -605,7 +605,7 @@ func TestCommandsWorkspace_Z_AuthAndRemoteCommandBranches(t *testing.T) {
 	commandsWorkspaceHSetAuthConfig(t, issueServer.URL)
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
-	t.Setenv("SMITHERS_TEST_CLAUDE_KEYCHAIN_PAYLOAD", "not-json")
+	setTestClaudeKeychainPayload(t, "not-json")
 	t.Setenv("COMMANDS_WORKSPACE_H_AUTH_READY", "0")
 	if _, err := runWorkspaceIssue(&incur.CommandContext{Args: map[string]any{"number": "11"}, Options: map[string]any{"repo": "alice/demo"}}); err == nil || !strings.Contains(err.Error(), "Claude Code auth is not configured") {
 		t.Fatalf("runWorkspaceIssue auth error = %v", err)

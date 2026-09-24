@@ -23,7 +23,7 @@ func authFSetConfig(t *testing.T, apiURL string) string {
 	configHome := filepath.Join(root, "config")
 	t.Setenv("XDG_CONFIG_HOME", configHome)
 	t.Setenv("SMITHERS_AUTH_FILE", filepath.Join(root, "auth.json"))
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", filepath.Join(root, "credentials.json"))
+	setTestCredentialStoreFile(t, filepath.Join(root, "credentials.json"))
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	t.Setenv("SMITHERS_TOKEN", "")
 	if err := os.MkdirAll(filepath.Join(configHome, "smithers"), 0o755); err != nil {
@@ -148,7 +148,7 @@ func TestAuth_F_PersistAuthTokenStoreAndFileErrors(t *testing.T) {
 	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", storeDir)
+	setTestCredentialStoreFile(t, storeDir)
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "")
 	if _, err := PersistAuthToken("tok", nil); err == nil {
 		t.Fatal("PersistAuthToken should surface StoreToken failure")
@@ -158,7 +158,7 @@ func TestAuth_F_PersistAuthTokenStoreAndFileErrors(t *testing.T) {
 func TestAuth_F_PersistAuthTokenWriteFileError(t *testing.T) {
 	root := authFSetConfig(t, "https://api.example.com")
 	// StoreToken returns unavailable (keyring disabled, no store file) -> skipped.
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	// writeSmithersAuthFile fails: auth file parent is a regular file.
 	blocker := filepath.Join(root, "blocker")
@@ -173,7 +173,7 @@ func TestAuth_F_PersistAuthTokenWriteFileError(t *testing.T) {
 
 func TestAuth_F_PersistAuthTokenSaveConfigError(t *testing.T) {
 	authFSetConfig(t, "https://api.example.com")
-	t.Setenv("SMITHERS_TEST_CREDENTIAL_STORE_FILE", "")
+	setTestCredentialStoreFile(t, "")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
 	// writeSmithersAuthFile succeeds (default auth file path), SaveConfig fails.
 	oldMkdir := configMkdirAll
@@ -257,7 +257,7 @@ func TestAuth_F_AdminBrowserLoginFlagsAndExpiry(t *testing.T) {
 			}))
 			defer server.Close()
 			authFSetConfig(t, server.URL)
-			t.Setenv("SMITHERS_TEST_BROWSER_MODE", "fetch")
+			setTestBrowserFetch(t, true)
 			args := []string{"login", "--admin", "--host", server.URL, "--json"}
 			if ttl != "" {
 				args = append(args, "--ttl", ttl)

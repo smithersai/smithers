@@ -1,12 +1,10 @@
 package smitherscli
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -72,44 +70,33 @@ func rawAPIRequest(method, endpoint string, body map[string]string, extraHeaders
 	if err != nil {
 		return nil, err
 	}
-	var reader io.Reader
+	var rawBody []byte
 	if body != nil {
-		data, err := rawAPIMarshal(body)
+		rawBody, err = rawAPIMarshal(body)
 		if err != nil {
 			return nil, err
 		}
-		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), method, authToken.APIURL+endpoint, reader)
+	resp, cancel, err := doAPI(apiCall{
+		Method:  method,
+		URL:     authToken.APIURL + endpoint,
+		Path:    endpoint,
+		RawBody: rawBody,
+		Token:   authToken.Token,
+		Headers: extraHeaders,
+	})
 	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) {
+			return nil, rawAPIError{apiErr}
+		}
 		return nil, err
 	}
-	req.Header.Set("Authorization", "token "+authToken.Token)
-	req.Header.Set("Accept", "application/json")
-	for key, value := range extraHeaders {
-		req.Header.Set(key, value)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
+	defer cancel()
 	defer func() { _ = resp.Body.Close() }()
-	textBytes, _ := io.ReadAll(resp.Body)
-	text := string(textBytes)
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := resp.Status
-		var parsed struct {
-			Message string `json:"message"`
-		}
-		if json.Unmarshal(textBytes, &parsed) == nil && parsed.Message != "" {
-			detail = parsed.Message
-		} else if strings.TrimSpace(text) != "" {
-			detail = strings.TrimSpace(text)
-		}
-		return nil, fmt.Errorf("%s", detail)
+	textBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxAPIResponseBytes))
+	if err != nil {
+		return nil, err
 	}
 	if len(textBytes) == 0 {
 		return nil, nil
@@ -118,9 +105,22 @@ func rawAPIRequest(method, endpoint string, body map[string]string, extraHeaders
 	if json.Unmarshal(textBytes, &decoded) == nil {
 		return decoded, nil
 	}
-	_, _ = fmt.Fprint(os.Stdout, text)
+	_, _ = os.Stdout.Write(textBytes)
 	return nil, nil
 }
+
+// rawAPIError prints only the server's message, as `smithers api` always has,
+// and keeps the typed *APIError reachable with errors.As.
+type rawAPIError struct{ *APIError }
+
+func (e rawAPIError) Error() string {
+	if e.RequestID != "" {
+		return e.Detail + " [request " + e.RequestID + "]"
+	}
+	return e.Detail
+}
+
+func (e rawAPIError) Unwrap() error { return e.APIError }
 
 func searchCommand() *incur.Cli {
 	cmd := incur.New("search", incur.WithDescription("Search repos, issues, and code"))

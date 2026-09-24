@@ -121,14 +121,13 @@ func smallFServeConfig(t *testing.T, argv ...string) error {
 func TestCommandsConfig_F_GetSetShow(t *testing.T) {
 	smallFSetConfig(t, "https://api.example.com")
 	t.Setenv("SMITHERS_DISABLE_SYSTEM_KEYRING", "1")
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
 	t.Setenv("SMITHERS_TOKEN", "")
 
 	if err := smallFServeConfig(t, "get", "git_protocol"); err != nil {
 		t.Fatalf("get git_protocol err = %v", err)
 	}
-	if err := smallFServeConfig(t, "get", "agent_issue_repo"); err != nil {
-		t.Fatalf("get agent_issue_repo err = %v", err)
+	if err := smallFServeConfig(t, "get", "agent_issue_repo"); err == nil {
+		t.Fatal("get agent_issue_repo should error: the key was removed")
 	}
 	if err := smallFServeConfig(t, "get", "api_url"); err != nil {
 		t.Fatalf("get api_url err = %v", err)
@@ -162,7 +161,6 @@ func TestCommandsConfig_F_GetSetShow(t *testing.T) {
 		t.Fatalf("show explicit err = %v", err)
 	}
 	// show with env overrides set to exercise the (set) / value branches.
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "env/issues")
 	t.Setenv("SMITHERS_TOKEN", "tok")
 	if err := smallFServeConfig(t, "show"); err != nil {
 		t.Fatalf("show with env err = %v", err)
@@ -208,40 +206,6 @@ func TestArgs_F_PositionalAndRewrites(t *testing.T) {
 	}
 	if !strings.Contains(joined, "third") {
 		t.Fatalf("clone rewrite missing extra positional: %#v", out)
-	}
-}
-
-func TestAgentIssue_F_BuildBodyBranches(t *testing.T) {
-	repoContext := map[string]any{
-		"cwd":        "/work",
-		"repoRoot":   "/work",
-		"repoSlug":   "owner/repo",
-		"auth":       map[string]any{"host": "example.com", "loggedIn": false},
-		"backend":    map[string]any{"backend": "microsandbox"},
-		"remoteRepo": map[string]any{"checked": true, "available": true, "status": "ready"},
-		"jjStatus":   map[string]any{"output": "clean"},
-		"jjRemotes":  map[string]any{"output": "origin"},
-	}
-	body := buildAgentIssueBody(agentIssueParams{
-		Summary:                "s",
-		ExpectedBehavior:       "should work",
-		ActualBehavior:         "broke",
-		ReproSteps:             "steps",
-		Workaround:             "none",
-		WhyThisIsStillAProblem: "ux",
-	}, repoContext)
-	for _, want := range []string{"backend: microsandbox", "available (ready)", "jj status", "jj git remote list", "Expected Behavior"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("body missing %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestAgentIssue_F_CreateNoDestination(t *testing.T) {
-	smallFSetConfig(t, "https://api.example.com")
-	t.Setenv("SMITHERS_AGENT_ISSUE_REPO", "")
-	if _, err := createAgentIssue(agentIssueParams{Summary: "s"}, map[string]any{}); err == nil || !strings.Contains(err.Error(), "No Smithers issue destination") {
-		t.Fatalf("createAgentIssue no destination err = %v", err)
 	}
 }
 
