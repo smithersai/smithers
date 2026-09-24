@@ -381,3 +381,31 @@ func TestAuthCleanerSweep_AccessTokenPruneCountIsNotAnError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, store.callSnapshot(), "access_tokens")
 }
+
+type oauth2GrantCleanupStore struct {
+	*mockCleanupStore
+	codes, refresh int
+}
+
+func (s *oauth2GrantCleanupStore) DeleteExpiredOAuth2AuthorizationCodes(context.Context) error {
+	s.codes++
+	return nil
+}
+
+func (s *oauth2GrantCleanupStore) DeleteExpiredOAuth2RefreshTokens(context.Context) error {
+	s.refresh++
+	return errors.New("refresh boom")
+}
+
+// The production store must satisfy the optional grant cleanup seam, or the
+// sweep silently skips expired codes and refresh tokens.
+var _ expiredOAuth2GrantStore = (*db.Queries)(nil)
+
+func TestAuthCleanerSweepDeletesExpiredOAuth2Grants(t *testing.T) {
+	t.Parallel()
+	store := &oauth2GrantCleanupStore{mockCleanupStore: &mockCleanupStore{}}
+	err := NewAuthCleaner(store, time.Minute).sweep(context.Background())
+	require.ErrorContains(t, err, "refresh boom")
+	assert.Equal(t, 1, store.codes)
+	assert.Equal(t, 1, store.refresh)
+}

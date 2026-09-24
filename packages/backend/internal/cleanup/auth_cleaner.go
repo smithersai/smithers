@@ -37,6 +37,13 @@ type expiredOAuth2AccessTokenStore interface {
 	DeleteExpiredOAuth2AccessTokens(context.Context) ([]db.Oauth2AccessToken, error)
 }
 
+// expiredOAuth2GrantStore deletes authorization codes and refresh tokens that
+// can no longer be redeemed, so both tables stay bounded.
+type expiredOAuth2GrantStore interface {
+	DeleteExpiredOAuth2AuthorizationCodes(context.Context) error
+	DeleteExpiredOAuth2RefreshTokens(context.Context) error
+}
+
 // SetRevocationPublisher announces expired OAuth2 access tokens so streams
 // authenticated by them stop instead of surviving until disconnect.
 func (c *AuthCleaner) SetRevocationPublisher(p revocation.Publisher) {
@@ -97,6 +104,14 @@ func (c *AuthCleaner) sweep(ctx context.Context) error {
 					Reason:    "oauth2 access token expired",
 				})
 			}
+		}
+	}
+	if store, ok := c.store.(expiredOAuth2GrantStore); ok {
+		if err := store.DeleteExpiredOAuth2AuthorizationCodes(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("delete expired oauth2 authorization codes: %w", err))
+		}
+		if err := store.DeleteExpiredOAuth2RefreshTokens(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("delete expired oauth2 refresh tokens: %w", err))
 		}
 	}
 
