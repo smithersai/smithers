@@ -1640,6 +1640,13 @@ export function App(props: AppProps) {
       if (rows.length > 0) setPicker((current) => current === undefined ? current : { ...current, selected: (current.selected + step + rows.length) % rows.length })
     }
     if (key.name === "escape") return setPicker(undefined)
+    // Typing that arrives before the dialog's input mounts would reach the still-focused composer.
+    const typed = key.sequence
+    if (composer.current?.focused === true && open.kind !== "undo" && !key.ctrl && !key.meta && !key.option &&
+      typed.length === 1 && typed >= " " && typed !== "\x7f") {
+      key.preventDefault()
+      return setPicker((current) => current === undefined || current.kind === "undo" ? current : { ...current, query: current.query + typed, selected: 0 })
+    }
     if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1)
     if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1)
     if (key.name === "pageup") return move(-Math.min(10, open.selected))
@@ -1782,7 +1789,10 @@ export function App(props: AppProps) {
     if (key.ctrl && key.name === "k") {
       // Also keeps the composer's default Ctrl+K (delete to line end) from firing.
       key.preventDefault()
-      setPicker(open?.kind === "palette" ? undefined : { kind: "palette", query: "", selected: 0 })
+      const next: Picker | undefined = open?.kind === "palette" ? undefined : { kind: "palette", query: "", selected: 0 }
+      // Keys in the same input burst are handled before the next render; they must see the palette open.
+      live.current = { ...live.current, picker: next }
+      setPicker(next)
       return
     }
     if (key.ctrl && key.name === "s") {

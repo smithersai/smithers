@@ -481,6 +481,18 @@ describe("search palette", () => {
     await tui.until((screen) => screen.includes("Search · first 200"), 10_000, "cap shown")
   }, 60_000)
 
+  it("typing in the same burst as ctrl+k lands in the search, not the composer", async () => {
+    const cwd = repository()
+    for (let file = 0; file < 12; file++) {
+      writeFileSync(join(cwd, `many${file}.txt`), Array.from({ length: 20 }, () => "repeated").join("\n") + "\n")
+    }
+    const { tui } = await start({ cwd })
+    // One PTY write: every key arrives before the palette has drawn its input.
+    await tui.press(`${key.ctrlK}text:repeated`)
+    const screen = await tui.until((screen) => screen.includes("Search · first 200"), 10_000, "cap shown")
+    expect(screen).not.toMatch(/┃\s+text:repeated/)
+  }, 60_000)
+
   it("session: resumes a past session", async () => {
     const first = await start()
     await first.tui.type("!echo remembered-output")
