@@ -61,7 +61,7 @@ interface Settings {
   readonly job?: "held-ready" | "held-settlement" | "attach-failure" | "cleanup-failure"
   readonly readiness?: "valid" | "malformed" | "wrong" | "silent" | "absent"
   readonly stop?: "exit" | "ignore" | "open-channel" | "cleanup-error"
-  readonly snapshot?: "empty" | "survivor" | "own-group" | "owner"
+  readonly snapshot?: "empty" | "survivor" | "own-group" | "owner" | "unavailable"
   readonly endOnDisconnect?: boolean
   readonly snapshotUnavailableAfterExitMs?: number
 }
@@ -126,14 +126,17 @@ const fixture = (settings: Settings = {}) => {
   const system: Cleanup.System = {
     platform: settings.platform ?? "darwin",
     snapshot: () =>
-      ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ? undefined : ({
-        ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
-        members: settings.snapshot === "survivor"
-          ? [{ pid: 900_003, startedAtMs: 1, zombie: false }]
-          : settings.snapshot === "owner" && !ownerDone
-          ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
-          : []
-      }),
+      settings.snapshot === "unavailable" ||
+        ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ?
+        undefined :
+        ({
+          ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
+          members: settings.snapshot === "survivor"
+            ? [{ pid: 900_003, startedAtMs: 1, zombie: false }]
+            : settings.snapshot === "owner" && !ownerDone
+            ? [{ pid: 900_001, startedAtMs: 1, zombie: false }]
+            : []
+        }),
     // Fixture identities are fabricated, so the kernel can prove nothing about them.
     vacant: () => false
   }
@@ -299,6 +302,44 @@ const run = async (
 }
 
 describe("failed process preparation", () => {
+  it.each([false, true])("preserves explicit environment values with extendEnv=%s", async (extendEnv) => {
+    const host = fixture()
+    const name = "SMITHERS_SUPERVISOR_TEST_INHERITED"
+    const previous = process.env[name]
+    process.env[name] = "from-host"
+    try {
+      const result = await run(host, undefined, { extendEnv, env: { EXPLICIT: "from-command" } })
+      expect(Exit.isSuccess(result.outcome)).toBe(true)
+      const env = host.requests.find((request) => request.type === "configure")!.env as Record<string, string>
+      expect(env.EXPLICIT).toBe("from-command")
+      expect(env[name]).toBe(extendEnv ? "from-host" : undefined)
+    } finally {
+      if (previous === undefined) delete process.env[name]
+      else process.env[name] = previous
+      host.dispose()
+    }
+  })
+
+  it.each(["empty", "survivor", "own-group", "unavailable"] as const)(
+    "does not fast-stop a natural exit without an owner-only snapshot (%s)",
+    async (snapshot) => {
+      const host = fixture({ snapshot })
+      try {
+        const result = await run(host, (handle) =>
+          Effect.gen(function*() {
+            host.exitTarget()
+            expect(yield* handle.exitCode).toBe(0)
+          }))
+        expect(host.requests.filter((request) => request.fast === true)).toEqual([])
+        expect(Exit.isSuccess(result.outcome)).toBe(snapshot === "empty")
+        expect(result.live).toHaveLength(snapshot === "empty" ? 0 : 1)
+        expect(host.rawKills).toBe(0)
+      } finally {
+        host.dispose()
+      }
+    }
+  )
+
   it("exposes running state and additional pipes while preserving window visibility", async () => {
     const host = fixture()
     try {
@@ -749,18 +790,23 @@ describe("Windows job ownership", () => {
     expect(result.live).toEqual([])
   })
 
-  it("tracks native job references through unref, reref, and explicit stop", async () => {
-    const host = fixture({ platform: "win32" })
-    const result = await run(host, (handle) =>
-      Effect.gen(function*() {
-        const reref = yield* handle.unref
-        yield* reref
-        yield* handle.unref
-        yield* handle.kill({ killSignal: "SIGINT", forceKillAfter: 0 })
-      }))
-    expect(Exit.isSuccess(result.outcome)).toBe(true)
-    expect(host.jobReferences).toEqual([false, true, false, true])
-    expect(host.requests.at(-1)).toMatchObject({ type: "stop", killSignal: "SIGINT", graceMs: 0 })
-    expect(result.live).toEqual([])
-  })
+  it.each(["darwin", "win32"] as const)(
+    "tracks %s references through repeated unref, reref, and explicit stop",
+    async (platform) => {
+      const host = fixture({ platform })
+      const result = await run(host, (handle) =>
+        Effect.gen(function*() {
+          const reref = yield* handle.unref
+          const second = yield* handle.unref
+          yield* reref
+          yield* second
+          yield* handle.unref
+          yield* handle.kill({ killSignal: "SIGINT", forceKillAfter: 0 })
+        }))
+      expect(Exit.isSuccess(result.outcome)).toBe(true)
+      expect(host.jobReferences).toEqual(platform === "win32" ? [false, true, false, true] : [])
+      expect(host.requests.at(-1)).toMatchObject({ type: "stop", killSignal: "SIGINT", graceMs: 0 })
+      expect(result.live).toEqual([])
+    }
+  )
 })

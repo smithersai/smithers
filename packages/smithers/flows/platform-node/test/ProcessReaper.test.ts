@@ -283,6 +283,56 @@ describe("Windows native process identity", () => {
 })
 
 describe("POSIX signal results through the native seam", () => {
+  it("parses a successful POSIX timestamp on every host", () => {
+    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
+      pid: 100,
+      output: [],
+      stdout: "Sat Sep  5 12:00:00 2026",
+      stderr: "",
+      status: 0,
+      signal: null
+    })
+    syncBuiltinESMExports()
+    try {
+      expect(ProcessReaper.posixSystem.startedAtMs(900001)).toEqual({
+        _tag: "started",
+        startedAtMs: Date.UTC(2026, 8, 5, 12)
+      })
+    } finally {
+      query.mockRestore()
+      syncBuiltinESMExports()
+    }
+  })
+
+  it.each(["pid", "pgid"] as const)("refuses a stored %s naming the observed caller group", async (field) => {
+    const record: ProcessLedger.ProcessRecord = {
+      pid: 900001,
+      pgid: 900001,
+      hostId: "probe",
+      ownerPid: 900003,
+      startedAtMs: 1,
+      commandDigest: "probe",
+      [field]: 77
+    }
+    const killTree = vi.fn(() => "signalled" as const)
+    const ledger: ProcessLedger.Service = {
+      record: () => Effect.die("unused"),
+      release: () => Effect.void,
+      reaped: () => Effect.die("must not retire"),
+      skipped: () => Effect.void,
+      live: Effect.succeed([]),
+      orphans: Effect.succeed([record])
+    }
+    const result = await Effect.runPromise(
+      ProcessReaper.reap({
+        ownerPid: 900002,
+        system: { ...ProcessReaper.posixSystem, ownGroup: () => 77, killTree }
+      }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, ledger))
+    )
+    expect(result).toEqual([{ record, killed: false, refusal: "own-group" }])
+    expect(killTree).not.toHaveBeenCalled()
+  })
+
   it("preserves unknown liveness and failed group signals", () => {
     const kill = vi.spyOn(process, "kill").mockImplementation(() => true)
     const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
