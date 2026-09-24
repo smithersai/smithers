@@ -1,4 +1,5 @@
 import * as Log from "./log.ts"
+import * as TabCommand from "./tab-command.ts"
 /**
  * The terminal UI: a transcript of cells above a composer.
  *
@@ -1147,27 +1148,14 @@ export function App(props: AppProps) {
         setFilter((current) => ({ ...current, query: argument }))
         return true
       case "retry":
-      case "stop": {
-        if (argument === "") {
-          const ids = [...workspace.snapshot().tabs.map((tab) => tab.id), ...runs.snapshot().map((run) => run.id)]
-          setStatus(ids.length === 0 ? "No tabs" : `/${verb} <id>: ${ids.join(", ")}`, "warning")
-          return true
-        }
-        if (!runs.has(argument) && !workspace.snapshot().tabs.some((tab) => tab.id === argument)) {
-          setStatus(`Unknown tab: ${argument}`, "warning")
-          return true
-        }
-        try {
-          if (verb === "retry") {
-            if (runs.has(argument)) runs.retry(argument)
-            else workspace.retry(argument)
-          } else if (runs.has(argument)) runs.cancel(argument)
-          else workspace.cancel(argument)
-        } catch (error) {
-          setStatus(error instanceof Error ? error.message : String(error), "warning")
-        }
+      case "stop":
+        TabCommand.run(verb, argument, {
+          flows: runs,
+          workers: { has: (id) => workspace.snapshot().tabs.some((tab) => tab.id === id), retry: workspace.retry, cancel: workspace.cancel },
+          pick: () => setPicker({ kind: "palette", query: "tab:", selected: 0 }),
+          report: (message) => setStatus(message, "warning")
+        })
         return true
-      }
       case "flows":
         runs.refresh()
         setPicker({ kind: "flows", query: "", selected: 0 })
