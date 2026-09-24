@@ -442,7 +442,7 @@ func TestWorkflowRun_H_CancelResumeAndRerunBranches(t *testing.T) {
 
 	_, err = NewWorkflowRunService(&mockWorkflowRunQuerier{
 		getRunFn: func(context.Context, db.GetWorkflowRunParams) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: 7, RepositoryID: 42, WorkflowDefinitionID: 5, Status: "failure", TriggerEvent: "push", TriggerRef: "main"}, nil
+			return db.WorkflowRun{ID: 7, RepositoryID: 42, WorkflowDefinitionID: 5, Status: "failure", TriggerEvent: "push", TriggerRef: "main", TriggerCommitSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, nil
 		},
 		getDefFn: func(context.Context, db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error) {
 			return makeWorkflowDef(5, 42, "ci", true, `{"on":{"push":{}},"jobs":{"build":{}}}`), nil
@@ -450,7 +450,7 @@ func TestWorkflowRun_H_CancelResumeAndRerunBranches(t *testing.T) {
 		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
 			return db.Repository{}, errors.New("repo failed")
 		},
-	}).RerunRun(ctx, RerunInput{RepositoryID: 42, RunID: 7})
+	}, WithWorkflowRunDefinitionCommitLoader(&recordingWorkflowDefinitionCommitLoader{result: workflowLoadResultForPath(".smithers/workflows/ci.tsx", `{"on":{"push":{}},"jobs":{"build":{}}}`)})).RerunRun(ctx, RerunInput{RepositoryID: 42, RunID: 7})
 	assert.Equal(t, 500, workflowRunAPIStatus(t, err))
 }
 

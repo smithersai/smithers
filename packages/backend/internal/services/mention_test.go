@@ -299,13 +299,14 @@ func TestMentionService_ProcessMentions_SendsNotificationToMentionedUser(t *test
 	err := svc.ProcessMentions(
 		context.Background(),
 		"Hi @bob, check this out!",
-		MentionContext{RepositoryID: 1, CommentType: "issue_body"},
+		MentionContext{RepositoryID: 1, IssueID: pgtype.Int8{Int64: 42, Valid: true}, CommentType: "issue_body"},
 		"You were mentioned in issue #42",
 	)
 	require.NoError(t, err)
 	assert.True(t, notifyCalled)
 	assert.Equal(t, int64(55), notifyArg.UserID)
-	assert.Equal(t, "mention", notifyArg.SourceType)
+	assert.Equal(t, "mention_issue", notifyArg.SourceType)
+	assert.Equal(t, int64(42), notifyArg.SourceID.Int64)
 	assert.Equal(t, "You were mentioned in issue #42", notifyArg.Subject)
 }
 

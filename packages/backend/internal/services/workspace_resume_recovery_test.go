@@ -39,11 +39,8 @@ func TestWorkspaceService_EnsureExistingWorkspaceRunning_TreatsMissingSandboxAsG
 	assert.Contains(t, apiErr.Message, "smithers workspace create")
 }
 
-// A hard, non-timeout controller failure from StartSandbox that
-// persists across the single retry must fall through to reprovision when input
-// is available — an unresumable VM is as good as gone. The workspace must reach
-// 'running' on a fresh replacement VM instead of returning Internal forever.
-func TestWorkspaceService_CreateWorkspace_ReprovisionsOnHardResumeFailure(t *testing.T) {
+// Repeated controller failures must preserve the suspended workspace disk.
+func TestWorkspaceService_CreateWorkspace_PreservesDiskOnServerFailure(t *testing.T) {
 	t.Parallel()
 
 	var updatedStatuses []string
@@ -105,23 +102,19 @@ func TestWorkspaceService_CreateWorkspace_ReprovisionsOnHardResumeFailure(t *tes
 		}),
 	)
 
-	workspace, err := svc.CreateWorkspace(context.Background(), CreateWorkspaceInput{
+	_, err := svc.CreateWorkspace(context.Background(), CreateWorkspaceInput{
 		RepositoryID: 101,
 		UserID:       1,
 		RepoOwner:    "roninjin10",
 		RepoName:     "smithers",
 		Name:         "primary",
 	})
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, startCalls, 2, "a hard 500 must be retried once before giving up on the VM")
-	require.NotEmpty(t, executionUpdates)
-	assert.Equal(t, "", executionUpdates[0].VmID, "reprovision must reset the row so the replacement VM can register")
-	assert.Equal(t, "starting", executionUpdates[0].Status)
-	assert.Contains(t, deletedVMs, "sandbox-unresumable", "the unresumable sandbox must be reaped")
-	assert.NotContains(t, deletedVMs, "vm-replacement")
-	assert.Equal(t, "vm-replacement", workspace.VMID)
-	assert.Equal(t, "running", workspace.Status)
-	assert.Empty(t, updatedStatuses, "reprovision must not mark the workspace failed")
+	require.Error(t, err)
+	assert.Equal(t, 2, startCalls)
+	assert.Empty(t, executionUpdates)
+	assert.Empty(t, deletedVMs)
+	assert.Empty(t, updatedStatuses)
+
 }
 
 // A single transient 500 from StartSandbox must be absorbed by the immediate retry:

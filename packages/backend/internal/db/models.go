@@ -1555,6 +1555,8 @@ type ProviderConnection struct {
 	CreatedBy             pgtype.Int8        `json:"created_by"`
 	CreatedAt             time.Time          `json:"created_at"`
 	UpdatedAt             time.Time          `json:"updated_at"`
+	RefreshLeaseUntil     pgtype.Timestamptz `json:"refresh_lease_until"`
+	RefreshGeneration     int64              `json:"refresh_generation"`
 }
 
 type ProviderConnectionGrant struct {

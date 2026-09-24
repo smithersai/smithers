@@ -291,44 +291,22 @@ func (c *notificationAccessChecker) canSee(ctx context.Context, n db.Notificatio
 		return false, nil
 	}
 	switch n.SourceType {
-	case "issue":
+	case "issue", "mention_issue":
 		repoID, err := c.issueRepo(ctx, n.SourceID.Int64)
 		if err != nil || repoID == notificationSourceMissing {
 			return false, err
 		}
 		return c.canReadRepoID(ctx, repoID)
-	case "landing":
+	case "landing", "mention_landing":
 		repoID, err := c.landingRepo(ctx, n.SourceID.Int64)
 		if err != nil || repoID == notificationSourceMissing {
 			return false, err
 		}
 		return c.canReadRepoID(ctx, repoID)
 	case "mention":
-		// Mention notifications reference either an issue or a landing request
-		// (see MentionService.ProcessMentions); the two ID sequences are
-		// independent, so the same ID may resolve to both. Fail closed: every
-		// object the ID resolves to must live in a readable repository.
-		issueRepoID, err := c.issueRepo(ctx, n.SourceID.Int64)
-		if err != nil {
-			return false, err
-		}
-		landingRepoID, err := c.landingRepo(ctx, n.SourceID.Int64)
-		if err != nil {
-			return false, err
-		}
-		if issueRepoID == notificationSourceMissing && landingRepoID == notificationSourceMissing {
-			return false, nil
-		}
-		for _, repoID := range []int64{issueRepoID, landingRepoID} {
-			if repoID == notificationSourceMissing {
-				continue
-			}
-			ok, err := c.canReadRepoID(ctx, repoID)
-			if err != nil || !ok {
-				return false, err
-			}
-		}
-		return true, nil
+		// Migration resolves historical mentions with an unambiguous context.
+		// Remaining legacy rows cannot identify an authorization boundary.
+		return false, nil
 	case "branch_lock":
 		// Branch-lock join requests/decisions reference the join-request row;
 		// its repository is the readability boundary.

@@ -118,6 +118,7 @@ func (s *WorkspaceService) CreateSession(ctx context.Context, input CreateWorksp
 		defer func() {
 			if r := recover(); r != nil {
 				slog.Error("panic in workspace session provisioning", "session_id", session.ID, "workspace_id", workspace.ID, "panic", r)
+				s.failWorkspaceSession(provisionCtx, session.ID)
 				recordProvision("failed")
 				done <- provisionOutcome{err: pkgerrors.Internal("workspace session provisioning failed")}
 			}
@@ -163,17 +164,25 @@ func (s *WorkspaceService) observeWorkspaceSessionProvision(status string, durat
 // freshly created session and settles the session row (running/failed). It
 // runs on a context detached from the originating HTTP request, so it must not
 // touch request-scoped state.
-func (s *WorkspaceService) finishWorkspaceSessionProvisioning(ctx context.Context, session db.WorkspaceSession, workspace db.Workspace, input CreateWorkspaceSessionInput, cols, rows int32) (WorkspaceSessionResponse, error) {
+func (s *WorkspaceService) finishWorkspaceSessionProvisioning(ctx context.Context, session db.WorkspaceSession, workspace db.Workspace, input CreateWorkspaceSessionInput, cols, rows int32) (response WorkspaceSessionResponse, retErr error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in workspace session provisioning", "session_id", session.ID, "panic", r)
+			retErr = pkgerrors.Internal("workspace session provisioning failed")
+		}
+		if retErr != nil {
+			s.failWorkspaceSession(ctx, session.ID)
+		}
+	}()
+
 	workspace, err := s.ensureWorkspaceRunning(ctx, workspace, input)
 	if err != nil {
-		s.failWorkspaceSession(ctx, session.ID)
 		return WorkspaceSessionResponse{}, err
 	}
 
 	if workspace.ID != session.WorkspaceID {
 		replacement, createErr := s.insertWorkspaceSession(ctx, workspace.ID, input, cols, rows)
 		if createErr != nil {
-			s.failWorkspaceSession(ctx, session.ID)
 			return WorkspaceSessionResponse{}, createErr
 		}
 		s.failWorkspaceSession(ctx, session.ID)
@@ -216,11 +225,14 @@ func (s *WorkspaceService) finishWorkspaceSessionProvisioning(ctx context.Contex
 // the user already stopped is not relabeled (or re-notified) as failed by a
 // stale provisioning goroutine.
 func (s *WorkspaceService) failWorkspaceSession(ctx context.Context, sessionID string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 	if _, err := s.q.FailActiveWorkspaceSession(ctx, sessionID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return
 		}
 		slog.Warn("failed to mark workspace session failed", "session_id", sessionID, "error", err)
+		return
 	}
 	s.notifyWorkspaceSession(ctx, sessionID, "failed")
 }

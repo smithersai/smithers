@@ -169,10 +169,12 @@ func TestEnsureExistingWorkspaceRunning_NoCapacityKeepsTheBox(t *testing.T) {
 	assert.Equal(t, "suspended", fixture.reg.state.Status)
 }
 
-// Regression guard for the behavior the capacity check must NOT change: a
-// genuinely unresumable snapshot (a hard 5xx with no capacity code) is still
-// retried once and then replaced.
-func TestEnsureWorkspaceRunning_HardFailureStillReprovisions(t *testing.T) {
+// A hard 5xx (even one that reads like an unresumable snapshot) is retried
+// once and then reported as retryable. The controller cannot tell a corrupt
+// snapshot from an outage, and the suspended disk may hold unpushed work, so
+// the VM is never replaced on a 5xx; only a 404 (vmAlreadyGone) reprovisions
+// and a human discards the box with `smithers workspace create`.
+func TestEnsureWorkspaceRunning_HardFailureKeepsTheBox(t *testing.T) {
 	t.Parallel()
 
 	fixture := newCapacityFixture(t, "ws-hard-5xx", &sandbox.StatusError{
@@ -186,11 +188,15 @@ func TestEnsureWorkspaceRunning_HardFailureStillReprovisions(t *testing.T) {
 		RepoName:     "repo",
 	})
 
-	require.NoError(t, err)
+	var apiErr *pkgerrors.APIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status)
+	assert.Positive(t, apiErr.RetryAfter)
 	assert.Equal(t, 2, fixture.startAttempts, "a hard 5xx keeps its single immediate retry")
-	assert.Equal(t, 1, fixture.createdVMs, "a twice-failed resume still reprovisions")
-	assert.Contains(t, fixture.deletedVMs, "vm-live", "the unresumable VM is still reaped")
-	assert.Equal(t, "vm-replacement", updated.VmID)
+	assert.Zero(t, fixture.createdVMs, "a twice-failed resume never reprovisions")
+	assert.Empty(t, fixture.deletedVMs, "the VM and its disk survive")
+	assert.Equal(t, "vm-live", updated.VmID)
+	assert.Equal(t, "vm-live", fixture.reg.state.VmID)
 }
 
 // The detached provisioning goroutine drives the row terminal on failure so

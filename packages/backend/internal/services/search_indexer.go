@@ -156,6 +156,11 @@ func (s *SearchIndexer) indexCurrentHead(ctx context.Context, input SearchIndexP
 			return diffErr
 		} else {
 			for _, file := range diff.FileDiffs {
+				if file.ChangeType == "renamed" && file.OldPath != "" && file.OldPath != file.Path {
+					if err := s.queries.DeleteCodeSearchDocumentByPath(ctx, db.DeleteCodeSearchDocumentByPathParams{RepositoryID: input.RepositoryID, FilePath: file.OldPath}); err != nil {
+						return err
+					}
+				}
 				paths = append(paths, codeSearchIndexPath{path: file.Path, deleted: file.ChangeType == "deleted"})
 			}
 		}

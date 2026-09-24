@@ -837,7 +837,7 @@ func TestWorkspaceService_CreateWorkspace_ReusesWinnerWhenActivationConflicts(t 
 	assert.Equal(t, 2, getActiveCalls)
 }
 
-func TestWorkspaceService_CreateWorkspace_ReprovisionsStoppedVMOnResumeTimeout(t *testing.T) {
+func TestWorkspaceService_CreateWorkspace_PreservesStoppedVMOnResumeTimeout(t *testing.T) {
 	t.Parallel()
 
 	var updatedStatuses []string
@@ -906,27 +906,18 @@ func TestWorkspaceService_CreateWorkspace_ReprovisionsStoppedVMOnResumeTimeout(t
 		}),
 	)
 
-	workspace, err := svc.CreateWorkspace(context.Background(), CreateWorkspaceInput{
+	_, err := svc.CreateWorkspace(context.Background(), CreateWorkspaceInput{
 		RepositoryID: 101,
 		UserID:       1,
 		RepoOwner:    "roninjin10",
 		RepoName:     "smithers",
 		Name:         "primary",
 	})
-	require.NoError(t, err)
-	// Issue #240: the row must be reset (vm_id='', status='starting') so
-	// RegisterWorkspaceVM can bind the replacement VM — not marked 'failed'
-	// with the stale vm_id kept, which made the guard unmatchable and reaped
-	// the fresh VM as an orphan.
-	assert.Empty(t, updatedStatuses, "reprovision must not mark the workspace failed")
-	require.NotEmpty(t, executionUpdates)
-	assert.Equal(t, "", executionUpdates[0].VmID)
-	assert.Equal(t, "starting", executionUpdates[0].Status)
-	assert.Contains(t, deletedVMs, "vm-stopped", "stale VM must be reaped")
-	assert.NotContains(t, deletedVMs, "vm-replacement")
-	assert.Equal(t, "ws-primary", workspace.ID)
-	assert.Equal(t, "vm-replacement", workspace.VMID)
-	assert.Equal(t, "running", workspace.Status)
+	require.Error(t, err)
+	assert.Empty(t, updatedStatuses)
+	assert.Empty(t, executionUpdates)
+	assert.Empty(t, deletedVMs)
+
 }
 
 func TestWorkspaceService_ForkWorkspace_UsesFork(t *testing.T) {

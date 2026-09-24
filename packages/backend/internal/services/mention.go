@@ -185,12 +185,14 @@ func (s *MentionService) ProcessMentions(ctx context.Context, body string, mctx 
 			// for the notification list/replay path to re-check repository
 			// access (see filterReadableNotifications).
 			sourceID := mctx.IssueID
+			sourceType := "mention_issue"
 			if !sourceID.Valid {
 				sourceID = mctx.LandingRequestID
+				sourceType = "mention_landing"
 			}
 			_, err = s.notf.Create(ctx, db.CreateNotificationParams{
 				UserID:     user.ID,
-				SourceType: "mention",
+				SourceType: sourceType,
 				SourceID:   sourceID,
 				Subject:    notificationSubject,
 				Body:       truncateBody(body, 255),

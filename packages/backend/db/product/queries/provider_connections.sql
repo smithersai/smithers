@@ -36,38 +36,43 @@ SET access_token_encrypted = sqlc.arg(access_token_encrypted),
     access_expires_at = sqlc.narg(access_expires_at),
     next_refresh_at = sqlc.narg(next_refresh_at),
     last_refresh_at = NOW(),
+    refresh_lease_until = NULL,
     refresh_failures = 0,
     last_error = '',
     state = 'active',
     updated_at = NOW()
-WHERE id = $1 AND state <> 'revoked';
+WHERE id = $1 AND state <> 'revoked' AND refresh_generation = sqlc.arg(refresh_generation);
 
 -- name: MarkProviderConnectionRefreshFailure :exec
 UPDATE provider_connections
-SET refresh_failures = sqlc.arg(refresh_failures),
+SET refresh_lease_until = NULL,
+    refresh_failures = sqlc.arg(refresh_failures),
     next_refresh_at = sqlc.narg(next_refresh_at),
     last_error = sqlc.arg(last_error),
     state = sqlc.arg(state),
     updated_at = NOW()
-WHERE id = $1 AND state <> 'revoked';
+WHERE id = $1 AND state <> 'revoked' AND refresh_generation = sqlc.arg(refresh_generation);
 
 -- name: ClaimProviderConnectionForRefresh :one
 -- Leases one refreshable connection whose access token expires within the
--- horizon (or already did) by pushing next_refresh_at forward; the caller
+-- horizon (or already did), or a specific interactive connection; the caller
 -- refreshes outside the transaction and then records the result.
 WITH due AS (
     SELECT id
     FROM provider_connections
-    WHERE state = 'active'
+    WHERE (state = 'active' OR (sqlc.arg(connection_id)::text <> '' AND state = 'refresh_failed'))
+      AND (sqlc.arg(connection_id)::text = '' OR id::text = sqlc.arg(connection_id)::text)
+      AND (refresh_lease_until IS NULL OR refresh_lease_until <= NOW())
       AND refresh_token_encrypted IS NOT NULL
-      AND (access_expires_at IS NULL OR access_expires_at <= sqlc.arg(expires_before)::timestamptz)
-      AND (next_refresh_at IS NULL OR next_refresh_at <= NOW())
+      AND (sqlc.arg(connection_id)::text <> '' OR access_expires_at IS NULL OR access_expires_at <= sqlc.arg(expires_before)::timestamptz)
+      AND (sqlc.arg(connection_id)::text <> '' OR next_refresh_at IS NULL OR next_refresh_at <= NOW())
     ORDER BY access_expires_at ASC NULLS FIRST, id
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
 UPDATE provider_connections pc
-SET next_refresh_at = sqlc.arg(lease_until)::timestamptz, updated_at = NOW()
+SET refresh_lease_until = sqlc.arg(lease_until)::timestamptz,
+    refresh_generation = pc.refresh_generation + 1, updated_at = NOW()
 FROM due
 WHERE pc.id = due.id
 RETURNING pc.*;

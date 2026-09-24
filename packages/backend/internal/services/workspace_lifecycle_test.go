@@ -262,7 +262,7 @@ func TestWorkspaceService_ResumeWorkspaceDoesNotMarkNixGuestRunningBeforeActivat
 	assert.False(t, resumeMarkedRunning, "workspace status must remain suspended until guest activation")
 }
 
-func TestWorkspaceService_ResumeWorkspace_ReturnsConflictOnResumeTimeout(t *testing.T) {
+func TestWorkspaceService_ResumeWorkspace_ReturnsRetryableFailureOnResumeTimeout(t *testing.T) {
 	t.Parallel()
 
 	q := &mockWorkspaceQuerier{
@@ -288,8 +288,8 @@ func TestWorkspaceService_ResumeWorkspace_ReturnsConflictOnResumeTimeout(t *test
 
 	apiErr, ok := err.(*pkgerrors.APIError)
 	require.True(t, ok)
-	assert.Equal(t, 409, apiErr.Status)
-	assert.Contains(t, apiErr.Message, "workspace resume timed out")
+	assert.Equal(t, 503, apiErr.Status)
+	assert.Positive(t, apiErr.RetryAfter)
 }
 
 func TestWorkspaceService_CleanupStalePendingWorkspaces_FailsZombies(t *testing.T) {

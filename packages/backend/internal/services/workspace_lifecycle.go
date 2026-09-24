@@ -405,14 +405,6 @@ func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, w
 		if isNoCapacityError(err) {
 			return s.refuseResumeForNoCapacity(ctx, workspace, err)
 		}
-		if errors.Is(err, context.DeadlineExceeded) {
-			return workspace, pkgerrors.Conflict("workspace resume timed out; run `smithers workspace create` to provision a fresh workspace")
-		}
-		// A hard 5xx (an unresumable snapshot) is retried once; a persistent
-		// hard failure means the VM is effectively gone. This path carries no
-		// provisioning input, so — mirroring the timeout/vmAlreadyGone advice —
-		// tell the caller to create a fresh workspace instead of 500ing forever
-		// on every reopen/SSH attempt.
 		if isHardResumeFailure(err) {
 			updated, err = s.resumeWorkspaceVM(ctx, workspace)
 			if err == nil {
@@ -423,11 +415,8 @@ func (s *WorkspaceService) ensureExistingWorkspaceRunning(ctx context.Context, w
 			if isNoCapacityError(err) {
 				return s.refuseResumeForNoCapacity(ctx, workspace, err)
 			}
-			if isHardResumeFailure(err) {
-				return workspace, pkgerrors.Conflict("workspace resume failed; run `smithers workspace create` to provision a fresh workspace")
-			}
 		}
-		return workspace, workspaceProvisioningError("resume sandbox", err)
+		return workspace, retryableWorkspaceResumeError(err)
 	}
 	return updated, nil
 }
@@ -479,11 +468,7 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 		if isWorkspaceGuestNotReady(err) {
 			return workspace, err
 		}
-		// Ahead of every other verdict, and especially ahead of
-		// isHardResumeFailure, whose 5xx range swallows this 503: a full pool
-		// is transient and the guest is intact. Falling through would retry,
-		// fail the same way, then reprovision — clearing vm_id and deleting a
-		// healthy VM and its disk for a condition that clears itself.
+		// Capacity refusals have their own retry pacing and do not need an immediate retry.
 		if isNoCapacityError(err) {
 			return s.refuseResumeForNoCapacity(ctx, workspace, err)
 		}
@@ -495,13 +480,7 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 		if vmAlreadyGone(err) && canProvisionWorkspace(input) {
 			return s.reprovisionWorkspaceVM(ctx, workspace, input, err)
 		}
-		if errors.Is(err, context.DeadlineExceeded) && canProvisionWorkspace(input) {
-			return s.reprovisionWorkspaceVM(ctx, workspace, input, err)
-		}
-		// A hard, non-timeout controller 5xx gets one immediate retry. That absorbs a
-		// genuinely transient 500 without replacing (and losing the data of) a
-		// still-good sandbox. If the retry also fails hard, the snapshot is as good
-		// as gone, so reprovision from scratch exactly like the timeout case.
+		// Retry server failures once, retaining the original VM and disk.
 		if isHardResumeFailure(err) {
 			updated, err = s.resumeWorkspaceVM(ctx, workspace)
 			if err == nil {
@@ -512,11 +491,11 @@ func (s *WorkspaceService) ensureWorkspaceRunning(ctx context.Context, workspace
 			if isNoCapacityError(err) {
 				return s.refuseResumeForNoCapacity(ctx, workspace, err)
 			}
-			if isHardResumeFailure(err) && canProvisionWorkspace(input) {
+			if vmAlreadyGone(err) && canProvisionWorkspace(input) {
 				return s.reprovisionWorkspaceVM(ctx, workspace, input, err)
 			}
 		}
-		return workspace, workspaceProvisioningError("resume sandbox", err)
+		return workspace, retryableWorkspaceResumeError(err)
 	}
 	return updated, nil
 }
@@ -946,13 +925,7 @@ func vmAlreadyGone(err error) bool {
 	return statusErr.StatusCode == 404
 }
 
-// isHardResumeFailure reports whether a resume error is a hard, non-transient
-// sandbox provider server failure (a StatusError 5xx) rather than a context timeout or
-// a transport error. Context cancellation must not match, so an in-flight open
-// that the client aborts never triggers a sandbox replacement.
-//
-// A full pool answers 503, which is inside that range, so every caller must ask
-// isNoCapacityError FIRST — see the comment there.
+// Server failures are retryable and say nothing about the persisted disk.
 func isHardResumeFailure(err error) bool {
 	var statusErr *sandbox.StatusError
 	return errors.As(err, &statusErr) && statusErr.StatusCode >= 500 && statusErr.StatusCode < 600
@@ -964,15 +937,6 @@ func isHardResumeFailure(err error) bool {
 // (Controller.startPlacement) and preserves the stopped placement exactly as it
 // was, so the VM and its disk are untouched and resumable the moment a slot
 // frees up.
-//
-// It has to be asked ahead of isHardResumeFailure, which it overlaps: the
-// refusal is HTTP 503. Treated as a hard failure it costs the user their
-// computer — ensureWorkspaceRunning retries, then reprovisionWorkspaceVM
-// clears vm_id and DELETES an intact, healthy VM before the replacement create
-// hits the very same full pool.
-//
-// It also matches the APIError this package raises for the same condition, so a
-// caller downstream of ensure* (the async provisioner) classifies it identically.
 func isNoCapacityError(err error) bool {
 	var statusErr *sandbox.StatusError
 	if errors.As(err, &statusErr) {
@@ -1059,4 +1023,16 @@ func (s *WorkspaceService) observeWorkspaceLifecycle(action string, err error) {
 		result = "failure"
 	}
 	metrics.ObserveWorkspaceLifecycle(action, result)
+}
+
+// retryableWorkspaceResumeError keeps the suspended VM and its disk. A
+// controller 5xx or a resume timeout says nothing about the persisted files, so
+// the caller retries later; only a 404 (vmAlreadyGone) justifies replacement.
+func retryableWorkspaceResumeError(cause error) *pkgerrors.APIError {
+	if isHardResumeFailure(cause) || errors.Is(cause, context.DeadlineExceeded) {
+		failure := pkgerrors.New(pkgerrors.CodeServiceUnavailable, "workspace resume temporarily unavailable; retry, or run `smithers workspace create` for a fresh workspace")
+		failure.RetryAfter = 5
+		return failure
+	}
+	return workspaceProvisioningError("resume sandbox", cause)
 }

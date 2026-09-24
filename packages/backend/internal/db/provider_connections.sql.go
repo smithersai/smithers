@@ -48,31 +48,35 @@ const claimProviderConnectionForRefresh = `-- name: ClaimProviderConnectionForRe
 WITH due AS (
     SELECT id
     FROM provider_connections
-    WHERE state = 'active'
+    WHERE (state = 'active' OR ($2::text <> '' AND state = 'refresh_failed'))
+      AND ($2::text = '' OR id::text = $2::text)
+      AND (refresh_lease_until IS NULL OR refresh_lease_until <= NOW())
       AND refresh_token_encrypted IS NOT NULL
-      AND (access_expires_at IS NULL OR access_expires_at <= $2::timestamptz)
-      AND (next_refresh_at IS NULL OR next_refresh_at <= NOW())
+      AND ($2::text <> '' OR access_expires_at IS NULL OR access_expires_at <= $3::timestamptz)
+      AND ($2::text <> '' OR next_refresh_at IS NULL OR next_refresh_at <= NOW())
     ORDER BY access_expires_at ASC NULLS FIRST, id
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
 UPDATE provider_connections pc
-SET next_refresh_at = $1::timestamptz, updated_at = NOW()
+SET refresh_lease_until = $1::timestamptz,
+    refresh_generation = pc.refresh_generation + 1, updated_at = NOW()
 FROM due
 WHERE pc.id = due.id
-RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at
+RETURNING pc.id, pc.owner_type, pc.user_id, pc.org_id, pc.provider, pc.kind, pc.label, pc.account_email, pc.account_id, pc.plan, pc.access_token_encrypted, pc.refresh_token_encrypted, pc.access_expires_at, pc.state, pc.last_refresh_at, pc.next_refresh_at, pc.refresh_failures, pc.last_error, pc.created_by, pc.created_at, pc.updated_at, pc.refresh_lease_until, pc.refresh_generation
 `
 
 type ClaimProviderConnectionForRefreshParams struct {
 	LeaseUntil    time.Time `json:"lease_until"`
+	ConnectionID  string    `json:"connection_id"`
 	ExpiresBefore time.Time `json:"expires_before"`
 }
 
 // Leases one refreshable connection whose access token expires within the
-// horizon (or already did) by pushing next_refresh_at forward; the caller
+// horizon (or already did), or a specific interactive connection; the caller
 // refreshes outside the transaction and then records the result.
 func (q *Queries) ClaimProviderConnectionForRefresh(ctx context.Context, arg ClaimProviderConnectionForRefreshParams) (ProviderConnection, error) {
-	row := q.db.QueryRow(ctx, claimProviderConnectionForRefresh, arg.LeaseUntil, arg.ExpiresBefore)
+	row := q.db.QueryRow(ctx, claimProviderConnectionForRefresh, arg.LeaseUntil, arg.ConnectionID, arg.ExpiresBefore)
 	var i ProviderConnection
 	err := row.Scan(
 		&i.ID,
@@ -96,6 +100,8 @@ func (q *Queries) ClaimProviderConnectionForRefresh(ctx context.Context, arg Cla
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
 	)
 	return i, err
 }
@@ -111,7 +117,7 @@ VALUES (
     $10, $11, $12,
     $13, $14
 )
-RETURNING id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at
+RETURNING id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation
 `
 
 type CreateProviderConnectionParams struct {
@@ -171,6 +177,8 @@ func (q *Queries) CreateProviderConnection(ctx context.Context, arg CreateProvid
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
 	)
 	return i, err
 }
@@ -193,7 +201,7 @@ func (q *Queries) DeleteProviderConnectionGrant(ctx context.Context, arg DeleteP
 }
 
 const getProviderConnection = `-- name: GetProviderConnection :one
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at FROM provider_connections WHERE id = $1
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections WHERE id = $1
 `
 
 func (q *Queries) GetProviderConnection(ctx context.Context, id string) (ProviderConnection, error) {
@@ -221,6 +229,8 @@ func (q *Queries) GetProviderConnection(ctx context.Context, id string) (Provide
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
 	)
 	return i, err
 }
@@ -237,7 +247,7 @@ func (q *Queries) GetRepositoryProviderConnectionPreference(ctx context.Context,
 }
 
 const listOrgProviderConnections = `-- name: ListOrgProviderConnections :many
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
 WHERE owner_type = 'org' AND org_id = $1
 ORDER BY created_at DESC, id
 `
@@ -273,6 +283,8 @@ func (q *Queries) ListOrgProviderConnections(ctx context.Context, orgID pgtype.I
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RefreshLeaseUntil,
+			&i.RefreshGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -316,7 +328,7 @@ func (q *Queries) ListProviderConnectionGrants(ctx context.Context, connectionID
 }
 
 const listUserProviderConnections = `-- name: ListUserProviderConnections :many
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
 WHERE owner_type = 'user' AND user_id = $1
 ORDER BY created_at DESC, id
 `
@@ -352,6 +364,8 @@ func (q *Queries) ListUserProviderConnections(ctx context.Context, userID pgtype
 			&i.CreatedBy,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.RefreshLeaseUntil,
+			&i.RefreshGeneration,
 		); err != nil {
 			return nil, err
 		}
@@ -365,20 +379,22 @@ func (q *Queries) ListUserProviderConnections(ctx context.Context, userID pgtype
 
 const markProviderConnectionRefreshFailure = `-- name: MarkProviderConnectionRefreshFailure :exec
 UPDATE provider_connections
-SET refresh_failures = $2,
+SET refresh_lease_until = NULL,
+    refresh_failures = $2,
     next_refresh_at = $3,
     last_error = $4,
     state = $5,
     updated_at = NOW()
-WHERE id = $1 AND state <> 'revoked'
+WHERE id = $1 AND state <> 'revoked' AND refresh_generation = $6
 `
 
 type MarkProviderConnectionRefreshFailureParams struct {
-	ID              string             `json:"id"`
-	RefreshFailures int32              `json:"refresh_failures"`
-	NextRefreshAt   pgtype.Timestamptz `json:"next_refresh_at"`
-	LastError       string             `json:"last_error"`
-	State           string             `json:"state"`
+	ID                string             `json:"id"`
+	RefreshFailures   int32              `json:"refresh_failures"`
+	NextRefreshAt     pgtype.Timestamptz `json:"next_refresh_at"`
+	LastError         string             `json:"last_error"`
+	State             string             `json:"state"`
+	RefreshGeneration int64              `json:"refresh_generation"`
 }
 
 func (q *Queries) MarkProviderConnectionRefreshFailure(ctx context.Context, arg MarkProviderConnectionRefreshFailureParams) error {
@@ -388,12 +404,13 @@ func (q *Queries) MarkProviderConnectionRefreshFailure(ctx context.Context, arg 
 		arg.NextRefreshAt,
 		arg.LastError,
 		arg.State,
+		arg.RefreshGeneration,
 	)
 	return err
 }
 
 const resolveActiveOrgProviderConnection = `-- name: ResolveActiveOrgProviderConnection :one
-SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at FROM provider_connections
+SELECT id, owner_type, user_id, org_id, provider, kind, label, account_email, account_id, plan, access_token_encrypted, refresh_token_encrypted, access_expires_at, state, last_refresh_at, next_refresh_at, refresh_failures, last_error, created_by, created_at, updated_at, refresh_lease_until, refresh_generation FROM provider_connections
 WHERE owner_type = 'org' AND org_id = $1 AND provider = $2 AND state = 'active'
 ORDER BY updated_at DESC, id
 LIMIT 1
@@ -429,12 +446,14 @@ func (q *Queries) ResolveActiveOrgProviderConnection(ctx context.Context, arg Re
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
 	)
 	return i, err
 }
 
 const resolveActiveUserProviderConnectionForRepository = `-- name: ResolveActiveUserProviderConnectionForRepository :one
-SELECT c.id, c.owner_type, c.user_id, c.org_id, c.provider, c.kind, c.label, c.account_email, c.account_id, c.plan, c.access_token_encrypted, c.refresh_token_encrypted, c.access_expires_at, c.state, c.last_refresh_at, c.next_refresh_at, c.refresh_failures, c.last_error, c.created_by, c.created_at, c.updated_at FROM provider_connections c
+SELECT c.id, c.owner_type, c.user_id, c.org_id, c.provider, c.kind, c.label, c.account_email, c.account_id, c.plan, c.access_token_encrypted, c.refresh_token_encrypted, c.access_expires_at, c.state, c.last_refresh_at, c.next_refresh_at, c.refresh_failures, c.last_error, c.created_by, c.created_at, c.updated_at, c.refresh_lease_until, c.refresh_generation FROM provider_connections c
 WHERE c.owner_type = 'user' AND c.user_id = $1 AND c.provider = $2 AND c.state = 'active'
   AND (
       EXISTS (SELECT 1 FROM repositories r WHERE r.id = $3 AND r.user_id = $1)
@@ -485,6 +504,8 @@ func (q *Queries) ResolveActiveUserProviderConnectionForRepository(ctx context.C
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.RefreshLeaseUntil,
+		&i.RefreshGeneration,
 	)
 	return i, err
 }
@@ -515,11 +536,12 @@ SET access_token_encrypted = $2,
     access_expires_at = $4,
     next_refresh_at = $5,
     last_refresh_at = NOW(),
+    refresh_lease_until = NULL,
     refresh_failures = 0,
     last_error = '',
     state = 'active',
     updated_at = NOW()
-WHERE id = $1 AND state <> 'revoked'
+WHERE id = $1 AND state <> 'revoked' AND refresh_generation = $6
 `
 
 type UpdateProviderConnectionTokensParams struct {
@@ -528,6 +550,7 @@ type UpdateProviderConnectionTokensParams struct {
 	RefreshTokenEncrypted []byte             `json:"refresh_token_encrypted"`
 	AccessExpiresAt       pgtype.Timestamptz `json:"access_expires_at"`
 	NextRefreshAt         pgtype.Timestamptz `json:"next_refresh_at"`
+	RefreshGeneration     int64              `json:"refresh_generation"`
 }
 
 func (q *Queries) UpdateProviderConnectionTokens(ctx context.Context, arg UpdateProviderConnectionTokensParams) error {
@@ -537,6 +560,7 @@ func (q *Queries) UpdateProviderConnectionTokens(ctx context.Context, arg Update
 		arg.RefreshTokenEncrypted,
 		arg.AccessExpiresAt,
 		arg.NextRefreshAt,
+		arg.RefreshGeneration,
 	)
 	return err
 }

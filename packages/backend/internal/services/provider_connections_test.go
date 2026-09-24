@@ -97,11 +97,12 @@ func (f *fakeProviderConnectionQuerier) RevokeProviderConnection(_ context.Conte
 }
 func (f *fakeProviderConnectionQuerier) UpdateProviderConnectionTokens(_ context.Context, a db.UpdateProviderConnectionTokensParams) error {
 	r := f.rows[a.ID]
-	if r.State == "revoked" {
+	if r.State == "revoked" || r.RefreshGeneration != a.RefreshGeneration {
 		return nil
 	}
 	r.AccessTokenEncrypted, r.RefreshTokenEncrypted, r.AccessExpiresAt, r.NextRefreshAt = a.AccessTokenEncrypted, a.RefreshTokenEncrypted, a.AccessExpiresAt, a.NextRefreshAt
 	r.State, r.RefreshFailures, r.LastError = "active", 0, ""
+	r.RefreshLeaseUntil = pgtype.Timestamptz{}
 	r.LastRefreshAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
 	f.rows[a.ID] = r
 	return nil
@@ -109,25 +110,33 @@ func (f *fakeProviderConnectionQuerier) UpdateProviderConnectionTokens(_ context
 func (f *fakeProviderConnectionQuerier) MarkProviderConnectionRefreshFailure(_ context.Context, a db.MarkProviderConnectionRefreshFailureParams) error {
 	f.failures = append(f.failures, a)
 	r := f.rows[a.ID]
-	if r.State == "revoked" {
+	if r.State == "revoked" || r.RefreshGeneration != a.RefreshGeneration {
 		return nil
 	}
+	r.RefreshLeaseUntil = pgtype.Timestamptz{}
 	r.RefreshFailures, r.NextRefreshAt, r.LastError, r.State = a.RefreshFailures, a.NextRefreshAt, a.LastError, a.State
 	f.rows[a.ID] = r
 	return nil
 }
 func (f *fakeProviderConnectionQuerier) ClaimProviderConnectionForRefresh(_ context.Context, a db.ClaimProviderConnectionForRefreshParams) (db.ProviderConnection, error) {
 	for id, r := range f.rows {
-		if r.State != "active" || len(r.RefreshTokenEncrypted) == 0 {
+		if (r.State != "active" && !(a.ConnectionID != "" && r.State == "refresh_failed")) || len(r.RefreshTokenEncrypted) == 0 {
 			continue
 		}
-		if r.AccessExpiresAt.Valid && r.AccessExpiresAt.Time.After(a.ExpiresBefore) {
+		if a.ConnectionID != "" && a.ConnectionID != id {
 			continue
 		}
-		if r.NextRefreshAt.Valid && r.NextRefreshAt.Time.After(time.Now()) {
+		if r.RefreshLeaseUntil.Valid && r.RefreshLeaseUntil.Time.After(time.Now()) {
 			continue
 		}
-		r.NextRefreshAt = pgtype.Timestamptz{Time: a.LeaseUntil, Valid: true}
+		if a.ConnectionID == "" && r.AccessExpiresAt.Valid && r.AccessExpiresAt.Time.After(a.ExpiresBefore) {
+			continue
+		}
+		if a.ConnectionID == "" && r.NextRefreshAt.Valid && r.NextRefreshAt.Time.After(time.Now()) {
+			continue
+		}
+		r.RefreshLeaseUntil = pgtype.Timestamptz{Time: a.LeaseUntil, Valid: true}
+		r.RefreshGeneration++
 		f.rows[id] = r
 		return r, nil
 	}

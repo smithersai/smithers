@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,7 +53,7 @@ func TestWorkflowRunService_RerunRun_DefinitionNotFound_ReturnsNotFound(t *testi
 				WorkflowDefinitionID: 999,
 				TriggerEvent:         "push",
 				TriggerRef:           "main",
-				TriggerCommitSha:     "abc123",
+				TriggerCommitSha:     strings.Repeat("a", 40),
 			}, nil
 		},
 		getDefFn: func(_ context.Context, _ db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error) {
@@ -105,7 +106,7 @@ func TestWorkflowRunService_RerunRun_Success_CreatesNewRun(t *testing.T) {
 		Status:               "completed",
 		TriggerEvent:         "push",
 		TriggerRef:           "refs/heads/main",
-		TriggerCommitSha:     "def456",
+		TriggerCommitSha:     strings.Repeat("d", 40),
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
 	}
@@ -125,7 +126,7 @@ func TestWorkflowRunService_RerunRun_Success_CreatesNewRun(t *testing.T) {
 		},
 	}
 
-	svc := NewWorkflowRunService(mock)
+	svc := NewWorkflowRunService(mock, WithWorkflowRunDefinitionCommitLoader(&recordingWorkflowDefinitionCommitLoader{result: workflowLoadResultForPath(def.Path, string(def.Config))}))
 	result, err := svc.RerunRun(context.Background(), RerunInput{
 		RepositoryID: repoID,
 		RunID:        originalRunID,
@@ -143,7 +144,7 @@ func TestWorkflowRunService_RerunRun_Success_CreatesNewRun(t *testing.T) {
 	assert.Equal(t, defID, mock.createRunCalls[0].WorkflowDefinitionID)
 	assert.Equal(t, "push", mock.createRunCalls[0].TriggerEvent)
 	assert.Equal(t, "refs/heads/main", mock.createRunCalls[0].TriggerRef)
-	assert.Equal(t, "def456", mock.createRunCalls[0].TriggerCommitSha)
+	assert.Equal(t, strings.Repeat("d", 40), mock.createRunCalls[0].TriggerCommitSha)
 }
 
 func TestWorkflowRunService_RerunRun_PreservesTriggerEvent(t *testing.T) {
@@ -158,19 +159,19 @@ func TestWorkflowRunService_RerunRun_PreservesTriggerEvent(t *testing.T) {
 			name:         "push event",
 			triggerEvent: "push",
 			triggerRef:   "refs/heads/feature-x",
-			commitSha:    "abc123",
+			commitSha:    strings.Repeat("a", 40),
 		},
 		{
 			name:         "workflow_dispatch event",
 			triggerEvent: "workflow_dispatch",
 			triggerRef:   "refs/tags/v1.0.0",
-			commitSha:    "def456",
+			commitSha:    strings.Repeat("d", 40),
 		},
 		{
 			name:         "landing_request event",
 			triggerEvent: "landing_request",
 			triggerRef:   "refs/heads/main",
-			commitSha:    "ghi789",
+			commitSha:    strings.Repeat("b", 40),
 		},
 	}
 
@@ -204,7 +205,7 @@ func TestWorkflowRunService_RerunRun_PreservesTriggerEvent(t *testing.T) {
 				},
 			}
 
-			svc := NewWorkflowRunService(mock)
+			svc := NewWorkflowRunService(mock, WithWorkflowRunDefinitionCommitLoader(&recordingWorkflowDefinitionCommitLoader{result: workflowLoadResultForPath(def.Path, string(def.Config))}))
 			_, err := svc.RerunRun(context.Background(), RerunInput{
 				RepositoryID: repoID,
 				RunID:        runID,
@@ -240,7 +241,7 @@ func TestWorkflowRunService_RerunRun_PreservesDispatchInputs(t *testing.T) {
 		Status:               "failure",
 		TriggerEvent:         "workflow_dispatch",
 		TriggerRef:           "refs/heads/main",
-		TriggerCommitSha:     "abc123",
+		TriggerCommitSha:     strings.Repeat("a", 40),
 		DispatchInputs:       inputsJSON,
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
@@ -257,7 +258,7 @@ func TestWorkflowRunService_RerunRun_PreservesDispatchInputs(t *testing.T) {
 		},
 	}
 
-	svc := NewWorkflowRunService(mock)
+	svc := NewWorkflowRunService(mock, WithWorkflowRunDefinitionCommitLoader(&recordingWorkflowDefinitionCommitLoader{result: workflowLoadResultForPath(def.Path, string(def.Config))}))
 	_, err = svc.RerunRun(context.Background(), RerunInput{
 		RepositoryID: repoID,
 		RunID:        runID,
@@ -297,7 +298,7 @@ func TestWorkflowRunService_RerunRun_NilDispatchInputs_OmitsFromRun(t *testing.T
 		Status:               "failure",
 		TriggerEvent:         "push",
 		TriggerRef:           "refs/heads/main",
-		TriggerCommitSha:     "abc123",
+		TriggerCommitSha:     strings.Repeat("a", 40),
 		DispatchInputs:       nil, // no dispatch inputs on original
 		CreatedAt:            time.Now(),
 		UpdatedAt:            time.Now(),
@@ -314,7 +315,7 @@ func TestWorkflowRunService_RerunRun_NilDispatchInputs_OmitsFromRun(t *testing.T
 		},
 	}
 
-	svc := NewWorkflowRunService(mock)
+	svc := NewWorkflowRunService(mock, WithWorkflowRunDefinitionCommitLoader(&recordingWorkflowDefinitionCommitLoader{result: workflowLoadResultForPath(def.Path, string(def.Config))}))
 	_, err := svc.RerunRun(context.Background(), RerunInput{
 		RepositoryID: repoID,
 		RunID:        runID,

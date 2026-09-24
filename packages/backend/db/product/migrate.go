@@ -55,6 +55,7 @@ var migrationRegistry = []migrationSpec{
 	{19, "migrations/0019_revocation_events_ssh_key_revoked.sql"},
 	{20, "migrations/0020_repository_setup_requests.sql"},
 	{21, "migrations/0021_oauth2_grant_source.sql"},
+	{22, "migrations/0022_provider_refresh_and_mention_sources.sql"},
 }
 
 type migration struct {

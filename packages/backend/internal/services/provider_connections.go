@@ -772,12 +772,16 @@ func (s *ProviderConnectionService) materialize(ctx context.Context, row db.Prov
 		if len(row.RefreshTokenEncrypted) == 0 {
 			return nil, errors.New("access token expired and the connection has no refresh token")
 		}
-		if err := s.refreshRow(ctx, row); err != nil {
-			return nil, err
-		}
+		refreshErr := s.refreshRow(ctx, row)
 		fresh, err := s.q.GetProviderConnection(ctx, row.ID)
 		if err != nil {
 			return nil, err
+		}
+		// A lost claim means another refresh holds the lease. Its stored
+		// result is usable once it lands; until then the dispatch waits.
+		stillExpiring := fresh.AccessExpiresAt.Valid && fresh.AccessExpiresAt.Time.Before(s.now().Add(providerConnectionDispatchHorizon))
+		if refreshErr != nil && (stillExpiring || fresh.State != ProviderConnectionStateActive) {
+			return nil, refreshErr
 		}
 		row = fresh
 	}
@@ -791,8 +795,23 @@ func (s *ProviderConnectionService) materialize(ctx context.Context, row db.Prov
 	}, nil
 }
 
-// refreshRow exchanges the stored refresh token and records the outcome.
+// refreshRow acquires the same durable lease as the background worker. The
+// claim returns the current token pair, never the caller's stale snapshot.
 func (s *ProviderConnectionService) refreshRow(ctx context.Context, row db.ProviderConnection) error {
+	claimed, err := s.q.ClaimProviderConnectionForRefresh(ctx, db.ClaimProviderConnectionForRefreshParams{
+		ConnectionID: row.ID, ExpiresBefore: s.now().Add(providerConnectionRefreshHorizon), LeaseUntil: s.now().Add(providerConnectionRefreshLease),
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return pkgerrors.Conflict("provider connection refresh already in progress or unavailable")
+	}
+	if err != nil {
+		return err
+	}
+	return s.refreshClaimedRow(ctx, claimed)
+}
+
+// Every result is fenced by the claim generation, including invalid_grant.
+func (s *ProviderConnectionService) refreshClaimedRow(ctx context.Context, row db.ProviderConnection) error {
 	if s.refresher == nil {
 		return errors.New("no token refresher configured")
 	}
@@ -811,7 +830,7 @@ func (s *ProviderConnectionService) refreshRow(ctx context.Context, row db.Provi
 		}
 		backoff := time.Duration(1<<uint(min(int(failures), 6))) * time.Minute
 		_ = s.q.MarkProviderConnectionRefreshFailure(ctx, db.MarkProviderConnectionRefreshFailureParams{
-			ID: row.ID, RefreshFailures: failures, LastError: err.Error(), State: state,
+			ID: row.ID, RefreshGeneration: row.RefreshGeneration, RefreshFailures: failures, LastError: err.Error(), State: state,
 			NextRefreshAt: pgtype.Timestamptz{Time: s.now().Add(backoff), Valid: true},
 		})
 		s.logger.Warn("provider connection refresh failed", "connection_id", row.ID, "provider", row.Provider, "state", state, "failures", failures, "error", err)
@@ -824,7 +843,7 @@ func (s *ProviderConnectionService) refreshRow(ctx context.Context, row db.Provi
 	if err != nil {
 		return errors.New("failed to encrypt access token")
 	}
-	params := db.UpdateProviderConnectionTokensParams{ID: row.ID, AccessTokenEncrypted: []byte(accessCipher), RefreshTokenEncrypted: row.RefreshTokenEncrypted}
+	params := db.UpdateProviderConnectionTokensParams{ID: row.ID, RefreshGeneration: row.RefreshGeneration, AccessTokenEncrypted: []byte(accessCipher), RefreshTokenEncrypted: row.RefreshTokenEncrypted}
 	if tokens.RefreshToken != "" {
 		refreshCipher, err := s.codec.EncryptString(tokens.RefreshToken)
 		if err != nil {
@@ -857,7 +876,7 @@ func (s *ProviderConnectionService) RefreshDue(ctx context.Context) (bool, error
 		}
 		return false, fmt.Errorf("claim provider connection: %w", err)
 	}
-	if err := s.refreshRow(ctx, row); err != nil {
+	if err := s.refreshClaimedRow(ctx, row); err != nil {
 		return true, nil // recorded on the row; the worker keeps going
 	}
 	return true, nil

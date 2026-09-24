@@ -659,18 +659,44 @@ func (s *workflowRunService) loadAlertRemediationDefinitionAtCommit(
 	definitionPath string,
 	event TriggerEvent,
 ) (json.RawMessage, error) {
+	config, err := s.loadDefinitionConfigAtCommit(ctx, repositoryID, commitSHA, definitionPath, "alert remediation workflow", "immutable base revision")
+	if err != nil {
+		return nil, err
+	}
+
+	matched, err := MatchTrigger(config, event)
+	if err != nil {
+		return nil, pkgerrors.UnprocessableEntity("invalid alert remediation workflow trigger at immutable base revision")
+	}
+	if !matched {
+		return nil, pkgerrors.UnprocessableEntity("workflow does not declare the alert remediation trigger at immutable base revision")
+	}
+	return config, nil
+}
+
+// loadDefinitionConfigAtCommit reads one workflow file's config from an
+// immutable commit. Definition rows are mutable (sync overwrites them on every
+// push), so any run pinned to a commit must take its config from that commit.
+func (s *workflowRunService) loadDefinitionConfigAtCommit(
+	ctx context.Context,
+	repositoryID int64,
+	commitSHA string,
+	definitionPath string,
+	subject string,
+	revision string,
+) (json.RawMessage, error) {
 	if s.definitionLoader == nil {
-		return nil, pkgerrors.Internal("alert remediation commit-scoped workflow loader unavailable")
+		return nil, pkgerrors.Internal("commit-scoped workflow loader unavailable for " + subject)
 	}
 
 	loaded, err := s.definitionLoader.LoadDefinitionsFromCommit(ctx, repositoryID, commitSHA)
 	if err != nil {
-		return nil, pkgerrors.Internal("failed to load alert remediation workflow at immutable base revision").WithCause(err)
+		return nil, pkgerrors.Internal("failed to load " + subject + " at " + revision).WithCause(err)
 	}
 
 	for _, fileErr := range loaded.FileErrors {
 		if fileErr.Path == definitionPath {
-			return nil, pkgerrors.UnprocessableEntity("alert remediation workflow is invalid at immutable base revision")
+			return nil, pkgerrors.UnprocessableEntity(subject + " is invalid at " + revision)
 		}
 	}
 
@@ -680,20 +706,12 @@ func (s *workflowRunService) loadAlertRemediationDefinitionAtCommit(
 			continue
 		}
 		if config != nil {
-			return nil, pkgerrors.UnprocessableEntity("alert remediation workflow path is ambiguous at immutable base revision")
+			return nil, pkgerrors.UnprocessableEntity(subject + " path is ambiguous at " + revision)
 		}
 		config = candidate.Config
 	}
 	if config == nil {
-		return nil, pkgerrors.UnprocessableEntity("alert remediation workflow is absent at immutable base revision")
-	}
-
-	matched, err := MatchTrigger(config, event)
-	if err != nil {
-		return nil, pkgerrors.UnprocessableEntity("invalid alert remediation workflow trigger at immutable base revision")
-	}
-	if !matched {
-		return nil, pkgerrors.UnprocessableEntity("workflow does not declare the alert remediation trigger at immutable base revision")
+		return nil, pkgerrors.UnprocessableEntity(subject + " is absent at " + revision)
 	}
 	return config, nil
 }
@@ -1438,6 +1456,17 @@ func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*W
 		return nil, pkgerrors.Internal("failed to fetch workflow definition").WithCause(err)
 	}
 
+	// The definition row is mutable: sync overwrote its config on every push
+	// since the original run. The rerun checks out the original commit, so its
+	// tasks must come from the workflow file at that commit.
+	if !isImmutableGitObjectID(originalRun.TriggerCommitSha) {
+		return nil, pkgerrors.Conflict("original workflow revision is unavailable")
+	}
+	config, err := s.loadDefinitionConfigAtCommit(ctx, input.RepositoryID, originalRun.TriggerCommitSha, def.Path, "original workflow", "original revision")
+	if err != nil {
+		return nil, err
+	}
+
 	// Reconstruct dispatch inputs from the original run.
 	var inputs map[string]interface{}
 	if len(originalRun.DispatchInputs) > 0 {
@@ -1448,7 +1477,7 @@ func (s *workflowRunService) RerunRun(ctx context.Context, input RerunInput) (*W
 	}
 
 	// Create a new run using the same trigger details as the original
-	result, err := s.createRunForDefinition(ctx, def, def.Config, DispatchForEventInput{
+	result, err := s.createRunForDefinition(ctx, def, config, DispatchForEventInput{
 		RepositoryID: input.RepositoryID,
 		UserID:       input.UserID,
 		Event: TriggerEvent{
