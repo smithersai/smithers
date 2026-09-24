@@ -270,3 +270,23 @@ describe("turn continuation ownership", () => {
 
   }
 })
+
+test("a non-admission submit whose durable write fails cancels its launched turn", async () => {
+  const durable = memoryStorage()
+  let rejectSubmit = false
+  const store = await createAppStore({ kind: "localStorage", storage: { ...durable, setItem(key, value) {
+    if (rejectSubmit && value.includes("unsaved prompt")) { rejectSubmit = false; throw Error("disk unavailable") }
+    durable.setItem(key, value)
+  } } })
+  await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+  const cancelled: string[] = []
+  const remote = recordingAgent({ cancelTurn: async id => { cancelled.push(id) } })
+  const controller = createAppController(store, unavailableRepositories, remote.agent)
+  try {
+    rejectSubmit = true
+    await expect(Promise.resolve(controller.send("unsaved prompt"))).rejects.toThrow("disk unavailable")
+    await settled()
+    expect(remote.launches).toHaveLength(1)
+    expect(cancelled).toContain(remote.launches[0]!.runId)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})

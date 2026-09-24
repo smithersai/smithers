@@ -1159,6 +1159,7 @@ export const createTurnController = (
       return true
     }, error => {
       if (ctx.activeTurn === pendingTurn) ctx.activeTurn = undefined
+      if (!admission) cancelTurn(turnId)
       throw error
     })
     void admitted.catch(() => {})
