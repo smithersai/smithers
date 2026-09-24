@@ -1,10 +1,8 @@
 /*
- * The nine Cloudflare Workers the product runs on (E2E-CANARY-CHECKLIST CN-18).
+ * The backing services the product runs on (E2E-CANARY-CHECKLIST CN-18).
  *
- * None of them is in this repository. They are deployed from smithersai/ui,
- * under workers/ (see apps/UPSTREAMS.md), so nothing here can build, test, or
- * roll one back — which is exactly why their health has to be assertable from
- * outside. This
+ * The Workers are deployed from smithersai/ui; the Cloud API is deployed
+ * from Plue (see apps/UPSTREAMS.md). Their health is checked externally. This
  * file is the only place the deployment's shape is written down where CI can
  * read it. apps/site/scripts/deployment.test.mjs fails when a Worker in this
  * repository claims one of these hostnames.
@@ -15,7 +13,7 @@
  * cannot be diffed, so a wrong origin hidden in one would probe nothing and
  * report PASS. $CANARY_WORKER_ORIGINS overrides it per deployment.
  *
- * Eight Workers, eleven routes: identity and chat each answer on both a
+ * Eight Workers and the Cloud API, eleven routes: identity and chat each answer on both a
  * custom domain and the workers.dev hostname apps/server/wrangler.jsonc
  * actually points at, and both routes are probed (see alternateOrigins).
  *
@@ -78,6 +76,14 @@ export interface BackingWorker {
 }
 
 export const BACKING_WORKERS: ReadonlyArray<BackingWorker> = [
+  {
+    name: "cloud-api",
+    origin: "https://api.jjhub.tech",
+    alternateOrigins: [],
+    path: "/healthz",
+    contract: "ok-json",
+    note: "repositories, workspaces and gateway provisioning; SMITHERS_CLOUD_API_BASE_URL"
+  },
   {
     name: "identity",
     origin: "https://identity.smithers.sh",

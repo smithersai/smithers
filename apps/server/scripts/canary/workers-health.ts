@@ -1,5 +1,5 @@
 /*
- * CN-18: the nine backing Workers answer a health probe.
+ * CN-18: the backing services answer a health probe.
  *
  *   bun scripts/canary/workers-health.ts [--timeout <ms>]
  *

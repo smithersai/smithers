@@ -133,6 +133,7 @@ describe("the manifest", () => {
     expect(BACKING_WORKERS.map((entry) => entry.name).sort()).toEqual([
       "billing",
       "chat",
+      "cloud-api",
       "connectors-catalog",
       "cron",
       "identity",
@@ -160,7 +161,7 @@ describe("the manifest", () => {
     // operator repoints a seam at a host this file does not know, CN-18 would
     // otherwise stay green while probing a stack the product no longer calls.
     const wrangler = await Bun.file(new URL("../../wrangler.jsonc", import.meta.url)).text()
-    const configured = [...wrangler.matchAll(/"([A-Z_]*(?:UPSTREAM_URL|CHAT_URL))"\s*:\s*"([^"]+)"/g)].map(
+    const configured = [...wrangler.matchAll(/"([A-Z_]*(?:UPSTREAM_URL|CHAT_URL|CLOUD_API_BASE_URL))"\s*:\s*"([^"]+)"/g)].map(
       (match) => ({ name: match[1] as string, origin: new URL(match[2] as string).origin })
     )
     expect(configured.length).toBeGreaterThan(0)
@@ -485,7 +486,7 @@ describe("the run", () => {
   test("a run that probed nothing fails instead of reporting a green CN-18", async () => {
     const blanked = JSON.stringify(Object.fromEntries(BACKING_WORKERS.map((entry) => [entry.name, ""])))
     const { summary } = await runWith({}, { CANARY_WORKER_ORIGINS: blanked })
-    expect(summary).toMatchObject({ healthy: 0, unhealthy: 0, notConfigured: 8, exitCode: 1 })
+    expect(summary).toMatchObject({ healthy: 0, unhealthy: 0, notConfigured: BACKING_WORKERS.length, exitCode: 1 })
     // Nine, not twelve: an unset Worker has no routes to expand.
     expect(summary.line).toContain("ASSERTED NOTHING")
   })
