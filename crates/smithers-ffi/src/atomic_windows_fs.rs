@@ -686,7 +686,7 @@ mod tests {
         let native = std::process::Command::new("node")
             .args([
                 "-e",
-                "console.log(JSON.stringify(require('node:fs').realpathSync(process.argv[1])))",
+                "console.log(JSON.stringify(require('node:fs').realpathSync.native(process.argv[1])))",
             ])
             .arg(fixture.root.join("nested/deeper/note.txt"))
             .output()
