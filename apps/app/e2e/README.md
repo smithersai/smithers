@@ -147,43 +147,17 @@ never read as a reply to it. `//apps/app:unitTests` runs `contracts/` alongside
 `native/` holds the main-process subprocess probe driven by
 `src/bun/Main.test.ts`; see `native/README.md`.
 
-## Sign-in probe (`probes/signin-roundtrip.mjs`)
+## The sign-in round trip
 
-`probes/signin-roundtrip.mjs` proves the app's own sign-in door round trip
-against the deployed host, https://smithers.sh by default. It opens the
-repository page, clicks the `Sign in with GitHub` door (clearing only the
-host's cookies first when the profile is already signed in, never GitHub's),
-signs in as the shared test account `codeplanesmithers`, expects the door to
-return to that same repository page with the `signed-in` marker stripped, and
-then expects the Account card to read `Account · @codeplanesmithers`. It is a plain Node
-script, not a Playwright spec: `playwright.config.ts` only collects
-`e2e/playwright`, and `PACKAGE.ts` only globs `e2e/**/*.ts`, so it never runs
-inside the T1 suite or the typecheck target.
-
-Run it with `node apps/app/e2e/probes/signin-roundtrip.mjs [host] [owner/repo]`.
-Its paths come only from the environment: `SMITHERS_E2E_PROFILE` names the
-persistent Chromium profile (default `~/.multi-e2e-profile`),
-`SMITHERS_E2E_NOTES` names a notes file outside the repository holding a
-`password: <value>` line (default the `multi-test-github-account` memory file),
-and `SMITHERS_E2E_USER` overrides the login. The probe never prints
-credentials; when the saved GitHub session has expired it logs the account in
-again from the notes file, and it fails with a reason when GitHub asks for a
-device code. Run it after every deploy that touches auth, chrome, or the shell.
-
-That profile is the one the real-E2E suites lease, so the probe takes the same
-atomic lease (`<profile>.smithers-real-e2e.lock`) before opening it and releases
-it on every exit; a second owner gets `FAIL: the persistent profile is in use`
-instead of a shared browser. A door counts only when it is visible: a dismissed
-composer overlay and an answered transcript step both keep a sign-in button in
-the DOM, and counting those read a signed-in page as signed out (2026-09-17).
-`probes/support.mjs` holds both rules and `bun test e2e/probes/support.test.mjs`
-proves them offline against a local Chromium.
-
-After the Account card check it reads `GET /api/auth/session` back and prints
-the claims that carried the round trip. `codeplanesmithers` is in the identity
-Worker's `ADMIN_LOGINS` today, so the probe prints `admin=true` and continues;
-`SMITHERS_E2E_REQUIRE_NON_ADMIN=1` fails the run on that claim instead, which is
-how a run proves the ruling below.
+`playwright/signin-return.spec.ts` runs the repository page's sign-in door
+round trip in T1 against a loopback OAuth fixture: the door carries
+`return_to`, the fixture signs the visitor in and redirects back with the
+`signed-in` marker the Worker adds, and the app must land on the same
+repository page, drop the marker and the door, and read the account back.
+`apps/server/src/index.test.ts` pins the Worker's half of that contract.
+Against a deployment, the real tier's `auth.oauth-return-to-deferred-resume`
+and `auth.sign-out-reauth-restart` scenarios run the same trip through GitHub
+with the leased persistent profile; no test reads a GitHub password.
 
 ## The identity the suites run as
 
@@ -197,11 +171,11 @@ the permission bug the suite exists to catch.
 `codeplanesmithers` is that scoped-down account. It is a plain GitHub login: it
 must not appear in the identity Worker's `ADMIN_LOGINS`, must not hold a
 maintainer claim on any repository, and must not appear on the hand-seeded
-closed-alpha roster `CANARY_ALLOWLIST_LOGINS`. The sign-in probe signs in as it
-(`$SMITHERS_E2E_USER`), and the server-side canary carries its session in
-`$CANARY_SESSION_COOKIE` and its login in `$CANARY_SESSION_LOGIN`; those
-variables are documented in `apps/server/DEPLOY.md`, under "The canary and e2e
-suites sign in as a scoped-down user".
+closed-alpha roster `CANARY_ALLOWLIST_LOGINS`. The server-side canary carries
+its session in `$CANARY_SESSION_COOKIE` and its login in
+`$CANARY_SESSION_LOGIN`; those variables are documented in
+`apps/server/DEPLOY.md`, under "The canary and e2e suites sign in as a
+scoped-down user".
 
 T1's server doubles answer with the same account. `playwright/identity.ts`
 holds it once, `SCOPED_TEST_USER` for `/api/auth/session` and

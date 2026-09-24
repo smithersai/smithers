@@ -19,9 +19,7 @@
  *                           Absent: the run measures the signed-out refusal
  *                           gate and says so, and never claims otherwise.
  *   $CANARY_SESSION_LOGIN   the login that cookie must belong to. Falls back to
- *                           $SMITHERS_E2E_USER, the same scoped account the
- *                           browser sign-in probe uses
- *                           (apps/app/e2e/probes/signin-roundtrip.mjs). Unset,
+ *                           $SMITHERS_E2E_USER, the scoped e2e account. Unset,
  *                           and with a deployment that states no `admin` field,
  *                           the identity check fails rather than guess.
  *   $CANARY_ALLOWLIST_LOGINS the hand-seeded closed-alpha roster, the same

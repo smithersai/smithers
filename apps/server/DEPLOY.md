@@ -543,9 +543,7 @@ roster `CANARY_ALLOWLIST_LOGINS`. No such account is configured today:
 cookie fails the canary's identity check. Satisfy the ruling one of two ways:
 remove `codeplanesmithers` from the identity Worker's `ADMIN_LOGINS`, or create
 a second account for the canary. `apps/HUMAN-TASKS.md` tracks the setup.
-`codeplanesmithers` is the login the browser sign-in probe signs in as
-(`apps/app/e2e/probes/signin-roundtrip.mjs`, `$SMITHERS_E2E_USER`) and the
-login the T1 Playwright doubles answer with
+`codeplanesmithers` is the login the T1 Playwright doubles answer with
 (`apps/app/e2e/playwright/identity.ts`).
 
 Until `$CANARY_SESSION_COOKIE` is set, the scheduled canary still runs: the
@@ -555,7 +553,7 @@ issue.
 
 | Variable | Kind | What it names |
 | --- | --- | --- |
-| `SMITHERS_E2E_USER` | env var for the browser sign-in probe and a local `uptime-probe.ts` run | the e2e account's GitHub login; `uptime-probe.ts` reads it when `CANARY_SESSION_LOGIN` is unset |
+| `SMITHERS_E2E_USER` | env var for a local `uptime-probe.ts` run | the e2e account's GitHub login, read when `CANARY_SESSION_LOGIN` is unset |
 | `CANARY_SESSION_COOKIE` | secret, `Canary` workflow | that account's signed-in cookie header, sent on the hourly tick only |
 | `CANARY_SESSION_LOGIN` | repository variable | the login `$CANARY_SESSION_COOKIE` must belong to; the `Canary` workflow reads only this variable, and a cookie with no declared login fails |
 | `CANARY_ALLOWLIST_LOGINS` | repository variable | the hand-seeded closed-alpha roster; `invite-probe.ts` reads it back, and `uptime-probe.ts` refuses a cookie belonging to one of those logins |

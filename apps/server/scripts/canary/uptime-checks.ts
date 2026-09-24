@@ -382,8 +382,7 @@ export const parseSessionRead = (status: number, body: string): SessionRead => {
 export interface ScopedIdentityExpectation {
   /**
    * The login the deployment declares for this cookie: $CANARY_SESSION_LOGIN,
-   * else $SMITHERS_E2E_USER, the same scoped account the browser sign-in probe
-   * signs in as (apps/app/e2e/probes/signin-roundtrip.mjs).
+   * else $SMITHERS_E2E_USER, the scoped e2e account.
    */
   readonly expectedLogin: string | undefined
   /** The hand-seeded closed-alpha roster, $CANARY_ALLOWLIST_LOGINS. */

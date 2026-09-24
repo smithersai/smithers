@@ -14,9 +14,8 @@
  * identity answer `true` for every login (Factory spec 01 §3); the privilege
  * is the `admin` claim and the seeded roster, never that flag.
  *
- * The login matches the deployed test account the sign-in probe uses
- * (`probes/signin-roundtrip.mjs`, `$SMITHERS_E2E_USER`), so one account name
- * reads the same across the doubles, the live browser probe, and the server
+ * The login matches the deployed test account, so one account name reads the
+ * same across the doubles, the real tier's persistent profile, and the server
  * canary's `$CANARY_SESSION_LOGIN`.
  *
  * A spec that needs a maintainer or an admin states that in the spec itself,

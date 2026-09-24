@@ -122,7 +122,7 @@ test("every app test belongs to an executable runner", () => {
   expect(owners("e2e/native/CloudAuthFragment.test.ts")).toEqual(["browser OAuth"])
   // A Bun test that launches Chromium belongs to the tier that installs it,
   // never to the hermetic unit gate.
-  expect(owners("e2e/probes/support.test.mjs")).toEqual(["probe helpers"])
+  expect(owners("e2e/probes/app-interactive-styles.test.ts")).toEqual(["probe helpers"])
   expect(owners("scripts/canary-restoration.test.ts")).toContain("unit")
   expect(owners("scripts/headless-page.test.ts")).toContain("unit")
   // The literal pin is a lint target with its own runner, never the unit gate.
