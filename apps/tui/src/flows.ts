@@ -112,9 +112,11 @@ export const interrupted = "Interrupted; retry to continue."
 export const seats = 3
 /** Events the watch settles on; they never move a parked run back to running. */
 export const terminal: ReadonlySet<string> = new Set(["control.run.completed", "control.run.failed", "control.run.cancelled", "control.run.pending"])
-const active = (run: Run) =>
-  run.status === "requested" || run.status === "input" || run.status === "running" ||
-  run.status === "waiting"
+/** Work is in flight: a launch in progress or a remote run. */
+export const running = (run: Run): boolean =>
+  run.status === "requested" || run.status === "running" || run.status === "waiting"
+/** Holds a seat: in flight, or parked here for the user's input. */
+const active = (run: Run) => running(run) || run.status === "input"
 
 export class FlowRuns {
   private runs = new Map<string, Run>()
@@ -159,8 +161,9 @@ export class FlowRuns {
     for (const listener of this.listeners) listener()
   }
   snapshot = (): ReadonlyArray<Run> => [...this.runs.values()]
+  /** A run parked for input never counts: it waits on the user, not on work. */
   get busy(): boolean {
-    return [...this.runs.values()].some((run) => active(run) || run.status === "queued")
+    return [...this.runs.values()].some((run) => running(run) || run.status === "queued")
   }
   has = (id: string): boolean => this.runs.has(id)
   get = (id: string): Run | undefined => this.runs.get(id)

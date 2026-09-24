@@ -1095,6 +1095,23 @@ describe("flows", () => {
     expect(tui.screen()).toContain("◌ review")
   }, 60_000)
 
+  it("a run parked on its form never blocks /new", async () => {
+    const { tui } = await open()
+    await tui.type("/flow review")
+    await tui.press(key.enter)
+    await tui.until((screen) => /┃\s+Title/.test(screen), 5_000, "form")
+    await tui.press(key.escape)
+    await tui.until((screen) => screen.includes("◌ review · input"), 5_000, "parked toast")
+    await tui.type("/new")
+    await tui.press(key.enter)
+    const screen = await tui.until(
+      (screen) => screen.includes("New session started") || screen.includes("Stop running work first"),
+      5_000,
+      "new session"
+    )
+    expect(screen).toContain("New session started")
+  }, 60_000)
+
   it("/smithers opens a Smithers tab that closes once the user moves on", async () => {
     const { tui } = await open()
     const tabBar = (screen: string) => screen.split("\n").find((line) => line.includes("Chat  Summary")) ?? ""

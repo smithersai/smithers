@@ -410,6 +410,23 @@ describe("flow runs", () => {
     expect(f.calls.filter((each) => each === "start")).toHaveLength(4)
   })
 
+  it("a run parked for input is not busy but still holds a seat", async () => {
+    const f = setup({ schema: Schema.Struct({ title: Schema.String }) })
+    f.runs.request({ id: "a", flow: "review", input: {}, by: "user" })
+    await tick()
+    expect(f.runs.get("a")?.status).toBe("input")
+    expect(f.runs.busy).toBe(false)
+
+    for (const id of ["b", "c"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })
+    await tick()
+    expect(f.runs.snapshot().every((run) => run.status === "input")).toBe(true)
+    expect(f.runs.busy).toBe(false)
+    expect(f.runs.request({ id: "d", flow: "review", input: {}, by: "user" })).toEqual({ id: "d", status: "queued" })
+    expect(f.runs.busy).toBe(true)
+    // A parked run from an earlier process is interrupted on restore, like any unfinished run.
+    expect(setup({ restored: f.runs.snapshot() }).runs.get("a")).toMatchObject({ status: "failed" })
+  })
+
   it("cancels a queued run without starting it", async () => {
     const f = setup()
     for (const id of ["a", "b", "c", "d"]) f.runs.request({ id, flow: "review", input: {}, by: "user" })

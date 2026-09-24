@@ -21,7 +21,7 @@ import * as Estimate from "./estimate.ts"
 import * as Extension from "./extension.ts"
 import * as External from "./external.ts"
 import * as Files from "./files.ts"
-import { FlowRuns, type Listed, type Port as FlowPort, type Run } from "./flows.ts"
+import { FlowRuns, type Listed, type Port as FlowPort, type Run, running as flowRunning } from "./flows.ts"
 import * as Form from "./form.ts"
 import * as Fuzzy from "./fuzzy.ts"
 import * as Monitors from "./monitors.ts"
@@ -138,8 +138,6 @@ const tabTitle = (tab: Tab): string => (tab.agent === undefined ? tab.title : `$
 
 const flowGlyph = (status: Run["status"]): string =>
   status === "done" ? "✓ " : status === "failed" ? "✗ " : status === "cancelled" ? "■ " : status === "queued" ? "… " : "◌ "
-const flowActive = (status: Run["status"]): boolean =>
-  status !== "done" && status !== "failed" && status !== "cancelled"
 
 interface Toast {
   readonly text: string
@@ -2008,11 +2006,13 @@ export function App(props: AppProps) {
             } ${approvals.some((request) => request.source === tab.id) ? `${tabTitle(tab)} · approval` : tabToast(tab)}`,
             tone: tab.status === "failed" ? "danger" as const : "info" as const
           })),
+          // A parked run waits on the user, not on the stopped clock's debounce.
           ...flowRuns.filter((run) =>
+            run.status === "input" ||
             now - run.startedAt >= 300 && (run.endedAt === undefined || now - run.endedAt < 3000)
           ).map((run) => ({
             id: `flow:${run.id}`,
-            text: `${flowActive(run.status) ? tick : run.status === "done" ? "✓" : "✗"} ${run.flow} · ${run.status}`,
+            text: `${flowRunning(run) ? `${tick} ` : flowGlyph(run.status)}${run.flow} · ${run.status}`,
             tone: run.status === "failed" ? "danger" as const : "info" as const
           })),
           ...(search?.status === "running" && now - search.startedAt >= 300
