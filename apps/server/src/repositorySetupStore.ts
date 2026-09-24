@@ -56,6 +56,8 @@ const PointerSchema = z.object({ sequence: z.number().int().positive(), requestI
 const CommandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), login: z.string().min(1).max(100), input: SetupHostInputSchema }),
   z.object({ action: z.literal("read"), requestId: KeySchema }),
+  z.object({ action: z.literal("claim"), requestId: KeySchema, holder: KeySchema }),
+  z.object({ action: z.literal("release"), requestId: KeySchema, holder: KeySchema }),
   z.object({ action: z.literal("discover"), repo: z.string().min(3).max(201), job: RepositoryJobSchema, match: RegistrationMatchSchema.optional() }),
   z.object({ action: z.literal("update"), requestId: KeySchema, expectedVersion: z.number().int().nonnegative(), record: SetupRecordSchema })
 ])
@@ -63,6 +65,10 @@ type Command = z.infer<typeof CommandSchema>
 const REQUEST_PREFIX = "repository-setup:request:"
 const key = (id: string) => `${REQUEST_PREFIX}${id}`
 export const setupPointerKey = (repo: string, job: RepositoryJob) => `repository-setup:current:${encodeURIComponent(repo)}:${job}`
+/** Outlives the platform's 30-second waitUntil window after a killed holder. */
+export const SETUP_ADVANCE_LEASE_MS = 60_000
+const leaseKey = (id: string) => `repository-setup:lease:${id}`
+const LeaseSchema = z.object({ holder: z.string(), until: z.number().finite() })
 export const SETUP_QUEUE_KEY = "repository-setup:pending"
 export interface SetupQueue { readonly login: string; readonly requests: Record<string, number> }
 /**
@@ -91,6 +97,19 @@ export const repositorySetupStorageRequest = (request: Request) => Effect.gen(fu
     const id = command.action === "create" ? command.input.requestId : command.requestId
     const old = yield* storage.get<SetupRecord>(key(id))
     if (command.action === "read") return Response.json({ record: old ?? null })
+    if (command.action === "claim" || command.action === "release") {
+      const raw = yield* storage.get(leaseKey(id))
+      const parsed = raw === undefined ? undefined : LeaseSchema.safeParse(raw)
+      if (parsed && !parsed.success) return Response.json({ message: "The setup lease is unavailable" }, { status: 503 })
+      const lease = parsed?.data
+      if (command.action === "release") {
+        if (lease?.holder === command.holder) yield* storage.put(leaseKey(id), { holder: "", until: 0 })
+        return Response.json({ released: true })
+      }
+      if (!old || old.result || (lease && lease.until > Date.now())) return Response.json({ claimed: false })
+      yield* storage.put(leaseKey(id), { holder: command.holder, until: Date.now() + SETUP_ADVANCE_LEASE_MS })
+      return Response.json({ claimed: true })
+    }
     const queue = (yield* storage.get<SetupQueue>(SETUP_QUEUE_KEY)) ?? { login: command.action === "create" ? command.login : "", requests: {} }
     const enqueue = () => Effect.gen(function* () {
       if (command.action !== "create" || old?.result) return queue
@@ -200,6 +219,8 @@ export const pendingSetupRequests = () => Effect.gen(function* () {
 })
 
 export interface SetupRequestsShape {
+  readonly claim: (login: string, requestId: string, holder: string) => Effect.Effect<boolean, SetupStoreError>
+  readonly release: (login: string, requestId: string, holder: string) => Effect.Effect<void, SetupStoreError>
   readonly discover: (login: string, repo: string, job: RepositoryJob, match?: z.infer<typeof RegistrationMatchSchema>) => Effect.Effect<Discovery, SetupStoreError>
   readonly create: (login: string, input: SetupHostInput) => Effect.Effect<SetupRecord, SetupStoreError>
   readonly read: (login: string, requestId: string) => Effect.Effect<SetupRecord | undefined, SetupStoreError>
@@ -228,6 +249,11 @@ export const setupRequestsLayer = (namespace: NativeNamespace): Layer.Layer<Setu
   const required = (record: SetupRecord | undefined) => record === undefined
     ? Effect.fail(new SetupStoreError({ message: "The setup request was not persisted" })) : Effect.succeed(record)
   return Layer.succeed(SetupRequests, {
+    claim: (login, requestId, holder) => call(login, { action: "claim", requestId, holder }).pipe(Effect.flatMap(body => {
+      const result = z.object({ claimed: z.boolean() }).safeParse(body)
+      return result.success ? Effect.succeed(result.data.claimed) : Effect.fail(new SetupStoreError({ message: "The setup lease is unavailable" }))
+    })),
+    release: (login, requestId, holder) => call(login, { action: "release", requestId, holder }).pipe(Effect.asVoid),
     discover: (login, repo, job, match) => call(login, { action: "discover", repo, job, ...(match ? { match } : {}) }).pipe(Effect.flatMap(body => {
       const result = DiscoverySchema.safeParse(body)
       return result.success ? Effect.succeed(result.data) : Effect.fail(new SetupStoreError({ message: "Setup recovery is invalid" }))

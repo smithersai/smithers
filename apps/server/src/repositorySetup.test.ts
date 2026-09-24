@@ -20,7 +20,7 @@ async function fixture() {
   const input = { requestId: "setup-test", repo: setup.repo, job: setup.job, revision: setup.revision, draft: setup.draft, digest: setupCandidate(setup) }
   const background: Promise<unknown>[] = []
   const calls: Array<{ login: string; tag: string; payload: Record<string, unknown> }> = []
-  const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
+  const options: { beforePlan?: Promise<void>; beforeWorkspace?: Promise<void>; onWorkspace?: () => void; workspaceState: string; runState: string; readError?: boolean; wrongFlow?: boolean; wrongResult?: boolean; incompatibleHost?: boolean;
     sleepBefore?: string; rejectResumedHost?: boolean; resultPayload?: "missing" | "malformed"; onSnapshot?: () => Promise<void>;
     lostWorkspace?: string; lostGateway?: string; newWorkspace?: string; boundReplacement?: boolean; lostRelay?: boolean;
     workspaceRefusal?: { status: number; code: string; message: string }; workspaceRaw?: { status: number; text: string }; registrations?: unknown; registrationError?: boolean; userError?: boolean; holdRegistrations?: Promise<void>; relayStatus?: number } = { runState: "running", workspaceState: "running" }
@@ -43,6 +43,7 @@ async function fixture() {
         if (options.holdRegistrations) await options.holdRegistrations
         return Response.json(options.registrations ?? [], { status: options.registrationError ? 503 : 200 })
       }
+      options.onWorkspace?.()
       if (options.beforeWorkspace) await options.beforeWorkspace
       const login = request.headers.get("authorization")?.replace("Bearer cloud-", "") as keyof typeof workspaceIds
       expect(workspaceIds[login]).toBeDefined()
@@ -1103,4 +1104,46 @@ test("a reload mid-run reads its recorded run through a renewed relay instead of
   expect(t.workspaceCalls).toHaveLength(before.workspace)
   expect(t.calls.filter(call => call.tag !== "Projection.Snapshot")).toHaveLength(before.writes)
   expect(t.launched.size).toBe(1)
+})
+
+
+test("polls and alarms do not duplicate an advance held at the workspace seam", async () => {
+  const t = await fixture(), held = gate(), entered = gate()
+  t.options.beforeWorkspace = held.wait
+  t.options.onWorkspace = entered.release
+  let alarm: Promise<void> | undefined
+  try {
+    expect((await t.send("POST", "evaluate", "alice", t.input)).status).toBe(202)
+    await entered.wait
+    const polls = await Promise.all(Array.from({ length: 4 }, () => t.read()))
+    expect(polls.every(response => response.status === 202)).toBe(true)
+    alarm = t.durable.runGatewayAlarms()
+    held.release()
+    await alarm
+    await t.settle()
+    expect(t.workspaceCalls.filter(call => call.method === "POST")).toHaveLength(1)
+    expect(t.calls.filter(call => call.tag === "Plan")).toHaveLength(1)
+    expect(t.calls.filter(call => call.tag === "Run")).toHaveLength(1)
+  } finally { held.release(); await alarm; await t.settle() }
+})
+
+
+test("expired setup leases recover and an old holder cannot release a successor", async () => {
+  const t = await fixture()
+  await t.send("POST", "evaluate", "alice", t.input)
+  await t.settle()
+  const stub = t.durable.GATEWAY_SESSIONS.get(t.durable.GATEWAY_SESSIONS.idFromName("alice"))
+  const command = async (action: string, holder: string) => {
+    const response = await stub.fetch(new Request("https://internal/repository-setup", { method: "POST", body: JSON.stringify({ action, holder, requestId: t.input.requestId }) }))
+    expect(response.status).toBe(200)
+    return response.json() as Promise<{ claimed?: boolean }>
+  }
+  expect(await command("claim", "old-holder")).toEqual({ claimed: true })
+  expect(await command("claim", "contender")).toEqual({ claimed: false })
+  t.durable.gatewayRows("alice").set(`repository-setup:lease:${t.input.requestId}`, { holder: "old-holder", until: Date.now() - 1 })
+  expect(await command("claim", "new-holder")).toEqual({ claimed: true })
+  await command("release", "old-holder")
+  expect(await command("claim", "third-holder")).toEqual({ claimed: false })
+  await command("release", "new-holder")
+  expect(await command("claim", "third-holder")).toEqual({ claimed: true })
 })

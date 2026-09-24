@@ -222,7 +222,14 @@ const executeRepositorySetup = (login: string, requestId: string, observeOnly: b
 }).pipe(Effect.catch(unrecorded => Effect.sync(() => logSeamFailure("repository setup observation", unrecorded))))))
 
 /** Normal admission alone may provision, plan, approve and start its durable request. */
-export const advanceRepositorySetup = (login: string, requestId: string) => executeRepositorySetup(login, requestId, false)
+export const advanceRepositorySetup = (login: string, requestId: string) => Effect.gen(function* () {
+  const requests = yield* SetupRequests
+  const holder = crypto.randomUUID()
+  if (!(yield* requests.claim(login, requestId, holder))) return
+  yield* executeRepositorySetup(login, requestId, false).pipe(Effect.ensuring(
+    requests.release(login, requestId, holder).pipe(Effect.catch(error => Effect.sync(() => logSeamFailure("repository setup lease", error))))
+  ))
+}).pipe(Effect.catch(error => Effect.sync(() => logSeamFailure("repository setup lease", error))))
 
 /** Recovered observers can only read the already recorded run, never replay admission. */
 export const observeRepositorySetup = (login: string, requestId: string) => executeRepositorySetup(login, requestId, true)
