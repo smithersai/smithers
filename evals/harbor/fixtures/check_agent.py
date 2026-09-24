@@ -389,8 +389,11 @@ def check_accounts() -> None:
     assert accounts.classify_cause("rate_limited: The usage limit has been reached\n/harness/HarnessError: x") == "seat"
     assert accounts.classify_cause("quota_exceeded: insufficient_quota") == "seat"
     assert accounts.classify_cause("rate_limited: 429 after 6 attempts") == "infra"
-    for code in ("authentication", "no_route", "provider_internal", "transport", "call_timeout", "completion_unjudged"):
+    for code in ("authentication", "no_route", "provider_internal", "transport", "completion_unjudged"):
         assert accounts.classify_cause(f"{code}: gateway 503") == "infra", code
+    # The harness's own per-call budget (modelCallMs, 300 s by default) firing
+    # is the arm's outcome, scored (coordinator ruling 2026-09-23 21:16 PDT).
+    assert accounts.classify_cause("call_timeout: The model call ran past its 300-second budget") is None
     assert accounts.classify_cause("claim_unproven: work this run never recorded") is None, "the model's own failure is scored"
     assert accounts.classify_cause("read_only_cap: no writes") is None
     assert accounts.classify_cause(None) is None and accounts.classify_cause("") is None

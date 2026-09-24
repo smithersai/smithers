@@ -124,7 +124,7 @@ the stock arm). The stock arm is
   `codex-account.json`; the earlier attempt's log and workspace are kept as
   `*-attempt-N`.
 - A route fault (`authentication`, `no_route`, `provider_internal`,
-  `transport`, `call_timeout`, `completion_unjudged`, a `rate_limited` the
+  `transport`, `completion_unjudged`, a `rate_limited` the
   harness gave up on) raises `ModelRouteError`, so Harbor records an
   exception and no reward.
 - A trial in which no command reached the task container with exit 0
@@ -148,7 +148,9 @@ the stock arm). The stock arm is
   (`SMITHERS_CODEX_POOL_WAIT_SEC`, default six hours) for a reset or a new
   `codex-*` login, then raises `NoSeatLeft`. `pool.json` carries `paused`.
 - The model's own failures (`claim_unproven`, `read_only_cap`, a wrong
-  answer) are scored as the verifier says.
+  answer) are scored as the verifier says. So is `call_timeout`: the
+  harness's per-call budget (`modelCallMs`, 300 s by default) is the arm's
+  own limit.
 
 The full benchmark drops the `-i` filters and raises `-n`. Use an absolute
 `-o`: Harbor resolves a relative jobs directory against the task's `tests/`

@@ -51,7 +51,10 @@ USAGE_LIMIT_SIGNAL = (
 # `<code>: <message>` where the code is a ModelErrorCode
 # (`packages/smithers/agent/model/src/ModelError.ts`) or the harness's own.
 SEAT_CODES = ("quota_exceeded",)
-INFRA_CODES = ("authentication", "no_route", "provider_internal", "transport", "call_timeout", "completion_unjudged")
+# `call_timeout` is not here: it is the harness's own per-call budget
+# (Agent `modelCallMs`, 300 s by default) cutting a slow model call, a limit
+# the arm chose, so the trial is graded as it stands (ruling 2026-09-23).
+INFRA_CODES = ("authentication", "no_route", "provider_internal", "transport", "completion_unjudged")
 _RESET_RE = re.compile(r"(?:try again|resets?|available again)\s+(?:at|on|after)\s+([A-Z][a-z]{2,8}\.? \d{1,2}(?:st|nd|rd|th)?,? \d{4},? \d{1,2}:\d{2}\s*[AP]M(?: [A-Z]{2,4})?)", re.I)
 _RESET_ISO_RE = re.compile(r"(?:resets?_at|reset_at|try again after)\W+(\d{4}-\d{2}-\d{2}T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)", re.I)
 
