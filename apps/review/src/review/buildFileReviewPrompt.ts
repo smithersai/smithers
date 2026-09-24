@@ -1,3 +1,4 @@
+import { fenceFor } from "../text/fenceFor.ts";
 import { trimDiff } from "../text/trimDiff.ts";
 import { effectivePath } from "../git/effectivePath.ts";
 import { diffStatus } from "../git/diffStatus.ts";
@@ -39,6 +40,8 @@ export function buildFileReviewPrompt(
   allDiffs: DiffRecord[],
 ) {
   const path = effectivePath(diff);
+  const excerpt = trimDiff(diff.diff, reviewDiffLimit);
+  const fence = fenceFor(excerpt);
   const changeLines = diff.insertions + diff.deletions;
   const planGuidance =
     changeLines >= 50
@@ -108,8 +111,8 @@ export function buildFileReviewPrompt(
     planGuidance,
     "",
     "Unified diff:",
-    "```diff",
-    trimDiff(diff.diff, reviewDiffLimit),
-    "```",
+    `${fence}diff`,
+    excerpt,
+    fence,
   ].join("\n");
 }

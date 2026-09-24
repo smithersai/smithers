@@ -66,7 +66,8 @@ export function buildNarratePrompt(args: {
       continue;
     }
     excerptBudget -= excerpt.length;
-    excerpts.push(`--- ${file.path} (${file.status}, +${file.insertions} −${file.deletions})\n${excerpt}`);
+    const fence = fenceFor(excerpt);
+    excerpts.push(`--- ${file.path} (${file.status}, +${file.insertions} −${file.deletions})\n${fence}diff\n${excerpt}\n${fence}`);
   }
 
   return [
