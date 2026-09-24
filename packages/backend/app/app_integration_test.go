@@ -13,6 +13,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/app"
 	"github.com/smithersai/smithers/packages/backend/internal/testutil/postgresfixture"
+	"github.com/smithersai/smithers/packages/backend/repository"
 )
 
 func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
@@ -24,15 +25,26 @@ func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
 		t.Skip("set SMITHERS_PRODUCT_TEST_DATABASE_URL for PostgreSQL integration test")
 	}
 	_, databaseURL := postgresfixture.NewProductDatabase(t, raw)
-	repository := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/health" {
-			http.NotFound(w, r)
-			return
+	ffi := os.Getenv("SMITHERS_FFI_LIBRARY_PATH")
+	if ffi == "" {
+		t.Fatal("SMITHERS_FFI_LIBRARY_PATH is required for the real repository engine")
+	}
+	local, err := repository.OpenLocal(repository.Config{
+		StoragePath: t.TempDir(), AuthToken: "repo-token", FFILibraryPath: ffi,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := local.Shutdown(ctx); err != nil {
+			t.Errorf("close repository: %v", err)
 		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	t.Cleanup(repository.Close)
+	})
 	for key, value := range map[string]string{
+		// A private deployment variable must not change the public process.
+		"PLUE_BACKEND_ROLE":                      "hosted_worker",
 		"SMITHERS_DATABASE_URL":                  databaseURL,
 		"SMITHERS_BLOB_DATA_DIR":                 t.TempDir(),
 		"SMITHERS_AUTH_MODE":                     "selfhost",
@@ -41,7 +53,7 @@ func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
 		"SMITHERS_LFS_SIGNING_SECRET":            "test-lfs-signing-secret",
 		"SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY": "test-webhook-key",
 		"SMITHERS_REPO_HOST_AUTH_TOKEN":          "repo-token",
-		"SMITHERS_REPO_HOST_URL":                 repository.URL,
+		"SMITHERS_REPO_HOST_URL":                 "",
 		"SMITHERS_PUSH_HOOK_CALLBACK_TOKEN":      "push-callback-token",
 		"SMITHERS_SERVER_ADDR":                   "127.0.0.1:0",
 		"SMITHERS_PUBLIC_URL":                    "http://127.0.0.1:4000",
@@ -55,7 +67,7 @@ func TestStartServesReadyAndBootstrapFromProductPostgres(t *testing.T) {
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	instance, err := app.Start(ctx, app.Config{Stdout: io.Discard, Stderr: io.Discard})
+	instance, err := app.Start(ctx, app.Config{Stdout: io.Discard, Stderr: io.Discard, Repository: local.Client()})
 	if err != nil {
 		t.Fatal(err)
 	}

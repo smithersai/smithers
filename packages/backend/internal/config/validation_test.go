@@ -40,25 +40,24 @@ func validStartupConfig() *Config {
 	}
 }
 
-func TestValidateServerStartup_BillingProviderIsExplicitAndComplete(t *testing.T) {
+func TestValidateServerStartup_BillingIsUnlimitedOnly(t *testing.T) {
 	t.Parallel()
 
 	cfg := validStartupConfig()
 	cfg.Billing.Mode = "invalid"
-	err := ValidateServerStartup(cfg)
-	require.ErrorContains(t, err, "billing.mode must be one of unlimited, stripe")
+	require.ErrorContains(t, ValidateServerStartup(cfg), "billing.mode must be unlimited")
 
 	cfg = validStartupConfig()
 	cfg.Billing.StripeSecretKey = "sk_test_configured"
-	err = ValidateServerStartup(cfg)
-	require.ErrorContains(t, err, "Stripe settings require billing.mode=stripe")
+	require.ErrorContains(t, ValidateServerStartup(cfg), "billing Stripe settings are unavailable in the public backend")
 
+	// A complete Stripe configuration is still refused: the public backend has
+	// no payment client, so accepting it would advertise commerce it cannot do.
 	cfg.Billing.Mode = "stripe"
-	err = ValidateServerStartup(cfg)
-	require.ErrorContains(t, err, "billing.stripe_webhook_secret is required")
-
 	cfg.Billing.StripeWebhookSecret = "whsec_configured"
-	require.NoError(t, ValidateServerStartup(cfg))
+	require.ErrorContains(t, ValidateServerStartup(cfg), "billing.mode=stripe is unavailable in the public backend")
+
+	require.NoError(t, ValidateServerStartup(validStartupConfig()))
 }
 
 func TestValidateServerStartup_LinearCredentialsAreAllOrNothing(t *testing.T) {

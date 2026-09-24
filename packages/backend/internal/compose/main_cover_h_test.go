@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/config"
-	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
@@ -50,23 +49,6 @@ func TestRun_EmailFromSMTPFallback(t *testing.T) {
 		return nil, errors.New("stop here")
 	})
 	path := writeRunConfigYAML(t, "email:\n  from: \"\"\n  smtp_from: \"fallback@example.com\"\n")
-
-	stderr := &syncBuffer{}
-	err := run(context.Background(), []string{"-config", path}, io.Discard, stderr)
-	require.Error(t, err)
-	assert.Contains(t, stderr.String(), "failed to initialize webhook secret codec")
-}
-
-// TestRun_EmailFromSESFallback covers main.go:328 (emailFrom falls back to
-// SESFrom when both From and SMTPFrom are empty).
-func TestRun_EmailFromSESFallback(t *testing.T) {
-	preserveSlog(t)
-	applyEnv(t, baseRunEnv(t))
-	stubSSEBroker(t)
-	swapVar(t, &newSecretCodec, func(string) (*webhook.AESGCMSecretCodec, error) {
-		return nil, errors.New("stop here")
-	})
-	path := writeRunConfigYAML(t, "email:\n  from: \"\"\n  smtp_from: \"\"\n  ses_from: \"ses@example.com\"\n")
 
 	stderr := &syncBuffer{}
 	err := run(context.Background(), []string{"-config", path}, io.Discard, stderr)
@@ -443,50 +425,6 @@ func TestInitEmailTransport_FromFallbacks(t *testing.T) {
 		_, err := initEmailTransport(config.EmailConfig{From: "", SMTPHost: "smtp.example.com", SMTPFrom: "a@b"})
 		require.NoError(t, err)
 	})
-	t.Run("ses from fallback", func(t *testing.T) {
-		swapVar(t, &newSESClient, func(context.Context, string) (email.SESAPI, error) {
-			return cmdServerFakeSESClient{}, nil
-		})
-		_, err := initEmailTransport(config.EmailConfig{From: "", SMTPFrom: "", SESRegion: "us-east-1", SESFrom: "c@d"})
-		require.NoError(t, err)
-	})
-}
-
-type cmdServerFakeSESClient struct{}
-
-func (cmdServerFakeSESClient) SendEmail(context.Context, string, []string, string, string, string) error {
-	return nil
-}
-
-func TestInitEmailTransport_WiresSESClientFromConfig(t *testing.T) {
-	var called bool
-	var gotRegion string
-	swapVar(t, &newSESClient, func(_ context.Context, region string) (email.SESAPI, error) {
-		called = true
-		gotRegion = region
-		return cmdServerFakeSESClient{}, nil
-	})
-
-	tr, err := initEmailTransport(config.EmailConfig{SESRegion: "us-east-1", SESFrom: "noreply@smithers.sh"})
-
-	require.NoError(t, err)
-	require.True(t, called, "SES client factory must be called when SES is configured")
-	assert.Equal(t, "us-east-1", gotRegion)
-	_, ok := tr.(*email.SESTransport)
-	assert.True(t, ok, "SES config should produce an SES transport")
-}
-
-func TestInitEmailTransport_SESClientErrorFailsStartup(t *testing.T) {
-	swapVar(t, &newSESClient, func(context.Context, string) (email.SESAPI, error) {
-		return nil, errors.New("aws config missing")
-	})
-
-	tr, err := initEmailTransport(config.EmailConfig{SESRegion: "us-east-1", SESFrom: "noreply@smithers.sh"})
-
-	require.Error(t, err)
-	assert.Nil(t, tr)
-	assert.Contains(t, err.Error(), "initialize SES email client")
-	assert.Contains(t, err.Error(), "aws config missing")
 }
 
 // ---------------------------------------------------------------------------
@@ -496,18 +434,16 @@ func TestInitEmailTransport_SESClientErrorFailsStartup(t *testing.T) {
 func TestLogStartupConfig_TransportBranches(t *testing.T) {
 	preserveSlog(t)
 
-	sendgridCfg := &config.Config{}
-	sendgridCfg.Email.SendGridAPIKey = "sg-key"
-	sesCfg := &config.Config{}
-	sesCfg.Email.SESRegion = "us-east-1"
+	smtpCfg := &config.Config{}
+	smtpCfg.Email.SMTPHost = "smtp.example.com"
 
 	for _, tc := range []struct {
 		name   string
 		cfg    *config.Config
 		expect string
 	}{
-		{"sendgrid", sendgridCfg, "sendgrid"},
-		{"ses", sesCfg, "ses"},
+		{"smtp", smtpCfg, `"email_transport":"smtp"`},
+		{"disabled", &config.Config{}, `"email_transport":"noop (log only)"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			buf := &syncBuffer{}

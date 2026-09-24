@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -44,6 +45,11 @@ type BillingComposition struct {
 	Capabilities BillingCapabilities
 }
 
+// ErrStripeBillingUnavailable is returned for billing.mode=stripe: the public
+// backend ships no payment client, and a hosted deployment that sells plans
+// supplies its own billing composition.
+var ErrStripeBillingUnavailable = errors.New("billing: stripe mode is unavailable in the public backend")
+
 func NewBillingComposition(q BillingBaseQuerier, cfg BillingCompositionConfig, opts ...BillingServiceOption) (BillingComposition, error) {
 	mode := BillingMode(strings.ToLower(strings.TrimSpace(string(cfg.Mode))))
 	if mode == "" {
@@ -57,28 +63,7 @@ func NewBillingComposition(q BillingBaseQuerier, cfg BillingCompositionConfig, o
 		policy := NewUnlimitedBillingPolicy()
 		return BillingComposition{Policy: policy}, nil
 	case BillingModeStripe:
-		return BillingComposition{}, fmt.Errorf("billing: stripe mode is provided by Plue")
-		if q == nil {
-			return BillingComposition{}, fmt.Errorf("billing: stripe mode requires the billing store")
-		}
-		if strings.TrimSpace(cfg.StripeSecretKey) == "" {
-			return BillingComposition{}, fmt.Errorf("billing: stripe mode requires a secret key")
-		}
-		if strings.TrimSpace(cfg.Service.StripeWebhookSecret) == "" {
-			return BillingComposition{}, fmt.Errorf("billing: stripe mode requires a webhook secret")
-		}
-		service := NewBillingService(q, NewStripeBillingClient(cfg.StripeSecretKey), cfg.Service, opts...)
-		return BillingComposition{
-			Policy:  service,
-			Service: service,
-			Capabilities: BillingCapabilities{
-				Overview: true,
-				Plans:    true,
-				Checkout: service.hasCheckoutPlan(),
-				Portal:   true,
-				Webhook:  true,
-			},
-		}, nil
+		return BillingComposition{}, ErrStripeBillingUnavailable
 	default:
 		return BillingComposition{}, fmt.Errorf("billing: mode must be %q or %q", BillingModeUnlimited, BillingModeStripe)
 	}
@@ -105,20 +90,6 @@ func billingHasStripeConfiguration(cfg BillingCompositionConfig) bool {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return true
-		}
-	}
-	return false
-}
-
-func (s *BillingService) hasCheckoutPlan() bool {
-	if s == nil || s.stripe == nil {
-		return false
-	}
-	for _, plans := range s.checkoutPlans {
-		for _, plan := range plans {
-			if strings.TrimSpace(plan.PriceID) != "" {
-				return true
-			}
 		}
 	}
 	return false

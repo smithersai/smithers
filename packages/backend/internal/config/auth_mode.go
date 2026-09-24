@@ -13,3 +13,9 @@ const (
 func IsSingleOwner(auth AuthConfig) bool {
 	return strings.EqualFold(strings.TrimSpace(auth.Mode), AuthModeSelfHosted)
 }
+
+// IsMultitenant reports whether composition explicitly selected the hosted,
+// many-owner identity boundary.
+func IsMultitenant(auth AuthConfig) bool {
+	return strings.EqualFold(strings.TrimSpace(auth.Mode), AuthModeMultitenant)
+}

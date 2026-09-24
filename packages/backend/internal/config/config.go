@@ -103,20 +103,15 @@ type RateLimitConfig struct {
 }
 
 // EmailConfig holds email transport configuration.
-// Transport selection precedence: SendGrid (if API key set) > SMTP (if host set) > SES (if region set) > disabled.
+// SMTP is the only public transport; without a host, delivery is disabled.
 type EmailConfig struct {
-	// SendGrid backend (preferred for transactional email)
-	SendGridAPIKey string `mapstructure:"sendgrid_api_key"`
 	// SMTP backend
 	SMTPHost string `mapstructure:"smtp_host"`
 	SMTPPort int    `mapstructure:"smtp_port"`
 	SMTPUser string `mapstructure:"smtp_user"`
 	SMTPPass string `mapstructure:"smtp_pass"`
 	SMTPFrom string `mapstructure:"smtp_from"`
-	// SES backend (alternative to SMTP)
-	SESRegion string `mapstructure:"ses_region"`
-	SESFrom   string `mapstructure:"ses_from"`
-	// From is the default sender address. Falls back to SMTPFrom or SESFrom.
+	// From is the default sender address. Falls back to SMTPFrom.
 	From string `mapstructure:"from"`
 	// Rate limiting
 	RateLimitPerSecond         int `mapstructure:"rate_limit_per_second"`
@@ -661,14 +656,11 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("observability.otel_exporter", "none")
 	v.SetDefault("observability.otlp_endpoint", "")
 	v.SetDefault("observability.metrics_project_id", "")
-	v.SetDefault("email.sendgrid_api_key", "")
 	v.SetDefault("email.smtp_host", "")
 	v.SetDefault("email.smtp_port", 587)
 	v.SetDefault("email.smtp_user", "")
 	v.SetDefault("email.smtp_pass", "")
 	v.SetDefault("email.smtp_from", "noreply@smithers.sh")
-	v.SetDefault("email.ses_region", "")
-	v.SetDefault("email.ses_from", "noreply@smithers.sh")
 	v.SetDefault("email.from", "noreply@smithers.sh")
 	v.SetDefault("email.rate_limit_per_second", 10)
 	v.SetDefault("email.rate_limit_per_recipient_per_hr", 20)
@@ -825,14 +817,11 @@ func Load(configFile string) (*Config, error) {
 		{"observability.otel_exporter", "SMITHERS_OTEL_EXPORTER"},
 		{"observability.otlp_endpoint", "SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT"},
 		{"observability.metrics_project_id", "SMITHERS_METRICS_PROJECT_ID"},
-		{"email.sendgrid_api_key", "SMITHERS_EMAIL_SENDGRID_API_KEY"},
 		{"email.smtp_host", "SMITHERS_EMAIL_SMTP_HOST"},
 		{"email.smtp_port", "SMITHERS_EMAIL_SMTP_PORT"},
 		{"email.smtp_user", "SMITHERS_EMAIL_SMTP_USER"},
 		{"email.smtp_pass", "SMITHERS_EMAIL_SMTP_PASS"},
 		{"email.smtp_from", "SMITHERS_EMAIL_SMTP_FROM"},
-		{"email.ses_region", "SMITHERS_EMAIL_SES_REGION"},
-		{"email.ses_from", "SMITHERS_EMAIL_SES_FROM"},
 		{"email.from", "SMITHERS_EMAIL_FROM"},
 		{"email.rate_limit_per_second", "SMITHERS_EMAIL_RATE_LIMIT_PER_SECOND"},
 		{"email.rate_limit_per_recipient_per_hr", "SMITHERS_EMAIL_RATE_LIMIT_PER_RECIPIENT_PER_HR"},

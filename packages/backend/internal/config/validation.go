@@ -73,17 +73,14 @@ func validateOptionalProviders(cfg *Config, errs *[]string) {
 	switch billingMode {
 	case "unlimited":
 		if billingStripeConfigured(cfg.Billing) {
-			*errs = append(*errs, "billing Stripe settings require billing.mode=stripe")
+			*errs = append(*errs, "billing Stripe settings are unavailable in the public backend")
 		}
 	case "stripe":
-		if strings.TrimSpace(cfg.Billing.StripeSecretKey) == "" {
-			*errs = append(*errs, "billing.stripe_secret_key is required when billing.mode=stripe")
-		}
-		if strings.TrimSpace(cfg.Billing.StripeWebhookSecret) == "" {
-			*errs = append(*errs, "billing.stripe_webhook_secret is required when billing.mode=stripe")
-		}
+		// The public backend ships no payment client; a hosted deployment that
+		// sells plans supplies its own billing composition.
+		*errs = append(*errs, "billing.mode=stripe is unavailable in the public backend")
 	default:
-		*errs = append(*errs, "billing.mode must be one of unlimited, stripe")
+		*errs = append(*errs, "billing.mode must be unlimited")
 	}
 
 	linearID := strings.TrimSpace(cfg.Auth.LinearClientID)

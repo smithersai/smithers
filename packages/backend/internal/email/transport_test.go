@@ -11,7 +11,6 @@ import (
 var (
 	_ Transport = (*NoopTransport)(nil)
 	_ Transport = (*SMTPTransport)(nil)
-	_ Transport = (*SESTransport)(nil)
 )
 
 func TestMessage_FieldsAccessible(t *testing.T) {

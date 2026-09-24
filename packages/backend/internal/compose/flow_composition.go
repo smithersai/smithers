@@ -46,14 +46,14 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 			Key: flowhost.CatalogCoding, Family: flowhost.CatalogCoding,
 			Executable: registry.Coding.Executable, ArtifactDigest: registry.Coding.SHA256,
 			ServiceName: "smithers-coding-host", ImplementationModel: strings.TrimSpace(cfg.Sandbox.WorkspaceCodingDefaultModel),
-			Environment: codingHostEnvironment(options.Role),
+			Environment: codingHostEnvironment(options.topology),
 		},
 		{
 			Key: flowhost.CatalogLibrarian, Family: flowhost.CatalogLibrarian,
 			Executable: registry.Librarian.Executable, ArtifactDigest: registry.Librarian.SHA256,
 			ServiceName: "smithers-librarian-host", ProductAPIURL: productAPIURL,
 			ImplementationModel: strings.TrimSpace(os.Getenv("SMITHERS_LIBRARIAN_MODEL")),
-			Environment:         librarianHostEnvironment(options.Role),
+			Environment:         librarianHostEnvironment(options.topology),
 		},
 	}
 	bindings, err := flowhost.NewStore(pool, codec)
@@ -92,7 +92,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	return &flowComposition{jobs: store, dispatcher: dispatcher, bindings: bindings, stopper: stopper}, nil
 }
 
-func codingHostEnvironment(role Role) map[string]string {
+func codingHostEnvironment(role topology) map[string]string {
 	environment := make(map[string]string)
 	if role.hosted() {
 		// The platform binds the real judge credential to the workspace egress
@@ -104,7 +104,7 @@ func codingHostEnvironment(role Role) map[string]string {
 			environment[name] = value
 		}
 	}
-	if role == RoleLocal {
+	if !role.hosted() {
 		environment["SMITHERS_CODING_LOCAL_OWNER"] = "1"
 		for _, name := range []string{"OPENAI_API_KEY", "AI_GATEWAY_API_KEY", "SMITHERS_OPENAI_COMPATIBLE_BASE_URL", "SMITHERS_EVALUATOR_BASE_URL"} {
 			if value := strings.TrimSpace(os.Getenv(name)); value != "" {
@@ -115,12 +115,12 @@ func codingHostEnvironment(role Role) map[string]string {
 	return environment
 }
 
-func librarianHostEnvironment(role Role) map[string]string {
+func librarianHostEnvironment(role topology) map[string]string {
 	environment := make(map[string]string)
 	if role.hosted() {
 		environment["AI_GATEWAY_API_KEY"] = "AI_GATEWAY_API_KEY"
 	}
-	if role == RoleLocal {
+	if !role.hosted() {
 		for _, name := range []string{"AI_GATEWAY_API_KEY", "SMITHERS_EVALUATOR_BASE_URL", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"} {
 			if value := strings.TrimSpace(os.Getenv(name)); value != "" {
 				environment[name] = value
@@ -191,7 +191,7 @@ func flowHostProductAPIURL(options runOptions, listenAddress string) (string, er
 		}
 		return origin, nil
 	}
-	if options.Role.hosted() || options.externalHTTP {
+	if options.topology.hosted() || options.externalHTTP {
 		return "", errors.New("Flow hosts require a runtime-reachable product API URL")
 	}
 	_, port, err := net.SplitHostPort(listenAddress)

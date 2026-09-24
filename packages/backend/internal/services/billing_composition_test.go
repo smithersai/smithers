@@ -38,46 +38,17 @@ func TestNewBillingComposition_UnlimitedRejectsHostedConfiguration(t *testing.T)
 	require.ErrorContains(t, err, "requires mode \"stripe\"")
 }
 
-func TestNewBillingComposition_StripeRequiresCompleteAuthority(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewBillingComposition(nil, BillingCompositionConfig{Mode: BillingModeStripe})
-	require.ErrorContains(t, err, "requires the billing store")
-
-	queries := newBillingQuerierMock()
-	_, err = NewBillingComposition(queries, BillingCompositionConfig{Mode: BillingModeStripe})
-	require.ErrorContains(t, err, "requires a secret key")
-
-	_, err = NewBillingComposition(queries, BillingCompositionConfig{
-		Mode:            BillingModeStripe,
-		StripeSecretKey: "sk_test_configured",
-	})
-	require.ErrorContains(t, err, "requires a webhook secret")
-}
-
-func TestNewBillingComposition_StripeRetainsHostedPolicyAndCapabilities(t *testing.T) {
+func TestNewBillingComposition_StripeModeIsRefused(t *testing.T) {
 	t.Parallel()
 
 	composition, err := NewBillingComposition(newBillingQuerierMock(), BillingCompositionConfig{
 		Mode:            BillingModeStripe,
 		StripeSecretKey: "sk_test_configured",
-		Service: BillingServiceConfig{
-			StripeWebhookSecret: "whsec_configured",
-			ProMonthlyPriceID:   "price_pro_monthly",
-			CheckoutSuccessURL:  "https://smithers.test/billing/success",
-			CheckoutCancelURL:   "https://smithers.test/billing/cancel",
-			PortalReturnURL:     "https://smithers.test/settings/billing",
-		},
+		Service:         BillingServiceConfig{StripeWebhookSecret: "whsec_configured", ProMonthlyPriceID: "price_pro_monthly"},
 	})
-	require.NoError(t, err)
-	require.Same(t, composition.Service, composition.Policy)
-	assert.Equal(t, BillingCapabilities{
-		Overview: true,
-		Plans:    true,
-		Checkout: true,
-		Portal:   true,
-		Webhook:  true,
-	}, composition.Capabilities)
+	require.ErrorIs(t, err, ErrStripeBillingUnavailable)
+	assert.Nil(t, composition.Policy, "a refused mode must not fall back to an admission policy")
+	assert.Nil(t, composition.Service)
 }
 
 func TestUnlimitedBillingPolicy_CommitsExactlyTheProductMutation(t *testing.T) {

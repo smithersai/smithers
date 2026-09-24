@@ -17,7 +17,7 @@ type Message struct {
 }
 
 // Transport is the interface for sending email messages.
-// Implementations include SMTPTransport, SESTransport, SendGridTransport, and
+// Implementations include SMTPTransport and
 // DisabledTransport. NoopTransport is a test recorder, not a production
 // fallback.
 type Transport interface {

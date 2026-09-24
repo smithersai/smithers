@@ -24,23 +24,23 @@ func (unusedChatHost) RunChatTurn(context.Context, ports.ChatTurnGrant) error { 
 func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
 	_, err := newChatComposition(runOptions{Options: Options{ChatProducerBaseURL: "http://127.0.0.1:1000"}}, nil, chat.RuntimeOptions{})
 	require.ErrorContains(t, err, "requires a chat host")
-	worker, err := newChatComposition(runOptions{Options: Options{
-		Role: RoleHostedWorker, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	worker, err := newChatComposition(runOptions{topology: hostedWorkerTopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
 	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
 	require.NoError(t, err)
 	require.Nil(t, worker.listener)
 
 	publicListener, err := net.Listen("tcp", "0.0.0.0:0")
 	require.NoError(t, err)
-	_, err = newChatComposition(runOptions{Options: Options{
-		Role: RoleLocal, ChatHost: unusedChatHost{}, ChatCallbackListener: publicListener,
+	_, err = newChatComposition(runOptions{topology: localTopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatCallbackListener: publicListener,
 	}}, nil, chat.RuntimeOptions{})
 	require.ErrorContains(t, err, "must bind loopback")
 }
 
 func TestHostedAPICallbackUsesSharedListenerWhenPrivateListenerIsAbsent(t *testing.T) {
-	runtime, err := newChatComposition(runOptions{Options: Options{
-		Role: RoleHostedAPI, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
+	runtime, err := newChatComposition(runOptions{topology: hostedAPITopology, Options: Options{
+		ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
 	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, runtime)

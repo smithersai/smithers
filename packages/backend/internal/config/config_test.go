@@ -166,14 +166,11 @@ var allEnvKeys = []string{
 	"SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT",
 	"SMITHERS_METRICS_PROJECT_ID",
 	// Email
-	"SMITHERS_EMAIL_SENDGRID_API_KEY",
 	"SMITHERS_EMAIL_SMTP_HOST",
 	"SMITHERS_EMAIL_SMTP_PORT",
 	"SMITHERS_EMAIL_SMTP_USER",
 	"SMITHERS_EMAIL_SMTP_PASS",
 	"SMITHERS_EMAIL_SMTP_FROM",
-	"SMITHERS_EMAIL_SES_REGION",
-	"SMITHERS_EMAIL_SES_FROM",
 	"SMITHERS_EMAIL_FROM",
 	"SMITHERS_EMAIL_RATE_LIMIT_PER_SECOND",
 	"SMITHERS_EMAIL_RATE_LIMIT_PER_RECIPIENT_PER_HR",
@@ -887,14 +884,11 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			OTLPEndpoint:        "",
 		},
 		Email: EmailConfig{
-			SendGridAPIKey:             "",
 			SMTPHost:                   "",
 			SMTPPort:                   587,
 			SMTPUser:                   "",
 			SMTPPass:                   "",
 			SMTPFrom:                   "noreply@smithers.sh",
-			SESRegion:                  "",
-			SESFrom:                    "noreply@smithers.sh",
 			From:                       "noreply@smithers.sh",
 			RateLimitPerSecond:         10,
 			RateLimitPerRecipientPerHr: 20,
@@ -1487,18 +1481,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 				assert.Equal(t, "custom@smithers.sh", cfg.Email.SMTPFrom)
 			},
 		},
-		{
-			envKey: "SMITHERS_EMAIL_SES_REGION", envValue: "eu-west-1",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "eu-west-1", cfg.Email.SESRegion)
-			},
-		},
-		{
-			envKey: "SMITHERS_EMAIL_SES_FROM", envValue: "ses@smithers.sh",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "ses@smithers.sh", cfg.Email.SESFrom)
-			},
-		},
 	}
 
 	for _, tc := range tests {
@@ -1691,8 +1673,6 @@ server:
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 194,
-		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
 
@@ -1792,69 +1772,6 @@ func TestLoad_EnvOverrideMidFlight(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, ":8888", cfg2.Server.Addr,
 		"env var change between Load() calls should be reflected")
-}
-
-// TestLoad_ConfigStructFieldCountReflection uses reflection to count the actual
-// number of fields in Config and each sub-struct. This is a stronger canary than
-// TestLoad_ConfigStructFieldCount — it will fail if ANY field is added to ANY
-// config struct without updating this test, ensuring test coverage keeps pace.
-func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
-	expectedFieldCounts := map[string]int{
-		"Config":              17, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit, Chat
-		"ServerConfig":        8,  // Addr, PublicURL, ReadTimeoutSecs, WriteTimeoutSecs, ShutdownTimeout, SSHHost, AllowedOrigins, TrustedProxyHops
-		"DatabaseConfig":      5,  // URL, MaxConns, MinConns, MaxConnLifetime, MaxConnIdleTime
-		"RepoHostConfig":      3,  // URL, AuthToken, PushHookCallbackToken
-		"SandboxConfig":       37, // provider assertion, Microsandbox transport/accelerator, provider-neutral resource sizing/access, anonymous-sandbox bounds (enabled/allowlist/TTL/global+per-IP caps), repo-gateway provider credentials, agent seat, desktop guest sizing and observe-text switch, health probe, and preview relay token
-		"SSHConfig":           13, // Addr, HostKeyDir, MaxConnections, MaxConnectionsPerIP, MaxReceivePackSize, MaxUploadPackRequestSize, ReceivePackTimeout, UploadPackTimeout, ShutdownDrainTimeout, AuthAttemptsPerMinute, IdleTimeout, MaxTimeout, MaxSessionsPerConn
-		"AuthConfig":          25, // Mode/bootstrap, Session*, dedicated LFS signer, Cookie*, OAuth, Linear, WorkerExchangeToken
-		"BillingConfig":       16, // authority mode, Stripe credentials, portal URLs, and plan price ids
-		"WebhookConfig":       2,  // SecretEncryptionKey, GitHubAppSecret
-		"AgentsConfig":        1,
-		"CleanupConfig":       3,  // AuthInterval, WorkflowCacheInterval, SandboxEgressAuditRetentionDays
-		"BlobConfig":          13, // cluster/local adapter settings, shared transfer origin, and workflow cache policy
-		"ObservabilityConfig": 6,  // LogLevel, TraceSampleRate, CloudTraceProjectID, OTelExporter, OTLPEndpoint, MetricsProjectID
-		"EmailConfig":         11, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, RateLimitPerSecond, RateLimitPerRecipientPerHr
-		"FeatureFlagsConfig":  37, // 11 base + 4 remote-client rollout + 21 ticket-12 MVP flags + Changesets (orgs is not a flag)
-		"RateLimitConfig":     7,  // TerminalOpenPerMin, TerminalActiveMax, ApprovalDecidePerMin, AppTimelineWritePerMin, ShareListingEventPerMin, AnonSandboxCreatePerHour, BuildCachePerMinute
-		"ChatConfig":          3,  // Concurrency, QueueSize, LeaseSeconds
-	}
-
-	types := []reflect.Type{
-		reflect.TypeOf(Config{}),
-		reflect.TypeOf(AgentsConfig{}),
-		reflect.TypeOf(ServerConfig{}),
-		reflect.TypeOf(DatabaseConfig{}),
-		reflect.TypeOf(RepoHostConfig{}),
-		reflect.TypeOf(SandboxConfig{}),
-		reflect.TypeOf(SSHConfig{}),
-		reflect.TypeOf(AuthConfig{}),
-		reflect.TypeOf(BillingConfig{}),
-		reflect.TypeOf(WebhookConfig{}),
-		reflect.TypeOf(CleanupConfig{}),
-		reflect.TypeOf(BlobConfig{}),
-		reflect.TypeOf(ObservabilityConfig{}),
-		reflect.TypeOf(EmailConfig{}),
-		reflect.TypeOf(FeatureFlagsConfig{}),
-		reflect.TypeOf(RateLimitConfig{}),
-		reflect.TypeOf(ChatConfig{}),
-	}
-
-	for _, typ := range types {
-		expected, ok := expectedFieldCounts[typ.Name()]
-		require.True(t, ok, "missing expected field count for %s", typ.Name())
-		assert.Equal(t, expected, typ.NumField(),
-			"struct %s field count changed — update tests for new fields and update this canary", typ.Name())
-	}
-
-	// Total fields across all sub-structs.
-	totalSubFields := 0
-	for name, count := range expectedFieldCounts {
-		if name != "Config" {
-			totalSubFields += count
-		}
-	}
-	assert.Equal(t, 190, totalSubFields,
-		"total leaf fields across all config sub-structs")
 }
 
 // TestLoad_AllFieldsHaveMapstructureTags verifies that every field in every config

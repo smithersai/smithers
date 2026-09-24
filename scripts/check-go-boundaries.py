@@ -7,7 +7,6 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE_ROOTS = (ROOT / "packages" / "backend", ROOT / "apps" / "backend")
 FORBIDDEN_SOURCE = (
     "github.com/smithersai/plue",
     "github.com/smithers-ai/smithers",  # old Plue module identity
@@ -15,33 +14,42 @@ FORBIDDEN_SOURCE = (
 FORBIDDEN_LOCAL_GRAPH = (
     "cloud.google.com/",
     "github.com/GoogleCloudPlatform/",
+    "github.com/aws/aws-sdk",
+    "github.com/stripe/stripe-go",
+    "github.com/sendgrid/",
+    "github.com/ethereum/go-ethereum",
     "google.golang.org/api/",
     "k8s.io/",
     "sigs.k8s.io/controller-runtime",
 )
+FORBIDDEN_TOPOLOGY = re.compile(
+    r"\b(?:HostedRollout|RoleHostedAPI|RoleHostedWorker|hosted_api|hosted_worker|PLUE_BACKEND_ROLE|PLUE_CLI_VERSION)\b"
+)
 
 
-def source_imports() -> list[str]:
+def source_imports(root: Path = ROOT) -> list[str]:
     failures = []
-    for source_root in SOURCE_ROOTS:
+    forbidden = "|".join(re.escape(prefix) for prefix in FORBIDDEN_SOURCE + FORBIDDEN_LOCAL_GRAPH)
+    import_pattern = re.compile(r'^\s*(?:import\s+)?(?:[\w.]+\s+)?"(?:' + forbidden + r')')
+    for source_root in (root / "packages", root / "apps"):
         if not source_root.exists():
             continue
         for path in source_root.rglob("*.go"):
             for line_number, line in enumerate(path.read_text().splitlines(), 1):
                 # Match import declaration lines, including aliased and
                 # single-line imports, without treating comments as imports.
-                if re.match(
-                    r'^\s*(?:import\s+)?(?:[\w.]+\s+)?"(?:github\.com/(?:smithersai/plue|smithers-ai/smithers))(?:/|\")',
-                    line,
-                ):
-                    failures.append(f"{path.relative_to(ROOT)}:{line_number}: forbidden import: {line.strip()}")
+                if import_pattern.match(line):
+                    failures.append(f"{path.relative_to(root)}:{line_number}: forbidden import: {line.strip()}")
+                # Regression tests may assert that a private variable has no effect.
+                if not path.name.endswith("_test.go") and FORBIDDEN_TOPOLOGY.search(line):
+                    failures.append(f"{path.relative_to(root)}:{line_number}: deployment-only topology: {line.strip()}")
     return failures
 
 
-def local_graph() -> list[str]:
+def local_graph(root: Path = ROOT) -> list[str]:
     result = subprocess.run(
         ["go", "list", "-deps", "-f", "{{.ImportPath}}", "./apps/backend"],
-        cwd=ROOT,
+        cwd=root,
         text=True,
         capture_output=True,
     )

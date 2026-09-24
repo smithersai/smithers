@@ -29,7 +29,7 @@ type appBootstrap struct {
 }
 
 type bootstrapFeatures struct {
-	role             Role
+	role             topology
 	identity         bool
 	redirectAuth     bool
 	github           bool

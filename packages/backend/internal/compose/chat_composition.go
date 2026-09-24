@@ -57,21 +57,21 @@ func newChatComposition(options runOptions, pool *pgxpool.Pool, sizing chat.Runt
 	}
 	listener := options.ChatCallbackListener
 	callbackURL := strings.TrimSpace(options.ChatProducerBaseURL)
-	if !options.Role.hosted() && listener == nil {
+	if !options.topology.hosted() && listener == nil {
 		var err error
 		listener, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return nil, fmt.Errorf("listen for local chat callbacks: %w", err)
 		}
 	}
-	if !options.Role.hosted() && listener != nil {
+	if !options.topology.hosted() && listener != nil {
 		address, ok := listener.Addr().(*net.TCPAddr)
 		if !ok || !address.IP.IsLoopback() {
 			_ = listener.Close()
 			return nil, errors.New("single-owner chat callbacks must bind loopback")
 		}
 	}
-	if !options.Role.hosted() && listener != nil {
+	if !options.topology.hosted() && listener != nil {
 		actualURL := "http://" + listener.Addr().String()
 		if callbackURL != "" && callbackURL != actualURL {
 			if listener != nil {

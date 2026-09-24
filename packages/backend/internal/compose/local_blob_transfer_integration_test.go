@@ -94,7 +94,7 @@ func TestLocalBlobTransferComposed(t *testing.T) {
 	var serverErr error
 	go func() {
 		serverErr = StartWithOptions(serverCtx, nil, io.Discard, io.Discard,
-			Options{Role: RoleLocal, Repository: local.Client()},
+			Options{Repository: local.Client()},
 			func(handler http.Handler) { ready <- handler })
 		close(finished)
 	}()

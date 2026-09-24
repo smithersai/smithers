@@ -601,10 +601,6 @@ func TestRun_FullyConfigured(t *testing.T) {
 	env["SMITHERS_AUTH_AUTH0_DOMAIN"] = "example.us.auth0.com"
 	env["SMITHERS_AUTH_AUTH0_CLIENT_ID"] = "auth0-id"
 	env["SMITHERS_AUTH_AUTH0_CLIENT_SECRET"] = "auth0-secret"
-	// Stripe billing (constructor-only).
-	env["SMITHERS_BILLING_MODE"] = "stripe"
-	env["SMITHERS_BILLING_STRIPE_SECRET_KEY"] = "sk_test_123"
-	env["SMITHERS_BILLING_STRIPE_WEBHOOK_SECRET"] = "whsec_test_123"
 	// Linear integration.
 	env["SMITHERS_AUTH_LINEAR_CLIENT_ID"] = "lin-id"
 	env["SMITHERS_AUTH_LINEAR_CLIENT_SECRET"] = "lin-secret"

@@ -99,9 +99,7 @@ func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writ
 
 // Options are the only deployment seams in the common product assembly.
 type Options struct {
-	// Duties selects which halves of the product this process runs. The zero
-	// value serves HTTP and runs the background workers in one process.
-	Duties                Duties
+	Role                  Role
 	TraceExporter         trace.SpanExporter
 	Blobs                 blob.Store
 	AgentLogs             services.AgentLogStore
@@ -119,43 +117,59 @@ type Options struct {
 	ModelStreamHost       ports.ModelStreamHost
 }
 
-// Duties splits one product composition across processes. A deployment
-// expresses its topology by the processes it starts, never by naming itself.
-type Duties string
+// Role selects only process responsibilities. Every role assembles the same
+// product services and route definitions; deployment adapters still determine
+// storage and execution behavior.
+type Role string
 
 const (
-	DutiesAll     Duties = ""
-	DutiesHTTP    Duties = "http"
-	DutiesWorkers Duties = "workers"
+	RoleLocal        Role = "local"
+	RoleHostedAPI    Role = "hosted_api"
+	RoleHostedWorker Role = "hosted_worker"
 )
 
-func (duties Duties) valid() bool {
-	return duties == DutiesAll || duties == DutiesHTTP || duties == DutiesWorkers
+func (role Role) valid() bool {
+	return role == "" || role == RoleLocal || role == RoleHostedAPI || role == RoleHostedWorker
 }
 
-// topology is derived from deployment-neutral inputs: the configured identity
-// mode and the requested duties. A multitenant composition is the only one
-// that runs fleet workers against the deployment schema.
-type topology struct {
-	multitenant bool
-	duties      Duties
-}
-
-func (t topology) hosted() bool         { return t.multitenant }
-func (t topology) workers() bool        { return t.duties != DutiesHTTP }
-func (t topology) clusterWorkers() bool { return t.multitenant && t.workers() }
-func (t topology) servesHTTP() bool     { return t.duties != DutiesWorkers }
+func (role Role) hosted() bool         { return role == RoleHostedAPI || role == RoleHostedWorker }
+func (role Role) workers() bool        { return role != RoleHostedAPI }
+func (role Role) clusterWorkers() bool { return role == RoleHostedWorker }
+func (role Role) servesHTTP() bool     { return role != RoleHostedWorker }
 
 type runOptions struct {
 	Options
-	topology     topology
 	externalHTTP bool
 	ready        func(http.Handler)
 }
 
 func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer, options runOptions) (runErr error) {
-	if !options.Duties.valid() {
-		return fmt.Errorf("unsupported backend duties %q", options.Duties)
+	if options.Role == "" {
+		switch strings.TrimSpace(os.Getenv("PLUE_BACKEND_ROLE")) {
+		case string(RoleHostedWorker):
+			options.Role = RoleHostedWorker
+		case string(RoleHostedAPI):
+			options.Role = RoleHostedAPI
+		default:
+			options.Role = RoleLocal
+			if options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed {
+				options.Role = RoleHostedAPI
+			}
+		}
+	}
+	if options.Workspace != nil {
+		switch isolation := options.Workspace.Isolation(); isolation {
+		case workspace.IsolationTrustedProcess:
+			if options.Role.hosted() {
+				return errors.New("hosted backend requires an isolated workspace runtime")
+			}
+		case workspace.IsolationSandboxed:
+			if !options.Role.hosted() {
+				return errors.New("single-owner backend requires a trusted process workspace runtime")
+			}
+		default:
+			return fmt.Errorf("unsupported workspace isolation %q", isolation)
+		}
 	}
 	_ = stdout
 	// `smithers-backend migrate [apply|status]` is a server-free schema
@@ -179,26 +193,18 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("failed to load config", "error", err)
 		return err
 	}
-	options.topology = topology{multitenant: config.IsMultitenant(cfg.Auth), duties: options.Duties}
-	if options.Workspace != nil {
-		switch isolation := options.Workspace.Isolation(); isolation {
-		case workspace.IsolationTrustedProcess:
-			if options.topology.hosted() {
-				return fmt.Errorf("auth.mode=%q requires an isolated workspace runtime", cfg.Auth.Mode)
-			}
-		case workspace.IsolationSandboxed:
-			if !options.topology.hosted() {
-				return fmt.Errorf("a sandboxed workspace runtime requires auth.mode=%q, got %q", config.AuthModeMultitenant, cfg.Auth.Mode)
-			}
-		default:
-			return fmt.Errorf("unsupported workspace isolation %q", isolation)
-		}
+	expectedAuthMode := config.AuthModeSelfHosted
+	if options.Role.hosted() {
+		expectedAuthMode = config.AuthModeMultitenant
 	}
-	if !options.topology.hosted() && cfg.FeatureFlags.Workflows {
+	if cfg.Auth.Mode != expectedAuthMode {
+		return fmt.Errorf("backend role %q requires auth.mode=%q, got %q", options.Role, expectedAuthMode, cfg.Auth.Mode)
+	}
+	if !options.Role.hosted() && cfg.FeatureFlags.Workflows {
 		return errors.New("legacy workflow triggers are unavailable in single-owner mode; use canonical Flow hosts")
 	}
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
-		InProcessRepository: !options.topology.hosted() && options.Repository != nil,
+		InProcessRepository: !options.Role.hosted() && options.Repository != nil,
 		WorkspaceRuntime:    options.Workspace != nil,
 	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
@@ -260,7 +266,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	defer pool.Close()
 	slog.Info("connected to database")
 
-	provisioningEnforced := options.topology.hosted()
+	provisioningEnforced := options.Role.hosted()
 
 	// Start background DB pool stats collector (reports every 15s).
 	poolStatsCtx, poolStatsCancel := context.WithCancel(ctx)
@@ -276,14 +282,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	hostedQueries := deploymentdb.New(pool)
 	var runnerStaleSweeper *runnerpool.RunnerPool
 	runtimeMetricsStore := services.NewRuntimeMetricsStore(hostedQueries, pool)
-	if options.topology.hosted() {
+	if options.Role.hosted() {
 		services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
 		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(hostedQueries))
 		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(hostedQueries)
 		smithersMetrics.MustRegister(inventoryMetrics)
 		inventoryMetrics.Start(poolStatsCtx)
 	}
-	if options.topology.clusterWorkers() {
+	if options.Role.clusterWorkers() {
 		runnerStaleSweeper = runnerpool.NewRunnerPool(hostedQueries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
 	}
 	// One shared broker multiplexes every SSE stream type (notifications,
@@ -410,10 +416,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if emailFrom == "" {
 		emailFrom = cfg.Email.SMTPFrom
 	}
+	if emailFrom == "" {
+		emailFrom = cfg.Email.SESFrom
+	}
 	// One public origin serves browser redirects, email, Git and blob transfers.
 	publicBaseURL := config.PublicOrigin(cfg)
 	workspaceGitBaseURL := publicBaseURL
-	if !options.topology.hosted() && options.Workspace != nil {
+	if !options.Role.hosted() && options.Workspace != nil {
 		workspaceGitBaseURL, err = flowHostProductAPIURL(options, cfg.Server.Addr)
 		if err != nil {
 			return fmt.Errorf("workspace Git origin: %w", err)
@@ -426,7 +435,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	})
 
 	billingQueries := services.BillingBaseQuerier(queries)
-	if options.topology.hosted() {
+	if options.Role.hosted() {
 		// Hosted admission includes deployment storage reservations and retained
 		// deletion bytes; local mode uses only the product schema.
 		billingQueries = hostedQueries
@@ -465,7 +474,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithRepoBillingPolicy(billingPolicy),
 	}
 	var repoService *services.RepoService
-	if options.topology.hosted() {
+	if options.Role.hosted() {
 		repoOptions = append(repoOptions, services.WithRepoPlacementResolver(options.RepositoryPlacement))
 		repoService = services.NewRepoServiceWithPool(queries, repoHostClient, activeStorageSetID, pool, repoOptions...)
 	} else {
@@ -650,7 +659,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var goldenSnapshotSandbox services.GoldenSnapshotVMClient
 	var orphanSandbox services.SandboxOrphanVMClient
 	var provider sandbox.Provider
-	if options.topology.hosted() {
+	if options.Role.hosted() {
 		provider, err = buildSandboxProvider(cfg.Sandbox, smithersMetrics)
 		if err != nil {
 			return err
@@ -876,10 +885,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitHubImportSyncedRepos(gitHubSyncedRepoService),
 	)
 	gitHubSyncedRepoService.SetMirrorer(gitHubImportService)
-	if !options.topology.hosted() {
+	if !options.Role.hosted() {
 		services.WithGitHubImportProductProvisioning(pool)(gitHubImportService)
 	}
-	if !options.topology.hosted() || provisioningEnforced {
+	if !options.Role.hosted() || provisioningEnforced {
 		gitHubImportService.EnableDurableWorker()
 	}
 
@@ -1205,11 +1214,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if flow != nil {
 		agentService.SetFlowDispatcher(flow.dispatcher)
 		repositoryJobService.SetFlowDispatcher(flow.dispatcher)
-		if options.topology.workers() {
+		if options.Role.workers() {
 			flowWorker = newCriticalWorker()
 		}
 	}
-	chatSizing, err := chatRuntimeOptions(cfg.Chat, options.topology.hosted(), slog.Default())
+	chatSizing, err := chatRuntimeOptions(cfg.Chat, options.Role.hosted(), slog.Default())
 	if err != nil {
 		return fmt.Errorf("initialize chat runtime: %w", err)
 	}
@@ -1395,7 +1404,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repoGatewayService.SetRevocationPublisher(revocationPublisher)
 	agentService.SetRevocationPublisher(revocationPublisher)
 	repoService.SetRevocationPublisher(revocationPublisher)
-	if !options.topology.hosted() {
+	if !options.Role.hosted() {
 		// These HTTP surfaces operate on fleet placement, runner, or canary
 		// state excluded from the single-owner product schema.
 		// The shared router already treats nil handlers as absent routes.
@@ -1504,7 +1513,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		alertRemediationWorker != nil,
 		routerExtras{Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
 	)
-	if flow != nil && options.topology.servesHTTP() {
+	if flow != nil && options.Role.servesHTTP() {
 		browser := &browserFlowAPI{repos: repoService, workspaces: workspaceService, queries: queries, dispatcher: flow.dispatcher}
 		flowAccess := []func(http.Handler) http.Handler{
 			cors.Handler(apiCORSOptions(cfg)), middleware.JSONTimeout(4 * time.Minute),
@@ -1515,7 +1524,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)
 		router.With(flowAccess...).Post("/api/workflow/rpc", browser.rpc)
 	}
-	if chatService != nil && options.topology.servesHTTP() {
+	if chatService != nil && options.Role.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
 		mountChatProducerOnSharedListener(router, chatService)
 		ownerModels := modelhost.OwnerModels{Pool: pool, Codec: webhookSecretCodec}
@@ -1526,7 +1535,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	if root := strings.TrimSpace(os.Getenv("SMITHERS_WEB_ROOT")); root != "" {
 		mode := webapp.SelfHosted
-		if options.topology.hosted() {
+		if options.Role.hosted() {
 			mode = webapp.Hosted
 		}
 		assets, err := webapp.New(root, mode)
@@ -1537,21 +1546,21 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		router.NotFound(assets.ServeHTTP)
 	}
 	var r http.Handler = withAppBootstrap(router, newAppBootstrap(bootstrapFeatures{
-		role: options.topology, identity: authHandler != nil,
-		agent:        options.ChatHost != nil && chatService != nil && options.topology.servesHTTP(),
+		role: options.Role, identity: authHandler != nil,
+		agent:        options.ChatHost != nil && chatService != nil && options.Role.servesHTTP(),
 		redirectAuth: strings.TrimSpace(cfg.Auth.GitHubClientID) != "" || strings.TrimSpace(cfg.Auth.Auth0ClientID) != "",
 		github:       gitHubImportHandler != nil && strings.TrimSpace(cfg.Auth.GitHubClientID) != "",
 		// A configured model turn is available only when the durable journal
 		// routes are mounted; it does not imply a separate agent executor.
-		modelTurn:        modelStreamHandler != nil && options.topology.servesHTTP(),
-		recommend:        recommendationHandler != nil && options.topology.servesHTTP(),
-		workspace:        options.Workspace != nil && options.topology.servesHTTP(),
-		terminal:         options.Workspace != nil && options.topology.servesHTTP(),
+		modelTurn:        modelStreamHandler != nil && options.Role.servesHTTP(),
+		recommend:        recommendationHandler != nil && options.Role.servesHTTP(),
+		workspace:        options.Workspace != nil && options.Role.servesHTTP(),
+		terminal:         options.Workspace != nil && options.Role.servesHTTP(),
 		billingCheckout:  billingComposition.Service != nil,
 		workspaceRuntime: options.Workspace != nil,
 		isolatedSandbox:  provider != nil || (options.Workspace != nil && options.Workspace.Isolation() == workspace.IsolationSandboxed),
 	}), apiCORSOptions(cfg))
-	if !options.topology.hosted() {
+	if options.Role == RoleLocal || options.Role == "" {
 		if options.Repository != nil {
 			r = withLocalReadiness(r, pool, options.Repository)
 		}
@@ -1602,45 +1611,45 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() { flow.maintainRetired(workerCtx) })
 	}
 	var wikiHistoryWorker *joinedBackgroundWorker
-	if options.topology.workers() && cfg.FeatureFlags.Wiki {
+	if options.Role.workers() && cfg.FeatureFlags.Wiki {
 		wikiHistoryWorker = startJoinedBackgroundWorker(func() { services.RunWikiHistory(workerCtx, pool, repoHostClient) })
 	}
-	if options.topology.workers() {
+	if options.Role.workers() {
 		launchWorker(func() { landingWorker.Start(workerCtx) })
 		launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
 		launchWorker(func() { workflowLogBudgetBackfiller.Start(workerCtx) })
 	}
-	if options.topology.clusterWorkers() {
+	if options.Role.clusterWorkers() {
 		launchWorker(func() { runnerStaleSweeper.RunStaleSweeper(workerCtx, 30*time.Second) })
 	}
 	var gitHubImportWorker *joinedBackgroundWorker
-	if options.topology.workers() && (!options.topology.hosted() || provisioningEnforced) {
+	if options.Role.workers() && (!options.Role.hosted() || provisioningEnforced) {
 		gitHubImportWorker = startJoinedBackgroundWorker(func() {
 			gitHubImportService.Start(workerCtx)
 		})
-	} else if options.topology.clusterWorkers() {
+	} else if options.Role.clusterWorkers() {
 		slog.Error("durable GitHub import worker is disabled until repository provisioning enforcement is enabled")
 	}
-	if options.topology.workers() && cfg.FeatureFlags.Workflows {
+	if options.Role.workers() && cfg.FeatureFlags.Workflows {
 		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })
 		launchWorker(func() { runnerQueueTimeoutWorker.Start(workerCtx) })
 		launchWorker(func() { gitHubWebhookEventWorker.Start(workerCtx) })
 		launchWorker(func() { repositoryJobService.Start(workerCtx) })
-		if options.topology.clusterWorkers() {
+		if options.Role.clusterWorkers() {
 			launchWorker(func() { workflowSandboxSchedulerWorker.Start(workerCtx) })
 		}
-		if options.topology.clusterWorkers() && alertRemediationWorker != nil {
+		if options.Role.clusterWorkers() && alertRemediationWorker != nil {
 			launchWorker(func() { alertRemediationWorker.Start(workerCtx) })
 		}
 	}
-	if options.topology.workers() {
+	if options.Role.workers() {
 		launchWorker(func() { webhookWorker.Start(workerCtx) })
 	}
 	// R3: the reconciliation backstop for the synced GitHub metadata store —
 	// webhooks are hints; this sweep (oldest staleness first, adaptive
 	// interval clamped 45s–8h, 14-strike hard fail) is the truth.
-	if options.topology.workers() {
-		if !options.topology.hosted() {
+	if options.Role.workers() {
+		if !options.Role.hosted() {
 			launchWorker(func() { repositoryStorageReconciler.Start(workerCtx) })
 		}
 		launchWorker(func() { gitHubSyncedRepoService.StartReconciler(workerCtx) })
@@ -1655,7 +1664,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		auditCleaner.Start(workerCtx)
 		workspaceCleaner.Start(workerCtx)
 	}
-	if options.topology.clusterWorkers() {
+	if options.Role.clusterWorkers() {
 		launchWorker(func() { repositoryStorageReconciler.Start(workerCtx) })
 		launchWorker(func() { repositoryProvisioningReconciler.Start(workerCtx) })
 		launchWorker(func() { repoGatewayService.StartReaper(workerCtx) })
@@ -1673,7 +1682,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// GetGitHubAppStatus reports "not installed" for every repo. Non-blocking so a
 	// slow/failed GitHub round-trip never delays serving; no-ops cleanly when app
 	// credentials are unconfigured.
-	if options.topology.workers() {
+	if options.Role.workers() {
 		launchWorker(func() {
 			defer func() {
 				if r := recover(); r != nil {
@@ -1688,7 +1697,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	// Register signals before listening so the first SIGTERM is never lost.
 	sigCh := make(chan os.Signal, 1)
-	if !options.externalHTTP && options.topology.servesHTTP() {
+	if !options.externalHTTP && options.Role.servesHTTP() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		defer signal.Stop(sigCh)
 	}
@@ -1708,7 +1717,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		case fatalWorkerErr = <-chatWorkerFailure:
 		case fatalWorkerErr = <-chatCallbackFailure:
 		}
-		if !options.externalHTTP && options.topology.servesHTTP() {
+		if !options.externalHTTP && options.Role.servesHTTP() {
 			signal.Stop(sigCh)
 		}
 		inFlightAtSIGTERM := requestTracker.BeginShutdown()
@@ -1775,14 +1784,14 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			}
 		}
 		stopWorkers()
-		if options.topology.workers() {
+		if options.Role.workers() {
 			authCleaner.Stop()
 			workflowCacheCleaner.Stop()
 			workflowArtifactCleaner.Stop()
 			auditCleaner.Stop()
 			workspaceCleaner.Stop()
 		}
-		if options.topology.clusterWorkers() {
+		if options.Role.clusterWorkers() {
 			storageDeletionCleaner.Stop()
 			egressAuditCleaner.Stop()
 			goldenSnapshotService.Stop()
@@ -1805,13 +1814,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 		slog.Info(fmt.Sprintf("in-flight requests at SIGTERM: %d, drained: %d, killed: %d", inFlightAtSIGTERM, drained, killed), attrs...)
 	}()
-	if options.externalHTTP || !options.topology.servesHTTP() {
+	if options.externalHTTP || !options.Role.servesHTTP() {
 		if err := ctx.Err(); err != nil {
 			<-shutdownDone
 			return errors.Join(err, shutdownFailure)
 		}
 		if options.ready != nil {
-			if options.topology.servesHTTP() {
+			if options.Role.servesHTTP() {
 				options.ready(handler)
 			} else {
 				options.ready(nil)

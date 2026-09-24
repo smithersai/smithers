@@ -26,6 +26,10 @@ type Config struct {
 	Args   []string
 	Stdout io.Writer
 	Stderr io.Writer
+	// Duties selects which halves of the product this process runs. The zero
+	// value serves HTTP and runs the background workers together; a deployment
+	// that scales them separately starts one process per duty.
+	Duties Duties
 	// TraceExporter is built by the deployment and runs through the common
 	// telemetry pipeline. Nil selects the local none/OTLP configuration.
 	TraceExporter trace.SpanExporter
@@ -66,6 +70,15 @@ type Config struct {
 	RecommendationLog   ports.RecommendationLog
 	ModelStreamHost     ports.ModelStreamHost
 }
+
+// Duties is one process's share of the product composition.
+type Duties string
+
+const (
+	DutiesAll     Duties = ""
+	DutiesHTTP    Duties = "http"
+	DutiesWorkers Duties = "workers"
+)
 
 // Instance is one running product composition. Its handler is the real shared
 // route set; callers can mount it on their own HTTP server while the bounded
@@ -142,6 +155,7 @@ func Run(ctx context.Context, cfg Config) error {
 // a new field cannot reach one entry point and miss the other.
 func (cfg Config) options() compose.Options {
 	return compose.Options{
+		Duties:                compose.Duties(cfg.Duties),
 		TraceExporter:         cfg.TraceExporter,
 		Blobs:                 cfg.Blobs,
 		AgentLogs:             cfg.AgentLogs,

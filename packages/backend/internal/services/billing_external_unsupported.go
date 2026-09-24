@@ -1,9 +1,6 @@
 package services
 
-import (
-	"errors"
-	"time"
-)
+import "time"
 
 // Stripe value types remain part of the private-adapter seam. The OSS backend
 // intentionally does not ship a payment client; Plue owns that implementation.
@@ -36,9 +33,3 @@ type StripeChargeSnapshot struct {
 	AmountRefunded                int64
 	Currency                      string
 }
-
-type stripeBillingClient struct{}
-
-func NewStripeBillingClient(string) StripeBillingClient { return nil }
-
-var errStripeUnavailable = errors.New("stripe billing is unavailable in the public backend")

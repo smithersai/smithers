@@ -11,14 +11,14 @@ import (
 )
 
 func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
-	local := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true, redirectAuth: true, workspaceRuntime: true, workspace: true, terminal: true})
+	local := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true, redirectAuth: true, workspaceRuntime: true, workspace: true, terminal: true})
 	require.Equal(t, "local", local.Host)
 	require.Equal(t, []string{"identity", "cloud", "cloud.terminal"}, local.Capabilities)
 	require.Equal(t, "credentials", local.AuthFlow)
 	require.Equal(t, "trusted-only", local.Sandbox.Mode)
 	require.NotEmpty(t, local.Sandbox.Platform)
 
-	hosted := newAppBootstrap(bootstrapFeatures{role: RoleHostedAPI, identity: true, redirectAuth: true,
+	hosted := newAppBootstrap(bootstrapFeatures{role: hostedAPITopology, identity: true, redirectAuth: true,
 		agent: true, modelTurn: true, billingCheckout: true, isolatedSandbox: true})
 	require.Equal(t, "cloud", hosted.Host)
 	require.Equal(t, []string{"identity", "agent", "model.turn", "billing.checkout"}, hosted.Capabilities)
@@ -32,9 +32,9 @@ func TestAppBootstrapReportsAssembledCapabilities(t *testing.T) {
 }
 
 func TestAppBootstrapGitHubRequiresConfiguredIntegration(t *testing.T) {
-	without := newAppBootstrap(bootstrapFeatures{role: RoleLocal, identity: true})
+	without := newAppBootstrap(bootstrapFeatures{role: localTopology, identity: true})
 	require.NotContains(t, without.Capabilities, "github")
-	with := newAppBootstrap(bootstrapFeatures{role: RoleHostedAPI, identity: true, github: true})
+	with := newAppBootstrap(bootstrapFeatures{role: hostedAPITopology, identity: true, github: true})
 	require.Contains(t, with.Capabilities, "github")
 }
 

@@ -318,7 +318,6 @@ var (
 	shutdownTimeoutFn = serverShutdownTimeout
 	startSSEBroker    = (*sse.Broker).Start
 	newEmailTransport = initEmailTransport
-	newSESClient      = email.NewSESClient
 	newSecretCodec    = webhook.NewSecretCodec
 	newBlobStore      = initializeBlobStore
 	ensurePairSchema  = (*services.PairService).EnsureSchema
@@ -647,15 +646,8 @@ func apiCORSOptions(cfg *config.Config) cors.Options {
 }
 
 // initEmailTransport creates an email transport from config using the factory.
-// SMTP is the only public email transport; hosted providers live in Plue.
+// SMTP is the only public email transport.
 func initEmailTransport(cfg config.EmailConfig) (email.Transport, error) {
-	from := cfg.From
-	if from == "" {
-		from = cfg.SMTPFrom
-	}
-	if from == "" {
-		from = cfg.SESFrom
-	}
 	return email.NewTransport(email.TransportConfig{
 		SMTP: email.SMTPConfig{
 			Host: cfg.SMTPHost,
@@ -686,12 +678,8 @@ func logStartupConfig(cfg *config.Config) {
 
 	// Determine email transport type.
 	emailStatus := "noop (log only)"
-	if cfg.Email.SendGridAPIKey != "" {
-		emailStatus = "sendgrid"
-	} else if cfg.Email.SMTPHost != "" {
+	if cfg.Email.SMTPHost != "" {
 		emailStatus = "smtp"
-	} else if cfg.Email.SESRegion != "" {
-		emailStatus = "ses"
 	}
 
 	slog.Info("server configuration summary",
