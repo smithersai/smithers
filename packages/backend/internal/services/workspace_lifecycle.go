@@ -622,17 +622,7 @@ func (s *WorkspaceService) resumeWorkspaceVM(ctx context.Context, workspace db.W
 	if err = s.q.MarkWorkspaceResumed(ctx, db.MarkWorkspaceResumedParams{ID: workspace.ID, ResumedAt: resumedAt}); err != nil {
 		return workspace, pkgerrors.Internal("record workspace resume: " + err.Error())
 	}
-	// The CAS helper intentionally returns a narrow projection. Preserve the
-	// immutable and last-reported fields loaded before resume, while returning
-	// the CAS result's authoritative execution fields (especially vm_id).
-	updated.Kind = workspace.Kind
-	updated.EnvironmentSource = workspace.EnvironmentSource
-	updated.EnvironmentRevision = workspace.EnvironmentRevision
-	updated.EnvironmentClosureHash = workspace.EnvironmentClosureHash
-	updated.HeadChangeID = workspace.HeadChangeID
-	updated.HeadCommitID = workspace.HeadCommitID
-	updated.Ahead = workspace.Ahead
-	updated.Behind = workspace.Behind
+	// MarkWorkspaceResumed wrote these after the CAS returned its row.
 	if !updated.StartedAt.Valid {
 		updated.StartedAt = pgtype.Timestamptz{Time: resumedAt, Valid: true}
 	}

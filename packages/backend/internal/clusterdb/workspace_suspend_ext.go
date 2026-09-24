@@ -2,14 +2,29 @@ package clusterdb
 
 import (
 	"context"
+
 	"github.com/jackc/pgx/v5"
 )
 
-const clusterWorkspaceReturningColumns = `id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, vm_id, status, last_activity_at, idle_timeout_secs, suspended_at, last_accessed_at, deleted_at, created_at, updated_at`
+// clusterWorkspaceReturningColumns names every column db.Workspace carries, in
+// model order. Naming them keeps the scan independent of the hosted table's
+// physical column order; a column missing here reaches the client as its zero
+// value.
+const clusterWorkspaceReturningColumns = `w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at`
 
 func scanClusterWorkspaceRow(row pgx.Row) (Workspace, error) {
 	var i Workspace
-	err := row.Scan(&i.ID, &i.RepositoryID, &i.UserID, &i.Name, &i.IsFork, &i.ParentWorkspaceID, &i.TargetBookmark, &i.SourceSnapshotID, &i.VmID, &i.Status, &i.LastActivityAt, &i.IdleTimeoutSecs, &i.SuspendedAt, &i.LastAccessedAt, &i.DeletedAt, &i.CreatedAt, &i.UpdatedAt)
+	err := row.Scan(
+		&i.ID, &i.RepositoryID, &i.UserID, &i.Name, &i.IsFork, &i.ParentWorkspaceID,
+		&i.TargetBookmark, &i.SourceSnapshotID, &i.Kind, &i.EnvironmentSource,
+		&i.EnvironmentRevision, &i.EnvironmentClosureHash, &i.AgentSessionID,
+		&i.HeadPushTokenID, &i.EnvironmentImage, &i.DesktopSessionID,
+		&i.DesktopSessionTokenHash, &i.DesktopSessionExpiresAt, &i.VmID,
+		&i.ProvisioningGeneration, &i.Status, &i.FailureCode, &i.FailureMessage,
+		&i.ProvisioningStage, &i.LastActivityAt, &i.IdleTimeoutSecs, &i.SuspendedAt,
+		&i.StartedAt, &i.ResumedAt, &i.HeadChangeID, &i.HeadCommitID, &i.Ahead,
+		&i.Behind, &i.LastAccessedAt, &i.DeletedAt, &i.CreatedAt, &i.UpdatedAt,
+	)
 	return i, err
 }
 

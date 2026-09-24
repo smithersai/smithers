@@ -1564,6 +1564,18 @@ type Reaction struct {
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
+type RecommendationLog struct {
+	ID             string             `json:"id"`
+	Repo           pgtype.Text        `json:"repo"`
+	TailDigest     string             `json:"tail_digest"`
+	CommandCount   int32              `json:"command_count"`
+	Commands       []string           `json:"commands"`
+	Model          string             `json:"model"`
+	OutcomeCommand pgtype.Text        `json:"outcome_command"`
+	OutcomeAt      pgtype.Timestamptz `json:"outcome_at"`
+	CreatedAt      time.Time          `json:"created_at"`
+}
+
 type Release struct {
 	ID           int64              `json:"id"`
 	RepositoryID int64              `json:"repository_id"`

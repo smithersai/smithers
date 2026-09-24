@@ -564,6 +564,70 @@ func (q *Queries) FailProvisioningWorkspaceIfCurrent(ctx context.Context, arg Fa
 	return i, err
 }
 
+const failStaleStartingWorkspace = `-- name: FailStaleStartingWorkspace :one
+UPDATE workspaces
+SET status = 'failed',
+    updated_at = NOW()
+WHERE id = $1
+  AND status = 'starting'
+  AND deleted_at IS NULL
+  AND updated_at < NOW() - make_interval(secs => $2::int)
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at
+`
+
+type FailStaleStartingWorkspaceParams struct {
+	ID             string `json:"id"`
+	StaleAfterSecs int32  `json:"stale_after_secs"`
+}
+
+// CAS a stranded 'starting' workspace to 'failed', re-checking staleness in the
+// same statement so a provision that completed after the reaper listed it is
+// left untouched.
+func (q *Queries) FailStaleStartingWorkspace(ctx context.Context, arg FailStaleStartingWorkspaceParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, failStaleStartingWorkspace, arg.ID, arg.StaleAfterSecs)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.Name,
+		&i.IsFork,
+		&i.ParentWorkspaceID,
+		&i.TargetBookmark,
+		&i.SourceSnapshotID,
+		&i.Kind,
+		&i.EnvironmentSource,
+		&i.EnvironmentRevision,
+		&i.EnvironmentClosureHash,
+		&i.AgentSessionID,
+		&i.HeadPushTokenID,
+		&i.EnvironmentImage,
+		&i.DesktopSessionID,
+		&i.DesktopSessionTokenHash,
+		&i.DesktopSessionExpiresAt,
+		&i.VmID,
+		&i.ProvisioningGeneration,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.ProvisioningStage,
+		&i.LastActivityAt,
+		&i.IdleTimeoutSecs,
+		&i.SuspendedAt,
+		&i.StartedAt,
+		&i.ResumedAt,
+		&i.HeadChangeID,
+		&i.HeadCommitID,
+		&i.Ahead,
+		&i.Behind,
+		&i.LastAccessedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const failWorkspaceIfUnchanged = `-- name: FailWorkspaceIfUnchanged :one
 UPDATE workspaces
 SET status = 'failed',
@@ -1644,6 +1708,77 @@ func (q *Queries) ListStalePendingWorkspaces(ctx context.Context, staleAfterSecs
 	return items, nil
 }
 
+const listStaleStartingWorkspacesWithVM = `-- name: ListStaleStartingWorkspacesWithVM :many
+SELECT id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at
+FROM workspaces
+WHERE status = 'starting'
+  AND vm_id <> ''
+  AND deleted_at IS NULL
+  AND updated_at < NOW() - make_interval(secs => $1::int)
+ORDER BY updated_at ASC
+`
+
+// Workspaces stranded in 'starting' with a registered VM past the threshold,
+// the rows a mid-provision API crash leaves behind. ListStalePendingWorkspaces
+// requires vm_id = ”, so no other reaper sees these rows.
+func (q *Queries) ListStaleStartingWorkspacesWithVM(ctx context.Context, staleAfterSecs int32) ([]Workspace, error) {
+	rows, err := q.db.Query(ctx, listStaleStartingWorkspacesWithVM, staleAfterSecs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Workspace{}
+	for rows.Next() {
+		var i Workspace
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.UserID,
+			&i.Name,
+			&i.IsFork,
+			&i.ParentWorkspaceID,
+			&i.TargetBookmark,
+			&i.SourceSnapshotID,
+			&i.Kind,
+			&i.EnvironmentSource,
+			&i.EnvironmentRevision,
+			&i.EnvironmentClosureHash,
+			&i.AgentSessionID,
+			&i.HeadPushTokenID,
+			&i.EnvironmentImage,
+			&i.DesktopSessionID,
+			&i.DesktopSessionTokenHash,
+			&i.DesktopSessionExpiresAt,
+			&i.VmID,
+			&i.ProvisioningGeneration,
+			&i.Status,
+			&i.FailureCode,
+			&i.FailureMessage,
+			&i.ProvisioningStage,
+			&i.LastActivityAt,
+			&i.IdleTimeoutSecs,
+			&i.SuspendedAt,
+			&i.StartedAt,
+			&i.ResumedAt,
+			&i.HeadChangeID,
+			&i.HeadCommitID,
+			&i.Ahead,
+			&i.Behind,
+			&i.LastAccessedAt,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserWorkspacesAcrossRepos = `-- name: ListUserWorkspacesAcrossRepos :many
 SELECT
     w.id                            AS workspace_id,
@@ -2154,6 +2289,65 @@ func (q *Queries) ResetWorkspaceForReprovision(ctx context.Context, id string) (
 	return i, err
 }
 
+const resumeWorkspaceToRunning = `-- name: ResumeWorkspaceToRunning :one
+UPDATE workspaces
+SET status = 'running',
+    suspended_at = NULL,
+    updated_at = NOW()
+WHERE id = $1
+  AND status <> 'running'
+  AND deleted_at IS NULL
+RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target_bookmark, source_snapshot_id, kind, environment_source, environment_revision, environment_closure_hash, agent_session_id, head_push_token_id, environment_image, desktop_session_id, desktop_session_token_hash, desktop_session_expires_at, vm_id, provisioning_generation, status, failure_code, failure_message, provisioning_stage, last_activity_at, idle_timeout_secs, suspended_at, started_at, resumed_at, head_change_id, head_commit_id, ahead, behind, last_accessed_at, deleted_at, created_at, updated_at
+`
+
+// CAS into running from any non-running, non-deleted state. Exactly one of N
+// concurrent resumes wins, so the active-VM gauge +1 pairs one-to-one with the
+// row entering running.
+func (q *Queries) ResumeWorkspaceToRunning(ctx context.Context, id string) (Workspace, error) {
+	row := q.db.QueryRow(ctx, resumeWorkspaceToRunning, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.Name,
+		&i.IsFork,
+		&i.ParentWorkspaceID,
+		&i.TargetBookmark,
+		&i.SourceSnapshotID,
+		&i.Kind,
+		&i.EnvironmentSource,
+		&i.EnvironmentRevision,
+		&i.EnvironmentClosureHash,
+		&i.AgentSessionID,
+		&i.HeadPushTokenID,
+		&i.EnvironmentImage,
+		&i.DesktopSessionID,
+		&i.DesktopSessionTokenHash,
+		&i.DesktopSessionExpiresAt,
+		&i.VmID,
+		&i.ProvisioningGeneration,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.ProvisioningStage,
+		&i.LastActivityAt,
+		&i.IdleTimeoutSecs,
+		&i.SuspendedAt,
+		&i.StartedAt,
+		&i.ResumedAt,
+		&i.HeadChangeID,
+		&i.HeadCommitID,
+		&i.Ahead,
+		&i.Behind,
+		&i.LastAccessedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setWorkspaceDesktopSession = `-- name: SetWorkspaceDesktopSession :exec
 UPDATE workspaces
 SET desktop_session_id = $2::text,
@@ -2462,6 +2656,72 @@ RETURNING id, repository_id, user_id, name, is_fork, parent_workspace_id, target
 // row entered 'running'.
 func (q *Queries) SuspendRunningWorkspace(ctx context.Context, id string) (Workspace, error) {
 	row := q.db.QueryRow(ctx, suspendRunningWorkspace, id)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.UserID,
+		&i.Name,
+		&i.IsFork,
+		&i.ParentWorkspaceID,
+		&i.TargetBookmark,
+		&i.SourceSnapshotID,
+		&i.Kind,
+		&i.EnvironmentSource,
+		&i.EnvironmentRevision,
+		&i.EnvironmentClosureHash,
+		&i.AgentSessionID,
+		&i.HeadPushTokenID,
+		&i.EnvironmentImage,
+		&i.DesktopSessionID,
+		&i.DesktopSessionTokenHash,
+		&i.DesktopSessionExpiresAt,
+		&i.VmID,
+		&i.ProvisioningGeneration,
+		&i.Status,
+		&i.FailureCode,
+		&i.FailureMessage,
+		&i.ProvisioningStage,
+		&i.LastActivityAt,
+		&i.IdleTimeoutSecs,
+		&i.SuspendedAt,
+		&i.StartedAt,
+		&i.ResumedAt,
+		&i.HeadChangeID,
+		&i.HeadCommitID,
+		&i.Ahead,
+		&i.Behind,
+		&i.LastAccessedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const suspendRunningWorkspaceIfSessionless = `-- name: SuspendRunningWorkspaceIfSessionless :one
+UPDATE workspaces w
+SET status = 'suspended',
+    suspended_at = NOW(),
+    updated_at = NOW()
+WHERE w.id = $1
+  AND w.status = 'running'
+  AND w.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM workspace_sessions s
+      WHERE s.workspace_id = w.id
+        AND s.status IN ('pending', 'starting', 'running')
+  )
+RETURNING w.id, w.repository_id, w.user_id, w.name, w.is_fork, w.parent_workspace_id, w.target_bookmark, w.source_snapshot_id, w.kind, w.environment_source, w.environment_revision, w.environment_closure_hash, w.agent_session_id, w.head_push_token_id, w.environment_image, w.desktop_session_id, w.desktop_session_token_hash, w.desktop_session_expires_at, w.vm_id, w.provisioning_generation, w.status, w.failure_code, w.failure_message, w.provisioning_stage, w.last_activity_at, w.idle_timeout_secs, w.suspended_at, w.started_at, w.resumed_at, w.head_change_id, w.head_commit_id, w.ahead, w.behind, w.last_accessed_at, w.deleted_at, w.created_at, w.updated_at
+`
+
+// CAS from running to suspended while the workspace has no active session.
+// The NOT EXISTS gate runs in the same statement as the status flip, so a
+// session created concurrently with a last-session destroy is never stranded
+// on a workspace this call suspends. Hosted deploymentdb adds a gateway fence.
+func (q *Queries) SuspendRunningWorkspaceIfSessionless(ctx context.Context, id string) (Workspace, error) {
+	row := q.db.QueryRow(ctx, suspendRunningWorkspaceIfSessionless, id)
 	var i Workspace
 	err := row.Scan(
 		&i.ID,

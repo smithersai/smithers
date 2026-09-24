@@ -836,3 +836,61 @@ WHERE w.status = 'running'
       AND NOW() <= s.last_activity_at + make_interval(secs => s.idle_timeout_secs)
   );
 
+
+-- name: SuspendRunningWorkspaceIfSessionless :one
+-- CAS from running to suspended while the workspace has no active session.
+-- The NOT EXISTS gate runs in the same statement as the status flip, so a
+-- session created concurrently with a last-session destroy is never stranded
+-- on a workspace this call suspends. Hosted deploymentdb adds a gateway fence.
+UPDATE workspaces w
+SET status = 'suspended',
+    suspended_at = NOW(),
+    updated_at = NOW()
+WHERE w.id = $1
+  AND w.status = 'running'
+  AND w.deleted_at IS NULL
+  AND NOT EXISTS (
+      SELECT 1
+      FROM workspace_sessions s
+      WHERE s.workspace_id = w.id
+        AND s.status IN ('pending', 'starting', 'running')
+  )
+RETURNING w.*;
+
+-- name: ResumeWorkspaceToRunning :one
+-- CAS into running from any non-running, non-deleted state. Exactly one of N
+-- concurrent resumes wins, so the active-VM gauge +1 pairs one-to-one with the
+-- row entering running.
+UPDATE workspaces
+SET status = 'running',
+    suspended_at = NULL,
+    updated_at = NOW()
+WHERE id = $1
+  AND status <> 'running'
+  AND deleted_at IS NULL
+RETURNING *;
+
+-- name: ListStaleStartingWorkspacesWithVM :many
+-- Workspaces stranded in 'starting' with a registered VM past the threshold,
+-- the rows a mid-provision API crash leaves behind. ListStalePendingWorkspaces
+-- requires vm_id = '', so no other reaper sees these rows.
+SELECT *
+FROM workspaces
+WHERE status = 'starting'
+  AND vm_id <> ''
+  AND deleted_at IS NULL
+  AND updated_at < NOW() - make_interval(secs => sqlc.arg(stale_after_secs)::int)
+ORDER BY updated_at ASC;
+
+-- name: FailStaleStartingWorkspace :one
+-- CAS a stranded 'starting' workspace to 'failed', re-checking staleness in the
+-- same statement so a provision that completed after the reaper listed it is
+-- left untouched.
+UPDATE workspaces
+SET status = 'failed',
+    updated_at = NOW()
+WHERE id = sqlc.arg(id)
+  AND status = 'starting'
+  AND deleted_at IS NULL
+  AND updated_at < NOW() - make_interval(secs => sqlc.arg(stale_after_secs)::int)
+RETURNING *;
