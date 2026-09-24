@@ -29,7 +29,7 @@ const session = (status: Tab["status"], settled?: string) => {
     outcome: settled === undefined ? { _tag: "done", answer: "fixed" } : { _tag: "failed", message: settled }
   })
   const chat = Session.create(host.cwd)
-  const tab: Tab = { id: "fix", title: "Fix", prompt: "fix", seat: "worker:test", file: worker.file, status, startedAt: 1 }
+  const tab: Tab = { id: "fix", title: "Fix", prompt: "fix", seat: "worker:test", file: worker.file, status, startedAt: 1, depth: 0 }
   chat.append({ type: "user", at: 1, text: "delegate" })
   chat.append({ type: "tab", tab })
   chat.append({ type: "user", at: 3, text: "next" })

@@ -529,7 +529,7 @@ describe("undo", () => {
     r.settle()
     const worker = Session.create(cwd, "worker")
     for (const record of r.records) worker.append(record)
-    const tab = { id: "fixer", title: "Fixer", prompt: "fix", seat: "w", file: worker.file, status: "done" as const, startedAt: 1 }
+    const tab = { id: "fixer", title: "Fixer", prompt: "fix", seat: "w", file: worker.file, status: "done" as const, startedAt: 1, depth: 0 }
     const host = { cwd, judged: false, compaction: async () => undefined, dispose: async () => {}, run: () => { throw new Error("no run") } }
     const workspace = new Workspace({
       host: host as never,

@@ -6,15 +6,18 @@ import * as Panels from "./panels.ts"
 import * as Session from "./session.ts"
 import * as Summary from "./summary.ts"
 import * as Transcript from "./transcript.ts"
+import * as Tree from "./tree.ts"
 
 export interface Tab {
   readonly id: string
+  readonly parent?: string
+  readonly depth: number
   readonly title: string
   readonly description?: string
   readonly prompt: string
   readonly seat: string
   readonly file: string
-  readonly status: "queued" | "requested" | "running" | "done" | "failed" | "cancelled"
+  readonly status: "queued" | "requested" | "running" | "waiting" | "done" | "failed" | "cancelled"
   /** When the request was made; a queued tab waits before it launches. */
   readonly startedAt: number
   /** When the worker began, after any wait for a seat. */
@@ -37,9 +40,15 @@ export interface Snapshot {
 const contextAnswers = 5
 const contextAnswerChars = 1500
 /** Concurrent worker seats; later requests wait FIFO in `queued`. */
-export const seats = 3
+export const seats = Math.max(1, Number.parseInt(process.env.SMITHERS_TUI_WORKERS ?? "6", 10) || 6)
 const active = (tab: Tab): boolean => tab.status === "running" || tab.status === "requested"
 const settled = (tab: Tab): boolean => tab.status === "done" || tab.status === "failed" || tab.status === "cancelled"
+/** Refusal returned by agent.delegate at the maximum supported depth. */
+export class AgentDepthExceeded extends Error {
+  readonly _tag = "AgentDepthExceeded"
+  readonly code = "depth_exceeded"
+  constructor() { super("Maximum delegation depth is 3") }
+}
 export class Workspace {
   private queue: Array<{ readonly id: string; readonly writer: Session.Writer; readonly history: ReadonlyArray<Context.Entry> }> = []
   private tabs = new Map<string, Tab>()
@@ -57,7 +66,9 @@ export class Workspace {
       restored?: Snapshot
     }
   ) {
-    for (const tab of options.restored?.tabs ?? []) {
+    for (const saved of options.restored?.tabs ?? []) {
+      // Older sessions predate recursive tabs.
+      const tab = { ...saved, depth: saved.depth ?? (saved.id.split("/").length - 1) }
       let records: ReadonlyArray<Session.Record> = []
       let transcript: Transcript.Transcript | undefined
       try {
@@ -65,7 +76,7 @@ export class Workspace {
         transcript = Session.restore(records).transcript
       } catch { /* A persisted request can precede creation of its worker file. */ }
       let settled = tab
-      if (tab.status === "running" || tab.status === "requested" || tab.status === "queued") {
+      if (tab.status === "running" || tab.status === "requested" || tab.status === "waiting") {
         // Prefer the worker's own receipt if the process exited before the parent saved it.
         const receipt = records.findLast((record) => record.type === "outcome")
         const outcome = receipt?.type === "outcome" ? receipt.outcome : undefined
@@ -88,8 +99,10 @@ export class Workspace {
       if (transcript !== undefined) this.transcripts.set(tab.id, transcript)
       if (settled === tab) this.tabs.set(tab.id, tab)
       else this.save(settled)
+      if (settled.status === "queued") this.queue.push({ id: tab.id, writer: Session.reopen(tab.file), history: [] })
     }
     for (const panel of options.restored?.panels ?? []) Panels.keep(this.panels, panel)
+    if (this.queue.length > 0) queueMicrotask(() => this.drain())
   }
   subscribe = (listener: () => void): () => void => {
     this.listeners.add(listener)
@@ -130,10 +143,44 @@ export class Workspace {
     this.changed()
   }
   request = (request: Request): { id: string; status: Tab["status"] } => this.open(request, this.seat(request))
+  /** Namespaces a child under its parent and refuses delegation beyond depth three. */
+  requestChild = (parent: Tab, request: Request): { id: string; status: Tab["status"] } => {
+    if (parent.depth >= 3) throw new AgentDepthExceeded()
+    return this.open({ ...request, id: `${parent.id}/${request.id}` }, this.seat(request), parent.id, parent.depth + 1)
+  }
+  /** A worker waits for its own children while its pool slot is available to queued work. */
+  wait = (parentId: string, ids: ReadonlyArray<string>): Promise<ReadonlyArray<Pick<Tab, "id" | "status" | "answer" | "message">>> => {
+    const parent = this.tabs.get(parentId)
+    if (parent === undefined) throw new Error("Unknown parent tab")
+    const children = ids.map((id) => {
+      const child = this.tabs.get(id.startsWith(`${parentId}/`) ? id : `${parentId}/${id}`)
+      if (child?.parent !== parentId) throw new Error(`Unknown child tab: ${id}`)
+      return child.id
+    })
+    this.save({ ...parent, status: "waiting" })
+    this.drain()
+    return new Promise((resolve, reject) => {
+      const check = () => {
+        const current = this.tabs.get(parentId)
+        if (this.closed || current === undefined || settled(current)) {
+          unsubscribe()
+          reject(new Error("Parent tab stopped while waiting"))
+          return
+        }
+        const tabs = children.map((id) => this.tabs.get(id)!)
+        if (!tabs.every(settled) || [...this.tabs.values()].filter(active).length >= seats) return
+        unsubscribe()
+        this.save({ ...this.tabs.get(parentId)!, status: "running" })
+        resolve(tabs.map(({ id, status, answer, message }) => ({ id, status, answer, message })))
+      }
+      const unsubscribe = this.subscribe(check)
+      check()
+    })
+  }
   private seat(request: Request): string {
     return request.model === undefined ? this.options.workerSeat : delegateModels[request.model]
   }
-  private open(request: Request, seat: string): { id: string; status: Tab["status"] } {
+  private open(request: Request, seat: string, parent?: string, depth = 0): { id: string; status: Tab["status"] } {
     if (this.closed) throw new Error("Session closed")
     const existing = this.tabs.get(request.id)
     if (existing !== undefined) {
@@ -144,6 +191,8 @@ export class Workspace {
     const { model: _model, ...task } = request
     const tab: Tab = {
       ...task,
+      ...(parent === undefined ? {} : { parent }),
+      depth,
       seat,
       file: writer.file,
       status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
@@ -183,7 +232,13 @@ export class Workspace {
         source: tab.id,
         history,
         role: "worker",
-        runtime: { publish: (panel) => this.publish({ ...panel, id: `${tab.id}/${panel.id}` }) },
+        runtime: {
+          publish: (panel) => this.publish({ ...panel, id: `${tab.id}/${panel.id}` }),
+          delegate: (request) => this.requestChild(tab, request),
+          read: (id) => this.read(id.startsWith(`${tab.id}/`) ? id : `${tab.id}/${id}`),
+          list: () => this.snapshot().tabs.filter((child) => child.parent === tab.id),
+          wait: (ids) => this.wait(tab.id, ids)
+        },
         onCaption: (prose) => {
           writer.append({ type: "caption", prose })
           transcript = Transcript.caption(transcript, prose)
@@ -290,6 +345,8 @@ export class Workspace {
         : panel.summary)
     return { ...panel, summary }
   }
+  /** Projects a root and descendants from current tab state. */
+  tree = (rootId: string): Panels.Panel => Tree.panel(rootId, [...this.tabs.values()], (id) => this.transcript(id))
   /**
    * What every coordinator turn is told about the tabs: every unsettled tab,
    * and the newest settled ones with a bounded answer. Older tabs keep only

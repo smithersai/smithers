@@ -6,7 +6,7 @@ import type { Tab } from "../src/workspace.ts"
 
 const files = ["README.md", "src/app.tsx", "src/view.tsx", "test/app.test.ts", "docs/my notes.md"]
 const tab = (id: string, title: string, status: Tab["status"]): Tab => ({
-  id, title, status, prompt: "p", seat: "s", file: `${id}.jsonl`, startedAt: 0
+  id, title, status, prompt: "p", seat: "s", file: `${id}.jsonl`, startedAt: 0, depth: 0
 })
 const sessions = [
   { file: "/s/b.jsonl", name: "Fix the build", firstPrompt: "fix it", modified: 1_000 },

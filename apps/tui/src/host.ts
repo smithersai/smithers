@@ -269,7 +269,7 @@ export const make = (options: {
               `Background tabs: ${input.background ?? "[]"}`
             ]
             : [
-              "Start each cell with a short sentence explaining its purpose in plain English. End with one sentence saying what happened, followed only by essential evidence. Never claim tests passed unless you observed them pass."
+              "Start each cell with a short purpose sentence. Split independent work with agent.delegate, then use agent.wait({ids}) and aggregate the child answers. Children can delegate to depth 3; depth 4 is refused. End with one sentence and essential evidence. Never claim unobserved tests passed."
             ])
         ],
         ...((input.thinking ??

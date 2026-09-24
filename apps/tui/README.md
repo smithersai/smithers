@@ -65,7 +65,8 @@ Ctrl+O read it.
 | Ctrl+O | Expand cell code, output, diffs, and the key list |
 | Ctrl+T | Inspect the run timeline; arrows scrub, [ ] or Shift+Left/Right step milestones, Home/End jump, Esc returns to live |
 | Ctrl+S | Open summary / switch focus between the view and chat |
-| Ctrl+], Ctrl+\\, Ctrl+Right, Ctrl+Left | Next, previous tab: Chat, Summary, worker tabs, and custom views. Click a tab to open it |
+| Ctrl+], Ctrl+\\, Ctrl+Right, Ctrl+Left | Next, previous tab: Chat, Summary, worker tabs, trees, and custom views. Click a tab to open it |
+| Ctrl+\\ or `/chat` | Return to full chat from a main view |
 | hjkl or arrows | In a view: move between rows, collapse/expand details |
 | Enter | In a view: toggle the selected row's details |
 | d, v | In a view: toggle the selected turn's diff; toggle split/unified |
@@ -157,17 +158,22 @@ ctx.done("The check passed.")
 Blocks support text, code, tables (`columns`, `rows`), and unified diffs
 (`path`, `patch`). Rows optionally carry `action: {label, prompt}`; only the
 user pressing **a** sends that prompt. Reusing a panel id updates it. Publishing
-never takes keyboard focus. Documents are schema-validated, capped at 1 MB,
+never takes keyboard focus. `placement:"main"` shows a view beside chat at
+120 columns or wider, or above chat on smaller terminals. `bind:{tree:rootId}`
+adds live worker rows to that view. Documents are schema-validated, capped at 1 MB,
 and persisted in the session. The host renders them; generated code is never
 loaded into the UI process.
 
 The chat coordinator has `ui.publish`, `agent.delegate`, `tab.read`,
-`tab.list`, and `tab.retry`. Workers have the filesystem/shell flows and `ui.publish`.
+`tab.list`, and `tab.retry`. Workers also have `agent.delegate`, `agent.wait({ids})`,
+`tab.read`, and `tab.list`. A worker can delegate children through depth 3;
+depth 4 returns `AgentDepthExceeded`. Waiting releases the worker's pool slot.
 Delegation takes `{id, title, prompt}`, persists before launch, and returns a
 `requested` receipt immediately. Reusing the id deduplicates the request.
 A tab's one-line description comes from the worker's own seat. A retry
 reruns the task on the model it was requested with.
-Up to three workers can run at once; they share the working directory, so
+Up to six workers can run at once (`SMITHERS_TUI_WORKERS` overrides the pool);
+later requests queue FIFO. They share the working directory, so
 independent tasks should name disjoint files. Worker transcripts persist in
 separate session files, and the chat interleaves their rows by time inside a
 colored rail titled `↳ <worker>`. `/filter` shows or hides the chat, each
@@ -175,7 +181,8 @@ worker, and each kind of row; `/grep <text>` keeps rows containing the text and
 `/grep` alone clears it. Chat receives every unsettled worker and the newest
 five settled answers (1,500 characters each) as context, and remains usable
 while workers run. Progress uses the shared toast stack,
-with a 300 ms delay and real completion/failure as its end.
+with a 300 ms delay and real completion/failure as its end. A `tree:<rootId>`
+tab appears when a worker gains children; its rows update from tab state.
 
 Workers run locally. Restarting the TUI restores their transcripts and marks
 unfinished workers interrupted, with an explicit retry; it does not claim to

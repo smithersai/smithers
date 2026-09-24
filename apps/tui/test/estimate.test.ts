@@ -42,7 +42,8 @@ const tab = (file: string, patch: Partial<Workspace.Tab> = {}): Workspace.Tab =>
   file,
   status: "running",
   startedAt: 0,
-  ...patch
+  ...patch,
+  depth: patch.depth ?? 0
 })
 
 describe("Improve.Ledger", () => {

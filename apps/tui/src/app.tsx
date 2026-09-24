@@ -420,6 +420,8 @@ export function App(props: AppProps) {
           : "■ "
       }${tab.title}${eta(Estimate.tabId(tab), tab.status, Estimate.tabStart(tab))}`
     })),
+    ...snapshot.tabs.filter((tab) => tab.parent === undefined && snapshot.tabs.some((child) => child.parent === tab.id))
+      .map((tab) => ({ id: `tree:${tab.id}`, title: `Tree: ${tab.title}` })),
     ...flowRuns.map((run) => ({
       id: `flow:${run.id}`,
       title: `${flowGlyph(run.status)}${run.flow}${eta(Estimate.runId(run), run.status, run.launchedAt ?? run.startedAt)}`
@@ -435,7 +437,7 @@ export function App(props: AppProps) {
     if (liveForm.current !== undefined) changeForm(undefined)
     showTab(id)
   }
-  const panel = surface === "summary"
+  const basePanel = surface === "summary"
     ? Summary.panel(transcript)
     : surface === "smithers"
     ? Smithers.panel(runs.listed(), flowRuns)
@@ -443,7 +445,14 @@ export function App(props: AppProps) {
     ? workspace.panel(surface.slice(4))
     : surface.startsWith("flow:")
     ? runs.panel(surface.slice(5))
+    : surface.startsWith("tree:")
+    ? workspace.tree(surface.slice(5))
     : snapshot.panels.find((panel) => `ui:${panel.id}` === surface)
+  const panel = basePanel?.bind === undefined ? basePanel : (() => {
+    const tree = workspace.tree(basePanel.bind.tree)
+    return { ...basePanel, rows: [...tree.rows, ...basePanel.rows.map((row) => ({ ...row, id: `${basePanel.id}/${row.id}` }))] }
+  })()
+  const focusMain = basePanel?.placement === "main"
   /** Approval keys the focused panel acts on: its `a` runs the selected row's action or opens a flow's form. */
   const panelKeys = panelFocus && panel !== undefined &&
       (surface.startsWith("flow:") || panel.rows[Math.min(navigation.selected, panel.rows.length - 1)]?.action !== undefined)
@@ -696,7 +705,13 @@ export function App(props: AppProps) {
       workerSeat: props.workerSeat ?? props.seat,
       background: `${workspace.context()}\nFlow runs: ${runs.context()}\nMonitors: ${monitors.context()}`,
       runtime: {
-        publish: workspace.publish,
+        publish: (panel) => {
+          workspace.publish(panel)
+          if (panel.placement === "main") {
+            setSurface((current) => current === "chat" ? `ui:${panel.id}` : current)
+            setPanelFocus(false)
+          }
+        },
         delegate: workspace.request,
         read: (id) => (runs.has(id) ? runs.read(id) : workspace.read(id)),
         list: () => [...workspace.snapshot().tabs, ...runs.snapshot()],
@@ -1414,8 +1429,13 @@ export function App(props: AppProps) {
     }
     if (key.ctrl && key.name === "s") {
       key.preventDefault()
-      setSurface(surface === "chat" ? "summary" : surface)
+      if (!focusMain) setSurface(surface === "chat" ? "summary" : surface)
       setPanelFocus(!panelFocus)
+      return
+    }
+    if (focusMain && key.ctrl && key.name === "\\") {
+      key.preventDefault()
+      showTab("chat")
       return
     }
     if (
@@ -1599,7 +1619,9 @@ export function App(props: AppProps) {
     tab.status === "queued" || tab.status === "requested" || tab.status === "running"
   )
   const showSidebar = dimensions.width >= 100 && activeTabs.length > 0
-  const width = Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
+  const sideChat = focusMain && dimensions.width >= 120
+  const width = sideChat ? 40 : Math.max(20, Math.min(columnWidth, dimensions.width - 2 - (showSidebar ? 24 : 0)))
+  const mainWidth = Math.max(20, dimensions.width - width - (showSidebar ? 24 : 0) - 2)
   const accent = bashMode ? color.success : working ? color.faint : color.brand
   const tabCount = Math.max(2, Math.floor(width / 24))
   const firstTab = Math.max(
@@ -1618,7 +1640,7 @@ export function App(props: AppProps) {
 
   return (
     <box style={{ width: "100%", height: "100%", alignItems: "center" }} backgroundColor={color.page} {...dragScroll}>
-      <box style={{ flexDirection: "row", width: "100%", height: "100%", justifyContent: "center" }}>
+      <box style={{ flexDirection: focusMain && !sideChat ? "column" : "row", width: "100%", height: "100%", justifyContent: "center" }}>
         {showSidebar ? (
           <box style={{ width: 22, marginRight: 2, paddingTop: 1, flexDirection: "column", flexShrink: 0 }}>
             {activeTabs.map((tab) => {
@@ -1636,7 +1658,15 @@ export function App(props: AppProps) {
             })}
           </box>
         ) : null}
-      <box style={{ flexDirection: "column", height: "100%", width, paddingTop: 1 }}>
+      {focusMain && panel !== undefined ? (
+        <box style={{ flexDirection: "column", width: sideChat ? mainWidth : "100%", height: sideChat ? "100%" : "45%", paddingTop: 1, paddingLeft: 1, flexShrink: 0 }}>
+          <text fg={color.brand} style={{ marginBottom: 1 }}>{panel.title}</text>
+          <PanelView panel={panel} navigation={navigation} height={sideChat ? dimensions.height - 4 : Math.floor(dimensions.height * 0.45) - 3}
+            width={sideChat ? mainWidth : dimensions.width - 2} scrollRef={panelScroll} />
+        </box>
+      ) : null}
+      <box style={{ flexDirection: "column", height: focusMain && !sideChat ? "55%" : "100%", width, paddingTop: 1 }}>
+        {focusMain ? <text fg={color.brand}>Chat</text> : null}
         <box style={{ flexDirection: "row", flexShrink: 0, marginBottom: 1 }}>
           {visibleTabs.map((tab) => (
             <text key={tab.id} wrapMode="none" fg={surface === tab.id ? color.brand : color.faint} onMouseDown={() => clickTab(tab.id)}>
@@ -1647,7 +1677,7 @@ export function App(props: AppProps) {
             ? <text fg={color.warning} wrapMode="none" style={{ flexShrink: 0 }}>{filter.query === "" ? " filtered" : ` grep ${filter.query}`}</text>
             : null}
         </box>
-        {panel !== undefined ?
+        {panel !== undefined && !focusMain ?
           (
             <PanelView
               panel={panel}
