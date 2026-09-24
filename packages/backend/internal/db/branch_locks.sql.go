@@ -51,23 +51,31 @@ func (q *Queries) AcquireBranchLockInsert(ctx context.Context, arg AcquireBranch
 
 const createBranchLockJoinRequest = `-- name: CreateBranchLockJoinRequest :one
 INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id, lock_generation)
-VALUES ($1, $2, $3, $4)
+SELECT l.repository_id, l.branch, $1::bigint, l.generation
+FROM branch_locks l
+WHERE l.repository_id = $2
+  AND l.branch = $3
+  AND l.generation = $4
+FOR SHARE OF l
 RETURNING id, repository_id, branch, requester_id, status, resolver_id, created_at, resolved_at, lock_generation
 `
 
 type CreateBranchLockJoinRequestParams struct {
+	RequesterID    int64  `json:"requester_id"`
 	RepositoryID   int64  `json:"repository_id"`
 	Branch         string `json:"branch"`
-	RequesterID    int64  `json:"requester_id"`
 	LockGeneration string `json:"lock_generation"`
 }
 
-// lock_generation binds the request to the holder's current acquisition.
+// lock_generation binds the request to the holder's current acquisition. The
+// insert reads the generation from the lock row itself (share-locked until the
+// request commits), so a request against a generation the branch no longer
+// carries inserts nothing (ErrNoRows) instead of an orphan no inbox shows.
 func (q *Queries) CreateBranchLockJoinRequest(ctx context.Context, arg CreateBranchLockJoinRequestParams) (BranchLockJoinRequest, error) {
 	row := q.db.QueryRow(ctx, createBranchLockJoinRequest,
+		arg.RequesterID,
 		arg.RepositoryID,
 		arg.Branch,
-		arg.RequesterID,
 		arg.LockGeneration,
 	)
 	var i BranchLockJoinRequest

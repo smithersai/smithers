@@ -365,6 +365,11 @@ func (s *BranchLockService) RequestBranchLockJoin(ctx context.Context, input Req
 		LockGeneration: lock.Generation,
 	})
 	if err != nil {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			// The lock was released or taken over between the read above and
+			// the insert; the caller re-reads the holder and asks again.
+			return BranchLockJoinRequestResponse{}, pkgerrors.Conflict("branch lock changed hands; retry")
+		}
 		if isUniqueViolation(err) {
 			latest, latestErr := s.queries.GetBranchLockJoinRequestForRequester(ctx, db.GetBranchLockJoinRequestForRequesterParams{
 				RepositoryID:   input.RepositoryID,

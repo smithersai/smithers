@@ -778,24 +778,18 @@ upserted AS (
         OR workflow_caches.workflow_run_id = EXCLUDED.workflow_run_id
         OR workflow_caches.expires_at <= NOW()
       )
-    RETURNING id
-),
-selected AS (
-    SELECT id
-    FROM upserted
-    UNION ALL
-    SELECT id
-    FROM workflow_caches
-    WHERE repository_id = $1
-      AND bookmark_name = $3
-      AND cache_key = $4
-      AND cache_version = $5
-      AND EXISTS (SELECT 1 FROM candidate)
-      AND NOT EXISTS (SELECT 1 FROM upserted)
+    RETURNING id, repository_id, workflow_run_id, bookmark_name, cache_key, cache_version, object_key, object_size_bytes, compression, status, deletion_token, hit_count, last_hit_at, finalized_at, expires_at, created_at, updated_at
 )
-SELECT workflow_caches.id, workflow_caches.repository_id, workflow_caches.workflow_run_id, workflow_caches.bookmark_name, workflow_caches.cache_key, workflow_caches.cache_version, workflow_caches.object_key, workflow_caches.object_size_bytes, workflow_caches.compression, workflow_caches.status, workflow_caches.deletion_token, workflow_caches.hit_count, workflow_caches.last_hit_at, workflow_caches.finalized_at, workflow_caches.expires_at, workflow_caches.created_at, workflow_caches.updated_at
+SELECT id, repository_id, workflow_run_id, bookmark_name, cache_key, cache_version, object_key, object_size_bytes, compression, status, deletion_token, hit_count, last_hit_at, finalized_at, expires_at, created_at, updated_at
 FROM workflow_caches
-JOIN selected ON selected.id = workflow_caches.id
+WHERE repository_id = $1
+  AND bookmark_name = $3
+  AND cache_key = $4
+  AND cache_version = $5
+  AND EXISTS (SELECT 1 FROM candidate)
+  AND NOT EXISTS (SELECT 1 FROM upserted)
+UNION ALL
+SELECT id, repository_id, workflow_run_id, bookmark_name, cache_key, cache_version, object_key, object_size_bytes, compression, status, deletion_token, hit_count, last_hit_at, finalized_at, expires_at, created_at, updated_at FROM upserted
 `
 
 type UpsertPendingWorkflowCacheParams struct {
@@ -810,6 +804,10 @@ type UpsertPendingWorkflowCacheParams struct {
 	ExpiresAt       time.Time   `json:"expires_at"`
 }
 
+// The row this statement wrote comes from RETURNING: the outer query runs on
+// the pre-statement snapshot, so a lookup of workflow_caches by the upserted
+// id would see no row for a new key and the old values for an update. The
+// unchanged-row branch only fires when the upsert wrote nothing.
 func (q *Queries) UpsertPendingWorkflowCache(ctx context.Context, arg UpsertPendingWorkflowCacheParams) (WorkflowCach, error) {
 	row := q.db.QueryRow(ctx, upsertPendingWorkflowCache,
 		arg.RepositoryID,

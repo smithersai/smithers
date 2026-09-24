@@ -51,9 +51,17 @@ WHERE repository_id = $1
   AND user_id = $3;
 
 -- name: CreateBranchLockJoinRequest :one
--- lock_generation binds the request to the holder's current acquisition.
+-- lock_generation binds the request to the holder's current acquisition. The
+-- insert reads the generation from the lock row itself (share-locked until the
+-- request commits), so a request against a generation the branch no longer
+-- carries inserts nothing (ErrNoRows) instead of an orphan no inbox shows.
 INSERT INTO branch_lock_join_requests (repository_id, branch, requester_id, lock_generation)
-VALUES ($1, $2, $3, $4)
+SELECT l.repository_id, l.branch, sqlc.arg(requester_id)::bigint, l.generation
+FROM branch_locks l
+WHERE l.repository_id = sqlc.arg(repository_id)
+  AND l.branch = sqlc.arg(branch)
+  AND l.generation = sqlc.arg(lock_generation)
+FOR SHARE OF l
 RETURNING *;
 
 -- name: GetBranchLockJoinRequest :one

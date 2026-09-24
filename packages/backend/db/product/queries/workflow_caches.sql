@@ -96,24 +96,22 @@ upserted AS (
         OR workflow_caches.workflow_run_id = EXCLUDED.workflow_run_id
         OR workflow_caches.expires_at <= NOW()
       )
-    RETURNING id
-),
-selected AS (
-    SELECT id
-    FROM upserted
-    UNION ALL
-    SELECT id
-    FROM workflow_caches
-    WHERE repository_id = sqlc.arg(repository_id)
-      AND bookmark_name = sqlc.arg(bookmark_name)
-      AND cache_key = sqlc.arg(cache_key)
-      AND cache_version = sqlc.arg(cache_version)
-      AND EXISTS (SELECT 1 FROM candidate)
-      AND NOT EXISTS (SELECT 1 FROM upserted)
+    RETURNING *
 )
-SELECT workflow_caches.*
+-- The row this statement wrote comes from RETURNING: the outer query runs on
+-- the pre-statement snapshot, so a lookup of workflow_caches by the upserted
+-- id would see no row for a new key and the old values for an update. The
+-- unchanged-row branch only fires when the upsert wrote nothing.
+SELECT *
 FROM workflow_caches
-JOIN selected ON selected.id = workflow_caches.id;
+WHERE repository_id = sqlc.arg(repository_id)
+  AND bookmark_name = sqlc.arg(bookmark_name)
+  AND cache_key = sqlc.arg(cache_key)
+  AND cache_version = sqlc.arg(cache_version)
+  AND EXISTS (SELECT 1 FROM candidate)
+  AND NOT EXISTS (SELECT 1 FROM upserted)
+UNION ALL
+SELECT * FROM upserted;
 
 
 -- name: FinalizeWorkflowCache :one
