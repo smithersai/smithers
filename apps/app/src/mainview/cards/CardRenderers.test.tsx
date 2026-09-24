@@ -8,7 +8,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 import { CardView } from "../ChatCards"
 import { FlowGraphSurface } from "../ViewModules"
 import { defaultPill } from "./CardFamily"
-import { CARD_FAMILIES, CARD_RENDERERS, pillStatus } from "./CardRenderers"
+import { CARD_FAMILIES, CARD_RENDERERS, RETIRED_CARD_KINDS, pillStatus } from "./CardRenderers"
 
 /*
  * The renderer map replaced ChatCards.tsx's render switch and pill switch.
@@ -19,7 +19,7 @@ import { CARD_FAMILIES, CARD_RENDERERS, pillStatus } from "./CardRenderers"
 
 /** Every card kind the wire declares, read off the discriminated union itself. */
 const wireKinds = (): ReadonlyArray<string> =>
-  CardSchema.options.map((option) => option.shape.kind.value)
+  CardSchema.options.map((option) => option.shape.kind.value).filter(kind => !(RETIRED_CARD_KINDS as readonly string[]).includes(kind))
 
 const base = { id: "card-x", title: "Card", createdAt: 1, ordinal: 1 } as const
 
@@ -125,7 +125,7 @@ describe("CardRenderers", () => {
       .filter(([, entry]) => entry.pill === defaultPill)
       .map(([kind]) => kind)
       .sort()
-    expect(onDefault).toEqual(["service-log", "workflow-repo"])
+    expect(onDefault).toEqual(["workflow-repo"])
   })
 
   test("a settled environment-images listing is done, not pending", () => {
@@ -183,8 +183,7 @@ describe("CardRenderers", () => {
       payload: { workspaceId: "ws-1", repo: "o/r", service: "web", lines: ["ready"], follow: false }
     }
     const shell = renderToStaticMarkup(<CardView card={serviceLog} {...handlers} />)
-    expect(shell).toContain("data-kind=\"service-log\"")
-    expect(shell).toContain("<div class=\"smithers-card-body\"></div>")
+    expect(shell).toBe("")
   })
 
   /*

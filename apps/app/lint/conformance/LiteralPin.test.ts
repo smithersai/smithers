@@ -162,11 +162,6 @@ const RESOLVES_ELSEWHERE: ReadonlyArray<Excuse> = [
     reason: "tag and class composed by the geometry probe from the real card element, not a flow id"
   },
   {
-    literal: "fixture-job-",
-    file: "e2e/playwright/repository-setup.spec.ts",
-    reason: "test-owned job execution ID returned by the explicit setup backend fixture, not a card ID prefix"
-  },
-  {
     literal: "storage-test-",
     file: "e2e/playwright/storage-refusal.spec.ts",
     reason: "test-owned request IDs on the shipped SQLite worker protocol, not application card IDs"
@@ -467,18 +462,18 @@ test("real scenario IDs and owned repository names do not excuse product asserti
   const check = (source: string) => extractLiterals("/app/e2e/real/probe.spec.ts", source)
     .flatMap(literal => [...violationsOf(literal, vocabularies)])
   const imports = 'import { scenario as evidence } from "./coverage/types"; import { createOwnedLocalRepo as owned } from "./support/test";'
-  expect(check(imports + 'evidence("workflow.create", { coverage: [] }); owned({name: `chat-fixture-${nonce}`});')).toEqual([])
+  expect(check(imports + 'evidence("workflow.create", { coverage: [] }); owned({name: `flow-fixture-${nonce}`});')).toEqual([])
   for (const statement of [
     'runCommand("workflow.create")',
     'page.locator("[data-flow=\\\"workflow.create\\\"]")',
-    'value.startsWith("chat-fixture-")',
-    'other({name: `chat-fixture-${nonce}`})',
+    'value.startsWith("flow-fixture-")',
+    'other({name: `flow-fixture-${nonce}`})',
     'scenario("workflow.create", {})'
   ]) expect(check(imports + statement).length).toBeGreaterThan(0)
   expect(check('import { scenario } from "./unrelated"; scenario("workflow.create", {})').length).toBeGreaterThan(0)
   expect(check('import { scenario } from "./coverage/types"; scenario("case", { flow: "workflow.create" })').length).toBeGreaterThan(0)
   expect(check(imports + 'function nested(evidence) { evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
-  expect(check(imports + 'function nested(owned) { owned({name: `chat-fixture-${nonce}`}) }').length).toBeGreaterThan(0)
+  expect(check(imports + 'function nested(owned) { owned({name: `flow-fixture-${nonce}`}) }').length).toBeGreaterThan(0)
   expect(check(imports + 'function nested() { function evidence() {} evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
   expect(check(imports + 'try {} catch(evidence) { evidence("workflow.create", {}) }').length).toBeGreaterThan(0)
 })

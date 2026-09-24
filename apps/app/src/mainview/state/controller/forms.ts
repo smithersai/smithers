@@ -1,4 +1,3 @@
-import { AGENT_ROLES } from "@smthrs/rpc/AgentRoles"
 import { MODEL_SEAT_DEFAULT,SeatIdSchema,modelSeat,seatAccepts } from "@smthrs/rpc/ConfiguredModel"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import { HARNESS_IDS } from "@smthrs/rpc/LocalApp"
@@ -224,7 +223,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
         )
       }
       case "agents":
-        return roleMenuEntries(harnesses(), AGENT_ROLES).map((entry) => ({
+        return roleMenuEntries(harnesses()).map((entry) => ({
           value: entry.role.id,
           label: entry.title,
           ...(entry.available ? {} : { disabled: true, reason: entry.reason })

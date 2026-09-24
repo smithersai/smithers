@@ -2,14 +2,7 @@ import { AGENT_ROLES, agentRoleTitle } from "@smthrs/rpc/AgentRoles"
 import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import type { Harness } from "./state/AppState"
 
-/*
- * The agents as the composer's `+` menu lists them: a role is
- * available exactly when its harness is installed AND carries a credential
- * for the role's model; otherwise the row is disabled with the reason. Pure,
- * so both menus, the Agents card, the roles paragraph, and their tests read
- * one rule. Custom agents (custom-agents.md) ride the same rule: the list is
- * the app-agents mirror, and the built-in table stands in until it loads.
- */
+/** Built-in roles available through installed, authenticated harnesses. */
 export interface RoleMenuEntry {
   readonly role: AgentRole
   readonly title: string
@@ -21,8 +14,7 @@ export interface RoleMenuEntry {
 }
 
 export const roleMenuEntries = (
-  harnesses: ReadonlyArray<Harness>,
-  _agents: ReadonlyArray<AgentRole> = AGENT_ROLES
+  harnesses: ReadonlyArray<Harness>
 ): ReadonlyArray<RoleMenuEntry> =>
   AGENT_ROLES.map((role) => {
     const harness = harnesses.find((candidate) => candidate.id === role.harness)

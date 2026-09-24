@@ -109,25 +109,6 @@
   max-width: none;
   z-index: 10;
 }
-.guidance-text-accessible {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.guidance-text-visual > span {
-  /* Finished text is ordinary visible content. A forward-filled 1ms effect can
-     settle fractionally below 100% after long delays and leave letters hidden. */
-  opacity: 1;
-  animation: guidance-character 1ms step-end var(--character-delay) backwards;
-}
-@keyframes guidance-character { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) {
-  .guidance-text-visual > span { opacity: 1; animation: none; }
-}
-
 .help-anchor[data-help-open] .help-anchor-target > button {
   box-shadow: 0 0 16px 4px color-mix(in srgb, var(--g-accent, #286447) 24%, transparent);
 }

@@ -3,7 +3,6 @@ import { afterAll,afterEach,expect,spyOn,test } from "bun:test"
 import { useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
-import { GuidanceText } from "./GuidanceText"
 import { HelpBubble } from "./HelpBubble"
 
 GlobalRegistrator.register()
@@ -130,18 +129,6 @@ test('coarse pointers hide tutorial and repository key chips at desktop width', 
   expect(chips.length).toBe(2)
   for (const chip of chips) expect(getComputedStyle(chip).display).toBe('none')
 })
-
-for (const sentence of ["Press Command/Control+K anytime to open Chat and commands.", "Start with the practice repository’s issues. Click Show issues or press i."]) {
-  test(`help retains the complete sentence: ${sentence}`, () => {
-    const host = document.createElement("div")
-    const root = createRoot(host)
-    flushSync(() => root.render(<HelpBubble id="typing-help" open content={<GuidanceText text={sentence} />} onDismiss={() => {}}><button>Action</button></HelpBubble>))
-    expect(host.querySelector('.guidance-text-accessible')?.textContent).toBe(sentence)
-    expect(host.querySelector('.guidance-text-visual')?.textContent).toBe(sentence)
-    expect(host.querySelectorAll('.guidance-text-visual > span')).toHaveLength(Array.from(sentence).length)
-    flushSync(() => root.unmount())
-  })
-}
 
 test("floating help clamps below a nearby goal instead of drawing over it", () => {
   const bounds = spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {

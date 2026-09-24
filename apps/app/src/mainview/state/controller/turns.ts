@@ -37,7 +37,6 @@ import { WORLD_BODY_BUDGET,worldContextDocuments } from "../WorldContext"
 import { knowledgeCardAvailable } from "../KnowledgeFeatures"
 import { isRuntimeOwnedCard } from "../isRuntimeOwnedCard"
 import { readDesktopStream } from "../seams/DesktopStream"
-import { currentAgentRoles } from "./agents"
 import { downloadUrlOf } from "./app"
 import type { ActiveTurn,ControllerContext } from "./context"
 import type { FailureController } from "./failures"
@@ -616,7 +615,7 @@ export const createTurnController = (
   const instructionRoles = (): ReadonlyArray<InstructionRole> =>
     ctx.commands.find("agent.delegate") === undefined
       ? []
-      : roleMenuEntries([...store.collections.harnesses.values()], currentAgentRoles(store)).map((entry) => ({
+      : roleMenuEntries([...store.collections.harnesses.values()]).map((entry) => ({
         id: entry.role.id,
         label: entry.role.label,
         purpose: entry.role.purpose,

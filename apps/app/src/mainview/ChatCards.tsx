@@ -11,7 +11,7 @@ import { Button, StatusPill } from "@smthrs/ui"
 import { ArrowLeft, ArrowRight, GitFork, Maximize2, Minimize2, PanelTop } from "lucide-react"
 import { memo, useCallback, useRef, useSyncExternalStore } from "react"
 import type { CardActions } from "./cards/CardFamily"
-import { pillStatus, renderCardBody } from "./cards/CardRenderers"
+import { isRetiredCard, pillStatus, renderCardBody } from "./cards/CardRenderers"
 import { Component, type ErrorInfo, type ReactNode } from "react"
 
 /*
@@ -149,6 +149,7 @@ export const CardView = memo(function CardView({
     onMinimize()
   }
   if (card.kind === "retired" || !knowledgeCardAvailable(card.kind, { wiki, mythicalHistory, pluginLibrary })) return null
+  if (isRetiredCard(card)) return null
   return (
     <>
       {maximized ?
