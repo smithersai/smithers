@@ -25,7 +25,6 @@ const run = async (env: Record<string, string>): Promise<{ exitCode: number; std
     env: {
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
-      CANARY_URL: "https://smithers.sh",
       CANARY_BROWSER_EVIDENCE: evidence,
       ...env
     }
@@ -37,6 +36,11 @@ const run = async (env: Record<string, string>): Promise<{ exitCode: number; std
 }
 
 describe("canary-browser.ts", () => {
+  test("a URL override cannot redirect the production session", async () => {
+    const { result } = await run({ CANARY_URL: "https://staging.test" })
+    expect(result.origin).toBe("https://smithers.sh")
+  }, SPAWN_TIMEOUT_MS)
+
   test("with nothing configured it skips out loud, names every unset variable and exits 0", async () => {
     const { exitCode, stdout, result } = await run({})
     expect(exitCode).toBe(0)

@@ -10,7 +10,8 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { chromium, type Browser, type Page } from "playwright"
 
-const origin = process.env.CANARY_URL ?? "https://smithers.sh"
+// The session cookie belongs only to production.
+const origin = "https://smithers.sh"
 const repo = process.env.CANARY_BROWSER_REPO ?? "codeplanesmithers/canary-sandbox"
 const flow = process.env.CANARY_BROWSER_FLOW
 const workspaceId = process.env.CANARY_BROWSER_WORKSPACE
@@ -56,7 +57,6 @@ let browser: Browser | undefined
 let active: Page | undefined
 let failure: unknown
 try {
-  requireValue(origin === "https://smithers.sh", "Browser canary target must be https://smithers.sh")
   requireValue(cookie && flow && workspaceId, "unreachable: the configuration gate above skips an unset cookie, flow or workspace")
   requireValue(login, "CANARY_SESSION_LOGIN must name the account CANARY_SESSION_COOKIE belongs to")
   requireValue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(workspaceId), "CANARY_BROWSER_WORKSPACE must name the fixture workspace UUID")
