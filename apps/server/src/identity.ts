@@ -100,9 +100,12 @@ export const validateSession = (request: Request): Effect.Effect<SessionValidati
     const config = yield* ServerConfig
     const upstream = config.identityUpstreamUrl
     if (upstream === undefined) return { status: "invalid" } as const
-    const headers: Record<string, string> = { "content-type": "application/json" }
-    const cookie = request.headers.get("cookie")
-    if (cookie !== null) headers.cookie = cookie
+    // Identity decides a validate by the session cookie alone, so a request
+    // with no cookie is signed out without a subrequest. Asking anyway made
+    // every cookieless call to a gated route an identity invocation.
+    const cookie = request.headers.get("cookie")?.trim() ?? ""
+    if (cookie === "") return { status: "invalid" } as const
+    const headers: Record<string, string> = { "content-type": "application/json", cookie }
     if (config.identityServiceToken !== undefined) {
       headers["x-smithers-service-token"] = Redacted.value(config.identityServiceToken)
     }

@@ -54,12 +54,15 @@ const ndjsonUpstream = (lines: ReadonlyArray<unknown>): Response =>
     { status: 200, headers: { "content-type": "application/x-ndjson" } }
   )
 
-const post = (path: string, body: unknown): Request =>
+const post = (path: string, body: unknown, headers: Record<string, string> = {}): Request =>
   new Request(`https://mvp.test${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body)
   })
+
+/** A session cookie: identity is asked about a caller only when one is sent. */
+const SESSION = { cookie: "smithers_session=abc" } as const
 
 /*
  * The app under the apex: smithers.sh/<owner>/<name>. wrangler.jsonc routes
@@ -465,7 +468,7 @@ describe("smithers mvp worker", () => {
     }) as unknown as typeof fetch
     try {
       for (const path of ["/api/identity/whoami", "/api/billing/balance"]) {
-        const response = await worker.fetch(new Request(`https://mvp.test${path}`), env)
+        const response = await worker.fetch(new Request(`https://mvp.test${path}`, { headers: SESSION }), env)
         expect(`${path} → ${response.status}`).toBe(`${path} → 502`)
         const body = (await response.json()) as { status: string; message: string }
         expect(body.status).toBe("error")
@@ -1158,7 +1161,7 @@ describe("turn seam session gate", () => {
         return undefined
       },
       async () => {
-        const response = await worker.fetch(post("/api/agent/turn", turnBody), identityEnv)
+        const response = await worker.fetch(post("/api/agent/turn", turnBody, SESSION), identityEnv)
         expect(response.status).toBe(502)
         expect(((await response.json()) as { message: string }).message).toContain("unreachable")
       }
@@ -1174,7 +1177,7 @@ describe("turn seam session gate", () => {
         })
       },
       async () => {
-        const response = await worker.fetch(post("/api/agent/turn", turnBody), {
+        const response = await worker.fetch(post("/api/agent/turn", turnBody, SESSION), {
           ...identityEnv,
           UPSTREAM_TIMEOUT_MS: "1"
         })
@@ -1197,7 +1200,7 @@ describe("turn seam session gate", () => {
         return ndjsonUpstream([{ type: "done" }])
       },
       async () => {
-        const response = await worker.fetch(post("/api/agent/turn", turnBody), identityEnv)
+        const response = await worker.fetch(post("/api/agent/turn", turnBody, SESSION), identityEnv)
         expect(response.status).toBe(403)
       }
     )
@@ -1353,16 +1356,17 @@ describe("anonymous exploring of a public catalog repository", () => {
   const signedOut = (request: Request): Response | undefined =>
     new URL(request.url).hostname === "identity.test" ? new Response("{}", { status: 401 }) : undefined
 
-  test("identity answering a cookieless validate with a loginless 200 is signed out, not an outage", async () => {
-    // Production identity answers a validate that carries no cookie with 200
-    // and a session body without a login; that must open the anonymous door
-    // exactly like a 401, never the 502 "malformed session" outage.
+  test("a cookieless turn opens the anonymous door without an identity subrequest, even with identity down", async () => {
+    // Identity decides a validate by the session cookie alone, so a request
+    // with no cookie is signed out at this Worker. Asking identity anyway
+    // made every cookieless call an identity invocation.
+    let identityCalls = 0
     let upstreamCalls = 0
     await withMockedFetch(
       (request) => {
         if (new URL(request.url).hostname === "identity.test") {
-          expect(request.headers.has("cookie")).toBe(false)
-          return Response.json({ state: "signed-out", login: null })
+          identityCalls += 1
+          return new Response("down", { status: 503 })
         }
         upstreamCalls += 1
         return ndjsonUpstream([{ type: "delta", kind: "text", text: "It is a monorepo." }, { type: "done" }])
@@ -1378,6 +1382,7 @@ describe("anonymous exploring of a public catalog repository", () => {
         )
         expect(response.status).toBe(200)
         expect(upstreamCalls).toBe(1)
+        expect(identityCalls).toBe(0)
       }
     )
   })
@@ -1852,7 +1857,7 @@ describe("the admin surface (non-enumerable)", () => {
   test("a validated NON-admin session is equally undetectable", async () => {
     await withMockedFetch(identityDouble(memberValidate), async () => {
       const unknown = await worker.fetch(new Request("https://mvp.test/api/nope"), adminEnv())
-      const probe = await worker.fetch(new Request("https://mvp.test/api/admin/requests"), adminEnv())
+      const probe = await worker.fetch(new Request("https://mvp.test/api/admin/requests", { headers: SESSION }), adminEnv())
       expect(probe.status).toBe(404)
       expect(await probe.text()).toBe(await unknown.text())
     })
@@ -1882,13 +1887,13 @@ describe("the admin surface (non-enumerable)", () => {
           "/api/admin/errors"
         ]
       ) {
-        const probe = await worker.fetch(new Request(`https://mvp.test${path}`), adminEnv())
+        const probe = await worker.fetch(new Request(`https://mvp.test${path}`, { headers: SESSION }), adminEnv())
         expect(probe.status).toBe(404)
         expect(await probe.text()).toBe(unknownBody)
       }
       // The write door too: a revoked admin cannot re-add itself.
       const write = await worker.fetch(
-        post("/api/admin/allowlist", { login: "will", action: "add" }),
+        post("/api/admin/allowlist", { login: "will", action: "add" }, SESSION),
         adminEnv()
       )
       expect(write.status).toBe(404)
@@ -1916,7 +1921,7 @@ describe("the admin surface (non-enumerable)", () => {
     }) as typeof fetch
     try {
       const response = await worker.fetch(
-        post("/api/admin/allowlist", { login: "octocat", action: "add" }),
+        post("/api/admin/allowlist", { login: "octocat", action: "add" }, SESSION),
         adminEnv()
       )
       expect(response.status).toBe(201)
@@ -1970,12 +1975,12 @@ describe("the admin surface (non-enumerable)", () => {
         }) as typeof fetch
         try {
           const first = await worker.fetch(
-            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }, SESSION),
             grantEnv()
           )
           expect(first.status).toBe(502)
           const retry = await worker.fetch(
-            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }, SESSION),
             grantEnv()
           )
           expect(retry.status).toBe(200)
@@ -2013,7 +2018,7 @@ describe("the admin surface (non-enumerable)", () => {
       },
       async () => {
         const conflict = await worker.fetch(
-          post("/api/admin/grant", { login: "octocat", amountUsd: 50, operationKey: grantKey }),
+          post("/api/admin/grant", { login: "octocat", amountUsd: 50, operationKey: grantKey }, SESSION),
           grantEnv()
         )
         expect(conflict.status).toBe(409)
@@ -2044,7 +2049,7 @@ describe("the admin surface (non-enumerable)", () => {
       },
       async () => {
         const conflict = await worker.fetch(
-          post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+          post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }, SESSION),
           grantEnv()
         )
         expect(conflict.status).toBe(409)
@@ -2070,7 +2075,7 @@ describe("the admin surface (non-enumerable)", () => {
         return undefined
       },
       async () => {
-        const response = await worker.fetch(post("/api/admin/grant", body), grantEnv())
+        const response = await worker.fetch(post("/api/admin/grant", body, SESSION), grantEnv())
         expect(response.status).toBe(400)
         expect(await response.json()).toEqual({
           status: "error",
@@ -2098,19 +2103,19 @@ describe("the admin surface (non-enumerable)", () => {
       },
       async () => {
         const found = await worker.fetch(
-          new Request(`https://mvp.test/api/admin/grant?login=octocat&operationKey=${grantKey}`),
+          new Request(`https://mvp.test/api/admin/grant?login=octocat&operationKey=${grantKey}`, { headers: SESSION }),
           grantEnv()
         )
         expect(found.status).toBe(200)
         expect(await found.json()).toEqual({ found: true, grantId, userId: "octocat", grant: credit })
         const missing = await worker.fetch(
-          new Request(`https://mvp.test/api/admin/grant?login=hubot&operationKey=${grantKey}`),
+          new Request(`https://mvp.test/api/admin/grant?login=hubot&operationKey=${grantKey}`, { headers: SESSION }),
           grantEnv()
         )
         expect(missing.status).toBe(200)
         expect(await missing.json()).toEqual({ found: false, grantId, userId: "hubot" })
         const malformed = await worker.fetch(
-          new Request("https://mvp.test/api/admin/grant?login=hubot&operationKey=nope"),
+          new Request("https://mvp.test/api/admin/grant?login=hubot&operationKey=nope", { headers: SESSION }),
           grantEnv()
         )
         expect(malformed.status).toBe(400)
@@ -2147,7 +2152,7 @@ describe("the admin surface (non-enumerable)", () => {
         }) as typeof fetch
         try {
           const response = await worker.fetch(
-            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }),
+            post("/api/admin/grant", { login: "octocat", amountUsd: 25, operationKey: grantKey }, SESSION),
             adminEnv()
           )
           expect(response.status).toBe(201)
@@ -2201,10 +2206,10 @@ describe("the admin surface (non-enumerable)", () => {
         return undefined
       },
       async () => {
-        const queue = await worker.fetch(new Request("https://mvp.test/api/admin/requests"), adminEnv())
+        const queue = await worker.fetch(new Request("https://mvp.test/api/admin/requests", { headers: SESSION }), adminEnv())
         expect(queue.status).toBe(200)
         // The deleted recommendations admin surface is just another unknown route now.
-        const feedback = await worker.fetch(new Request("https://mvp.test/api/admin/feedback"), adminEnv())
+        const feedback = await worker.fetch(new Request("https://mvp.test/api/admin/feedback", { headers: SESSION }), adminEnv())
         expect(feedback.status).toBe(404)
       }
     )
@@ -2248,7 +2253,7 @@ describe("the admin surface (non-enumerable)", () => {
           BILLING_UPSTREAM_URL: "https://billing.test",
           BILLING_ADMIN_TOKEN: "billing-admin-123"
         }
-        const response = await worker.fetch(new Request("https://mvp.test/api/admin/health"), env)
+        const response = await worker.fetch(new Request("https://mvp.test/api/admin/health", { headers: SESSION }), env)
         expect(response.status).toBe(200)
         const body = (await response.json()) as {
           services: Array<{ name: string; status: string }>
@@ -2273,7 +2278,7 @@ describe("the admin surface (non-enumerable)", () => {
         IDENTITY_UPSTREAM_URL: "https://identity.test",
         IDENTITY_SERVICE_TOKEN: "service-token-123"
       }
-      const response = await worker.fetch(new Request("https://mvp.test/api/admin/requests"), env)
+      const response = await worker.fetch(new Request("https://mvp.test/api/admin/requests", { headers: SESSION }), env)
       expect(response.status).toBe(501)
       const body = (await response.json()) as { message: string }
       expect(body.message).toContain("IDENTITY_ADMIN_TOKEN")
@@ -2968,7 +2973,7 @@ describe("the browser tool route (§2d)", () => {
       return new Response("followed", { status: 200 })
     }) as unknown as typeof fetch
     try {
-      const response = await worker.fetch(new Request("https://mvp.test/api/user/repos"), env)
+      const response = await worker.fetch(new Request("https://mvp.test/api/user/repos", { headers: SESSION }), env)
       expect(response.status).toBe(502)
       expect(response.headers.get("location")).toBeNull()
       const body = (await response.json()) as { status: string; code: string; message: string }
@@ -3010,7 +3015,7 @@ describe("the browser tool route (§2d)", () => {
     }) as unknown as typeof fetch
     try {
       for (const path of ["/api/billing/checkout", "/api/billing/portal"]) {
-        const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method: "POST" }), env)
+        const response = await worker.fetch(new Request(`https://mvp.test${path}`, { method: "POST", headers: SESSION }), env)
         expect(`${path} → ${response.status}`).toBe(`${path} → 501`)
         const body = (await response.json()) as { message: string }
         expect(body.message).toContain("nothing to buy")
@@ -3049,7 +3054,7 @@ describe("the browser tool route (§2d)", () => {
     }) as unknown as typeof fetch
     try {
       const response = await worker.fetch(
-        new Request("https://mvp.test/api/billing/checkout", { method: "POST" }),
+        new Request("https://mvp.test/api/billing/checkout", { method: "POST", headers: SESSION }),
         env
       )
       expect(response.status).toBe(200)
@@ -3404,9 +3409,9 @@ describe("the /api/cloud bridge", () => {
       const inner = rule.exact ?? (rule.prefix?.endsWith("/") ? `${rule.prefix}x` : `${rule.prefix}/x`)
       for (const method of rule.methods) {
         await withUpstreams(() => jsonAnswer({ ok: true }), async (calls) => {
-          const direct = await worker.fetch(new Request(`https://mvp.test${inner}`, { method }), signedInEnv)
+          const direct = await worker.fetch(new Request(`https://mvp.test${inner}`, { method, headers: SESSION }), signedInEnv)
           const bridged = await worker.fetch(
-            new Request(`https://mvp.test${CLOUD_ROUTE_PREFIX}${inner.slice(1)}`, { method }),
+            new Request(`https://mvp.test${CLOUD_ROUTE_PREFIX}${inner.slice(1)}`, { method, headers: SESSION }),
             signedInEnv
           )
           expect(`${method} ${inner} → ${bridged.status}`).toBe(`${method} ${inner} → ${direct.status}`)
@@ -3675,7 +3680,8 @@ describe("cloud roles on Cerebras", () => {
       )
       expect(refused.status).toBe(401)
     })
-    expect(wire.calls.identity).toBe(2)
+    // A signed-out visitor sends no cookie, so identity is never asked.
+    expect(wire.calls.identity).toBe(0)
     expect(wire.calls.cerebras.length).toBe(1)
     expect(wire.calls.upstream.length).toBe(0)
     const spends = limits.spends()
@@ -3907,7 +3913,7 @@ describe("configured upstream headers deadlines", () => {
       (request) => validate(request) ?? stalledHeaders(request, aborted),
       async () => {
         const response = await worker.fetch(
-          body === undefined ? new Request(`https://mvp.test${path}`) : post(path, body),
+          body === undefined ? new Request(`https://mvp.test${path}`, { headers: SESSION }) : post(path, body, SESSION),
           { ...deadlineEnv(), TURN_CANCELS: cancels }
         )
         expect(response.status).toBe(504)
@@ -3935,7 +3941,7 @@ describe("configured upstream headers deadlines", () => {
     await withMockedFetch(
       (request) => validate(request) ?? stalledHeaders(request, aborted),
       async () => {
-        const response = await worker.fetch(new Request("https://mvp.test/api/admin/health"), deadlineEnv())
+        const response = await worker.fetch(new Request("https://mvp.test/api/admin/health", { headers: SESSION }), deadlineEnv())
         expect(response.status).toBe(200)
         const body = await response.json() as {
           services: Array<{ status: string; detail: string }>

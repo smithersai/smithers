@@ -342,8 +342,8 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     if (url.pathname === RECOMMEND_PATH || url.pathname === RECOMMEND_OUTCOME_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
       if (url.pathname === RECOMMEND_OUTCOME_PATH) return yield* handleRecommendOutcome(request, ISOLATION_HEADERS)
-      const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
-      const login = validation?.status === "valid" ? validation.identity.login : undefined
+      const validation = yield* validateSession(request)
+      const login = validation.status === "valid" ? validation.identity.login : undefined
       return yield* handleRecommend(request, login, ISOLATION_HEADERS)
     }
     // The Jev relay (src/jevRelay.ts): the browser's one door to the decision
@@ -351,8 +351,8 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     // ceiling — open to a visitor, a login when the session validates.
     if (url.pathname === JEV_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
-      const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
-      return yield* handleJev(request, validation?.status === "valid" ? validation.identity.login : undefined, ISOLATION_HEADERS)
+      const validation = yield* validateSession(request)
+      return yield* handleJev(request, validation.status === "valid" ? validation.identity.login : undefined, ISOLATION_HEADERS)
     }
     if (url.pathname === INSTALLATIONS_PATH || url.pathname.startsWith(`${INSTALLATIONS_PATH}/`)) {
       if (request.method !== "GET") return methodNotAllowed()
@@ -425,8 +425,8 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
     }
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
-      const validation = request.headers.has("cookie") ? yield* validateSession(request) : undefined
-      const login = validation?.status === "valid" && (validation.identity.allowlisted || validation.identity.admitted) ? validation.identity.login : undefined
+      const validation = yield* validateSession(request)
+      const login = validation.status === "valid" && (validation.identity.allowlisted || validation.identity.admitted) ? validation.identity.login : undefined
       const account = login === undefined ? undefined : yield* accountModelCredentials(request, login)
       if (account && (yield* account.current)) return yield* handleModelCatalog(undefined, false)
       return yield* handleModelCatalog(account, login !== undefined)

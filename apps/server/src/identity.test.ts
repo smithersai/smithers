@@ -59,6 +59,16 @@ describe("validateSession", () => {
     expect(seen[0]!.headers.get("x-smithers-service-token")).toBe("service-token")
   })
 
+  test("a request with no cookie is signed out without an identity subrequest, even when identity is down", async () => {
+    const { seen, layer } = wire(() => Promise.reject(new Error("connection reset")))
+    expect(await run(validateSession(session()), layer, config())).toEqual({ status: "invalid" })
+    expect(await run(validateSession(session("")), layer, config())).toEqual({ status: "invalid" })
+    expect(seen).toEqual([])
+    const gate = await run(requireTurnSession(session()), layer, config())
+    expect((gate as Response).status).toBe(401)
+    expect(seen).toEqual([])
+  })
+
   test("a 401 is invalid; any other refusal is the seam being unavailable, with its status named", async () => {
     const refused = await run(validateSession(session("smithers_session=abc")), wire(() => new Response("{}", { status: 401 })).layer, config())
     expect(refused).toEqual({ status: "invalid" })
@@ -76,7 +86,6 @@ describe("validateSession", () => {
     // first-party cookie (the live-tutorial cookie, an edge cookie) must not
     // turn that answer into a 502 outage that closes the anonymous door.
     const answer = () => jsonAnswer(200, { state: "signed-out", login: null })
-    expect(await run(validateSession(session()), wire(answer).layer, config())).toEqual({ status: "invalid" })
     expect(await run(validateSession(session("__Host-smithers-tutorial=x")), wire(answer).layer, config())).toEqual({ status: "invalid" })
     expect(await run(validateSession(session("smithers_identity=stale")), wire(answer).layer, config())).toEqual({ status: "invalid" })
     const unparseable = await run(
@@ -96,7 +105,7 @@ describe("validateSession", () => {
 
   test("an unreachable seam is a 502 and a deadline a 504 naming its milliseconds, never a false sign-in", async () => {
     const down = await run(
-      validateSession(session()),
+      validateSession(session("smithers_session=abc")),
       wire(() => Promise.reject(new Error("connection reset"))).layer,
       config()
     )
@@ -110,7 +119,7 @@ describe("validateSession", () => {
         request.signal.addEventListener("abort", () => reject(request.signal.reason), { once: true })
       })
     )
-    const slow = await run(validateSession(session()), stalled.layer, config({ upstreamTimeoutMs: 20 }))
+    const slow = await run(validateSession(session("smithers_session=abc")), stalled.layer, config({ upstreamTimeoutMs: 20 }))
     expect(slow.status).toBe("unavailable")
     if (slow.status === "unavailable") {
       expect(slow.response.status).toBe(504)
@@ -143,7 +152,7 @@ describe("requireTurnSession", () => {
         expect((outcome as Response).status).toBe(403)
       }
     }
-    const signedOut = await run(requireTurnSession(session()), wire(() => jsonAnswer(200, { admission: "public" })).layer, config())
+    const signedOut = await run(requireTurnSession(session("smithers_session=stale")), wire(() => jsonAnswer(200, { admission: "public" })).layer, config())
     expect((signedOut as Response).status).toBe(401)
   })
   test("stays out of the way without a seam, refuses 401 signed out and 403 off the allowlist, and admits a member", async () => {
