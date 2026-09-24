@@ -1,7 +1,7 @@
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { PALETTES } from "../state/AppState"
@@ -38,20 +38,12 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const freshController = async (bootstrap?: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap, features: { wiki: true } })
+    controller: createAppController(store, unavailableAgent, { bootstrap, features: { wiki: true } })
   }
 }
 

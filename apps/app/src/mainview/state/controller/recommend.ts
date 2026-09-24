@@ -1,6 +1,5 @@
 import { currentRepositoryUpdate } from "../RepositoryContext"
 import type { CatalogItem, CommandState } from "../../flows/registry"
-import type { RepoStep } from "../../Onboarding"
 import { RECOMMENDATION_ID } from "../AppState"
 import {
   RECOMMEND_FLOW,
@@ -79,7 +78,6 @@ interface Flight {
 export interface RecommendDependencies {
   readonly catalog: () => ReadonlyArray<CatalogItem>
   readonly state: () => CommandState
-  readonly repoStep: () => RepoStep
   /** The active repository as `owner/name`, or null. */
   readonly repo: () => string | null
   readonly config: RecommenderConfig
@@ -113,7 +111,6 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
     repositoryUpdate: currentRepositoryUpdate(store),
     state: deps.state(),
     catalog: deps.catalog(),
-    repoStep: deps.repoStep(),
     repo: deps.repo(),
     messages: [...store.collections.messages.values()].sort((a, b) => a.ordinal - b.ordinal),
     cards: [...store.collections.cards.values()].sort((a, b) => a.ordinal - b.ordinal).slice(-5)

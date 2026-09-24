@@ -8,7 +8,7 @@ import { launchModelProvider } from "../../e2e/real/support/model-provider-proce
 import { createRuntime,loadBootstrap,unavailableAgent } from "../mainview/runtime/Runtime"
 import { createAppStore } from "../mainview/state/AppStore"
 import { scopedControllers } from "../mainview/state/ControllerTestScope"
-import { memoryStorage,unavailableRepositories,waitFor } from "../mainview/state/TestFixtures"
+import { memoryStorage, waitFor } from "../mainview/state/TestFixtures"
 import { startLocalServer } from "./server"
 
 const createAppController = scopedControllers()
@@ -30,7 +30,7 @@ test("an offline host tests and assigns a loopback model, then answers through t
   }
   const bootstrap = await loadBootstrap(http)
   const runtime = createRuntime({ bootstrap, http })
-  const controller = createAppController(store, unavailableRepositories, runtime.backend.agent ?? unavailableAgent(), { bootstrap, fetchImpl: http })
+  const controller = createAppController(store, runtime.backend.agent ?? unavailableAgent(), { bootstrap, fetchImpl: http })
   try {
     await controller.adoptSession({ state: "unavailable", login: null, allowlisted: false, admin: false })
     expect(await controller.explain("the loopback provider")).toBe("There is no agent on this host to explain with.")

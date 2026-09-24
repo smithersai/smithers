@@ -12,9 +12,6 @@ test("PR tabs use the shared flow and survive reload without a network request",
   }
   const store = await createAppStore({ kind: "localStorage", storage })
   const controller = createAppController(store, {
-    available: false,
-    pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "Unavailable" })
-  }, {
     available: false, startTurn: async () => ({ status: "error", message: "Unavailable" }),
     cancelTurn: async () => {}, subscribe: () => () => {}
   }, { fetchImpl: async () => { throw new Error("Changing a PR tab must not fetch") } })

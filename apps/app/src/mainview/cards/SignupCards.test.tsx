@@ -6,7 +6,7 @@ import type { Signup } from "../state/Signup"
 import { initialSignup } from "../state/Signup"
 import { createAppStore } from "../state/AppStore"
 import { scopedControllers } from "../state/ControllerTestScope"
-import { memoryStorage, silentAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, silentAgent } from "../state/TestFixtures"
 import { SignupCardBody } from "./SignupCards"
 
 GlobalRegistrator.register()
@@ -44,7 +44,7 @@ describe("the signup cards", () => {
           ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held) }
           : Reflect.get(target, property, receiver) })
       }
-    }, unavailableRepositories, silentAgent)
+    }, silentAgent)
     const host = document.createElement("div")
     document.body.append(host)
     const root = createRoot(host)

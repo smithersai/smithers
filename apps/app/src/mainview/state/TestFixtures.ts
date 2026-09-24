@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 
 /**
@@ -24,19 +24,6 @@ export const writeLegacyCollection = (storage: StorageApi, collectionId: string,
   ]))))
 }
 
-export const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
-
-export const nativeRepositories: NativeRepositories = {
-  available: true,
-  pickLocalRepository: async () => ({ status: "cancelled" })
-}
 
 export const silentAgent: AgentPort = {
   available: true,

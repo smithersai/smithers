@@ -65,13 +65,6 @@ export interface TabsController {
   readonly selectRepo: (repoKey: string) => Promise<string | void>
   /** Forget a pinned repository; its open session and tabs stay until closed. */
   readonly unpinRepo: (repoKey: string) => string | void
-  /**
-   * The chrome's "Open repository" and the agent's `repo.open [path]`: a
-   * named path opens directly where the host allows one; without a path the
-   * native picker (or the typed-path prompt) is the HUMAN's door alone — the
-   * agent is told to name the path.
-   */
-  readonly openLocalRepo: (path?: string) => Promise<string | void>
   readonly loadHarnesses: () => Promise<void>
   readonly loadRepos: () => Promise<void>
   /** A `pty.exit` frame reached a tab: record the code so closing no longer asks. */
@@ -480,54 +473,13 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
     const pin: PinnedRepo | undefined = collections.pinnedRepos.get(repoKey)
     if (pin === undefined) return `There is no pinned repository with key ${repoKey}.`
     const open = [...collections.repos.values()].some((repo) => repoKeyOf(repo.path) === repoKey)
-    if (!open) {
-      // A pinned repository the host no longer holds: open it again.
-      const refusal = await openLocalRepo()
-      if (refusal !== undefined) return refusal
-      if (![...collections.repos.values()].some((repo) => repoKeyOf(repo.path) === repoKey)) {
-        return `${pin.name} was not reopened.`
-      }
-    }
+    if (!open) return "This host no longer opens local repositories."
     store.dispatch({ type: "repo.selected", actor: "user", id: repoKey })
   }
 
   const unpinRepo: TabsController["unpinRepo"] = (repoKey) => {
     if (collections.pinnedRepos.get(repoKey) === undefined) return `There is no pinned repository with key ${repoKey}.`
     store.dispatch({ type: "repo.unpinned", actor: "user", id: repoKey })
-  }
-
-  const openLocalRepo: TabsController["openLocalRepo"] = async (path) => {
-    const named = path?.trim() ?? ""
-    if (named !== "") return "Opening a repository by path is not allowed here — use the folder dialog."
-    /*
-     * The folder dialog is the human's gesture: the agent's bare `repo.open`
-     * never opens it (the three-door law's `userOnly` would refuse the whole
-     * flow; this refuses only the gesture). The agent names the path, and the
-     * confirm card puts the click back in the human's hands.
-     */
-    if (ctx.commandActor === "smithers") {
-      return "Name the path: repo.open <path> — the folder dialog is the human's to open."
-    }
-    if (ctx.repositories.available) {
-      store.dispatch({ type: "connector.local.requested", actor: "user", access: "read-write" })
-      try {
-        const result = await ctx.repositories.pickLocalRepository("read-write")
-        if (result.status === "cancelled") {
-          store.dispatch({ type: "connector.local.cancelled", actor: "user" })
-          return
-        }
-        if (result.status === "error") {
-          store.dispatch({ type: "connector.local.failed", actor: "system", message: result.message })
-          return result.message
-        }
-        return "Repositories are opened as Smithers Cloud workspaces, not from this machine."
-      } catch {
-        const message = "The native repository picker stopped responding. Try again."
-        store.dispatch({ type: "connector.local.failed", actor: "system", message })
-        return message
-      }
-    }
-    return "Opening a repository needs the Smithers native app."
   }
 
   const notePtyExit: TabsController["notePtyExit"] = (sessionId, code) => {
@@ -566,7 +518,6 @@ export const createTabsController = (ctx: ControllerContext): TabsController => 
     toggleTabMenu,
     selectRepo,
     unpinRepo,
-    openLocalRepo,
     loadHarnesses,
     loadRepos,
     notePtyExit,

@@ -9,7 +9,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 
 /*
@@ -78,7 +78,7 @@ const signedIn = async (store: AppStore, admin = false): Promise<void> => {
 describe("wave 10 — the derived pill row (§2a/§2f)", () => {
   test("with no recommendation and no next step the pill row is EMPTY — an empty row is correct", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await signedIn(store)
     // No repo step and no recommendation → no pill. An empty row is correct.
     await settled()
@@ -88,7 +88,7 @@ describe("wave 10 — the derived pill row (§2a/§2f)", () => {
 
   test("signed-out, no pill: sign-in stays callable without permanent chrome", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -111,7 +111,7 @@ describe("wave 10 — the derived pill row (§2a/§2f)", () => {
 describe("wave 10 — admin-only affordances are absent, not hidden (§2/§2b)", () => {
   test("non-admin: no reset button, no devtools panel, no trace in the DOM", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await signedIn(store, false)
     const { host } = mount(controller)
     expect(host.querySelector(".corner-reset-btn")).toBeNull()
@@ -130,7 +130,7 @@ describe("wave 10 — admin-only affordances are absent, not hidden (§2/§2b)",
 
   test("admin: reset stays in the registry and admin.devtools toggles the panel", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await signedIn(store, true)
     const { host } = mount(controller)
     expect(host.querySelector(".corner-reset-btn")).toBeNull()
@@ -147,7 +147,7 @@ describe("wave 10 — admin-only affordances are absent, not hidden (§2/§2b)",
 describe("wave 10 — the maximize transition (§2d′)", () => {
   test("maximizing keeps the SAME element (no re-mount); Escape minimizes", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await signedIn(store)
     store.dispatch({
       type: "card.upsert",
@@ -196,7 +196,7 @@ describe("local app: identity is not a gate on the chat (LOCAL-APP.md)", () => {
       cancelTurn: async () => {},
       subscribe: () => () => {}
     }
-    const controller = createAppController(store, unavailableRepositories, countingAgent)
+    const controller = createAppController(store, countingAgent)
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",

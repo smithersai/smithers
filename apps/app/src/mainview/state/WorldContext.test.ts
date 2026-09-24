@@ -3,7 +3,7 @@ import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { WORLD_BODY_PER_DOCUMENT, worldContextDocuments } from "./WorldContext"
-import { memoryStorage, recordingAgent, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, recordingAgent, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -76,7 +76,7 @@ describe("world notes ride the turn under a budget", () => {
   test("the turn the client sends carries the note's text, not just its path", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
     const seeded = [...store.collections.worldDocuments.values()][0]
     expect(seeded).toBeDefined()
     controller.changeWorldDocument(

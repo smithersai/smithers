@@ -3,16 +3,11 @@ import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
 import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
 import { hasCapability } from "@smthrs/rpc/AppBootstrap"
-import {
-  nativeApplicationBootstrapToken,
-  nativeOpenExternal,
-  nativeRepositories,
-  nativeShellAvailable
-} from "./native/NativeBridge"
+import { nativeApplicationBootstrapToken, nativeOpenExternal, nativeShellAvailable } from "./native/NativeBridge"
 import { loadRuntimeApplicationClient } from "./runtime/ApplicationTransport"
 import { beginRepositoryEntry, openRequestedRepo, requestedRepo, withoutRepoParam } from "./RepoLink"
 import { createBrowserFrameHistory } from "./runtime/FrameHistory"
-import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent, unavailableRepositories } from "./runtime/Runtime"
+import { BootstrapFailure, createRuntime, warmBootstrap, unavailableAgent } from "./runtime/Runtime"
 import { createAppController } from "./state/AppController"
 import { wikiFlagEnabled } from "./state/KnowledgeFeatures"
 import type { AppController } from "./state/AppController"
@@ -62,14 +57,12 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     const runtime = yield* Effect.sync(() => createRuntime({
       bootstrap,
       http,
-      nativeRepositories,
       ...(nativeShellAvailable ? { nativeOpenExternal } : {})
     }))
     const agent = yield* Effect.sync(() => runtime.backend.agent ?? unavailableAgent())
     const controller = yield* Effect.sync(() =>
       createAppController(
         store,
-        runtime.backend.repositories ?? unavailableRepositories,
         agent,
         {
           fetchImpl: runtime.http,
@@ -132,7 +125,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
     // The awaited branch above has its identity answer here; the non-blocking
     // one does not, so this call is its own no-op and the `.then()` decides.
     if (requested === null) yield* Effect.sync(() => selectFirstRunRepository(store, controller.settleFirstRunTarget))
-    if (runtime.backend.repositories !== undefined) {
+    if (bootstrap.host === "local" && bootstrap.sandbox !== null) {
       yield* Effect.sync(() => void controller.loadRepos())
       yield* Effect.sync(() => void controller.loadHarnesses())
       // Agents as data (custom-agents.md): the app-agents mirror loads beside the harness list.

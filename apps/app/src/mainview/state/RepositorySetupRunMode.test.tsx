@@ -7,7 +7,7 @@ import type { StorageApi } from "@tanstack/db"
 import { RepositorySetupCard } from "../cards/RepositorySetupCard"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { recordingAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { recordingAgent, waitFor } from "./TestFixtures"
 
 GlobalRegistrator.register()
 afterAll(async () => { await new Promise(resolve => setTimeout(resolve, 0)); await GlobalRegistrator.unregister() })
@@ -139,7 +139,7 @@ async function walk(options: { readonly explodeAfterCardWrite?: boolean; readonl
       } : {})
     }
   } }).isPersisted.promise
-  const controller = createAppController(controllerStore, unavailableRepositories, recordingAgent([]), {
+  const controller = createAppController(controllerStore, recordingAgent([]), {
     workflowPollMs: 1,
     toastDebounceMs: 0,
     fetchImpl: async (input, init) => {

@@ -3,7 +3,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { json, memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -91,7 +91,7 @@ const harness = async (options: {
       return json(404, { status: "error", message: `no stub for ${path}` })
     }
   }
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableAgent, services)
   await signedOut(store)
   return { store, opened, requests, signIn: () => controller.commands.run("auth.sign-in"), dispose: async () => { await controller.dispose() } }
 }

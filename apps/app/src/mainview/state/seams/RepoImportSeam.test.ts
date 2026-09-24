@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
@@ -32,14 +32,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -109,7 +101,7 @@ const freshController = async (services: AppServices) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, services)
+    controller: createAppController(store, unavailableAgent, services)
   }
 }
 
@@ -514,7 +506,7 @@ describe("repo import — instant background lifecycle", () => {
     } }).isPersisted.promise
     let starts = 0
     let polls = 0
-    createAppController(store, unavailableRepositories, unavailableAgent, {
+    createAppController(store, unavailableAgent, {
       toastDebounceMs: 0,
       fetchImpl: async (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
@@ -538,7 +530,7 @@ describe("repo import — instant background lifecycle", () => {
         requestId: "persisted-retry", requestKind: "retry", accountOwner: "will" }
     } }).isPersisted.promise
     let retries = 0
-    createAppController(store, unavailableRepositories, unavailableAgent, {
+    createAppController(store, unavailableAgent, {
       fetchImpl: async (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
         if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(409, { message: "only failed import jobs can be retried" }) }
@@ -562,7 +554,7 @@ describe("repo import — instant background lifecycle", () => {
     let releaseObservation: (response: Response) => void = () => {}
     const observation = new Promise<Response>(resolve => { releaseObservation = resolve })
     let retries = 0
-    createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+    createAppController(store, unavailableAgent, { fetchImpl: async (input, init) => {
       const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
       if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(202, jobBody("cloning")) }
       if (path.endsWith("/github/import/job-1")) return observation
@@ -585,7 +577,7 @@ describe("repo import — instant background lifecycle", () => {
         requestId: "persisted-retry", requestKind: "retry", accountOwner: "will" }
     } }).isPersisted.promise
     let retries = 0
-    createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+    createAppController(store, unavailableAgent, { fetchImpl: async (input, init) => {
       const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
       if (path.endsWith("/retry") && init?.method === "POST") { retries += 1; return json(202, jobBody("cloning")) }
       if (path.endsWith("/github/import/job-1")) return json(500, { message: "job lookup unavailable" })
@@ -629,7 +621,7 @@ describe("repo import — instant background lifecycle", () => {
       return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: Promise.reject(new Error("disk full")) } }
     }) as AppStore["dispatch"] })
     let starts = 0
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, importBackend(() => { starts += 1; return json(202, jobBody("ready")) }))
+    const controller = createAppController(store, unavailableAgent, importBackend(() => { starts += 1; return json(202, jobBody("ready")) }))
     expect((await controller.commands.run("repos.import", "will/flows")).status).toBe("failed")
     await until(() => importCard(store)?.payload.phase === "failed", "the persistence failure")
     expect(importCard(store)?.payload.detail).toBe("The import request couldn't be saved.")
@@ -652,7 +644,7 @@ describe("repo import — instant background lifecycle", () => {
         return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held) } }
       }) as AppStore["dispatch"] })
       let starts = 0
-      const controller = createAppController(store, unavailableRepositories, unavailableAgent,
+      const controller = createAppController(store, unavailableAgent,
         importBackend(() => { starts += 1; return json(202, jobBody("ready")) }))
       const admission = controller.commands.run("repos.import", "will/flows")
       await settled()
@@ -689,7 +681,7 @@ describe("repo import — instant background lifecycle", () => {
       return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held) } }
     }) as AppStore["dispatch"] })
     let starts = 0
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: async (input, init) => {
+    const controller = createAppController(store, unavailableAgent, { fetchImpl: async (input, init) => {
       const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url, "https://app.test").pathname
       if (path.endsWith("/github/import") && init?.method === "POST") starts += 1
       return json(202, jobBody("ready"))
@@ -729,7 +721,7 @@ describe("repo import — instant background lifecycle", () => {
       holdReceipt = false
       return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: held } }
     }) as AppStore["dispatch"] })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, importBackend(() => json(202, jobBody("ready"))))
+    const controller = createAppController(store, unavailableAgent, importBackend(() => json(202, jobBody("ready"))))
     const admission = controller.commands.run("repos.import", "will/flows")
     await until(() => importCard(store) !== undefined, "the persisted intent")
     const old = importCard(store)!
@@ -758,7 +750,7 @@ describe("repo import — instant background lifecycle", () => {
       if (path.endsWith("/github/import") && init?.method === "POST") { postedBody = JSON.parse(String(init.body)); return json(202, jobBody("ready")) }
       return json(404, {})
     } }
-    const fresh = createAppController(store, unavailableRepositories, unavailableAgent, services)
+    const fresh = createAppController(store, unavailableAgent, services)
     await fresh.commands.run("repos.import", "will/flows")
     await until(() => importCard(store)?.payload.phase === "done", "the new owner's import")
     expect(postedBody).toEqual({ owner: "will", repo: "flows" })
@@ -956,7 +948,7 @@ test("the import toast waits for the terminal completion receipt to persist", as
     if (transition.type !== "card.upsert" || transition.card.kind !== "repo-import" || transition.card.payload.phase !== "done") return receipt
     return { ...receipt, isPersisted: { ...receipt.isPersisted, promise: receipt.isPersisted.promise.then(() => held) } }
   }) as AppStore["dispatch"] })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     ...importBackend(() => json(202, jobBody("cloning")), () => json(200, jobBody("ready"))),
     toastDebounceMs: 0
   })

@@ -6,11 +6,11 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import { identityMessage, INIT_GREETING, INIT_TITLE, initMessage, repoStep, repoSuggestion, SMITHERS_HELPERS } from "../Onboarding"
+import { identityMessage, INIT_GREETING, INIT_TITLE, initMessage, SMITHERS_HELPERS } from "../Onboarding"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { backend, json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -76,7 +76,7 @@ const text = (node: Element | null): string => (node?.textContent ?? "").replace
 describe("onboarding — the opening entry", () => {
   test("local host, fresh session: the init read is the whole opening — no repo step, no picker", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       bootstrap: localBootstrap,
       features: { suggestionPills: true },
       ...backend({})
@@ -121,7 +121,6 @@ describe("onboarding — the opening entry", () => {
      * carries neither the prompt, the message action, nor the pill.
      */
     expect(controller.commands.find("repo.open")).toBeUndefined()
-    expect(init?.querySelector(".message-init-prompt")).toBeNull()
     expect(host.querySelector(".message-cta")).toBeNull()
     expect(host.querySelectorAll(".smithers-suggestion")).toHaveLength(0)
     expect(text(host)).not.toContain("Select a repo to get started.")
@@ -129,7 +128,7 @@ describe("onboarding — the opening entry", () => {
 
   test("cloud host, signed in: with no local picker there is no repo step and no pill", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       features: { suggestionPills: true },
       ...backend({
         "/api/auth/session": json(200, { login: "will", allowlisted: true, admin: false })
@@ -147,7 +146,7 @@ describe("onboarding — the opening entry", () => {
 
   test("a selected cloud repository opens without startup chatter and retains failures", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       bootstrap: { ...localBootstrap, host: "cloud", capabilities: ["identity"], authFlow: "redirect", sandbox: null },
       ...backend({})
     })
@@ -168,7 +167,7 @@ describe("onboarding — the opening entry", () => {
 
   test("local host, signed out: sign-in is an option, so the init read still opens the session", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       bootstrap: { ...localBootstrap, authFlow: "both" },
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
@@ -191,7 +190,7 @@ describe("onboarding — the opening entry", () => {
 
   test("cloud: signed out, the auth state still shows only itself — no init read, no pill", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
         "/api/auth/scopes": json(200, { scopes: [] })
@@ -209,7 +208,7 @@ describe("onboarding — the opening entry", () => {
 describe("onboarding — the pill feature flag", () => {
   test("off by default: no pill row in the DOM, and the entry names no step either", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       bootstrap: localBootstrap,
       ...backend({ "/api/repos": json(200, { repos: [] }) })
     })
@@ -223,27 +222,6 @@ describe("onboarding — the pill feature flag", () => {
 })
 
 describe("onboarding — the pure rules", () => {
-  test("a connected or open repository ends the local step", () => {
-    expect(repoStep({ localPickerAvailable: true, connectors: [], repos: [] })).toBe("local")
-    expect(repoStep({ localPickerAvailable: true, connectors: [{}], repos: [] })).toBe("none")
-    /*
-     * The defect: "Select a repo" stayed on screen right after the user
-     * selected one. An open repository or a connector answers the step.
-     */
-    expect(repoStep({ localPickerAvailable: true, connectors: [], repos: [{}] })).toBe("none")
-    expect(repoStep({ localPickerAvailable: false, connectors: [{}], repos: [] })).toBe("none")
-    expect(repoStep({ localPickerAvailable: false, connectors: [], repos: [] })).toBe("none")
-  })
-
-  test("the pill and the message action name the same flow for the step", () => {
-    expect(repoSuggestion("none")).toEqual([])
-    expect(repoSuggestion("local")[0]?.flow).toBe("repo.open")
-    const facts = { bootstrap: undefined, flowCount: 3, harnesses: [], connectors: [], repos: [] }
-    expect(initMessage({ ...facts, repoStep: "none" }).action).toBeUndefined()
-    expect(initMessage({ ...facts, repoStep: "none" }).text).not.toContain("Select a repo")
-    expect(initMessage({ ...facts, repoStep: "local" }).action).toEqual({ flow: "repo.open", label: "Select a repo" })
-  })
-
   test("an open repository and a connector both read back by name", () => {
     const message = initMessage({
       bootstrap: undefined,
@@ -251,7 +229,6 @@ describe("onboarding — the pure rules", () => {
       harnesses: [],
       connectors: [{ name: "flows", branch: "main" }],
       repos: [{ name: "smithers" }],
-      repoStep: "none"
     })
     expect(message.text).toContain("Host: unknown")
     expect(message.text).toContain("Harnesses: none detected")
@@ -259,7 +236,7 @@ describe("onboarding — the pure rules", () => {
   })
 
   test("the opening text names Smithers on its first line and keeps the title as the second", () => {
-    const lines = initMessage({ bootstrap: undefined, flowCount: 0, harnesses: [], connectors: [], repos: [], repoStep: "none" }).text.split("\n")
+    const lines = initMessage({ bootstrap: undefined, flowCount: 0, harnesses: [], connectors: [], repos: [] }).text.split("\n")
     expect(INIT_GREETING).toBe("Smithers here.")
     expect(lines[0]).toBe(`**${INIT_GREETING}**`)
     expect(lines[1]).toBe(`**${INIT_TITLE}**`)

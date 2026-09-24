@@ -3,7 +3,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -42,7 +42,7 @@ const bodies = (store: AppStore): string[] => [...store.collections.messages.val
 describe("the debug reads render for the human", () => {
   test("/debug.backend answers the human", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
+    const controller = createAppController(store, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -60,7 +60,7 @@ describe("the debug reads render for the human", () => {
     ["debug.net", "Network tap"]
   ])("/%s appends its payload to the transcript", async (flow, title) => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
+    const controller = createAppController(store, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -75,7 +75,7 @@ describe("the debug reads render for the human", () => {
 
   test("the agent's own invocation renders nothing and still reads the value", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
+    const controller = createAppController(store, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size
@@ -87,7 +87,7 @@ describe("the debug reads render for the human", () => {
 
   test("the dev-tools panel's read never dispatches", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, debugAgent(), {
+    const controller = createAppController(store, debugAgent(), {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const before = store.collections.messages.size

@@ -94,7 +94,7 @@ export const createTurnController = (
   ctx: ControllerContext,
   dependencies: TurnControllerDependencies
 ): TurnController => {
-  const { store, repositories, agent } = ctx
+  const { store, agent } = ctx
   const { settleTurnBilling, nextOrdinal, surfaceCommandFailure, forwardApprovalDecision, forwardInboxApprovalDecision, credentialMissing } =
     dependencies
 
@@ -413,10 +413,7 @@ export const createTurnController = (
           ? []
           : [
             `Read the public repository ${exploring} the visitor is exploring signed out: files.list <path> lists a directory and files.read <path> renders a file as a card in this chat, no sign-in needed.`
-          ]),
-        ...(repositories.available
-          ? ["Connect a local repository the user picks in the native picker."]
-          : [])
+          ])
       ],
       limitations: [
         "Cannot see or control the host environment beyond what this context block states.",
@@ -426,9 +423,7 @@ export const createTurnController = (
             `The visitor is signed out, exploring ${exploring}: anything that writes (pull requests, issues, workspaces, flow runs, secrets) needs GitHub sign-in, so when they ask for one execute auth.prompt instead.`
           ]),
         "Flow runs execute on the user's workspace gateway; any outbound act a run wants (pushes, PRs) pauses for the human's explicit approval. Never promise one landed without it.",
-        repositories.available
-          ? "Can only touch repositories the user explicitly connected, listed above."
-          : "This pure-web client cannot connect local repositories (the native app can); none are connected unless listed above."
+        "This host cannot connect local repositories."
       ]
     }
   }
@@ -470,7 +465,7 @@ export const createTurnController = (
           ...[...store.collections.repos.values()].map((repo) => repo.name)
         ])
       ],
-      localRepositoriesAvailable: repositories.available,
+      localRepositoriesAvailable: false,
       repositorySetups: !signedIn ? [] : [...store.collections.cards.values()]
         .filter(card => inConversation(card, conversationTabIdOf(store.session())) && (recent.has(card.id) || mentioned(card.id)))
         .sort((left, right) => Number(mentioned(left.id)) - Number(mentioned(right.id)) || left.ordinal - right.ordinal)

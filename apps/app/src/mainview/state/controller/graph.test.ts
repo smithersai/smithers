@@ -18,7 +18,7 @@ import { createAppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
 import { payloadFor } from "../../flows/SlashPayload"
 import { flowArgs } from "../../flows/FlowArgs"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "../TestFixtures"
+import { json, memoryStorage, settle, silentAgent, waitFor } from "../TestFixtures"
 import { triggerNodeId } from "../../cards/FlowGraphTriggerNode"
 
 const createAppController = scopedControllers()
@@ -226,7 +226,7 @@ const planCard = (store: Awaited<ReturnType<typeof webStore>>): Extract<Card, { 
 const launched = async (options: Parameters<typeof relay>[0] = {}) => {
   const store = await webStore()
   const served = relay(options)
-  const controller = createAppController(store, unavailableRepositories, silentAgent, served.services)
+  const controller = createAppController(store, silentAgent, served.services)
   await signIn(store)
   await controller.commands.run("flow.run", FLOW)
   // The command returns on the persisted request; the run card carries a run id
@@ -238,7 +238,7 @@ const launched = async (options: Parameters<typeof relay>[0] = {}) => {
 const planned = async (options: Parameters<typeof relay>[0] = {}) => {
   const store = await webStore()
   const served = relay(options)
-  const controller = createAppController(store, unavailableRepositories, silentAgent, served.services)
+  const controller = createAppController(store, silentAgent, served.services)
   await signIn(store)
   await controller.commands.run("flow.plan", FLOW)
   await settle(2)
@@ -345,7 +345,7 @@ describe("the run graph's node drawer", () => {
 
   test("both gestures need the run's card first", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, relay().services)
+    const controller = createAppController(store, silentAgent, relay().services)
     await signIn(store)
     expect(said(await controller.commands.run("runs.graph.select", "run-9 gate"))).toContain("runs.open run-9")
     expect(said(await controller.commands.run("runs.graph.tab", "run-9 code"))).toContain("runs.open run-9")
@@ -544,7 +544,7 @@ describe("the plan card's node drawer", () => {
         return base.services.fetchImpl!(input, init)
       }
     }
-    const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+    const controller = createAppController(store, silentAgent, services)
     await signIn(store)
     await controller.commands.run("flow.plan", FLOW)
     await settle(2)

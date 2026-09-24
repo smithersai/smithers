@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url"
 import { scopedControllers } from "./ControllerTestScope"
 import { DEFAULT_PALETTE, PALETTES } from "./AppState"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -85,7 +85,7 @@ describe("the color-theme axis in the store and the DOM", () => {
 
   test("every registered palette round-trips through /theme into the attribute", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+    const controller = createAppController(store, unavailableAgent)
     for (const palette of PALETTES) {
       expect((await controller.commands.run("appearance.theme", palette)).status).toBe("executed")
       expect(store.session().palette).toBe(palette)
@@ -108,7 +108,7 @@ describe("the color-theme axis in the store and the DOM", () => {
 
   test("the two axes are independent: the light/dark toggle leaves the palette alone", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+    const controller = createAppController(store, unavailableAgent)
     await controller.commands.run("appearance.theme", "catppuccin")
     const before = store.session().theme
     await controller.commands.run("appearance.dark-mode")

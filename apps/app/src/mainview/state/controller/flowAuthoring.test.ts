@@ -18,7 +18,7 @@ import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
 import { runtimeRunKey } from "../RuntimeProjection"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "../TestFixtures"
+import { json, memoryStorage, settle, silentAgent, waitFor } from "../TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -171,7 +171,7 @@ const planCards = (store: Awaited<ReturnType<typeof signedIn>>) =>
 test("a flow file written mid-run is planned before the authoring run settles", async () => {
   const store = await signedIn()
   const served = relay()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, served.services)
+  const controller = createAppController(store, silentAgent, served.services)
   try {
     await controller.commands.run("flow.create", `review my pull requests ${REPO}`)
     await waitFor(() => served.plans.includes(FLOW_AUTHORING_ENTRY))

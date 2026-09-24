@@ -166,13 +166,13 @@ describe("recommend: the answer contract", () => {
 
 describe("recommend: the rule", () => {
   test("the repo step leads, then the registry's recommendation order, capped", () => {
-    const suggestions = ruleSuggestions({ state: { ...state, hasConnectors: false }, catalog, repoStep: "local" })
-    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["repo.open", "connect", "wiki"])
+    const suggestions = ruleSuggestions({ state: { ...state, hasConnectors: false }, catalog })
+    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["connect", "wiki"])
     expect(suggestions[0]?.emphasis).toBe("primary")
   })
 
   test("with a repository open the repo step is gone and the first recommendation is gold", () => {
-    const suggestions = ruleSuggestions({ state, catalog, repoStep: "none" })
+    const suggestions = ruleSuggestions({ state, catalog })
     expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["wiki", "connect"])
     expect(suggestions[0]?.emphasis).toBe("primary")
   })
@@ -187,13 +187,12 @@ describe("recommend: the rule", () => {
     const suggestions = ruleSuggestions({
       state,
       catalog: lifecycleCatalog,
-      repoStep: "local",
       cards: [
         { kind: "approval", title: "Approve deployment", status: "active" },
         { kind: "run-trace", title: "Deploy", status: "active" }
       ]
     })
-    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["approvals.list", "repo.open", "wiki"])
+    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["approvals.list", "wiki", "connect"])
     expect(suggestions[0]).toEqual({
       id: "reco-approvals.list",
       label: "Decide approvals",
@@ -207,13 +206,12 @@ describe("recommend: the rule", () => {
     const suggestions = ruleSuggestions({
       state,
       catalog: lifecycleCatalog,
-      repoStep: "local",
       cards: [
         { kind: "approval", title: "Approved deployment", status: "acted" },
         { kind: "run-trace", title: "Deploy", status: "active" }
       ]
     })
-    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["runs.list", "repo.open", "wiki"])
+    expect(suggestions.map((suggestion) => suggestion.flow)).toEqual(["runs.list", "wiki", "connect"])
     expect(suggestions[0]).toEqual({
       id: "reco-runs.list",
       label: "See your runs",
@@ -224,7 +222,7 @@ describe("recommend: the rule", () => {
   })
 
   test("an acted approval contributes no lifecycle suggestion", () => {
-    const input = { state, catalog: lifecycleCatalog, repoStep: "none" as const }
+    const input = { state, catalog: lifecycleCatalog }
     expect(ruleSuggestions({
       ...input,
       cards: [{ kind: "approval", title: "Approved deployment", status: "acted" }]
@@ -234,7 +232,6 @@ describe("recommend: the rule", () => {
   test("lifecycle suggestions require an offerable command", () => {
     const input = {
       state,
-      repoStep: "local" as const,
       cards: [
         { kind: "approval" as const, title: "Approve deployment", status: "active" as const },
         { kind: "run-trace" as const, title: "Deploy", status: "active" as const }
@@ -247,7 +244,7 @@ describe("recommend: the rule", () => {
         : command)
     ]) {
       expect(ruleSuggestions({ ...input, catalog: unavailableCatalog })).toEqual(
-        ruleSuggestions({ state, repoStep: "local", catalog: unavailableCatalog })
+        ruleSuggestions({ state, catalog: unavailableCatalog })
       )
     }
     expect(ruleSuggestions({
@@ -257,7 +254,7 @@ describe("recommend: the rule", () => {
   })
 
   test("a streaming turn offers nothing: the pills are disabled anyway", () => {
-    expect(ruleSuggestions({ state: { ...state, typing: true }, catalog, repoStep: "none" })).toEqual([])
+    expect(ruleSuggestions({ state: { ...state, typing: true }, catalog })).toEqual([])
   })
 })
 

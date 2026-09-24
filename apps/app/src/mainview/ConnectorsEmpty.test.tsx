@@ -5,7 +5,7 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { ConnectorsSurface } from "./ConnectorsSurface"
 import { ControllerTestProvider } from "./ControllerContext"
-import type { NativeRepositories } from "./native/NativeBridge"
+
 import type { AgentPort } from "./runtime/AgentPort"
 import type { AppController as AppControllerType } from "./state/AppController"
 import { createAppController } from "./state/AppController"
@@ -46,14 +46,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const silentAgent: AgentPort = {
   available: true,
@@ -96,7 +88,7 @@ const openConnectors = async (
       scopesPlain: null
     })
   }
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: async () => new Response("{}", { headers: { "content-type": "application/json" } })
   })
   const host = mount(controller)

@@ -7,13 +7,13 @@ import type { AppStore } from "../state/AppStore"
 import { createAppStore } from "../state/AppStore"
 import { MAIN_TAB_ID, PALETTES } from "../state/AppState"
 import { scopedControllers } from "../state/ControllerTestScope"
-import { memoryStorage, settled, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, settled, unavailableAgent } from "../state/TestFixtures"
 
 const createAppController = scopedControllers()
 
 const boot = async (experimental: boolean, storage = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     features: { experimental }
   })
   return { controller, store, storage }
@@ -205,7 +205,7 @@ describe("experimental flows share the flag and all three doors", () => {
       const restoredStore = await createAppStore({ kind: "localStorage", storage })
       if (presentation === "tab") expect(restoredStore.session().activeTabId).toBe(`card-${id}`)
       else expect(restoredStore.session().maximizedCardId).toBe(id)
-      createAppController(restoredStore, unavailableRepositories, unavailableAgent, { features: { experimental: false } })
+      createAppController(restoredStore, unavailableAgent, { features: { experimental: false } })
       expect(restoredStore.session().maximizedCardId).toBeNull()
       expect(restoredStore.session().activeTabId).toBe(MAIN_TAB_ID)
       expect(restoredStore.collections.cards.has(id)).toBe(true)
@@ -230,7 +230,7 @@ describe("experimental flows share the flag and all three doors", () => {
     try {
       process.env.VITE_SMITHERS_EXPERIMENTAL = "true"
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-      const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+      const controller = createAppController(store, unavailableAgent)
       expect(controller.features.experimental).toBe(true)
       expect(names(controller.commands.disclosed())).toEqual(allNames)
       expect((await controller.commands.runAsAgent("experimental.plan")).status).toBe("executed")

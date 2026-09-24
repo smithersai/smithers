@@ -14,7 +14,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { memoryStorage, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -78,7 +78,7 @@ const transcriptTexts = (store: Awaited<ReturnType<typeof webStore>>): ReadonlyA
 describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
   test("flow.run at $0 fails deterministically with the exhausted-balance message, no seam call", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     const outcome = await controller.commands.run("flow.run", "review-pr")
@@ -89,7 +89,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("flow.create at $0 fails deterministically with the exhausted-balance message, no seam call", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     const outcome = await controller.commands.run("flow.create", "summarize my open issues")
@@ -100,7 +100,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("the exhausted-balance message renders embedded in the transcript (THE EMBED LAW), not a toast-only surface", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -121,7 +121,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
         return { status: "started" }
       }
     }
-    const controller = createAppController(store, unavailableRepositories, countingAgent, noWorkflowSeam())
+    const controller = createAppController(store, countingAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     controller.send("what's the status of my repo?")
@@ -133,7 +133,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("a positive balance never triggers the exhausted-balance guard", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -176,7 +176,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("an unread/unavailable billing seam never blocks a workflow launch (gate on answers, not silence)", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -215,7 +215,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 
   test("a button-driven flow.run at $0 does not double-surface the refusal as a toast", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, noWorkflowSeam())
+    const controller = createAppController(store, silentAgent, noWorkflowSeam())
     await signInAtZeroBalance(store)
 
     controller.runCommand("flow.run", "review-pr")
@@ -231,7 +231,7 @@ describe("zero-balance workflow launch (Launch Checklist D-4)", () => {
 test("a selected cloud workspace uses its own provider at zero managed balance", async () => {
   const store = await webStore()
   const calls: string[] = []
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: async (input) => {
       calls.push(String(input))
       return new Response(JSON.stringify({ status: "error", message: "workspace probe" }), { status: 500 })

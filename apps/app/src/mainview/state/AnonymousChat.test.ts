@@ -3,7 +3,7 @@ import type { StartAgentTurnRequest,StartAgentTurnResult } from "@smthrs/rpc/Nat
 import { describe,expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,settled,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const cloud: AppBootstrap = { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity"], authFlow: "redirect", sandbox: null }
@@ -17,7 +17,7 @@ const setup = async (options: { bootstrap?: AppBootstrap; state?: "signed-in" | 
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state, login: state === "signed-in" ? "will" : null, allowlisted: state === "signed-in", admin: false, scopesPlain: null }).isPersisted.promise
   }
   const requests: StartAgentTurnRequest[] = []
-  const controller = createAppController(store, unavailableRepositories, { ...silentAgent, available: true,
+  const controller = createAppController(store, { ...silentAgent, available: true,
     startTurn: async request => { requests.push(request); return options.result ? options.result() : { status: "started" } },
   }, { bootstrap: options.bootstrap ?? cloud, fetchImpl: async input => Response.json(
     String(input).endsWith("/api/public/repos") ? { repos: [{ name: "smithersai/smithers" }] } : {},

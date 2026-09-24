@@ -14,7 +14,7 @@ import type { AgentRole } from "@smthrs/rpc/AgentRoles"
 import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { Harness } from "@smthrs/rpc/LocalApp"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
@@ -40,7 +40,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const repositories: NativeRepositories = { available: true, pickLocalRepository: async () => ({ status: "cancelled" }) }
 
 const EVERYTHING: AppBootstrap = {
   apiVersion: 1,
@@ -80,7 +79,7 @@ const boot = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const agents: Array<AgentRole> = [...AGENT_ROLES]
   const puts: Array<{ id: string; body: Record<string, unknown> }> = []
-  const controller = createAppController(store, repositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     bootstrap: EVERYTHING,
     fetchImpl: async (input, init) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url

@@ -3,7 +3,7 @@ import { initialSetup, setupCandidate } from "@smthrs/rpc/RepositorySetup"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage, recordingAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { memoryStorage, recordingAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const id = "setup:maintainer:example%2Frepo:issues"
@@ -16,7 +16,7 @@ async function fixture() {
     id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(), payload
   } }).isPersisted.promise
   const mutations: string[] = [], conversations: StartAgentTurnRequest[] = []
-  const controller = createAppController(store, unavailableRepositories, recordingAgent(conversations), {
+  const controller = createAppController(store, recordingAgent(conversations), {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async (input, init) => {
       if (init?.method && init.method !== "GET") mutations.push(String(input))

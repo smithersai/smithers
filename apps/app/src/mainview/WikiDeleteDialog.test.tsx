@@ -8,7 +8,7 @@ const createAppController = scopedControllers({ wiki: true })
 
 test("the delete question keeps its exact target through cancel and confirm", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, { available: false, pickLocalRepository: async () => ({ status: "cancelled" }) }, silentAgent)
+  const controller = createAppController(store, silentAgent)
   const note = store.collections.worldDocuments.get("world-home")!
   await controller.commands.run("wiki.delete", note.id)
   expect(pendingWikiDeleteDocument(store.session(), [...store.collections.worldDocuments.values()])?.id).toBe(note.id)

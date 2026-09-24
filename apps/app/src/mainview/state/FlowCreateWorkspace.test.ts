@@ -14,7 +14,7 @@ import { initialSetup } from "@smthrs/rpc/RepositorySetup"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -86,7 +86,7 @@ const said = (outcome: { status: string; value?: string; error?: string }): stri
 test("the flow-authoring door provisions the box the repository's jobs run on", async () => {
   const store = await signedInStore()
   const double = relay()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const controller = createAppController(store, silentAgent, double.services)
   try {
     await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
     /* The door answers first and provisions in the background (AGENTS.md instant chat). */
@@ -101,7 +101,7 @@ test("the flow-authoring door provisions the box the repository's jobs run on", 
 test("a refused provision reaches the person as its registered refusal, with its fault class", async () => {
   const store = await signedInStore()
   const double = relay({ provisionStatus: 502, provision: () => UPSTREAM_500 })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const controller = createAppController(store, silentAgent, double.services)
   try {
     expect(said(await controller.commands.run("flow.create", `summarise my issues ${REPO}`))).toBe(`flow-requested repo=${REPO}`)
     /* The refusal stays where the person is looking after the toast goes: the durable card. */
@@ -130,7 +130,7 @@ test("a cold workspace keeps the flow-authoring door polling: no rpc, no transcr
   const store = await signedInStore()
   let provisioning = 8
   const double = relay({ provision: () => provisioning-- > 0 ? { status: "provisioning" } : { status: "ready", gatewayId: "gw-1" } })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     ...double.services,
     toastDebounceMs: 0
   })

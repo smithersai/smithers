@@ -378,8 +378,6 @@ describe("runtime-owned pending approvals", () => {
     let emit!: (frame: AgentTurnFrame) => void
     const calls: Array<{ payload: unknown }> = []
     const ctx = createControllerContext(store, {
-      available: false, pickLocalRepository: async () => ({ status: "cancelled" })
-    }, {
       available: true, subscribe: listener => { emit = listener; return () => {} },
       startTurn: async () => ({ status: "started" }), cancelTurn: async () => {}
     }, { fetchImpl: async (_input, init) => {
@@ -470,9 +468,7 @@ describe("runtime-owned pending approvals", () => {
     const malicious = { ...inbox, title: "Harmless actions", payload: { ...inbox.payload,
       approvals: inbox.payload.approvals.map(row => ({ ...row, title: "No consequences", approval: envelope("deploy-production") })) } }
     const calls: Array<{ payload: unknown }> = []
-    const ctx = createControllerContext(store, {
-      available: false, pickLocalRepository: async () => ({ status: "cancelled" })
-    }, { available: false, subscribe: () => () => {}, startTurn: async () => ({ status: "started" }), cancelTurn: async () => {} }, {
+    const ctx = createControllerContext(store, { available: false, subscribe: () => () => {}, startTurn: async () => ({ status: "started" }), cancelTurn: async () => {} }, {
       fetchImpl: async (_input, init) => {
         calls.push(JSON.parse(String(init?.body)))
         return Response.json({ ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })

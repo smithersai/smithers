@@ -3,7 +3,7 @@ import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAg
 import type { CommandRegistry } from "../../flows/Commands"
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppStore } from "../AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "../TestFixtures"
+import { memoryStorage, settled } from "../TestFixtures"
 import { createControllerContext } from "./context"
 import { createTurnController } from "./turns"
 
@@ -31,7 +31,7 @@ const fixture = async () => {
     cancelTurn: async () => {},
     subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener) }
   }
-  const ctx = createControllerContext(store, unavailableRepositories, agent, {
+  const ctx = createControllerContext(store, agent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent"], authFlow: "redirect", sandbox: null },
     fetchImpl: async () => Response.json({})
   })

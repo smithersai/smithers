@@ -18,7 +18,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { claimsRunState, renderedRunTurnText, runLaunchCommandOf, toolResultLaunchedRun } from "./RunClaims"
-import { json, memoryStorage, scriptedToolAgent, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, scriptedToolAgent, settle, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -216,7 +216,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("can you make me a smithers workflow that summarizes my open issues?")
@@ -255,7 +255,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("make me a workflow")
@@ -284,7 +284,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("make me a workflow")
@@ -312,7 +312,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
       ],
       () => [{ type: "done" as const, reason: "stop" as const }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("make me a workflow")
@@ -345,7 +345,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("run nope")
@@ -382,7 +382,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("make me a workflow")
@@ -415,7 +415,7 @@ describe("wave 12 §1 — the model may not narrate run state", () => {
       // The continuation leg never answers: the human stops the turn instead.
       () => []
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("make me a workflow")
@@ -453,7 +453,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("one loaded repo is not a question", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store, [REPO])
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
@@ -467,7 +467,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("an owner/repo argument targets it directly — slash and agent alike", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     const outcome = await controller.commands.run("flow.create", `summarize my open issues ${OTHER_REPO}`)
@@ -485,7 +485,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
   test("more than one loaded repo and no argument: the chooser-among-loaded, then one act creates it", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     const asked = await controller.commands.run("flow.create", "summarize my open issues")
@@ -543,7 +543,7 @@ describe("wave 12 §2 — flow.create asks WHICH loaded repo", () => {
      */
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store, [REPO, OTHER_REPO])
 
     await controller.commands.run("flow.create", "summarize my open issues")
@@ -585,7 +585,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("no progress for the bound: the card says it has gone quiet and the pump stops", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       // A bound the test can actually wait out; production is 10 minutes.
       workflowQuietMs: 25
@@ -611,7 +611,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("real progress keeps the clock honest — a moving run never goes quiet", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       // Generous next to the emit cadence below: what is being pinned is
       // that progress RESETS the clock, not a race against the wall.
@@ -630,7 +630,7 @@ describe("wave 12 §3 — a run the workspace never finishes", () => {
   test("the quiet card's two acts are registered commands: check again, or stop watching", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       workflowQuietMs: 25
     })
@@ -668,7 +668,7 @@ describe("wave 12 §4 — the residuals", () => {
       code: "plan_limit_exceeded", fault: "user", message: "Suspend one sandbox or upgrade.",
       plan_key: "free", limit_kind: "concurrent_sandboxes", upgrade_plan_key: "pro"
     }) })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
     /* The door answers at once and provisions in the background, so the refusal lands on the durable card. */
     expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toContain("flow-requested")
@@ -688,7 +688,7 @@ describe("wave 12 §4 — the residuals", () => {
         message: `${REPO} isn't on Smithers Cloud yet, so there is no workspace to provision for it.`
       })
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toContain("flow-requested")

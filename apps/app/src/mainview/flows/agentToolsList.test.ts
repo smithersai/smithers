@@ -13,7 +13,7 @@ import { agentVisibleCatalog, executeAgentToolCall } from "./agentTools"
 import { boundToolResult } from "../state/AgentTurnPolicy"
 import { scopedControllers } from "../state/ControllerTestScope"
 import { createAppStore } from "../state/AppStore"
-import { memoryStorage, nativeRepositories, settle, silentAgent } from "../state/TestFixtures"
+import { memoryStorage, settle, silentAgent } from "../state/TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -41,7 +41,7 @@ const bootstraps: ReadonlyArray<AppBootstrap> = [
 describe("the commands list action", () => {
   test.each([...bootstraps])("every callable command survives the tool-result bound on the $host host", async (bootstrap: AppBootstrap) => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, nativeRepositories, silentAgent, { bootstrap })
+    const controller = createAppController(store, silentAgent, { bootstrap })
     store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null })
     await settle(2)
     const raw = await executeAgentToolCall(controller.commands, { name: "commands", arguments: JSON.stringify({ action: "list" }) })

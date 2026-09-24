@@ -107,9 +107,6 @@ test("the live catalog keeps unavailable runtime and admin plugin flows out", as
     getItem: key => data.get(key) ?? null, setItem: (key, value) => { data.set(key, value) }, removeItem: key => { data.delete(key) },
   } })
   const controller = createAppController(store, {
-    available: false,
-    pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "Unavailable" }),
-  }, {
     available: false, startTurn: async () => ({ status: "error", message: "Unavailable" }),
     cancelTurn: async () => {}, subscribe: () => () => {},
   }, { bootstrap: {

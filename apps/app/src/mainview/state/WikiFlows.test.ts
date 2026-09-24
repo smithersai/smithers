@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { memoryStorage, silentAgent } from "./TestFixtures"
@@ -15,14 +15,10 @@ const createAppController = scopedControllers()
  * every door.
  */
 
-const noRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "cancelled" })
-}
 
 const setup = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, noRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     features: { wiki: true },
     fetchImpl: async () => new Response("{}", { status: 200 })
   })

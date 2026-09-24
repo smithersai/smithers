@@ -34,7 +34,7 @@ import type { AppBootstrap, RuntimeCapability } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppController } from "../state/AppController"
@@ -97,21 +97,13 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 /** Per-test fixtures; the scope disposes each one in its own `afterEach`. */
 const scopedController = scopedControllers()
 
 const controllerFor = async (bootstrap?: AppBootstrap): Promise<AppController> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return scopedController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+  return scopedController(store, unavailableAgent, { bootstrap })
 }
 
 /*
@@ -124,7 +116,7 @@ const sharedControllers = new Set<AppController>()
 
 const sharedControllerFor = async (bootstrap?: AppBootstrap): Promise<AppController> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+  const controller = createAppController(store, unavailableAgent, { bootstrap })
   sharedControllers.add(controller)
   return controller
 }
@@ -547,7 +539,7 @@ describe("host parity — the web and native catalogs against the servers' own c
    */
   test("(a‴) a signed-in web page with a workspace card and a TypeScript file card renders no control bound to a flow the web registry lacks", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = scopedController(store, unavailableRepositories, unavailableAgent, {
+    const controller = scopedController(store, unavailableAgent, {
       bootstrap: WEB,
       fetchImpl: async () =>
         new Response(JSON.stringify({ status: "error" }), { status: 404, headers: { "content-type": "application/json" } })
@@ -632,7 +624,7 @@ describe("host parity — the web and native catalogs against the servers' own c
 
   test("(a″) the web DOM's data-flow controls and data-flows manifest name only web-registered flows", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = scopedController(store, unavailableRepositories, unavailableAgent, {
+    const controller = scopedController(store, unavailableAgent, {
       bootstrap: WEB,
       // The download button renders only while a native release exists to download; the sweep must see it.
       downloadUrl: "https://example.test/download",

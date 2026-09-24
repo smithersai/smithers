@@ -6,7 +6,7 @@ import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
 import { createFailureController } from "./controller/failures"
 import { ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
-import { memoryStorage, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage } from "./TestFixtures"
 
 /*
  * Ruling B (docs/persistence.md): everything a controller opens is released
@@ -38,7 +38,7 @@ describe("disposing a controller releases what it opened", () => {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })
     const { agent } = countingAgent()
-    const context = createControllerContext(store, unavailableRepositories, agent, { toastDebounceMs: 20, toastAutoDismissMs: 20 })
+    const context = createControllerContext(store, agent, { toastDebounceMs: 20, toastAutoDismissMs: 20 })
     const failures = createFailureController(context)
     await store.dispatch({ type: "toast.shown", actor: "system", key: "done", title: "Finished" }).isPersisted.promise
     failures.resolveToast("done", { status: "ok", detail: "" })
@@ -56,7 +56,7 @@ describe("disposing a controller releases what it opened", () => {
   test("scope finalizers release in reverse acquisition order and a failure cannot skip later releases", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const { agent } = countingAgent()
-    const context = createControllerContext(store, unavailableRepositories, agent, {})
+    const context = createControllerContext(store, agent, {})
     const released: string[] = []
     const original = new Error("second resource close failed")
     context.onDispose(() => {
@@ -96,7 +96,7 @@ describe("disposing a controller releases what it opened", () => {
       }
     }
     const { agent, listeners } = countingAgent()
-    const controller = createAppController(store, unavailableRepositories, {
+    const controller = createAppController(store, {
       ...agent,
       subscribe: (listener) => {
         const unsubscribe = agent.subscribe(listener)
@@ -123,7 +123,7 @@ describe("disposing a controller releases what it opened", () => {
       }
     }
     const { agent } = countingAgent()
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await controller.dispose()
     await controller.dispose()
     expect(releases).toBe(1)
@@ -133,7 +133,6 @@ describe("disposing a controller releases what it opened", () => {
     const { agent, listeners } = countingAgent()
     const controller = createAppController(
       await createAppStore({ kind: "localStorage", storage: memoryStorage() }),
-      unavailableRepositories,
       agent
     )
     expect(listeners.size).toBe(1)
@@ -145,7 +144,6 @@ describe("disposing a controller releases what it opened", () => {
     const { agent, listeners } = countingAgent()
     const controller = createAppController(
       await createAppStore({ kind: "localStorage", storage: memoryStorage() }),
-      unavailableRepositories,
       agent
     )
     await controller.dispose()
@@ -163,7 +161,6 @@ describe("disposing a controller releases what it opened", () => {
       const { agent } = countingAgent()
       const controller = createAppController(
         await createAppStore({ kind: "localStorage", storage: memoryStorage() }),
-        unavailableRepositories,
         agent,
         {
           fetchImpl: (input) => {

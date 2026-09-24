@@ -45,8 +45,7 @@ describe("runtime composition", () => {
       http: async () => new Response(null, { status: 204 })
     })
     expect(runtime.backend.agent).toBeUndefined()
-    expect(Object.keys(runtime.backend)).toEqual(["repositories"])
-    expect(runtime.backend.repositories?.available).toBe(false)
+    expect(Object.keys(runtime.backend)).toEqual([])
     expect(runtime.bootstrap.capabilities).not.toContain("identity")
     // The sandbox descriptor stays on the validated bootstrap, where the
     // product reads it (state/Onboarding.ts).

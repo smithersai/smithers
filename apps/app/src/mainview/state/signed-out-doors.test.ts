@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settle, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const setup = async (fetchImpl?: import("./AppController").AppServices["fetchImpl"]) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const redirects: string[] = []
   const requests: string[] = []
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     openExternal: async url => { redirects.push(url); return true },
     fetchImpl: async (input, init) => {
       requests.push(String(input))

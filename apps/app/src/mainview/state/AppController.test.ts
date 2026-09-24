@@ -5,7 +5,7 @@ import type { AgentTurnFrame } from "@smthrs/rpc/NativeAgent"
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -21,7 +21,7 @@ const webAgent = (message = "Could not reach the Smithers web agent."): AgentPor
 
 test("parking a gated act dispatches only the durable command, leaving the answer to its prompt", async () => {
   const store = await webStore()
-  const controller = createAppController(store, unavailableRepositories, webAgent())
+  const controller = createAppController(store, webAgent())
   const before = new Set(store.collections.transitions.keys())
   controller.deferCommand("issues.view", "3", "signed-in")
   const events = [...store.collections.transitions.values()].filter(record => !before.has(record.id))
@@ -32,14 +32,13 @@ test("parking a gated act dispatches only the durable command, leaving the answe
 
 describe("createAppController in pure web mode", () => {
   test("reports the native agent as unavailable without blocking the composer path", async () => {
-    const controller = createAppController(await webStore(), unavailableRepositories, webAgent())
+    const controller = createAppController(await webStore(), webAgent())
     expect(controller.nativeAgentAvailable).toBe(false)
-    expect(controller.nativeRepositoriesAvailable).toBe(false)
   })
 
   test("records the user message and a visible failure when no native agent can run the turn", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, webAgent())
+    const controller = createAppController(store, webAgent())
 
     controller.send("hello from the web build")
     await settled()
@@ -55,7 +54,7 @@ describe("createAppController in pure web mode", () => {
 
   test("returns the session to idle so the composer stays usable after a failed turn", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, webAgent())
+    const controller = createAppController(store, webAgent())
 
     controller.send("first attempt")
     await settled()
@@ -88,7 +87,7 @@ describe("createAppController in pure web mode", () => {
         return () => listeners.delete(listener)
       }
     }
-    const controller = createAppController(store, unavailableRepositories, streamingAgent)
+    const controller = createAppController(store, streamingAgent)
     expect(controller.nativeAgentAvailable).toBe(true)
 
     controller.send("Hello who are you")
@@ -104,7 +103,7 @@ describe("createAppController in pure web mode", () => {
 
   test("journals composer and theme transitions with their actor in web mode", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, webAgent())
+    const controller = createAppController(store, webAgent())
 
     controller.changeDraft("draft in the browser")
     expect(store.session().draft).toBe("draft in the browser")
@@ -120,7 +119,7 @@ describe("createAppController in pure web mode", () => {
 
 describe("the controller's command surface", () => {
   test("runCommand takes optional args in one member, with the split members gone", async () => {
-    const controller = createAppController(await webStore(), unavailableRepositories, webAgent())
+    const controller = createAppController(await webStore(), webAgent())
 
     expect(controller.runCommand("definitely-not-a-command")).toBe(false)
     expect(controller.runCommand("definitely-not-a-command", "with args")).toBe(false)
@@ -162,7 +161,6 @@ describe("the controller's command surface", () => {
       "downloadUrl",
       "features",
       "nativeAgentAvailable",
-      "nativeRepositoriesAvailable",
       "tappedFetch",
       "commands",
       "slashItems",

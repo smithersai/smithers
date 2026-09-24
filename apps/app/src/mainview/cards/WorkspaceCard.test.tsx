@@ -7,7 +7,7 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { INFRA_NOT_YOUR_FAULT } from "@smthrs/rpc/RefusalCopy"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppController } from "../state/AppController"
@@ -73,18 +73,10 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const controllerFor = async (bootstrap: AppBootstrap): Promise<AppController> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+  return createAppController(store, unavailableAgent, { bootstrap })
 }
 
 const NATIVE = await controllerFor({

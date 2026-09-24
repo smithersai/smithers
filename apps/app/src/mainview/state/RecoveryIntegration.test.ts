@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
@@ -7,10 +7,7 @@ import { RECOVERY_DOWNLOAD_LABEL, RECOVERY_PRIVATE_WARNING } from "./StorageReco
 
 const createAppController = scopedControllers()
 
-const repositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "fixture unavailable" })
-}
+
 const agent: AgentPort = {
   available: false,
   startTurn: async () => ({ status: "error", message: "fixture unavailable" }),
@@ -37,7 +34,7 @@ describe("recovery through the real controller and registry", () => {
     const store = await createAppStore({ kind: "localStorage", storage })
     const downloads: string[] = []
     let reads = 0
-    const controller = createAppController(store, repositories, agent, {
+    const controller = createAppController(store, agent, {
       storageRecoveryHost: {
         read: async () => {
           reads++

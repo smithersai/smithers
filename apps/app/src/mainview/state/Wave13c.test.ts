@@ -15,7 +15,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { ASK_HONEST_LINES } from "./Instructions"
 import { impossibleAskOf, offersAskClassAct, renderedAskTurnText } from "./RunClaims"
-import { memoryStorage, scriptedToolAgent, settle, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, scriptedToolAgent, settle } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -216,7 +216,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("Open a pull request for this work and paste me the PR link.")
     await settle()
@@ -236,7 +236,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
           { type: "done" as const, reason: "stop" as const }
         ]
       ])
-      const controller = createAppController(store, unavailableRepositories, agent)
+      const controller = createAppController(store, agent)
       await signIn(store)
       controller.send(ask)
       await settle()
@@ -256,7 +256,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("Open a pull request for this work and paste me the PR link.")
     await settle()
@@ -272,7 +272,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("make me a workflow that summarizes issues")
     await settle()
@@ -288,7 +288,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("make me a workflow that summarizes open PRs")
     await settle()
@@ -305,7 +305,7 @@ describe("wave 13c — the rendered turn answers honestly", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("what would you do about email?")
     await settle()

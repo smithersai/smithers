@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { RunSummaryRow } from "./gateway"
 import { scopedControllers } from "../ControllerTestScope"
 import { createAppStore } from "../AppStore"
-import { json, memoryStorage, scriptedToolAgent, settle, unavailableRepositories, waitFor } from "../TestFixtures"
+import { json, memoryStorage, scriptedToolAgent, settle, waitFor } from "../TestFixtures"
 
 const createAppController = scopedControllers()
 const repo = "owner/launch-test"
@@ -47,7 +47,7 @@ async function fixture(options: { workflowPreparationTimeoutMs?: number } = {}) 
     if (body.procedure === "Projection.Snapshot") return json(200, { ok: true, payload: { rows: body.payload.selector._tag === "run-summary" ? [summary()] : [] } })
     return json(200, { ok: true, payload: { items: [] } })
   } }
-  const controller = createAppController(store, unavailableRepositories, chat.agent, services)
+  const controller = createAppController(store, chat.agent, services)
   const cards = () => [...store.collections.cards.values()].filter(card => card.kind === "run-trace")
   const toasts = () => [...store.collections.toasts.values()].filter(toast => toast.key.startsWith("flow.request."))
   return { store, storage, controller, services, calls, cards, toasts, chat,
@@ -245,7 +245,7 @@ test("reload reconnects a launch whose Run response was lost, using the same Pla
   await t.store.settled?.()
   const restored = await createAppStore({ kind: "localStorage", storage: t.storage })
   t.run(async () => json(200, { ok: true, payload: { runId: "run-1" } }))
-  createAppController(restored, unavailableRepositories, t.chat.agent, t.services)
+  createAppController(restored, t.chat.agent, t.services)
   await waitFor(() => [...restored.collections.cards.values()].some(card => card.kind === "run-trace" && card.payload.runId === "run-1"))
   for (const procedure of ["Plan", "Run"]) {
     const requests = t.calls.filter(call => call.procedure === procedure)
@@ -269,7 +269,7 @@ test("reload resumes a pending launch once through the boot's same-owner identit
   const gate = deferred<Response>()
   t.provision(() => gate.promise)
   const store = await createAppStore({ kind: "localStorage", storage: t.storage })
-  const controller = createAppController(store, unavailableRepositories, t.chat.agent, t.services)
+  const controller = createAppController(store, t.chat.agent, t.services)
   try {
     await waitFor(() => t.provisions() === 2)
     await controller.loadSession()
@@ -288,7 +288,7 @@ test("reload of a running remote job restores its toast without launching again"
   await t.controller.dispose()
   await t.store.settled?.()
   const store = await createAppStore({ kind: "localStorage", storage: t.storage })
-  createAppController(store, unavailableRepositories, t.chat.agent, t.services)
+  createAppController(store, t.chat.agent, t.services)
   await waitFor(() => [...store.collections.toasts.values()].some(toast => toast.key.startsWith("flow.request.") && toast.status === "running"))
   expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(1)
   t.status("failed")

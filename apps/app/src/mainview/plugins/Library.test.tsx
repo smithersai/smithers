@@ -5,7 +5,7 @@ import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
@@ -38,10 +38,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const noRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const silentAgent: AgentPort = {
   available: true,
@@ -66,7 +62,7 @@ const openLibrary = async (enabled = true, saved = false): Promise<{
       createdAt: 1, ordinal: 1, payload: { tutorial: false }
     } })
   }
-  const controller = createAppController(store, noRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     features: { pluginLibrary: enabled, wiki: true, mythicalHistory: true },
     fetchImpl: async () => new Response("{}", { headers: { "content-type": "application/json" } })
   })

@@ -1,5 +1,5 @@
 import { describe,expect,test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import type { AppStore } from "./AppStore"
 import { createAppStore } from "./AppStore"
@@ -8,10 +8,7 @@ import { scopedControllers } from "./ControllerTestScope"
 
 const createAppController = scopedControllers()
 
-const repositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
-}
+
 const agent: AgentPort = {
   available: true,
   startTurn: async () => ({ status: "error", message: "unused" }),
@@ -54,7 +51,7 @@ describe("controller shutdown has an awaitable completion boundary", () => {
         return actual.dispatch(transition)
       }
     }
-    const controller = createAppController(observed, repositories, {
+    const controller = createAppController(observed, {
       ...agent,
       startTurn: async () => { starts++; return { status: "error", message: "unexpected model start" } }
     }, {
@@ -74,7 +71,7 @@ describe("controller shutdown has an awaitable completion boundary", () => {
   })
 
   test("asynchronous failures and pump-stop failures are collected without skipping other resources", async () => {
-    const context = createControllerContext(await store(), repositories, agent, {})
+    const context = createControllerContext(await store(), agent, {})
     const releaseError = new Error("resource failed")
     const pumpError = new Error("pump failed")
     const released: string[] = []
@@ -105,7 +102,7 @@ describe("controller shutdown has an awaitable completion boundary", () => {
   })
 
   test("a direct reentrant self-wait is refused without hanging or skipping host cleanup", async () => {
-    const context = createControllerContext(await store(), repositories, agent, {})
+    const context = createControllerContext(await store(), agent, {})
     let released = 0
     context.onDispose(() => {
       released += 1
@@ -116,7 +113,7 @@ describe("controller shutdown has an awaitable completion boundary", () => {
   })
 
   test("an asynchronous finalizer added after disposal is returned to its acquiring caller", async () => {
-    const context = createControllerContext(await store(), repositories, agent, {})
+    const context = createControllerContext(await store(), agent, {})
     await context.dispose()
     const failure = new Error("late resource failed")
     await expect(context.onDispose(async () => {
@@ -125,7 +122,7 @@ describe("controller shutdown has an awaitable completion boundary", () => {
   })
 
   test("a host stays alive until its dependent asynchronous resource releases", async () => {
-    const context = createControllerContext(await store(), repositories, agent, {})
+    const context = createControllerContext(await store(), agent, {})
     const held = deferred()
     const released: string[] = []
     context.onDispose(() => {
@@ -165,7 +162,6 @@ describe("controller shutdown has an awaitable completion boundary", () => {
           closed = true
         }
       },
-      repositories,
       {
         ...agent,
         subscribe: () => {

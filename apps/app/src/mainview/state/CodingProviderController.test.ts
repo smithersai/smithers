@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { writeOnlyGesture } from "../flows/CommandGesture"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { unavailableAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { unavailableAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const deferred = <T>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(done => { resolve = done }); return { promise, resolve } }
@@ -14,7 +14,7 @@ test("Claude form and controller keep a held token out of history and persisted 
   const store = await createAppStore({ kind: "localStorage", storage: {
     getItem: key => persisted.get(key) ?? null, setItem: (key, value) => { persisted.set(key, value) }, removeItem: key => { persisted.delete(key) }
   } })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async (url, init) => {
       if (String(url).endsWith("/api/user/provider-connections") && init?.method === "POST") { posts.push(String(init.body)); return hold.promise }
@@ -56,7 +56,7 @@ test("reload reconciles a token-free connect receipt and revocation through the 
   const reopened = await createAppStore({ kind: "localStorage", storage })
   let state = "active"
   const calls: Array<{ path: string; method: string }> = []
-  const controller = createAppController(reopened, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(reopened, unavailableAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async (url, init) => {
       const path = new URL(String(url), "https://test.invalid").pathname
@@ -91,7 +91,7 @@ test("cloud session ownership changes reconnect a held coding receipt", async ()
   await store.dispatch({ type: "coding.provider.requests.changed", actor: "system", requests: [{ id: "request-1", owner: "alice", action: "connect", state: "requested" }] }).isPersisted.promise
   const old = deferred<Response>()
   let reads = 0
-  createAppController(store, unavailableRepositories, unavailableAgent, {
+  createAppController(store, unavailableAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async url => {
       if (String(url).endsWith("/api/user/provider-connections")) {

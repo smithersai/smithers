@@ -9,7 +9,7 @@ import { RECOMMENDATION_ID } from "./AppState"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { RECOMMEND_OUTCOME_PATH,RECOMMEND_PATH } from "./Recommend"
-import { json,memoryStorage,repositoryHttpFixture,nativeRepositories,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, repositoryHttpFixture, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -84,10 +84,10 @@ const refused = (retryAt: number | string | undefined, retryAfter?: string) => (
     { status: 429, headers: { "content-type": "application/json", ...(retryAfter === undefined ? {} : { "retry-after": retryAfter }) } }
   )
 
-const boot = async (services: AppServices = {}, repositories = unavailableRepositories, _freshTutorial = false, storage = memoryStorage()) => {
+const boot = async (services: AppServices = {}, storage = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage })
   // Most tests isolate a later material event from the first-entry background read.
-  const controller = createAppController(store, repositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     bootstrap: cloudBootstrap,
     recommender: { enabled: true, debounceMs: 0 },
     ...services
@@ -132,9 +132,9 @@ describe("recommend: the flow", () => {
     expect(cloud.controller.features.suggestionPills).toBe(true)
     const cloudOff = await boot({ features: { suggestionPills: false } })
     expect(cloudOff.controller.features.suggestionPills).toBe(false)
-    const local = await boot({ bootstrap: localBootstrap }, nativeRepositories)
+    const local = await boot({ bootstrap: localBootstrap })
     expect(local.controller.features.suggestionPills).toBe(false)
-    const localOn = await boot({ bootstrap: localBootstrap, features: { suggestionPills: true } }, nativeRepositories)
+    const localOn = await boot({ bootstrap: localBootstrap, features: { suggestionPills: true } })
     expect(localOn.controller.features.suggestionPills).toBe(true)
   })
 
@@ -330,7 +330,7 @@ describe("recommend: the flow", () => {
   test("opt-in: a composition root that does not enable the recommender gets the rule only", async () => {
     const worker = recorder([answer("rec-1", ["wiki"])])
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    createAppController(store, unavailableRepositories, silentAgent, {
+    createAppController(store, silentAgent, {
       bootstrap: cloudBootstrap,
       fetchImpl: worker.fetchImpl,
       recommender: { debounceMs: 0 }
@@ -345,7 +345,7 @@ describe("recommend: the flow", () => {
     const retryAt = Date.now() + 60 * 60 * 1000
     const worker = recorder([refused(retryAt, "3600"), answer("rec-never", ["wiki"])])
     const storage = memoryStorage()
-    const first = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, false, storage)
+    const first = await boot({ fetchImpl: worker.fetchImpl }, storage)
     signIn(first.store)
     await settle()
     expect(worker.recommends().length).toBe(1)
@@ -370,7 +370,7 @@ describe("recommend: the flow", () => {
     // A reload: the window is on the persisted row, so the boot's own material change sends nothing either.
     await first.controller.dispose()
     await first.store.dispose?.()
-    const reopened = await boot({ fetchImpl: worker.fetchImpl }, unavailableRepositories, false, storage)
+    const reopened = await boot({ fetchImpl: worker.fetchImpl }, storage)
     expect(row(reopened.store)?.retry).toEqual({ at: retryAt, owner: "will", origin: "same-origin" })
     signIn(reopened.store)
     materialChange(reopened.store, "after-reload")

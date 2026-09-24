@@ -17,7 +17,7 @@ import { RuntimeCapabilitySchema } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import type { Harness, Repo } from "@smthrs/rpc/LocalApp"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
@@ -208,14 +208,8 @@ const boot = async (bootstrap: AppBootstrap = EVERYTHING) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const ptyBodies: Array<Record<string, unknown>> = []
   let picks = 0
-  const repositories: NativeRepositories = {
-    available: true,
-    pickLocalRepository: async () => {
-      picks += 1
-      return { status: "cancelled" }
-    }
-  }
-  const controller = createAppController(store, repositories, unavailableAgent, {
+  
+  const controller = createAppController(store, unavailableAgent, {
     features: { pluginLibrary: true, wiki: true, mythicalHistory: true },
     bootstrap,
     fetchImpl: async (input, init) => {

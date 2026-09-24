@@ -4,7 +4,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import type { FrameHistoryPort, FrameLocation } from "../runtime/FrameHistory"
 import { createAppController } from "../state/AppController"
@@ -46,14 +46,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const silentAgent: AgentPort = {
   available: true,
@@ -119,7 +111,7 @@ const CARD_ID = "card-tabbed"
 const openCardTab = async (): Promise<Opened> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const history = recordingHistory()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { frameHistory: history })
+  const controller = createAppController(store, silentAgent, { frameHistory: history })
   store.dispatch({
     type: "card.upsert",
     actor: "system",

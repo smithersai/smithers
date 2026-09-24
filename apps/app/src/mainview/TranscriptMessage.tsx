@@ -101,14 +101,6 @@ export function TranscriptMessage({ entry, streamingMessageId }: { entry: { kind
                   content={entry.message.details}
                 />
               </details>
-              {entry.message.prompt === undefined ?
-                null :
-                (
-                  <Markdown
-                    className="message-markdown message-init-prompt"
-                    content={entry.message.prompt}
-                  />
-                )}
             </div>
           </div>
         ) :

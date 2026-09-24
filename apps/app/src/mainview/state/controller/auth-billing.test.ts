@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppStore } from "../AppStore"
 import { createAuthBillingController } from "./auth-billing"
@@ -17,14 +17,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const repositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "native unavailable"
-  })
-}
 
 const agent: AgentPort = {
   available: false,
@@ -43,7 +35,7 @@ const signedIn = {
 const runSignedInEntry = async (entry: "load" | "adopt", sessionAnswer: Record<string, unknown> = signedIn) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const calls: string[] = []
-  const ctx = createControllerContext(store, repositories, agent, {
+  const ctx = createControllerContext(store, agent, {
     fetchImpl: async (input) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
       const body = new URL(url, "https://app.test").pathname.endsWith("/auth/session")
@@ -154,7 +146,7 @@ describe("sign-in return path", () => {
 
   const signedOutController = async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
     })
     store.dispatch({
@@ -192,7 +184,7 @@ describe("sign-in return path", () => {
 
   test("a selected Go backend uses its GitHub start route", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: async () => Response.json({})
     })
     const controller = createAuthBillingController(ctx, () => 0, undefined, undefined, {
@@ -222,7 +214,7 @@ describe("sign-in return path", () => {
 test("selected backend identity also supplies the Cloud capability session", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requested: string[] = []
-  const ctx = createControllerContext(store, repositories, agent, {
+  const ctx = createControllerContext(store, agent, {
     fetchImpl: async (input) => {
       requested.push(String(input))
       return Response.json({
@@ -273,7 +265,7 @@ describe("native sign-in handoff ownership", () => {
     const opened: string[] = []
     const requests: string[] = []
     let requestSignal: AbortSignal | null | undefined
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       baseUrl: "https://app.test",
       handoffPollMs: pause === "wait" || pause === "reopen" ? 30 : 1,
       openExternal: async (url) => {
@@ -409,7 +401,7 @@ describe("a balance refresh the account outlives", () => {
   test("an epoch change mid-request leaves no 'up to date' toast and no balance", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve
@@ -448,7 +440,7 @@ describe("a balance refresh the account outlives", () => {
 for (const entry of ["load", "adopt"] as const) {
   test(`${entry} waits for the web Cloud session before resuming a parked act`, async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: async () => Response.json(signedIn)
     })
     ctx.withToast = async (_key, _title, _done, work) => work()
@@ -487,7 +479,7 @@ describe("automatic balance refreshes", () => {
   const setupBilling = async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const pending: Array<(response: Response) => void> = []
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: (input) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
         return new URL(url, "https://app.test").pathname.endsWith("/auth/session")
@@ -677,7 +669,7 @@ describe("identity re-probes", () => {
   const probes = async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const answers: Array<(response: Response) => void> = []
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "https://app.test").pathname
         if (path.endsWith("/auth/session")) return new Promise<Response>(resolve => { answers.push(resolve) })
@@ -764,7 +756,7 @@ describe("account answers that outlive their account", () => {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", ...identity, scopesPlain: null })
       .isPersisted.promise
     const held: Array<{ path: string; answer: (response: Response) => void }> = []
-    const ctx = createControllerContext(store, repositories, agent, {
+    const ctx = createControllerContext(store, agent, {
       fetchImpl: (input, init) => {
         const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "https://app.test").pathname
         if (path.endsWith("/auth/logout") && init?.method === "POST") return Promise.resolve(Response.json({}))

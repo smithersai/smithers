@@ -6,14 +6,14 @@ import { SessionNavigation } from "../SessionNavigation"
 import { ControllerTestProvider } from "../ControllerContext"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
-import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, settle, unavailableAgent } from "../state/TestFixtures"
 
 GlobalRegistrator.register()
 afterAll(async () => { await settle(); await GlobalRegistrator.unregister() })
 
 test("the header carries the sign-in door and leaves itself empty once signed in", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+  const controller = createAppController(store, unavailableAgent)
   const calls: string[] = []
   const host = document.createElement("div")
   document.body.append(host)

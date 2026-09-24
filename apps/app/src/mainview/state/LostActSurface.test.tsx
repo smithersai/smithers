@@ -7,7 +7,7 @@ import type { Card } from "./AppState"
 import { FlowFormCardBody } from "../cards/FlowFormCards"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, silentAgent } from "./TestFixtures"
 
 /*
  * The other half of a lost act: the act that reached nothing because THIS APP
@@ -48,7 +48,6 @@ test("a bug in the staged form preparation reaches the person as a bug, not as s
    */
   const controller = createAppController(
     { ...store, stagePendingCardInput: () => { throw new TypeError("the form card is not ready") } },
-    unavailableRepositories,
     silentAgent,
     {}
   )

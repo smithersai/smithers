@@ -10,7 +10,7 @@ import { flowArgs } from "../flows/FlowArgs"
 import type { CommandOutcome } from "../flows/Commands"
 import { createAppStore } from "../state/AppStore"
 import { scopedControllers } from "../state/ControllerTestScope"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, unavailableAgent } from "../state/TestFixtures"
 import { Graph, Table } from "./Primitives"
 import { EXPERIMENTAL_MANIFEST } from "./Manifest"
 import type { ExperimentalPane } from "./Pane"
@@ -52,7 +52,7 @@ const mount = async (body: ReactNode) => {
 
 const boot = async (experimental: boolean) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { features: { experimental } })
+  const controller = createAppController(store, unavailableAgent, { features: { experimental } })
   return { controller, store }
 }
 

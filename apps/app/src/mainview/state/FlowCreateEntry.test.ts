@@ -25,7 +25,7 @@ import { FLOW_AUTHORING_ENTRY } from "@smthrs/rpc/FlowAuthoring"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -120,7 +120,7 @@ const until = async (done: () => boolean): Promise<void> => {
 test("the flow-authoring door launches the id the workspace host provisions", async () => {
   const store = await signedInStore()
   const double = relay()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const controller = createAppController(store, silentAgent, double.services)
   try {
     const outcome = await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
     /* The door SAVES the request and answers; the launch rides the background. */
@@ -137,7 +137,7 @@ test("the flow-authoring door launches the id the workspace host provisions", as
 test("a workspace without the authoring flow is told what to do, not handed an internal id", async () => {
   const store = await signedInStore()
   const double = relay({ registered: false })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const controller = createAppController(store, silentAgent, double.services)
   try {
     await controller.commands.run("flow.create", `summarise my issues ${REPO}`)
     await until(() => authoringCard(store)?.payload.authoring?.launchError !== undefined)
@@ -157,7 +157,7 @@ test("a workspace without the authoring flow is told what to do, not handed an i
 test("a flow-authoring form honors its named repository instead of the loaded default", async () => {
   const store = await signedInStore()
   const double = relay()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+  const controller = createAppController(store, silentAgent, double.services)
   const target = "codeplanesmithers/other-repository"
   try {
     const outcome = await controller.commands.submit({ name: "flow.create", actor: "user",

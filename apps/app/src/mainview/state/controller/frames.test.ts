@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { FrameHistoryPort,FrameLocation } from "../../runtime/FrameHistory"
 import { createAppController } from "../AppController"
@@ -16,10 +16,6 @@ const storage = (): StorageApi => {
   }
 }
 
-const repositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const agent: AgentPort = {
   available: false,
@@ -72,7 +68,7 @@ describe("durable frame navigation", () => {
     const host = storage()
     const history = memoryHistory()
     const store = await createAppStore({ kind: "localStorage", storage: host })
-    const controller = createAppController(store, repositories, agent, { frameHistory: history })
+    const controller = createAppController(store, agent, { frameHistory: history })
     const card = { id: "fork-content", kind: "status" as const, title: "Original", status: "active" as const,
       createdAt: 1, ordinal: 0, payload: { progress: 0.5 } }
     await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
@@ -109,7 +105,7 @@ describe("durable frame navigation", () => {
     expect(store.session().draft).toBe("Fork draft")
     controller.dispose()
     const restored = await createAppStore({ kind: "localStorage", storage: host })
-    const resumed = createAppController(restored, repositories, agent, { frameHistory: history })
+    const resumed = createAppController(restored, agent, { frameHistory: history })
     resumed.frameBack()
     await settle()
     expect(restored.collections.cards.get(card.id)?.title).toBe("Original")
@@ -124,7 +120,7 @@ describe("durable frame navigation", () => {
   })
   test("forking a historical card starts at its recorded world revision", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: storage() })
-    const controller = createAppController(store, repositories, agent, { frameHistory: memoryHistory() })
+    const controller = createAppController(store, agent, { frameHistory: memoryHistory() })
     await store.dispatch({ type: "card.upsert", actor: "system", card: {
       id: "historical", kind: "status", title: "Earlier", status: "active",
       createdAt: 1, ordinal: 0, payload: { progress: 0.5 }
@@ -152,7 +148,7 @@ describe("durable frame navigation", () => {
     const host = storage()
     const history = memoryHistory()
     const store = await createAppStore({ kind: "localStorage", storage: host })
-    const controller = createAppController(store, repositories, agent, { frameHistory: history })
+    const controller = createAppController(store, agent, { frameHistory: history })
     const card = {
       id: "status-1",
       kind: "status" as const,
@@ -202,7 +198,7 @@ describe("durable frame navigation", () => {
     // Simulate the durable store restoring at root while the address bar keeps
     // the forked frame; controller boot must choose the valid deep link.
     await restored.dispatch({ type: "card.minimized", actor: "user" }).isPersisted.promise
-    const restoredController = createAppController(restored, repositories, agent, { frameHistory: history })
+    const restoredController = createAppController(restored, agent, { frameHistory: history })
     await settle()
     expect(restored.session().activeBranchId).toBe(forkLocation?.branchId)
     expect(restored.session().activeFrameId).toBe(forkLocation?.frameId)
@@ -213,7 +209,7 @@ describe("durable frame navigation", () => {
     const host = storage()
     const history = memoryHistory()
     const store = await createAppStore({ kind: "localStorage", storage: host })
-    const controller = createAppController(store, repositories, agent, { frameHistory: history })
+    const controller = createAppController(store, agent, { frameHistory: history })
     const card = {
       id: "status-2",
       kind: "status" as const,

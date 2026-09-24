@@ -8,7 +8,7 @@ import type { AppServices } from "./AppController"
 import type { Card } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -57,7 +57,7 @@ const balanceBody = (totalUsd: string, chargeCount = 0) => ({
 describe("identity session record", () => {
   test("a signed-in allowlisted answer drives the record (actor: system)", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({ "/api/auth/session": json(200, { login: "will", allowlisted: true, admin: false }) })
     })
     await controller.loadSession()
@@ -71,7 +71,7 @@ describe("identity session record", () => {
 
   test("a 401 is signed-out and the scope list is fetched for the opening chat message", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
         // The real /api/auth/scopes shape: one whole sentence per scope.
@@ -98,7 +98,7 @@ describe("identity session record", () => {
   // how calmly the client handles it). Same resolved state, no error path.
   test("the seam's 200 signed-out answer resolves the same state as a 401", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(200, { status: "signed-out" }),
         "/api/auth/scopes": json(200, {
@@ -118,7 +118,7 @@ describe("identity session record", () => {
 
   test("a signed-in answer drives the balance read from the session answer, not a blind boot probe", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(200, { login: "will", allowlisted: true, admin: false }),
         "/api/billing/balance": json(200, balanceBody("500"))
@@ -133,7 +133,7 @@ describe("identity session record", () => {
 
   test("an unreachable seam is recorded as unavailable, which never gates", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => {
         throw new Error("connection refused")
       }
@@ -144,7 +144,7 @@ describe("identity session record", () => {
 
   test("request access confirms once and is honest when the post fails", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(200, { login: "newcomer", allowlisted: false, admin: false }),
         "/api/identity/request-access": json(200, { status: "requested" })
@@ -163,7 +163,7 @@ describe("identity session record", () => {
 
   test("a failed access request is an honest state, not a dead end", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(200, { login: "newcomer", allowlisted: false, admin: false }),
         "/api/identity/request-access": json(500, { status: "error", message: "queue unavailable" })
@@ -178,7 +178,7 @@ describe("identity session record", () => {
 
   test("sign out posts to the seam and clears the record", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(200, { login: "will", allowlisted: true, admin: false }),
         "/api/auth/logout": json(200, { status: "ok" })
@@ -202,7 +202,7 @@ describe("identity session record", () => {
         return { status: "started" }
       }
     }
-    const controller = createAppController(store, unavailableRepositories, countingAgent, {
+    const controller = createAppController(store, countingAgent, {
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
         "/api/auth/scopes": json(200, { scopes: [] })
@@ -229,7 +229,7 @@ describe("identity session record", () => {
         return { status: "started" }
       }
     }
-    const controller = createAppController(store, unavailableRepositories, countingAgent, {
+    const controller = createAppController(store, countingAgent, {
       ...backend({
         "/api/auth/session": json(200, { login: "newcomer", allowlisted: false, admin: false })
       })
@@ -247,7 +247,7 @@ describe("identity session record", () => {
 
   test("returning from a failed OAuth redirect is a chat message with a retry action, never a bare page", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({}))
+    const controller = createAppController(store, silentAgent, backend({}))
     expect(controller.handleAuthReturn("?auth=failed")).toBe(true)
     const message = [...store.collections.messages.values()].find((entry) =>
       entry.text.includes("GitHub sign-in didn't finish")
@@ -262,7 +262,7 @@ describe("identity session record", () => {
 describe("billing record", () => {
   test("balance refresh records dollars and allowedToStartWork", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({ "/api/billing/balance": json(200, balanceBody("500")) })
     })
     await controller.refreshBalance()
@@ -274,7 +274,7 @@ describe("billing record", () => {
 
   test("the balance card states the first-run line once, in dollars", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({ "/api/billing/balance": json(200, balanceBody("500")) })
     })
     await controller.showBalance()
@@ -285,7 +285,7 @@ describe("billing record", () => {
 
   test("the intro line is gone once anything has been charged", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({ "/api/billing/balance": json(200, balanceBody("499.94625", 1)) })
     })
     await controller.showBalance()
@@ -302,7 +302,7 @@ describe("billing record", () => {
         return { status: "started" }
       }
     }
-    const controller = createAppController(store, unavailableRepositories, countingAgent, {
+    const controller = createAppController(store, countingAgent, {
       ...backend({ "/api/billing/balance": json(200, balanceBody("0")) })
     })
     await controller.refreshBalance()
@@ -324,7 +324,7 @@ describe("billing record", () => {
 
   test("an unconfigured billing seam is honest and never pauses work", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({})
     })
     await controller.refreshBalance()
@@ -360,7 +360,7 @@ describe("approval round trip", () => {
   test("decision → pending → gateway → freeze from the gateway's own answer", async () => {
     const store = await webStore()
     let posted: unknown
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/workflow/rpc": async (request) => {
           posted = await request.json()
@@ -393,7 +393,7 @@ describe("approval round trip", () => {
 
   test("the deny path round-trips and freezes denied from the gateway's answer", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/workflow/rpc": json(200, { ok: true, payload: { decision: { _tag: "Accepted", receiptId: "approval-receipt" } } })
       })
@@ -409,7 +409,7 @@ describe("approval round trip", () => {
   test("a failed round trip is a retryable honest error, never a silent freeze", async () => {
     const store = await webStore()
     let attempts = 0
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async (input) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (!url.includes("/api/workflow/rpc")) return json(404, {})
@@ -443,7 +443,7 @@ describe("approval round trip", () => {
   ] as const) {
     test(`${name} cannot freeze an approval as decided`, async () => {
       const store = await webStore()
-      const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+      const controller = createAppController(store, silentAgent, backend({
         "/api/workflow/rpc": async (request) => {
           const body = await request.json() as { procedure: string }
           return json(200, { ok: true, payload: body.procedure === "Approval.Submit" ? { decision: receipt } : { rows: [] } })
@@ -463,7 +463,7 @@ describe("approval round trip", () => {
   test("a terminal receipt reconciles the actual opposite decision made by another client", async () => {
     const store = await webStore()
     const trusted = approvalCard(store) as Extract<Card, { kind: "approval" }>
-    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+    const controller = createAppController(store, silentAgent, backend({
       "/api/workflow/rpc": async (request) => {
         const body = await request.json() as { procedure: string }
         return json(200, { ok: true, payload: body.procedure === "Approval.Submit"
@@ -485,7 +485,7 @@ describe("approval round trip", () => {
   test("an idempotent receipt settles the same human decision without another resume request", async () => {
     const store = await webStore()
     const calls: string[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({
+    const controller = createAppController(store, silentAgent, backend({
       "/api/workflow/rpc": async (request) => {
         const body = await request.json() as { procedure: string }
         calls.push(body.procedure)
@@ -501,7 +501,7 @@ describe("approval round trip", () => {
 
   test("a card with no run identity cannot be fake-decided", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, backend({}))
+    const controller = createAppController(store, silentAgent, backend({}))
     store.dispatch({
       type: "card.upsert",
       actor: "system",
@@ -555,7 +555,7 @@ describe("turn cost + stop discipline", () => {
       push({ runId, type: "delta", kind: "text", text: "Done." })
       push({ runId, type: "done" })
     })
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       ...backend({
         "/api/billing/balance": json(200, balanceBody("499.94625", 1)),
         "/api/billing/usage": () => {
@@ -586,7 +586,7 @@ describe("turn cost + stop discipline", () => {
         error: "The response stream ended before Smithers finished the turn."
       })
     })
-    const controller = createAppController(store, unavailableRepositories, agent, backend({}))
+    const controller = createAppController(store, agent, backend({}))
     controller.send("hello")
     await settled()
     const response = [...store.collections.messages.values()].find((m) => m.text === "partial")
@@ -602,7 +602,7 @@ describe("turn cost + stop discipline", () => {
       // The Worker's terminal frame for a kill through /api/agent/turn/cancel.
       push({ runId, type: "done", reason: "cancelled" })
     })
-    const controller = createAppController(store, unavailableRepositories, agent, backend({}))
+    const controller = createAppController(store, agent, backend({}))
     controller.send("hello")
     await settled()
     const response = [...store.collections.messages.values()].find((m) => m.text === "partial work")
@@ -617,7 +617,7 @@ describe("turn cost + stop discipline", () => {
       // No delta at all: the kill beat the model's first token.
       push({ runId, type: "done", reason: "cancelled" })
     })
-    const controller = createAppController(store, unavailableRepositories, agent, backend({}))
+    const controller = createAppController(store, agent, backend({}))
     controller.send("hello")
     await settled()
     const response = [...store.collections.messages.values()].find(
@@ -633,7 +633,7 @@ describe("turn cost + stop discipline", () => {
     const { agent, cancelled } = streamingAgent((runId, push) => {
       push({ runId, type: "delta", kind: "text", text: "working on it" })
     })
-    const controller = createAppController(store, unavailableRepositories, agent, backend({}))
+    const controller = createAppController(store, agent, backend({}))
     controller.send("hello")
     await settled()
     controller.stop()
@@ -650,7 +650,7 @@ for (const state of ["signed-in", "signed-out", "degraded"] as const) {
     const store = await webStore()
     const requests: string[] = []
     let signedOut = state === "signed-out"
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       bootstrap: {
         apiVersion: 1, host: "cloud", version: "test", buildSha: "test", authFlow: "redirect", sandbox: null,
         capabilities: cloudCapabilities({ identity: true, cloud: true, agent: false, checkout: false, terminal: true })

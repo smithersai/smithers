@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
 import { SIGNUP_QUESTIONS } from "../Signup"
-import { backend, json, memoryStorage, silentAgent, unavailableRepositories } from "../TestFixtures"
+import { backend, json, memoryStorage, silentAgent } from "../TestFixtures"
 import { createControllerContext } from "./context"
 import { createSignupController, SIGNUP_DOOR_UNAVAILABLE, SIGNUP_EMAIL_START_PATH } from "./signup"
 
 const boot = async (routes: Record<string, Response> = {}) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const toasts: Array<string> = []
-  const ctx = createControllerContext(store, unavailableRepositories, silentAgent, backend(routes))
+  const ctx = createControllerContext(store, silentAgent, backend(routes))
   ctx.withToast = async (key, _title, _done, work) => { toasts.push(key); return work() }
   return { store, toasts, controller: createSignupController(ctx) }
 }

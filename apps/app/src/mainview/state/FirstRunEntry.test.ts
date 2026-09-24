@@ -2,7 +2,7 @@ import { selectFirstRunRepository } from "./FirstRunRepository"
 import { expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json,memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, silentAgent } from "./TestFixtures"
 import { resolveTargetRepo } from "./RepoContext"
 
 /* Every controller this file builds is disposed even when an assertion fails. */
@@ -15,7 +15,7 @@ const until = async (check: () => boolean) => {
 
 test("a bare repository command during first-run selection parks instead of asking for a repo", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: async () => json(404, {})
   })
   const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
@@ -83,7 +83,7 @@ for (const [branch, identity] of [["non-blocking boot", undefined], ["settled id
   for (const requirement of ["signed-in", "repo-read"] as const) {
     test(`a stale ${requirement} park survives the first-run settle on the ${branch} branch`, async () => {
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-      const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+      const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
       try {
         if (identity !== undefined) {
           await store.dispatch({ type: "identity.session.loaded", actor: "system", state: identity, login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
@@ -101,7 +101,7 @@ for (const [branch, identity] of [["non-blocking boot", undefined], ["settled id
 
 test("a first-run-target park resumes exactly once when the selection settles", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
   try {
     expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
@@ -115,7 +115,7 @@ test("a first-run-target park resumes exactly once when the selection settles", 
 
 test("a first-run-target park whose choice settles with no target renders the repo form once", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
   try {
     expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
@@ -134,7 +134,7 @@ test("a first-run-target park whose choice settles with no target renders the re
  */
 test("a command issued after signed-out but before the selection settles parks and resumes once", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
   const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
   try {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
@@ -153,7 +153,7 @@ test("a command issued after signed-out but before the selection settles parks a
 
 test("a signed-in entry with no persisted target keeps today's behaviour: it asks for a repository at once", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
   try {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "alice", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     await controller.commands.run("issues.list")
@@ -177,7 +177,7 @@ test("a signed-in entry with no persisted target keeps today's behaviour: it ask
  */
 test("a signed-out visitor's issues door offers sign-in and nothing to fill in", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: async () => json(404, {}) })
+  const controller = createAppController(store, silentAgent, { fetchImpl: async () => json(404, {}) })
   const forms = () => [...store.collections.cards.values()].filter(card => card.kind === "flow-form")
   try {
     await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise

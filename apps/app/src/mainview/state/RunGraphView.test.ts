@@ -14,7 +14,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const webStore = () => createAppStore({ kind: "localStorage", storage: memoryStorage() })
@@ -156,7 +156,7 @@ const launched = async (
   } = {}
 ) => {
   const store = await webStore()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, relay(options).services)
+  const controller = createAppController(store, silentAgent, relay(options).services)
   await signIn(store)
   await controller.commands.run("flow.run", FLOW)
   await waitFor(() => runCard(store)?.payload.phase === "running")
@@ -248,7 +248,7 @@ describe("the graph view's reader gestures", () => {
 
   test("both gestures need the run's card first", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, relay().services)
+    const controller = createAppController(store, silentAgent, relay().services)
     await signIn(store)
     expect(said(await controller.commands.run("runs.trace.view", "run-9 graph"))).toContain("runs.open run-9")
     expect(said(await controller.commands.run("runs.graph.follow", "run-9 on"))).toContain("runs.open run-9")

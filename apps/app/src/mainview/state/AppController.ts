@@ -8,9 +8,7 @@ import { hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { ApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
 import { APPLICATION_SIGN_IN_PATH } from "@smthrs/rpc/ApplicationAuth"
 import type { FetchLike } from "@smthrs/rpc/NativeAgent"
-import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { MarkdownEditorHandle } from "@smthrs/ui/adapters/markdown-editor"
-import { repoStep } from "../Onboarding"
 import type { CatalogItem,CommandRegistry } from "../flows/Commands"
 import { createCommandRegistry } from "../flows/Commands"
 import { bindFlowPreloading } from "../flows/FlowAction"
@@ -18,7 +16,7 @@ import type { CommandActions } from "../flows/Flows"
 import type { RepositoryFlowCatalog } from "../flows/entries/flow"
 import type { SlashItem,SlashRow } from "../flows/registry"
 import { flowRequirements } from "../flows/registry"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import type { ApplicationIdentityClient, LocalIdentityClient } from "../runtime/ApplicationClient"
 import type { FrameHistoryPort } from "../runtime/FrameHistory"
@@ -160,7 +158,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** The resolved feature flags (every flag defaults off). */
   readonly features: Required<AppFeatures>
   readonly nativeAgentAvailable: boolean
-  readonly nativeRepositoriesAvailable: boolean
   /** The command registry: every interactive affordance routes through it. */
   readonly dismissFirstRun: () => void
   readonly dismissHint: (id: string) => void
@@ -209,7 +206,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly cancelReset: () => void
   readonly submitCommand: (submission: FlowSubmission) => Promise<import("../flows/Commands").CommandOutcome>
   readonly runCommand: (name: string, args?: string) => boolean
-  readonly connectLocalRepository: (access: RepositoryAccess) => Promise<void>
   readonly makeConnectorReadOnly: (id: string) => string | void
   readonly askConnectorRemoval: (id: string) => string | void
   readonly cancelConnectorRemoval: () => void
@@ -336,7 +332,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   readonly toggleRepoTree: SidebarController["toggleRepoTree"]
   readonly renameWorkspace: SidebarController["renameWorkspace"]
   readonly toggleWorkspaceRename: SidebarController["toggleWorkspaceRename"]
-  readonly openLocalRepo: TabsController["openLocalRepo"]
   readonly loadHarnesses: TabsController["loadHarnesses"]
   /* Agents as data (docs/workbench-lanes/custom-agents.md); see controller/agents.ts. */
   readonly loadAgents: AgentsController["loadAgents"]
@@ -756,7 +751,6 @@ export interface AppFeatures {
  */
 export const createAppController = (
   store: AppStore,
-  repositories: NativeRepositories,
   agent: AgentPort,
   services: AppServices = {}
 ): AppController => {
@@ -765,7 +759,7 @@ export const createAppController = (
     mythicalHistory: services.features?.mythicalHistory ?? import.meta.env?.VITE_SMITHERS_MYTHICAL_HISTORY === "true",
     experimental: services.features?.experimental === true || import.meta.env?.VITE_SMITHERS_EXPERIMENTAL === "true"
   }
-  const ctx = createControllerContext(store, repositories, agent, {
+  const ctx = createControllerContext(store, agent, {
     ...services, features: { ...services.features, ...knowledge }
   })
   const actors = createActorBindings(ctx.onDispose)
@@ -1054,7 +1048,6 @@ export const createAppController = (
     toggleTabMenu,
     selectRepo,
     unpinRepo,
-    openLocalRepo,
     loadHarnesses,
     loadRepos,
     notePtyExit,
@@ -1368,12 +1361,6 @@ export const createAppController = (
   const recommender = createRecommendController(ctx, {
     catalog: () => ctx.commands.all(),
     state: () => ctx.commands.state(),
-    repoStep: () =>
-      repoStep({
-        localPickerAvailable: repositories.available && ctx.commands.find("repo.open") !== undefined,
-        connectors: [...store.collections.connectors.values()],
-        repos: [...store.collections.repos.values()]
-      }),
     repo: () => activeRepositoryId(store),
     // Without the pills there is nowhere for the server's answer to show, so no request leaves.
     config: { ...services.recommender, enabled: (services.recommender?.enabled ?? false) && features.suggestionPills }
@@ -1580,7 +1567,6 @@ export const createAppController = (
   ctx.onDispose(() => { clearTimeout(firstRunDeadline) })
 
   const {
-    connectLocalRepository,
     makeConnectorReadOnly,
     askConnectorRemoval,
     cancelConnectorRemoval,
@@ -1637,7 +1623,6 @@ export const createAppController = (
     installPlugin,
     removePlugin,
     listPlugins,
-    connectLocalRepository,
     makeConnectorReadOnly,
     askConnectorRemoval,
     cancelConnectorRemoval,
@@ -1725,7 +1710,6 @@ export const createAppController = (
     toggleRepoTree,
     renameWorkspace,
     toggleWorkspaceRename,
-    openLocalRepo,
     loadHarnesses,
     loadAgents,
     listAgents,
@@ -2102,7 +2086,6 @@ export const createAppController = (
     downloadUrl,
     features,
     nativeAgentAvailable: agent.available,
-    nativeRepositoriesAvailable: repositories.available,
     tappedFetch: http,
     localAuth,
     commands,

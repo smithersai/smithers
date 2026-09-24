@@ -90,7 +90,7 @@ export const createPresentationController = (
           connected: identity?.state === "signed-in",
           login: identity?.login ?? null
         },
-        nativeAvailable: ctx.repositories.available
+        nativeAvailable: false
       }
     }
     ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card })

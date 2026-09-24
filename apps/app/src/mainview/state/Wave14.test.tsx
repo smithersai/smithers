@@ -7,7 +7,7 @@ import { ControllerTestProvider } from "../ControllerContext"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { backend, json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -77,7 +77,7 @@ const FILLER = /Tell me what you[’']re working on/
 describe("wave 14 §1 — the opening message is never filler", () => {
   test("signed out: no opening message at all; the transcript starts empty (LOCAL-APP.md)", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/auth/session": json(401, { status: "error" }),
         "/api/auth/scopes": json(200, {

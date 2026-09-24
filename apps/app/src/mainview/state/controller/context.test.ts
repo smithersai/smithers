@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "../TestFixtures"
+import { memoryStorage, unavailableAgent } from "../TestFixtures"
 import { createControllerContext } from "./context"
 
 type Store = Awaited<ReturnType<typeof createAppStore>>
@@ -13,7 +13,7 @@ const cleared = (store: Store) => store.dispatch({ type: "identity.session.clear
 const harness = async (seed?: (store: Store) => Promise<unknown>) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await seed?.(store)
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { fetchImpl: async () => Response.json({}) })
+  const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: async () => Response.json({}) })
   const start = ctx.accountEpoch
   const delta = () => ctx.accountEpoch - start
   const tap = () => { ctx.netRing.push({ at: 0, method: "GET", url: "/tap", status: 200, ms: 0 }) }
@@ -80,7 +80,7 @@ test("the controller posts through its supplied reporter and resets evidence on 
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const sent: unknown[] = []
   const clientErrors = { report: (kind: string, error: unknown) => { sent.push({ kind, error }) }, reported: () => sent.length }
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { clientErrors })
+  const ctx = createControllerContext(store, unavailableAgent, { clientErrors })
   try {
     ctx.failures.report("run.pump", Error("unavailable"), "run")
     expect(sent).toHaveLength(1)

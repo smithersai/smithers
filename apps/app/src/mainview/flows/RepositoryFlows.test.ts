@@ -13,7 +13,7 @@
 import type { Repo } from "@smthrs/rpc/LocalApp"
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppServices } from "../state/AppController"
@@ -41,14 +41,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -133,7 +125,7 @@ const CATALOG = {
 
 const ready = async (services: AppServices, state: "signed-in" | "signed-out" = "signed-in") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableAgent, services)
   await identity(store, state)
   store.dispatch({
     type: "repositories.loaded",
@@ -317,7 +309,6 @@ describe("the repository's flows are slash leaves", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ [projectionPath(checkout)]: projectionDocument(CATALOG) }, seen)
     )

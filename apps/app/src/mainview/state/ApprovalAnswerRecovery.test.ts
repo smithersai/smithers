@@ -1,6 +1,6 @@
 import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { createControllerContext } from "./controller/context"
-import { silentAgent, unavailableRepositories } from "./TestFixtures"
+import { silentAgent } from "./TestFixtures"
 import { SCHEMA_VERSION_STORAGE_KEY } from "../chain/SchemaVersion"
 import { STAGED_ENVELOPE_STORAGE_KEY } from "../chain/TransactionalStorage"
 import { describe, expect, test } from "bun:test"
@@ -77,7 +77,7 @@ describe("pending HumanTask answer recovery", () => {
           property === "isPersisted" ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held.promise) }
             : Reflect.get(target, property, receiver) })
       } }
-      const context = createControllerContext(wrapped, unavailableRepositories, silentAgent, {})
+      const context = createControllerContext(wrapped, silentAgent, {})
       const lifecycle = createCommandIntentLifecycle(context)
       const first = lifecycle.accept({ name: "form.set", actor: "user", source: "command" }, {
         cardId: "question-card", field: `answer:${input.question}`, value: "first keystroke"

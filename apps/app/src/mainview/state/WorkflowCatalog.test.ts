@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent, waitFor } from "./TestFixtures"
 
 const controllerFor = scopedControllers()
 const repo = "codeplanesmithers/canary-sandbox"
@@ -33,7 +33,7 @@ async function fixture(options: {
       expect(body).toMatchObject({ procedure: "List", payload: { _tag: "flows" } })
       return options.list?.() ?? catalog()
     } }
-  const controller = controllerFor(store, unavailableRepositories, silentAgent, services)
+  const controller = controllerFor(store, silentAgent, services)
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "codeplanesmithers", ownerKind: "user", name: "canary-sandbox", head: null }] }).isPersisted.promise
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "codeplanesmithers", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   await settle(2)

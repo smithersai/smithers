@@ -15,7 +15,7 @@ import { createRoot } from "react-dom/client"
 import App from "./App"
 import { ControllerTestProvider } from "./ControllerContext"
 import { runSearchRef } from "./flows/RunCommand"
-import type { NativeRepositories } from "./native/NativeBridge"
+
 import type { AgentPort } from "./runtime/AgentPort"
 import type { AppController as AppControllerType } from "./state/AppController"
 import { createAppController } from "./state/AppController"
@@ -46,14 +46,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const unavailableAgent: AgentPort = {
   available: false,
@@ -75,7 +67,7 @@ interface View {
 /** The app signed in with two files and a run already listed, so the palette has rows to walk. */
 const mount = async (): Promise<View> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     features: { wiki: true },
     fetchImpl: async () => json(404, { status: "error", message: "no backend" })
   })

@@ -5,7 +5,7 @@ import { accountOwnerOf } from "../AccountOwner"
 import { gatewayBindingFor } from "../RepoContext"
 import { createGatewaySeam } from "./gateway"
 import type { CommandRegistry } from "../../flows/Commands"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
 import type { Toast } from "../AppState"
@@ -56,7 +56,6 @@ export interface NetEntry {
 
 export interface ControllerContext {
   readonly store: AppStore
-  readonly repositories: NativeRepositories
   readonly agent: AgentPort
   readonly services: AppServices
   readonly baseUrl: string
@@ -146,7 +145,6 @@ export interface ControllerContext {
  */
 export const createControllerContext = (
   store: AppStore,
-  repositories: NativeRepositories,
   agent: AgentPort,
   services: AppServices
 ): ControllerContext => {
@@ -190,7 +188,6 @@ export const createControllerContext = (
   let completion: Promise<void> | undefined
   const ctx = {
     store,
-    repositories,
     agent,
     services,
     baseUrl: services.baseUrl ?? "",

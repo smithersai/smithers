@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
@@ -35,14 +35,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -115,7 +107,7 @@ const openCheckout = (store: AppStore): Promise<unknown> =>
 const issuesController = async (services: AppServices) => {
   const storage = memoryStorage()
   const store = await createAppStore({ kind: "localStorage", storage })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableAgent, services)
   await signedIn(store)
   await reposChosen(store)
   return { store, controller, storage }
@@ -236,7 +228,7 @@ describe("issues seam — the list", () => {
    */
   test("a signed-out read answers with the sign-in prompt alone, not a failed view card", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent,
+    const controller = createAppController(store, unavailableAgent,
       backend({ "GET /api/repos/smithersai/smithers/issues": json(401, { status: "error", message: "sign in first" }) }))
     store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null })
     store.dispatch({ type: "repositories.loaded", actor: "system",

@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, setDefaultTimeout, test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
 import { scopedControllers } from "../ControllerTestScope"
@@ -44,14 +44,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -116,7 +108,7 @@ const ready = async (
   options: { signedIn?: boolean; store?: AppStore } = {}
 ) => {
   const store = options.store ?? await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableAgent, services)
   if (options.signedIn === true) await signedIn(store)
   else await signedOut(store)
   await reposChosen(store)

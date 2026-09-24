@@ -7,7 +7,7 @@ import type { Root } from "react-dom/client"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { ControllerTestProvider } from "../ControllerContext"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { Card } from "../state/AppState"
@@ -388,10 +388,7 @@ const memoryStorage = (): StorageApi => {
   return { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => void data.set(key, value), removeItem: (key) => void data.delete(key) }
 }
 const unavailableAgent: AgentPort = { available: false, startTurn: async () => ({ status: "error", message: "unavailable" }), cancelTurn: async () => {}, subscribe: () => () => {} }
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "Repositories are opened as Smithers Cloud workspaces, not from this machine." })
-}
+
 /** The web host with the workspace terminal tunnel: the language server is in reach. */
 const WEB: AppBootstrap = {
   apiVersion: 1,
@@ -420,7 +417,7 @@ const NATIVE: AppBootstrap = {
 
 const renderOn = async (bootstrap: AppBootstrap, card: Extract<Card, { kind: "file" }>): Promise<{ readonly host: HTMLElement; readonly calls: Array<[string, string | undefined]> }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+  const controller = createAppController(store, unavailableAgent, { bootstrap })
   const calls: Array<[string, string | undefined]> = []
   const host = document.createElement("div")
   document.body.appendChild(host)

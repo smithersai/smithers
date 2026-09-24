@@ -1,5 +1,5 @@
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
-import type { Harness, LocalRepositoryConnector, Message, Repo, Suggestion } from "./state/AppState"
+import type { Harness, LocalRepositoryConnector, Message, Repo } from "./state/AppState"
 
 /*
  * The host opening entry: "Smithers initialized successfully", derived
@@ -17,10 +17,6 @@ export const SMITHERS_NAME = "Smithers"
 /** The greeting for the host diagnostic entry, when that entry is shown. */
 export const INIT_GREETING = `${SMITHERS_NAME} here.`
 export const INIT_TITLE = "Smithers initialized successfully"
-export const SELECT_REPO_LABEL = "Select a repo"
-
-/** How the session selects a repository: the native folder picker, or nothing to ask. */
-export type RepoStep = "local" | "none"
 
 export interface InitFacts {
   readonly bootstrap: AppBootstrap | undefined
@@ -28,37 +24,12 @@ export interface InitFacts {
   readonly harnesses: ReadonlyArray<Harness>
   readonly connectors: ReadonlyArray<Pick<LocalRepositoryConnector, "name" | "branch">>
   readonly repos: ReadonlyArray<Pick<Repo, "name">>
-  readonly repoStep: RepoStep
 }
 
 /** Structured fields used only by the derived opening-message projection. */
 export interface InitMessage extends Message {
   readonly details: string
-  readonly prompt?: string
 }
-
-const REPO_STEP_FLOW: Readonly<Record<Exclude<RepoStep, "none">, string>> = {
-  local: "repo.open"
-}
-
-export const repoStep = (input: {
-  readonly localPickerAvailable: boolean
-  readonly connectors: ReadonlyArray<unknown>
-  readonly repos: ReadonlyArray<unknown>
-}): RepoStep => {
-  /*
-   * A repository already open or connected answers the step: the pill used
-   * to stay on screen after the user had just selected one.
-   */
-  if (input.connectors.length > 0 || input.repos.length > 0) return "none"
-  return input.localPickerAvailable ? "local" : "none"
-}
-
-/** The "Select a repo" pill for the step, or none. */
-export const repoSuggestion = (step: RepoStep): ReadonlyArray<Suggestion> =>
-  step === "none"
-    ? []
-    : [{ id: "select-repo", label: SELECT_REPO_LABEL, flow: REPO_STEP_FLOW[step], emphasis: "primary" }]
 
 const harnessLine = (harness: Harness): string => {
   const account = harness.account?.email ?? harness.account?.label
@@ -87,19 +58,13 @@ export const initMessage = (facts: InitFacts): InitMessage => {
     `- Harnesses: ${harnesses}`,
     `- Repositories: ${repositories.length === 0 ? "none open" : repositories.join(", ")}`
   ]
-  const prompt = facts.repoStep === "none" ? undefined : "Select a repo to get started."
   const lines = [`**${INIT_GREETING}**`, `**${INIT_TITLE}**`, "", ...detailLines]
-  if (prompt !== undefined) lines.push("", prompt)
   return {
     id: INIT_MESSAGE_ID,
     role: "smithers",
     text: lines.join("\n"),
     details: detailLines.join("\n"),
-    ...(prompt === undefined ? {} : { prompt }),
     status: "complete",
-    ...(facts.repoStep === "none"
-      ? {}
-      : { action: { flow: REPO_STEP_FLOW[facts.repoStep], label: SELECT_REPO_LABEL } }),
     /* Before every stored row and the derived auth message (createdAt 0). */
     createdAt: -1,
     ordinal: 0

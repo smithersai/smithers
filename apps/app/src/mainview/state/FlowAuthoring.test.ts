@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json, memoryStorage, settle, waitFor, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settle, waitFor, silentAgent } from "./TestFixtures"
 import type { Card } from "./AppState"
 import { runtimeRunKey } from "./RuntimeProjection"
 import { createControllerContext } from "./controller/context"
@@ -52,7 +52,7 @@ const fixture = () => {
 const ready = async (relay: ReturnType<typeof fixture>, storage = memoryStorage()) => {
   const store = await createAppStore({ kind: "localStorage", storage })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-  const controller = createController(store, unavailableRepositories, silentAgent, { fetchImpl: relay.fetchImpl, workflowPollMs: 1, toastDebounceMs: 0, toastAutoDismissMs: 10000 })
+  const controller = createController(store, silentAgent, { fetchImpl: relay.fetchImpl, workflowPollMs: 1, toastDebounceMs: 0, toastAutoDismissMs: 10000 })
   return { store, controller }
 }
 const runs = (store: Awaited<ReturnType<typeof createAppStore>>) => Array.from<Card>(store.collections.cards.values()).filter((card): card is Extract<Card, { kind: "run-trace" }> => card.kind === "run-trace")
@@ -280,7 +280,7 @@ test("an authoring wait holds no scope registration after it settles and still w
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const signIn = (login: string) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   await signIn("will")
-  const ctx = createControllerContext(store, unavailableRepositories, silentAgent, { toastDebounceMs: 0, toastAutoDismissMs: 10000 })
+  const ctx = createControllerContext(store, silentAgent, { toastDebounceMs: 0, toastAutoDismissMs: 10000 })
   const { withToast } = createFailureController(ctx)
   /* Count the background authoring work in flight, through the real toast door. */
   let running = 0

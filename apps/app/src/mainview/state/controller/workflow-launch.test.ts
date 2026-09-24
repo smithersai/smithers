@@ -1,7 +1,7 @@
 import { createFailureController } from "./failures"
 import { expect, test } from "bun:test"
 import { createAppStore } from "../AppStore"
-import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "../TestFixtures"
+import { memoryStorage, settle, unavailableAgent } from "../TestFixtures"
 import { createControllerContext } from "./context"
 import { createWorkflowLaunchController } from "./workflow-launch"
 
@@ -15,7 +15,7 @@ test("requests waiting on admission when the account ends save nothing and ackno
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner",
     allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { fetchImpl: () => new Promise<Response>(() => {}) })
+  const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: () => new Promise<Response>(() => {}) })
   const prepared: string[] = []
   const launch = createWorkflowLaunchController(ctx, () => 1, () => new Promise(() => {}), (repo) => {
     prepared.push(repo)
@@ -42,7 +42,7 @@ test("a failed post-launch save keeps the job pending and retries without relaun
     durable.setItem(key, value)
   } } })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "owner", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { workflowPollMs: 1, toastDebounceMs: 1, toastAutoDismissMs: 10000 })
+  const ctx = createControllerContext(store, unavailableAgent, { workflowPollMs: 1, toastDebounceMs: 1, toastAutoDismissMs: 10000 })
   let launches = 0, pumps = 0
   ctx.gateway = { ...ctx.gateway, launch: async () => { launches++; failSave = true; return { status: "ok", value: { runId: "remote-run" } } } } as typeof ctx.gateway
   const failures = createFailureController(ctx)

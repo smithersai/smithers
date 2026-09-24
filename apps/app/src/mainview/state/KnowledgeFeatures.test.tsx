@@ -12,7 +12,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { smithersInstructions } from "./Instructions"
 import { knowledgeCardAvailable, knowledgeFlowAvailable, runtimeFlowAvailable, wikiFlagEnabled } from "./KnowledgeFeatures"
 import { parseRecommendation } from "./Recommend"
-import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const hidden = ["wiki", "wiki.create", "wiki.open", "wiki.graph", "world", "world.new-note",
@@ -21,7 +21,7 @@ const hidden = ["wiki", "wiki.create", "wiki.open", "wiki.graph", "world", "worl
 describe("optional generated knowledge", () => {
   test("default-off flags remove command, agent, recommendation and palette doors without changing source tools", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     expect(controller.features.wiki).toBe(false)
     expect(controller.features.mythicalHistory).toBe(false)
     const callable = controller.commands.callable().map(entry => entry.binding.descriptor.name)
@@ -47,7 +47,7 @@ describe("optional generated knowledge", () => {
   test("built-in knowledge doors stay disabled while runtime flows reach the identity guard", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const calls: string[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async input => { calls.push(String(input)); return new Response("{}") }
     })
     for (const name of ["wiki", "checks/wiki"]) {
@@ -69,7 +69,7 @@ describe("optional generated knowledge", () => {
     await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
     await store.dispatch({ type: "surface.changed", actor: "user", surface: "world" }).isPersisted.promise
     await store.dispatch({ type: "card.maximized", actor: "user", id: card.id }).isPersisted.promise
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     expect(store.session().surface).toBe("chat")
     expect(store.session().maximizedCardId).toBeNull()
     expect(store.collections.cards.has(card.id)).toBe(true)
@@ -81,7 +81,7 @@ describe("optional generated knowledge", () => {
   test("the two opt-ins are independent and preserve their existing implementations", async () => {
     for (const features of [{ wiki: true }, { mythicalHistory: true }]) {
       const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-      const controller = createAppController(store, unavailableRepositories, silentAgent, { features })
+      const controller = createAppController(store, silentAgent, { features })
       expect(controller.commands.find("wiki") !== undefined).toBe("wiki" in features)
       expect(controller.commands.find("history.bootstrap") !== undefined).toBe("mythicalHistory" in features)
       if ("wiki" in features) {
@@ -123,7 +123,7 @@ const suggestedFlows = (controller: ReturnType<typeof createAppController>, comm
 describe("a repository that declares a knowledge flow", () => {
   test("gets no slash leaf, no agent tool, no recommendation and no unrelated loss while the Wiki flag is off", async () => {
     const store = await repositoryDeclaringWikiFlows()
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     // The leaf builder is live: an unrelated row keeps every door.
     expect(controller.commands.find("review")).toBeDefined()
     expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).toContain("review")
@@ -141,7 +141,7 @@ describe("a repository that declares a knowledge flow", () => {
 
   test("keeps every door when the Wiki flag is on", async () => {
     const store = await repositoryDeclaringWikiFlows()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, { features: { wiki: true } })
+    const controller = createAppController(store, silentAgent, { features: { wiki: true } })
     for (const name of ["wiki", "checks.wiki", "review"]) expect(controller.commands.find(name)).toBeDefined()
     // The declared `wiki` surface flow still takes the name from the leaf: one entry, not two.
     expect(controller.commands.all().filter(item => item.name === "wiki")).toHaveLength(1)
@@ -160,7 +160,7 @@ describe("the Plugin Library flag", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     await store.dispatch({ type: "card.upsert", actor: "system", card: libraryCard }).isPersisted.promise
     await store.dispatch({ type: "card.maximized", actor: "user", id: libraryCard.id }).isPersisted.promise
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     expect(store.session().maximizedCardId).toBeNull()
     expect(store.collections.cards.has(libraryCard.id)).toBe(true)
     expect((await controller.commands.run("card.maximize", libraryCard.id)).status).toBe("failed")
@@ -172,7 +172,7 @@ describe("the Plugin Library flag", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     await store.dispatch({ type: "card.upsert", actor: "system", card: libraryCard }).isPersisted.promise
     await store.dispatch({ type: "card.maximized", actor: "user", id: libraryCard.id }).isPersisted.promise
-    const controller = createAppController(store, unavailableRepositories, silentAgent, { features: { pluginLibrary: true } })
+    const controller = createAppController(store, silentAgent, { features: { pluginLibrary: true } })
     expect(store.session().maximizedCardId).toBe(libraryCard.id)
     expect((await controller.commands.run("tab.card", libraryCard.id)).status).toBe("executed")
     expect(renderToStaticMarkup(createElement(ControllerTestProvider, {
@@ -187,7 +187,7 @@ describe("the copy the slash menu and the prompt carry", () => {
     expect(searchNamespace.summary).not.toMatch(/wiki|history/i)
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     for (const features of [{}, { wiki: true, mythicalHistory: true }]) {
-      const controller = createAppController(store, unavailableRepositories, silentAgent, { features })
+      const controller = createAppController(store, silentAgent, { features })
       const open = controller.commands.all().find(item => item.name === "search.open")
       expect(open?.summary).toBeDefined()
       expect(open?.summary).not.toMatch(/wiki|history/i)
@@ -231,7 +231,7 @@ const sweepStream = () =>
 const readyToArchive = async (features: { readonly wiki?: boolean }) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const sweeps: string[] = []
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     features,
     fetchImpl: async (input) => {
       const path = new URL(String(input), "https://app.test").pathname

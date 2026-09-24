@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -16,7 +16,7 @@ const idleAgent: AgentPort = {
 describe("the wire tap", () => {
   test("records method, path, status, and duration for every controller fetch", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, idleAgent, {
+    const controller = createAppController(store, idleAgent, {
       fetchImpl: async () => new Response("{}", { status: 500 })
     })
     await controller.refreshBalance()
@@ -35,7 +35,7 @@ describe("the wire tap", () => {
 
   test("records a thrown fetch as an error entry and rethrows to the caller's handling", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, idleAgent, {
+    const controller = createAppController(store, idleAgent, {
       fetchImpl: async () => {
         throw new Error("network down")
       }

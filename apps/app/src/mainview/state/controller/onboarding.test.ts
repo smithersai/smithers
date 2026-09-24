@@ -4,7 +4,7 @@ import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
 import { Effect } from "effect"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
 import type { Card } from "../AppState"
@@ -24,10 +24,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const REPO = "smithersai/smithers"
 const SUMMARY = "Smithers is a durable framework that lets agents plan, run, and review changes to a code repository through flows."
@@ -77,7 +73,7 @@ const fixture = async (routes: Record<string, Route>, selected = true) => {
       return (routes[path] ?? (() => json(404, { status: "error", message: `no stub for ${path}` })))(init)
     }
   }
-  const controller = createAppController(store, unavailableRepositories, agent, services)
+  const controller = createAppController(store, agent, services)
   store.dispatch({
     type: "repositories.loaded",
     actor: "system",

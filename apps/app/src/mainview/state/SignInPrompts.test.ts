@@ -4,7 +4,7 @@ import { resolveApplicationTarget } from "@smthrs/rpc/ApplicationTarget"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settle, unavailableAgent } from "./TestFixtures"
 import { createControllerContext } from "./controller/context"
 import { createFailureController } from "./controller/failures"
 
@@ -19,7 +19,7 @@ const setup = async (web = true, storage = memoryStorage(), initiallySignedIn = 
   const store = await createAppStore({ kind: "localStorage", storage })
   let identity = initiallySignedIn
   let cloud: "signed-out" | "signed-in" | "degraded" | "offline" = "signed-out"
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     ...(web ? { bootstrap: WEB } : {}),
     fetchImpl: async input => {
       const path = new URL(String(input), "https://app.test").pathname
@@ -94,7 +94,7 @@ for (const web of [true, false]) {
 for (const flow of ["auth.sign-in", "cloud.sign-in"] as const) {
   test(`failure toast with ${flow} answers without claiming the failed command succeeded`, async () => {
     const h = await setup(false)
-    const ctx = createControllerContext(h.store, unavailableRepositories, unavailableAgent, {})
+    const ctx = createControllerContext(h.store, unavailableAgent, {})
     ctx.commands = h.controller.commands
     try {
       createFailureController(ctx).surfaceCommandFailure("test.read", { status: "failed", error: `Sign in first — /${flow}.` })
@@ -137,7 +137,7 @@ test("an OAuth reload answers legacy persisted prompts; the answer survives the 
 
 test("an owner backend names its credential door without promising GitHub", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     applicationTarget: resolveApplicationTarget({
       apiVersion: 1,
       mode: "web-selfhost",
@@ -177,7 +177,7 @@ test("the hosted cloud GitHub door bypasses owner-local auth and uses the cloud 
       assign: (url: string) => void assigned.push(url)
     }
   }
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     bootstrap: WEB,
     applicationTarget: resolveApplicationTarget({
       apiVersion: 1,
@@ -215,7 +215,7 @@ test("a Plue bearer target reads its selected identity on a cloud host", async (
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const requested: string[] = []
   let selectedReads = 0
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     bootstrap: WEB,
     applicationTarget: resolveApplicationTarget({
       apiVersion: 1, mode: "web-plue", apiOrigin: "", auth: { kind: "bearer" },

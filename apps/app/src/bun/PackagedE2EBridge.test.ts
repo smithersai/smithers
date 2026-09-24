@@ -78,6 +78,7 @@ describe("the packaged E2E bridge", () => {
     expect(wrongMethod.status).toBe(405)
     expect(wrongMethod.headers.get("allow")).toBe("GET")
     expect((await request(bridge, "/absent")).status).toBe(404)
+    expect((await request(bridge, "/window/repository-picker", { method: "POST" })).status).toBe(404)
   })
 
   test("returns state and serialized renderer evaluation results and errors", async () => {

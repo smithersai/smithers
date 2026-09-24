@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { CODING_PLAN } from "../../cards/fixtures/CodingPlan"
 import { createAppStore } from "../AppStore"
 import { scopedControllers } from "../ControllerTestScope"
-import { json, memoryStorage, silentAgent, unavailableRepositories, waitFor } from "../TestFixtures"
+import { json, memoryStorage, silentAgent, waitFor } from "../TestFixtures"
 
 /*
  * A plan card is scoped to the repository and the account OWNER that asked
@@ -21,7 +21,7 @@ const fixture = async () => {
   let planned: () => Promise<Response> = async () => json(200, plan)
   let login = "owner"
   const posts: string[] = []
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: async (input) => {
       const path = new URL(String(input), "https://app.test").pathname
       if (path.endsWith("/api/auth/session")) return json(200, { login, allowlisted: true, admin: false })

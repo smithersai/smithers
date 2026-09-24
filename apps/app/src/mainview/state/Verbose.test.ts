@@ -11,13 +11,13 @@ import type { CommandActions } from "../flows/Flows"
 import { afterEach, describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore, TRACE_MESSAGE_PREFIX, VERBOSE_OFF_TEXT, VERBOSE_ON_TEXT, verboseTrace } from "./AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
 const fresh = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return { store, controller: createAppController(store, unavailableRepositories, unavailableAgent) }
+  return { store, controller: createAppController(store, unavailableAgent) }
 }
 
 const traces = (store: Awaited<ReturnType<typeof fresh>>["store"]): Array<string> =>

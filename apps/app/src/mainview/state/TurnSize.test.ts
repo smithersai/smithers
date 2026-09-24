@@ -4,7 +4,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import { MAX_TOOL_RESULT_BYTES,MAX_TURN_REQUEST_BYTES,turnRequestBytes,utf8Bytes } from "./AgentTurnPolicy"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,recordingAgent,settled,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, recordingAgent, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -29,7 +29,7 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
   test("the turn is bounded, the newest prompt survives, and the drop is stated", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     // Six long turns is roughly where canary crossed the limit.
     for (let turn = 0; turn < 6; turn += 1) {
@@ -51,7 +51,7 @@ describe("a long conversation still sends a turn the boundary accepts", () => {
   for (const practice of [false, true]) test(`a short conversation in ${practice ? "a retained legacy selection" : "the workspace"} is sent whole, with no notice invented`, async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     if (practice) await controller.selectRepo("practice:smithersai/hello-server")
     controller.send("hello")
@@ -107,7 +107,6 @@ describe("a wide tool result is bounded before it goes back to the model", () =>
     const name = "n".repeat(MAX_TOOL_RESULT_BYTES + 4_096)
     const controller = createAppController(
       store,
-      unavailableRepositories,
       toolCallingAgent(requests, {
         type: "tool_call",
         call_id: "call_wide",

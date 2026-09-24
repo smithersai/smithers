@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
@@ -33,14 +33,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -69,7 +61,7 @@ const billingBackend = (
 
 const freshController = async (services: AppServices) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+  const controller = createAppController(store, unavailableAgent, services)
   // Both billing commands require signed-in; park nothing, run for real.
   store.dispatch({
     type: "identity.session.loaded",
@@ -156,7 +148,7 @@ describe("billing seam — the honest failure paths", () => {
 
   test("a network throw never escapes: it comes back as an honest string", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    const controller = createAppController(store, unavailableAgent, {
       fetchImpl: async (input) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
         if (url.startsWith("/api/billing/")) throw new TypeError("network down")

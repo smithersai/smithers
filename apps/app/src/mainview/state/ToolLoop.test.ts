@@ -3,7 +3,7 @@ import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAg
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -71,7 +71,7 @@ describe("the client-side agent tool loop", () => {
         ]
       }
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("make me a note")
     await settled()
@@ -123,7 +123,7 @@ describe("the client-side agent tool loop", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("make me a note")
     await settled()
     await settled()
@@ -148,7 +148,7 @@ describe("the client-side agent tool loop", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     try {
       controller.send("read the file")
       await settled(); await settled()
@@ -167,7 +167,7 @@ describe("the client-side agent tool loop", () => {
       ],
       () => [{ type: "done" as const, reason: "stop" as const }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     try {
       controller.send("start a fresh conversation")
       await settled(); await settled()
@@ -191,7 +191,7 @@ describe("the client-side agent tool loop", () => {
         { type: "done" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("do something odd")
     await settled()
     await settled()
@@ -222,7 +222,7 @@ describe("the client-side agent tool loop", () => {
         { type: "done" as const, reason: "tool_call" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("loop forever")
     for (let i = 0; i < 20; i += 1) await settled()
 
@@ -244,7 +244,7 @@ describe("the client-side agent tool loop", () => {
     const { agent, requests } = scriptedToolAgent([
       () => [newNoteCall, { type: "done" as const, reason: "cancelled" as const }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("make me a note")
     for (let i = 0; i < 5; i += 1) await settled()
 
@@ -267,7 +267,7 @@ describe("the client-side agent tool loop", () => {
         { type: "done" as const, reason: "tool_limit" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("hello")
     await settled()
     const failed = [...store.collections.messages.values()].find((m) => m.status === "failed")

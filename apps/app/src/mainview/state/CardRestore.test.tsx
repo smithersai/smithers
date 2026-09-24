@@ -8,7 +8,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 
 /*
@@ -65,7 +65,7 @@ const act = async (work: () => unknown): Promise<void> => {
 /** A file card in the transcript: the card the ask was reported against. */
 const withFileCard = async (): Promise<{ store: AppStore; controller: AppControllerType }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent)
+  const controller = createAppController(store, silentAgent)
   store.dispatch({
     type: "card.upsert",
     actor: "smithers",

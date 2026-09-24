@@ -9,7 +9,7 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { SMITHERS_HELPERS } from "../Onboarding"
 import { createAppController } from "../state/AppController"
@@ -33,14 +33,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const WEB: AppBootstrap = {
   apiVersion: 1,
@@ -64,7 +56,7 @@ const NATIVE: AppBootstrap = {
 
 const freshController = async (bootstrap: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return { store, controller: createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap }) }
+  return { store, controller: createAppController(store, unavailableAgent, { bootstrap }) }
 }
 
 const smithersMessages = (store: Awaited<ReturnType<typeof freshController>>["store"]): ReadonlyArray<string> =>

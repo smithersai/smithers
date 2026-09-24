@@ -1,6 +1,6 @@
 import type { StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
 import { describe,expect,test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import type { AppStore } from "./AppStore"
 import { createAppStore } from "./AppStore"
@@ -21,10 +21,6 @@ const createAppController = scopedControllers()
  * failure keeps today's message.
  */
 
-const repositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const PER_ADDRESS =
   "That is 20 turns today without signing in, which is as far as exploring goes. Sign in with GitHub to keep going, or come back in about 6 hours. Nothing was charged."
@@ -61,7 +57,7 @@ const storeWith = async (state: IdentityFixture): Promise<AppStore> => {
 
 const sendRefused = async (state: IdentityFixture, result: StartAgentTurnResult, _tutorial = false) => {
   const store = await storeWith(state)
-  const controller = createAppController(store, repositories, refusingAgent(result), {
+  const controller = createAppController(store, refusingAgent(result), {
     fetchImpl: async () => new Response("{}", { status: 200 })
   })
   controller.send("what does the kernel do with a denied capability?")

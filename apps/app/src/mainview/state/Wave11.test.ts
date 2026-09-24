@@ -15,7 +15,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { json, memoryStorage, scriptedToolAgent, settle, silentAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, scriptedToolAgent, settle, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -291,7 +291,7 @@ describe("wave 11 — the full journey: make me a workflow", () => {
     // A slow provision so the toast genuinely crosses the debounce (the 300ms
     // law): work that settles faster than that must never flash anything.
     const double = relay({ provisionDelayMs: 8 })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       toastDebounceMs: 1
     })
@@ -400,7 +400,7 @@ describe("wave 11 — the full journey: make me a workflow", () => {
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, double.services)
+    const controller = createAppController(store, agent, double.services)
     await signIn(store)
 
     controller.send("can you make me a smithers workflow that summarizes my open issues?")
@@ -424,7 +424,7 @@ describe("wave 11 — the loaded repositories are the universe", () => {
   test("no repository loaded gets the honest name-one line instead of a guess", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store, null)
 
     const outcome = await controller.commands.run("flow.create", "summarize my issues")
@@ -435,7 +435,7 @@ describe("wave 11 — the loaded repositories are the universe", () => {
   test("signed out, nothing reaches the seam — the answer names the one step", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
 
     for (const command of ["flow.create", "flow.list", "flow.run"]) {
       const outcome = await controller.commands.run(command, command === "flow.list" ? undefined : "x")
@@ -453,7 +453,7 @@ describe("wave 11 — the run card never silently stalls", () => {
       payload: { version: 1, executionId: "run-w11", generation: 0 }
     }]
     const double = relay({ events: () => events, typedCursors: true })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
     double.finish()
     await controller.commands.run("flow.run", "review-pr")
@@ -486,7 +486,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     const store = await webStore()
     const double = relay({ typedCursors: true, events: () => [{ sequence: 1, occurredAt: 1,
       kind: "control.engine.projection-started", payload: { version: 1, executionId: "run-w11", generation: 0 } }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, { ...double.services, workflowQuietMs: 40 })
+    const controller = createAppController(store, silentAgent, { ...double.services, workflowQuietMs: 40 })
     await signIn(store)
     double.finish()
     await controller.commands.run("flow.run", "review-pr")
@@ -506,7 +506,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     let unavailable = false
     const events = [{ sequence: 1, occurredAt: 1, kind: "control.engine.projection-started", payload: { version: 1, executionId: "run-w11", generation: 0 } }]
     const double = relay({ events: () => events, eventReadsFail: () => unavailable, typedCursors: true })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
     double.state.turns = 2
     double.state.calls = 3
@@ -519,7 +519,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     await controller.dispose()
     unavailable = true
     store = await createAppStore({ kind: "localStorage", storage })
-    const resumed = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const resumed = createAppController(store, silentAgent, double.services)
     // Session reconciliation invokes this after the account is authenticated.
     resumed.resumeWorkflowRuns()
     await waitFor(() => runCard(store)?.payload.observationError?.includes("engine evidence unavailable") === true)
@@ -544,7 +544,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     let store = await createAppStore({ kind: "localStorage", storage })
     const double = relay()
     double.advance(2, 3)
-    let controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    let controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
     await controller.commands.run("flow.run", "review-pr")
     await waitFor(() => runCard(store)?.payload.steps.includes("2 turns · 3 calls") === true)
@@ -552,7 +552,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     expect(before).toContain("2 turns · 3 calls")
     await controller.dispose()
     store = await createAppStore({ kind: "localStorage", storage })
-    controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    controller = createAppController(store, silentAgent, double.services)
     controller.resumeWorkflowRuns()
     await waitFor(() => runCard(store)?.payload.phase === "running")
     expect(runCard(store)?.payload.phase).toBe("running")
@@ -563,7 +563,7 @@ describe("wave 11 — the run card never silently stalls", () => {
     const store = await webStore()
     let broken = false
     const double = relay({ readsFail: () => broken })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     double.advance(1, 1)
@@ -586,7 +586,7 @@ describe("wave 11 — the run card never silently stalls", () => {
   test("a re-read never re-narrates what the card already said", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     double.advance(1, 1)
@@ -607,7 +607,7 @@ describe("wave 11 — the run card never silently stalls", () => {
   test("a failed run states it and stops — no card left spinning", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -627,7 +627,7 @@ describe("wave 11 — the run card never silently stalls", () => {
      */
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -655,7 +655,7 @@ describe("wave 11 — the run card never silently stalls", () => {
      */
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -685,7 +685,7 @@ describe("wave 11 — the run card never silently stalls", () => {
   test("a run that has done nothing yet narrates nothing", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     await controller.commands.run("flow.run", "review-pr")
@@ -707,7 +707,7 @@ describe("wave 11 — the run card never silently stalls", () => {
         message: "Smithers Cloud has no free workspace capacity right now — nothing was queued; try again in a bit."
       })
     })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       toastDebounceMs: 1
     })
@@ -728,7 +728,7 @@ describe("wave 11 — workflows are presented", () => {
   test("flow.list renders the workspace's workflows as an embedded card", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     const outcome = await controller.commands.run("flow.list")
@@ -749,7 +749,7 @@ describe("wave 11 — workflows are presented", () => {
   test("flow.list uses the selected repository and accepts an explicit override", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     try {
       await signIn(store, [REPO, "another/project"])
       store.dispatch({ type: "repo.selected", actor: "user", id: "another/project" })
@@ -765,7 +765,7 @@ describe("wave 11 — workflows are presented", () => {
   test("flow.run refuses a name the workspace does not have, and names what it does have", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     const outcome = await controller.commands.run("flow.run", "nope")
@@ -783,7 +783,7 @@ describe("wave 11 — workflows are presented", () => {
     // cannot author a flow, so say that and what closes it, not the id.
     const store = await webStore()
     const double = relay({ flows: [{ flowId: "review-pr" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     expect(said(await controller.commands.run("flow.create", "summarize my issues"))).toBe(`flow-requested repo=${REPO}`)
@@ -804,7 +804,7 @@ describe("wave 11 — workflows are presented", () => {
     // registry; a listing is a second answer that can only ever agree with it.
     const store = await webStore()
     const double = relay({ flows: [{ flowId: "create-flow" }] })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...double.services,
       fetchImpl: async (input, init) => {
         const absolute = new URL(
@@ -838,7 +838,7 @@ describe("wave 11 — workflows are presented", () => {
      */
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     const created = said(await controller.commands.run("flow.create", "summarize my open issues"))
@@ -851,7 +851,7 @@ describe("wave 11 — workflows are presented", () => {
   test("the three commands are agent-reachable (trigger both) — this is the whole of the new surface", async () => {
     const store = await webStore()
     const double = relay()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, double.services)
+    const controller = createAppController(store, silentAgent, double.services)
     await signIn(store)
 
     const listed = await controller.commands.executeForAgent({

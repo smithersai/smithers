@@ -4,7 +4,7 @@ import type { AppServices } from "./AppController"
 import type { Card } from "./AppState"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -83,7 +83,7 @@ const QUEUE = {
 describe("the admin plugin (admin session)", () => {
   test("human-authority confirmations are structurally absent from the model catalog", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     const callable = controller.commands.callable().map((entry) => entry.binding.descriptor.name)
     expect(callable).not.toContain("admin.grant.confirm")
     expect(callable).not.toContain("admin.grant.cancel")
@@ -94,7 +94,7 @@ describe("the admin plugin (admin session)", () => {
   test("allowlist add posts and confirms from the server echo", async () => {
     const store = await adminStore()
     const recorded: RecordedRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend(
         {
           "/api/admin/allowlist": json(201, {
@@ -118,7 +118,7 @@ describe("the admin plugin (admin session)", () => {
   test("grant asks first: the confirmation card states exactly what happens before posting", async () => {
     const store = await adminStore()
     const recorded: RecordedRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend(
         {
           "/api/admin/grant": json(201, { granted: true, grantId: "admin:product-x", userId: "octocat" })
@@ -149,7 +149,7 @@ describe("the admin plugin (admin session)", () => {
     const store = await adminStore()
     const recorded: RecordedRequest[] = []
     let attempts = 0
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend(
         {
           "/api/admin/grant": () => {
@@ -180,7 +180,7 @@ describe("the admin plugin (admin session)", () => {
   test("grant cancel removes the card without posting", async () => {
     const store = await adminStore()
     const recorded: RecordedRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({}, recorded)
     })
     await controller.commands.run("admin.grant", "10 hubot")
@@ -194,7 +194,7 @@ describe("the admin plugin (admin session)", () => {
   test("requests renders the queue card and one-click approve posts allowlist add then re-reads", async () => {
     const store = await adminStore()
     const recorded: RecordedRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend(
         {
           // The landed identity contract does NOT drain the queue on
@@ -223,7 +223,7 @@ describe("the admin plugin (admin session)", () => {
 
   test("health composes the per-service card from the real read", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/admin/health": json(200, {
           services: [
@@ -248,7 +248,7 @@ describe("the admin plugin (admin session)", () => {
 
   test("an admin route failure is an honest line, never a dead end", async () => {
     const store = await adminStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/admin/requests": json(501, {
           status: "error",

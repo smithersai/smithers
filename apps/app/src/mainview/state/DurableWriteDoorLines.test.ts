@@ -6,7 +6,7 @@ import type { ControllerContext } from "./controller/context"
 import { createFailureController } from "./controller/failures"
 import { latestOrdinal } from "./controller/spokenLines"
 import { scopedControllers } from "./ControllerTestScope"
-import { recordingAgent, unavailableRepositories } from "./TestFixtures"
+import { recordingAgent } from "./TestFixtures"
 
 /*
  * WHAT THIS FILE MEASURES, AND WHAT IT DOES NOT.
@@ -146,7 +146,7 @@ const reachEveryDoor = async (): Promise<ReadonlyArray<Reached>> => {
       type: "identity.session.loaded", actor: "system", state: "signed-in",
       login: "maintainer", allowlisted: true, admin: true, scopesPlain: null
     }).isPersisted.promise
-    const controller = createAppController(store, unavailableRepositories, recordingAgent([]), {
+    const controller = createAppController(store, recordingAgent([]), {
       // No poll of its own: the only writes in this test are the acts under test.
       workflowPollMs: 100_000,
       toastDebounceMs: 0,

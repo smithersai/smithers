@@ -2,7 +2,7 @@ import { afterEach,expect,test } from "bun:test"
 import type { AppController,AppServices } from "./AppController"
 import { createAppStore,type AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -33,7 +33,7 @@ const fixture = async (services: AppServices = {}, reject = false) => {
       ? { ...target.isPersisted, promise: target.isPersisted.promise.then(() => held.promise).then(() => { if (reject) throw new Error("receipt failed") }) }
       : Reflect.get(target, key, receiver) })
   } }
-  const controller = createAppController(observed, unavailableRepositories, silentAgent, services)
+  const controller = createAppController(observed, silentAgent, services)
   controllers.push(controller)
   return { controller, held }
 }

@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppServices } from "../state/AppController"
@@ -37,14 +37,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -78,7 +70,7 @@ const freshController = async (services: AppServices = deadBackend) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, services)
+    controller: createAppController(store, unavailableAgent, services)
   }
 }
 

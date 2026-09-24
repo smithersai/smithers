@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { createControllerContext } from "./controller/context"
-import { json, memoryStorage, unavailableAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { json, memoryStorage, unavailableAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -15,7 +15,7 @@ const createAppController = scopedControllers()
 describe("a seam that never answers becomes an honest answer", () => {
   test("provisioning refuses on its own deadline instead of standing forever", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    const controller = createAppController(store, unavailableAgent, {
       seamTimeoutMs: 40,
       toastDebounceMs: 10_000,
       fetchImpl: (input, init) => {
@@ -78,7 +78,7 @@ describe("a seam that never answers becomes an honest answer", () => {
      * the literal string "undefined".
      */
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+    const ctx = createControllerContext(store, unavailableAgent, {
       seamTimeoutMs: 20,
       fetchImpl: (_input, init) =>
         new Promise((_resolve, reject) => {
@@ -107,7 +107,7 @@ for (const status of [200, 503]) {
       }), { status, headers: { "content-type": "application/json" } })
     })
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+    const ctx = createControllerContext(store, unavailableAgent, {
       seamTimeoutMs: 500,
       fetchImpl: async (input, init) => {
         signal = init?.signal
@@ -141,7 +141,7 @@ for (const status of [200, 503]) {
 test("a stalled body reader is cancelled even when the transport ignores abort", async () => {
   let cancelled = false
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+  const ctx = createControllerContext(store, unavailableAgent, {
     seamTimeoutMs: 20,
     fetchImpl: async () => new Response(new ReadableStream({
       cancel() { cancelled = true; return new Promise<void>(() => {}) }
@@ -166,7 +166,7 @@ for (const status of [200, 503]) {
   test(`the seam rejects and cancels an oversized HTTP ${status} body`, async () => {
     let cancelled = false
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+    const ctx = createControllerContext(store, unavailableAgent, {
       fetchImpl: async () => new Response(new ReadableStream<Uint8Array>({
         start(controller) {
           controller.enqueue(new Uint8Array(8 * 1024 * 1024))
@@ -191,7 +191,7 @@ test("buffered responses retain JSON, error text, headers, and empty-body semant
     new Response("offline", { status: 503 }),
     new Response(null, { status: 204 })
   ]
-  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+  const ctx = createControllerContext(store, unavailableAgent, {
     fetchImpl: async () => replies.shift()!
   })
   try {
@@ -217,7 +217,7 @@ for (const [status, method] of [[204, "DELETE"], [205, "POST"], [304, "GET"], [2
     Object.defineProperty(reply, "body", {
       value: new ReadableStream<Uint8Array>({ start: controller => controller.close() })
     })
-    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+    const ctx = createControllerContext(store, unavailableAgent, {
       fetchImpl: async () => reply
     })
     try {

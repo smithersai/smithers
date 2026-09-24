@@ -9,7 +9,7 @@ import type { Card } from "@smthrs/rpc/Cards"
 import type { StorageApi } from "@tanstack/db"
 import { describe,expect,test } from "bun:test"
 import { runSearchRef } from "../../flows/RunCommand"
-import type { NativeRepositories } from "../../native/NativeBridge"
+
 import type { AgentPort } from "../../runtime/AgentPort"
 import type { AppServices } from "../AppController"
 import { createAppController } from "../AppController"
@@ -33,14 +33,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const json = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
@@ -77,7 +69,7 @@ const REPO = "will/flows"
 
 const ready = async (services: AppServices = backend({}), state: "signed-in" | "signed-out" = "signed-out") => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     ...services, features: { wiki: true, mythicalHistory: true, ...services.features }
   })
   await identity(store, state)

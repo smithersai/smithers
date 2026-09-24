@@ -13,7 +13,7 @@ import { ControllerTestProvider } from "../ControllerContext"
 import type { AppController as AppControllerType } from "./AppController"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,unavailableAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -40,7 +40,7 @@ interface View {
 
 const mount = async (): Promise<View> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+  const controller = createAppController(store, unavailableAgent)
   const host = document.createElement("div")
   document.body.append(host)
   const root = createRoot(host)

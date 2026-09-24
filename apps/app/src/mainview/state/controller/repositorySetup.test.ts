@@ -2,7 +2,7 @@ import { createOperationalFailureReporter } from "../OperationalFailures"
 import { expect, spyOn, test } from "bun:test"
 import { editSetup, initialSetup, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { createAppStore } from "../AppStore"
-import { memoryStorage, recordingAgent, unavailableRepositories } from "../TestFixtures"
+import { memoryStorage, recordingAgent } from "../TestFixtures"
 import type { StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
 import type { ControllerContext } from "./context"
 import { createFailureController } from "./failures"
@@ -633,7 +633,7 @@ test("the composed app renders its own setup question and starts no conversation
   const { createAppController } = await import("../AppController")
   const requests: StartAgentTurnRequest[] = []
   const t = await fixture(async body => response(body))
-  const controller = createAppController(t.store, unavailableRepositories, recordingAgent(requests), {
+  const controller = createAppController(t.store, recordingAgent(requests), {
     fetchImpl: async () => Response.json({}, { status: 404 })
   })
   try {

@@ -1,8 +1,6 @@
-import type { RepositoryAccess } from "@smthrs/rpc/NativeRepository"
 import type { ControllerContext } from "./context"
 
 export interface ConnectorController {
-  readonly connectLocalRepository: (access: RepositoryAccess) => Promise<void>
   readonly makeConnectorReadOnly: (id: string) => string | void
   readonly askConnectorRemoval: (id: string) => string | void
   readonly cancelConnectorRemoval: () => void
@@ -12,37 +10,7 @@ export interface ConnectorController {
 export const createConnectorController = (
   ctx: ControllerContext
 ): ConnectorController => {
-  const { store, repositories } = ctx
-
-  const connectLocalRepository = async (access: RepositoryAccess): Promise<void> => {
-    const operation = store.collections.connectorOperations.get("connector-operation")
-    if (operation?.phase !== "idle") return
-    store.dispatch({ type: "connector.local.requested", actor: "user", access })
-    try {
-      const result = await repositories.pickLocalRepository(access)
-      switch (result.status) {
-        // No host opens a repository on this machine any more
-        // (docs/LOCAL-BACKEND-RETIREMENT.md); the picker only ever refuses.
-        case "connected":
-        case "cancelled":
-          store.dispatch({ type: "connector.local.cancelled", actor: "user" })
-          break
-        case "error":
-          store.dispatch({
-            type: "connector.local.failed",
-            actor: "system",
-            message: result.message
-          })
-          break
-      }
-    } catch {
-      store.dispatch({
-        type: "connector.local.failed",
-        actor: "system",
-        message: "The native repository picker stopped responding. Try again."
-      })
-    }
-  }
+  const { store } = ctx
 
   /*
    * A connector is a record in this store, never a directory this host has
@@ -75,7 +43,6 @@ export const createConnectorController = (
   }
 
   return {
-    connectLocalRepository,
     makeConnectorReadOnly,
     askConnectorRemoval,
     cancelConnectorRemoval,

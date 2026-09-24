@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
-import { json, memoryStorage, silentAgent, unavailableRepositories } from "../TestFixtures"
+import { json, memoryStorage, silentAgent } from "../TestFixtures"
 
 const deferred = <T>() => {
   let resolve!: (value: T) => void
@@ -25,7 +25,7 @@ const fixture = async (answer: () => Promise<Response>, services: Pick<AppServic
       if (transition.type === "identity.session.cleared") throw new Error("privacy cleanup refused")
       return store.dispatch(transition)
     } : Reflect.get(target, key, receiver) }) : store
-  const controller = createAppController(guarded, unavailableRepositories, silentAgent, {
+  const controller = createAppController(guarded, silentAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     features: { wiki: true },
     // Tests invoke the flow explicitly; material notifications cannot race the gates.
@@ -209,7 +209,7 @@ const seatFixture = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   await identity(store, "alice")
   const bodies: Array<Record<string, unknown>> = []
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     features: { wiki: true },
     recommender: { enabled: true, debounceMs: 60_000 },

@@ -5,7 +5,7 @@ import { useState } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import { CardView } from "../ChatCards"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppController } from "../state/AppController"
@@ -47,14 +47,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const silentAgent: AgentPort = {
   available: true,
@@ -65,7 +57,7 @@ const silentAgent: AgentPort = {
 
 const newController = async (): Promise<AppController> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent)
+  const controller = createAppController(store, silentAgent)
   mounted.push(() => controller.dispose())
   return controller
 }

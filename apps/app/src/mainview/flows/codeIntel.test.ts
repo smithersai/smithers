@@ -2,7 +2,7 @@ import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
@@ -34,14 +34,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 /** The Bun server with the Smithers Cloud upstream configured: the tunnel is open. */
 const NATIVE: AppBootstrap = {
@@ -75,7 +67,7 @@ const CODE_FLOWS = ["code.hover", "code.definition", "code.diagnostics"] as cons
 
 const controllerFor = async (bootstrap: AppBootstrap) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  return createAppController(store, unavailableRepositories, unavailableAgent, { bootstrap })
+  return createAppController(store, unavailableAgent, { bootstrap })
 }
 
 describe("the code.* flows", () => {

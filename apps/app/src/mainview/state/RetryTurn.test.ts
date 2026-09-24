@@ -4,7 +4,7 @@ import type { AgentPort } from "../runtime/AgentPort"
 import type { AppStore } from "./AppStore"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,settled,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -68,7 +68,7 @@ describe("/retry re-runs the last turn", () => {
   test("the user message is never duplicated, however many times retry runs", async () => {
     const store = await signedInStore()
     const { agent, launches, fail } = recordingAgent()
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     controller.send("Reply with one random uncommon English noun, nothing else.")
@@ -95,7 +95,7 @@ describe("/retry re-runs the last turn", () => {
   for (const practice of [false, true]) test(`the failed answer makes way for the re-run in ${practice ? "a retained legacy selection" : "the workspace"}`, async () => {
     const store = await signedInStore()
     const { agent, launches, fail } = recordingAgent()
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     if (practice) await controller.selectRepo("practice:smithersai/hello-server")
@@ -119,7 +119,7 @@ describe("/retry re-runs the last turn", () => {
   test("retry with nothing to retry refuses by name instead of executing silently", async () => {
     const store = await signedInStore()
     const { agent, launches } = recordingAgent()
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     const outcome = await controller.commands.run("chat.retry")
@@ -130,7 +130,7 @@ describe("/retry re-runs the last turn", () => {
   test("retry mid-turn does nothing — there is nothing settled to re-run", async () => {
     const store = await signedInStore()
     const { agent, launches } = recordingAgent()
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       fetchImpl: async () => new Response("{}", { status: 200 })
     })
     controller.send("still running")
@@ -158,7 +158,7 @@ describe("turn continuation ownership", () => {
         ? { status: "error", message: "That Smithers turn is already running." }
         : { status: "started" }
     })
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     const tool = deferred<string>()
     const execute = spyOn(controller.commands, "executeForAgent").mockImplementation(() => tool.promise)
     try {
@@ -195,7 +195,7 @@ describe("turn continuation ownership", () => {
         ? { status: "error", message: "That Smithers turn is already running." }
         : { status: "started" }
     })
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     try {
       controller.send("keep going")
       const runId = launches[0]!.runId
@@ -222,7 +222,7 @@ describe("turn continuation ownership", () => {
       const store = await signedInStore()
       const cancellation = deferred<void>()
       const { agent, launches, answer } = recordingAgent({ cancelTurn: () => cancellation.promise })
-      const controller = createAppController(store, unavailableRepositories, agent)
+      const controller = createAppController(store, agent)
       try {
         controller.send("original question")
         controller.stop()
@@ -249,7 +249,7 @@ describe("turn continuation ownership", () => {
       const { agent, launches, answer } = recordingAgent({
         startTurn: async () => launches.length === 1 ? original.promise : { status: "started" }
       })
-      const controller = createAppController(store, unavailableRepositories, agent)
+      const controller = createAppController(store, agent)
       try {
         controller.send("first attempt")
         const runId = launches[0]!.runId
@@ -281,7 +281,7 @@ test("a non-admission submit whose durable write fails cancels its launched turn
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
   const cancelled: string[] = []
   const remote = recordingAgent({ cancelTurn: async id => { cancelled.push(id) } })
-  const controller = createAppController(store, unavailableRepositories, remote.agent)
+  const controller = createAppController(store, remote.agent)
   try {
     rejectSubmit = true
     await expect(Promise.resolve(controller.send("unsaved prompt"))).rejects.toThrow("disk unavailable")

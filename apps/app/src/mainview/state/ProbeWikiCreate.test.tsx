@@ -8,7 +8,7 @@ import App from "../App"
 import { ControllerTestProvider } from "../ControllerContext"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { backend, json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { backend, json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -37,7 +37,7 @@ const WEB: AppBootstrap = {
 
 test("probe: what does the Create Wiki click dispatch", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { bootstrap: WEB,
+  const controller = createAppController(store, silentAgent, { bootstrap: WEB,
     ...backend({ "/api/auth/session": json(401, {}), "/api/auth/scopes": json(200, { scopes: [] }) }) })
   await controller.commands.run("wiki")
   await settled()

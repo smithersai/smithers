@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { selectFirstRunRepository } from "./FirstRunRepository"
-import { json, memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -52,7 +52,7 @@ const bootIdentityRead = (
 test("a focus re-read during the boot identity read still offers sign-in for the parked command", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const identity = heldIdentity()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: identity.fetchImpl,
     // The deadline must not be what saves this: the seam has to announce.
     firstRunSettleMs: 60_000
@@ -74,7 +74,7 @@ test("a focus re-read during the boot identity read still offers sign-in for the
 
 test("an identity read no boot closure watches still settles the first-run choice", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: async (input: unknown) => {
       if (new URL(String(input), "https://app.test").pathname.endsWith("/auth/session")) throw new Error("identity seam unreachable")
       return json(404, { status: "error" })
@@ -96,7 +96,7 @@ test("an identity read no boot closure watches still settles the first-run choic
 test("a first-run park settles at its deadline when identity never answers", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const identity = heldIdentity()
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: identity.fetchImpl,
     firstRunSettleMs: 25
   })

@@ -21,7 +21,7 @@ import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import { DOWNLOAD_URL } from "@smthrs/rpc/AppLinks"
 import { cloudCapabilities, localCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { NOT_DOWNLOADABLE_TEXT } from "../state/controller/app"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppController } from "../state/AppController"
 import type { AppServices } from "../state/AppController"
@@ -48,14 +48,6 @@ const unavailableAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 /** The Worker's bootstrap, built by the function the Worker calls. */
 const WEB: AppBootstrap = {
@@ -90,7 +82,7 @@ const freshController = async (bootstrap?: AppBootstrap, services: Omit<AppServi
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   return {
     store,
-    controller: createAppController(store, unavailableRepositories, unavailableAgent, {
+    controller: createAppController(store, unavailableAgent, {
       downloadUrl: RELEASE_URL,
       ...services,
       bootstrap

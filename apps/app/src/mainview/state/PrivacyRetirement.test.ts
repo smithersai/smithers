@@ -13,7 +13,7 @@ import { captureBrowserStorageRecovery, createRecoveryDownload } from "./Browser
 import { createStorageRecoveryAction } from "./StorageRecoveryAction"
 import { createAuthBillingController } from "./controller/auth-billing"
 import { createControllerContext } from "./controller/context"
-import { unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { unavailableAgent } from "./TestFixtures"
 
 const secret = "PRIVATE-RETIRED-ACCOUNT-BYTES"
 const memory = () => {
@@ -58,7 +58,7 @@ describe("durable privacy retirement", () => {
     const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
     const store = await open(storage, async () => { entered.resolve(); await release.promise; if (fails) throw new Error(secret) })
     await fill(store)
-    const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { fetchImpl: async () => Response.json({}) })
+    const ctx = createControllerContext(store, unavailableAgent, { fetchImpl: async () => Response.json({}) })
     const auth = createAuthBillingController(ctx, store.nextOrdinal)
     let changed = 0, finished = false
     ctx.identityChanged = () => { changed++ }

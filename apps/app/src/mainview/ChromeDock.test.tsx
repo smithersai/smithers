@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client"
 import App from "./App"
 import { ChromeDock } from "./ChromeDock"
 import { ControllerTestProvider } from "./ControllerContext"
-import type { NativeRepositories } from "./native/NativeBridge"
+
 import type { AgentPort } from "./runtime/AgentPort"
 import type { AppController as AppControllerType,AppServices } from "./state/AppController"
 import { createAppController } from "./state/AppController"
@@ -45,14 +45,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repositories can only be connected from the Smithers native app."
-  })
-}
 
 const unavailableAgent: AgentPort = {
   available: false,
@@ -63,7 +55,7 @@ const unavailableAgent: AgentPort = {
 
 const localHarness = async (services: AppServices = {}): Promise<{ store: AppStore; controller: AppControllerType }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     ...services,
     features: { wiki: true, mythicalHistory: true, ...services.features },
     bootstrap: {
@@ -82,7 +74,7 @@ const localHarness = async (services: AppServices = {}): Promise<{ store: AppSto
 /** The Worker's shell (docs/web-mode/PLAN.md §1): host `cloud`, capabilities from the table the server calls. */
 const cloudHarness = async (services: AppServices = {}): Promise<{ store: AppStore; controller: AppControllerType }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     ...services,
     features: { wiki: true, mythicalHistory: true, ...services.features },
     bootstrap: {

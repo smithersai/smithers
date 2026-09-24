@@ -139,8 +139,7 @@ export const startPackagedE2EBridge = (
         const allowed = url.pathname === "/health" || url.pathname === "/state" ||
             url.pathname === "/window/screenshot" ?
           "GET" :
-          url.pathname === "/window/eval" || url.pathname === "/window/repository-picker" ||
-              url.pathname === "/app/quit"
+          url.pathname === "/window/eval" || url.pathname === "/app/quit"
           ? "POST"
           : undefined
         return allowed === undefined

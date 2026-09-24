@@ -4,7 +4,7 @@ import type { CommandRegistry } from "../../flows/Commands"
 import type { AgentPort } from "../../runtime/AgentPort"
 import { createAppStore } from "../AppStore"
 import type { AppTransition } from "../AppState"
-import { memoryStorage, settled, unavailableRepositories } from "../TestFixtures"
+import { memoryStorage, settled } from "../TestFixtures"
 import { createAuthBillingController } from "./auth-billing"
 import { createControllerContext } from "./context"
 import { createTurnController } from "./turns"
@@ -35,7 +35,7 @@ const fixture = async (options: {
     ...(options.steer === undefined ? {} : { steer: options.steer }),
     ...(options.approval === undefined ? {} : { resolveApproval: options.approval })
   }
-  const ctx = createControllerContext(store, unavailableRepositories, agent, {
+  const ctx = createControllerContext(store, agent, {
     fetchImpl: options.fetch ?? (async () => Response.json({ scopes: [], state: "ok", allowedToStartWork: true,
       balance: { totalUsd: "0", lifetimeChargedUsd: "0", chargeCount: 0 } }))
   })

@@ -1,7 +1,7 @@
 import { describe,expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,settled,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -26,7 +26,7 @@ const balanceJson = new Response(
 describe("the 300ms toast law", () => {
   test("work settled under 300ms never flashes a toast", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => balanceJson.clone(),
       toastDebounceMs: 300
     })
@@ -38,7 +38,7 @@ describe("the 300ms toast law", () => {
   test("work not settled within 300ms states what is running, then resolves", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve
@@ -61,7 +61,7 @@ describe("the 300ms toast law", () => {
   test("a failure resolves the toast honestly and it stays until dismissed", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve
@@ -90,7 +90,7 @@ describe("the 300ms toast law", () => {
   test("a settled toast states its result, never the running sentence", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve
@@ -114,7 +114,7 @@ describe("the 300ms toast law", () => {
   test("a re-run's running toast outlives the previous run's auto-dismiss", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve
@@ -143,7 +143,7 @@ describe("the 300ms toast law", () => {
   test("a flow that fails resolves honestly instead of leaving a toast running", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     let release: (response: Response) => void = () => {}
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: () =>
         new Promise<Response>((resolve) => {
           release = resolve

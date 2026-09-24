@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
-import { json, memoryStorage, scriptedToolAgent, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, scriptedToolAgent, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -71,7 +71,7 @@ describe("wave 10 — the embed law's in-app half (§2c″)", () => {
         { type: "done" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("what is in world?")
     await settled()
     await settled()
@@ -92,7 +92,7 @@ describe("wave 10 — the embed law's in-app half (§2c″)", () => {
 
   test("the agent's connect invocation renders the embedded connect card, not the pane", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await signIn(store)
     const result = await controller.commands.executeForAgent({
       name: "commands",
@@ -111,7 +111,7 @@ describe("wave 10 — the embed law's in-app half (§2c″)", () => {
 
 test("the human connect door embeds the same repository controls without opening a pane", async () => {
   const store = await webStore()
-  const controller = createAppController(store, unavailableRepositories, silentAgent)
+  const controller = createAppController(store, silentAgent)
   await signIn(store)
   expect((await controller.commands.run("connect")).status).toBe("executed")
   expect(store.session().surface).toBe("chat")
@@ -138,7 +138,7 @@ describe("wave 10 — transcript hygiene (§2b)", () => {
         { type: "done" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     controller.send("what can you do?")
     await settled()
     await settled()
@@ -163,7 +163,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
   test("an explicit summary commits new world notes and the archive together", async () => {
     const store = await webStore()
     const calls: Array<{ path: string; method: string; body: unknown }> = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend(
         {
           "/api/model/stream": () =>
@@ -218,7 +218,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 
   test("a failed sweep leaves the chat UNcleared with an honest line", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/model/stream": json(500, { status: "error", message: "chat upstream down" })
       })
@@ -241,7 +241,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 
   test("a transcript with nothing worth keeping clears with the zero-kept line", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/model/stream": () =>
           new Response(
@@ -265,7 +265,7 @@ describe("/chat.clear — optional summaries and atomic local archives", () => {
 describe("wave 10 — the browser tool (§2d)", () => {
   test("the agent's browser call returns the extracted text and renders the embedded card", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/tools/browser-fetch": json(200, {
           status: 200,
@@ -293,7 +293,7 @@ describe("wave 10 — the browser tool (§2d)", () => {
 
   test("a site that refuses framing lands the honest blocked state on the card", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       ...backend({
         "/api/tools/browser-fetch": json(200, {
           status: 200,
@@ -332,7 +332,7 @@ describe("wave 10 — the browser tool (§2d)", () => {
         { type: "done" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       ...backend({
         "/api/tools/browser-fetch": json(200, {
           status: 200,
@@ -360,7 +360,7 @@ describe("wave 10 — the browser tool (§2d)", () => {
 describe("wave 10 — sign-in IS the GitHub connector (§2a′)", () => {
   test("a signed-in session means connected: the snapshot and the agent context derive it", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     expect(controller.commands.state().hasConnectors).toBe(false)
     await signIn(store)
     expect(controller.commands.state().hasConnectors).toBe(true)
@@ -368,7 +368,7 @@ describe("wave 10 — sign-in IS the GitHub connector (§2a′)", () => {
 
   test("the agent answering from the debug reads (admin) — snapshot/events contracts", async () => {
     const store = await webStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     store.dispatch({
       type: "identity.session.loaded",
       actor: "system",

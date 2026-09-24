@@ -5,7 +5,7 @@ import { flushSync } from "react-dom"
 import { ControllerTestProvider } from "../ControllerContext"
 import { createAppController } from "../state/AppController"
 import { createAppStore } from "../state/AppStore"
-import { memoryStorage, settle, unavailableAgent, unavailableRepositories } from "../state/TestFixtures"
+import { memoryStorage, settle, unavailableAgent } from "../state/TestFixtures"
 import { TerminalView } from "./TerminalView"
 
 GlobalRegistrator.register()
@@ -13,7 +13,7 @@ afterAll(async () => { await settle(); await GlobalRegistrator.unregister() })
 
 test("replacing a terminal session detaches the old stream and attaches the new session", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent)
+  const controller = createAppController(store, unavailableAgent)
   const calls: string[] = []
   const sizes: Array<{ sessionId: string; cols: number; rows: number }> = []
   const originalResizeObserver = globalThis.ResizeObserver

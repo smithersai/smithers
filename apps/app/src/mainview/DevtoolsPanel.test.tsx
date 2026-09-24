@@ -13,7 +13,7 @@ import { createRoot } from "react-dom/client"
 import * as DebugFolds from "./chain/DebugFolds"
 import { ControllerTestProvider } from "./ControllerContext"
 import { DevtoolsPanel } from "./DevtoolsPanel"
-import type { NativeRepositories } from "./native/NativeBridge"
+
 import type { AgentPort } from "./runtime/AgentPort"
 import { createAppController } from "./state/AppController"
 import type { AppController } from "./state/AppController"
@@ -42,10 +42,6 @@ const memoryStorage = (): StorageApi => {
   }
 }
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const unavailableAgent: AgentPort = {
   available: false,
@@ -69,7 +65,7 @@ const mount = async (onWorldRowsRead?: () => void): Promise<View> => {
     get: (target, property) => property === "values" ? () => { onWorldRowsRead(); return target.values() } : Reflect.get(target, property)
   })
   const store: AppStore = { ...source, collections: { ...source.collections, worldDocuments } }
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+  const controller = createAppController(store, unavailableAgent, {
     fetchImpl: async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
   })
   const host = document.createElement("div")

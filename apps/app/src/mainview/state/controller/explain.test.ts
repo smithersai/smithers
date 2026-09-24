@@ -108,10 +108,7 @@ const streamingController = (start: AgentPort["startTurn"] = async () => ({ stat
       }
     } },
     dispatch: (action: (typeof dispatches)[number]) => { dispatches.push(action) }
-  } as unknown as ControllerContext["store"], {
-    available: false,
-    pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
-  }, agent, {})
+  } as unknown as ControllerContext["store"], agent, {})
   const controller = createExplainController({
     ...ctx,
     unref: (timer) => { timers.push(timer); ctx.unref(timer) }
@@ -272,9 +269,7 @@ test("the Explainer posts a journal turn and projects the HTTP delivery into its
       status: 200, headers: { "content-type": "application/x-ndjson", "x-smithers-turn-journal": "1" }
     })
   } })
-  const ctx = createControllerContext(store, {
-    available: false, pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
-  }, agent, {})
+  const ctx = createControllerContext(store, agent, {})
   try {
     await createExplainController(ctx).explain("Why did it fail?")
     for (let i = 0; i < 10; i++) await new Promise(resolve => setTimeout(resolve, 0))
@@ -302,9 +297,7 @@ test("disposing a journal Explainer cancels its side turn and ignores later outp
     startTurn: async value => { request = value; return { status: "started" } },
     cancelTurn: async runId => { cancelled.push(runId) }
   }
-  const ctx = createControllerContext(store, {
-    available: false, pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unused" })
-  }, agent, {})
+  const ctx = createControllerContext(store, agent, {})
   try {
     await createExplainController(ctx).explain("Why?")
     expect(request?.journal).toBeDefined()

@@ -14,7 +14,7 @@ import { type AppTransition } from "./AppState"
 import { createAppStore,type AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { httpToolItems } from "./HttpTurn"
-import { memoryStorage,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -164,7 +164,7 @@ const journalAgent = () => {
     journal: { subscribe: next => { listener = next; return () => { listener = undefined } }, read: async access => { reads.push(access); return reply }, retire: async () => {}, disconnect: id => { disconnected.push(id) } } }
   return { agent, starts, reads, disconnected, emit: async (delivery: AgentTurnJournalDelivery) => { await listener?.(delivery) }, setReply: (next: AgentTurnJournalReply) => { reply = next } }
 }
-const controllerFor = (store: AppStore, agent: AgentPort) => { const controller = createAppController(store, unavailableRepositories, agent); controllers.push(controller); return controller }
+const controllerFor = (store: AppStore, agent: AgentPort) => { const controller = createAppController(store, agent); controllers.push(controller); return controller }
 
 test("the active AppController persists capability and prompt before POST, then resumes a disconnected leg after a real reopen", async () => {
   const storage = memoryStorage(), store = await open(storage), remote = journalAgent()

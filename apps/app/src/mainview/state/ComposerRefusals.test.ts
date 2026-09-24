@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { json, memoryStorage, settled, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settled, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -41,7 +41,7 @@ const transcript = (store: AppStore) =>
 describe("a flow typed into the composer states its refusal", () => {
   test("an upstream 404 on /issues.view <n> <repo> surfaces the seam's own message", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async (input) => {
         const path = new URL(
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
@@ -64,7 +64,7 @@ describe("a flow typed into the composer states its refusal", () => {
   test("a malformed argument is refused before the flow runs", async () => {
     const store = await signedInStore()
     let calls = 0
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => {
         calls += 1
         return json(200, {})
@@ -82,7 +82,7 @@ describe("a flow typed into the composer states its refusal", () => {
 
   test("a flow that succeeds raises no refusal", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => json(200, [])
     })
     controller.send("/issues.list open codeplanesmithers/canary-sandbox")
@@ -100,7 +100,7 @@ describe("a flow typed into the composer states its refusal", () => {
    */
   test("an unknown flag refuses instead of running the flow without it", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => json(200, {})
     })
     controller.send("hello")
@@ -133,7 +133,7 @@ describe("a flow typed into the composer states its refusal", () => {
    */
   test("the unknown flag's refusal lands in the transcript, names the flag and the door, and archives nothing", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => json(200, {}),
       /* A notification that auto-dismisses is exactly what the walk could not find afterwards. */
       toastAutoDismissMs: 1
@@ -175,7 +175,7 @@ describe("a flow typed into the composer states its refusal", () => {
   test("a flow-authoring door the workspace refuses says so on the card it minted", async () => {
     const store = await signedInStore()
     const rpc: Array<string> = []
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async (input, init) => {
         const path = new URL(
           typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url,
@@ -210,7 +210,7 @@ describe("a flow typed into the composer states its refusal", () => {
    */
   test("a seam's cloud sign-in refusal offers a persistent sign-in action", async () => {
     const store = await signedInStore()
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async () => json(401, { status: "signed-out" }),
       toastAutoDismissMs: 1
     })

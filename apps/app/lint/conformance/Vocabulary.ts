@@ -14,7 +14,7 @@ import { CardSchema } from "@smthrs/rpc/Cards"
 import ts from "typescript"
 import { adminFlows, baseFlows, guideFlows, type CommandActions } from "../../src/mainview/flows/Flows"
 import { nameOf } from "../../src/mainview/flows/registry"
-import type { NativeRepositories } from "../../src/mainview/native/NativeBridge"
+
 import type { AgentPort } from "../../src/mainview/runtime/AgentPort"
 import { createAppController } from "../../src/mainview/state/AppController"
 import { createAppStore } from "../../src/mainview/state/AppStore"
@@ -174,19 +174,11 @@ const absentAgent: AgentPort = {
   subscribe: () => () => {}
 }
 
-const absentRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "no native bridge in the conformance pin"
-  })
-}
 
 /** The command manifest `App.tsx` renders into `data-flows`, read the same way. */
 export const manifestFlowNames = async (): Promise<ReadonlySet<string>> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, absentRepositories, absentAgent)
+  const controller = createAppController(store, absentAgent)
   return new Set(controller.commands.all().map((command) => command.name))
 }
 

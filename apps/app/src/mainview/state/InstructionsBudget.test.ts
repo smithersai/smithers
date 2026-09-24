@@ -1,6 +1,6 @@
 import type { StorageApi } from "@tanstack/db"
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
@@ -26,7 +26,7 @@ const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
   return { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => void data.set(key, value), removeItem: (key) => void data.delete(key) }
 }
-const repositories: NativeRepositories = { available: true, pickLocalRepository: async () => ({ status: "cancelled" }) }
+
 const bytes = (text: string): number => new TextEncoder().encode(text).length
 
 const NATIVE_EVERYTHING = {
@@ -77,7 +77,7 @@ const capturedTurn = async (prepare: (store: Awaited<ReturnType<typeof createApp
     cancelTurn: async () => {},
     subscribe: () => () => {}
   }
-  const controller = createAppController(store, repositories, agent, { bootstrap: { ...host, capabilities: [...host.capabilities] } })
+  const controller = createAppController(store, agent, { bootstrap: { ...host, capabilities: [...host.capabilities] } })
   await controller.send(message)
   await new Promise((resolve) => setTimeout(resolve, 50))
   const instructions = captured?.instructions ?? ""

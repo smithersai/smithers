@@ -17,7 +17,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { instructionStageOf, smithersInstructions } from "./Instructions"
 import { offersImpossibleCapability, renderedRunTurnText } from "./RunClaims"
-import { memoryStorage, scriptedToolAgent, settle, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, scriptedToolAgent, settle } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -174,7 +174,7 @@ describe("wave 13 §F — the capability section is generated from the live cata
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("hello")
     await settle()
@@ -309,7 +309,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent, {
+    const controller = createAppController(store, agent, {
       workflowPollMs: 1,
       toastDebounceMs: 0,
       toastAutoDismissMs: 10_000,
@@ -369,7 +369,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
         { type: "done" as const, reason: "stop" as const }
       ]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
     await signIn(store)
     controller.send("what would you do about email?")
     await settle()
@@ -380,7 +380,7 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
 test("retired composer menus are absent from both command doors", async () => {
   const store = await webStore()
   const { agent } = scriptedToolAgent([() => []])
-  const controller = createAppController(store, unavailableRepositories, agent)
+  const controller = createAppController(store, agent)
   for (const name of ["chat.surfaces", "composer.add"]) {
     expect(controller.commands.find(name)).toBeUndefined()
     expect(controller.runCommand(name)).toBe(false)

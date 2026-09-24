@@ -10,7 +10,7 @@ import { createCommandIntentLifecycle } from "./controller/commandIntents"
 import { createControllerContext } from "./controller/context"
 import { scopedControllers } from "./ControllerTestScope"
 import { readEntityRecoveries } from "./EntityRecovery"
-import { memoryStorage,repositoryHttpFixture,silentAgent,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, repositoryHttpFixture, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -31,7 +31,7 @@ const open = async (storage: StorageApi = memoryStorage()) => {
   return store
 }
 const controllerFor = (store: AppStore, services: AppServices = {}) => {
-  const controller = createAppController(store, unavailableRepositories, silentAgent, services)
+  const controller = createAppController(store, silentAgent, services)
   controllers.push(controller)
   return controller
 }
@@ -182,7 +182,7 @@ describe("durable command intent at the active shared door", () => {
 
   test("stable chain identities refuse concurrent/replayed calls while distinct slots remain independent", async () => {
     const store = await open()
-    const lifecycle = createCommandIntentLifecycle(createControllerContext(store, unavailableRepositories, silentAgent, {}))
+    const lifecycle = createCommandIntentLifecycle(createControllerContext(store, silentAgent, {}))
     const live = invocation()
     const request = { name: "repo.update", actor: "smithers" as const, source: "command" as const,
       invocation: { ...live, slot: { ...live.slot, signal: new AbortController().signal } } }
@@ -378,7 +378,7 @@ describe("durable command intent at the active shared door", () => {
 
   test("privacy erasure does not recreate the erased command at settlement", async () => {
     const store = await open()
-    const lifecycle = createCommandIntentLifecycle(createControllerContext(store, unavailableRepositories, silentAgent, {}))
+    const lifecycle = createCommandIntentLifecycle(createControllerContext(store, silentAgent, {}))
     const accepted = await lifecycle.accept({ name: "app.reset", actor: "user", source: "command" })
     if (!("receipt" in accepted)) throw new Error("acceptance failed")
     await store.dispatch({ type: "app.reset", actor: "user" }).isPersisted.promise

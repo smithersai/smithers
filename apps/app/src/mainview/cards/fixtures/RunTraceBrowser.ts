@@ -2,7 +2,7 @@ import { createElement } from "react"
 import { createRoot } from "react-dom/client"
 import { createAppStore } from "../../state/AppStore"
 import { createAppController } from "../../state/AppController"
-import { silentAgent, unavailableRepositories } from "../../state/TestFixtures"
+import { silentAgent } from "../../state/TestFixtures"
 import type { Card } from "../../state/AppState"
 import type { FlowName } from "../../flows/FlowName"
 import { RunTraceBody } from "../RunTraceCard.tsx"
@@ -105,7 +105,7 @@ if (!store.collections.cards.has(cardId)) {
   }
   await store.dispatch({ type: "card.upsert", actor: "system", card }).isPersisted.promise
 }
-const controller = createAppController(store, unavailableRepositories, silentAgent, {
+const controller = createAppController(store, silentAgent, {
   fetchImpl: async () => new Response("{}", { status: 404 }),
   cloudSocketUrl: () => undefined,
   cloudLspSocketUrl: () => undefined

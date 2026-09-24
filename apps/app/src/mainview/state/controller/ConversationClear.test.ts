@@ -54,9 +54,6 @@ const attachWorld = (
 ) => {
   const ctx = createControllerContext(store, {
     available: false,
-    pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "unavailable" })
-  }, {
-    available: false,
     startTurn: async () => ({ status: "error", message: "unavailable" }),
     cancelTurn,
     subscribe: () => () => {}

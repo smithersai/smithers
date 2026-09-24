@@ -33,7 +33,6 @@ const repo = (id: string, path: string): Repo => ({
 const boot = async (fetchImpl?: AppServices["fetchImpl"]) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const controller = createAppController(store,
-    { available: true, pickLocalRepository: async () => ({ status: "cancelled" }) },
     { available: false, startTurn: async () => ({ status: "error", message: "unused" }), cancelTurn: async () => {}, subscribe: () => () => {} },
     {
       bootstrap: { apiVersion: 1, host: "local", version: "test", buildSha: "test", capabilities: [...RuntimeCapabilitySchema.options], authFlow: "none", sandbox: { platform: "darwin", mode: "enforced" } },

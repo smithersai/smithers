@@ -14,7 +14,7 @@ import { runtimeRunKey, type RuntimeRunObservation } from "./RuntimeProjection"
 import { createControllerContext, type ControllerContext } from "./controller/context"
 import { createWorkflowPumpController } from "./controller/workflow-pump"
 import { reconcileRunApprovals } from "./controller/approval-reconciliation"
-import { unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { unavailableAgent } from "./TestFixtures"
 
 // Accepted commands remain immutable facts. Idle transport reads must never
 // manufacture those facts; diagnostic truncation cannot bound the event stream.
@@ -83,7 +83,7 @@ const gate = (status: ApprovalRow["status"] = "pending"): ApprovalRow => ({ runI
 type Snapshot = { events: ReadonlyArray<ControlEvent>; transcript: ReadonlyArray<TranscriptRow>; summary?: RunSummaryRow; approvals?: ReadonlyArray<ApprovalRow> }
 const poll = async (store: AppStore, snapshots: ReadonlyArray<Snapshot>, afterCycle: () => void, journalAfter: unknown[] = [], beforeJournal?: (cycle: number) => Promise<void>) => {
   let cycle = -1, transcriptReads = 0, approvalReads = 0
-  const base = createControllerContext(store, unavailableRepositories, unavailableAgent, {
+  const base = createControllerContext(store, unavailableAgent, {
     baseUrl: "https://gateway.test", workflowPollMs: 1, workflowQuietMs: 60_000,
     fetchImpl: async (_url, init) => {
       const request = JSON.parse(String(init?.body)) as { payload: { selector: { _tag: string }; after?: { value: number; offset: number } } }

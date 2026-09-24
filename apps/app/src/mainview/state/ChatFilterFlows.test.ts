@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, unavailableAgent } from "./TestFixtures"
 
 const createController = scopedControllers()
 
@@ -9,7 +9,7 @@ describe("chat filter flows", () => {
   test("all four flows dispatch actor-stamped durable state", async () => {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })
-    const controller = createController(store, unavailableRepositories, unavailableAgent)
+    const controller = createController(store, unavailableAgent)
     expect((await controller.commands.run("chat.filter")).status).toBe("executed")
     expect(store.session().chatFilterMenuOpen).toBe(true)
     expect((await controller.commands.run("chat.filter.toggle", "chat")).status).toBe("executed")
@@ -34,7 +34,7 @@ describe("chat filter flows", () => {
   test("an active filter survives reload", async () => {
     const storage = memoryStorage()
     const store = await createAppStore({ kind: "localStorage", storage })
-    const controller = createController(store, unavailableRepositories, unavailableAgent)
+    const controller = createController(store, unavailableAgent)
     await controller.commands.run("chat.filter.toggle", "chat")
     await controller.commands.run("chat.filter.grep", "error")
     const reopened = await createAppStore({ kind: "localStorage", storage })
@@ -43,7 +43,7 @@ describe("chat filter flows", () => {
 
   test("agent invocation records Smithers, unknown targets refuse, and missing target opens a form", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createController(store, unavailableRepositories, unavailableAgent)
+    const controller = createController(store, unavailableAgent)
     expect((await controller.commands.runForAgent("chat.filter.toggle", "messages")).status).toBe("executed")
     expect([...store.collections.transitions.values()].find(row => row.type === "chat-filter.changed")?.actor).toBe("smithers")
     const unknown = await controller.commands.run("chat.filter.toggle", "unknown")

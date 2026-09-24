@@ -6,7 +6,7 @@ import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
 import { SMITHERS_INSTRUCTIONS } from "./Instructions"
-import { json, memoryStorage, settled, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settled, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -39,7 +39,7 @@ const backend = (): AppServices => ({
 
 const ready = async (): Promise<{ store: AppStore; controller: ReturnType<typeof createAppController> }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, backend())
+  const controller = createAppController(store, unavailableAgent, backend())
   store.dispatch({
     type: "identity.session.loaded",
     actor: "system",
@@ -127,7 +127,6 @@ describe("the model is told the numbers it is asked about", () => {
     const requests: StartAgentTurnRequest[] = []
     const controller = createAppController(
       store,
-      unavailableRepositories,
       {
         available: true,
         startTurn: async (request) => {
@@ -178,7 +177,7 @@ describe("the model is told the numbers it is asked about", () => {
 
   test("a billing service that did not answer states that, and names no figure", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, {
+    const controller = createAppController(store, unavailableAgent, {
       fetchImpl: async () => json(500, { message: "billing is down" })
     })
     store.dispatch({

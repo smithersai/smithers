@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { Harness } from "@smthrs/rpc/LocalApp"
 import type { AgentTurnFrame, StartAgentTurnRequest } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
@@ -19,10 +19,6 @@ const createAppController = scopedControllers()
  * model is touched: the agent is a recorder.
  */
 
-const repositories: NativeRepositories = {
-  available: true,
-  pickLocalRepository: async () => ({ status: "cancelled" })
-}
 
 const bootstrap: AppBootstrap = {
   apiVersion: 1,
@@ -78,7 +74,7 @@ const settle = async (ticks = 4) => {
 const boot = async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const recorder = recordingAgent()
-  const controller = createAppController(store, repositories, recorder.agent, {
+  const controller = createAppController(store, recorder.agent, {
     bootstrap,
     fetchImpl: async (input) => {
       const url = String(input)

@@ -9,7 +9,7 @@ import type { ConfiguredModel, ModelCatalog, ModelTestResult } from "@smthrs/rpc
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { MODELS_CARD_ID } from "./controller/models"
-import { memoryStorage, unavailableAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { memoryStorage, unavailableAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -36,7 +36,7 @@ test("the model flows run through the registry, and a requested test survives a 
   const storage = memoryStorage()
   const first = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   // A host that never answers the test: the request is all the first session leaves behind.
-  const silent = createAppController(first, unavailableRepositories, unavailableAgent, {
+  const silent = createAppController(first, unavailableAgent, {
     fetchImpl: (input) => new URL(input instanceof Request ? input.url : String(input), "http://local.test").pathname === MODEL_TEST_PATH
       ? new Promise<Response>(() => {})
       : Promise.resolve(Response.json(catalog))
@@ -51,7 +51,7 @@ test("the model flows run through the registry, and a requested test survives a 
   const second = await createAppStore({ kind: "localStorage", storage }, { seedWiki: false })
   expect(modelsCard(second)?.payload.testing).toEqual(["mine"])
   const answering = host()
-  const reloaded = createAppController(second, unavailableRepositories, unavailableAgent, { fetchImpl: answering.fetchImpl })
+  const reloaded = createAppController(second, unavailableAgent, { fetchImpl: answering.fetchImpl })
   expect(answering.paths).toEqual([])
   await reloaded.loadSession()
   await waitFor(() => second.collections.models.get("mine")?.lastTest !== undefined)
@@ -63,7 +63,7 @@ test("the model flows run through the registry, and a requested test survives a 
 test("a user command restores the transcript before rendering over a stale maximized card", async () => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() }, { seedWiki: false })
   const answering = host()
-  const controller = createAppController(store, unavailableRepositories, unavailableAgent, { fetchImpl: answering.fetchImpl })
+  const controller = createAppController(store, unavailableAgent, { fetchImpl: answering.fetchImpl })
 
   await controller.commands.run("model.save", "--name mine --protocol openai-chat --model qwen-3-coder-480b --credential CEREBRAS_API_KEY --url https://api.cerebras.ai")
   await controller.commands.run("card.maximize", MODELS_CARD_ID)

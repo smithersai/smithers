@@ -76,9 +76,6 @@ const fixture = async (storage = memory()) => {
   const connect = (store: AppStore) => {
     const ctx = createControllerContext(store, {
       available: false,
-      pickLocalRepository: async () => ({ status: "cancelled" })
-    }, {
-      available: false,
       startTurn: async () => ({ status: "started" }),
       cancelTurn: async () => {},
       subscribe: () => () => {}

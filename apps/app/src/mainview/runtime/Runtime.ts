@@ -1,7 +1,7 @@
 import { APP_BOOTSTRAP_PATH, AppBootstrapSchema, hasCapability } from "@smthrs/rpc/AppBootstrap"
 import type { AppBootstrap } from "@smthrs/rpc/AppBootstrap"
 import type { FetchLike, StartAgentTurnResult } from "@smthrs/rpc/NativeAgent"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "./AgentPort"
 import { createWebAgent } from "../native/WebAgent"
 
@@ -19,7 +19,6 @@ export interface AppRuntime {
    */
   readonly backend: {
     readonly agent?: AgentPort
-    readonly repositories?: NativeRepositories
   }
   readonly shell: ShellPort
 }
@@ -34,14 +33,6 @@ export const unavailableAgent = (): AgentPort => ({
   subscribe: () => () => {}
 })
 
-export const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({
-    status: "error",
-    code: "native-required",
-    message: "Local repository selection is unavailable in this runtime."
-  })
-}
 
 export type BootstrapFailureKind = "unreachable" | "missing" | "server" | "invalid"
 
@@ -81,7 +72,6 @@ export const warmBootstrap = (http: FetchLike): Promise<AppBootstrap> => {
 export const createRuntime = (options: {
   readonly bootstrap: AppBootstrap
   readonly http: FetchLike
-  readonly nativeRepositories?: NativeRepositories
   readonly nativeOpenExternal?: (url: string) => Promise<boolean>
 }): AppRuntime => {
   const { bootstrap, http } = options
@@ -93,10 +83,7 @@ export const createRuntime = (options: {
     http,
     backend: {
       ...(hasCapability(bootstrap, "agent") || hasCapability(bootstrap, "model.turn")
-        ? { agent: { ...createWebAgent({ fetchImpl: http }), available: hasCapability(bootstrap, "agent") } } : {}),
-      ...(bootstrap.host === "local" && bootstrap.sandbox !== null
-        ? { repositories: options.nativeRepositories ?? unavailableRepositories }
-        : {})
+        ? { agent: { ...createWebAgent({ fetchImpl: http }), available: hasCapability(bootstrap, "agent") } } : {})
     },
     shell: native
   }

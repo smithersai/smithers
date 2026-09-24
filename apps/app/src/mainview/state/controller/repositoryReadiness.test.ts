@@ -6,7 +6,7 @@ import { openSqliteRowStorage } from "../../chain/SqliteRowStorage"
 import { APP_SCHEMA_VERSION } from "../../chain/SchemaVersion"
 import { createAppController } from "../AppController"
 import { createAppStore, PERSISTED_COLLECTION_SPECS, type PersistenceBackend } from "../AppStore"
-import { json, memoryStorage, silentAgent, unavailableRepositories } from "../TestFixtures"
+import { json, memoryStorage, silentAgent } from "../TestFixtures"
 
 const repo = "alpha/one"
 const pause = (ms = 0) => new Promise(resolve => setTimeout(resolve, ms))
@@ -15,7 +15,7 @@ const setup = async (storage = memoryStorage(), fetchImpl: FetchLike = async () 
   const store = await createAppStore(backend ?? { kind: "localStorage", storage })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-out", login: null, allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
   await store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { requestId: crypto.randomUUID(), repo, phase: "pending" } }).isPersisted.promise
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { fetchImpl: (input, init) => String(input).includes("/contents/.smithers/factory.json") ? Promise.resolve(json(404, {})) : fetchImpl(input, init), toastDebounceMs: 10 })
+  const controller = createAppController(store, silentAgent, { fetchImpl: (input, init) => String(input).includes("/contents/.smithers/factory.json") ? Promise.resolve(json(404, {})) : fetchImpl(input, init), toastDebounceMs: 10 })
   const ready = async () => {
     await store.dispatch({ type: "repository.upserted", actor: "system", repository: { id: repo, org: "alpha", name: "one", ownerKind: "user", head: null, catalog: true } }).isPersisted.promise
     await store.dispatch({ type: "repository.entry.changed", actor: "system", entry: { ...store.session().repositoryEntry!, phase: "ready" } }).isPersisted.promise
@@ -80,7 +80,7 @@ for (const phase of ["pending", "ready"] as const) test(`root reload waits for t
   const hits: string[] = []
   let releaseScopes!: () => void
   const scopes = new Promise<void>(resolve => { releaseScopes = resolve })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, { toastDebounceMs: 10, fetchImpl: async input => {
+  const controller = createAppController(store, silentAgent, { toastDebounceMs: 10, fetchImpl: async input => {
     const url = String(input); hits.push(url)
     if (url.endsWith("/api/auth/scopes")) { await scopes; return json(200, { scopes: [] }) }
     return url === "/api/public/repos" ? json(200, { repos: [{ name: repo }] }) : json(200, [])

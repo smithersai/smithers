@@ -6,7 +6,7 @@ import { CardView } from "../ChatCards"
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -88,7 +88,6 @@ describe("server-emitted card frames", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       scriptedAgent([
         { runId: "turn", type: "card", card: planCard },
         { runId: "turn", type: "card", card: statusCard },
@@ -211,7 +210,6 @@ describe("server-emitted card frames", () => {
     }
     const controller = createAppController(
       store,
-      unavailableRepositories,
       scriptedAgent([
         { runId: "turn", type: "delta", kind: "text", text: "Decision needed." },
         { runId: "turn", type: "done" }

@@ -26,8 +26,8 @@ export const scopedControllers = (features: AppFeatures = {}): typeof createAppC
     if (errors.length > 0) throw new AggregateError(errors, "Controller fixture cleanup failed")
   })
   return (...args) => {
-    const [store, repositories, agent, services] = args
-    const controller = createAppController(store, repositories, agent, {
+    const [store, agent, services] = args
+    const controller = createAppController(store, agent, {
       ...services, features: { ...features, ...services?.features }
     })
     controllers.add(controller)

@@ -16,7 +16,7 @@ import type { ControlEvent, RunSummaryRow } from "./controller/gateway"
 import type { Card } from "./AppState"
 import { createAppStore, type AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -160,7 +160,7 @@ const ready = async (rows: ReadonlyArray<ControlEvent>, served: Served = {}) => 
     type: "gateway.run.observed", actor: "system",
     observation: { scope: { repo: REPO, runId: RUN }, summary: SUMMARY, journal: { mode: "full", events: [...rows] } }
   }).isPersisted.promise
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: relay(served),
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000

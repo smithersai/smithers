@@ -2,7 +2,7 @@ import { MODEL_CATALOG_PATH,MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { expect,test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,silentAgent,unavailableRepositories,waitFor } from "./TestFixtures"
+import { memoryStorage, silentAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const model = { id: "lab", protocol: "openai-chat", baseUrl: "http://127.0.0.1:9", modelId: "lab", credential: "LAB" } as const
@@ -12,7 +12,7 @@ const passed = { ok: true, latencyMs: 12, sample: "ok" } as const
 test("boot resumes a persisted model test after loading identity and keeps its delayed result", async () => {
   const storage = memoryStorage()
   const before = await createAppStore({ kind: "localStorage", storage })
-  const first = createAppController(before, unavailableRepositories, silentAgent, {
+  const first = createAppController(before, silentAgent, {
     fetchImpl: async () => new Promise<Response>(() => {}), toastDebounceMs: 0
   })
   await before.dispatch({ type: "model.saved", actor: "user", model }).isPersisted.promise
@@ -25,7 +25,7 @@ test("boot resumes a persisted model test after loading identity and keeps its d
   let releaseIdentity!: (response: Response) => void
   let calls = 0
   const store = await createAppStore({ kind: "localStorage", storage })
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     toastDebounceMs: 0, toastAutoDismissMs: 60_000,
     fetchImpl: async (input) => {
       const path = new URL(String(input), "http://app.test").pathname
@@ -60,7 +60,7 @@ test("the agent acknowledges model.list while its catalog is unresolved and dupl
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   let release!: (response: Response) => void
   let calls = 0
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     toastAutoDismissMs: 60_000,
     fetchImpl: async (input) => {
       if (String(input) === MODEL_CATALOG_PATH) { calls += 1; return new Promise<Response>((resolve) => { release = resolve }) }
@@ -91,7 +91,7 @@ test("the agent acknowledges model.list while its catalog is unresolved and dupl
 test("boot reconnects a persisted catalog refresh once after identity adoption", async () => {
   const storage = memoryStorage()
   const before = await createAppStore({ kind: "localStorage", storage })
-  const first = createAppController(before, unavailableRepositories, silentAgent, {
+  const first = createAppController(before, silentAgent, {
     fetchImpl: async () => new Promise<Response>(() => {})
   })
   await first.commands.runAsAgent("model.list")
@@ -100,7 +100,7 @@ test("boot reconnects a persisted catalog refresh once after identity adoption",
   const store = await createAppStore({ kind: "localStorage", storage })
   let calls = 0
   let release!: (response: Response) => void
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     toastDebounceMs: 0,
     fetchImpl: async () => { calls += 1; return new Promise<Response>((resolve) => { release = resolve }) }
   })
@@ -120,7 +120,7 @@ test("a same-owner focus re-read while a model test is out sends no second provi
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   let releaseTest!: (response: Response) => void
   let calls = 0
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     toastDebounceMs: 0, toastAutoDismissMs: 60_000,
     fetchImpl: async (input) => {
       const path = new URL(String(input), "http://app.test").pathname

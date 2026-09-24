@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
@@ -15,10 +15,6 @@ const createAppController = scopedControllers()
  * conversation; an unknown id with the list of tabs that exist.
  */
 
-const unavailableRepositories: NativeRepositories = {
-  available: false,
-  pickLocalRepository: async () => ({ status: "error", code: "native-required", message: "native only" })
-}
 
 const silentAgent: AgentPort = {
   available: false,
@@ -30,7 +26,7 @@ const silentAgent: AgentPort = {
 const harness = async (answer: (url: string) => Response) => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const urls: string[] = []
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     bootstrap: {
       apiVersion: 1,
       host: "local",

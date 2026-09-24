@@ -10,7 +10,7 @@
 import { describe, expect, test } from "bun:test"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { json, memoryStorage, settle, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settle, silentAgent } from "./TestFixtures"
 import type { Card } from "./AppState"
 
 const createAppController = scopedControllers()
@@ -95,7 +95,7 @@ const readyController = async (relay: ReturnType<typeof scriptedRelay>, storage 
     type: "repositories.loaded", actor: "system",
     repositories: [{ id: REPO, org: "smithersai", ownerKind: "org", name: "smithers", head: null }]
   }).isPersisted.promise
-  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+  const controller = createAppController(store, silentAgent, {
     fetchImpl: relay.fetchImpl,
     toastDebounceMs: 0,
     toastAutoDismissMs: 10_000

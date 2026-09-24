@@ -4,7 +4,7 @@ import type { AppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { parseDiagnosticQuery, readDiagnostics } from "./Diagnostics"
 import { SMITHERS_INSTRUCTIONS } from "./Instructions"
-import { memoryStorage, silentAgent, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, silentAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const toast = async (store: AppStore, detail: string, key = "billing.refresh") => {
@@ -20,7 +20,7 @@ const read = async (controller: ReturnType<typeof createAppController>, args?: s
 describe("app diagnostics without a repository", () => {
   test("the agent discovers and reads failures signed out without admin access", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await toast(store, "Billing service unavailable")
     expect(store.collections.repositories.size).toBe(0)
     expect(controller.commands.callable().map(entry => entry.binding.descriptor.name)).toContain("debug.errors")
@@ -42,7 +42,7 @@ describe("app diagnostics without a repository", () => {
     await toast(store, "Second attempt failed")
     await store.dispatch({ type: "toast.dismissed", actor: "user", id: "toast-billing.refresh" }).isPersisted.promise
     const reopened = await createAppStore({ kind: "localStorage", storage })
-    const controller = createAppController(reopened, unavailableRepositories, silentAgent)
+    const controller = createAppController(reopened, silentAgent)
     expect(reopened.collections.toasts.size).toBe(0)
     const result = await read(controller, "--source toast")
     expect(result.items.map(row => row.detail)).toEqual(["Second attempt failed", "First attempt failed"])
@@ -51,7 +51,7 @@ describe("app diagnostics without a repository", () => {
 
   test("the human slash door renders the errors in chat and leaves the current surface alone", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await toast(store, "Service refused the request")
     const surface = store.session().surface
     expect((await controller.commands.run("debug.errors", "refused --source toast")).status).toBe("executed")
@@ -61,7 +61,7 @@ describe("app diagnostics without a repository", () => {
 
   test("filters text, source, time and limit; includes running notices only with --all", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent)
+    const controller = createAppController(store, silentAgent)
     await toast(store, "Request timed out", "first")
     await toast(store, "Request refused", "second")
     await store.dispatch({ type: "toast.shown", actor: "system", key: "active", title: "Still loading" }).isPersisted.promise
@@ -81,7 +81,7 @@ describe("app diagnostics without a repository", () => {
 
   test("reads network and application failures without exposing request data or successful tool content", async () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async input => {
         if (String(input).includes("offline")) throw new Error("offline")
         return new Response("private response body", { status: String(input).includes("healthy") ? 200 : 503 })
@@ -106,7 +106,7 @@ describe("app diagnostics without a repository", () => {
     const identity = (login: string | null) => store.dispatch({ type: "identity.session.loaded", actor: "system", state: login ? "signed-in" : "signed-out", login, allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     await identity("alice")
     let release!: (response: Response) => void
-    const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    const controller = createAppController(store, silentAgent, {
       fetchImpl: async input => String(input).includes("late") ? new Promise<Response>(resolve => { release = resolve }) : new Response("", { status: 500 })
     })
     await toast(store, "Alice's failure")

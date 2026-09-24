@@ -5,7 +5,7 @@ import { describe,expect,test } from "bun:test"
 import type { AgentPort } from "../runtime/AgentPort"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
-import { memoryStorage,recordingAgent,settled,unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, recordingAgent, settled } from "./TestFixtures"
 
 const createAppController = scopedControllers({ wiki: true })
 
@@ -16,7 +16,7 @@ describe("per-turn runtime context", () => {
   test("every turn carries a freshly derived context identifying the Smithers product", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     controller.send("hey smithers what app am I in")
     await settled()
@@ -33,7 +33,7 @@ describe("per-turn runtime context", () => {
   test("the hidden context never enters the persisted visible transcript", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     controller.send("what app am I in")
     await settled()
@@ -82,7 +82,7 @@ describe("per-turn runtime context", () => {
         return () => listeners.delete(listener)
       }
     }
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("make me a note")
     await settled()
@@ -96,22 +96,22 @@ describe("per-turn runtime context", () => {
     expect(after?.revision ?? 0).toBeGreaterThan(before?.revision ?? 0)
   })
 
-  test("web limitations are honest about the native-only repository picker", async () => {
+  test("runtime context does not promise a retired repository picker", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     controller.send("connect my repo")
     await settled()
 
     const limitations = requests[0]?.context?.limitations ?? []
-    expect(limitations.some((line) => line.includes("pure-web client cannot connect"))).toBe(true)
+    expect(limitations.some((line) => line.includes("This host cannot connect local repositories."))).toBe(true)
   })
 
   test("the selected repository rides the context, so a plain first message can be about it", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
 
     controller.send("what is this?")
     await settled()
@@ -138,7 +138,7 @@ describe("per-turn runtime context", () => {
   test("Smithers is the first tab and sees every other one: the context lists the tabs and their status", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+    const controller = createAppController(store, recordingAgent(requests), {
       bootstrap: {
         apiVersion: 1,
         host: "local",
@@ -202,7 +202,7 @@ describe("per-turn runtime context", () => {
   test("the native app's context states the Smithers Cloud session and names cloud.prompt when it is signed out", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+    const controller = createAppController(store, recordingAgent(requests), {
       bootstrap: {
         apiVersion: 1,
         host: "local",
@@ -235,7 +235,7 @@ describe("per-turn runtime context", () => {
   test("public catalog turns on the web report cloud context from the GitHub identity", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+    const controller = createAppController(store, recordingAgent(requests), {
       bootstrap: {
         apiVersion: 1,
         host: "cloud",
@@ -268,7 +268,7 @@ describe("per-turn runtime context", () => {
   test("a host with no cloud door states the session unavailable", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+    const controller = createAppController(store, recordingAgent(requests), {
       bootstrap: {
         apiVersion: 1,
         host: "local",
@@ -288,7 +288,7 @@ describe("per-turn runtime context", () => {
   test("alone, the context says so and offers no tab.read", async () => {
     const store = await webStore()
     const requests: StartAgentTurnRequest[] = []
-    const controller = createAppController(store, unavailableRepositories, recordingAgent(requests))
+    const controller = createAppController(store, recordingAgent(requests))
     controller.send("hi")
     await settled()
     expect(requests[0]?.context?.tabs).toEqual([{ id: "main", kind: "main", title: "Smithers", status: "open", active: true }])
@@ -300,7 +300,7 @@ describe("per-turn runtime context", () => {
 test("plain repository chat carries no practice priming or hidden tutorial observations", async () => {
   const store = await webStore()
   const requests: StartAgentTurnRequest[] = []
-  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), { repositoryApp: "smithersai/smithers" })
+  const controller = createAppController(store, recordingAgent(requests), { repositoryApp: "smithersai/smithers" })
   await settled()
   controller.send("What does this repository do?")
   await settled()
@@ -315,7 +315,7 @@ test("browser chat sees a desktop opened outside chat and refreshes its stream s
   const { AgentRuntimeContextSchema } = await import('@smthrs/rpc/AgentContext')
   const store = await webStore()
   const requests: StartAgentTurnRequest[] = []
-  const controller = createAppController(store, unavailableRepositories, recordingAgent(requests), {
+  const controller = createAppController(store, recordingAgent(requests), {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
   })
   await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "will", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise

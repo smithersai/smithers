@@ -3,7 +3,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
 import { createAppStore } from "./AppStore"
 import type { AppStore } from "./AppStore"
-import { json, memoryStorage, settled, unavailableAgent, unavailableRepositories } from "./TestFixtures"
+import { json, memoryStorage, settled, unavailableAgent } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -103,7 +103,6 @@ describe("signing out leaves nothing of the account behind", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ "/api/auth/logout": () => json(200, { ok: true }) })
     )
@@ -128,7 +127,6 @@ describe("signing out leaves nothing of the account behind", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ "/api/auth/session": () => json(200, { status: "signed-out" }) })
     )
@@ -179,7 +177,6 @@ describe("signing out leaves nothing of the account behind", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ "/api/auth/session": () => json(500, { message: "down" }) })
     )
@@ -196,7 +193,6 @@ describe("signing out leaves nothing of the account behind", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ "/api/auth/session": () => json(403, { message: "forbidden" }) })
     )
@@ -213,7 +209,6 @@ describe("signing out leaves nothing of the account behind", () => {
     const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
     const controller = createAppController(
       store,
-      unavailableRepositories,
       unavailableAgent,
       backend({ "/api/auth/logout": () => json(403, { message: "forbidden" }) })
     )
@@ -359,7 +354,7 @@ for (const next of ["logout", "replacement"] as const) {
     const reopened = await createAppStore({ kind: "localStorage", storage })
     assertScrubbed(reopened)
     await loadIdentity(reopened, "signed-in", "bob")
-    const controller = createAppController(reopened, unavailableRepositories, unavailableAgent, backend({}))
+    const controller = createAppController(reopened, unavailableAgent, backend({}))
     controller.resumeDeferredCommand()
     // Let the controller's automatic onboarding flow finish before closing its
     // store owner; a disposed store correctly refuses late trace writes.

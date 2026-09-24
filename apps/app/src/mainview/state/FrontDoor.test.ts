@@ -5,7 +5,7 @@ import { visible } from "../flows/registry"
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { COMMANDS_MAX, recommendRequest } from "./Recommend"
-import { memoryStorage, settled, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settled } from "./TestFixtures"
 
 /*
  * The client half of the Jev front door (apps/server frontDoor.ts).
@@ -66,7 +66,7 @@ describe("the turn request carries the commands the client can execute right now
   test("a user-only command and one waiting on a requirement are left out; the recommender's pills still carry both", async () => {
     const store = await webStore()
     const { agent, requests } = scriptedAgent([() => [{ type: "done", reason: "stop" }]])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("hello")
     await settled()
@@ -118,7 +118,7 @@ describe("the Worker-authored frames drive the client's own execution boundary",
       () => workerRoutedFrames("world.new-note"),
       () => [{ type: "done", reason: "stop" }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("make me a note")
     await settled()
@@ -152,7 +152,7 @@ describe("the Worker-authored frames drive the client's own execution boundary",
       () => [{ type: "done", reason: "stop" }],
       () => [{ type: "delta", kind: "text", text: "Sure." }, { type: "done", reason: "stop" }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("make me a note")
     await settled()
@@ -191,7 +191,7 @@ describe("the Worker-authored frames drive the client's own execution boundary",
       () => [{ type: "done", reason: "stop" }],
       () => [{ type: "delta", kind: "text", text: "Sure." }, { type: "done", reason: "stop" }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("show me my flows")
     await settled()
@@ -221,7 +221,7 @@ describe("the Worker-authored frames drive the client's own execution boundary",
       () => workerRoutedFrames("browser.open"),
       () => [{ type: "done", reason: "stop" }]
     ])
-    const controller = createAppController(store, unavailableRepositories, agent)
+    const controller = createAppController(store, agent)
 
     controller.send("open example.com")
     await settled()

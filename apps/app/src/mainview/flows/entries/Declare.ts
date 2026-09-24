@@ -39,7 +39,6 @@ export type CommandActions =
     | "observeGuideVisibility"
     | "storageRecoveryState"
     | "nativeAgentAvailable"
-    | "nativeRepositoriesAvailable"
     | "slashCommands"
     | "slashItems"
     | "slashTree"

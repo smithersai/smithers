@@ -8,7 +8,7 @@
  */
 import { describe, expect, test } from "bun:test"
 import { payloadFor } from "../flows/SlashPayload"
-import type { NativeRepositories } from "../native/NativeBridge"
+
 import type { AgentPort } from "../runtime/AgentPort"
 import { scopedControllers } from "./ControllerTestScope"
 import type { AppServices } from "./AppController"
@@ -210,14 +210,7 @@ describe("a repo-scoped command whose text ends in a path", () => {
     cancelTurn: async () => {},
     subscribe: () => () => {}
   }
-  const unavailableRepositories: NativeRepositories = {
-    available: false,
-    pickLocalRepository: async () => ({
-      status: "error",
-      code: "native-required",
-      message: "Local repositories can only be connected from the Smithers native app."
-    })
-  }
+  
   const json = (status: number, body: unknown): Response =>
     new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -245,7 +238,7 @@ describe("a repo-scoped command whose text ends in a path", () => {
       }
     }
     const store = await freshStore()
-    const controller = createAppController(store, unavailableRepositories, unavailableAgent, services)
+    const controller = createAppController(store, unavailableAgent, services)
     await dispatch(store, {
       type: "identity.session.loaded", actor: "system", state: "signed-in",
       login: "will", allowlisted: true, admin: false, scopesPlain: null

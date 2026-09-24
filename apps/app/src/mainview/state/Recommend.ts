@@ -2,8 +2,6 @@ import type { AgentRepositoryUpdate } from "@smthrs/rpc/AgentContext"
 import { RECOMMEND_OUTCOME_PATH, RECOMMEND_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import type { CatalogItem, CommandState } from "../flows/registry"
 import { recommendedNames, visible } from "../flows/registry"
-import { repoSuggestion } from "../Onboarding"
-import type { RepoStep } from "../Onboarding"
 import type { AppTransition, Card, Message, Suggestion } from "./AppState"
 import { REPO_TOKEN } from "./RepoContext"
 
@@ -80,7 +78,6 @@ export interface RecommendInput {
   readonly repositoryUpdate?: AgentRepositoryUpdate
   readonly state: CommandState
   readonly catalog: ReadonlyArray<CatalogItem>
-  readonly repoStep: RepoStep
   /** The active target, or null when none is selected. */
   readonly repo: string | null
   readonly messages: ReadonlyArray<Pick<Message, "role" | "text" | "act">>
@@ -258,7 +255,7 @@ export const parseRecommendation = (
  * While a turn streams the pills are disabled anyway, so the row is empty then.
  */
 export const ruleSuggestions = (
-  input: Pick<RecommendInput, "state" | "catalog" | "repoStep"> & Partial<Pick<RecommendInput, "cards">>
+  input: Pick<RecommendInput, "state" | "catalog"> & Partial<Pick<RecommendInput, "cards">>
 ): ReadonlyArray<Suggestion> => {
   if (input.state.typing) return []
   const byName = new Map(visible(input.catalog).map((command) => [command.name, command]))
@@ -283,7 +280,7 @@ export const ruleSuggestions = (
       why: "Runs are live on your workspace."
     })
   }
-  const lead = [...lifecycle, ...repoSuggestion(input.repoStep)]
+  const lead = lifecycle
   const rest = recommendedNames(input.state)
     .filter((name) => byName.has(name) && !lead.some((suggestion) => suggestion.flow === name))
     .map((name): Suggestion => ({

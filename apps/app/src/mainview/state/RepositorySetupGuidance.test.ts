@@ -11,7 +11,7 @@ import { setupContextSummary, setupQuestionCardId } from "./controller/repositor
 import { createAppStore } from "./AppStore"
 import { scopedControllers } from "./ControllerTestScope"
 import { CHAT_INSTRUCTIONS_CAP_BYTES, INSTRUCTIONS_HEADROOM_BYTES, instructionStageOf } from "./Instructions"
-import { memoryStorage, recordingAgent, scriptedToolAgent, unavailableRepositories, waitFor } from "./TestFixtures"
+import { memoryStorage, recordingAgent, scriptedToolAgent, waitFor } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 const id = "setup:maintainer:example%2Frepo:issues"
@@ -37,7 +37,7 @@ async function fixture(agent?: (requests: StartAgentTurnRequest[]) => AgentPort,
     id, kind: "repository-setup", title: "Handle issues", status: "active", createdAt: 1, ordinal: store.nextOrdinal(), payload
   } }).isPersisted.promise
   const requests: StartAgentTurnRequest[] = [], fetches: { url: string; method: string }[] = []
-  const controller = createAppController(store, unavailableRepositories, agent?.(requests) ?? recordingAgent(requests), {
+  const controller = createAppController(store, agent?.(requests) ?? recordingAgent(requests), {
     bootstrap: { apiVersion: 1, host: "cloud", version: "test", buildSha: "test", capabilities: ["agent", "identity", "cloud"], authFlow: "redirect", sandbox: null },
     fetchImpl: async (input, init) => {
       const url = String(input), method = init?.method ?? "GET"

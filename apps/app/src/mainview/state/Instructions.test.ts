@@ -16,7 +16,7 @@ import { scopedControllers } from "./ControllerTestScope"
 import { createAppStore } from "./AppStore"
 import { IDENTITY_LINE, NO_DOWNLOAD_LINE, instructionStageOf, smithersInstructions, WEB_HOST_LINE } from "./Instructions"
 import type { InstructionHonesty } from "./Instructions"
-import { memoryStorage, settle, unavailableRepositories } from "./TestFixtures"
+import { memoryStorage, settle } from "./TestFixtures"
 
 const createAppController = scopedControllers()
 
@@ -104,7 +104,7 @@ const bootstrapFor = (host: AppBootstrap["host"]): AppBootstrap =>
 const firstTurnInstructions = async (host: AppBootstrap["host"], prompt = "hello"): Promise<{ instructions: string; names: string[] }> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const { agent, requests } = recordingAgent()
-  const controller = createAppController(store, unavailableRepositories, agent, { bootstrap: bootstrapFor(host) })
+  const controller = createAppController(store, agent, { bootstrap: bootstrapFor(host) })
   store.dispatch({
     type: "identity.session.loaded",
     actor: "system",
