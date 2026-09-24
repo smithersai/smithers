@@ -27,6 +27,16 @@ const drawn = (screen: string) => /↑\S+ ↓\S+/.test(screen)
 const idle = (screen: string) =>
   drawn(screen) && !screen.includes("esc Interrupt") && !/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] \d/.test(screen)
 
+/**
+ * The one session folder under a session root. The root also holds the
+ * process-wide `tui.log` diagnostic file, so the first entry is not always it.
+ */
+const sessionFolder = (root: string): string => {
+  const folders = readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory())
+  expect(folders).toHaveLength(1)
+  return join(root, folders[0]!.name)
+}
+
 /** The scrubber's playhead column. */
 const knob = (screen: string): number =>
   screen.split("\n").map((line) => [...line].indexOf("●")).find((column) => column >= 0) ?? -1
@@ -240,9 +250,9 @@ describe("! shell commands", () => {
     const screen = await tui.until((screen) => screen.includes("done-2"), 10_000, "shell output")
     expect(screen).toContain("$ ls && echo done-$((1+1))")
     expect(screen).toContain("check.mjs")
-    const [folder] = readdirSync(sessions)
-    const [file] = readdirSync(join(sessions, folder!))
-    const records = readFileSync(join(sessions, folder!, file!), "utf8").trim().split("\n").map((line) =>
+    const folder = sessionFolder(sessions)
+    const [file] = readdirSync(folder)
+    const records = readFileSync(join(folder, file!), "utf8").trim().split("\n").map((line) =>
       JSON.parse(line)
     )
     expect(records.at(-1)).toMatchObject({
@@ -311,7 +321,7 @@ describe("turns", () => {
     await tui.type("node check.mjs fails. Fix it and show it passes.")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("esc Interrupt"), 10_000, "running turn")
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     chmodSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), 0o444)
     await tui.until((screen) => screen.includes("Session not saved: EACCES"), 10_000, "unsaved record")
     await tui.until((screen) => idle(screen) && /Fixed/.test(screen), 90_000, "answer")
@@ -813,7 +823,7 @@ describe("runtime views", () => {
       10_000,
       "undone"
     )
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     const lines = (file: string) => readFileSync(file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
     const chat = lines(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!))
     expect(chat.filter((record) => record.type === "undo")).toMatchObject([{ tab: "fixer", paths: ["math.js"] }])
@@ -842,7 +852,7 @@ describe("runtime views", () => {
     await tui.type("what is the ETA on all tasks")
     await tui.press(key.enter)
     await tui.until((screen) => screen.includes("ETA investigation:running:class"), 30_000, "tab.eta answer")
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     const ledger = readFileSync(join(folder, "evals", "estimates.jsonl"), "utf8").trim().split("\n")
       .map((line) => JSON.parse(line))
     expect(ledger.filter((entry) => entry.type === "observation" && entry.observation.kind === "delegate")).toHaveLength(1)
@@ -1011,7 +1021,7 @@ it(
       5_000,
       "show all restores the worker"
     )
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     const records = readFileSync(join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!), "utf8")
       .trim().split("\n").map((line) => JSON.parse(line))
     const requests = records.filter((record) => record.type === "tab" && record.tab.status === "requested")
@@ -1200,7 +1210,7 @@ describe("approvals", () => {
     await started.tui.until((screen) => screen.includes("n deny"))
     await started.tui.press("n")
     await started.tui.until((screen) => screen.includes("consequential · failed") && !screen.includes("n deny"))
-    const sessions = join(started.sessions, readdirSync(started.sessions)[0]!)
+    const sessions = sessionFolder(started.sessions)
     const records = Session.load(join(sessions, readdirSync(sessions).find((name) => name.endsWith(".jsonl"))!))
     expect(records.filter((record) => record.type === "flow").every((record) => record.run.runId === undefined)).toBe(true)
   }, 60_000)
@@ -1222,7 +1232,7 @@ describe("approvals", () => {
     await tui.press("n")
     await Bun.sleep(600)
     expect(tui.screen()).not.toContain("? bash true")
-    const folder = join(cwd, "sessions", readdirSync(join(cwd, "sessions"))[0]!)
+    const folder = sessionFolder(join(cwd, "sessions"))
     const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
     const outcome = Session.load(file).findLast((record) => record.type === "outcome")
     expect(outcome).toMatchObject({ type: "outcome", outcome: { answer: "Choice: deny" } })
@@ -1300,7 +1310,7 @@ describe("approvals", () => {
     await tui.press(key.enter)
     await tui.until((screen) => asking.test(screen), 60_000, "first approval")
     await tui.press("n")
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
     await tui.until(() => Session.load(file).some((record) =>
       record.type === "event" && record.event._tag === "cell-call-settled" &&
@@ -1448,7 +1458,7 @@ describe("monitors", () => {
     }
     for (let attempt = 0; attempt < 200 && !judged().some((entry) => entry.done); attempt++) await Bun.sleep(50)
     expect(judged().some((entry) => entry.done)).toBe(true)
-    const folder = join(sessions, readdirSync(sessions)[0]!)
+    const folder = sessionFolder(sessions)
     const file = join(folder, readdirSync(folder).find((name) => name.endsWith(".jsonl"))!)
     const updates = () => Session.load(file).filter((record) => record.type === "monitor-update")
     return { tui, judged, updates }

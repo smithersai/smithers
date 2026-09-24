@@ -15,19 +15,22 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-/** A recorded model that answers once with `cell` (default `ctx.done("ok")`). */
-const doneReplay = (directory: string, cell = "ctx.done(\"ok\")"): string => {
+/**
+ * A recorded model that answers with `cell` (default `ctx.done("ok")`), then
+ * with each of `later` in turn. The last reply repeats for every further frame.
+ */
+const doneReplay = (directory: string, cell = "ctx.done(\"ok\")", ...later: ReadonlyArray<string>): string => {
   const file = join(directory, "done.jsonl")
   const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
   writeFileSync(
     file,
-    [
+    [cell, ...later].flatMap((body) => [
       JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
       delta({ type: "text-start", id: "cell" }),
-      delta({ type: "text-delta", id: "cell", text: `\`\`\`cell\n${cell}\n\`\`\`` }),
+      delta({ type: "text-delta", id: "cell", text: `\`\`\`cell\n${body}\n\`\`\`` }),
       delta({ type: "text-end", id: "cell" }),
       JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
-    ].join("\n")
+    ]).join("\n")
   )
   return file
 }
@@ -146,13 +149,16 @@ test("Host.run bounds a worker frame waiting on a non-flow promise", async () =>
   const host = Host.make({ cwd, environment: {}, totalMs: 30 })
   try {
     const events: AgentEvent.AgentEvent[] = []
+    // The stalled frame is rejected at once; the next frame answers, so the
+    // turn ends there instead of replaying the stall until the 40-frame budget.
     const outcome = await host.run({ prompt: "stall", role: "worker", seat: `replay:${doneReplay(cwd,
-      "await new Promise(() => {}); ctx.done('never')")}`,
+      "await new Promise(() => {}); ctx.done('never')", "ctx.done('recovered')")}`,
       history: [], onEvent: (event) => events.push(event) }).done
     expect(events.find((event) => event._tag === "discipline-armed")).toMatchObject({ totalMs: 30 })
-    expect(events.find((event) => event._tag === "cell-settled" && event.outcome._tag === "rejected"))
-      .toMatchObject({ outcome: { code: "stalled" } })
-    expect(outcome._tag === "done" ? outcome.answer : "").not.toContain("never")
+    const outcomes = events.flatMap((event) => (event._tag === "cell-settled" ? [event.outcome] : []))
+    expect(outcomes[0]).toMatchObject({ _tag: "rejected", code: "stalled" })
+    expect(outcomes.slice(1).every((outcome) => outcome._tag !== "rejected")).toBe(true)
+    expect(outcome).toEqual({ _tag: "done", answer: "recovered" })
   } finally { await host.dispose() }
 })
 
