@@ -2,6 +2,11 @@ import { WORKER_IDENTITY } from "../../src/workerIdentity"
 import { validateBindings, type Settings } from "./cloudflare"
 
 export const maintenanceNames = ["SMITHERS_EXPORT_TOKEN", "SMITHERS_EXPORT_RECIPIENT", "SMITHERS_EXPORT_EXPIRES_AT", "SMITHERS_EXPORT_SOURCE_REVISION", "SMITHERS_EXPORT_SOURCE_VERSION"] as const
+export const requireExportVersion = (deployment: { versions: Array<{ version_id: string; percentage: number }> } | undefined, version: string): void => {
+  if (!deployment || deployment.versions.length !== 1 || deployment.versions[0]!.percentage !== 100 || deployment.versions[0]!.version_id !== version) {
+    throw new Error("Live maintenance version changed; partial sealed files retained, automatic restore forbidden")
+  }
+}
 export const uploadedVersion = (result: { deployment_id?: string }): string => {
   const raw = result.deployment_id?.replaceAll("-", "")
   if (!raw || !/^[a-f0-9]{32}$/i.test(raw)) throw new Error("Upload did not identify its exact version")

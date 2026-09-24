@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { WORKER_IDENTITY } from "../../src/workerIdentity"
-import { metadataFor, stable, uploadedVersion, wrapperFor } from "./deployment"
+import { metadataFor, requireExportVersion, stable, uploadedVersion, wrapperFor } from "./deployment"
 import type { Settings } from "./cloudflare"
 
 const settings = (): Settings => ({ compatibility_date: "2026-08-01", compatibility_flags: ["nodejs_compat"], observability: { enabled: true },
@@ -30,6 +30,14 @@ test("upload identity comes from the exact API result rather than the latest dep
   expect(uploadedVersion({ deployment_id: "0123456789abcdef0123456789abcdef" })).toBe("01234567-89ab-cdef-0123-456789abcdef")
   expect(uploadedVersion({ deployment_id: "01234567-89ab-cdef-0123-456789abcdef" })).toBe("01234567-89ab-cdef-0123-456789abcdef")
   expect(() => uploadedVersion({})).toThrow()
+})
+
+test("each export refuses missing, replaced or split deployment authority", () => {
+  const version = "01234567-89ab-cdef-0123-456789abcdef"
+  expect(() => requireExportVersion({ versions: [{ version_id: version, percentage: 100 }] }, version)).not.toThrow()
+  expect(() => requireExportVersion(undefined, version)).toThrow("partial sealed files retained")
+  expect(() => requireExportVersion({ versions: [{ version_id: "another", percentage: 100 }] }, version)).toThrow("automatic restore forbidden")
+  expect(() => requireExportVersion({ versions: [{ version_id: version, percentage: 50 }, { version_id: "another", percentage: 50 }] }, version)).toThrow()
 })
 
 test("namespace or temporary-binding drift refuses upload; wrapper references exact live module", () => {
