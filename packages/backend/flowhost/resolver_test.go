@@ -62,6 +62,48 @@ type memoryBindingLease struct {
 	target     Binding
 }
 
+func (store *memoryBindingStore) AcquireExisting(ctx context.Context, authority Authority, catalog Catalog) (BindingLease, error) {
+	if store.binding.ID == "" {
+		return nil, ErrHostNotRunning
+	}
+	return store.Acquire(ctx, authority, catalog)
+}
+
+func TestReadResolutionNeverCreatesRestartsOrUpgradesHost(t *testing.T) {
+	ctx := context.Background()
+	resolver, store, launcher, target := testResolver(t)
+	_, err := resolver.ResolveExistingFlowRuntime(ctx, target)
+	require.ErrorContains(t, err, "runtime_host_not_running")
+	require.Empty(t, store.binding.ID)
+	require.Empty(t, launcher.starts)
+	require.Equal(t, 0, store.acquires)
+
+	_, err = resolver.ResolveFlowRuntime(ctx, target)
+	require.NoError(t, err)
+	before := store.binding
+	runtime, err := resolver.ResolveExistingFlowRuntime(ctx, target)
+	require.NoError(t, err)
+	identity, err := runtime.Identity(ctx)
+	require.NoError(t, err)
+	require.Equal(t, before.OwnerGeneration, identity.OwnerGeneration)
+	require.Equal(t, before, store.binding)
+	require.Len(t, launcher.starts, 1)
+
+	launcher.running = false
+	_, err = resolver.ResolveExistingFlowRuntime(ctx, target)
+	require.ErrorContains(t, err, "runtime_host_not_running")
+	require.Equal(t, before, store.binding)
+	require.Len(t, launcher.starts, 1)
+
+	upgradeCatalog(resolver, strings.Repeat("c", 64))
+	_, err = resolver.ResolveExistingFlowRuntime(ctx, target)
+	require.ErrorContains(t, err, "runtime_upgrade_required")
+	require.Equal(t, before, store.binding)
+	require.Equal(t, 0, store.rebinds)
+	require.Empty(t, launcher.stops)
+	require.Len(t, launcher.starts, 1)
+}
+
 func (lease *memoryBindingLease) Supersedes() (Binding, bool) {
 	if lease.supersedes == nil {
 		return Binding{}, false

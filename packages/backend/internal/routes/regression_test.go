@@ -332,37 +332,6 @@ func TestRegression_AdminAuth_NonAdminTokenCannotHitAdminRoute(t *testing.T) {
 //
 // Background: an earlier handler version returned an empty env map because the
 // service call was missing the context-injected workflow run.
-func TestRegression_RunnerSecrets_GetTaskEnvironmentIncludesSecrets(t *testing.T) {
-	t.Parallel()
-
-	h := RunnerHandler{Service: &mockRunnerRouteService{
-		getTaskRuntimeEnvFn: func(_ context.Context, taskID int64) (map[string]string, error) {
-			assert.Equal(t, int64(99), taskID)
-			return map[string]string{
-				"ANTHROPIC_AUTH_TOKEN": "super-secret-api-key",
-				"SMITHERS_AGENT_TOKEN": "smithers_agent_cafebabe01234567cafebabe01234567cafebabe",
-				"BUILD_VAR":            "not-a-secret",
-			}, nil
-		},
-	}}
-
-	req := httptest.NewRequest(http.MethodGet, "/internal/tasks/99/env", nil)
-	req = withRouteParams(req, map[string]string{"task-id": "99"})
-	rec := httptest.NewRecorder()
-
-	h.GetTaskEnvironment(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	var payload taskEnvironmentResponse
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-
-	assert.Equal(t, "super-secret-api-key", payload.Env["ANTHROPIC_AUTH_TOKEN"],
-		"injected secret must appear in the response")
-	assert.Equal(t, "smithers_agent_cafebabe01234567cafebabe01234567cafebabe", payload.Env["SMITHERS_AGENT_TOKEN"],
-		"agent token must appear in the response")
-	assert.Equal(t, "not-a-secret", payload.Env["BUILD_VAR"])
-}
 
 // TestRegression_RunnerSecrets_RedactSecretValuesRemovesSecretsFromLogOutput
 // verifies that RedactSecretValues replaces every secret value in a log string

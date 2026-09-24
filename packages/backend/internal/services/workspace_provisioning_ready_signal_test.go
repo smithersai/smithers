@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // A boot contract that waits for readiness must declare which service emits

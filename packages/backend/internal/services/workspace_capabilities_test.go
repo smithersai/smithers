@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/microsandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func TestRepositoryJobsIntegrationMissingPrimaryRecovery(t *testing.T) {
@@ -32,19 +32,15 @@ func TestRepositoryJobsIntegrationMissingPrimaryRecovery(t *testing.T) {
 			}
 			_, err := pool.Exec(ctx, `UPDATE workspaces SET kind='vm',vm_id='missing-primary',status=$2 WHERE id=$1`, config.WorkspaceID, status)
 			require.NoError(t, err)
-			controller := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
+			provider := &mockWorkspaceSandboxVMClient{getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
 				if scenario == "transport" {
-					w.WriteHeader(503)
-					_, _ = w.Write([]byte(`{"error":{"code":"unavailable","message":"temporary"}}`))
-					return
+					return sandbox.Sandbox{}, &sandbox.StatusError{StatusCode: 503, Message: "temporary"}
 				}
-				w.WriteHeader(404)
-				_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"sandbox not found"}}`))
-			}))
-			defer controller.Close()
+				return sandbox.Sandbox{}, sandbox.ErrNotFound
+			}}
+
 			billing := NewBillingService(q, nil, BillingServiceConfig{})
-			s := NewWorkspaceService(q, WithWorkspaceCapabilityTransactions(pool), WithWorkspaceBillingPolicy(billing), WithWorkspaceSandboxClient(microsandbox.NewClient(controller.URL, "fixture")))
+			s := NewWorkspaceService(q, WithWorkspaceCapabilityTransactions(pool), WithWorkspaceBillingPolicy(billing), WithWorkspaceSandboxClient(provider))
 			probes := 0
 			s.capabilityProbe = func(ctx context.Context, w db.Workspace, _ string) (bool, error) {
 				probes++
@@ -206,7 +202,7 @@ func TestRepositoryJobsIntegrationCompatiblePrimaryFreePlan(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{"gatewayId": gatewayID, "workspaceHash": hex.EncodeToString(hash[:])[:16], "protocolVersion": "1", "capabilities": []string{repositoryJobsCapability, "repository-source/v1"}})
 			}))
 			defer server.Close()
-			gateway := NewRepoGatewayService(q, WithRepoGatewayHealthProbe(server.URL, server.Client()))
+			gateway := NewRepoGatewayService(nil, WithRepoGatewayHealthProbe(server.URL, server.Client()))
 			s := NewWorkspaceService(q, WithWorkspaceCapabilityTransactions(pool), WithWorkspaceBillingPolicy(billing),
 				WithWorkspaceCapabilityProbe(func(ctx context.Context, w db.Workspace, capability string) (bool, error) {
 					// A second connection can take the selector's advisory lock:

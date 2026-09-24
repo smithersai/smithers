@@ -5,7 +5,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -70,7 +71,7 @@ func (s *WorkspaceService) sweepSandboxUsage(ctx context.Context) {
 	}
 }
 
-func (s *RepoGatewayService) meterGatewayUsage(ctx context.Context, gateway clusterdb.RepoGateway) {
+func (s *RepoGatewayService) meterGatewayUsage(ctx context.Context, gateway runtimeports.RepoGateway) {
 	// Workspace gateways are a service inside the workspace's VM.
 	if !gateway.WorkspaceID.Valid {
 		meterSandboxUsage(ctx, s.q, gateway.UserID, "gateway", gateway.ID, true)

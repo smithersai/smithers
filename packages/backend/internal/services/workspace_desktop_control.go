@@ -15,7 +15,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Desktop observe and input: the seam that lets an agent SEE a kind=desktop

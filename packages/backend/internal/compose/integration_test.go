@@ -37,12 +37,9 @@ func TestServerRouter_WorkflowRunLogsSSEPreflightIncludesCORSHeaders(t *testing.
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -75,60 +72,6 @@ func TestServerRouter_WorkflowRunLogsSSEPreflightIncludesCORSHeaders(t *testing.
 	assert.NotEqual(t, http.StatusNotFound, rec.Code, "workflow logs SSE route should handle CORS preflight")
 	assert.Equal(t, "https://example.com", rec.Header().Get("Access-Control-Allow-Origin"), "preflight should include the configured CORS origin header")
 	assert.NotEmpty(t, rec.Header().Get("Access-Control-Allow-Methods"), "preflight should include allowed methods")
-}
-
-func TestServerRouter_CanaryResultsPostUpdatesMetricsScrape(t *testing.T) {
-	t.Setenv("SMITHERS_CANARY_REPORT_TOKEN", "canary-report-secret")
-	t.Setenv("SMITHERS_METRICS_TOKEN", "metrics-secret")
-
-	reportedAt := time.Unix(1_710_000_000, 0).UTC()
-	store := &stubRouterCanaryStore{}
-	metrics := routes.NewSmithersMetrics()
-	metrics.MustRegister(routes.NewCanaryStatusCollector(store))
-	router := canaryResultsRouterForTest(&routes.CanaryReportHandler{
-		Store: store,
-		Clock: func() time.Time { return reportedAt },
-	}, metrics)
-
-	scrapeMetrics := func() string {
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-		req.Header.Set("Authorization", "Bearer metrics-secret")
-		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, req)
-
-		require.Equal(t, http.StatusOK, rec.Code)
-		return rec.Body.String()
-	}
-
-	before := scrapeMetrics()
-	assert.Contains(t, before, `smithers_canary_test_status{test="ui-health"} 0`)
-	assert.Contains(t, before, `smithers_canary_test_status{test="ui-status-boundary"} 0`)
-	assert.Contains(t, before, `smithers_canary_test_status{test="ui-auth-flow"} 0`)
-	assert.Contains(t, before, `smithers_canary_test_status{test="ui-auth-boundary"} 0`)
-	assert.Contains(t, before, `smithers_canary_suite_last_reported_timestamp_seconds{suite="playwright"} 0`)
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/canary/results", strings.NewReader(`{
-		"suite":"playwright",
-		"run_id":"integration-run-1",
-		"results":[
-			{"test":"ui-health","status":"success","duration_seconds":1.25},
-			{"test":"ui-status-boundary","status":"success","duration_seconds":0.5},
-			{"test":"ui-auth-flow","status":"failure","duration_seconds":2.5,"error":"login failed"},
-			{"test":"ui-auth-boundary","status":"success","duration_seconds":0.25}
-		]
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer canary-report-secret")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusAccepted, rec.Code)
-
-	after := scrapeMetrics()
-	assert.Contains(t, after, `smithers_canary_test_status{test="ui-health"} 1`)
-	assert.Contains(t, after, `smithers_canary_test_status{test="ui-status-boundary"} 1`)
-	assert.Contains(t, after, `smithers_canary_test_status{test="ui-auth-flow"} 0`)
-	assert.Contains(t, after, `smithers_canary_test_status{test="ui-auth-boundary"} 1`)
-	assert.Contains(t, after, `smithers_canary_suite_last_reported_timestamp_seconds{suite="playwright"} 1.71`)
 }
 
 // mockIntegrationWorkflowQuerier is a minimal WorkflowAPIQuerier for integration tests.
@@ -414,12 +357,9 @@ func TestServerRouter_WorkspaceSessionCRUDRoutesRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -536,12 +476,9 @@ func TestServerRouter_AgentSessionCRUDRoutesRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -615,12 +552,9 @@ func TestServerRouter_AgentSessionStreamRouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -700,12 +634,9 @@ func TestServerRouter_GitHubImportStatusSSEOutsideAPITimeout(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -798,12 +729,9 @@ func TestServerRouter_WorkspaceSSEStreamRouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -868,12 +796,9 @@ func TestServerRouter_WorkspaceSSEStreamPreflightIncludesCORSHeaders(t *testing.
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -949,12 +874,9 @@ func TestServerRouter_WorkspaceInternalRoutesRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -1030,12 +952,9 @@ func TestServerRouter_WorkflowRunLogsSSEPreflightWithRealWorkflowAPIService(t *t
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler

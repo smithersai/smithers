@@ -7,33 +7,34 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 type stubEnvironmentImageResolver struct {
-	image clusterdb.SandboxEnvironmentImage
+	image runtimeports.SandboxEnvironmentImage
 	err   error
 	calls []string
 }
 
-func (s *stubEnvironmentImageResolver) Resolve(_ context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
+func (s *stubEnvironmentImageResolver) Resolve(_ context.Context, repositoryID int64, kind string) (runtimeports.SandboxEnvironmentImage, error) {
 	s.calls = append(s.calls, kind)
 	if s.err != nil {
-		return clusterdb.SandboxEnvironmentImage{}, s.err
+		return runtimeports.SandboxEnvironmentImage{}, s.err
 	}
 	return s.image, nil
 }
 
-func nixTestImage(kind string) clusterdb.SandboxEnvironmentImage {
-	return clusterdb.SandboxEnvironmentImage{
+func nixTestImage(kind string) runtimeports.SandboxEnvironmentImage {
+	return runtimeports.SandboxEnvironmentImage{
 		ID:             "img-1",
 		Kind:           kind,
 		Source:         defaultWorkspaceEnvironmentSource,
@@ -478,11 +479,11 @@ func TestCreateDesktopSessionRejectsWrongKindAndState(t *testing.T) {
 }
 
 type fakeEnvironmentImageQuerier struct {
-	rows     []clusterdb.SandboxEnvironmentImage
-	upserted []clusterdb.UpsertSandboxEnvironmentImageParams
+	rows     []runtimeports.SandboxEnvironmentImage
+	upserted []runtimeports.UpsertSandboxEnvironmentImageParams
 }
 
-func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Context, arg clusterdb.UpsertSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Context, arg runtimeports.UpsertSandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error) {
 	f.upserted = append(f.upserted, arg)
 	if !arg.RepositoryID.Valid {
 		for index := range f.rows {
@@ -491,22 +492,22 @@ func (f *fakeEnvironmentImageQuerier) UpsertSandboxEnvironmentImage(_ context.Co
 			}
 		}
 	}
-	row := clusterdb.SandboxEnvironmentImage{ID: "new", RepositoryID: arg.RepositoryID, Kind: arg.Kind, Source: arg.Source, SourceRevision: arg.SourceRevision, ClosureHash: arg.ClosureHash, Image: arg.Image, Status: "ready"}
-	f.rows = append([]clusterdb.SandboxEnvironmentImage{row}, f.rows...)
+	row := runtimeports.SandboxEnvironmentImage{ID: "new", RepositoryID: arg.RepositoryID, Kind: arg.Kind, Source: arg.Source, SourceRevision: arg.SourceRevision, ClosureHash: arg.ClosureHash, Image: arg.Image, Status: "ready"}
+	f.rows = append([]runtimeports.SandboxEnvironmentImage{row}, f.rows...)
 	return row, nil
 }
 
-func (f *fakeEnvironmentImageQuerier) GetLatestReadySandboxEnvironmentImage(_ context.Context, arg clusterdb.GetLatestReadySandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) GetLatestReadySandboxEnvironmentImage(_ context.Context, arg runtimeports.GetLatestReadySandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error) {
 	for _, row := range f.rows {
 		if row.Kind == arg.Kind && row.Status == "ready" && row.RepositoryID.Int64 == arg.RepositoryID.Int64 && row.RepositoryID.Valid == arg.RepositoryID.Valid {
 			return row, nil
 		}
 	}
-	return clusterdb.SandboxEnvironmentImage{}, pgx.ErrNoRows
+	return runtimeports.SandboxEnvironmentImage{}, pgx.ErrNoRows
 }
 
-func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Context, repositoryID pgtype.Int8) ([]clusterdb.SandboxEnvironmentImage, error) {
-	var out []clusterdb.SandboxEnvironmentImage
+func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Context, repositoryID pgtype.Int8) ([]runtimeports.SandboxEnvironmentImage, error) {
+	var out []runtimeports.SandboxEnvironmentImage
 	for _, row := range f.rows {
 		if row.RepositoryID == repositoryID {
 			out = append(out, row)
@@ -515,18 +516,18 @@ func (f *fakeEnvironmentImageQuerier) ListSandboxEnvironmentImages(_ context.Con
 	return out, nil
 }
 
-func (f *fakeEnvironmentImageQuerier) RetireSandboxEnvironmentImage(_ context.Context, arg clusterdb.RetireSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageQuerier) RetireSandboxEnvironmentImage(_ context.Context, arg runtimeports.RetireSandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error) {
 	for i := range f.rows {
 		if f.rows[i].ID == arg.ID && f.rows[i].RepositoryID == arg.RepositoryID {
 			f.rows[i].Status = "retired"
 			return f.rows[i], nil
 		}
 	}
-	return clusterdb.SandboxEnvironmentImage{}, pgx.ErrNoRows
+	return runtimeports.SandboxEnvironmentImage{}, pgx.ErrNoRows
 }
 
 func TestSandboxEnvironmentImageResolveFallsBackToBase(t *testing.T) {
-	q := &fakeEnvironmentImageQuerier{rows: []clusterdb.SandboxEnvironmentImage{
+	q := &fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
 		{ID: "base-vm", Kind: "vm", ClosureHash: "b", Image: "reg/nixos-guest:base-b", Status: "ready"},
 		{ID: "repo-vm", RepositoryID: pgtype.Int8{Int64: 7, Valid: true}, Kind: "vm", ClosureHash: "r", Image: "reg/nixos-guest:o--r-r", Status: "ready"},
 	}}
@@ -606,7 +607,7 @@ func TestSandboxEnvironmentImageRegisterValidatesInput(t *testing.T) {
 }
 
 func TestSandboxEnvironmentImageRegisterBaseRetiresPriorKindOnly(t *testing.T) {
-	q := &fakeEnvironmentImageQuerier{rows: []clusterdb.SandboxEnvironmentImage{
+	q := &fakeEnvironmentImageQuerier{rows: []runtimeports.SandboxEnvironmentImage{
 		{ID: "old-vm", Kind: "vm", ClosureHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Image: "reg/base:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Status: "ready"},
 		{ID: "desktop", Kind: "desktop", ClosureHash: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Image: "reg/base:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Status: "ready"},
 		{ID: "repo-vm", RepositoryID: pgtype.Int8{Int64: 7, Valid: true}, Kind: "vm", ClosureHash: "cccccccccccccccccccccccccccccccc", Image: "reg/repo:cccccccccccccccccccccccccccccccc", Status: "ready"},

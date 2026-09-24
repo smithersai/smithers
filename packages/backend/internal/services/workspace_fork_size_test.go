@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // A fork child is a fresh sandbox. Before this test the ForkRequest carried no

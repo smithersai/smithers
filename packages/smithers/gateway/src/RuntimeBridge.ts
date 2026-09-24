@@ -13,6 +13,8 @@ import type { Principal, WatchCursor } from "@smthrs/control/ControlSchema"
 import { ApprovalPayload, ControlEvent, Receipt, RunSummary, SignalPayload } from "@smthrs/control/ControlSchema"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { RunSummaryRow } from "./GatewayProjection.ts"
+import * as Projections from "./Projections.ts"
 
 /**
  * The only protocol version accepted by this host.
@@ -397,8 +399,26 @@ export const observe = (control: Control["Service"], input: ObserveRequest) =>
     )
     const page = events.slice(0, limit)
     const last = page.at(-1)
+    // Typed Flow results use the same committed root projection as the app.
+    // A terminal status alone never supplies a result, and a bounded event
+    // page cannot reconstruct a root result that precedes its cursor.
+    let finalOutput: string | undefined
+    if (terminal.has(summary.status)) {
+      const projections = yield* Projections.make(control)
+      const snapshot = yield* projections.snapshot({ _tag: "run-summary", runId: input.runId })
+      const row = snapshot.rows.find(Schema.is(RunSummaryRow))
+      if (
+        row === undefined || row.runId !== summary.runId || row.flowId !== summary.flowId ||
+        row.status !== summary.status || row.planId !== summary.planId || row.planDigest !== summary.planDigest
+      ) {
+        return yield* Effect.fail(
+          new BridgeError({ code: "internal", message: "Terminal result observation changed", retryable: true })
+        )
+      }
+      finalOutput = row.finalOutput
+    }
     return {
-      run: summary,
+      run: { ...summary, ...(finalOutput === undefined ? {} : { finalOutput }) },
       events: page,
       nextCursor: last === undefined
         ? input.afterCursor ?? ""
@@ -440,7 +460,7 @@ export const ObserveResponse = Schema.Struct({
   protocol: Schema.Literal(protocol),
   ok: Schema.Literal(true),
   value: Schema.Struct({
-    run: RunSummary,
+    run: Schema.Struct({ ...RunSummary.fields, finalOutput: Schema.optional(Schema.String) }),
     events: Schema.Array(ControlEvent),
     nextCursor: Schema.String,
     hasMore: Schema.Boolean,

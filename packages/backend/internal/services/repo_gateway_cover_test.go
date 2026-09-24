@@ -9,13 +9,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 type repoGatewayCovQuerier struct {
@@ -25,34 +26,14 @@ type repoGatewayCovQuerier struct {
 	staleErr  error
 }
 
-type repoGatewayCovGoldenDB struct{}
-
-func (repoGatewayCovGoldenDB) QueryRow(context.Context, string, ...any) pgx.Row {
-	return repoGatewayCovRow{}
-}
-
-func (repoGatewayCovGoldenDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, nil
-}
-
-func (repoGatewayCovGoldenDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	return pgconn.CommandTag{}, nil
-}
-
-type repoGatewayCovRow struct{}
-
-func (repoGatewayCovRow) Scan(...any) error {
-	return pgx.ErrNoRows
-}
-
-func (q *repoGatewayCovQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
+func (q *repoGatewayCovQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg runtimeports.GetActiveRepoGatewayForUserRepoParams) (runtimeports.RepoGateway, error) {
 	if q.activeErr != nil {
-		return clusterdb.RepoGateway{}, q.activeErr
+		return runtimeports.RepoGateway{}, q.activeErr
 	}
 	return q.fakeRepoGatewayQuerier.GetActiveRepoGatewayForUserRepo(ctx, arg)
 }
 
-func (q *repoGatewayCovQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]clusterdb.RepoGateway, error) {
+func (q *repoGatewayCovQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]runtimeports.RepoGateway, error) {
 	if q.staleErr != nil {
 		return nil, q.staleErr
 	}
@@ -63,7 +44,7 @@ func TestRepoGateway_Cov_OptionsCreateVMAndEnvBranches(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("golden snapshot retry deletes orphan and preserves idle timeout", func(t *testing.T) {
-		golden := NewGoldenSnapshotService(repoGatewayCovGoldenDB{}, nil, nil)
+		golden := NewGoldenSnapshotService(&fakeGoldenDB{}, nil, nil)
 		golden.cachedID = "snap-ready"
 		golden.cachedAt = time.Now()
 
@@ -195,7 +176,7 @@ func TestRepoGateway_Cov_VMCommandReuseAndSystemdBranches(t *testing.T) {
 	})
 
 	t.Run("reuse maps get and start VM non-404 failures", func(t *testing.T) {
-		gateway := clusterdb.RepoGateway{ID: "gw-1", VmID: "vm-1", BaseUrl: "https://gw", AuthTokenCiphertext: "smithers_gateway_token", Status: "running"}
+		gateway := runtimeports.RepoGateway{ID: "gw-1", VmID: "vm-1", BaseUrl: "https://gw", AuthTokenCiphertext: "smithers_gateway_token", Status: "running"}
 		svc := newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, &fakeRepoGatewayVMClient{
 			getVMFn: func(context.Context, string) (sandbox.Sandbox, error) {
 				return sandbox.Sandbox{}, errors.New("sandbox unavailable")

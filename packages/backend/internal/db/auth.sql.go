@@ -143,16 +143,17 @@ func (q *Queries) ConsumeOAuthStateWithScopes(ctx context.Context, arg ConsumeOA
 }
 
 const createAccessToken = `-- name: CreateAccessToken :one
-INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, expires_at)
+INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, expires_at, system_issued)
 VALUES (
     $1,
     $2,
     $3,
     $4,
     $5,
-    $6
+    $6,
+    $7
 )
-RETURNING id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at
+RETURNING id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 `
 
 type CreateAccessTokenParams struct {
@@ -162,6 +163,7 @@ type CreateAccessTokenParams struct {
 	TokenLastEight string             `json:"token_last_eight"`
 	Scopes         string             `json:"scopes"`
 	ExpiresAt      pgtype.Timestamptz `json:"expires_at"`
+	SystemIssued   bool               `json:"system_issued"`
 }
 
 func (q *Queries) CreateAccessToken(ctx context.Context, arg CreateAccessTokenParams) (AccessToken, error) {
@@ -172,6 +174,7 @@ func (q *Queries) CreateAccessToken(ctx context.Context, arg CreateAccessTokenPa
 		arg.TokenLastEight,
 		arg.Scopes,
 		arg.ExpiresAt,
+		arg.SystemIssued,
 	)
 	var i AccessToken
 	err := row.Scan(
@@ -185,6 +188,7 @@ func (q *Queries) CreateAccessToken(ctx context.Context, arg CreateAccessTokenPa
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SystemIssued,
 	)
 	return i, err
 }
@@ -193,7 +197,7 @@ const createAdminCLIAccessToken = `-- name: CreateAdminCLIAccessToken :one
 WITH token AS (
     INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, expires_at)
     VALUES ($1, 'smithers-cli-admin', $2, $3, $4, $5)
-    RETURNING id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at
+    RETURNING id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 ), audit AS (
     INSERT INTO audit_log (event_type, actor_id, actor_name, target_type, target_id, target_name, action, metadata, ip_address)
     SELECT 'auth.cli_admin_login', token.user_id, $6, 'access_token', token.id,
@@ -201,7 +205,7 @@ WITH token AS (
     FROM token
     RETURNING id
 )
-SELECT token.id, token.user_id, token.name, token.token_hash, token.token_last_eight, token.scopes, token.expires_at, token.last_used_at, token.created_at, token.updated_at FROM token CROSS JOIN audit
+SELECT token.id, token.user_id, token.name, token.token_hash, token.token_last_eight, token.scopes, token.expires_at, token.last_used_at, token.created_at, token.updated_at, token.system_issued FROM token CROSS JOIN audit
 `
 
 type CreateAdminCLIAccessTokenParams struct {
@@ -226,6 +230,7 @@ type CreateAdminCLIAccessTokenRow struct {
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
+	SystemIssued   bool               `json:"system_issued"`
 }
 
 // The PAT and its audit event commit together; no credential is returned if
@@ -253,6 +258,7 @@ func (q *Queries) CreateAdminCLIAccessToken(ctx context.Context, arg CreateAdmin
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SystemIssued,
 	)
 	return i, err
 }
@@ -598,7 +604,7 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 }
 
 const getAccessTokenByID = `-- name: GetAccessTokenByID :one
-SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at
+SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 FROM access_tokens
 WHERE id = $1
 `
@@ -617,6 +623,30 @@ func (q *Queries) GetAccessTokenByID(ctx context.Context, id int64) (AccessToken
 		&i.LastUsedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SystemIssued,
+	)
+	return i, err
+}
+
+const getAccessTokenForOAuthGrant = `-- name: GetAccessTokenForOAuthGrant :one
+SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued FROM access_tokens WHERE id = $1 FOR SHARE
+`
+
+func (q *Queries) GetAccessTokenForOAuthGrant(ctx context.Context, id int64) (AccessToken, error) {
+	row := q.db.QueryRow(ctx, getAccessTokenForOAuthGrant, id)
+	var i AccessToken
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Name,
+		&i.TokenHash,
+		&i.TokenLastEight,
+		&i.Scopes,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SystemIssued,
 	)
 	return i, err
 }
@@ -771,7 +801,7 @@ func (q *Queries) GetPrimaryEmail(ctx context.Context, userID int64) (EmailAddre
 }
 
 const listAccessTokensByUserID = `-- name: ListAccessTokensByUserID :many
-SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at
+SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 FROM access_tokens
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -797,6 +827,7 @@ func (q *Queries) ListAccessTokensByUserID(ctx context.Context, userID int64) ([
 			&i.LastUsedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SystemIssued,
 		); err != nil {
 			return nil, err
 		}
@@ -809,7 +840,7 @@ func (q *Queries) ListAccessTokensByUserID(ctx context.Context, userID int64) ([
 }
 
 const listUserAccessTokens = `-- name: ListUserAccessTokens :many
-SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at
+SELECT id, user_id, name, token_hash, token_last_eight, scopes, expires_at, last_used_at, created_at, updated_at, system_issued
 FROM access_tokens
 WHERE user_id = $1
 ORDER BY created_at DESC
@@ -835,6 +866,7 @@ func (q *Queries) ListUserAccessTokens(ctx context.Context, userID int64) ([]Acc
 			&i.LastUsedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SystemIssued,
 		); err != nil {
 			return nil, err
 		}

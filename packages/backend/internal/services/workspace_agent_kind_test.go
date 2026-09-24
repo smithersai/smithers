@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 // RFD-004 regression: an agent workspace is a container guest. Prod refused
@@ -16,9 +16,9 @@ import (
 // against "container" and the new agent kind fell through to the resolver.
 type failingEnvironmentImageResolver struct{ t *testing.T }
 
-func (r *failingEnvironmentImageResolver) Resolve(_ context.Context, _ int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
+func (r *failingEnvironmentImageResolver) Resolve(_ context.Context, _ int64, kind string) (runtimeports.SandboxEnvironmentImage, error) {
 	r.t.Fatalf("environment image resolver must not be consulted for kind %q", kind)
-	return clusterdb.SandboxEnvironmentImage{}, nil
+	return runtimeports.SandboxEnvironmentImage{}, nil
 }
 
 func TestAgentWorkspaceKindNeverResolvesANixImage(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func TestWorkspaceSSH_Cov_TouchSessionActivityBranches(t *testing.T) {
@@ -28,7 +28,7 @@ func TestWorkspaceSSH_Cov_TouchSessionActivityBranches(t *testing.T) {
 	}
 }
 
-func TestWorkspaceSSH_Cov_BuildConnectionInfoRootDoesNotRestrictAllowedUsers(t *testing.T) {
+func TestWorkspaceSSH_Cov_BuildConnectionInfoRootRestrictsAllowedUsers(t *testing.T) {
 	var grantReq sandbox.GrantAccessRequest
 	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{},
 		WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
@@ -45,8 +45,8 @@ func TestWorkspaceSSH_Cov_BuildConnectionInfoRootDoesNotRestrictAllowedUsers(t *
 	if err != nil {
 		t.Fatalf("buildWorkspaceSSHConnectionInfo returned error: %v", err)
 	}
-	if len(grantReq.AllowedUsers) != 0 {
-		t.Fatalf("root grant should not restrict users: %+v", grantReq)
+	if len(grantReq.AllowedUsers) != 1 || grantReq.AllowedUsers[0] != "root" {
+		t.Fatalf("root grant must restrict users: %+v", grantReq)
 	}
 	if info.Username != "root" || !strings.Contains(info.Command, "+root:") || len(info.HostKeys) != 1 {
 		t.Fatalf("info = %+v", info)

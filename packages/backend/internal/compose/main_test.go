@@ -18,14 +18,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
 
-func TestInitializeBlobStore_GCSRequiresInjectedAdapter(t *testing.T) {
-	store, client, expiry, err := initializeBlobStore(context.Background(), config.BlobConfig{GCSBucket: "hosted-bucket"})
-	require.ErrorContains(t, err, "requires an injected cloud blob adapter")
-	assert.Nil(t, store)
-	assert.Nil(t, client)
-	assert.Zero(t, expiry)
-}
-
 func TestInitializeBlobStore_FilesystemDefault(t *testing.T) {
 	t.Setenv("SMITHERS_ENV", "development")
 	cfg := config.BlobConfig{
@@ -87,12 +79,11 @@ func TestInitializeBlobStore_ProductionRequiresDurableAdapter(t *testing.T) {
 
 func TestValidateProductionBlobStoreFailsClosed(t *testing.T) {
 	require.NoError(t, validateProductionBlobStore("development", config.BlobConfig{}))
-	require.NoError(t, validateProductionBlobStore(" production ", config.BlobConfig{GCSBucket: "plue-blobs"}))
 	require.NoError(t, validateProductionBlobStore("production", config.BlobConfig{DataDir: "/var/lib/smithers/blobs"}))
 
 	err := validateProductionBlobStore("PRODUCTION", config.BlobConfig{})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "SMITHERS_BLOB_DATA_DIR or SMITHERS_BLOB_GCS_BUCKET is required")
+	assert.Contains(t, err.Error(), "SMITHERS_BLOB_DATA_DIR or an injected blob adapter is required")
 }
 
 func TestInitializeBlobStore_ExpiryParsing(t *testing.T) {
@@ -139,9 +130,7 @@ func TestInitializeBlobStore_ExpiryParsing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			if tt.cfg.GCSBucket == "" {
-				tt.cfg.DataDir = t.TempDir()
-			}
+			tt.cfg.DataDir = t.TempDir()
 			_, _, expiry, err := initializeBlobStore(ctx, tt.cfg)
 			if tt.expectedError {
 				assert.Error(t, err)

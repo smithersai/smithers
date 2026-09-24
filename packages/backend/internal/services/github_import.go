@@ -335,6 +335,12 @@ type githubImportProvisioningStore interface {
 	ReleaseClaim(context.Context, repositoryProvisioningOperation, string, error)
 }
 
+// WithGitHubImportProvisioningStore supplies the deployment's journal to the
+// canonical import worker. Local composition selects its product store instead.
+func WithGitHubImportProvisioningStore(store RepositoryProvisioningStore) GitHubImportOption {
+	return func(s *GitHubImportService) { s.provisioning = store }
+}
+
 // WithGitHubImportOrgs wires organization lookups into the import path so an
 // org-owned GitHub repository mirrors into that organization's namespace.
 // Without it the service only knows user namespaces.
@@ -443,7 +449,6 @@ func NewGitHubImportService(db GitHubImportDB, repoDB GitHubImportRepoDB, tokenD
 	if pool, ok := db.(*pgxpool.Pool); ok && pool != nil {
 		if staged, stagedOK := repoHost.(gitHubImportStagedRepoHost); stagedOK {
 			s.pool = pool
-			s.provisioning = newPostgresRepositoryProvisioningStore(pool)
 			s.stagedRepoHost = staged
 			s.wakeDurable = make(chan struct{}, 1)
 		}
@@ -565,7 +570,7 @@ func (s *GitHubImportService) startImport(ctx context.Context, input ImportGitHu
 	if input.UserID <= 0 {
 		return ImportJob{}, pkgerrors.Unauthorized("authentication required")
 	}
-	if s.provisioning != nil && !s.durableEnabled {
+	if s.stagedRepoHost != nil && (s.provisioning == nil || !s.durableEnabled) {
 		return ImportJob{}, &pkgerrors.APIError{
 			Status: http.StatusServiceUnavailable, Code: pkgerrors.CodeRepositoryProvisioningRollout,
 			Message: "repository imports are temporarily unavailable during a provisioning rollout",

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
 )
 
 const purgedStorageDeletionClearTimeout = 5 * time.Second
@@ -18,7 +18,7 @@ const purgedStorageDeletionClearTimeout = 5 * time.Second
 // paths must retain their queue fences until previously issued capabilities
 // expire.
 type purgedStorageDeletionClearer interface {
-	ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
+	ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
 }
 
 func clearPurgedStorageDeletionKeys(
@@ -40,7 +40,7 @@ func clearPurgedStorageDeletionKeys(
 		if strings.TrimSpace(objectKey) == "" {
 			continue
 		}
-		if _, err := clearer.ClearPurgedStorageDeletionByExactKey(clearCtx, clusterdb.ClearPurgedStorageDeletionByExactKeyParams{
+		if _, err := clearer.ClearPurgedStorageDeletionByExactKey(clearCtx, runtimeports.ClearPurgedStorageDeletionByExactKeyParams{
 			RepositoryID:  repositoryID,
 			AllocationKey: allocationKey,
 			ObjectKey:     objectKey,

@@ -388,3 +388,7 @@ type oauth2CovAlphaAccess struct {
 func (a *oauth2CovAlphaAccess) IsUserWhitelisted(ctx context.Context, user *db.User) (bool, error) {
 	return a.allowed, a.err
 }
+
+func (m *oauth2CovRouteService) AuthorizeGrant(ctx context.Context, in services.OAuth2AuthorizeInput) (services.OAuth2AuthorizeResult, error) {
+	return m.Authorize(ctx, in.UserID, in.ClientID, in.RedirectURI, in.Scope, in.CodeChallenge, in.CodeChallengeMethod, in.CallerScopes)
+}

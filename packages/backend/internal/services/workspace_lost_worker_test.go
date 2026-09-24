@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func TestWorkspaceResumePreservesLostWorkerResponseAndRetainedVM(t *testing.T) {

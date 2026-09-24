@@ -17,14 +17,23 @@ import (
 	"github.com/smithersai/smithers/packages/backend/commerce"
 	"github.com/smithersai/smithers/packages/backend/flowmanifest"
 	"github.com/smithersai/smithers/packages/backend/internal/compose"
+	"github.com/smithersai/smithers/packages/backend/operations"
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/repository"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Config holds the process-level inputs of the shared backend. The product
 // routes, services, jobs, and database are assembled by the common
 // implementation. A deployment can pass its configuration file using Args.
 type Config struct {
+	RuntimeStores ports.RuntimeStores
+	// BeforeShutdown drains host-owned listeners and workers before shared resources close.
+	// Start invokes it once after readiness, including cancellation and worker failure.
+	BeforeShutdown func() error
+	// ComputeProvider supplies optional isolated compute for product features.
+	// Workspace remains the canonical workspace and Flow execution authority.
+	ComputeProvider sandbox.Provider
 	// Admission is the complete quota authority. Multitenant deployments must
 	// supply it; Commerce is optional and supplied only to HTTP processes.
 	Admission admission.Policy
@@ -41,16 +50,16 @@ type Config struct {
 	TraceExporter trace.SpanExporter
 	// Blobs and AgentLogs are deployment adapters. Nil uses the configured
 	// single-process default, which the self-hosted app supplies locally.
-	Blobs       ports.BlobStore
-	AgentLogs   ports.AgentLogStore
-	MetricsDoer ports.MetricsDoer
+	Blobs     ports.BlobStore
+	AgentLogs ports.AgentLogStore
 	// Repository is the same native Git/jj client in local and Plue modes.
 	// A local host supplies repository.OpenLocal(...).Client(); Plue supplies
 	// repository.NewRemoteClient(...).
 	Repository *repository.Client
 	// RepositoryPlacement is supplied by a hosted deployment and keyed by the
 	// canonical repository ID. Single-owner installations leave it nil.
-	RepositoryPlacement ports.RepositoryPlacement
+	RepositoryPlacement    ports.RepositoryPlacement
+	RepositoryProvisioning ports.RepositoryProvisioning
 	// Workspace supplies the common execution boundary. The app closes it after
 	// requests and workers stop. Local deployments supply a trusted process
 	// runtime; hosted deployments supply an isolated runtime.
@@ -90,13 +99,17 @@ const (
 // route set; callers can mount it on their own HTTP server while the bounded
 // background workers run under the same lifecycle.
 type Instance struct {
-	handler http.Handler
-	cancel  context.CancelFunc
-	done    chan struct{}
-	err     error
+	bindings operations.Bindings
+	handler  http.Handler
+	cancel   context.CancelFunc
+	done     chan struct{}
+	err      error
 }
 
 func (instance *Instance) Handler() http.Handler { return instance.handler }
+
+// Bindings returns the collaborators of this running composition.
+func (instance *Instance) Bindings() operations.Bindings { return instance.bindings }
 
 // Wait returns when the product workers and resources have stopped.
 func (instance *Instance) Wait() error {
@@ -126,8 +139,10 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	instance := &Instance{cancel: cancel, done: make(chan struct{})}
 	ready := make(chan http.Handler, 1)
 	stdout, stderr := writers(cfg)
+	options := cfg.options()
+	options.ReadyBindings = func(bindings operations.Bindings) { instance.bindings = bindings }
 	go func() {
-		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, cfg.options(), func(handler http.Handler) {
+		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, options, func(handler http.Handler) {
 			ready <- handler
 		}))
 		close(instance.done)
@@ -161,23 +176,26 @@ func Run(ctx context.Context, cfg Config) error {
 // a new field cannot reach one entry point and miss the other.
 func (cfg Config) options() compose.Options {
 	return compose.Options{
-		Admission: cfg.Admission, Commerce: cfg.Commerce,
-		Duties:                compose.Duties(cfg.Duties),
-		TraceExporter:         cfg.TraceExporter,
-		Blobs:                 cfg.Blobs,
-		AgentLogs:             cfg.AgentLogs,
-		MetricsDoer:           cfg.MetricsDoer,
-		Repository:            cfg.Repository,
-		RepositoryPlacement:   cfg.RepositoryPlacement,
-		Workspace:             cfg.Workspace,
-		FlowHostRegistry:      cfg.FlowHostRegistry,
-		FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
-		ChatHost:              cfg.ChatHost,
-		ChatCallbackListener:  cfg.ChatCallbackListener,
-		ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
-		Recommender:           cfg.Recommender,
-		RecommendationLog:     cfg.RecommendationLog,
-		ModelStreamHost:       cfg.ModelStreamHost,
+		RuntimeStores:   cfg.RuntimeStores,
+		BeforeShutdown:  cfg.BeforeShutdown,
+		ComputeProvider: cfg.ComputeProvider,
+		Admission:       cfg.Admission, Commerce: cfg.Commerce,
+		Duties:                 compose.Duties(cfg.Duties),
+		TraceExporter:          cfg.TraceExporter,
+		Blobs:                  cfg.Blobs,
+		AgentLogs:              cfg.AgentLogs,
+		Repository:             cfg.Repository,
+		RepositoryPlacement:    cfg.RepositoryPlacement,
+		RepositoryProvisioning: cfg.RepositoryProvisioning,
+		Workspace:              cfg.Workspace,
+		FlowHostRegistry:       cfg.FlowHostRegistry,
+		FlowHostProductAPIURL:  cfg.FlowHostProductAPIURL,
+		ChatHost:               cfg.ChatHost,
+		ChatCallbackListener:   cfg.ChatCallbackListener,
+		ChatProducerBaseURL:    cfg.ChatProducerBaseURL,
+		Recommender:            cfg.Recommender,
+		RecommendationLog:      cfg.RecommendationLog,
+		ModelStreamHost:        cfg.ModelStreamHost,
 	}
 }
 

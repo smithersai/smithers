@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,7 +27,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/services/alertregistry"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 )
@@ -326,7 +324,6 @@ var (
 	newEmailTransport = initEmailTransport
 	newSecretCodec    = webhook.NewSecretCodec
 	newBlobStore      = initializeBlobStore
-	loadAlertRegistry = alertregistry.Load
 )
 
 // flagParseError wraps a flag-parsing failure so exitCodeFor can preserve the
@@ -344,93 +341,6 @@ func exitCodeFor(err error) int {
 		return 2
 	}
 	return 1
-}
-
-type alertRemediationRepository struct {
-	ID       int64
-	FullName string
-}
-
-func resolveAlertRemediationRepository(ctx context.Context, queries *db.Queries) alertRemediationRepository {
-	configuredID, _ := strconv.ParseInt(strings.TrimSpace(os.Getenv("SMITHERS_ALERT_REMEDIATION_REPOSITORY_ID")), 10, 64)
-	configuredFullName := strings.TrimSpace(os.Getenv("SMITHERS_ALERT_REMEDIATION_REPOSITORY"))
-	if configuredID <= 0 && configuredFullName == "" {
-		return alertRemediationRepository{}
-	}
-	if queries == nil {
-		slog.Error("alert remediation repository configured but database queries are unavailable")
-		return alertRemediationRepository{}
-	}
-
-	// Preserve the legacy numeric-ID configuration without leaving the runner
-	// unable to determine which repository it may clone and push. Resolve the
-	// immutable ID back to its current canonical owner/name and put that value
-	// into every server-authored remediation dispatch.
-	if configuredID > 0 {
-		repo, err := queries.GetRepoByID(ctx, configuredID)
-		if err != nil {
-			slog.Error("failed to resolve legacy alert remediation repository ID; remediation worker disabled",
-				"repository_id", configuredID,
-				"error", err,
-			)
-			return alertRemediationRepository{}
-		}
-
-		var owner string
-		switch {
-		case repo.UserID.Valid && !repo.OrgID.Valid:
-			user, err := queries.GetUserByID(ctx, repo.UserID.Int64)
-			if err != nil {
-				slog.Error("failed to resolve alert remediation repository owner; remediation worker disabled", "repository_id", configuredID, "error", err)
-				return alertRemediationRepository{}
-			}
-			owner = user.Username
-		case repo.OrgID.Valid && !repo.UserID.Valid:
-			org, err := queries.GetOrgByID(ctx, repo.OrgID.Int64)
-			if err != nil {
-				slog.Error("failed to resolve alert remediation repository owner; remediation worker disabled", "repository_id", configuredID, "error", err)
-				return alertRemediationRepository{}
-			}
-			owner = org.Name
-		default:
-			slog.Error("alert remediation repository has invalid ownership; remediation worker disabled", "repository_id", configuredID)
-			return alertRemediationRepository{}
-		}
-
-		resolvedFullName := owner + "/" + repo.Name
-		if configuredFullName != "" && !strings.EqualFold(configuredFullName, resolvedFullName) {
-			slog.Error("alert remediation repository ID and name refer to different repositories; remediation worker disabled",
-				"repository_id", configuredID,
-				"configured_repository", configuredFullName,
-				"resolved_repository", resolvedFullName,
-			)
-			return alertRemediationRepository{}
-		}
-		slog.Info("legacy alert remediation repository ID resolved", "repository", resolvedFullName, "repository_id", configuredID)
-		return alertRemediationRepository{ID: configuredID, FullName: resolvedFullName}
-	}
-
-	owner, repo, ok := strings.Cut(configuredFullName, "/")
-	owner = strings.TrimSpace(owner)
-	repo = strings.TrimSpace(repo)
-	if !ok || owner == "" || repo == "" || strings.Contains(repo, "/") {
-		slog.Error("invalid SMITHERS_ALERT_REMEDIATION_REPOSITORY; expected owner/repo", "repository", configuredFullName)
-		return alertRemediationRepository{}
-	}
-	row, err := queries.GetRepoByOwnerAndName(ctx, db.GetRepoByOwnerAndNameParams{
-		Owner: owner,
-		Name:  repo,
-	})
-	if err != nil {
-		slog.Error("failed to resolve alert remediation repository; remediation worker disabled",
-			"repository", configuredFullName,
-			"error", err,
-		)
-		return alertRemediationRepository{}
-	}
-	fullName := owner + "/" + row.Name
-	slog.Info("alert remediation repository resolved", "repository", fullName, "repository_id", row.ID)
-	return alertRemediationRepository{ID: row.ID, FullName: fullName}
 }
 
 func apiAllowedOrigins(cfg *config.Config) []string {
@@ -583,41 +493,33 @@ func initializeBlobStore(_ context.Context, cfg config.BlobConfig) (blob.Store, 
 		return nil, nil, 0, fmt.Errorf("invalid signed URL expiry: %w", err)
 	}
 
-	if strings.TrimSpace(cfg.GCSBucket) == "" {
-		baseURL := strings.TrimSpace(cfg.TransferBaseURL)
-		if baseURL == "" {
-			baseURL = "http://localhost:4000"
-		}
-		store, err := blob.NewFilesystemStore(blob.FilesystemConfig{
-			Root:          cfg.DataDir,
-			PublicBaseURL: baseURL,
-			SigningKey:    []byte(cfg.TransferSigningKey),
-			MaxBytes:      cfg.MaxBytes,
-			ReserveBytes:  cfg.ReserveBytes,
-		})
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("initialize filesystem blob store: %w", err)
-		}
-		return store, store, expiry, nil
+	baseURL := strings.TrimSpace(cfg.TransferBaseURL)
+	if baseURL == "" {
+		baseURL = "http://localhost:4000"
 	}
-
-	return nil, nil, 0, fmt.Errorf("GCS bucket %q requires an injected cloud blob adapter", cfg.GCSBucket)
+	store, err := blob.NewFilesystemStore(blob.FilesystemConfig{
+		Root:          cfg.DataDir,
+		PublicBaseURL: baseURL,
+		SigningKey:    []byte(cfg.TransferSigningKey),
+		MaxBytes:      cfg.MaxBytes,
+		ReserveBytes:  cfg.ReserveBytes,
+	})
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("initialize filesystem blob store: %w", err)
+	}
+	return store, store, expiry, nil
 }
 
-// initializeAgentLogStore selects the store for archived agent session
-// transcripts. Transcripts go to the dedicated retention-limited agent-logs
-// bucket when one is configured, otherwise the general blobs bucket (the
-// pre-dedicated-bucket behavior). When a dedicated bucket is in use, reads
-// fall back to the blobs bucket so transcripts archived before the cutover
-// stay retrievable. The local adapter stores transcripts in its durable data
-// root; memory remains available only to tests that provide no local store.
-func initializeAgentLogStore(_ io.Closer, _ config.BlobConfig, localStore ...blob.Store) services.AgentLogStore {
-	if len(localStore) > 0 {
-		if filesystem, ok := localStore[0].(*blob.FilesystemStore); ok {
-			return blob.NewFilesystemAgentLogStore(filesystem)
-		}
+// selectAgentLogStore preserves the host's transcript adapter. Local storage
+// keeps transcripts in the same durable root as its filesystem blobs.
+func selectAgentLogStore(store blob.Store, provided services.AgentLogStore) (services.AgentLogStore, error) {
+	if provided != nil {
+		return provided, nil
 	}
-	return blob.NewMemoryAgentLogStore()
+	if filesystem, ok := store.(*blob.FilesystemStore); ok {
+		return blob.NewFilesystemAgentLogStore(filesystem), nil
+	}
+	return nil, errors.New("an injected blob adapter requires an injected agent-log adapter")
 }
 
 func mountBlobTransferHandler(next http.Handler, store blob.Store, cfg *config.Config) http.Handler {
@@ -691,8 +593,6 @@ func logStartupConfig(cfg *config.Config) {
 		"listen_addr", cfg.Server.Addr,
 		"database", dbStatus,
 		"repo_host_url", status(cfg.RepoHost.URL, cfg.RepoHost.URL),
-		"gcs_bucket", status(cfg.Blob.GCSBucket, cfg.Blob.GCSBucket),
-		"cloud_trace", status(cfg.Observability.CloudTraceProjectID, cfg.Observability.CloudTraceProjectID),
 		"github_oauth", status(cfg.Auth.GitHubClientID, "configured"),
 		"closed_alpha_enabled", cfg.Auth.ClosedAlphaEnabled,
 		"email_transport", emailStatus,

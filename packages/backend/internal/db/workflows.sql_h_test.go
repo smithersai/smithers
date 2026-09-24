@@ -105,11 +105,6 @@ func TestWorkflowsSQL_H_DefinitionsRunsTasksAndStatusesRoundTrip(t *testing.T) {
 	require.NoError(t, q.FailWorkflowRun(ctx, run.ID))
 	_, err = q.UpdateWorkflowStepStatusTerminal(ctx, UpdateWorkflowStepStatusTerminalParams{Status: "success", StepID: canaryStep.ID})
 	require.NoError(t, err)
-	canaries, err := q.ListLatestCanaryStepStatuses(ctx, def.Path)
-	require.NoError(t, err)
-	require.Len(t, canaries, 1)
-	assert.Equal(t, "canary-linux", canaries[0].Name)
-	assert.Equal(t, "success", canaries[0].Status)
 
 	assigned := workflowsSQLHCreateTask(t, q, run.ID, buildStep.ID, repoID, "assigned", `{"task":"assigned"}`)
 	runnerID := int64(4242)
@@ -366,10 +361,7 @@ func TestWorkflowsSQL_H_ManyErrorBranches(t *testing.T) {
 			_, err := q.ListCommitStatusesBySHA(context.Background(), ListCommitStatusesBySHAParams{RepositoryID: 1, CommitSha: pgtype.Text{String: "sha", Valid: true}, PageOffset: 0, PageSize: 1})
 			return err
 		}},
-		{"ListLatestCanaryStepStatuses", func(q *Queries) error {
-			_, err := q.ListLatestCanaryStepStatuses(context.Background(), ".smithers/workflows/ci.yml")
-			return err
-		}},
+
 		{"ListTaskStepInfoForRun", func(q *Queries) error { _, err := q.ListTaskStepInfoForRun(context.Background(), 1); return err }},
 		{"ListWorkflowDefinitionsByRepo", func(q *Queries) error {
 			_, err := q.ListWorkflowDefinitionsByRepo(context.Background(), ListWorkflowDefinitionsByRepoParams{RepositoryID: 1, PageOffset: 0, PageSize: 1})

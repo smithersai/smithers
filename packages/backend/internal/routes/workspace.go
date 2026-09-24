@@ -553,7 +553,20 @@ func (h *WorkspaceHandler) GetWorkspaceSSHConnectionInfo(w http.ResponseWriter, 
 		return
 	}
 
-	info, svcErr := h.Service.GetWorkspaceSSHConnectionInfo(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID)
+	var (
+		info   services.WorkspaceSSHConnectionInfo
+		svcErr error
+	)
+	if guestUser := strings.TrimSpace(r.URL.Query().Get("user")); guestUser != "" {
+		selector, ok := h.Service.(workspaceSSHUserSelector)
+		if !ok {
+			pkgerrors.WriteError(w, pkgerrors.New(pkgerrors.CodeWorkspaceSSHUserInvalid, "this workspace offers no other ssh user"))
+			return
+		}
+		info, svcErr = selector.GetWorkspaceSSHConnectionInfoAs(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID, guestUser)
+	} else {
+		info, svcErr = h.Service.GetWorkspaceSSHConnectionInfo(r.Context(), workspaceID, repoCtx.Repository.ID, user.ID)
+	}
 	if svcErr != nil {
 		writeRouteError(w, r, svcErr)
 		return
@@ -1187,3 +1200,7 @@ var _ WorkspaceRouteService = (*services.WorkspaceService)(nil)
 
 // Ensure db.Queries satisfies WorkspaceQuerier at compile time.
 var _ services.WorkspaceQuerier = (*db.Queries)(nil)
+
+type workspaceSSHUserSelector interface {
+	GetWorkspaceSSHConnectionInfoAs(ctx context.Context, workspaceID string, repositoryID, userID int64, guestUser string) (services.WorkspaceSSHConnectionInfo, error)
+}

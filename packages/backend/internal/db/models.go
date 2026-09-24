@@ -22,6 +22,7 @@ type AccessToken struct {
 	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
+	SystemIssued   bool               `json:"system_issued"`
 }
 
 type AgentMessage struct {
@@ -1217,13 +1218,14 @@ type NotificationJournal struct {
 }
 
 type Oauth2AccessToken struct {
-	ID        int64     `json:"id"`
-	TokenHash string    `json:"token_hash"`
-	AppID     int64     `json:"app_id"`
-	UserID    int64     `json:"user_id"`
-	Scopes    []string  `json:"scopes"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                  int64       `json:"id"`
+	TokenHash           string      `json:"token_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	CreatedAt           time.Time   `json:"created_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
 }
 
 type Oauth2Application struct {
@@ -1250,16 +1252,18 @@ type Oauth2AuthorizationCode struct {
 	ExpiresAt           time.Time          `json:"expires_at"`
 	UsedAt              pgtype.Timestamptz `json:"used_at"`
 	CreatedAt           time.Time          `json:"created_at"`
+	SourceAccessTokenID pgtype.Int8        `json:"source_access_token_id"`
 }
 
 type Oauth2RefreshToken struct {
-	ID        int64     `json:"id"`
-	TokenHash string    `json:"token_hash"`
-	AppID     int64     `json:"app_id"`
-	UserID    int64     `json:"user_id"`
-	Scopes    []string  `json:"scopes"`
-	ExpiresAt time.Time `json:"expires_at"`
-	CreatedAt time.Time `json:"created_at"`
+	ID                  int64       `json:"id"`
+	TokenHash           string      `json:"token_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	CreatedAt           time.Time   `json:"created_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
 }
 
 type OauthAccount struct {
@@ -1868,6 +1872,22 @@ type RepositorySecret struct {
 	ValueEncrypted []byte    `json:"value_encrypted"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+type RepositorySetupRequest struct {
+	ID               string          `json:"id"`
+	UserID           int64           `json:"user_id"`
+	RepositoryID     int64           `json:"repository_id"`
+	RequestID        string          `json:"request_id"`
+	Job              string          `json:"job"`
+	Input            json.RawMessage `json:"input"`
+	OperationID      string          `json:"operation_id"`
+	WorkspaceID      pgtype.UUID     `json:"workspace_id"`
+	Response         json.RawMessage `json:"response"`
+	Terminal         bool            `json:"terminal"`
+	ObservationError string          `json:"observation_error"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 type RepositoryStorageOperation struct {

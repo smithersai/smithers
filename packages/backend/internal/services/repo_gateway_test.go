@@ -13,15 +13,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // fakeRepoGatewayQuerier is an in-memory RepoGatewayQuerier + access-token store.
@@ -30,10 +31,10 @@ type fakeRepoGatewayQuerier struct {
 	// mu guards the fields the background reaper goroutine mutates
 	// (staleAgeSeconds, softDeleted) so tests can read them race-free.
 	mu                          sync.Mutex
-	active                      *clusterdb.RepoGateway
-	created                     []clusterdb.CreateRepoGatewayParams
-	executionInfo               []clusterdb.UpdateRepoGatewayExecutionInfoParams
-	statusUpdates               []clusterdb.UpdateRepoGatewayStatusParams
+	active                      *runtimeports.RepoGateway
+	created                     []runtimeports.CreateRepoGatewayParams
+	executionInfo               []runtimeports.UpdateRepoGatewayExecutionInfoParams
+	statusUpdates               []runtimeports.UpdateRepoGatewayStatusParams
 	touched                     []string
 	softDeleted                 []string
 	accessTokens                []db.CreateAccessTokenParams
@@ -41,18 +42,18 @@ type fakeRepoGatewayQuerier struct {
 	createGatewayErr            error
 	executionInfoErr            error
 	nextGatewayID               string
-	activeAfterCreate           *clusterdb.RepoGateway
-	staleRows                   []clusterdb.RepoGateway
+	activeAfterCreate           *runtimeports.RepoGateway
+	staleRows                   []runtimeports.RepoGateway
 	staleAgeSeconds             int64
-	activeRows                  []clusterdb.RepoGateway
-	discardedWorkspaceRows      []clusterdb.RepoGateway
+	activeRows                  []runtimeports.RepoGateway
+	discardedWorkspaceRows      []runtimeports.RepoGateway
 	writableWorkspaceShares     bool
 	clearedWorkspaceCredentials []string
 	workspaceCleanupAttempts    []string
-	landingTokenWrites          []clusterdb.SetRepoGatewayLandingTokenIDParams
+	landingTokenWrites          []runtimeports.SetRepoGatewayLandingTokenIDParams
 }
 
-func (f *fakeRepoGatewayQuerier) SetRepoGatewayLandingTokenID(_ context.Context, p clusterdb.SetRepoGatewayLandingTokenIDParams) error {
+func (f *fakeRepoGatewayQuerier) SetRepoGatewayLandingTokenID(_ context.Context, p runtimeports.SetRepoGatewayLandingTokenIDParams) error {
 	f.landingTokenWrites = append(f.landingTokenWrites, p)
 	if f.active != nil && f.active.ID == p.ID {
 		f.active.LandingTokenID = p.LandingTokenID
@@ -60,7 +61,7 @@ func (f *fakeRepoGatewayQuerier) SetRepoGatewayLandingTokenID(_ context.Context,
 	return nil
 }
 
-func (f *fakeRepoGatewayQuerier) ListDiscardedWorkspaceGateways(_ context.Context, p clusterdb.ListDiscardedWorkspaceGatewaysParams) ([]clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) ListDiscardedWorkspaceGateways(_ context.Context, p runtimeports.ListDiscardedWorkspaceGatewaysParams) ([]runtimeports.RepoGateway, error) {
 	return f.discardedWorkspaceRows, nil
 }
 
@@ -78,20 +79,20 @@ func (f *fakeRepoGatewayQuerier) TouchDiscardedWorkspaceGatewayCleanup(_ context
 	return nil
 }
 
-func (f *fakeRepoGatewayQuerier) ListPendingWorkspaceGatewayCleanup(_ context.Context) ([]clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) ListPendingWorkspaceGatewayCleanup(_ context.Context) ([]runtimeports.RepoGateway, error) {
 	return f.discardedWorkspaceRows, nil
 }
 
-func (f *fakeRepoGatewayQuerier) CreateRepoGateway(ctx context.Context, arg clusterdb.CreateRepoGatewayParams) (clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) CreateRepoGateway(ctx context.Context, arg runtimeports.CreateRepoGatewayParams) (runtimeports.RepoGateway, error) {
 	if f.createGatewayErr != nil {
-		return clusterdb.RepoGateway{}, f.createGatewayErr
+		return runtimeports.RepoGateway{}, f.createGatewayErr
 	}
 	f.created = append(f.created, arg)
 	id := f.nextGatewayID
 	if id == "" {
 		id = "gw-1"
 	}
-	return clusterdb.RepoGateway{
+	return runtimeports.RepoGateway{
 		ID:           id,
 		RepositoryID: arg.RepositoryID,
 		UserID:       arg.UserID,
@@ -99,19 +100,19 @@ func (f *fakeRepoGatewayQuerier) CreateRepoGateway(ctx context.Context, arg clus
 	}, nil
 }
 
-func (f *fakeRepoGatewayQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) GetActiveRepoGatewayForUserRepo(ctx context.Context, arg runtimeports.GetActiveRepoGatewayForUserRepoParams) (runtimeports.RepoGateway, error) {
 	if f.active != nil {
 		return *f.active, nil
 	}
-	return clusterdb.RepoGateway{}, pgx.ErrNoRows
+	return runtimeports.RepoGateway{}, pgx.ErrNoRows
 }
 
-func (f *fakeRepoGatewayQuerier) UpdateRepoGatewayExecutionInfo(ctx context.Context, arg clusterdb.UpdateRepoGatewayExecutionInfoParams) (clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) UpdateRepoGatewayExecutionInfo(ctx context.Context, arg runtimeports.UpdateRepoGatewayExecutionInfoParams) (runtimeports.RepoGateway, error) {
 	if f.executionInfoErr != nil {
-		return clusterdb.RepoGateway{}, f.executionInfoErr
+		return runtimeports.RepoGateway{}, f.executionInfoErr
 	}
 	f.executionInfo = append(f.executionInfo, arg)
-	return clusterdb.RepoGateway{
+	return runtimeports.RepoGateway{
 		ID:                  arg.ID,
 		VmID:                arg.VmID,
 		BaseUrl:             arg.BaseUrl,
@@ -121,9 +122,9 @@ func (f *fakeRepoGatewayQuerier) UpdateRepoGatewayExecutionInfo(ctx context.Cont
 	}, nil
 }
 
-func (f *fakeRepoGatewayQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg clusterdb.UpdateRepoGatewayStatusParams) (clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg runtimeports.UpdateRepoGatewayStatusParams) (runtimeports.RepoGateway, error) {
 	f.statusUpdates = append(f.statusUpdates, arg)
-	return clusterdb.RepoGateway{ID: arg.ID, Status: arg.Status}, nil
+	return runtimeports.RepoGateway{ID: arg.ID, Status: arg.Status}, nil
 }
 
 func (f *fakeRepoGatewayQuerier) TouchRepoGatewayActivity(ctx context.Context, id string) error {
@@ -131,14 +132,14 @@ func (f *fakeRepoGatewayQuerier) TouchRepoGatewayActivity(ctx context.Context, i
 	return nil
 }
 
-func (f *fakeRepoGatewayQuerier) SoftDeleteRepoGateway(ctx context.Context, id string) (clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) SoftDeleteRepoGateway(ctx context.Context, id string) (runtimeports.RepoGateway, error) {
 	f.mu.Lock()
 	f.softDeleted = append(f.softDeleted, id)
 	f.mu.Unlock()
-	return clusterdb.RepoGateway{ID: id, Status: "stopped"}, nil
+	return runtimeports.RepoGateway{ID: id, Status: "stopped"}, nil
 }
 
-func (f *fakeRepoGatewayQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) ListStaleRepoGateways(ctx context.Context, ageSeconds int64) ([]runtimeports.RepoGateway, error) {
 	f.mu.Lock()
 	f.staleAgeSeconds = ageSeconds
 	rows := f.staleRows
@@ -146,10 +147,10 @@ func (f *fakeRepoGatewayQuerier) ListStaleRepoGateways(ctx context.Context, ageS
 	return rows, nil
 }
 
-func (f *fakeRepoGatewayQuerier) ListActiveRepoGateways(ctx context.Context) ([]clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayQuerier) ListActiveRepoGateways(ctx context.Context) ([]runtimeports.RepoGateway, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]clusterdb.RepoGateway(nil), f.activeRows...), nil
+	return append([]runtimeports.RepoGateway(nil), f.activeRows...), nil
 }
 
 // getSoftDeleted returns a copy of the tombstoned gateway IDs under lock, so
@@ -418,11 +419,8 @@ func TestRepoGatewayService_Provision_CreatesGatewayVM(t *testing.T) {
 	assert.Equal(t, sandbox.ServiceModeService, spec.Mode)
 	require.NotNil(t, spec.RestartPolicy)
 	assert.Equal(t, sandbox.RestartPolicyOnFailure, spec.RestartPolicy.Kind)
-	require.Len(t, spec.Exec, 1)
-	assert.Contains(t, spec.Exec[0], "smithers")
-	assert.Contains(t, spec.Exec[0], "gateway")
-	assert.Contains(t, spec.Exec[0], "--host 0.0.0.0")
-	assert.Contains(t, spec.Exec[0], "--port 7331")
+	require.NoError(t, spec.ValidateExec())
+	assert.Equal(t, []string{"/usr/local/bin/bun", repoGatewayProductHostPath, "serve", "--root", repoGatewayWorkspace, "--host", "0.0.0.0", "--port", "7331", "--listen"}, spec.Exec)
 	assert.Equal(t, "/workspace/repo", spec.Workdir)
 	assert.NotEmpty(t, spec.Env["PATH"])
 	assert.Equal(t, info.Token, spec.Env["SMITHERS_API_KEY"])
@@ -557,7 +555,7 @@ func TestRepoGatewayService_Reuse_RunningVM_ReturnsExistingToken(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-live",
 			RepositoryID:        200,
 			UserID:              1,
@@ -585,7 +583,7 @@ func TestRepoGatewayService_Reuse_StartingRowReturnsProvisioningConflict(t *test
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-starting",
 			RepositoryID:        200,
 			UserID:              1,
@@ -613,7 +611,7 @@ func TestRepoGatewayService_Reuse_SuspendedVM_Resumes(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-idle",
 			RepositoryID:        200,
 			UserID:              1,
@@ -653,7 +651,7 @@ func TestRepoGatewayService_Reuse_SuspendedVM_RedeclaresServiceWithSecrets(t *te
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-idle-seated",
 			RepositoryID:        200,
 			UserID:              1,
@@ -701,7 +699,7 @@ func TestRepoGatewayService_Reuse_TransientServiceDeclareFailure_RetriesInPlace(
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-idle-flaky-declare",
 			RepositoryID:        200,
 			UserID:              1,
@@ -742,7 +740,7 @@ func TestRepoGatewayService_Reuse_TransientHardResumeFailure_RetriesInPlace(t *t
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-transient", RepositoryID: 200, UserID: 1, VmID: "vm-transient",
 			BaseUrl: "https://vm-transient.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_live",
 			Status: "running",
@@ -775,7 +773,7 @@ func TestRepoGatewayService_Reuse_PersistentHardResumeFailure_Reprovisions(t *te
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-uffd", RepositoryID: 200, UserID: 1, VmID: "vm-uffd",
 			BaseUrl: "https://vm-uffd.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_live",
 			Status: "running",
@@ -808,7 +806,7 @@ func TestRepoGatewayService_Reuse_ResumeTimeout_Reprovisions(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-timeout", RepositoryID: 200, UserID: 1, VmID: "vm-timeout",
 			BaseUrl: "https://vm-timeout.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_live",
 			Status: "running",
@@ -837,7 +835,7 @@ func TestRepoGatewayService_Reuse_CallerCancellation_DoesNotReprovision(t *testi
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-canceled", RepositoryID: 200, UserID: 1, VmID: "vm-canceled",
 			BaseUrl: "https://vm-canceled.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_live",
 			Status: "running",
@@ -875,7 +873,7 @@ func TestRepoGatewayService_Reuse_AutoSuspendedVM_DoesNotInflateGauge(t *testing
 		}
 	}}
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-run", RepositoryID: 200, UserID: 1, VmID: "vm-run",
 			BaseUrl: "https://vm-run.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_run",
 			Status: "running", // DB still 'running'; Microsandbox auto-suspended the VM
@@ -906,7 +904,7 @@ func TestRepoGatewayService_Reuse_SuspendedVM_ReAddsGauge(t *testing.T) {
 		}
 	}}
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-susp", RepositoryID: 200, UserID: 1, VmID: "vm-susp",
 			BaseUrl: "https://vm-susp.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_susp",
 			Status: "suspended",
@@ -936,7 +934,7 @@ func TestRepoGatewayService_Reuse_GoneVM_GaugeNetZero(t *testing.T) {
 		}
 	}}
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID: "gw-gone", RepositoryID: 200, UserID: 1, VmID: "vm-gone",
 			BaseUrl: "https://vm-gone.sandbox.sh", AuthTokenCiphertext: "smithers_gateway_live",
 			Status: "running",
@@ -963,7 +961,7 @@ func TestRepoGatewayService_Reuse_UnrecoverableToken_Reprovisions(t *testing.T) 
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-corrupt",
 			RepositoryID:        200,
 			UserID:              1,
@@ -994,7 +992,7 @@ func TestRepoGatewayService_Reuse_GoneVM_Reprovisions(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-gone",
 			RepositoryID:        200,
 			UserID:              1,
@@ -1144,7 +1142,7 @@ func TestRepoGatewayService_Reuse_AtCap_Allowed(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		active: &clusterdb.RepoGateway{
+		active: &runtimeports.RepoGateway{
 			ID:                  "gw-live",
 			RepositoryID:        200,
 			UserID:              1,
@@ -1171,7 +1169,7 @@ func TestRepoGatewayService_Reaper_ReclaimsStaleRows(t *testing.T) {
 	t.Parallel()
 
 	q := &fakeRepoGatewayQuerier{
-		staleRows: []clusterdb.RepoGateway{
+		staleRows: []runtimeports.RepoGateway{
 			{ID: "gw-starting", VmID: "vm-abandoned", Status: "starting"},
 			{ID: "gw-pending", VmID: "", Status: "pending"},
 		},
@@ -1195,13 +1193,13 @@ func TestRepoGatewayService_Reaper_ReclaimsStaleRows(t *testing.T) {
 // fakeRepoGatewayAccessQuerier drives the access-revocation sweep: a set of
 // live gateway rows, their repositories, and per-user collaborator permissions.
 type fakeRepoGatewayAccessQuerier struct {
-	rows        []clusterdb.RepoGateway
+	rows        []runtimeports.RepoGateway
 	repos       map[int64]db.Repository
 	collabPerms map[int64]string // userID → collaborator permission
 	listErr     error
 }
 
-func (f *fakeRepoGatewayAccessQuerier) ListActiveRepoGateways(_ context.Context) ([]clusterdb.RepoGateway, error) {
+func (f *fakeRepoGatewayAccessQuerier) ListActiveRepoGateways(_ context.Context) ([]runtimeports.RepoGateway, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -1242,7 +1240,7 @@ func TestRepoGatewayService_RevocationSweep_TearsDownRevokedGateways(t *testing.
 	q := &fakeRepoGatewayQuerier{}
 	vm := &fakeRepoGatewayVMClient{}
 	access := &fakeRepoGatewayAccessQuerier{
-		rows: []clusterdb.RepoGateway{
+		rows: []runtimeports.RepoGateway{
 			{ID: "gw-ok", RepositoryID: 200, UserID: 1, VmID: "vm-ok", Status: "running"},
 			{ID: "gw-revoked", RepositoryID: 200, UserID: 2, VmID: "vm-revoked", Status: "running"},
 			{ID: "gw-repo-gone", RepositoryID: 999, UserID: 3, VmID: "vm-repo-gone", Status: "suspended"},

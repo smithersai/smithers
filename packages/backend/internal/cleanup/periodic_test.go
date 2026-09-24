@@ -73,25 +73,10 @@ func TestEveryCleanerClampsNonPositiveInterval(t *testing.T) {
 			NewWorkspaceCleaner(&mockWorkspaceCleanupStore{}, interval),
 			NewWorkflowArtifactCleaner(nil, interval, 10),
 			NewWorkflowCacheCleaner(nil, interval),
-			NewSandboxEgressAuditCleaner(&sandboxEgressAuditCleanupStore{retentionDays: make(chan int64, 8)}, interval, 1),
 		}
 		for _, c := range starters {
 			c.Start(context.Background())
 			c.Stop()
 		}
 	}
-}
-
-func TestConcurrentStopIsSafe(t *testing.T) {
-	cleaner := NewSandboxEgressAuditCleaner(&sandboxEgressAuditCleanupStore{retentionDays: make(chan int64, 8)}, time.Hour, 1)
-	cleaner.Start(context.Background())
-	var wg sync.WaitGroup
-	for i := 0; i < 16; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			cleaner.Stop()
-		}()
-	}
-	wg.Wait()
 }

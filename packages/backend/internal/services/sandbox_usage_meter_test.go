@@ -6,11 +6,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Shared mocks default to successful writes, including when used by billing tests.
@@ -245,7 +246,7 @@ func TestSandboxUsageGatewayLifecycle(t *testing.T) {
 	svc.markGatewayFailed(ctx, gateway.ID)
 	q.requireClose(t, "gateway", gateway.ID)
 	q.closes = nil
-	q.staleRows = []clusterdb.RepoGateway{gateway}
+	q.staleRows = []runtimeports.RepoGateway{gateway}
 	svc.sweepStaleGateways(ctx)
 	q.requireClose(t, "gateway", gateway.ID)
 	q.opens = nil
@@ -258,7 +259,7 @@ func TestSandboxUsageGatewayLifecycle(t *testing.T) {
 // narrow status projection; production UPDATE ... RETURNING supplies them.
 type meteredGatewayQuerier struct{ fakeRepoGatewayQuerier }
 
-func (q *meteredGatewayQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg clusterdb.UpdateRepoGatewayStatusParams) (clusterdb.RepoGateway, error) {
+func (q *meteredGatewayQuerier) UpdateRepoGatewayStatus(ctx context.Context, arg runtimeports.UpdateRepoGatewayStatusParams) (runtimeports.RepoGateway, error) {
 	row, err := q.fakeRepoGatewayQuerier.UpdateRepoGatewayStatus(ctx, arg)
 	if q.active != nil {
 		row = *q.active

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // GoldenSnapshotService maintains the pre-baked "golden" sandbox provider snapshot
@@ -49,74 +49,6 @@ const (
 	// copy before re-reading the DB (a fresh bake on another pod should be
 	// picked up promptly, but the read must not run per-provision).
 	goldenSnapshotCacheTTL = time.Minute
-
-	insertGoldenSnapshotBakingSQL = `
-INSERT INTO sandbox_golden_snapshots (kind, status)
-VALUES ($1, 'baking')
-ON CONFLICT (kind) WHERE status = 'baking' DO NOTHING
-RETURNING id;
-`
-	latestReadyGoldenSnapshotSQL = `
-SELECT snapshot_id, created_at
-FROM sandbox_golden_snapshots
-WHERE kind = $1 AND status = 'ready'
-ORDER BY created_at DESC
-LIMIT 1;
-`
-	finishGoldenSnapshotSQL = `
-UPDATE sandbox_golden_snapshots
-SET status = $2, snapshot_id = $3, updated_at = NOW()
-WHERE id = $1
-RETURNING id;
-`
-	// reclaimStaleBakingSQL frees the single per-kind 'baking' slot when a prior
-	// baker died before writing a terminal status. Only rows older than the
-	// caller-supplied age (seconds, $2) are touched, so a live bake is safe.
-	reclaimStaleBakingSQL = `
-UPDATE sandbox_golden_snapshots
-SET status = 'failed', updated_at = NOW()
-WHERE kind = $1 AND status = 'baking'
-  AND created_at < NOW() - make_interval(secs => $2)
-RETURNING id;
-`
-	// supersedeGoldenSnapshotsSQL (GC phase 1) marks every prior 'ready' row for
-	// the kind superseded, EXCLUDING the just-finished row ($2) and any row NEWER
-	// than it (created_at guard) — so the current/newest snapshot is never
-	// touched even if another pod raced a newer bake in. This only removes rows
-	// from Current()'s candidate set; the sandbox provider snapshots are deleted later
-	// (phase 2) once no cache can still reference them.
-	supersedeGoldenSnapshotsSQL = `
-UPDATE sandbox_golden_snapshots
-SET status = 'superseded', updated_at = NOW()
-WHERE kind = $1
-  AND status = 'ready'
-  AND id <> $2
-  AND created_at <= (SELECT created_at FROM sandbox_golden_snapshots WHERE id = $2);
-`
-	// listExpiredSupersededSQL (GC phase 2) returns superseded rows that have
-	// been superseded for longer than the caller-supplied age (seconds, $2) —
-	// long enough that no other pod's Current() in-memory cache (TTL
-	// goldenSnapshotCacheTTL) can still be handing out the snapshot id. Only then
-	// is deleting the backing sandbox provider snapshot safe.
-	listExpiredSupersededSQL = `
-SELECT id, snapshot_id
-FROM sandbox_golden_snapshots
-WHERE kind = $1
-  AND status = 'superseded'
-  AND updated_at < NOW() - make_interval(secs => $2);
-`
-	// deleteGoldenSnapshotRowSQL removes a collected superseded row AFTER its
-	// sandbox provider snapshot has been deleted (or 404'd).
-	deleteGoldenSnapshotRowSQL = `DELETE FROM sandbox_golden_snapshots WHERE id = $1;`
-	// markBadGoldenSnapshotSQL retires a ready snapshot that sandbox provider rejected
-	// at VM-create time. 'superseded' (not 'failed') routes it through the
-	// existing phase-2 GC (listExpiredSupersededSQL) so the dead sandbox provider
-	// snapshot and its row are reclaimed after the grace TTL.
-	markBadGoldenSnapshotSQL = `
-UPDATE sandbox_golden_snapshots
-SET status = 'superseded', updated_at = NOW()
-WHERE kind = $1 AND snapshot_id = $2 AND status = 'ready';
-`
 )
 
 // goldenSnapshotSupersededGraceTTL is how long a snapshot must have been
@@ -140,13 +72,6 @@ var goldenSnapshotToolchainCheck = strings.Join([]string{
 
 var goldenSnapshotRefreshEvery = goldenSnapshotRefreshInterval
 
-// GoldenSnapshotDB is the minimal DB surface (matches pgx pool).
-type GoldenSnapshotDB interface {
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-}
-
 // GoldenSnapshotVMClient is the minimal sandbox provider surface for baking.
 type GoldenSnapshotVMClient interface {
 	CreateSandbox(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error)
@@ -159,7 +84,7 @@ type GoldenSnapshotVMClient interface {
 }
 
 type GoldenSnapshotService struct {
-	db      GoldenSnapshotDB
+	db      runtimeports.GoldenSnapshotStore
 	sandbox GoldenSnapshotVMClient
 	// buildRequest returns the VM request the snapshot must be baked FROM —
 	// injected so the bake boots the exact same image workspaces boot.
@@ -178,7 +103,7 @@ type GoldenSnapshotService struct {
 	inflight map[string]struct{}
 }
 
-func NewGoldenSnapshotService(db GoldenSnapshotDB, sandbox GoldenSnapshotVMClient, buildRequest func() sandbox.CreateRequest) *GoldenSnapshotService {
+func NewGoldenSnapshotService(db runtimeports.GoldenSnapshotStore, sandbox GoldenSnapshotVMClient, buildRequest func() sandbox.CreateRequest) *GoldenSnapshotService {
 	return &GoldenSnapshotService{
 		db:           db,
 		sandbox:      sandbox,
@@ -202,11 +127,7 @@ func (s *GoldenSnapshotService) Current(ctx context.Context) string {
 	}
 	s.mu.Unlock()
 
-	var (
-		id        string
-		createdAt time.Time
-	)
-	err := s.db.QueryRow(ctx, latestReadyGoldenSnapshotSQL, goldenSnapshotKindWorkspace).Scan(&id, &createdAt)
+	id, _, err := s.db.LatestReadyGoldenSnapshot(ctx, goldenSnapshotKindWorkspace)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("golden snapshot lookup failed", "error", err)
@@ -232,7 +153,7 @@ func (s *GoldenSnapshotService) MarkBad(ctx context.Context, snapshotID string) 
 	}
 	// A canceled request context must not abort invalidation.
 	bg := context.WithoutCancel(ctx)
-	if _, err := s.db.Exec(bg, markBadGoldenSnapshotSQL, goldenSnapshotKindWorkspace, snapshotID); err != nil {
+	if err := s.db.MarkBadGoldenSnapshot(bg, goldenSnapshotKindWorkspace, snapshotID); err != nil {
 		slog.Warn("golden snapshot mark-bad failed", "snapshot_id", snapshotID, "error", err)
 		return
 	}
@@ -286,11 +207,7 @@ func (s *GoldenSnapshotService) Stop() {
 }
 
 func (s *GoldenSnapshotService) refresh(ctx context.Context) {
-	var (
-		id        string
-		createdAt time.Time
-	)
-	err := s.db.QueryRow(ctx, latestReadyGoldenSnapshotSQL, goldenSnapshotKindWorkspace).Scan(&id, &createdAt)
+	_, createdAt, err := s.db.LatestReadyGoldenSnapshot(ctx, goldenSnapshotKindWorkspace)
 	if err == nil && time.Since(createdAt) < goldenSnapshotMaxAge {
 		return
 	}
@@ -304,8 +221,8 @@ func (s *GoldenSnapshotService) refresh(ctx context.Context) {
 	s.reclaimStaleBaking(ctx)
 
 	// Claim the single 'baking' slot; losing the race means another pod bakes.
-	var rowID string
-	if err := s.db.QueryRow(ctx, insertGoldenSnapshotBakingSQL, goldenSnapshotKindWorkspace).Scan(&rowID); err != nil {
+	rowID, err := s.db.ClaimGoldenSnapshotBake(ctx, goldenSnapshotKindWorkspace)
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return // another pod holds the baking slot
 		}
@@ -320,8 +237,8 @@ func (s *GoldenSnapshotService) refresh(ctx context.Context) {
 		snapshotID = ""
 		slog.Error("golden snapshot bake failed", "error", bakeErr)
 	}
-	var finished string
-	if err := s.db.QueryRow(context.WithoutCancel(ctx), finishGoldenSnapshotSQL, rowID, status, snapshotID).Scan(&finished); err != nil {
+	finished, err := s.db.FinishGoldenSnapshot(context.WithoutCancel(ctx), rowID, status, snapshotID)
+	if err != nil {
 		slog.Warn("golden snapshot finish write failed", "row_id", rowID, "error", err)
 		if bakeErr == nil {
 			// The bake succeeded but its snapshot id never reached a durable
@@ -369,7 +286,7 @@ func (s *GoldenSnapshotService) gcSupersededSnapshotsFor(ctx context.Context, ki
 		return
 	}
 	// Phase 1: mark superseded (fast; removes from Current() candidates now).
-	if _, err := s.db.Exec(ctx, supersedeGoldenSnapshotsSQL, kind, rowID); err != nil {
+	if err := s.db.SupersedeGoldenSnapshots(ctx, kind, rowID); err != nil {
 		slog.Warn("golden snapshot supersede failed", "row_id", rowID, "error", err)
 		// Continue: phase 2 can still collect anything superseded earlier.
 	}
@@ -377,25 +294,9 @@ func (s *GoldenSnapshotService) gcSupersededSnapshotsFor(ctx context.Context, ki
 	// Phase 2: delete sandbox provider snapshots (then rows) that have been superseded
 	// long enough that no Current() cache can still vend them.
 	graceSeconds := int64(goldenSnapshotSupersededGraceTTL / time.Second)
-	rows, err := s.db.Query(ctx, listExpiredSupersededSQL, kind, graceSeconds)
+	victims, err := s.db.ExpiredGoldenSnapshots(ctx, kind, graceSeconds)
 	if err != nil {
 		slog.Warn("golden snapshot list superseded failed", "error", err)
-		return
-	}
-	type victim struct{ id, snapshotID string }
-	var victims []victim
-	for rows.Next() {
-		var v victim
-		if err := rows.Scan(&v.id, &v.snapshotID); err != nil {
-			slog.Warn("golden snapshot scan superseded failed", "error", err)
-			rows.Close()
-			return
-		}
-		victims = append(victims, v)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		slog.Warn("golden snapshot iterate superseded failed", "error", err)
 		return
 	}
 
@@ -403,14 +304,14 @@ func (s *GoldenSnapshotService) gcSupersededSnapshotsFor(ctx context.Context, ki
 		// Delete the sandbox provider snapshot FIRST; only drop the row once it is gone
 		// (or already 404). If the delete fails for another reason, keep the row
 		// so a later sweep retries — never orphan the sandbox provider snapshot.
-		if snap := strings.TrimSpace(v.snapshotID); snap != "" {
+		if snap := strings.TrimSpace(v.SnapshotID); snap != "" {
 			if err := s.sandbox.DeleteSnapshot(ctx, snap); err != nil && !vmAlreadyGone(err) {
-				slog.Warn("golden snapshot delete failed; will retry", "row_id", v.id, "snapshot_id", snap, "error", err)
+				slog.Warn("golden snapshot delete failed; will retry", "row_id", v.ID, "snapshot_id", snap, "error", err)
 				continue
 			}
 		}
-		if _, err := s.db.Exec(ctx, deleteGoldenSnapshotRowSQL, v.id); err != nil {
-			slog.Warn("golden snapshot row delete failed", "row_id", v.id, "error", err)
+		if err := s.db.DeleteGoldenSnapshot(ctx, v.ID); err != nil {
+			slog.Warn("golden snapshot row delete failed", "row_id", v.ID, "error", err)
 		}
 	}
 }
@@ -426,8 +327,7 @@ func (s *GoldenSnapshotService) reclaimStaleBaking(ctx context.Context) {
 // reclaimStaleBakingFor is reclaimStaleBaking for any snapshot key.
 func (s *GoldenSnapshotService) reclaimStaleBakingFor(ctx context.Context, kind string) {
 	staleSeconds := int64(goldenSnapshotStaleBakingAge / time.Second)
-	var reclaimedID string
-	err := s.db.QueryRow(ctx, reclaimStaleBakingSQL, kind, staleSeconds).Scan(&reclaimedID)
+	reclaimedID, err := s.db.ReclaimStaleGoldenSnapshot(ctx, kind, staleSeconds)
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("golden snapshot stale-baking reclaim failed", "error", err)
@@ -497,7 +397,7 @@ func (s *GoldenSnapshotService) bakeWith(ctx context.Context, rowID string, buil
 		return "", fmt.Errorf("snapshot builder vm: %w", err)
 	}
 	if strings.TrimSpace(snapshot.SnapshotID) == "" {
-		return "", errors.New("microsandbox returned an empty snapshot id")
+		return "", errors.New("sandbox provider returned an empty snapshot id")
 	}
 	return snapshot.SnapshotID, nil
 }

@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
 )
 
 // SandboxOrphanQuerier is the DB contract for the orphan sweep. *db.Queries
 // implements it.
 type SandboxOrphanQuerier interface {
-	ListOrphanedSandboxInstances(ctx context.Context, arg clusterdb.ListOrphanedSandboxInstancesParams) ([]clusterdb.ListOrphanedSandboxInstancesRow, error)
+	ListOrphanedSandboxInstances(ctx context.Context, arg runtimeports.ListOrphanedSandboxInstancesParams) ([]runtimeports.ListOrphanedSandboxInstancesRow, error)
 }
 
 // SandboxOrphanVMClient is the minimal sandbox provider surface the sweep needs.
@@ -92,7 +92,7 @@ func (s *SandboxOrphanReaper) Sweep(ctx context.Context) int {
 	if s == nil || s.q == nil || s.sandbox == nil {
 		return 0
 	}
-	rows, err := s.q.ListOrphanedSandboxInstances(ctx, clusterdb.ListOrphanedSandboxInstancesParams{
+	rows, err := s.q.ListOrphanedSandboxInstances(ctx, runtimeports.ListOrphanedSandboxInstancesParams{
 		MinAgeSeconds: int64(s.minAge / time.Second),
 		MaxRows:       sandboxOrphanBatch,
 	})

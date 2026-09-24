@@ -118,12 +118,10 @@ func TestBuildTextMapPropagator(t *testing.T) {
 }
 
 func TestInit_NoProjectID(t *testing.T) {
-	// When CloudTraceProjectID is empty, should return nil provider and no error
 	ctx := context.Background()
 	cfg := config.ObservabilityConfig{
-		TraceSampleRate:     0.01,
-		CloudTraceProjectID: "",
-		OTelExporter:        "none",
+		TraceSampleRate: 0.01,
+		OTelExporter:    "none",
 	}
 
 	provider, err := Init(ctx, cfg)
@@ -136,8 +134,7 @@ func TestInit_WithProjectID(t *testing.T) {
 	// Full integration with Cloud Trace requires GCP credentials.
 	ctx := context.Background()
 	cfg := config.ObservabilityConfig{
-		TraceSampleRate:     0.01,
-		CloudTraceProjectID: "test-project",
+		TraceSampleRate: 0.01,
 	}
 
 	// Should attempt to create a provider (may fail due to missing credentials)

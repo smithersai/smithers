@@ -196,10 +196,9 @@ func observabilityFromEnv() (config.ObservabilityConfig, error) {
 		sampleRate = parsed
 	}
 	return config.ObservabilityConfig{
-		CloudTraceProjectID: strings.TrimSpace(os.Getenv("SMITHERS_CLOUD_TRACE_PROJECT_ID")),
-		OTelExporter:        envOrDefault("SMITHERS_OTEL_EXPORTER", "none"),
-		OTLPEndpoint:        strings.TrimSpace(os.Getenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT")),
-		TraceSampleRate:     sampleRate,
+		OTelExporter:    envOrDefault("SMITHERS_OTEL_EXPORTER", "none"),
+		OTLPEndpoint:    strings.TrimSpace(os.Getenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT")),
+		TraceSampleRate: sampleRate,
 	}, nil
 }
 

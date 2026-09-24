@@ -10,10 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 const testWorkspaceGitBaseURL = "http://localhost"
@@ -82,8 +81,6 @@ type mockWorkspaceQuerier struct {
 	deleteAccessTokenFn                    func(ctx context.Context, arg db.DeleteAccessTokenParams) error
 	notifyWorkspaceStatusFn                func(ctx context.Context, arg db.NotifyWorkspaceStatusParams) error
 	getWorkspaceShareFn                    func(ctx context.Context, arg db.GetWorkspaceShareParams) (db.WorkspaceShare, error)
-	createSandboxAccessTokenFn             func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error)
-	getSandboxAccessTokenByHashFn          func(ctx context.Context, tokenHash []byte) (clusterdb.SandboxAccessToken, error)
 	markSandboxAccessTokenUsedFn           func(ctx context.Context, id string) error
 	deleteExpiredSandboxAccessTokensFn     func(ctx context.Context) error
 }
@@ -516,20 +513,6 @@ func (m *mockWorkspaceQuerier) GetWorkspaceShare(ctx context.Context, arg db.Get
 	return db.WorkspaceShare{}, pgx.ErrNoRows
 }
 
-func (m *mockWorkspaceQuerier) CreateSandboxAccessToken(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
-	if m.createSandboxAccessTokenFn != nil {
-		return m.createSandboxAccessTokenFn(ctx, arg)
-	}
-	return clusterdb.SandboxAccessToken{ID: "sat-123", VmID: arg.VmID, UserID: arg.UserID, LinuxUser: arg.LinuxUser, TokenHash: arg.TokenHash, TokenType: arg.TokenType, ExpiresAt: arg.ExpiresAt, CreatedAt: time.Now()}, nil
-}
-
-func (m *mockWorkspaceQuerier) GetSandboxAccessTokenByHash(ctx context.Context, tokenHash []byte) (clusterdb.SandboxAccessToken, error) {
-	if m.getSandboxAccessTokenByHashFn != nil {
-		return m.getSandboxAccessTokenByHashFn(ctx, tokenHash)
-	}
-	return clusterdb.SandboxAccessToken{}, nil
-}
-
 func (m *mockWorkspaceQuerier) MarkSandboxAccessTokenUsed(ctx context.Context, id string) error {
 	if m.markSandboxAccessTokenUsedFn != nil {
 		return m.markSandboxAccessTokenUsedFn(ctx, id)
@@ -545,6 +528,7 @@ func (m *mockWorkspaceQuerier) DeleteExpiredSandboxAccessTokens(ctx context.Cont
 }
 
 type mockWorkspaceSandboxVMClient struct {
+	createIdentityTokenFn  func(context.Context, string) (sandbox.CreatedToken, error)
 	createVMFn             func(ctx context.Context, req sandbox.CreateRequest) (sandbox.CreateResult, error)
 	forkVMFn               func(ctx context.Context, sourceVMID string, req sandbox.ForkRequest) (sandbox.CreateResult, error)
 	execAwaitFn            func(ctx context.Context, vmID string, req sandbox.ExecRequest) (sandbox.ExecResult, error)
@@ -657,6 +641,9 @@ func (m *mockWorkspaceSandboxVMClient) GrantAccess(ctx context.Context, identity
 }
 
 func (m *mockWorkspaceSandboxVMClient) CreateIdentityToken(ctx context.Context, identityID string) (sandbox.CreatedToken, error) {
+	if m.createIdentityTokenFn != nil {
+		return m.createIdentityTokenFn(ctx, identityID)
+	}
 	return sandbox.CreatedToken{ID: "token-test-123", Token: "test-token"}, nil
 }
 
@@ -779,13 +766,12 @@ func TestWorkspaceSSH_CredentialScopedToOwner(t *testing.T) {
 			}
 			return db.WorkspaceSession{}, pgx.ErrNoRows
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
-			tokenCreated = true
-			return clusterdb.SandboxAccessToken{}, nil
-		},
 	}
 
-	svc := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{}))
+	svc := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{createIdentityTokenFn: func(context.Context, string) (sandbox.CreatedToken, error) {
+		tokenCreated = true
+		return sandbox.CreatedToken{Token: "should-not-mint"}, nil
+	}}))
 
 	// User 2 tries to SSH into a session owned by user 1 — must be rejected.
 	_, err := svc.GetSSHConnectionInfo(context.Background(), "sess-owner", 101, 2)
@@ -818,13 +804,12 @@ func TestWorkspaceSSH_CrossRepoRejected(t *testing.T) {
 			}
 			return db.WorkspaceSession{}, pgx.ErrNoRows
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
-			tokenCreated = true
-			return clusterdb.SandboxAccessToken{}, nil
-		},
 	}
 
-	svc := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{}))
+	svc := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{createIdentityTokenFn: func(context.Context, string) (sandbox.CreatedToken, error) {
+		tokenCreated = true
+		return sandbox.CreatedToken{Token: "should-not-mint"}, nil
+	}}))
 
 	// Access via wrong repo ID (202 instead of 101) — session not found → 404.
 	_, err := svc.GetSSHConnectionInfo(context.Background(), "sess-repo-a", 202, 1)

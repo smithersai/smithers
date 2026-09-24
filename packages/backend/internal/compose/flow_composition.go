@@ -30,7 +30,7 @@ type flowComposition struct {
 	stopper    flowhost.RetirementStopper
 }
 
-func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy) (*flowComposition, error) {
+func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Pool, codec flowhost.SecretCodec, agents *services.AgentService, repositoryJobs *services.RepositoryJobService, policy admission.Policy, setupServices ...*services.RepositorySetupService) (*flowComposition, error) {
 	if options.FlowHostRegistry == nil {
 		return nil, nil
 	}
@@ -69,7 +69,13 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("repository job Flow host targets: %w", err)
 	}
-	targets := flowTargetResolver(agentTargets, repositoryJobTargets, browserFlowTarget{queries: db.New(pool)})
+	additionalTargets := []flowhost.TargetResolver{browserFlowTarget{queries: db.New(pool)}}
+	projectors := []flowdispatch.Projector{agents, repositoryJobs}
+	if len(setupServices) == 1 {
+		additionalTargets = append(additionalTargets, setupServices[0])
+		projectors = append(projectors, setupServices[0])
+	}
+	targets := flowTargetResolver(agentTargets, repositoryJobTargets, additionalTargets...)
 	launcher, err := flowhost.NewWorkspaceLauncher(options.Workspace)
 	if err != nil {
 		return nil, fmt.Errorf("Flow workspace launcher: %w", err)
@@ -91,7 +97,7 @@ func newFlowComposition(options runOptions, cfg *config.Config, pool *pgxpool.Po
 	if err != nil {
 		return nil, fmt.Errorf("Flow jobs: %w", err)
 	}
-	dispatcher, err := flowdispatch.New(flowdispatch.Config{Store: store, Resolver: resolver, Projector: flowProjector(agents, repositoryJobs)})
+	dispatcher, err := flowdispatch.New(flowdispatch.Config{Store: store, Resolver: resolver, Projector: flowProjector(projectors...)})
 	if err != nil {
 		return nil, fmt.Errorf("Flow dispatcher: %w", err)
 	}
@@ -154,8 +160,13 @@ func flowTargetResolver(agents, repositoryJobs flowhost.TargetResolver, browserT
 			return agents.ResolveFlowHostTarget(ctx, target)
 		case "repository-job-dispatch":
 			return repositoryJobs.ResolveFlowHostTarget(ctx, target)
+		case "repository-setup":
+			if len(browserTargets) == 2 {
+				return browserTargets[1].ResolveFlowHostTarget(ctx, target)
+			}
+			return flowhost.Authority{}, errors.New("repository setup Flow target unavailable")
 		case "browser-flow":
-			if len(browserTargets) == 1 {
+			if len(browserTargets) >= 1 {
 				return browserTargets[0].ResolveFlowHostTarget(ctx, target)
 			}
 			return flowhost.Authority{}, errors.New("browser Flow target unavailable")
@@ -165,11 +176,13 @@ func flowTargetResolver(agents, repositoryJobs flowhost.TargetResolver, browserT
 	})
 }
 
-func flowProjector(agents, repositoryJobs flowdispatch.Projector) flowdispatch.Projector {
+func flowProjector(projectors ...flowdispatch.Projector) flowdispatch.Projector {
 	return flowdispatch.ProjectorFunc(func(ctx context.Context, update flowdispatch.ProjectionUpdate) error {
-		// Both projectors ignore foreign binding kinds. Always invoke both so a
-		// failed product projection does not hide the other product's receipt.
-		return errors.Join(agents.ProjectFlowRuntime(ctx, update), repositoryJobs.ProjectFlowRuntime(ctx, update))
+		var failures []error
+		for _, projector := range projectors {
+			failures = append(failures, projector.ProjectFlowRuntime(ctx, update))
+		}
+		return errors.Join(failures...)
 	})
 }
 

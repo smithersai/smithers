@@ -516,7 +516,7 @@ func TestOAuth2_H_RevokeAllAndIssueTokenPairErrors(t *testing.T) {
 			return db.Oauth2AccessToken{}, assert.AnError
 		},
 	}
-	_, err = NewOAuth2Service(failAccess).issueTokenPair(ctx, failAccess, 41, 7, nil)
+	_, err = NewOAuth2Service(failAccess).issueTokenPair(ctx, failAccess, 41, 7, nil, grantSource{})
 	require.Equal(t, 500, oauth2HStatus(t, err))
 
 	failRefresh := &oauth2HQuerier{
@@ -524,7 +524,7 @@ func TestOAuth2_H_RevokeAllAndIssueTokenPairErrors(t *testing.T) {
 			return db.Oauth2RefreshToken{}, assert.AnError
 		},
 	}
-	_, err = NewOAuth2Service(failRefresh).issueTokenPair(ctx, failRefresh, 41, 7, []string{"read:user"})
+	_, err = NewOAuth2Service(failRefresh).issueTokenPair(ctx, failRefresh, 41, 7, []string{"read:user"}, grantSource{})
 	require.Equal(t, 500, oauth2HStatus(t, err))
 }
 
@@ -553,7 +553,7 @@ func TestOAuth2_H_IssueTokenPairUsesServiceClock(t *testing.T) {
 	})
 	svc.now = func() time.Time { return now }
 
-	resp, err := svc.issueTokenPair(ctx, svc.queries, 41, 7, nil)
+	resp, err := svc.issueTokenPair(ctx, svc.queries, 41, 7, nil, grantSource{})
 	require.NoError(t, err)
 	assert.Equal(t, now.Add(oauth2AccessTokenTTL), accessExpires)
 	assert.Equal(t, now.Add(oauth2RefreshTokenTTL), refreshExpires)

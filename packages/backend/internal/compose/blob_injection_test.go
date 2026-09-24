@@ -12,7 +12,7 @@ import (
 func TestInjectedBlobStoreBypassesDeploymentConstructor(t *testing.T) {
 	provided := blob.NewMemoryStore()
 	store, client, expiry, err := selectBlobStore(context.Background(), config.BlobConfig{
-		GCSBucket:       "must-not-open-cloud-client",
+		DataDir:         "", // No usable local configuration: injected storage must bypass it.
 		SignedURLExpiry: "9m",
 	}, provided)
 	if err != nil {

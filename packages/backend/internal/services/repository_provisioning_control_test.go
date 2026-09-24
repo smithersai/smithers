@@ -4,10 +4,8 @@ import (
 	"context"
 	stdErrors "errors"
 	"net/http"
-	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +78,16 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 	pool := getAgentTestPool(t)
 	actor := &db.User{ID: 7, Username: "bob", LowerUsername: "bob"}
 
+	t.Run("missing injected journal stays unavailable after enable", func(t *testing.T) {
+		q := &rolloutRepoQuerier{mockRepoQuerier: &mockRepoQuerier{}}
+		host := &rolloutProvisioningHost{mockRepoHostClient: &mockRepoHostClient{}}
+		svc := NewRepoServiceWithPool(q, host, "s1", pool)
+		svc.EnableDurableProvisioning()
+		_, err := svc.CreateRepo(context.Background(), actor, "missing-store", "", true, "main", false)
+		requireRepositoryRolloutUnavailable(t, err)
+		assert.Zero(t, host.prepareInitCalls)
+	})
+
 	t.Run("user repository", func(t *testing.T) {
 		createCalls := 0
 		q := &rolloutRepoQuerier{mockRepoQuerier: &mockRepoQuerier{
@@ -89,7 +97,7 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 			},
 		}}
 		host := &rolloutProvisioningHost{mockRepoHostClient: &mockRepoHostClient{}}
-		svc := NewRepoServiceWithPool(q, host, "s1", pool)
+		svc := NewRepoServiceWithPool(q, host, "s1", pool, WithRepoProvisioningStore(struct{ RepositoryProvisioningStore }{}))
 
 		_, err := svc.CreateRepo(context.Background(), actor, "demo", "", true, "main", false)
 		requireRepositoryRolloutUnavailable(t, err)
@@ -118,7 +126,7 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 			},
 		}}
 		host := &rolloutProvisioningHost{mockRepoHostClient: &mockRepoHostClient{}}
-		svc := NewRepoServiceWithPool(q, host, "s1", pool)
+		svc := NewRepoServiceWithPool(q, host, "s1", pool, WithRepoProvisioningStore(struct{ RepositoryProvisioningStore }{}))
 
 		_, err := svc.CreateOrgRepo(context.Background(), actor, "acme", "demo", "", true, "main", false)
 		requireRepositoryRolloutUnavailable(t, err)
@@ -151,7 +159,7 @@ func TestRepoServiceDurableCreatesStayGatedUntilEnabled(t *testing.T) {
 			canonicalUser: db.User{ID: 22, Username: "alice", LowerUsername: "alice"},
 		}
 		host := &rolloutProvisioningHost{mockRepoHostClient: &mockRepoHostClient{}}
-		svc := NewRepoServiceWithPool(q, host, "s1", pool, WithRepoPlacementResolver(&fixedRepoPlacement{storageSetID: "s1"}))
+		svc := NewRepoServiceWithPool(q, host, "s1", pool, WithRepoProvisioningStore(struct{ RepositoryProvisioningStore }{}), WithRepoPlacementResolver(&fixedRepoPlacement{storageSetID: "s1"}))
 
 		_, err := svc.ForkRepo(context.Background(), actor, "alice", "source", "copy", "")
 		requireRepositoryRolloutUnavailable(t, err)
@@ -178,7 +186,7 @@ func TestGitHubImportStartStaysGatedUntilDurableWorkerEnabled(t *testing.T) {
 	host := &candidateFallbackStagedHost{testGitHubImportRepoHost: &testGitHubImportRepoHost{}}
 	svc := NewGitHubImportService(
 		pool, &testGitHubImportRepoDB{}, testGitHubImportTokenDB{}, host,
-		testGitHubImportDecrypter{}, "https://smithers.test",
+		testGitHubImportDecrypter{}, "https://smithers.test", WithGitHubImportProductProvisioning(pool),
 	)
 	input := ImportGitHubRepoInput{UserID: userID, Owner: "octo", Repo: "demo", Branch: "main"}
 
@@ -195,122 +203,4 @@ func TestGitHubImportStartStaysGatedUntilDurableWorkerEnabled(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM import_jobs WHERE user_id = $1`, userID).Scan(&jobCount))
 	assert.Equal(t, int64(1), jobCount)
 	assert.Equal(t, owner, job.RepoOwner)
-}
-
-func TestProvisioningEnforcementAtomicallyTerminalizesUnboundLegacyImports(t *testing.T) {
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	userID, owner := createProvisioningTestUser(t)
-	_, err := pool.Exec(ctx, `INSERT INTO repository_provisioning_control (singleton) VALUES (TRUE) ON CONFLICT (singleton) DO NOTHING`)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `
-		UPDATE repository_provisioning_control
-		SET enforce_insert_fence = FALSE, updated_at = NOW()
-		WHERE singleton
-	`)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `
-			UPDATE repository_provisioning_control
-			SET enforce_insert_fence = FALSE, updated_at = NOW()
-			WHERE singleton
-		`)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM import_jobs WHERE user_id = $1`, userID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
-	})
-
-	unboundID := uuid.NewString()
-	boundID := uuid.NewString()
-	readyID := uuid.NewString()
-	claimToken := strings.Repeat("8", 64)
-	var provisioningRepositoryID int64
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT nextval(pg_get_serial_sequence('repositories', 'id'))`).Scan(&provisioningRepositoryID))
-	_, err = pool.Exec(ctx, `
-		INSERT INTO import_jobs (
-			id, user_id, github_owner, github_repo, repo_owner, repo_name,
-			branch, target_bookmark, status, stage, claim_token, claimed_at
-		) VALUES ($1, $2, 'legacy', 'unbound', $3, 'unbound', 'main', 'main',
-			'cloning', 'pushing_mirror', $4, NOW())
-	`, unboundID, userID, owner, claimToken)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `
-		INSERT INTO import_jobs (
-			id, user_id, github_owner, github_repo, repo_owner, repo_name,
-			branch, target_bookmark, status, stage, provisioning_repository_id,
-			provisioning_token, claim_token, claimed_at
-		) VALUES ($1, $2, 'durable', 'bound', $3, 'bound', 'main', 'main',
-			'cloning', 'pushing_mirror', $4, $5, $6, NOW())
-	`, boundID, userID, owner, provisioningRepositoryID, strings.Repeat("9", 64), claimToken)
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `
-		INSERT INTO import_jobs (
-			id, user_id, github_owner, github_repo, repo_owner, repo_name,
-			branch, target_bookmark, status
-		) VALUES ($1, $2, 'legacy', 'ready', $3, 'ready', 'main', 'main', 'ready')
-	`, readyID, userID, owner)
-	require.NoError(t, err)
-
-	enabled, err := ConfigureRepositoryProvisioningEnforcement(ctx, pool, false)
-	require.NoError(t, err)
-	assert.False(t, enabled, "false request must read, not override, the DB-authoritative switch")
-	enabled, err = ConfigureRepositoryProvisioningEnforcement(ctx, pool, true)
-	require.NoError(t, err)
-	assert.True(t, enabled)
-
-	var (
-		status      string
-		stage       string
-		message     string
-		storedClaim *string
-	)
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT status, stage, error, claim_token FROM import_jobs WHERE id = $1
-	`, unboundID).Scan(&status, &stage, &message, &storedClaim))
-	assert.Equal(t, "failed", status)
-	assert.Empty(t, stage)
-	assert.Equal(t, legacyImportRolloutFailure, message)
-	assert.Nil(t, storedClaim)
-	assert.Contains(t, message, "operator review")
-	assert.Contains(t, message, "retry")
-
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT status, stage, claim_token FROM import_jobs WHERE id = $1
-	`, boundID).Scan(&status, &stage, &storedClaim))
-	assert.Equal(t, "cloning", status, "durably bound work must remain resumable")
-	assert.Equal(t, "pushing_mirror", stage)
-	require.NotNil(t, storedClaim)
-	assert.Equal(t, claimToken, *storedClaim)
-
-	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM import_jobs WHERE id = $1`, readyID).Scan(&status))
-	assert.Equal(t, "ready", status)
-	var databaseEnabled bool
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT enforce_insert_fence FROM repository_provisioning_control WHERE singleton
-	`).Scan(&databaseEnabled))
-	assert.True(t, databaseEnabled)
-
-	// Once contracted, a normal durable StartImport briefly has no provisioning
-	// binding until its worker reserves a candidate. Pod restarts must treat an
-	// already-true switch as read-only and never mistake that fresh job for
-	// pre-transition legacy work.
-	freshDurableJobID := uuid.NewString()
-	_, err = pool.Exec(ctx, `
-		INSERT INTO import_jobs (
-			id, user_id, github_owner, github_repo, repo_owner, repo_name,
-			branch, target_bookmark, status
-		) VALUES ($1, $2, 'durable', 'fresh-after-contract', $3,
-			'fresh-after-contract', 'main', 'main', 'cloning')
-	`, freshDurableJobID, userID, owner)
-	require.NoError(t, err)
-	enabled, err = ConfigureRepositoryProvisioningEnforcement(ctx, pool, true)
-	require.NoError(t, err)
-	assert.True(t, enabled)
-	require.NoError(t, pool.QueryRow(ctx,
-		`SELECT status FROM import_jobs WHERE id = $1`, freshDurableJobID).Scan(&status))
-	assert.Equal(t, "cloning", status, "an already-contracted startup must not terminalize fresh durable work")
-
-	enabled, err = ConfigureRepositoryProvisioningEnforcement(ctx, pool, false)
-	require.NoError(t, err)
-	assert.True(t, enabled, "a false request must not weaken an already-contracted DB switch")
 }

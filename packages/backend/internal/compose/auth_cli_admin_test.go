@@ -49,12 +49,9 @@ func adminCLIConsentTestRouter(authHandler *routes.AuthHandler) http.Handler {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler — pool is nil so SSE would 500; fine for non-SSE tests
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler

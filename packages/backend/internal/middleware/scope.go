@@ -47,14 +47,15 @@ const (
 )
 
 type AuthInfo struct {
-	User        *db.User
-	TokenID     int64
-	TokenHash   string
-	OAuth2AppID int64
-	RawScopes   string
-	Scopes      ScopeSet
-	IsTokenAuth bool
-	TokenSource TokenSource
+	TokenSystemIssued bool
+	User              *db.User
+	TokenID           int64
+	TokenHash         string
+	OAuth2AppID       int64
+	RawScopes         string
+	Scopes            ScopeSet
+	IsTokenAuth       bool
+	TokenSource       TokenSource
 }
 
 // repositoryRestrictionScopePrefix marks a scopes-list entry that binds a token
@@ -455,5 +456,38 @@ func NormalizeTokenScope(raw string) TokenScope {
 		return ScopeReadAgent
 	default:
 		return ""
+	}
+}
+
+// ContextAsAnonymous strips the authenticated identity from ctx so downstream
+// handlers serve the request exactly as they serve an unauthenticated caller.
+// Both the AuthInfo and the legacy UserContextKey value are cleared, so
+// UserFromContext returns nil.
+func ContextAsAnonymous(ctx context.Context) context.Context {
+	ctx = context.WithValue(ctx, authInfoContextKey, (*AuthInfo)(nil))
+	return context.WithValue(ctx, UserContextKey, (*db.User)(nil))
+}
+
+// PublicReadAsAnonymousWithoutTokenScope guards anonymous-readable routes. A
+// session caller and a token holding the required scope keep their identity.
+// A token lacking the scope, or bound to a resource (repo:, workspace:,
+// agent-session:, path:), is served as an anonymous caller instead of being
+// refused: a token must never see less than an anonymous caller on a public
+// read, and the anonymous view carries no member-only data the token could
+// not otherwise reach.
+func PublicReadAsAnonymousWithoutTokenScope(required TokenScope) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authInfo := AuthInfoFromContext(r.Context())
+			if authInfo == nil || !authInfo.IsTokenAuth {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if !authInfo.Scopes.Has(required) || authInfo.IsResourceBound() {
+				next.ServeHTTP(w, r.WithContext(ContextAsAnonymous(r.Context())))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

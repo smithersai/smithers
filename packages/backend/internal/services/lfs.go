@@ -14,10 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -109,7 +110,7 @@ type LFSQuerier interface {
 }
 
 type lfsStorageDeletionAllocationQuerier interface {
-	HasStorageDeletionAllocation(ctx context.Context, arg clusterdb.HasStorageDeletionAllocationParams) (bool, error)
+	HasStorageDeletionAllocation(ctx context.Context, arg runtimeports.HasStorageDeletionAllocationParams) (bool, error)
 }
 
 type LFSService struct {
@@ -714,7 +715,7 @@ func (s *LFSService) reserveLFSUploadCapacity(ctx context.Context, repositoryID 
 			}
 			freshReservations[oid] = true
 			if allocationStore, ok := s.queries.(lfsStorageDeletionAllocationQuerier); ok {
-				queued, queueErr := allocationStore.HasStorageDeletionAllocation(ctx, clusterdb.HasStorageDeletionAllocationParams{
+				queued, queueErr := allocationStore.HasStorageDeletionAllocation(ctx, runtimeports.HasStorageDeletionAllocationParams{
 					RepositoryID:  repositoryID,
 					AllocationKey: lfsStorageAllocationKey(repositoryID, oid),
 				})

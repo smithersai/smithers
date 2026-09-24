@@ -14,17 +14,13 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/identity"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
-	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	"github.com/smithersai/smithers/packages/backend/internal/services/alertregistry"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
@@ -62,16 +58,9 @@ func buildRouter(
 	notificationHandler *routes.NotificationHandler,
 	pairSessionHandler *routes.PairSessionHandler,
 
-	runnerHandler *routes.RunnerHandler,
-	adminRunnerHandler *routes.AdminRunnerHandler,
 	adminUserHandler *routes.AdminUserHandler,
 	adminOrgHandler *routes.AdminOrgHandler,
 	adminRepoHandler *routes.AdminRepoHandler,
-	adminSystemHealthHandler *routes.AdminSystemHealthHandler,
-	adminSystemStatusHandler *routes.AdminSystemStatusHandler,
-	adminSystemCanariesHandler *routes.AdminSystemCanariesHandler,
-	adminSystemIncidentsHandler *routes.AdminSystemIncidentsHandler,
-	adminSystemMetricsHandler *routes.AdminSystemMetricsHandler,
 	adminGitHubAppHandler *routes.AdminGitHubAppHandler,
 	adminAuditHandler *routes.AdminAuditHandler,
 	webhookHandler *routes.WebhookHandler,
@@ -89,7 +78,6 @@ func buildRouter(
 	approvalsHandler *routes.ApprovalsHandler,
 	branchLockHandler *routes.BranchLockHandler,
 	pushHookHandler *routes.InternalPushHookHandler,
-	canaryReportHandler *routes.CanaryReportHandler,
 	workflowHandler *routes.WorkflowHandler,
 	workflowCacheHandler *routes.WorkflowCacheHandler,
 	workflowArtifactHandler *routes.WorkflowArtifactHandler,
@@ -113,12 +101,9 @@ func buildRouter(
 	smithersMetrics *routes.SmithersMetrics,
 	routerOptions ...any,
 ) *chi.Mux {
-	alertRemediationReady := false
 	var extras routerExtras
 	for _, option := range routerOptions {
 		switch value := option.(type) {
-		case bool:
-			alertRemediationReady = value
 		case routerExtras:
 			extras = value
 		}
@@ -127,10 +112,6 @@ func buildRouter(
 		extras.Catalog = routes.NewPublicRepositoryCatalog(queries)
 	}
 	r := chi.NewRouter()
-	// Fleet routes are available only when the hosted assembly supplied its
-	// runner handler. Their SQL belongs to the deployment adapter.
-	hosted := adminRunnerHandler != nil
-	clusterQueries := deploymentdb.New(pool)
 	var ownerBoundary identity.OwnerAuthorizer
 	if config.IsSingleOwner(cfg.Auth) {
 		ownerBoundary = identity.NewSingleOwnerBoundary(queries)
@@ -282,51 +263,6 @@ func buildRouter(
 	r.Get("/health", routes.Health)
 	r.Get("/healthz", healthzHandler.Healthz)
 	r.Get("/readyz", readyzHandler.Readyz)
-	if canaryWebhookHandler := routes.NewCanaryWebhookHandler(os.Getenv("SMITHERS_CANARY_WEBHOOK_SIGNING_KEY")); canaryWebhookHandler != nil {
-		canaryWebhookHandler.Observer = smithersMetrics
-		r.Post("/canary/webhook-receiver/{token}", canaryWebhookHandler.Receive)
-	}
-	// GCP Cloud Monitoring alert webhook receiver (webhook_basicauth channel)
-	// feeding the alert auto-remediation pipeline.
-	var alertIncidentService *clusterservices.AlertIncidentService
-	if hosted && queries != nil {
-		// Outcome callbacks only need the durable run/job binding. Keep this
-		// route available on every healthy API replica even when that replica
-		// could not start the background dispatcher.
-		alertIncidentService = clusterservices.NewAlertIncidentService(clusterQueries, nil, clusterservices.WithAlertTransactions())
-	}
-	if alertWebhookHandler := routes.NewAlertWebhookHandler(os.Getenv("SMITHERS_ALERT_WEBHOOK_SIGNING_KEY")); alertWebhookHandler != nil {
-		ready := alertRemediationReady
-		if hosted && queries != nil {
-			// Recording the incident must NOT depend on the remediation worker.
-			// It used to: with alertRemediation.enabled=false (the deliberate
-			// fail-closed default during rollouts) the Receiver stayed nil and
-			// EVERY Cloud Monitoring delivery was answered 503 and dropped, so
-			// no alert was ever recorded, surfaced in
-			// /api/admin/system/incidents, or visible to an operator. The
-			// worker's readiness now gates only the enqueue half.
-			var alertRegistry *alertregistry.Registry
-			if loaded, err := loadAlertRegistry(); err != nil {
-				// A registry that will not parse costs runbook/workflow
-				// metadata on the row; it must not cost the row itself.
-				slog.Error("failed to load alert remediation registry; incidents will be recorded without runbook metadata", "error", err)
-			} else {
-				alertRegistry = loaded
-			}
-			alertIncidentService = clusterservices.NewAlertIncidentService(
-				clusterQueries,
-				alertRegistry,
-				clusterservices.WithAlertRemediationEnabled(ready),
-				clusterservices.WithAlertTransactions(),
-			)
-			alertWebhookHandler.Receiver = alertIncidentService
-		}
-		if !ready {
-			slog.Warn("alert auto-remediation is disabled; incidents are recorded but no remediation job is enqueued")
-		}
-		r.Post("/api/internal/alerts/incident", alertWebhookHandler.Receive)
-	}
-
 	// Prometheus metrics endpoint (for Kubernetes monitoring / Cloud Monitoring scraping).
 	// The ingress exposes "/" publicly, so network policy alone is not sufficient: the
 	// metrics expose sensitive operational data. Require a shared bearer token. The token
@@ -352,12 +288,6 @@ func buildRouter(
 		sharedAgentToken := strings.TrimSpace(os.Getenv("SMITHERS_AGENT_TOKEN"))
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireSharedBearerToken(sharedAgentToken))
-			if runnerHandler != nil {
-				r.Post("/runners/register", runnerHandler.Register)
-				r.Post("/runners/{id}/claim", runnerHandler.ClaimTask)
-				r.Post("/runners/{id}/heartbeat", runnerHandler.Heartbeat)
-				r.Post("/runners/{id}/terminate", runnerHandler.Terminate)
-			}
 			if workspaceInternalHandler != nil {
 				r.Post("/workspace/{id}/status", workspaceInternalHandler.PostWorkspaceStatus)
 				r.Post("/workspace/{id}/head", workspaceInternalHandler.PostWorkspaceHead)
@@ -365,16 +295,6 @@ func buildRouter(
 		})
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAgentToken(querier))
-			if alertIncidentService != nil {
-				alertOutcomeHandler := &routes.AlertRemediationOutcomeHandler{Recorder: alertIncidentService}
-				r.Post("/alerts/incidents/{incident-id}/outcome", alertOutcomeHandler.Record)
-			}
-			if runnerHandler != nil {
-				r.Get("/tasks/{task-id}/env", runnerHandler.GetTaskEnvironment)
-				r.Get("/tasks/{task-id}/status", runnerHandler.GetTaskStatus)
-				r.Post("/tasks/{task-id}/stream", runnerHandler.StreamEvents)
-				r.Post("/tasks/{task-id}/complete", runnerHandler.CompleteTask)
-			}
 			if workflowCacheHandler != nil {
 				r.With(gateWorkflows).Post("/caches/restore", workflowCacheHandler.Restore)
 				r.With(gateWorkflows).Post("/caches/save", workflowCacheHandler.BeginSave)
@@ -392,10 +312,6 @@ func buildRouter(
 		})
 		if pushHookHandler != nil {
 			r.With(middleware.RequireSharedBearerToken(cfg.RepoHost.PushHookCallbackToken)).Post("/repo-host/push-events", pushHookHandler.PostPushEvent)
-		}
-		if canaryReportHandler != nil {
-			canaryReportToken := strings.TrimSpace(os.Getenv("SMITHERS_CANARY_REPORT_TOKEN"))
-			r.With(middleware.RequireSharedBearerToken(canaryReportToken)).Post("/canary/results", canaryReportHandler.PostResults)
 		}
 	})
 
@@ -1820,8 +1736,9 @@ func buildRouter(
 
 			// Orgs / teams routes. Organizations are not a feature flag: these
 			// routes are always mounted so org-owned repositories exist on Cloud.
-			r.Get("/orgs/{org}", orgHandler.GetOrg)
-			r.Get("/orgs/{org}/repos", orgHandler.GetOrgRepos)
+			orgPublicRead := middleware.PublicReadAsAnonymousWithoutTokenScope(middleware.ScopeReadOrganization)
+			r.With(orgPublicRead).Get("/orgs/{org}", orgHandler.GetOrg)
+			r.With(orgPublicRead).Get("/orgs/{org}/repos", orgHandler.GetOrgRepos)
 
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Post("/orgs", orgHandler.PostOrg)
 			r.With(middleware.RequireAuth, middleware.RequireScope(middleware.ScopeWriteOrganization)).Patch("/orgs/{org}", orgHandler.PatchOrg)
@@ -1881,48 +1798,6 @@ func buildRouter(
 				writeAdmin := []func(http.Handler) http.Handler{
 					middleware.RequireScope(middleware.ScopeWriteAdmin),
 				}
-				// observe-v2: api-manage
-				if hosted && queries != nil {
-					var agents clusterservices.AdminAgentCanceller
-					var workspaces clusterservices.AdminWorkspaceLifecycle
-					if agentSessionHandler != nil {
-						agents, _ = agentSessionHandler.Service.(clusterservices.AdminAgentCanceller)
-					}
-					if workspaceHandler != nil {
-						workspaces, _ = workspaceHandler.Service.(clusterservices.AdminWorkspaceLifecycle)
-					}
-					var hosts clusterservices.AdminHostDrainer
-					if pool != nil {
-						hosts = control.NewPGStore(pool)
-					}
-					manage := clusterservices.NewAdminManageService(clusterQueries, agents, workspaces, hosts)
-					agentAdmin := &routes.AdminAgentSessionHandler{Service: manage}
-					workspaceAdmin := &routes.AdminWorkspaceHandler{Service: manage}
-					hostAdmin := &routes.AdminSandboxHostHandler{Service: manage}
-					tokenAdmin := &routes.AdminTokenHandler{Service: manage}
-					r.With(readAdmin...).Get("/agent-sessions", agentAdmin.List)
-					r.With(writeAdmin...).Post("/agent-sessions/{id}/cancel", agentAdmin.Cancel)
-					r.With(readAdmin...).Get("/workspaces", workspaceAdmin.List)
-					r.With(writeAdmin...).Post("/workspaces/{id}/stop", workspaceAdmin.Stop)
-					r.With(writeAdmin...).Post("/workspaces/{id}/suspend", workspaceAdmin.Suspend)
-					r.With(readAdmin...).Get("/sandbox/hosts", hostAdmin.List)
-					r.With(writeAdmin...).Post("/sandbox/hosts/{id}/drain", hostAdmin.Drain)
-					r.With(writeAdmin...).Post("/sandbox/hosts/prune-stale", hostAdmin.PruneStale)
-					r.With(readAdmin...).Get("/tokens", tokenAdmin.List)
-				}
-				// observe-v2: api-analytics
-				if hosted && queries != nil {
-					analyticsService := clusterservices.NewAdminAnalyticsService(clusterQueries)
-					if pool != nil {
-						analyticsService = clusterservices.NewAdminAnalyticsServiceWithPool(pool)
-					}
-					analyticsHandler := &routes.AdminAnalyticsHandler{Service: analyticsService}
-					r.With(readAdmin...).Get("/analytics/summary", analyticsHandler.Summary)
-				}
-
-				if adminRunnerHandler != nil {
-					r.With(readAdmin...).Get("/runners", adminRunnerHandler.ListRunners)
-				}
 				if workspaceHandler != nil && workspaceHandler.EnvironmentImages != nil {
 					// Platform base NixOS images (repository_id NULL) for kind=vm/desktop.
 					r.With(readAdmin...).Get("/sandbox/environment-images", workspaceHandler.EnvironmentImages.ListBaseImages)
@@ -1942,33 +1817,6 @@ func buildRouter(
 				}
 				if adminRepoHandler != nil {
 					r.With(readAdmin...).Get("/repos", adminRepoHandler.ListRepos)
-				}
-				if adminSystemHealthHandler != nil {
-					r.With(readAdmin...).Get("/system/health", adminSystemHealthHandler.SystemHealth)
-				}
-				if adminSystemStatusHandler != nil {
-					r.With(readAdmin...).Get("/system/status", adminSystemStatusHandler.SystemStatus)
-				}
-				if adminSystemCanariesHandler != nil {
-					r.With(readAdmin...).Get("/system/canaries", adminSystemCanariesHandler.SystemCanaries)
-				}
-				// observe-v2: api-incidents
-				if adminSystemIncidentsHandler != nil {
-					if adminSystemIncidentsHandler.Actions == nil && hosted && queries != nil {
-						adminSystemIncidentsHandler.Actions = clusterservices.NewHostedAdminIncidentsService(clusterQueries)
-					}
-					r.With(writeAdmin...).Post("/system/incidents/{id}/acknowledge", adminSystemIncidentsHandler.Acknowledge)
-					r.With(writeAdmin...).Post("/system/incidents/{id}/unacknowledge", adminSystemIncidentsHandler.Unacknowledge)
-					r.With(writeAdmin...).Post("/system/incidents/{id}/resolve", adminSystemIncidentsHandler.Resolve)
-					r.With(writeAdmin...).Post("/system/incidents/{id}/snooze", adminSystemIncidentsHandler.Snooze)
-					r.With(writeAdmin...).Post("/system/incidents/bulk", adminSystemIncidentsHandler.Bulk)
-					r.With(readAdmin...).Get("/system/incidents", adminSystemIncidentsHandler.ListIncidents)
-				}
-				if adminSystemMetricsHandler != nil {
-					// main.go always supplies a handler, using one with no metrics
-					// backend when no GCP project is configured, so an unconfigured
-					// backend answers 501 rather than looking like a missing route.
-					r.With(readAdmin...).Get("/system/metrics/query", adminSystemMetricsHandler.Query)
 				}
 				if adminGitHubAppHandler != nil {
 					r.With(writeAdmin...).Post("/github-app/reconcile", adminGitHubAppHandler.Reconcile)

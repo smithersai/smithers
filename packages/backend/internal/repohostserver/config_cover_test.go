@@ -18,7 +18,6 @@ func TestConfig_Cov_LoadConfigWithExplicitFFILibraryPath(t *testing.T) {
 	t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_URL", " https://example.test/push ")
 	t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN", "callback-token")
 	t.Setenv("SMITHERS_FFI_LIBRARY_PATH", " "+ffiPath+" ")
-	t.Setenv("SMITHERS_CLOUD_TRACE_PROJECT_ID", " trace-project ")
 	t.Setenv("SMITHERS_TRACE_SAMPLE_RATE", "0.25")
 	t.Setenv("SMITHERS_OTEL_EXPORTER", "otlp")
 	t.Setenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
@@ -44,9 +43,6 @@ func TestConfig_Cov_LoadConfigWithExplicitFFILibraryPath(t *testing.T) {
 	}
 	if cfg.FFILibraryPath != ffiPath {
 		t.Fatalf("FFILibraryPath = %q, want %q", cfg.FFILibraryPath, ffiPath)
-	}
-	if cfg.Observability.CloudTraceProjectID != "trace-project" {
-		t.Fatalf("CloudTraceProjectID = %q", cfg.Observability.CloudTraceProjectID)
 	}
 	if cfg.Observability.TraceSampleRate != 0.25 {
 		t.Fatalf("TraceSampleRate = %v", cfg.Observability.TraceSampleRate)
@@ -271,7 +267,6 @@ func configCovClearEnv(t *testing.T) {
 		"SMITHERS_PUSH_HOOK_CALLBACK_URL",
 		"SMITHERS_PUSH_HOOK_CALLBACK_TOKEN",
 		"SMITHERS_FFI_LIBRARY_PATH",
-		"SMITHERS_CLOUD_TRACE_PROJECT_ID",
 		"SMITHERS_TRACE_SAMPLE_RATE",
 		"SMITHERS_OTEL_EXPORTER",
 		"SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT",

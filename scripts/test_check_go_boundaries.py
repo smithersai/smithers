@@ -25,6 +25,33 @@ class BoundaryTests(unittest.TestCase):
         self.write("packages/backend/internal/compose/main.go", 'package compose\nconst role = "hosted_worker"\n')
         self.assertEqual(len(boundaries.source_imports(self.root)), 1)
 
+    def test_every_deleted_package_root_is_rejected(self):
+        self.assertEqual(boundaries.source_imports(self.root), [])
+        for package in boundaries.PRIVATE_PACKAGE_ROOTS:
+            with self.subTest(package=package):
+                target = self.root / package
+                target.mkdir(parents=True)
+                self.assertEqual(boundaries.source_imports(self.root), [
+                    f"{package}: private package belongs to Plue",
+                ])
+                target.rmdir()
+
+    def test_all_hosted_topology_spellings_are_rejected(self):
+        for identifier in ("HostedRollout", "RoleHostedAPI", "RoleHostedWorker", "hosted_api", "hosted_worker", "PLUE_BACKEND_ROLE", "PLUE_CLI_VERSION"):
+            with self.subTest(identifier=identifier):
+                self.write("packages/backend/app/contract.go", f'package app\nconst value = "{identifier}"\n')
+                self.assertEqual(len(boundaries.source_imports(self.root)), 1)
+        self.write("packages/backend/app/contract.go", 'package app\nconst value = "http"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [])
+
+    def test_testkit_cannot_enter_production_through_helper_package(self):
+        self.write("packages/helper/helper.go", f'package helper\nimport "{boundaries.TESTKIT_IMPORT}"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [
+            "packages/helper/helper.go: production source imports testkit",
+        ])
+        (self.root / "packages/helper/helper.go").rename(self.root / "packages/helper/helper_test.go")
+        self.assertEqual(boundaries.source_imports(self.root), [])
+
     def test_test_imports_cannot_reintroduce_cloud_sdks(self):
         self.write("packages/backend/auth_test.go", 'package backend\nimport crypto "github.com/ethereum/go-ethereum/crypto"\n')
         self.assertEqual(len(boundaries.source_imports(self.root)), 1)
@@ -34,6 +61,23 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(boundaries.source_imports(self.root), [
             "packages/backend/db/cluster: private schema belongs to Plue",
         ])
+
+    def test_production_private_sql_mutations_are_rejected(self):
+        # Mutate an otherwise valid production source, then remove the actual
+        # SQL mutation and prove the same boundary check passes again.
+        path = "packages/backend/internal/services/provisioning.go"
+        baseline = 'package services\n// repository_provisioning_operations is supplied through a Store.\ntype RepositoryProvisioningStore interface {}\n'
+        for table in boundaries.PRIVATE_SQL_TABLES:
+            for expression in (f'`SELECT * FROM {table} FOR UPDATE`', f'"UPDATE public.{table}\\nSET enabled=true"', f'`INSERT INTO "public"."{table}" DEFAULT VALUES`'):
+                with self.subTest(table=table, expression=expression):
+                    self.write(path, baseline + f"const query = {expression}\n")
+                    self.assertEqual(boundaries.source_imports(self.root), [f"{path}: SQL table {table} belongs to Plue"])
+                    self.write(path, baseline)
+                    self.assertEqual(boundaries.source_imports(self.root), [])
+
+    def test_private_table_names_in_docs_and_interfaces_are_allowed(self):
+        self.write("packages/backend/internal/services/provisioning.go", 'package services\n// SELECT * FROM repository_provisioning_operations\ntype RepositoryProvisioningStore interface {}\nconst message = "repository_provisioning_operations unavailable"\n')
+        self.assertEqual(boundaries.source_imports(self.root), [])
 
     def test_dependency_resolution_failure_is_not_a_pass(self):
         self.assertTrue(boundaries.local_graph(self.root))

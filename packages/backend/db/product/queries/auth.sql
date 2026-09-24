@@ -108,14 +108,15 @@ WHERE session_key = sqlc.arg(session_key)
 RETURNING *;
 
 -- name: CreateAccessToken :one
-INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, expires_at)
+INSERT INTO access_tokens (user_id, name, token_hash, token_last_eight, scopes, expires_at, system_issued)
 VALUES (
     sqlc.arg(user_id),
     sqlc.arg(name),
     sqlc.arg(token_hash),
     sqlc.arg(token_last_eight),
     sqlc.arg(scopes),
-    sqlc.arg(expires_at)
+    sqlc.arg(expires_at),
+    sqlc.arg(system_issued)
 )
 RETURNING *;
 
@@ -384,3 +385,6 @@ WITH token AS (
     RETURNING id
 )
 SELECT token.* FROM token CROSS JOIN audit;
+
+-- name: GetAccessTokenForOAuthGrant :one
+SELECT * FROM access_tokens WHERE id = $1 FOR SHARE;

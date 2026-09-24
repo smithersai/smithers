@@ -224,7 +224,17 @@ func (service *Service) Get(ctx context.Context, scope jobs.Scope, operationID s
 // CallRPC resolves the same fenced Flow host as durable dispatch, then relays
 // a browser catalog, plan, run, or projection call to its canonical RPC.
 func (service *Service) CallRPC(ctx context.Context, target flowruntime.Target, procedure string, payload json.RawMessage) (json.RawMessage, error) {
-	runtime, err := service.resolver.ResolveFlowRuntime(ctx, target)
+	var runtime flowruntime.Runtime
+	var err error
+	if procedure == "List" || procedure == "Projection.Snapshot" {
+		reader, ok := service.resolver.(flowruntime.ExistingResolver)
+		if !ok {
+			return nil, errors.New("flow dispatch: runtime has no read-only resolver")
+		}
+		runtime, err = reader.ResolveExistingFlowRuntime(ctx, target)
+	} else {
+		runtime, err = service.resolver.ResolveFlowRuntime(ctx, target)
+	}
 	if err != nil {
 		return nil, err
 	}

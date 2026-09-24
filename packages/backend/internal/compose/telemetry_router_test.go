@@ -83,12 +83,9 @@ func telemetryRouterForTest(cfg *config.Config, metrics *routes.SmithersMetrics)
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler

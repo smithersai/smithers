@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -62,8 +61,6 @@ func (h *candidateFallbackStagedHost) AbortStagedProvision(_ context.Context, st
 func createProvisioningTestUser(t *testing.T) (int64, string) {
 	t.Helper()
 	pool := getAgentTestPool(t)
-	_, err := pool.Exec(context.Background(), `INSERT INTO repo_storage_sets (id) VALUES ('s1') ON CONFLICT (id) DO NOTHING`)
-	require.NoError(t, err)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 	username := "provision-" + suffix
 	email := username + "@example.com"
@@ -74,105 +71,6 @@ func createProvisioningTestUser(t *testing.T) (int64, string) {
 		RETURNING id
 	`, username, email).Scan(&userID))
 	return userID, username
-}
-
-func TestRepositoryProvisioningStaleClaimCanBeTakenOver(t *testing.T) {
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	userID, owner := createProvisioningTestUser(t)
-	store := newPostgresRepositoryProvisioningStore(pool)
-	token := strings.Repeat("a", 64)
-	operation, err := store.Reserve(ctx, newInitProvisioningOperation(
-		userID,
-		pgtype.Int8{Int64: userID, Valid: true}, pgtype.Int8{}, owner,
-		repositoryProvisionParams{Name: "stale-claim", LowerName: "stale-claim", IsPublic: true, DefaultBookmark: "main"},
-		repohost.StagedProvision{StorageSetID: "s1", Token: token, OperationType: repositoryProvisionInit, Owner: owner, Repo: "stale-claim", DefaultBookmark: "main"},
-		repositoryProvisionInit,
-	))
-	require.NoError(t, err)
-
-	oldClaim := strings.Repeat("b", 64)
-	_, err = pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET claim_token = $1, claimed_at = NOW() - INTERVAL '1 hour'
-		WHERE repository_id = $2
-	`, oldClaim, operation.RepositoryID)
-	require.NoError(t, err)
-	newClaim := strings.Repeat("c", 64)
-	require.NoError(t, store.AcquireProcessing(ctx, operation.RepositoryID, token, newClaim))
-	assert.ErrorIs(t, store.AcquireProcessing(ctx, operation.RepositoryID, token, strings.Repeat("d", 64)), errRepositoryProvisionInProgress)
-
-	var storedClaim string
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT claim_token FROM repository_provisioning_operations WHERE repository_id = $1
-	`, operation.RepositoryID).Scan(&storedClaim))
-	assert.Equal(t, newClaim, storedClaim)
-}
-
-func TestImportPublicationAtomicallyBindsJobAndAdoptsLostResponse(t *testing.T) {
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	userID, owner := createProvisioningTestUser(t)
-	store := newPostgresRepositoryProvisioningStore(pool)
-	jobID := uuid.NewString()
-	claimToken := strings.Repeat("e", 64)
-	require.NoError(t, pool.QueryRow(ctx, `
-		INSERT INTO import_jobs (
-			id, user_id, github_owner, github_repo, repo_owner, repo_name,
-			branch, target_bookmark, status, claim_token, claimed_at
-		) VALUES ($1, $2, 'upstream', 'mirror', $3, 'mirror', 'work', 'work', 'cloning', $4, NOW())
-		RETURNING id
-	`, jobID, userID, owner, claimToken).Scan(&jobID))
-
-	token := strings.Repeat("f", 64)
-	wanted := newInitProvisioningOperation(
-		userID,
-		pgtype.Int8{Int64: userID, Valid: true}, pgtype.Int8{}, owner,
-		repositoryProvisionParams{
-			Name: "mirror", LowerName: "mirror", Description: "Imported from github.com/upstream/mirror",
-			IsPublic: false, DefaultBookmark: "main",
-		},
-		repohost.StagedProvision{StorageSetID: "s1", Token: token, OperationType: repositoryProvisionImport, Owner: owner, Repo: "mirror", DefaultBookmark: "main"},
-		repositoryProvisionImport,
-	)
-	wanted.ImportJobID = jobID
-	wanted.ImportJobClaimToken = claimToken
-	operation, err := store.Reserve(ctx, wanted)
-	require.NoError(t, err)
-	operation.ImportJobID = jobID
-	operation.ImportJobClaimToken = claimToken
-
-	require.NoError(t, store.AcquireProcessing(ctx, operation.RepositoryID, token, claimToken))
-	require.NoError(t, store.MarkPublishReady(ctx, operation.RepositoryID, token, claimToken))
-	operation.PublishReady = true
-	repository, err := store.Publish(ctx, operation, claimToken)
-	require.NoError(t, err)
-	assert.Equal(t, operation.RepositoryID, repository.ID)
-
-	// A caller can lose the commit response. Repeating publication with the
-	// same stable ID/token adopts the exact row and re-applies the job binding.
-	repository, err = store.Publish(ctx, operation, claimToken)
-	require.NoError(t, err)
-	assert.Equal(t, operation.RepositoryID, repository.ID)
-
-	var (
-		boundRepositoryID int64
-		boundToken        string
-		status            string
-	)
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT repository_id, provisioning_token, status
-		FROM import_jobs WHERE id = $1
-	`, jobID).Scan(&boundRepositoryID, &boundToken, &status))
-	assert.Equal(t, repository.ID, boundRepositoryID)
-	assert.Equal(t, token, boundToken)
-	assert.Equal(t, "cloning", status, "publication and post-publish workspace completion are separate durable steps")
-
-	var operationUpdated time.Time
-	require.NoError(t, pool.QueryRow(ctx, `
-		SELECT updated_at FROM repository_provisioning_operations WHERE repository_id = $1
-	`, operation.RepositoryID).Scan(&operationUpdated))
-	assert.False(t, operationUpdated.IsZero())
 }
 
 func TestImportProvenanceTrustsFailedJobOnlyWithDurablePublishedBinding(t *testing.T) {
@@ -239,27 +137,21 @@ func TestDurableImportMismatchFallsBackAndAbortsUnboundStage(t *testing.T) {
 	pool := getAgentTestPool(t)
 	ctx := context.Background()
 	userID, owner := createProvisioningTestUser(t)
-	store := newPostgresRepositoryProvisioningStore(pool)
+	store := &productImportProvisioningStore{pool: pool}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM import_jobs WHERE user_id = $1`, userID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM repository_provisioning_operations WHERE user_id = $1`, userID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1`, userID)
 	})
 
-	_, err := store.Reserve(ctx, newInitProvisioningOperation(
-		userID,
-		pgtype.Int8{Int64: userID, Valid: true}, pgtype.Int8{}, owner,
-		repositoryProvisionParams{
-			Name: "demo", LowerName: "demo", Description: "unrelated pending create",
-			IsPublic: false, DefaultBookmark: "main",
-		},
-		repohost.StagedProvision{
-			StorageSetID: "s1", Token: strings.Repeat("1", 64),
-			OperationType: repositoryProvisionInit, Owner: owner, Repo: "demo",
-			DefaultBookmark: "main",
-		},
-		repositoryProvisionInit,
-	))
+	occupiedJobID := uuid.NewString()
+	occupiedClaim := strings.Repeat("0", 64)
+	_, err := pool.Exec(ctx, `INSERT INTO import_jobs(id,user_id,github_owner,github_repo,repo_owner,repo_name,branch,target_bookmark,status,claim_token,claimed_at) VALUES($1,$2,'occupied','demo',$3,'demo','main','main','cloning',$4,NOW())`, occupiedJobID, userID, owner, occupiedClaim)
+	require.NoError(t, err)
+	occupied := newInitProvisioningOperation(userID, pgtype.Int8{Int64: userID, Valid: true}, pgtype.Int8{}, owner,
+		repositoryProvisionParams{Name: "demo", LowerName: "demo", Description: "unrelated pending import", DefaultBookmark: "main"},
+		repohost.StagedProvision{StorageSetID: DefaultStorageSetID, Token: strings.Repeat("1", 64), OperationType: repositoryProvisionImport, Owner: owner, Repo: "demo", DefaultBookmark: "main"}, repositoryProvisionImport)
+	occupied.ImportJobID, occupied.ImportJobClaimToken = occupiedJobID, occupiedClaim
+	_, err = store.Reserve(ctx, occupied)
 	require.NoError(t, err)
 
 	jobID := uuid.NewString()
@@ -275,7 +167,7 @@ func TestDurableImportMismatchFallsBackAndAbortsUnboundStage(t *testing.T) {
 
 	host := &candidateFallbackStagedHost{testGitHubImportRepoHost: &testGitHubImportRepoHost{}}
 	svc := &GitHubImportService{
-		repoDB: db.New(pool), storageSetID: "s1", provisioning: store,
+		repoDB: db.New(pool), storageSetID: DefaultStorageSetID, provisioning: store,
 		stagedRepoHost: host,
 	}
 	job := claimedGitHubImportJob{
@@ -300,44 +192,4 @@ func TestDurableImportMismatchFallsBackAndAbortsUnboundStage(t *testing.T) {
 	`, jobID).Scan(&boundRepositoryID, &boundToken))
 	assert.Equal(t, reserved.RepositoryID, boundRepositoryID)
 	assert.Equal(t, reserved.Token, boundToken)
-}
-
-func TestRepositoryProvisioningFailedClaimRotatesBehindPendingWork(t *testing.T) {
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	userID, owner := createProvisioningTestUser(t)
-	store := newPostgresRepositoryProvisioningStore(pool)
-	reserve := func(name, token string) repositoryProvisioningOperation {
-		operation, err := store.Reserve(ctx, newInitProvisioningOperation(
-			userID,
-			pgtype.Int8{Int64: userID, Valid: true}, pgtype.Int8{}, owner,
-			repositoryProvisionParams{Name: name, LowerName: name, IsPublic: true, DefaultBookmark: "main"},
-			repohost.StagedProvision{StorageSetID: "s1", Token: token, OperationType: repositoryProvisionInit, Owner: owner, Repo: name, DefaultBookmark: "main"},
-			repositoryProvisionInit,
-		))
-		require.NoError(t, err)
-		return operation
-	}
-	poison := reserve("poison", strings.Repeat("5", 64))
-	next := reserve("next", strings.Repeat("6", 64))
-	_, err := pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET created_at = CASE repository_id WHEN $1 THEN NOW() - INTERVAL '2 hours' ELSE NOW() - INTERVAL '1 hour' END,
-		    updated_at = CASE repository_id WHEN $1 THEN NOW() - INTERVAL '2 hours' ELSE NOW() - INTERVAL '1 hour' END
-		WHERE repository_id IN ($1, $2)
-	`, poison.RepositoryID, next.RepositoryID)
-	require.NoError(t, err)
-
-	firstClaim := strings.Repeat("7", 64)
-	claimed, err := store.ClaimReady(ctx, firstClaim)
-	require.NoError(t, err)
-	require.Len(t, claimed, 1)
-	assert.Equal(t, poison.RepositoryID, claimed[0].RepositoryID)
-	store.ReleaseClaim(ctx, claimed[0], firstClaim, assert.AnError)
-
-	secondClaim := strings.Repeat("8", 64)
-	claimed, err = store.ClaimReady(ctx, secondClaim)
-	require.NoError(t, err)
-	require.Len(t, claimed, 1)
-	assert.Equal(t, next.RepositoryID, claimed[0].RepositoryID)
 }

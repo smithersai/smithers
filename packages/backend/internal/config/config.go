@@ -219,10 +219,6 @@ type ObservabilityConfig struct {
 	// Env: SMITHERS_TRACE_SAMPLE_RATE
 	TraceSampleRate float64 `mapstructure:"trace_sample_rate"`
 
-	// CloudTraceProjectID is the GCP project ID for Cloud Trace export.
-	// If empty, tracing is disabled (graceful no-op). Env: SMITHERS_CLOUD_TRACE_PROJECT_ID
-	CloudTraceProjectID string `mapstructure:"cloud_trace_project_id"`
-
 	// OTelExporter selects the trace exporter backend.
 	// Valid: "none" (default), "otlp". A deployment exporter such as Cloud
 	// Trace is injected by the host, not selected here. Env: SMITHERS_OTEL_EXPORTER
@@ -231,14 +227,6 @@ type ObservabilityConfig struct {
 	// OTLPEndpoint is the OTLP/HTTP trace collector endpoint used when
 	// OTelExporter is "otlp". Env: SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
-
-	// MetricsProjectID is the GCP project whose Google Managed Prometheus
-	// store backs GET /api/admin/system/metrics/query. If empty, the admin
-	// metrics query endpoint answers 501 (see Config.MetricsQueryProjectID,
-	// which falls back to blob.gcs_project because Terraform already injects
-	// the deployment's project id there).
-	// Env: SMITHERS_METRICS_PROJECT_ID
-	MetricsProjectID string `mapstructure:"metrics_project_id"`
 }
 
 type ServerConfig struct {
@@ -277,24 +265,16 @@ type RepoHostConfig struct {
 	PushHookCallbackToken string `mapstructure:"push_hook_callback_token"`
 }
 
-// SandboxConfig holds provider-neutral product settings and Microsandbox
-// controller transport details.
+// SandboxConfig holds product compute requirements. Deployment transport
+// settings belong to the injected provider.
 type SandboxConfig struct {
-	Provider                 string `mapstructure:"provider"`
-	MicrosandboxControlURL   string `mapstructure:"microsandbox_control_url"`
-	MicrosandboxAPIKey       string `mapstructure:"microsandbox_api_key"`
-	MicrosandboxDefaultImage string `mapstructure:"microsandbox_default_image"`
-	GoldenSnapshotsEnabled   bool   `mapstructure:"golden_snapshots_enabled"`
-	MicrosandboxClientCert   string `mapstructure:"microsandbox_client_cert_file"`
-	MicrosandboxClientKey    string `mapstructure:"microsandbox_client_key_file"`
-	MicrosandboxCA           string `mapstructure:"microsandbox_ca_file"`
-	MicrosandboxServerName   string `mapstructure:"microsandbox_server_name"`
-	AgentSnapshotID          string `mapstructure:"agent_snapshot_id"`
-	AgentMemoryMB            int32  `mapstructure:"agent_memory_mb"`
-	AgentVCPUCount           int32  `mapstructure:"agent_vcpu_count"`
-	AgentRootfsSizeMB        int64  `mapstructure:"agent_rootfs_size_mb"`
-	AgentMaxRuntimeSecs      int64  `mapstructure:"agent_max_runtime_seconds"`
-	AgentIdleTimeoutSecs     int64  `mapstructure:"agent_idle_timeout_seconds"`
+	GoldenSnapshotsEnabled bool   `mapstructure:"golden_snapshots_enabled"`
+	AgentSnapshotID        string `mapstructure:"agent_snapshot_id"`
+	AgentMemoryMB          int32  `mapstructure:"agent_memory_mb"`
+	AgentVCPUCount         int32  `mapstructure:"agent_vcpu_count"`
+	AgentRootfsSizeMB      int64  `mapstructure:"agent_rootfs_size_mb"`
+	AgentMaxRuntimeSecs    int64  `mapstructure:"agent_max_runtime_seconds"`
+	AgentIdleTimeoutSecs   int64  `mapstructure:"agent_idle_timeout_seconds"`
 	// WorkspaceMemoryMB and WorkspaceVCPUCount size kind=vm/container workspaces.
 	WorkspaceMemoryMB  int32 `mapstructure:"workspace_memory_mb"`
 	WorkspaceVCPUCount int32 `mapstructure:"workspace_vcpu_count"`
@@ -474,8 +454,7 @@ type CleanupConfig struct {
 }
 
 type BlobConfig struct {
-	GCSBucket string `mapstructure:"gcs_bucket"`
-	// DataDir selects the durable local adapter when GCSBucket is empty.
+	// DataDir configures the durable local adapter when no store is injected.
 	DataDir string `mapstructure:"data_dir"`
 	// TransferSigningKey optionally supplies the local application-transfer
 	// HMAC key. When empty, the adapter persists a generated key in DataDir.
@@ -488,7 +467,6 @@ type BlobConfig struct {
 	// TransferBaseURL is assigned by shared composition from the trusted public
 	// API origin; it is not a second externally configurable origin.
 	TransferBaseURL              string `mapstructure:"-"`
-	GCSProject                   string `mapstructure:"gcs_project"`
 	SignedURLExpiry              string `mapstructure:"signed_url_expiry"`
 	WorkflowCachePrefix          string `mapstructure:"workflow_cache_prefix"`
 	WorkflowCacheTTL             string `mapstructure:"workflow_cache_ttl"`
@@ -498,21 +476,6 @@ type BlobConfig struct {
 	// per-repository smithers build cache; 0 selects the protocol default of
 	// 16 MiB, which is also the absolute ceiling.
 	BuildCacheArtifactMaxBytes int64 `mapstructure:"build_cache_artifact_max_bytes"`
-}
-
-// MetricsQueryProjectID returns the GCP project the admin metrics query
-// endpoint reads Google Managed Prometheus from.
-//
-// observability.metrics_project_id wins when set. It falls back to
-// blob.gcs_project, which Terraform already populates with the deployment's
-// project id, so a standard deployment gets a working endpoint without a second
-// project setting. An empty result disables the endpoint: it answers 501 rather
-// than querying an unknown project.
-func (c *Config) MetricsQueryProjectID() string {
-	if project := strings.TrimSpace(c.Observability.MetricsProjectID); project != "" {
-		return project
-	}
-	return strings.TrimSpace(c.Blob.GCSProject)
 }
 
 // Load reads configuration from config files, environment variables, and defaults.
@@ -538,15 +501,7 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("repo_host.url", "http://localhost:8080")
 	v.SetDefault("repo_host.auth_token", "")
 	v.SetDefault("repo_host.push_hook_callback_token", "")
-	v.SetDefault("sandbox.provider", "microsandbox")
-	v.SetDefault("sandbox.microsandbox_control_url", "")
-	v.SetDefault("sandbox.microsandbox_api_key", "")
-	v.SetDefault("sandbox.microsandbox_default_image", "")
 	v.SetDefault("sandbox.golden_snapshots_enabled", true)
-	v.SetDefault("sandbox.microsandbox_client_cert_file", "")
-	v.SetDefault("sandbox.microsandbox_client_key_file", "")
-	v.SetDefault("sandbox.microsandbox_ca_file", "")
-	v.SetDefault("sandbox.microsandbox_server_name", "")
 	v.SetDefault("sandbox.agent_snapshot_id", "")
 	// Agent guests are model-latency-bound, not CPU-bound: 1 vCPU/3 GiB packs
 	// 7 per worker (CPU binds: 7×1000m vs the 7000m budget) vs 3 at 2 vCPU.
@@ -638,12 +593,10 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("cleanup.auth_interval", "5m")
 	v.SetDefault("cleanup.workflow_cache_interval", "1h")
 	v.SetDefault("cleanup.sandbox_egress_audit_retention_days", 30)
-	v.SetDefault("blob.gcs_bucket", "")
 	v.SetDefault("blob.data_dir", "./data/blobs")
 	v.SetDefault("blob.transfer_signing_key", "")
 	v.SetDefault("blob.max_bytes", 0)
 	v.SetDefault("blob.reserve_bytes", 256*1024*1024)
-	v.SetDefault("blob.gcs_project", "")
 	v.SetDefault("blob.signed_url_expiry", "5m")
 	v.SetDefault("blob.workflow_cache_prefix", "workflow-cache")
 	v.SetDefault("blob.workflow_cache_ttl", "168h")
@@ -652,10 +605,8 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("blob.build_cache_artifact_max_bytes", 16*1024*1024)
 	v.SetDefault("observability.log_level", "info")
 	v.SetDefault("observability.trace_sample_rate", 0.01)
-	v.SetDefault("observability.cloud_trace_project_id", "")
 	v.SetDefault("observability.otel_exporter", "none")
 	v.SetDefault("observability.otlp_endpoint", "")
-	v.SetDefault("observability.metrics_project_id", "")
 	v.SetDefault("email.smtp_host", "")
 	v.SetDefault("email.smtp_port", 587)
 	v.SetDefault("email.smtp_user", "")
@@ -799,12 +750,10 @@ func Load(configFile string) (*Config, error) {
 		{"cleanup.auth_interval", "SMITHERS_CLEANUP_AUTH_INTERVAL"},
 		{"cleanup.workflow_cache_interval", "SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL"},
 		{"cleanup.sandbox_egress_audit_retention_days", "SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS"},
-		{"blob.gcs_bucket", "SMITHERS_BLOB_GCS_BUCKET"},
 		{"blob.data_dir", "SMITHERS_BLOB_DATA_DIR"},
 		{"blob.transfer_signing_key", "SMITHERS_BLOB_TRANSFER_SIGNING_KEY"},
 		{"blob.max_bytes", "SMITHERS_BLOB_MAX_BYTES"},
 		{"blob.reserve_bytes", "SMITHERS_BLOB_RESERVE_BYTES"},
-		{"blob.gcs_project", "SMITHERS_BLOB_GCS_PROJECT"},
 		{"blob.signed_url_expiry", "SMITHERS_BLOB_SIGNED_URL_EXPIRY"},
 		{"blob.workflow_cache_prefix", "SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX"},
 		{"blob.workflow_cache_ttl", "SMITHERS_BLOB_WORKFLOW_CACHE_TTL"},
@@ -813,10 +762,8 @@ func Load(configFile string) (*Config, error) {
 		{"blob.build_cache_artifact_max_bytes", "SMITHERS_BLOB_BUILD_CACHE_ARTIFACT_MAX_BYTES"},
 		{"observability.log_level", "SMITHERS_LOG_LEVEL"},
 		{"observability.trace_sample_rate", "SMITHERS_TRACE_SAMPLE_RATE"},
-		{"observability.cloud_trace_project_id", "SMITHERS_CLOUD_TRACE_PROJECT_ID"},
 		{"observability.otel_exporter", "SMITHERS_OTEL_EXPORTER"},
 		{"observability.otlp_endpoint", "SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT"},
-		{"observability.metrics_project_id", "SMITHERS_METRICS_PROJECT_ID"},
 		{"email.smtp_host", "SMITHERS_EMAIL_SMTP_HOST"},
 		{"email.smtp_port", "SMITHERS_EMAIL_SMTP_PORT"},
 		{"email.smtp_user", "SMITHERS_EMAIL_SMTP_USER"},
@@ -900,14 +847,7 @@ func Load(configFile string) (*Config, error) {
 		{"provider_connections.claude_client_id", "SMITHERS_PROVIDER_CONNECTIONS_CLAUDE_CLIENT_ID"},
 		{"provider_connections.codex_token_url", "SMITHERS_PROVIDER_CONNECTIONS_CODEX_TOKEN_URL"},
 		{"provider_connections.codex_client_id", "SMITHERS_PROVIDER_CONNECTIONS_CODEX_CLIENT_ID"},
-		{"sandbox.microsandbox_control_url", "SMITHERS_MICROSANDBOX_CONTROL_URL"},
-		{"sandbox.microsandbox_api_key", "SMITHERS_MICROSANDBOX_API_KEY"},
-		{"sandbox.microsandbox_default_image", "SMITHERS_MICROSANDBOX_DEFAULT_IMAGE"},
 		{"sandbox.golden_snapshots_enabled", "SMITHERS_GOLDEN_SNAPSHOTS_ENABLED"},
-		{"sandbox.microsandbox_client_cert_file", "SMITHERS_MICROSANDBOX_CLIENT_CERT_FILE"},
-		{"sandbox.microsandbox_client_key_file", "SMITHERS_MICROSANDBOX_CLIENT_KEY_FILE"},
-		{"sandbox.microsandbox_ca_file", "SMITHERS_MICROSANDBOX_CA_FILE"},
-		{"sandbox.microsandbox_server_name", "SMITHERS_MICROSANDBOX_SERVER_NAME"},
 		{"sandbox.workspace_ssh_host", "SMITHERS_SANDBOX_WORKSPACE_SSH_HOST"},
 		{"sandbox.workspace_ssh_dial_host", "SMITHERS_SANDBOX_WORKSPACE_SSH_DIAL_HOST"},
 		{"sandbox.agent_snapshot_id", "SMITHERS_SANDBOX_AGENT_SNAPSHOT_ID"},

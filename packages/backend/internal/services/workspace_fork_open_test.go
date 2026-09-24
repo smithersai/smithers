@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	sandbox "github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	sandbox "github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // derivedWorkspace is a new branch workspace row: IsFork=true, no VM yet.

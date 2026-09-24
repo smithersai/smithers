@@ -169,6 +169,10 @@ type BindingStore interface {
 	Acquire(context.Context, Authority, Catalog) (BindingLease, error)
 }
 
+type ExistingBindingStore interface {
+	AcquireExisting(context.Context, Authority, Catalog) (BindingLease, error)
+}
+
 type Config struct {
 	Store    BindingStore
 	Targets  TargetResolver

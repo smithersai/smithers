@@ -109,7 +109,6 @@ func InitWithExporter(ctx context.Context, cfg config.ObservabilityConfig, expor
 	slog.Info(
 		"OpenTelemetry initialized",
 		"exporter", exporterName,
-		"project", cfg.CloudTraceProjectID,
 		"sample_rate", cfg.TraceSampleRate,
 	)
 

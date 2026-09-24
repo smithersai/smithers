@@ -9,17 +9,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 type badClaimSchedulerQuerier struct {
 	*mockWorkflowSandboxSchedulerQuerier
-	rows []clusterdb.ClaimQueuedWorkflowRunsRow
+	rows []runtimeports.ClaimQueuedWorkflowRunsRow
 }
 
-func (q badClaimSchedulerQuerier) ClaimQueuedWorkflowRuns(context.Context, int32) ([]clusterdb.ClaimQueuedWorkflowRunsRow, error) {
+func (q badClaimSchedulerQuerier) ClaimQueuedWorkflowRuns(context.Context, int32) ([]runtimeports.ClaimQueuedWorkflowRunsRow, error) {
 	return q.rows, nil
 }
 
@@ -58,7 +58,7 @@ func TestWorkflowSandboxSchedulerWorker_PollOnce_BadClaimDoesNotAbortBatch(t *te
 		},
 	}
 	worker := NewWorkflowSandboxSchedulerWorker(
-		badClaimSchedulerQuerier{mockWorkflowSandboxSchedulerQuerier: base, rows: []clusterdb.ClaimQueuedWorkflowRunsRow{missingToken, expired, good}},
+		badClaimSchedulerQuerier{mockWorkflowSandboxSchedulerQuerier: base, rows: []runtimeports.ClaimQueuedWorkflowRunsRow{missingToken, expired, good}},
 		sandboxClient,
 		WithWorkflowSandboxSchedulerGitBaseURL("https://api.smithers.test"),
 		WithWorkflowSandboxSchedulerAPIBaseURL("https://api.smithers.test/api"),

@@ -1,17 +1,28 @@
-# Product database composition gaps
+# Product database composition boundary
 
-`migrate` installs the product schema only. The baseline excludes the tables that `../ownership.csv` marks `private` or `retired`. `internal/compose/main.go` starts every service that needs those tables only when `options.Role.hosted()` or `options.Role.clusterWorkers()` is true. Keep that gate on any new caller.
+`migrate` installs the product schema only. Tables classified as private or
+retired in `../ownership.csv` are absent from a fresh self-host database.
+The public module contains no private schema, private generated queries, or
+cloud SDK implementation.
 
-| Hosted-only service in `internal/compose/main.go` | Excluded state |
-| --- | --- |
-| `runnerpool.NewRunnerPool` stale sweeper, `NewWorkflowSandboxSchedulerWorker` | `runner_pool`, `workflow_sandbox_claims` |
-| `NewCanaryStatusCollector`, `NewAdminRuntimeMetricsCollector`, `NewAlertRemediationWorker` | `canary_results`, `alert_incidents`, `alert_remediation_jobs` |
-| `NewRepositoryProvisioningReconciler` | `repository_provisioning_operations` |
-| `repoGatewayService.StartReaper`, `NewSandboxOrphanReaper`, `goldenSnapshotService.Start` | `repo_gateways`, `sandbox_orphans`, `sandbox_golden_snapshots` |
-| `NewStorageDeletionCleaner`, `NewSandboxEgressAuditCleaner` | `storage_deletion_queue`, `sandbox_egress_audit` |
+Plue supplies the fleet and storage collaborators through `app.Config` and the
+exported ports. Its private migration lineage and `plue_private_revisions`
+ledger are independent of the product migration ledger.
 
-Product queries and models generate into `internal/db` from `sqlc.yaml` in this directory. `internal/clusterdb` is generated code whose schema source, `db/cluster`, was removed in commit 1105bc94; it cannot be regenerated from this repository.
+Repository provisioning follows the same boundary: the exported `provisioning`
+contract describes the operation, Plue owns the placement journal and mutation
+fence, and the shared product helper publishes canonical repository state
+inside the adapter's transaction. Self-hosting uses the product journal.
+Missing required collaborators fail at the composition or operation seam.
 
-`CountPrivateReposByOwner` and the storage byte queries count product allocations only. A hosted billing adapter must add pending private provisioning and deletion allocations.
+Product queries and models generate into `internal/db` from this directory's
+`sqlc.yaml`. Private adapters call exported product stores instead of copying
+product SQL. `productstore.ConfigureTypes` registers canonical product codecs
+on deployment-owned PostgreSQL pools.
 
-The product `ListIdleWorkspaces` query excludes active browser sessions. Keep the idle sweeper off in local composition until the local executor provides an active-runtime lease; otherwise a native run without a browser could be suspended. `HasUnsettledRunnerOwnershipForWorkflowRun` treats a non-null `workflow_tasks.runner_id` as unsettled even when the private runner pool is unavailable.
+`CountPrivateReposByOwner` and storage-byte queries measure product allocations.
+Private admission policy is responsible for its pending infrastructure
+allocations. Product code must not query those private tables directly.
+
+`scripts/check-go-boundaries.py` enforces the SQL and import boundary; its
+negative tests deliberately insert private-table queries and dependencies.

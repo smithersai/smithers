@@ -60,7 +60,8 @@ INSERT INTO oauth2_authorization_codes (
     redirect_uri,
     code_challenge,
     code_challenge_method,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     sqlc.arg(code_hash),
@@ -70,7 +71,8 @@ VALUES (
     sqlc.arg(redirect_uri),
     sqlc.arg(code_challenge),
     sqlc.arg(code_challenge_method),
-    sqlc.arg(expires_at)
+    sqlc.arg(expires_at),
+    sqlc.narg(source_access_token_id)
 );
 
 -- name: ConsumeOAuth2AuthorizationCode :one
@@ -91,14 +93,16 @@ INSERT INTO oauth2_access_tokens (
     app_id,
     user_id,
     scopes,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     sqlc.arg(token_hash),
     sqlc.arg(app_id),
     sqlc.arg(user_id),
     sqlc.arg(scopes),
-    sqlc.arg(expires_at)
+    sqlc.arg(expires_at),
+    sqlc.narg(source_access_token_id)
 )
 RETURNING *;
 
@@ -128,14 +132,16 @@ INSERT INTO oauth2_refresh_tokens (
     app_id,
     user_id,
     scopes,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     sqlc.arg(token_hash),
     sqlc.arg(app_id),
     sqlc.arg(user_id),
     sqlc.arg(scopes),
-    sqlc.arg(expires_at)
+    sqlc.arg(expires_at),
+    sqlc.narg(source_access_token_id)
 )
 RETURNING *;
 
@@ -171,3 +177,9 @@ JOIN oauth2_applications a ON a.id = t.app_id
 WHERE t.user_id = $1
   AND t.expires_at > NOW()
 ORDER BY t.created_at DESC;
+
+-- name: GetOAuth2AuthorizationCodeByHash :one
+-- Inspect the complete grant without consuming it. Client/redirect/PKCE are
+-- validated before the atomic consume-and-issue transaction.
+SELECT * FROM oauth2_authorization_codes
+WHERE code_hash = $1 AND used_at IS NULL AND expires_at > NOW();

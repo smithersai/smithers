@@ -291,42 +291,6 @@ func TestParseWebhookDeliveryPagination_LimitMatrix(t *testing.T) {
 	assert.Equal(t, 51, caseCount)
 }
 
-func TestParseTaskID_Matrix(t *testing.T) {
-	t.Parallel()
-
-	caseCount := 0
-	for id := -5; id <= 105; id++ {
-		id := id
-		t.Run(fmt.Sprintf("task_id_%d", id), func(t *testing.T) {
-			caseCount++
-			req := httptest.NewRequest(http.MethodPost, "/runners/tasks/events", nil)
-			req = withRouteParams(req, map[string]string{"task-id": fmt.Sprintf("%d", id)})
-			taskID, err := parseTaskID(req)
-			if id <= 0 {
-				requireAPIError(t, err, 400)
-				assert.Zero(t, taskID)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, int64(id), taskID)
-		})
-	}
-
-	for _, raw := range []string{"", "abc", "1.5", " 2 "} {
-		raw := raw
-		t.Run("task_id_invalid_"+fmt.Sprintf("%q", raw), func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodPost, "/runners/tasks/events", nil)
-			req = withRouteParams(req, map[string]string{"task-id": raw})
-			taskID, err := parseTaskID(req)
-			requireAPIError(t, err, 400)
-			assert.Zero(t, taskID)
-		})
-	}
-
-	assert.Equal(t, 111, caseCount)
-}
-
 func TestParseWorkflowArtifactRunID_Matrix(t *testing.T) {
 	t.Parallel()
 

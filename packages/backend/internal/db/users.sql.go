@@ -136,7 +136,8 @@ const getAuthInfoByTokenHash = `-- name: GetAuthInfoByTokenHash :one
 SELECT
     u.id, u.username, u.lower_username, u.email, u.lower_email, u.display_name, u.bio, u.search_vector, u.avatar_url, u.wallet_address, u.user_type, u.is_active, u.is_admin, u.prohibit_login, u.email_notifications_enabled, u.last_login_at, u.deleted_at, u.created_at, u.updated_at, u.is_synthetic,
     t.id AS token_id,
-    t.scopes AS token_scopes
+    t.scopes AS token_scopes,
+    t.system_issued AS token_system_issued
 FROM access_tokens t
 JOIN users u ON t.user_id = u.id
 WHERE t.token_hash = $1
@@ -168,6 +169,7 @@ type GetAuthInfoByTokenHashRow struct {
 	IsSynthetic               bool               `json:"is_synthetic"`
 	TokenID                   int64              `json:"token_id"`
 	TokenScopes               string             `json:"token_scopes"`
+	TokenSystemIssued         bool               `json:"token_system_issued"`
 }
 
 func (q *Queries) GetAuthInfoByTokenHash(ctx context.Context, tokenHash string) (GetAuthInfoByTokenHashRow, error) {
@@ -196,6 +198,7 @@ func (q *Queries) GetAuthInfoByTokenHash(ctx context.Context, tokenHash string) 
 		&i.IsSynthetic,
 		&i.TokenID,
 		&i.TokenScopes,
+		&i.TokenSystemIssued,
 	)
 	return i, err
 }

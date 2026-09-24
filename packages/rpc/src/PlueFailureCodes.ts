@@ -35,7 +35,7 @@ export const PLUE_FAILURE_SCHEMA_VERSION = 1
  * @since 1.0.0
  * @category constants
  */
-export const PLUE_FAILURE_DIGEST = "sha256:3369fd6c63afd7d41bbb5d73050556eadf1ee511eb93d6632a47f4e6c62e3f96"
+export const PLUE_FAILURE_DIGEST = "sha256:f899a3de17ca0c051aa16f7126d94dd9a2cdd980a5456633905879e72c013703"
 
 /**
  * Whose problem a failure is — the registry's verdict, and the only question the app
@@ -166,6 +166,7 @@ export const PLUE_FAILURE_CODES = [
   "sandbox_control_busy",
   "secret_delivery_unavailable",
   "service_unavailable",
+  "setup_request_reused",
   "snapshot_in_use",
   "snapshot_not_found",
   "snapshot_too_large",
@@ -191,6 +192,7 @@ export const PLUE_FAILURE_CODES = [
   "workspace_source_invalid_ack",
   "workspace_source_missing",
   "workspace_source_unavailable",
+  "workspace_ssh_user_invalid",
   "workspace_vm_missing"
 ] as const
 
@@ -421,6 +423,8 @@ export const PLUE_FAILURES = {
   "secret_delivery_unavailable": { fault: "infra", status: 501, retryAfter: 0 },
   /** plue is up but a component it needs is not answering. */
   "service_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The setup request identity was already admitted with different input. */
+  "setup_request_reused": { fault: "infra", status: 409, retryAfter: 0 },
   /** The snapshot backs a live sandbox and cannot be changed or deleted. */
   "snapshot_in_use": { fault: "user", status: 409, retryAfter: 0 },
   /** The named sandbox snapshot does not exist. Distinct from not_found so a bad golden snapshot is diagnosable. */
@@ -471,6 +475,8 @@ export const PLUE_FAILURES = {
   "workspace_source_missing": { fault: "user", status: 404, retryAfter: 0 },
   /** plue could not verify the box's native source. */
   "workspace_source_unavailable": { fault: "infra", status: 503, retryAfter: 0 },
+  /** The requested workspace SSH user is not offered; ask for the workspace user or root. */
+  "workspace_ssh_user_invalid": { fault: "user", status: 400, retryAfter: 0 },
   /** The recorded workspace VM no longer exists. An unbound setup may select another compatible workspace within quota; established bindings remain explicit. */
   "workspace_vm_missing": { fault: "infra", status: 409, retryAfter: 0 }
 } satisfies Record<PlueFailureCode, PlueFailureEntry>

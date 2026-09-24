@@ -11,10 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -22,56 +23,43 @@ import (
 )
 
 // WorkflowRunQuerier is the DB interface required for workflow run orchestration.
-type WorkflowRunQuerier interface {
-	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
-	CreateWorkflowRun(ctx context.Context, arg db.CreateWorkflowRunParams) (db.WorkflowRun, error)
-	CreateWorkflowStep(ctx context.Context, arg db.CreateWorkflowStepParams) (db.WorkflowStep, error)
-	CreateWorkflowTask(ctx context.Context, arg db.CreateWorkflowTaskParams) (db.WorkflowTask, error)
-	CreateCommitStatus(ctx context.Context, arg db.CreateCommitStatusParams) (db.CommitStatus, error)
-	ListWorkflowDefinitionsByRepo(ctx context.Context, arg db.ListWorkflowDefinitionsByRepoParams) ([]db.WorkflowDefinition, error)
-	GetWorkflowDefinition(ctx context.Context, arg db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error)
-	EnsureWorkflowDefinitionReference(ctx context.Context, arg db.EnsureWorkflowDefinitionReferenceParams) (db.WorkflowDefinition, error)
-	GetWorkflowRun(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
-	UpdateWorkflowRunAgentToken(ctx context.Context, arg db.UpdateWorkflowRunAgentTokenParams) (db.WorkflowRun, error)
-	CancelWorkflowRun(ctx context.Context, id int64) error
-	// FailWorkflowRun terminalizes a run that aborted during dispatch. It is
-	// required, not optional: a querier that silently lacked it left the run
-	// queued forever, because status is otherwise derived from tasks that were
-	// never created.
-	FailWorkflowRun(ctx context.Context, id int64) error
-	CancelWorkflowTasks(ctx context.Context, workflowRunID int64) error
-	HasUnsettledRunnerOwnershipForWorkflowRun(ctx context.Context, workflowRunID int64) (bool, error)
-	ResumeWorkflowRun(ctx context.Context, id int64) error
-	ResumeWorkflowTasks(ctx context.Context, workflowRunID int64) error
-	ResumeWorkflowSteps(ctx context.Context, workflowRunID int64) error
-	NotifyWorkflowRunEvent(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
+type WorkflowRunQuerier = runtimeports.WorkflowRunQuerier
+
+// WorkflowRunQueryRebinder preserves deployment extensions inside the caller's
+// exact transaction. In particular, alert claim binding must commit with its run.
+type WorkflowRunQueryRebinder interface {
+	RebindWorkflowRunQueries(pgx.Tx) WorkflowRunQuerier
 }
 
-// workflowQueryTxStarter and workflowQueryTxFactory are intentionally kept
-// separate from WorkflowRunQuerier. The service has small in-memory fakes in
-// unit tests, while production uses *db.Queries, which can bind generated
-// queries to a pgx transaction.
 type workflowQueryTxStarter interface {
-	BeginTx(ctx context.Context) (pgx.Tx, error)
+	BeginTx(context.Context) (pgx.Tx, error)
 }
 
-type workflowQueryTxFactory interface {
-	WithTx(tx pgx.Tx) *db.Queries
-}
-
-func BeginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, *db.Queries, bool, error) {
+func BeginWorkflowQueryTx(ctx context.Context, queries any) (pgx.Tx, WorkflowRunQuerier, bool, error) {
 	starter, canStart := queries.(workflowQueryTxStarter)
-	factory, canBind := queries.(workflowQueryTxFactory)
-	if !canStart || !canBind {
+	if !canStart {
 		return nil, nil, false, nil
+	}
+	var bind func(pgx.Tx) WorkflowRunQuerier
+	if factory, ok := queries.(WorkflowRunQueryRebinder); ok {
+		bind = factory.RebindWorkflowRunQueries
+	} else if product, ok := queries.(*db.Queries); ok {
+		bind = func(tx pgx.Tx) WorkflowRunQuerier { return product.WithTx(tx) }
+	} else {
+		// A composite that starts transactions but cannot retain its capabilities
+		// must not silently execute a multi-statement workflow outside a transaction.
+		return nil, nil, true, fmt.Errorf("workflow query store does not support transaction rebinding")
 	}
 	tx, err := starter.BeginTx(ctx)
 	if err != nil {
 		return nil, nil, true, err
 	}
-	return tx, factory.WithTx(tx), true, nil
+	rebound := bind(tx)
+	if rebound == nil {
+		_ = tx.Rollback(context.Background())
+		return nil, nil, true, fmt.Errorf("workflow transaction rebinding returned no store")
+	}
+	return tx, rebound, true, nil
 }
 
 func LockWorkflowRun(ctx context.Context, tx pgx.Tx, runID int64) error {
@@ -231,7 +219,7 @@ type AlertRemediationRunBinding struct {
 }
 
 type alertRemediationRunBinder interface {
-	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
 }
 
 // WorkflowRunResult captures the run and tasks created for a workflow definition.
@@ -864,7 +852,7 @@ func createWorkflowRunRows(
 		if !ok {
 			return result, run, pkgerrors.Internal("alert remediation run binding is unavailable")
 		}
-		rowsAffected, bindErr := binder.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams{
+		rowsAffected, bindErr := binder.BindAlertRemediationJobWorkflowRunAtAttempt(ctx, runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams{
 			WorkflowRunID:    pgtype.Int8{Int64: run.ID, Valid: true},
 			JobID:            binding.JobID,
 			IncidentRowID:    binding.IncidentRowID,

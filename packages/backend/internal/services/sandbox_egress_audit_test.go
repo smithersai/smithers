@@ -5,25 +5,25 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 )
 
 type fakeSandboxEgressAuditQuerier struct {
-	params clusterdb.ListSandboxEgressAuditByResourceParams
-	rows   []clusterdb.SandboxEgressAudit
+	params runtimeports.ListSandboxEgressAuditByResourceParams
+	rows   []runtimeports.SandboxEgressAudit
 }
 
-func (f *fakeSandboxEgressAuditQuerier) ListSandboxEgressAuditByResource(_ context.Context, params clusterdb.ListSandboxEgressAuditByResourceParams) ([]clusterdb.SandboxEgressAudit, error) {
+func (f *fakeSandboxEgressAuditQuerier) ListSandboxEgressAuditByResource(_ context.Context, params runtimeports.ListSandboxEgressAuditByResourceParams) ([]runtimeports.SandboxEgressAudit, error) {
 	f.params = params
 	return f.rows, nil
 }
 
 func TestSandboxEgressAuditServiceKeysetPagination(t *testing.T) {
 	now := time.Date(2026, 9, 2, 15, 0, 0, 0, time.UTC)
-	querier := &fakeSandboxEgressAuditQuerier{rows: []clusterdb.SandboxEgressAudit{
+	querier := &fakeSandboxEgressAuditQuerier{rows: []runtimeports.SandboxEgressAudit{
 		{ID: 3, OccurredAt: now, Host: "one.example", Method: "GET", Path: "/one", Status: 200, Allowed: true, SwappedSecretNames: []string{}},
 		{ID: 2, OccurredAt: now.Add(-time.Second), Host: "two.example", Method: "POST", Path: "/two", Status: 403, Allowed: false, SwappedSecretNames: []string{"TOKEN"}},
 		{ID: 1, OccurredAt: now.Add(-2 * time.Second), Host: "three.example"},

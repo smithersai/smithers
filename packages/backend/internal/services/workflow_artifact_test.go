@@ -11,20 +11,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 type mockWorkflowArtifactQuerier struct {
-	clearPurgedStorageDeletionFn       func(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
+	clearPurgedStorageDeletionFn       func(ctx context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error)
 	getWorkflowRunFn                   func(ctx context.Context, arg db.GetWorkflowRunParams) (db.WorkflowRun, error)
 	createWorkflowArtifactFn           func(ctx context.Context, arg db.CreateWorkflowArtifactParams) (db.WorkflowArtifact, error)
 	confirmWorkflowArtifactUploadFn    func(ctx context.Context, arg db.ConfirmWorkflowArtifactUploadParams) (db.WorkflowArtifact, error)
@@ -42,7 +43,7 @@ type mockWorkflowArtifactQuerier struct {
 	lastPrune                          db.ListPrunableWorkflowArtifactsParams
 }
 
-func (m *mockWorkflowArtifactQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+func (m *mockWorkflowArtifactQuerier) ClearPurgedStorageDeletionByExactKey(ctx context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 	if m.clearPurgedStorageDeletionFn != nil {
 		return m.clearPurgedStorageDeletionFn(ctx, arg)
 	}

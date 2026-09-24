@@ -40,12 +40,9 @@ func TestServerRouter_InternalAgentCallbackRouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -185,12 +182,9 @@ func routerWithAdminUserHandler(adminUserHandler *routes.AdminUserHandler, authM
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		adminUserHandler,
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler

@@ -13,14 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 type repositoryCiReceiptFixture struct {
 	pool           *pgxpool.Pool
-	queries        *deploymentdb.Queries
+	queries        *db.Queries
 	service        *RepositoryJobService
 	gateway        *repositoryJobTestGateway
 	registrationID string

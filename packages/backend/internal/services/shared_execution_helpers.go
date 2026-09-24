@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/smithersai/smithers/packages/backend/internal/microsandbox/control"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 const AlertRemediationTriggerEvent = "monitoring_alert"
@@ -42,7 +42,7 @@ func WorkflowRunStatusDescription(status string) string {
 }
 
 func ResourceStoreError(err error, resource string) error {
-	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, control.ErrNotFound) {
+	if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, sandbox.ErrNotFound) {
 		return pkgerrors.NotFound(resource + " not found")
 	}
 	return pkgerrors.Internal("could not load " + resource)

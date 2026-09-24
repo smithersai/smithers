@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -86,12 +85,6 @@ func TestGitSmartHTTP_WrappedAPIErrorKeepsItsStatus(t *testing.T) {
 	assert.NotContains(t, logs, "git smart HTTP request failed")
 }
 
-type failingCanaryLister struct{ err error }
-
-func (f failingCanaryLister) ListCanaryResults(context.Context) ([]clusterdb.CanaryResult, error) {
-	return nil, f.err
-}
-
 type failingGitHubAppReconciler struct{ err error }
 
 func (f failingGitHubAppReconciler) ReconcileGitHubAppInstallations(context.Context) error {
@@ -108,10 +101,7 @@ func TestInternalErrorsLogTheirCause(t *testing.T) {
 		handler http.HandlerFunc
 		req     *http.Request
 	}{
-		"admin canaries": {
-			(&AdminSystemCanariesHandler{Store: failingCanaryLister{cause}}).SystemCanaries,
-			httptest.NewRequest(http.MethodGet, "/api/admin/system/canaries", nil),
-		},
+
 		"github app reconcile": {
 			(&AdminGitHubAppHandler{Service: failingGitHubAppReconciler{cause}}).Reconcile,
 			httptest.NewRequest(http.MethodPost, "/api/admin/github-app/reconcile", nil),

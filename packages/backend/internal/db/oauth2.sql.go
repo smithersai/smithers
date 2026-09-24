@@ -8,6 +8,8 @@ package db
 import (
 	"context"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const consumeOAuth2AuthorizationCode = `-- name: ConsumeOAuth2AuthorizationCode :one
@@ -16,7 +18,7 @@ SET used_at = NOW()
 WHERE code_hash = $1
   AND used_at IS NULL
   AND expires_at > NOW()
-RETURNING code_hash, app_id, user_id, scopes, redirect_uri, code_challenge, code_challenge_method, expires_at, used_at, created_at
+RETURNING code_hash, app_id, user_id, scopes, redirect_uri, code_challenge, code_challenge_method, expires_at, used_at, created_at, source_access_token_id
 `
 
 func (q *Queries) ConsumeOAuth2AuthorizationCode(ctx context.Context, codeHash string) (Oauth2AuthorizationCode, error) {
@@ -33,6 +35,7 @@ func (q *Queries) ConsumeOAuth2AuthorizationCode(ctx context.Context, codeHash s
 		&i.ExpiresAt,
 		&i.UsedAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
@@ -41,7 +44,7 @@ const consumeOAuth2RefreshToken = `-- name: ConsumeOAuth2RefreshToken :one
 DELETE FROM oauth2_refresh_tokens
 WHERE token_hash = $1
   AND expires_at > NOW()
-RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
+RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 `
 
 func (q *Queries) ConsumeOAuth2RefreshToken(ctx context.Context, tokenHash string) (Oauth2RefreshToken, error) {
@@ -55,6 +58,7 @@ func (q *Queries) ConsumeOAuth2RefreshToken(ctx context.Context, tokenHash strin
 		&i.Scopes,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
@@ -65,24 +69,27 @@ INSERT INTO oauth2_access_tokens (
     app_id,
     user_id,
     scopes,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     $1,
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6
 )
-RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
+RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 `
 
 type CreateOAuth2AccessTokenParams struct {
-	TokenHash string    `json:"token_hash"`
-	AppID     int64     `json:"app_id"`
-	UserID    int64     `json:"user_id"`
-	Scopes    []string  `json:"scopes"`
-	ExpiresAt time.Time `json:"expires_at"`
+	TokenHash           string      `json:"token_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
 }
 
 func (q *Queries) CreateOAuth2AccessToken(ctx context.Context, arg CreateOAuth2AccessTokenParams) (Oauth2AccessToken, error) {
@@ -92,6 +99,7 @@ func (q *Queries) CreateOAuth2AccessToken(ctx context.Context, arg CreateOAuth2A
 		arg.UserID,
 		arg.Scopes,
 		arg.ExpiresAt,
+		arg.SourceAccessTokenID,
 	)
 	var i Oauth2AccessToken
 	err := row.Scan(
@@ -102,6 +110,7 @@ func (q *Queries) CreateOAuth2AccessToken(ctx context.Context, arg CreateOAuth2A
 		&i.Scopes,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
@@ -173,7 +182,8 @@ INSERT INTO oauth2_authorization_codes (
     redirect_uri,
     code_challenge,
     code_challenge_method,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     $1,
@@ -183,19 +193,21 @@ VALUES (
     $5,
     $6,
     $7,
-    $8
+    $8,
+    $9
 )
 `
 
 type CreateOAuth2AuthorizationCodeParams struct {
-	CodeHash            string    `json:"code_hash"`
-	AppID               int64     `json:"app_id"`
-	UserID              int64     `json:"user_id"`
-	Scopes              []string  `json:"scopes"`
-	RedirectUri         string    `json:"redirect_uri"`
-	CodeChallenge       string    `json:"code_challenge"`
-	CodeChallengeMethod string    `json:"code_challenge_method"`
-	ExpiresAt           time.Time `json:"expires_at"`
+	CodeHash            string      `json:"code_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	RedirectUri         string      `json:"redirect_uri"`
+	CodeChallenge       string      `json:"code_challenge"`
+	CodeChallengeMethod string      `json:"code_challenge_method"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
 }
 
 func (q *Queries) CreateOAuth2AuthorizationCode(ctx context.Context, arg CreateOAuth2AuthorizationCodeParams) error {
@@ -208,6 +220,7 @@ func (q *Queries) CreateOAuth2AuthorizationCode(ctx context.Context, arg CreateO
 		arg.CodeChallenge,
 		arg.CodeChallengeMethod,
 		arg.ExpiresAt,
+		arg.SourceAccessTokenID,
 	)
 	return err
 }
@@ -218,24 +231,27 @@ INSERT INTO oauth2_refresh_tokens (
     app_id,
     user_id,
     scopes,
-    expires_at
+    expires_at,
+    source_access_token_id
 )
 VALUES (
     $1,
     $2,
     $3,
     $4,
-    $5
+    $5,
+    $6
 )
-RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
+RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 `
 
 type CreateOAuth2RefreshTokenParams struct {
-	TokenHash string    `json:"token_hash"`
-	AppID     int64     `json:"app_id"`
-	UserID    int64     `json:"user_id"`
-	Scopes    []string  `json:"scopes"`
-	ExpiresAt time.Time `json:"expires_at"`
+	TokenHash           string      `json:"token_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
 }
 
 func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2RefreshTokenParams) (Oauth2RefreshToken, error) {
@@ -245,6 +261,7 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 		arg.UserID,
 		arg.Scopes,
 		arg.ExpiresAt,
+		arg.SourceAccessTokenID,
 	)
 	var i Oauth2RefreshToken
 	err := row.Scan(
@@ -255,6 +272,7 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 		&i.Scopes,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
@@ -262,7 +280,7 @@ func (q *Queries) CreateOAuth2RefreshToken(ctx context.Context, arg CreateOAuth2
 const deleteExpiredOAuth2AccessTokens = `-- name: DeleteExpiredOAuth2AccessTokens :many
 DELETE FROM oauth2_access_tokens
 WHERE expires_at < NOW()
-RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at
+RETURNING id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 `
 
 func (q *Queries) DeleteExpiredOAuth2AccessTokens(ctx context.Context) ([]Oauth2AccessToken, error) {
@@ -282,6 +300,7 @@ func (q *Queries) DeleteExpiredOAuth2AccessTokens(ctx context.Context) ([]Oauth2
 			&i.Scopes,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.SourceAccessTokenID,
 		); err != nil {
 			return nil, err
 		}
@@ -391,7 +410,7 @@ func (q *Queries) DeleteOAuth2RefreshTokensByAppAndUser(ctx context.Context, arg
 }
 
 const getOAuth2AccessTokenByHash = `-- name: GetOAuth2AccessTokenByHash :one
-SELECT id, token_hash, app_id, user_id, scopes, expires_at, created_at
+SELECT id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 FROM oauth2_access_tokens
 WHERE token_hash = $1
   AND expires_at > NOW()
@@ -408,6 +427,7 @@ func (q *Queries) GetOAuth2AccessTokenByHash(ctx context.Context, tokenHash stri
 		&i.Scopes,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
@@ -460,8 +480,34 @@ func (q *Queries) GetOAuth2ApplicationByID(ctx context.Context, id int64) (Oauth
 	return i, err
 }
 
+const getOAuth2AuthorizationCodeByHash = `-- name: GetOAuth2AuthorizationCodeByHash :one
+SELECT code_hash, app_id, user_id, scopes, redirect_uri, code_challenge, code_challenge_method, expires_at, used_at, created_at, source_access_token_id FROM oauth2_authorization_codes
+WHERE code_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+`
+
+// Inspect the complete grant without consuming it. Client/redirect/PKCE are
+// validated before the atomic consume-and-issue transaction.
+func (q *Queries) GetOAuth2AuthorizationCodeByHash(ctx context.Context, codeHash string) (Oauth2AuthorizationCode, error) {
+	row := q.db.QueryRow(ctx, getOAuth2AuthorizationCodeByHash, codeHash)
+	var i Oauth2AuthorizationCode
+	err := row.Scan(
+		&i.CodeHash,
+		&i.AppID,
+		&i.UserID,
+		&i.Scopes,
+		&i.RedirectUri,
+		&i.CodeChallenge,
+		&i.CodeChallengeMethod,
+		&i.ExpiresAt,
+		&i.UsedAt,
+		&i.CreatedAt,
+		&i.SourceAccessTokenID,
+	)
+	return i, err
+}
+
 const getOAuth2RefreshTokenByHash = `-- name: GetOAuth2RefreshTokenByHash :one
-SELECT id, token_hash, app_id, user_id, scopes, expires_at, created_at
+SELECT id, token_hash, app_id, user_id, scopes, expires_at, created_at, source_access_token_id
 FROM oauth2_refresh_tokens
 WHERE token_hash = $1
   AND expires_at > NOW()
@@ -478,12 +524,13 @@ func (q *Queries) GetOAuth2RefreshTokenByHash(ctx context.Context, tokenHash str
 		&i.Scopes,
 		&i.ExpiresAt,
 		&i.CreatedAt,
+		&i.SourceAccessTokenID,
 	)
 	return i, err
 }
 
 const listOAuth2AccessTokensByUser = `-- name: ListOAuth2AccessTokensByUser :many
-SELECT t.id, t.token_hash, t.app_id, t.user_id, t.scopes, t.expires_at, t.created_at, a.name AS app_name, a.client_id AS app_client_id
+SELECT t.id, t.token_hash, t.app_id, t.user_id, t.scopes, t.expires_at, t.created_at, t.source_access_token_id, a.name AS app_name, a.client_id AS app_client_id
 FROM oauth2_access_tokens t
 JOIN oauth2_applications a ON a.id = t.app_id
 WHERE t.user_id = $1
@@ -492,15 +539,16 @@ ORDER BY t.created_at DESC
 `
 
 type ListOAuth2AccessTokensByUserRow struct {
-	ID          int64     `json:"id"`
-	TokenHash   string    `json:"token_hash"`
-	AppID       int64     `json:"app_id"`
-	UserID      int64     `json:"user_id"`
-	Scopes      []string  `json:"scopes"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	CreatedAt   time.Time `json:"created_at"`
-	AppName     string    `json:"app_name"`
-	AppClientID string    `json:"app_client_id"`
+	ID                  int64       `json:"id"`
+	TokenHash           string      `json:"token_hash"`
+	AppID               int64       `json:"app_id"`
+	UserID              int64       `json:"user_id"`
+	Scopes              []string    `json:"scopes"`
+	ExpiresAt           time.Time   `json:"expires_at"`
+	CreatedAt           time.Time   `json:"created_at"`
+	SourceAccessTokenID pgtype.Int8 `json:"source_access_token_id"`
+	AppName             string      `json:"app_name"`
+	AppClientID         string      `json:"app_client_id"`
 }
 
 func (q *Queries) ListOAuth2AccessTokensByUser(ctx context.Context, userID int64) ([]ListOAuth2AccessTokensByUserRow, error) {
@@ -520,6 +568,7 @@ func (q *Queries) ListOAuth2AccessTokensByUser(ctx context.Context, userID int64
 			&i.Scopes,
 			&i.ExpiresAt,
 			&i.CreatedAt,
+			&i.SourceAccessTokenID,
 			&i.AppName,
 			&i.AppClientID,
 		); err != nil {

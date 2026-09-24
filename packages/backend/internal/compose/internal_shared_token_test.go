@@ -34,12 +34,9 @@ func buildInternalAuthTestRouter(t *testing.T, sharedToken string) http.Handler 
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -68,7 +65,7 @@ func buildInternalAuthTestRouter(t *testing.T, sharedToken string) http.Handler 
 // callback operate purely on IDs from the URL with no per-run scoping, so they
 // must only accept the shared runner pod credential — never the per-run agent
 // tokens handed to untrusted sandboxes.
-func TestInternalRunnerPoolAndWorkspaceStatus_RejectPerRunTokens(t *testing.T) {
+func TestWorkspaceStatus_RejectsPerRunTokens(t *testing.T) {
 	const sharedToken = "shared-runner-pod-token"
 	// A syntactically valid per-run agent token (smithers_agent_ + 40 hex).
 	const perRunToken = "smithers_agent_0123456789abcdef0123456789abcdef01234567"
@@ -80,10 +77,6 @@ func TestInternalRunnerPoolAndWorkspaceStatus_RejectPerRunTokens(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{http.MethodPost, "/internal/runners/register", `{"name":"runner-1"}`},
-		{http.MethodPost, "/internal/runners/1/claim", `{}`},
-		{http.MethodPost, "/internal/runners/1/heartbeat", `{}`},
-		{http.MethodPost, "/internal/runners/1/terminate", `{}`},
 		{http.MethodPost, "/internal/workspace/ws-1/status", `{"status":"running"}`},
 	}
 
@@ -120,10 +113,10 @@ func TestInternalRunnerPoolAndWorkspaceStatus_RejectPerRunTokens(t *testing.T) {
 }
 
 // When no shared token is configured, the routes fail safe (401 for everyone).
-func TestInternalRunnerPoolRoutes_FailSafeWithoutSharedToken(t *testing.T) {
+func TestWorkspaceStatus_FailsSafeWithoutSharedToken(t *testing.T) {
 	router := buildInternalAuthTestRouter(t, "")
 
-	req := httptest.NewRequest(http.MethodPost, "/internal/runners/register", strings.NewReader(`{"name":"runner-1"}`))
+	req := httptest.NewRequest(http.MethodPost, "/internal/workspace/ws-1/status", strings.NewReader(`{"status":"running"}`))
 	req.Header.Set("Authorization", "Bearer anything")
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()

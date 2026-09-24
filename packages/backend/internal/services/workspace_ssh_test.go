@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -10,60 +9,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
-func TestWorkspaceService_GetWorkspaceSSHConnectionInfo_CreatesSandboxAccessToken(t *testing.T) {
-	t.Skip("API refactored: SSH tokens are now minted via sandbox identity (CreateIdentity + CreateIdentityToken), not via the CreateSandboxAccessToken DB call. This test asserts the old contract and needs a rewrite against the new flow.")
+func TestWorkspaceService_GetWorkspaceSSHConnectionInfo_MintsScopedIdentityToken(t *testing.T) {
 	t.Parallel()
-
 	const wsID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-	var storedTokenParams clusterdb.CreateSandboxAccessTokenParams
-
 	q := &mockWorkspaceQuerier{
-		getWorkspaceForUserRepoFn: func(ctx context.Context, arg db.GetWorkspaceForUserRepoParams) (db.Workspace, error) {
+		getWorkspaceByRepoFn: func(ctx context.Context, arg db.GetWorkspaceByRepoParams) (db.Workspace, error) {
 			workspace := sampleDBWorkspace(arg.ID)
 			workspace.VmID = "vm-ssh-123"
 			return workspace, nil
 		},
-		createSandboxAccessTokenFn: func(ctx context.Context, arg clusterdb.CreateSandboxAccessTokenParams) (clusterdb.SandboxAccessToken, error) {
-			storedTokenParams = arg
-			return clusterdb.SandboxAccessToken{
-				ID:        "sat-123",
-				VmID:      arg.VmID,
-				UserID:    arg.UserID,
-				LinuxUser: arg.LinuxUser,
-				TokenHash: arg.TokenHash,
-				TokenType: arg.TokenType,
-				ExpiresAt: arg.ExpiresAt,
-			}, nil
-		},
 	}
-
-	svc := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{
+	var granted, minted string
+	client := &mockWorkspaceSandboxVMClient{
 		getVMFn: func(ctx context.Context, vmID string) (sandbox.Sandbox, error) {
 			return sandbox.Sandbox{ID: vmID, State: sandbox.StateRunning}, nil
 		},
-	}))
-
+		grantVMPermissionFn: func(ctx context.Context, identityID, vmID string, req sandbox.GrantAccessRequest) (sandbox.AccessGrant, error) {
+			require.Equal(t, "vm-ssh-123", vmID)
+			granted = identityID
+			return sandbox.AccessGrant{ID: "grant"}, nil
+		},
+		createIdentityTokenFn: func(ctx context.Context, identityID string) (sandbox.CreatedToken, error) {
+			minted = identityID
+			return sandbox.CreatedToken{Token: "scoped-token"}, nil
+		},
+	}
+	svc := newWorkspaceServiceForTests(q, WithWorkspaceSandboxClient(client))
 	info, err := svc.GetWorkspaceSSHConnectionInfo(context.Background(), wsID, 101, 1)
 	require.NoError(t, err)
-	assert.Equal(t, wsID, info.WorkspaceID)
-	assert.Equal(t, "vm-ssh-123", info.VMID)
-	assert.Equal(t, "root", info.Username)
-	assert.NotEmpty(t, info.AccessToken, "access_token must contain the raw token")
-	assert.Contains(t, info.Command, "ssh vm-ssh-123+root:")
-	assert.Contains(t, info.Command, "@vm-ssh.smithers.sh")
-
-	// Verify the stored token hash matches SHA-256 of the raw token.
-	expectedHash := sha256.Sum256([]byte(info.AccessToken))
-	assert.Equal(t, expectedHash[:], storedTokenParams.TokenHash)
-	assert.Equal(t, "ssh", storedTokenParams.TokenType)
-	assert.Equal(t, "root", storedTokenParams.LinuxUser)
-	assert.Equal(t, "vm-ssh-123", storedTokenParams.VmID)
+	require.NotEmpty(t, granted)
+	require.Equal(t, granted, minted, "token must belong to the identity granted this workspace")
+	require.Equal(t, "scoped-token", info.AccessToken)
+	require.Equal(t, wsID, info.WorkspaceID)
+	require.Contains(t, info.Command, "vm-ssh-123+developer:scoped-token@")
 }
 
 func TestWorkspaceService_GetSSHConnectionInfo_PersistsSessionSSHInfo(t *testing.T) {

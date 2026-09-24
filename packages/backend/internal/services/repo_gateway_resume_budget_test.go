@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Repro apps/ui/canary-repros/honesty/22.6 and flow-sweep/A.18: the product's

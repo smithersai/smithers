@@ -192,6 +192,8 @@ func LoadRepoContext(queries RepoContextQuerier) func(http.Handler) http.Handler
 				return
 			}
 
+			permission = capRepositoryBoundTokenPermission(r.Context(), repository.ID, permission)
+
 			repoCopy := repository
 			ctx := ContextWithRepoContext(r.Context(), &RepoContext{
 				Owner:             owner,
@@ -404,4 +406,20 @@ func permissionRank(permission PermissionLevel) int {
 	default:
 		return 0
 	}
+}
+
+// capRepositoryBoundTokenPermission bounds a repository-restricted token
+// (per-run sandbox/agent token, repo:<id>) at PermissionWrite on the repository
+// it names. The token is issued for one run's writes; the owner's admin and
+// owner authority (delete, archive, visibility, hooks, deploy keys, secrets)
+// must not travel with a token that lives inside a sandbox.
+func capRepositoryBoundTokenPermission(ctx context.Context, repositoryID int64, permission PermissionLevel) PermissionLevel {
+	authInfo := AuthInfoFromContext(ctx)
+	if authInfo == nil || authInfo.RepositoryRestriction() != repositoryID {
+		return permission
+	}
+	if permissionRank(permission) > permissionRank(PermissionWrite) {
+		return PermissionWrite
+	}
+	return permission
 }

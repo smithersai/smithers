@@ -281,3 +281,8 @@ ORDER BY
     COALESCE(last_hit_at, finalized_at, updated_at, created_at) ASC,
     id ASC
 LIMIT sqlc.arg(limit_count);
+
+-- name: GetWorkflowCacheRepoUsage :one
+SELECT COALESCE(SUM(object_size_bytes), 0)::bigint
+FROM workflow_caches
+WHERE repository_id = $1 AND status IN ('pending', 'finalized', 'deleting');

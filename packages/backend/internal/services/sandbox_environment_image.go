@@ -8,12 +8,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Sandbox environment images are the NixOS compute path for kind=vm and
@@ -34,10 +35,10 @@ var (
 
 // SandboxEnvironmentImageQuerier is the persistence surface (generated sqlc).
 type SandboxEnvironmentImageQuerier interface {
-	UpsertSandboxEnvironmentImage(ctx context.Context, arg clusterdb.UpsertSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
-	GetLatestReadySandboxEnvironmentImage(ctx context.Context, arg clusterdb.GetLatestReadySandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
-	ListSandboxEnvironmentImages(ctx context.Context, repositoryID pgtype.Int8) ([]clusterdb.SandboxEnvironmentImage, error)
-	RetireSandboxEnvironmentImage(ctx context.Context, arg clusterdb.RetireSandboxEnvironmentImageParams) (clusterdb.SandboxEnvironmentImage, error)
+	UpsertSandboxEnvironmentImage(ctx context.Context, arg runtimeports.UpsertSandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error)
+	GetLatestReadySandboxEnvironmentImage(ctx context.Context, arg runtimeports.GetLatestReadySandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error)
+	ListSandboxEnvironmentImages(ctx context.Context, repositoryID pgtype.Int8) ([]runtimeports.SandboxEnvironmentImage, error)
+	RetireSandboxEnvironmentImage(ctx context.Context, arg runtimeports.RetireSandboxEnvironmentImageParams) (runtimeports.SandboxEnvironmentImage, error)
 }
 
 // SandboxEnvironmentImageResponse is the API representation of one image.
@@ -76,7 +77,7 @@ type SandboxEnvironmentImageService struct {
 	golden *GoldenSnapshotService
 	// bakeRequest returns the builder request for an image: the exact
 	// kind=vm/desktop workspace request, repository-agnostic, booting Image.
-	bakeRequest func(image clusterdb.SandboxEnvironmentImage) sandbox.CreateRequest
+	bakeRequest func(image runtimeports.SandboxEnvironmentImage) sandbox.CreateRequest
 }
 
 // SandboxEnvironmentImageServiceOption configures optional dependencies.
@@ -84,7 +85,7 @@ type SandboxEnvironmentImageServiceOption func(*SandboxEnvironmentImageService)
 
 // WithSandboxEnvironmentImageGoldenSnapshots wires per-closure golden
 // snapshot baking. bakeRequest is WorkspaceService.NixBakeVMRequest.
-func WithSandboxEnvironmentImageGoldenSnapshots(golden *GoldenSnapshotService, bakeRequest func(clusterdb.SandboxEnvironmentImage) sandbox.CreateRequest) SandboxEnvironmentImageServiceOption {
+func WithSandboxEnvironmentImageGoldenSnapshots(golden *GoldenSnapshotService, bakeRequest func(runtimeports.SandboxEnvironmentImage) sandbox.CreateRequest) SandboxEnvironmentImageServiceOption {
 	return func(s *SandboxEnvironmentImageService) {
 		s.golden = golden
 		s.bakeRequest = bakeRequest
@@ -141,7 +142,7 @@ func (s *SandboxEnvironmentImageService) Register(ctx context.Context, input Reg
 	if len(revision) > 128 {
 		return SandboxEnvironmentImageResponse{}, pkgerrors.BadRequest("source_revision is too long")
 	}
-	row, err := s.q.UpsertSandboxEnvironmentImage(ctx, clusterdb.UpsertSandboxEnvironmentImageParams{
+	row, err := s.q.UpsertSandboxEnvironmentImage(ctx, runtimeports.UpsertSandboxEnvironmentImageParams{
 		RepositoryID:   repositoryIDArg(input.RepositoryID),
 		Kind:           kind,
 		Source:         source,
@@ -160,7 +161,7 @@ func (s *SandboxEnvironmentImageService) Register(ctx context.Context, input Reg
 
 // ensureGoldenSnapshot starts the per-closure bake when snapshots are wired
 // (and enabled: see nixGoldenSnapshotsEnabled).
-func (s *SandboxEnvironmentImageService) ensureGoldenSnapshot(ctx context.Context, row clusterdb.SandboxEnvironmentImage) {
+func (s *SandboxEnvironmentImageService) ensureGoldenSnapshot(ctx context.Context, row runtimeports.SandboxEnvironmentImage) {
 	if s.golden == nil || s.bakeRequest == nil || !nixGoldenSnapshotsEnabled {
 		return
 	}
@@ -192,7 +193,7 @@ func (s *SandboxEnvironmentImageService) Retire(ctx context.Context, repositoryI
 	if s == nil || s.q == nil {
 		return SandboxEnvironmentImageResponse{}, pkgerrors.Internal("environment image store unavailable")
 	}
-	row, err := s.q.RetireSandboxEnvironmentImage(ctx, clusterdb.RetireSandboxEnvironmentImageParams{
+	row, err := s.q.RetireSandboxEnvironmentImage(ctx, runtimeports.RetireSandboxEnvironmentImageParams{
 		ID:           strings.TrimSpace(id),
 		RepositoryID: repositoryIDArg(repositoryID),
 	})
@@ -207,22 +208,22 @@ func (s *SandboxEnvironmentImageService) Retire(ctx context.Context, repositoryI
 
 // Resolve returns the image a new workspace of kind boots: the repository's
 // newest ready image, else the platform base image for the kind.
-func (s *SandboxEnvironmentImageService) Resolve(ctx context.Context, repositoryID int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
+func (s *SandboxEnvironmentImageService) Resolve(ctx context.Context, repositoryID int64, kind string) (runtimeports.SandboxEnvironmentImage, error) {
 	if s == nil || s.q == nil {
-		return clusterdb.SandboxEnvironmentImage{}, pkgerrors.Internal("environment image store unavailable")
+		return runtimeports.SandboxEnvironmentImage{}, pkgerrors.Internal("environment image store unavailable")
 	}
 	// RFD-004: agent workspaces are container guests; they never boot a
 	// NixOS closure image.
 	kind = sandboxKindForWorkspace(kind)
 	if kind == "container" {
-		return clusterdb.SandboxEnvironmentImage{}, pkgerrors.BadRequest("container workspaces do not use environment images")
+		return runtimeports.SandboxEnvironmentImage{}, pkgerrors.BadRequest("container workspaces do not use environment images")
 	}
 	candidates := []int64{0}
 	if repositoryID > 0 {
 		candidates = []int64{repositoryID, 0}
 	}
 	for _, candidate := range candidates {
-		row, err := s.q.GetLatestReadySandboxEnvironmentImage(ctx, clusterdb.GetLatestReadySandboxEnvironmentImageParams{
+		row, err := s.q.GetLatestReadySandboxEnvironmentImage(ctx, runtimeports.GetLatestReadySandboxEnvironmentImageParams{
 			RepositoryID: repositoryIDArg(candidate),
 			Kind:         kind,
 		})
@@ -230,13 +231,13 @@ func (s *SandboxEnvironmentImageService) Resolve(ctx context.Context, repository
 			return row, nil
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
-			return clusterdb.SandboxEnvironmentImage{}, pkgerrors.Internal("resolve environment image: " + err.Error())
+			return runtimeports.SandboxEnvironmentImage{}, pkgerrors.Internal("resolve environment image: " + err.Error())
 		}
 	}
-	return clusterdb.SandboxEnvironmentImage{}, pkgerrors.EnvironmentImageUnavailable("no NixOS environment image is registered for kind " + kind + "; build one with scripts/build-nix-environment.ts")
+	return runtimeports.SandboxEnvironmentImage{}, pkgerrors.EnvironmentImageUnavailable("no NixOS environment image is registered for kind " + kind + "; build one with scripts/build-nix-environment.ts")
 }
 
-func (s *SandboxEnvironmentImageService) toResponse(ctx context.Context, row clusterdb.SandboxEnvironmentImage) SandboxEnvironmentImageResponse {
+func (s *SandboxEnvironmentImageService) toResponse(ctx context.Context, row runtimeports.SandboxEnvironmentImage) SandboxEnvironmentImageResponse {
 	resp := SandboxEnvironmentImageResponse{
 		ID:             row.ID,
 		Kind:           row.Kind,

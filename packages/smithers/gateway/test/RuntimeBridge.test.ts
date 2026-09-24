@@ -37,7 +37,9 @@ const plan = {
 const summary = {
   runId: "run-1",
   flowId: "fixture/small",
-  status: "completed"
+  status: "completed",
+  createdAt: 1,
+  updatedAt: 2
 } as RunSummary
 
 const service = (overrides: Partial<Control.Service> = {}): Control.Service =>
@@ -313,10 +315,10 @@ describe("RuntimeBridge", () => {
 
   it.effect("returns bounded reconnect pages and terminal truth from Control", () =>
     Effect.gen(function*() {
-      let watched: unknown
+      const watched: unknown[] = []
       const control = service({
         watch: (filter) => {
-          watched = filter
+          watched.push(filter)
           return Stream.fromIterable([
             { sequence: 5, cursor: { sequence: 5 }, kind: "one", occurredAt: 1, payload: null },
             { sequence: 6, kind: "two", occurredAt: 2, payload: null }
@@ -329,9 +331,48 @@ describe("RuntimeBridge", () => {
         afterCursor: "4",
         limit: 1
       })
-      expect(watched).toEqual({ runId: "run-1", afterSequence: 4, follow: false })
+      expect(watched[0]).toEqual({ runId: "run-1", afterSequence: 4, follow: false })
+      expect(watched.length).toBeGreaterThan(1)
       expect(result).toMatchObject({ nextCursor: "5", hasMore: true, terminal: true })
       expect(result.events).toHaveLength(1)
+    }))
+
+  it.effect("retains the committed root result after the observation cursor has passed it", () =>
+    Effect.gen(function*() {
+      const output = JSON.stringify({ requestId: "setup-1", receipt: { phase: "completed" } })
+      const control = service({
+        watch: (filter) =>
+          filter.afterSequence === undefined && filter.afterCursor === undefined
+            ? Stream.make({
+              sequence: 1,
+              kind: "control.agent.resolved",
+              runId: "run-1",
+              occurredAt: 1,
+              payload: { text: output }
+            })
+            : Stream.empty
+      })
+      const result = yield* RuntimeBridge.observe(control, {
+        protocol: RuntimeBridge.protocol,
+        runId: "run-1",
+        afterCursor: "9"
+      })
+      expect(result.events).toEqual([])
+      expect(result.run.finalOutput).toBe(output)
+      expect(
+        Schema.decodeUnknownSync(RuntimeBridge.ObserveResponse)({
+          protocol: RuntimeBridge.protocol,
+          ok: true,
+          value: result
+        }).value.run.finalOutput
+      ).toBe(output)
+    }))
+
+  it.effect("does not invent a result for a terminal run without committed output", () =>
+    Effect.gen(function*() {
+      const result = yield* RuntimeBridge.observe(service(), { protocol: RuntimeBridge.protocol, runId: "run-1" })
+      expect(result.terminal).toBe(true)
+      expect(result.run).not.toHaveProperty("finalOutput")
     }))
 
   it.effect("uses defaults, caps pages, and advances every supported cursor shape", () =>

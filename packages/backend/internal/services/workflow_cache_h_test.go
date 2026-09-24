@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -163,7 +164,7 @@ func TestWorkflowCache_H_RestoreBranches(t *testing.T) {
 func TestWorkflowCache_H_BeginSaveBranches(t *testing.T) {
 	ctx := context.Background()
 	run := workflowCacheHRun()
-	var cleared []clusterdb.ClearPurgedStorageDeletionByExactKeyParams
+	var cleared []runtimeports.ClearPurgedStorageDeletionByExactKeyParams
 	var failedSignerObjectKey string
 
 	service := NewWorkflowCacheService(&mockWorkflowCacheQuerier{
@@ -253,7 +254,7 @@ func TestWorkflowCache_H_BeginSaveBranches(t *testing.T) {
 	assert.True(t, reservation.AlreadyExists)
 
 	service = NewWorkflowCacheService(&mockWorkflowCacheQuerier{
-		clearPurgedStorageDeletionFn: func(_ context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+		clearPurgedStorageDeletionFn: func(_ context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 			cleared = append(cleared, arg)
 			return 1, nil
 		},

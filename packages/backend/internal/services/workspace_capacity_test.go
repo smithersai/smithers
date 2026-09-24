@@ -13,7 +13,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // noCapacityRefusal is byte-for-byte what the controller answers when the
@@ -26,7 +26,7 @@ func noCapacityRefusal() *sandbox.StatusError {
 		StatusCode: http.StatusServiceUnavailable,
 		ErrorCode:  "no_capacity",
 		Code:       "no_capacity",
-		Provider:   sandbox.ProviderMicrosandbox,
+		Provider:   sandbox.ProviderName("microsandbox"),
 		Message:    "no healthy Microsandbox worker has sufficient capacity",
 	}
 }

@@ -16,16 +16,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func WithRepoGatewayWorkspaces(workspaces *WorkspaceService) RepoGatewayServiceOption {
@@ -66,19 +67,21 @@ func (s *RepoGatewayService) ProbeWorkspaceCapability(ctx context.Context, works
 	return true, nil
 }
 
-func gatewayWorkspaceID(g clusterdb.RepoGateway) string {
+func gatewayWorkspaceID(g runtimeports.RepoGateway) string {
 	if g.WorkspaceID.Valid {
 		return g.WorkspaceID.String()
 	}
 	return ""
 }
-func gatewayIngressDomain(g clusterdb.RepoGateway) string {
+func gatewayIngressDomain(g runtimeports.RepoGateway) string {
 	if g.WorkspaceID.Valid {
 		return repoGatewayDomain(g.ID)
 	}
 	return repoGatewayDomain(g.VmID)
 }
-func workspaceGatewayServiceName(g clusterdb.RepoGateway) string { return "smithers-gateway-" + g.ID }
+func workspaceGatewayServiceName(g runtimeports.RepoGateway) string {
+	return "smithers-gateway-" + g.ID
+}
 
 // The process lock belongs to the workspace, while cleanup belongs to a gateway
 // row. Root owns this directory so a coding flow cannot unlink the held lock.
@@ -90,11 +93,11 @@ const workspaceGatewayLockDirectory = "/run/smithers-workspace-coding"
 const workspaceGatewayLandingTokenTTL = 7 * 24 * time.Hour
 
 type workspaceGatewayLifecycleQuerier interface {
-	ListDiscardedWorkspaceGateways(context.Context, clusterdb.ListDiscardedWorkspaceGatewaysParams) ([]clusterdb.RepoGateway, error)
+	ListDiscardedWorkspaceGateways(context.Context, runtimeports.ListDiscardedWorkspaceGatewaysParams) ([]runtimeports.RepoGateway, error)
 	HasWritableWorkspaceShares(context.Context, string) (bool, error)
 	ClearDiscardedWorkspaceGatewayCredential(context.Context, string) error
-	SetRepoGatewayLandingTokenID(context.Context, clusterdb.SetRepoGatewayLandingTokenIDParams) error
-	ListPendingWorkspaceGatewayCleanup(context.Context) ([]clusterdb.RepoGateway, error)
+	SetRepoGatewayLandingTokenID(context.Context, runtimeports.SetRepoGatewayLandingTokenIDParams) error
+	ListPendingWorkspaceGatewayCleanup(context.Context) ([]runtimeports.RepoGateway, error)
 	TouchDiscardedWorkspaceGatewayCleanup(context.Context, string) error
 }
 
@@ -103,11 +106,11 @@ func workspaceGatewaySharingConflict(err error) bool {
 	return errors.As(err, &constraint) && constraint.Code == "23514" && constraint.ConstraintName == "workspace_gateway_private_execution"
 }
 
-func workspaceGatewayLockPath(g clusterdb.RepoGateway) string {
+func workspaceGatewayLockPath(g runtimeports.RepoGateway) string {
 	return workspaceGatewayLockDirectory + "/" + gatewayWorkspaceID(g) + ".lock"
 }
 
-func workspaceGatewayCommand(g clusterdb.RepoGateway) string {
+func workspaceGatewayCommand(g runtimeports.RepoGateway) string {
 	return strings.Join([]string{
 		"set -eu",
 		// Reuse the existing repository environment and egress-proxy placeholders.
@@ -169,7 +172,7 @@ func (s *RepoGatewayService) landingAPIBaseURL() string {
 // teardown revokes exactly this token. A credential recorded by an earlier
 // start is revoked first: only the live process may hold one. The returned
 // plaintext is passed to the service environment and never logged.
-func (s *RepoGatewayService) ensureWorkspaceGatewayLandingToken(ctx context.Context, gateway *clusterdb.RepoGateway) (string, error) {
+func (s *RepoGatewayService) ensureWorkspaceGatewayLandingToken(ctx context.Context, gateway *runtimeports.RepoGateway) (string, error) {
 	if s.landingAPIBaseURL() == "" || gateway.RepositoryID <= 0 {
 		return "", nil
 	}
@@ -184,7 +187,7 @@ func (s *RepoGatewayService) ensureWorkspaceGatewayLandingToken(ctx context.Cont
 	if err != nil {
 		return "", pkgerrors.Internal("mint workspace gateway landing token").WithCause(err)
 	}
-	if err := store.SetRepoGatewayLandingTokenID(ctx, clusterdb.SetRepoGatewayLandingTokenIDParams{
+	if err := store.SetRepoGatewayLandingTokenID(ctx, runtimeports.SetRepoGatewayLandingTokenIDParams{
 		ID: gateway.ID, LandingTokenID: pgtype.Int8{Int64: token.ID, Valid: true},
 	}); err != nil {
 		// An unrecorded credential could never be revoked; drop it now.
@@ -197,13 +200,13 @@ func (s *RepoGatewayService) ensureWorkspaceGatewayLandingToken(ctx context.Cont
 
 // revokeWorkspaceGatewayLandingToken deletes the recorded landing credential
 // and clears the reference. Best effort: a row without one is not an error.
-func (s *RepoGatewayService) revokeWorkspaceGatewayLandingToken(ctx context.Context, gateway clusterdb.RepoGateway) {
+func (s *RepoGatewayService) revokeWorkspaceGatewayLandingToken(ctx context.Context, gateway runtimeports.RepoGateway) {
 	if !gateway.LandingTokenID.Valid || gateway.LandingTokenID.Int64 <= 0 {
 		return
 	}
 	revokeTemporaryRepoCloneToken(ctx, s.q, gateway.UserID, gateway.LandingTokenID.Int64)
 	if store, ok := s.q.(workspaceGatewayLifecycleQuerier); ok {
-		_ = store.SetRepoGatewayLandingTokenID(ctx, clusterdb.SetRepoGatewayLandingTokenIDParams{ID: gateway.ID})
+		_ = store.SetRepoGatewayLandingTokenID(ctx, runtimeports.SetRepoGatewayLandingTokenIDParams{ID: gateway.ID})
 	}
 }
 
@@ -247,7 +250,7 @@ func (s *RepoGatewayService) getWorkspaceGateway(ctx context.Context, input Repo
 		return RepoGatewayConnectionInfo{}, err
 	}
 	binding := pgtype.UUID{Bytes: uuid.MustParse(input.WorkspaceID), Valid: true}
-	existing, err := s.q.GetActiveRepoGatewayForUserRepo(ctx, clusterdb.GetActiveRepoGatewayForUserRepoParams{RepositoryID: input.RepositoryID, UserID: input.UserID, WorkspaceID: binding})
+	existing, err := s.q.GetActiveRepoGatewayForUserRepo(ctx, runtimeports.GetActiveRepoGatewayForUserRepoParams{RepositoryID: input.RepositoryID, UserID: input.UserID, WorkspaceID: binding})
 	if err == nil {
 		return s.resolveExistingGateway(ctx, existing, input)
 	}
@@ -269,7 +272,7 @@ func (s *RepoGatewayService) provisionWorkspaceGateway(ctx context.Context, inpu
 		return RepoGatewayConnectionInfo{}, pkgerrors.Conflict("workspace VM has not been provisioned")
 	}
 	binding := pgtype.UUID{Bytes: uuid.MustParse(input.WorkspaceID), Valid: true}
-	gateway, err := s.q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: input.RepositoryID, UserID: input.UserID, WorkspaceID: binding, Status: "pending"})
+	gateway, err := s.q.CreateRepoGateway(ctx, runtimeports.CreateRepoGatewayParams{RepositoryID: input.RepositoryID, UserID: input.UserID, WorkspaceID: binding, Status: "pending"})
 	if err != nil {
 		if workspaceGatewaySharingConflict(err) {
 			return RepoGatewayConnectionInfo{}, pkgerrors.Conflict("coding gateways require a workspace without write shares")
@@ -289,7 +292,7 @@ func (s *RepoGatewayService) provisionWorkspaceGateway(ctx context.Context, inpu
 	gateway.WorkspaceID, gateway.RepositoryID, gateway.UserID = binding, input.RepositoryID, input.UserID
 	gateway.VmID, gateway.BaseUrl = workspace.VmID, "https://"+gatewayIngressDomain(gateway)
 	gateway.AuthTokenHash, gateway.AuthTokenCiphertext, gateway.Status = hash, encrypted, "starting"
-	_, err = s.q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: gateway.VmID, BaseUrl: gateway.BaseUrl, AuthTokenHash: hash, AuthTokenCiphertext: encrypted, Status: "starting"})
+	_, err = s.q.UpdateRepoGatewayExecutionInfo(ctx, runtimeports.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: gateway.VmID, BaseUrl: gateway.BaseUrl, AuthTokenHash: hash, AuthTokenCiphertext: encrypted, Status: "starting"})
 	if err != nil {
 		s.markGatewayFailed(ctx, gateway.ID)
 		// Nothing was installed yet. A racing provision owns a different service
@@ -304,7 +307,7 @@ func (s *RepoGatewayService) provisionWorkspaceGateway(ctx context.Context, inpu
 	return s.resolveExistingGateway(ctx, gateway, input)
 }
 
-func (s *RepoGatewayService) reuseWorkspaceGateway(ctx context.Context, gateway clusterdb.RepoGateway) (RepoGatewayConnectionInfo, error) {
+func (s *RepoGatewayService) reuseWorkspaceGateway(ctx context.Context, gateway runtimeports.RepoGateway) (RepoGatewayConnectionInfo, error) {
 	workspace, err := s.loadGatewayWorkspace(ctx, gateway.WorkspaceID.String(), gateway.RepositoryID, gateway.UserID)
 	if err != nil {
 		return RepoGatewayConnectionInfo{}, err
@@ -376,10 +379,7 @@ func (s *RepoGatewayService) reuseWorkspaceGateway(ctx context.Context, gateway 
 	restartSeconds := int64(5)
 	response, err := s.sandbox.CreateService(ctx, gateway.VmID, sandbox.ServiceSpec{
 		Name: workspaceGatewayServiceName(gateway), Mode: sandbox.ServiceModeService,
-		// The worker launches a service as `exec <Exec joined by spaces>`
-		// inside `sh -lc`, so the multi-line launch script must arrive as one
-		// executable line; a bare script makes the guest exec the word `set`.
-		Exec: []string{"/bin/sh -c " + shellQuote(workspaceGatewayCommand(gateway))},
+		Exec: []string{"/bin/sh", "-c", workspaceGatewayCommand(gateway)},
 		User: defaultWorkspaceUser, Workdir: defaultWorkspaceClonePath, Env: env,
 		RestartPolicy: &sandbox.RestartPolicy{Kind: sandbox.RestartPolicyOnFailure, Sec: &restartSeconds},
 	})
@@ -409,7 +409,7 @@ func (s *RepoGatewayService) reuseWorkspaceGateway(ctx context.Context, gateway 
 		s.stopWorkspaceGateway(ctx, gateway)
 		return RepoGatewayConnectionInfo{}, err
 	}
-	if _, err = s.q.UpdateRepoGatewayStatus(ctx, clusterdb.UpdateRepoGatewayStatusParams{ID: gateway.ID, Status: "running"}); err != nil {
+	if _, err = s.q.UpdateRepoGatewayStatus(ctx, runtimeports.UpdateRepoGatewayStatusParams{ID: gateway.ID, Status: "running"}); err != nil {
 		// The status write also checks the tombstone, closing the race after
 		// the identity read above. Cleanup is scoped to this row's resources.
 		s.discardGatewayAfterReuse(ctx, gateway)
@@ -419,7 +419,7 @@ func (s *RepoGatewayService) reuseWorkspaceGateway(ctx context.Context, gateway 
 	return s.workspaceGatewayInfo(ctx, gateway, token)
 }
 
-func (s *RepoGatewayService) checkGatewayWorkspaceIdentity(ctx context.Context, gateway clusterdb.RepoGateway) error {
+func (s *RepoGatewayService) checkGatewayWorkspaceIdentity(ctx context.Context, gateway runtimeports.RepoGateway) error {
 	workspace, err := s.loadGatewayWorkspace(ctx, gateway.WorkspaceID.String(), gateway.RepositoryID, gateway.UserID)
 	if err != nil {
 		return err
@@ -440,7 +440,7 @@ func (s *RepoGatewayService) checkGatewayWorkspaceIdentity(ctx context.Context, 
 	}
 	return nil
 }
-func (s *RepoGatewayService) workspaceGatewayInfo(ctx context.Context, gateway clusterdb.RepoGateway, token string) (RepoGatewayConnectionInfo, error) {
+func (s *RepoGatewayService) workspaceGatewayInfo(ctx context.Context, gateway runtimeports.RepoGateway, token string) (RepoGatewayConnectionInfo, error) {
 	if err := s.checkGatewayWorkspaceIdentity(ctx, gateway); err != nil {
 		return RepoGatewayConnectionInfo{}, err
 	}
@@ -449,7 +449,7 @@ func (s *RepoGatewayService) workspaceGatewayInfo(ctx context.Context, gateway c
 	return RepoGatewayConnectionInfo{BaseURL: gateway.BaseUrl, Token: token, ExpiresAt: time.Now().UTC().Add(repoGatewayTokenAdvertisedTTL), GatewayID: gateway.ID, VMID: gateway.VmID, Status: "running", WorkspaceID: gatewayWorkspaceID(gateway)}, nil
 }
 
-func workspaceGatewayPreflight(gateway clusterdb.RepoGateway) string {
+func workspaceGatewayPreflight(gateway runtimeports.RepoGateway) string {
 	// Only nonsecret identity is passed in argv. The installed native adapter
 	// itself validates root-owned config and runs as the effective owner.
 	return strings.Join([]string{
@@ -474,13 +474,13 @@ func workspaceGatewayPreflight(gateway clusterdb.RepoGateway) string {
 	}, "\n")
 }
 
-func (s *RepoGatewayService) stopWorkspaceGateway(ctx context.Context, gateway clusterdb.RepoGateway) {
+func (s *RepoGatewayService) stopWorkspaceGateway(ctx context.Context, gateway runtimeports.RepoGateway) {
 	if err := s.stopWorkspaceGatewayChecked(ctx, gateway); err != nil {
 		slog.Warn("stop workspace gateway", "gateway_id", gateway.ID, "error", err)
 	}
 }
 
-func (s *RepoGatewayService) stopWorkspaceGatewayChecked(ctx context.Context, gateway clusterdb.RepoGateway) error {
+func (s *RepoGatewayService) stopWorkspaceGatewayChecked(ctx context.Context, gateway runtimeports.RepoGateway) error {
 	if gateway.VmID == "" {
 		return nil
 	}
@@ -537,12 +537,12 @@ func (s *RepoGatewayService) sweepDiscardedWorkspaceGateways(ctx context.Context
 	}
 }
 
-func (s *RepoGatewayService) cleanupDiscardedWorkspaceGateways(ctx context.Context, gateway clusterdb.RepoGateway) error {
+func (s *RepoGatewayService) cleanupDiscardedWorkspaceGateways(ctx context.Context, gateway runtimeports.RepoGateway) error {
 	q, ok := s.q.(workspaceGatewayLifecycleQuerier)
 	if !ok {
 		return pkgerrors.Internal("workspace gateway lifecycle store unavailable")
 	}
-	rows, err := q.ListDiscardedWorkspaceGateways(ctx, clusterdb.ListDiscardedWorkspaceGatewaysParams{WorkspaceID: gateway.WorkspaceID.String(), VmID: gateway.VmID})
+	rows, err := q.ListDiscardedWorkspaceGateways(ctx, runtimeports.ListDiscardedWorkspaceGatewaysParams{WorkspaceID: gateway.WorkspaceID.String(), VmID: gateway.VmID})
 	if err != nil {
 		return pkgerrors.Conflict("workspace gateway cleanup could not be checked; retry")
 	}
@@ -573,7 +573,7 @@ func codingHostUnavailable(message string) *pkgerrors.APIError {
 	return &pkgerrors.APIError{Status: 409, Code: pkgerrors.CodeCodingHostUnavailable, Message: message}
 }
 
-func (s *RepoGatewayService) probeWorkspaceGatewayHealth(ctx context.Context, gateway clusterdb.RepoGateway) error {
+func (s *RepoGatewayService) probeWorkspaceGatewayHealth(ctx context.Context, gateway runtimeports.RepoGateway) error {
 	if s.healthProbeBaseURL == "" {
 		return errCodingGatewayNotConfigured
 	}

@@ -1,0 +1,62 @@
+[
+  {
+    "requestId": "fixture:0",
+    "repo": "owner/repo",
+    "job": "chores",
+    "revision": 1,
+    "digest": "6237e1e839e4188a2c386934873e1759af60c4f2da50fd833561686a3b8a6449",
+    "draft": {
+      "steps": [
+        {
+          "id": "chore",
+          "name": "Run a chore",
+          "mode": "manual",
+          "prompt": "Read <tag> & emoji 😀 line next end"
+        }
+      ],
+      "checks": [],
+      "cases": [],
+      "replies": "draft",
+      "landing": "ask",
+      "scope": "future",
+      "label": "",
+      "schedule": "",
+      "choreEvent": "none",
+      "budgetMinutes": 10,
+      "connectIssues": false,
+      "trialTitle": "[Smithers test] Automate a chore",
+      "trialBody": "A scoped setup trial. Handling remains inactive for other work until explicitly enabled."
+    },
+    "operation": "inspect"
+  },
+  {
+    "requestId": "fixture:1",
+    "repo": "owner/repo",
+    "job": "chores",
+    "revision": 1,
+    "digest": "83588b4e22f117d086186a7dc10e427c58da29c0cc0913cc57309432fb04cc78",
+    "draft": {
+      "steps": [
+        {
+          "id": "chore",
+          "name": "Run a chore",
+          "mode": "manual",
+          "prompt": "Read <tag> & emoji 😀 line next end"
+        }
+      ],
+      "checks": [],
+      "cases": [],
+      "replies": "draft",
+      "landing": "ask",
+      "scope": "future",
+      "label": "",
+      "schedule": "",
+      "choreEvent": "push",
+      "budgetMinutes": 10,
+      "connectIssues": false,
+      "trialTitle": "[Smithers test] Automate a chore",
+      "trialBody": "A scoped setup trial. Handling remains inactive for other work until explicitly enabled."
+    },
+    "operation": "inspect"
+  }
+]

@@ -168,18 +168,10 @@ func sseIdentityRouterForTest() http.Handler {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		nil, // pairSessionHandler
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
+		nil,                       // notificationHandler
 		nil,                       // adminRunnerHandler
 		nil,                       // adminUserHandler
 		nil,                       // adminOrgHandler
-		nil,                       // adminRepoHandler
-		nil,                       // adminSystemHealthHandler
-		nil,                       // adminSystemStatusHandler
-		nil,                       // adminSystemCanariesHandler
-		nil,                       // adminSystemIncidentsHandler
 		nil,                       // adminSystemMetricsHandler
 		nil,                       // adminGitHubAppHandler
 		nil,                       // adminAuditHandler
@@ -197,7 +189,6 @@ func sseIdentityRouterForTest() http.Handler {
 		nil,                       // agentSessionStreamHandler
 		nil,                       // approvalsHandler
 		nil,                       // branchLockHandler
-		nil,                       // pushHookHandler
 		nil,                       // canaryReportHandler
 		&routes.WorkflowHandler{}, // workflowHandler -> registers sseTicketAuth group
 		nil,                       // workflowCacheHandler
@@ -256,18 +247,10 @@ func featureGateRouterForTest(cfg *config.Config) http.Handler {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		nil, // pairSessionHandler
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
+		nil,                                // notificationHandler
 		nil,                                // adminRunnerHandler
 		nil,                                // adminUserHandler
 		nil,                                // adminOrgHandler
-		nil,                                // adminRepoHandler
-		nil,                                // adminSystemHealthHandler
-		nil,                                // adminSystemStatusHandler
-		nil,                                // adminSystemCanariesHandler
-		nil,                                // adminSystemIncidentsHandler
 		nil,                                // adminSystemMetricsHandler
 		nil,                                // adminGitHubAppHandler
 		nil,                                // adminAuditHandler
@@ -285,7 +268,6 @@ func featureGateRouterForTest(cfg *config.Config) http.Handler {
 		nil,                                // agentSessionStreamHandler
 		nil,                                // approvalsHandler
 		nil,                                // branchLockHandler
-		nil,                                // pushHookHandler
 		nil,                                // canaryReportHandler
 		&routes.WorkflowHandler{Service: &mockRouterWorkflowService{}}, // workflowHandler
 		nil, // workflowCacheHandler
@@ -397,21 +379,6 @@ func TestBuildRateLimitRejectObserver_ClosureIncrements(t *testing.T) {
 	require.NotNil(t, obs)
 	obs("test_scope")
 	assert.Equal(t, 1.0, testutil.ToFloat64(m.RateLimitRejectionsTotal.WithLabelValues("test_scope")))
-}
-
-// ---------------------------------------------------------------------------
-// initializeBlobStore GCS-client error
-// ---------------------------------------------------------------------------
-
-func TestInitializeBlobStore_GCSClientError(t *testing.T) {
-	preserveSlog(t)
-	// Empty STORAGE_EMULATOR_HOST => normal auth path; a bogus credentials file
-	// forces storage.NewClient to fail deterministically before any network I/O.
-	t.Setenv("STORAGE_EMULATOR_HOST", "")
-	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", filepath.Join(t.TempDir(), "nonexistent.json"))
-	_, _, _, err := initializeBlobStore(context.Background(), config.BlobConfig{GCSBucket: "b"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "requires an injected cloud blob adapter")
 }
 
 // ---------------------------------------------------------------------------

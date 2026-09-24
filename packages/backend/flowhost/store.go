@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	_ "embed"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -17,13 +16,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
-
-//go:embed schema.sql
-var schemaSQL string
-
-// SchemaSQL is the exact additive schema handed to the ordered product
-// migration owner. Store never self-migrates.
-func SchemaSQL() string { return schemaSQL }
 
 type Store struct {
 	pool          *pgxpool.Pool
@@ -67,6 +59,16 @@ func bindingLockKey(authority Authority, catalog Catalog) string {
 }
 
 func (store *Store) Acquire(ctx context.Context, authority Authority, catalog Catalog) (BindingLease, error) {
+	return store.acquire(ctx, authority, catalog, false)
+}
+
+// AcquireExisting takes the same owner lock but never inserts a binding or
+// generates a credential. A missing binding is an unavailable host.
+func (store *Store) AcquireExisting(ctx context.Context, authority Authority, catalog Catalog) (BindingLease, error) {
+	return store.acquire(ctx, authority, catalog, true)
+}
+
+func (store *Store) acquire(ctx context.Context, authority Authority, catalog Catalog, existingOnly bool) (BindingLease, error) {
 	if store == nil || store.pool == nil || store.codec == nil {
 		return nil, errors.New("flow host store is unavailable")
 	}
@@ -90,14 +92,14 @@ func (store *Store) Acquire(ctx context.Context, authority Authority, catalog Ca
 		return nil, err
 	}
 	result := &lease{store: store, connection: connection, lockKey: lockKey}
-	if err := result.loadOrCreate(ctx, authority, validated); err != nil {
+	if err := result.loadOrCreate(ctx, authority, validated, existingOnly); err != nil {
 		_ = result.Close()
 		return nil, err
 	}
 	return result, nil
 }
 
-func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catalog Catalog) error {
+func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catalog Catalog, existingOnly bool) error {
 	tx, err := value.connection.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -123,6 +125,9 @@ func (value *lease) loadOrCreate(ctx context.Context, authority Authority, catal
 		WHERE workspace_id=$1 AND catalog_key=$2
 		FOR UPDATE`, authority.WorkspaceID, catalog.Key))
 	if errors.Is(err, pgx.ErrNoRows) {
+		if existingOnly {
+			return ErrHostNotRunning
+		}
 		if !lowerHex(authority.SourceRevision, 40) {
 			return ErrSourceRevisionRequired
 		}

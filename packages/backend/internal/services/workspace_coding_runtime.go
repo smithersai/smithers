@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Provisioning stages one native executable; a running guest must still carry

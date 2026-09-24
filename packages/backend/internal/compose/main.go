@@ -26,12 +26,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/auth"
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
 	"github.com/smithersai/smithers/packages/backend/internal/cleanup"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/configsync"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/email"
 	"github.com/smithersai/smithers/packages/backend/internal/lfsauth"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -39,15 +37,15 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/routes"
-	runnerpool "github.com/smithersai/smithers/packages/backend/internal/runner"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 	"github.com/smithersai/smithers/packages/backend/modelhost"
+	"github.com/smithersai/smithers/packages/backend/operations"
 	"github.com/smithersai/smithers/packages/backend/ports"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 	"github.com/smithersai/smithers/packages/backend/webapp"
 	"github.com/smithersai/smithers/packages/backend/workspace"
 )
@@ -100,26 +98,30 @@ func StartWithOptions(ctx context.Context, args []string, stdout, stderr io.Writ
 
 // Options are the only deployment seams in the common product assembly.
 type Options struct {
-	Admission admission.Policy
-	Commerce  commerce.Service
+	RuntimeStores   ports.RuntimeStores
+	ReadyBindings   func(operations.Bindings)
+	BeforeShutdown  func() error
+	ComputeProvider sandbox.Provider
+	Admission       admission.Policy
+	Commerce        commerce.Service
 	// Duties selects which halves of the product this process runs. The zero
 	// value serves HTTP and runs the background workers in one process.
-	Duties                Duties
-	TraceExporter         trace.SpanExporter
-	Blobs                 blob.Store
-	AgentLogs             services.AgentLogStore
-	MetricsDoer           services.GMPDoer
-	Repository            *repohost.Client
-	RepositoryPlacement   services.RepoPlacementLookup
-	Workspace             workspace.WorkspaceRuntime
-	FlowHostRegistry      *flowmanifest.Registry
-	FlowHostProductAPIURL string
-	ChatHost              ports.ChatHost
-	ChatCallbackListener  net.Listener
-	ChatProducerBaseURL   string
-	Recommender           ports.Recommender
-	RecommendationLog     ports.RecommendationLog
-	ModelStreamHost       ports.ModelStreamHost
+	Duties                 Duties
+	TraceExporter          trace.SpanExporter
+	Blobs                  blob.Store
+	AgentLogs              services.AgentLogStore
+	Repository             *repohost.Client
+	RepositoryPlacement    services.RepoPlacementLookup
+	RepositoryProvisioning services.RepositoryProvisioningStore
+	Workspace              workspace.WorkspaceRuntime
+	FlowHostRegistry       *flowmanifest.Registry
+	FlowHostProductAPIURL  string
+	ChatHost               ports.ChatHost
+	ChatCallbackListener   net.Listener
+	ChatProducerBaseURL    string
+	Recommender            ports.Recommender
+	RecommendationLog      ports.RecommendationLog
+	ModelStreamHost        ports.ModelStreamHost
 }
 
 // Duties splits one product composition across processes. A deployment
@@ -136,18 +138,15 @@ func (duties Duties) valid() bool {
 	return duties == DutiesAll || duties == DutiesHTTP || duties == DutiesWorkers
 }
 
-// topology is derived from deployment-neutral inputs: the configured identity
-// mode and the requested duties. A multitenant composition is the only one
-// that runs fleet workers against the deployment schema.
+// topology is derived from the configured identity mode and requested duties.
 type topology struct {
 	multitenant bool
 	duties      Duties
 }
 
-func (t topology) hosted() bool         { return t.multitenant }
-func (t topology) workers() bool        { return t.duties != DutiesHTTP }
-func (t topology) clusterWorkers() bool { return t.multitenant && t.workers() }
-func (t topology) servesHTTP() bool     { return t.duties != DutiesWorkers }
+func (t topology) hosted() bool     { return t.multitenant }
+func (t topology) workers() bool    { return t.duties != DutiesHTTP }
+func (t topology) servesHTTP() bool { return t.duties != DutiesWorkers }
 
 type runOptions struct {
 	Options
@@ -209,6 +208,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err := config.ValidateServerStartupWithDependencies(cfg, config.StartupDependencies{
 		InProcessRepository: !options.topology.hosted() && options.Repository != nil,
 		WorkspaceRuntime:    options.Workspace != nil,
+		ComputeProvider:     options.ComputeProvider != nil,
 		MeteredAdmission:    options.Admission != nil,
 	}); err != nil {
 		slog.New(middleware.NewGCPJSONHandler(stderr, slog.LevelError)).Error("invalid startup config", "error", err)
@@ -278,23 +278,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	database.StartPoolStatsCollector(poolStatsCtx, pool, smithersMetrics, 15*time.Second)
 
 	queries := db.New(pool)
+	runtimeStores := resolveProductRuntimeStores(options.RuntimeStores, queries)
 	if err := services.ValidateLocalIdentityStartup(ctx, queries, cfg.Auth); err != nil {
 		return fmt.Errorf("validate local identity startup: %w", err)
-	}
-	// Hosted infrastructure adds cluster-only SQL without changing the product
-	// query model used by every common service and the local deployment.
-	hostedQueries := deploymentdb.New(pool)
-	var runnerStaleSweeper *runnerpool.RunnerPool
-	runtimeMetricsStore := services.NewRuntimeMetricsStore(hostedQueries, pool)
-	if options.topology.hosted() {
-		services.StartRuntimeMetricsCollector(poolStatsCtx, runtimeMetricsStore, smithersMetrics, 15*time.Second)
-		smithersMetrics.MustRegister(routes.NewCanaryStatusCollector(hostedQueries))
-		inventoryMetrics := routes.NewAdminRuntimeMetricsCollector(hostedQueries)
-		smithersMetrics.MustRegister(inventoryMetrics)
-		inventoryMetrics.Start(poolStatsCtx)
-	}
-	if options.topology.clusterWorkers() {
-		runnerStaleSweeper = runnerpool.NewRunnerPool(hostedQueries, runnerpool.Config{HeartbeatTimeout: 2 * time.Minute})
 	}
 	// One shared broker multiplexes every SSE stream type (notifications,
 	// workspaces, workflow-run logs, agent sessions, releases) over a SINGLE
@@ -455,7 +441,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	var repoService *services.RepoService
 	if options.topology.hosted() {
-		repoOptions = append(repoOptions, services.WithRepoPlacementResolver(options.RepositoryPlacement))
+		repoOptions = append(repoOptions, services.WithRepoPlacementResolver(options.RepositoryPlacement), services.WithRepoProvisioningStore(options.RepositoryProvisioning))
 		repoService = services.NewRepoServiceWithPool(queries, repoHostClient, activeStorageSetID, pool, repoOptions...)
 	} else {
 		repoService = services.NewProductRepoServiceWithPool(queries, repoHostClient, pool, repoOptions...)
@@ -464,7 +450,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		repoService.EnableDurableProvisioning()
 	}
 	repositoryStorageReconciler := services.NewRepositoryStorageOperationReconciler(pool, repoHostClient)
-	repositoryProvisioningReconciler := services.NewRepositoryProvisioningReconciler(pool, repoHostClient)
+	repositoryProvisioningReconciler := services.NewRepositoryProvisioningReconciler(options.RepositoryProvisioning, repoHostClient)
 	repoOwnershipFence := services.NewRepoOwnershipFence(pool)
 	sshKeyService := services.NewSSHKeyService(queries)
 	deployKeyService := services.NewDeployKeyService(queries)
@@ -513,7 +499,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	workflowParser := services.NewWorkflowParser()
 	workflowSyncService := services.NewWorkflowSyncService(queries, repoHostClient, workflowParser)
 	workflowRunService := services.NewWorkflowRunService(
-		queries,
+		runtimeStores.WorkflowRuns,
 		services.WithWorkflowRunMetrics(smithersMetrics),
 		services.WithWorkflowRunWebhookDispatcher(webhookDispatcher),
 		services.WithWorkflowRunCommitStatusWriter(commitStatusService),
@@ -551,20 +537,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithIssueNotificationService(notificationService),
 		services.WithIssueOwnershipGuard(repoOwnershipFence),
 	)
-	runnerOptions := []clusterservices.RunnerServiceOption{
-		clusterservices.WithRunnerTransactions(),
-		clusterservices.WithRunnerMetrics(smithersMetrics),
-		clusterservices.WithRunnerWebhookDispatcher(webhookDispatcher),
-		clusterservices.WithRunnerCommitStatusWriter(commitStatusService),
-		clusterservices.WithRunnerGitHubCheckRunService(gitHubCheckRunService),
-		clusterservices.WithRunnerGitHubInstallationResolver(repoConnectionService),
-		clusterservices.WithRunnerSecretInjector(secretInjector),
-	}
-	if cfg.FeatureFlags.Workflows {
-		runnerOptions = append(runnerOptions, clusterservices.WithRunnerWorkflowDispatcher(workflowRunService))
-	}
-	runnerService := clusterservices.NewRunnerService(hostedQueries, runnerOptions...)
-	runnerAdminService := clusterservices.NewRunnerAdminService(hostedQueries)
 	adminUserService := services.NewAdminUserService(queries,
 		services.WithTokenCreator(authService),
 		services.WithAdminAuditor(auditService),
@@ -580,13 +552,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 
 	blobConfig := cfg.Blob
 	blobConfig.TransferBaseURL = publicBaseURL
-	blobStore, gcsClient, expiryDuration, err := selectBlobStore(ctx, blobConfig, options.Blobs)
+	blobStore, blobCloser, expiryDuration, err := selectBlobStore(ctx, blobConfig, options.Blobs)
 	if err != nil {
 		slog.Error("failed to initialize blob store", "error", err)
 		return err
 	}
-	if gcsClient != nil {
-		defer func() { _ = gcsClient.Close() }()
+	if blobCloser != nil {
+		defer func() { _ = blobCloser.Close() }()
 	}
 	transferStore := blobStore
 
@@ -597,7 +569,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 
 	lfsService := services.NewLFSService(
-		hostedQueries,
+		runtimeStores.LFS,
 		blobStore,
 		expiryDuration,
 		services.WithLFSBillingPolicy(billingPolicy),
@@ -614,7 +586,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.Error("blob store does not implement workflow cache storage requirements")
 		return errors.New("blob store does not implement workflow cache storage requirements")
 	}
-	workflowCacheService := services.NewWorkflowCacheService(hostedQueries, workflowCacheStore, services.WorkflowCacheConfig{
+	workflowCacheService := services.NewWorkflowCacheService(runtimeStores.WorkflowCache, workflowCacheStore, services.WorkflowCacheConfig{
 		Prefix:          cfg.Blob.WorkflowCachePrefix,
 		SignedURLExpiry: expiryDuration,
 		TTL:             workflowCacheTTL,
@@ -622,7 +594,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		ArchiveMaxBytes: cfg.Blob.WorkflowCacheArchiveMaxBytes,
 	}, services.WithWorkflowCacheBillingPolicy(billingPolicy))
 	workflowArtifactService := services.NewWorkflowArtifactService(
-		hostedQueries,
+		runtimeStores.WorkflowArtifacts,
 		blobStore,
 		expiryDuration,
 		services.WithWorkflowArtifactWebhookDispatcher(webhookDispatcher),
@@ -637,13 +609,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	var repoGatewaySandbox services.RepoGatewayVMClient
 	var goldenSnapshotSandbox services.GoldenSnapshotVMClient
 	var orphanSandbox services.SandboxOrphanVMClient
-	var provider sandbox.Provider
-	if options.topology.hosted() {
-		provider, err = buildSandboxProvider(cfg.Sandbox, smithersMetrics)
-		if err != nil {
-			return err
-		}
-	}
+	provider := options.ComputeProvider
 	if provider != nil {
 		sandboxClient = provider
 		workflowSandboxClient = provider
@@ -658,17 +624,16 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Backstop for micro-VMs whose owning gateway/workspace row was cascade-
 	// deleted with its repository: nothing else can see them, because every
 	// other sweep starts from the row that is gone.
-	sandboxOrphanReaper := services.NewSandboxOrphanReaper(hostedQueries, orphanSandbox, smithersMetrics)
+	var sandboxOrphanReaper *services.SandboxOrphanReaper
+	if runtimeStores.Orphans != nil && orphanSandbox != nil {
+		sandboxOrphanReaper = services.NewSandboxOrphanReaper(runtimeStores.Orphans, orphanSandbox, smithersMetrics)
+	}
 
-	// Initialize agent log store (GCS-backed when available, in-memory fallback).
-	// Transcripts are retention-limited operational data: they belong in the
-	// dedicated agent-logs bucket, not the versioned long-retention blobs bucket.
-	agentLogStore := options.AgentLogs
-	if agentLogStore == nil {
-		if strings.TrimSpace(cfg.Blob.GCSBucket) != "" {
-			return errors.New("GCS agent logs require an injected cloud agent-log adapter")
-		}
-		agentLogStore = initializeAgentLogStore(gcsClient, cfg.Blob, blobStore)
+	// The deployment may inject its transcript adapter; local storage shares the
+	// durable filesystem blob root.
+	agentLogStore, err := selectAgentLogStore(blobStore, options.AgentLogs)
+	if err != nil {
+		return err
 	}
 
 	agentSnapshotID := cfg.Sandbox.AgentSnapshotID
@@ -686,7 +651,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	})
 	if len(agentProviderEnv) == 0 {
 		slog.Error("no usable AI-provider credential is configured; agent runs will be refused",
-			"remediation", "seed a real value for one of plue-cerebras-api-key, plue-anthropic-api-key, plue-openai-api-key or plue-openrouter-api-key in Secret Manager")
+			"remediation", "configure a valid CEREBRAS_API_KEY, ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY")
 	}
 	changesetService := services.NewChangesetService(queries, repoHostClient, repoService, pool, services.WithChangesetLandingPolicy(landingService))
 	// Bring-your-own subscriptions (RFD-003): connections are encrypted with
@@ -705,7 +670,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	providerConnectionRefreshWorker := services.NewProviderConnectionRefreshWorker(providerConnectionService, time.Minute, slog.Default())
 	neverStartedTimeout, _ := time.ParseDuration(cfg.Agents.NeverStartedTimeout)
 	agentService := services.NewAgentServiceWithPool(queries, pool,
-		services.WithAgentDispatchQuerier(hostedQueries),
+		services.WithAgentDispatchQuerier(runtimeStores.AgentDispatch),
 		services.WithAgentNeverStartedTimeout(neverStartedTimeout),
 		services.WithAgentChangesetMaterializer(changesetService),
 		services.WithAgentLogStore(agentLogStore),
@@ -739,7 +704,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	)
 	landingService.SetAgentTurnDispatcher(agentService)
 
-	workspaceService := services.NewWorkspaceService(queries,
+	workspaceService := services.NewWorkspaceService(runtimeStores.Workspaces,
 		services.WithWorkspaceRuntime(options.Workspace),
 		services.WithWorkspaceCapabilityTransactions(pool),
 		services.WithWorkspaceBillingPolicy(billingPolicy),
@@ -773,20 +738,26 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// workspace/gateway VMs boot from. Baked in the background from the exact
 	// workspace VM request; provisioning falls back to the bare base image
 	// whenever no ready snapshot exists.
-	goldenSnapshotService := services.NewGoldenSnapshotService(pool, goldenSnapshotSandbox, workspaceService.GoldenBakeVMRequest)
-	services.WithWorkspaceGoldenSnapshots(goldenSnapshotService)(workspaceService)
+	var goldenSnapshotService *services.GoldenSnapshotService
+	if runtimeStores.GoldenSnapshots != nil && goldenSnapshotSandbox != nil {
+		goldenSnapshotService = services.NewGoldenSnapshotService(runtimeStores.GoldenSnapshots, goldenSnapshotSandbox, workspaceService.GoldenBakeVMRequest)
+		services.WithWorkspaceGoldenSnapshots(goldenSnapshotService)(workspaceService)
+	}
 	// NixOS environment images: the kind=vm/desktop compute path. Registering
 	// an image bakes its closure-keyed golden snapshot from the same request
 	// workspaces boot (NixBakeVMRequest), so the second boot clones a disk.
-	environmentImageService := services.NewSandboxEnvironmentImageService(hostedQueries,
-		services.WithSandboxEnvironmentImageGoldenSnapshots(goldenSnapshotService, workspaceService.NixBakeVMRequest))
-	services.WithWorkspaceEnvironmentImages(environmentImageService)(workspaceService)
-	// NixOS CI routing: a repository whose trigger commit declares
-	// .smithers/environment.nix and has a registered kind=vm closure image runs
-	// its CI in NixOS guests on the sandbox plane instead of the Debian runner
-	// pool. Bound here because the image registry is constructed after the run
-	// service.
-	services.BindWorkflowRunEnvironmentRouting(workflowRunService, repoHostClient, environmentImageService)
+	var environmentImageService *services.SandboxEnvironmentImageService
+	if runtimeStores.EnvironmentImages != nil {
+		environmentImageService = services.NewSandboxEnvironmentImageService(runtimeStores.EnvironmentImages,
+			services.WithSandboxEnvironmentImageGoldenSnapshots(goldenSnapshotService, workspaceService.NixBakeVMRequest))
+		services.WithWorkspaceEnvironmentImages(environmentImageService)(workspaceService)
+		// NixOS CI routing: a repository whose trigger commit declares
+		// .smithers/environment.nix and has a registered kind=vm closure image runs
+		// its CI in NixOS guests on the sandbox plane instead of the Debian runner
+		// pool. Bound here because the image registry is constructed after the run
+		// service.
+		services.BindWorkflowRunEnvironmentRouting(workflowRunService, repoHostClient, environmentImageService)
+	}
 
 	// Smithers Pair sessions: the server-authoritative pairing backend
 	// (fork-and-swap, ACL ladder, roles, invites, per-link slugs, serial FIFO
@@ -810,34 +781,37 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// Repo gateway: durable per-user+repo `smithers gateway` control plane in a
 	// Microsandbox VM (the 4th sandbox archetype). Degrades honestly (409) when
 	// Microsandbox is not configured.
-	repoGatewayService := services.NewRepoGatewayService(hostedQueries,
-		services.WithRepoGatewayBillingPolicy(billingPolicy),
-		services.WithRepoGatewayWorkspaces(workspaceService),
-		services.WithRepoGatewaySandboxClient(repoGatewaySandbox),
-		services.WithRepoGatewaySandboxMetrics(smithersMetrics),
-		services.WithRepoGatewaySecretCodec(webhookSecretCodec),
-		services.WithRepoGatewayGitBaseURL(publicBaseURL),
-		services.WithRepoGatewayGoldenSnapshots(goldenSnapshotService),
-		// Cap concurrent gateway VMs against the same per-user active-sandbox
-		// budget as workspaces (default 3), enforced only on the provision path
-		// so resuming an existing gateway is never blocked.
-		services.WithRepoGatewayConcurrencyCap(queries, perUserConcurrentSandboxCap),
-		// Reaper-driven authorization sweep: tear down gateways whose user lost
-		// write access, since the VM-local operator token is never re-checked
-		// against Smithers permissions on use.
-		services.WithRepoGatewayAccessRevocation(hostedQueries),
-		// AI-provider seat for agent workflows on gateway VMs (Cerebras
-		// supplier key, per-VM systemd env at provision time). Empty disables
-		// the seat; gateways then honestly fail agent nodes for lack of a
-		// provider instead of pretending one exists.
-		services.WithRepoGatewayAgentSeat(cfg.Sandbox.GatewayAgentCerebrasAPIKey),
-		services.WithRepoGatewayProviderEnv(agentProviderEnv),
-		// Resume-time liveness probe through the preview ingress (the relay's
-		// own upstream). Empty in local dev: no preview gateway exists there.
-		services.WithRepoGatewayHealthProbe(cfg.Sandbox.GatewayHealthProbeBaseURL, nil),
-		services.WithPreviewRelayToken(cfg.Sandbox.PreviewRelayToken),
-	)
-	services.WithWorkspaceCapabilityProbe(repoGatewayService.ProbeWorkspaceCapability)(workspaceService)
+	var repoGatewayService *services.RepoGatewayService
+	if runtimeStores.RepoGateways != nil && repoGatewaySandbox != nil {
+		repoGatewayService = services.NewRepoGatewayService(runtimeStores.RepoGateways,
+			services.WithRepoGatewayBillingPolicy(billingPolicy),
+			services.WithRepoGatewayWorkspaces(workspaceService),
+			services.WithRepoGatewaySandboxClient(repoGatewaySandbox),
+			services.WithRepoGatewaySandboxMetrics(smithersMetrics),
+			services.WithRepoGatewaySecretCodec(webhookSecretCodec),
+			services.WithRepoGatewayGitBaseURL(publicBaseURL),
+			services.WithRepoGatewayGoldenSnapshots(goldenSnapshotService),
+			// Cap concurrent gateway VMs against the same per-user active-sandbox
+			// budget as workspaces (default 3), enforced only on the provision path
+			// so resuming an existing gateway is never blocked.
+			services.WithRepoGatewayConcurrencyCap(queries, perUserConcurrentSandboxCap),
+			// Reaper-driven authorization sweep: tear down gateways whose user lost
+			// write access, since the VM-local operator token is never re-checked
+			// against Smithers permissions on use.
+			services.WithRepoGatewayAccessRevocation(runtimeStores.RepoGateways),
+			// AI-provider seat for agent workflows on gateway VMs (Cerebras
+			// supplier key, per-VM systemd env at provision time). Empty disables
+			// the seat; gateways then honestly fail agent nodes for lack of a
+			// provider instead of pretending one exists.
+			services.WithRepoGatewayAgentSeat(cfg.Sandbox.GatewayAgentCerebrasAPIKey),
+			services.WithRepoGatewayProviderEnv(agentProviderEnv),
+			// Resume-time liveness probe through the preview ingress (the relay's
+			// own upstream). Empty in local dev: no preview gateway exists there.
+			services.WithRepoGatewayHealthProbe(cfg.Sandbox.GatewayHealthProbeBaseURL, nil),
+			services.WithPreviewRelayToken(cfg.Sandbox.PreviewRelayToken),
+		)
+		services.WithWorkspaceCapabilityProbe(repoGatewayService.ProbeWorkspaceCapability)(workspaceService)
+	}
 	gitHubImportService := services.NewGitHubImportService(
 		pool,
 		queries,
@@ -854,6 +828,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitHubImportInstallationTokens(repoConnectionService),
 		services.WithGitHubImportReadAccess(gitHubUserReposService),
 		services.WithGitHubImportSyncedRepos(gitHubSyncedRepoService),
+		services.WithGitHubImportProvisioningStore(options.RepositoryProvisioning),
 	)
 	gitHubSyncedRepoService.SetMirrorer(gitHubImportService)
 	if !options.topology.hosted() {
@@ -870,40 +845,21 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithLandingWorkerAutoLandProcessor(landingService),
 	)
 	cronSchedulerWorker := services.NewCronSchedulerWorker(queries, workflowRunService)
-	runnerQueueTimeoutWorker := clusterservices.NewRunnerQueueTimeoutWorker(hostedQueries, workflowRunService)
 	workflowLogBudgetBackfiller := services.NewWorkflowLogBudgetBackfiller(queries)
-	workflowSandboxSchedulerWorker := services.NewWorkflowSandboxSchedulerWorker(
-		hostedQueries,
-		workflowSandboxClient,
-		services.WithWorkflowSandboxSchedulerAPIBaseURL(agentAPIBaseURL),
-		services.WithWorkflowSandboxSchedulerGitBaseURL(publicBaseURL),
-		services.WithWorkflowSandboxSchedulerSecretInjector(secretInjector),
-		// NixOS CI: a sandbox-plane run with a rendered job graph runs each job
-		// in its own kind=vm guest, built by the same code a workspace uses.
-		services.WithWorkflowSandboxSchedulerCIGuests(workspaceService),
-	)
-	gitHubWebhookEventWorker := services.NewGitHubWebhookEventWorker(queries, workflowRunService)
-	// Alert auto-remediation worker: drains alert_remediation_jobs and
-	// dispatches the registered remediation workflow. Only runs when
-	// SMITHERS_ALERT_REMEDIATION_REPOSITORY (owner/repo) or the legacy
-	// SMITHERS_ALERT_REMEDIATION_REPOSITORY_ID identifies the repository
-	// hosting .smithers/workflows/remediate.tsx.
-	var alertRemediationWorker *clusterservices.AlertRemediationWorker
-	if cfg.FeatureFlags.Workflows {
-		if remediationRepo := resolveAlertRemediationRepository(ctx, queries); remediationRepo.ID > 0 {
-			if alertRegistry, err := loadAlertRegistry(); err != nil {
-				slog.Error("failed to load alert remediation registry; remediation worker disabled", "error", err)
-			} else {
-				alertRemediationWorker = clusterservices.NewAlertRemediationWorker(
-					hostedQueries,
-					workflowRunService,
-					alertRegistry,
-					remediationRepo.ID,
-					remediationRepo.FullName,
-				)
-			}
-		}
+	var workflowSandboxSchedulerWorker *services.WorkflowSandboxSchedulerWorker
+	if runtimeStores.WorkflowScheduler != nil && workflowSandboxClient != nil {
+		workflowSandboxSchedulerWorker = services.NewWorkflowSandboxSchedulerWorker(
+			runtimeStores.WorkflowScheduler,
+			workflowSandboxClient,
+			services.WithWorkflowSandboxSchedulerAPIBaseURL(agentAPIBaseURL),
+			services.WithWorkflowSandboxSchedulerGitBaseURL(publicBaseURL),
+			services.WithWorkflowSandboxSchedulerSecretInjector(secretInjector),
+			// NixOS CI: a sandbox-plane run with a rendered job graph runs each job
+			// in its own kind=vm guest, built by the same code a workspace uses.
+			services.WithWorkflowSandboxSchedulerCIGuests(workspaceService),
+		)
 	}
+	gitHubWebhookEventWorker := services.NewGitHubWebhookEventWorker(queries, workflowRunService)
 	webhookWorker := webhook.NewWorker(
 		queries,
 		webhook.DefaultHTTPClient(),
@@ -926,10 +882,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	workflowCacheCleaner := cleanup.NewWorkflowCacheCleaner(workflowCacheService, workflowCacheCleanupInterval)
 	workflowArtifactCleaner := cleanup.NewWorkflowArtifactCleaner(workflowArtifactService, 24*time.Hour, 250)
 
-	storageDeletionCleaner := cleanup.NewStorageDeletionCleaner(pool, blobStore, time.Minute, 250)
-
 	auditCleaner := cleanup.NewAuditCleaner(queries, 24*time.Hour, 90*24*time.Hour)
-	egressAuditCleaner := cleanup.NewSandboxEgressAuditCleaner(hostedQueries, 24*time.Hour, cfg.Cleanup.SandboxEgressAuditRetentionDays)
 
 	workspaceCleaner := cleanup.NewWorkspaceCleaner(workspaceService, 5*time.Minute)
 	repoSyncService := services.NewRepoSyncService("", repoConnectionService)
@@ -1009,12 +962,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Metrics: smithersMetrics,
 	}
 
-	runnerHandler := &routes.RunnerHandler{
-		Service: runnerService,
-	}
-	adminRunnerHandler := &routes.AdminRunnerHandler{
-		Service: runnerAdminService,
-	}
 	adminUserHandler := &routes.AdminUserHandler{
 		Service: adminUserService,
 	}
@@ -1023,38 +970,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	}
 	adminRepoHandler := &routes.AdminRepoHandler{
 		Service: adminRepoService,
-	}
-	adminSystemHealthHandler := &routes.AdminSystemHealthHandler{
-		DB: pool,
-	}
-	// The admin system console reads the same sources the runtime gauges do, plus
-	// the incident and landing-queue aggregates, through one adapter.
-	adminSystemConsoleStore := clusterservices.NewAdminSystemConsoleStore(hostedQueries)
-	adminSystemStatusHandler := &routes.AdminSystemStatusHandler{
-		Service: clusterservices.NewAdminSystemStatusService(clusterservices.AdminSystemStatusServiceConfig{
-			DB:           pool,
-			Runtime:      runtimeMetricsStore,
-			Canaries:     hostedQueries,
-			Sandboxes:    hostedQueries,
-			LandingQueue: adminSystemConsoleStore,
-			Incidents:    hostedQueries,
-			SSE:          sseBroker,
-		}),
-	}
-	adminSystemCanariesHandler := &routes.AdminSystemCanariesHandler{
-		Store: hostedQueries,
-	}
-	adminSystemIncidentsHandler := &routes.AdminSystemIncidentsHandler{
-		Service: clusterservices.NewAdminSystemIncidentsService(adminSystemConsoleStore),
-	}
-	adminSystemMetricsHandler := routes.NewAdminSystemMetricsHandler(cfg.MetricsQueryProjectID(), options.MetricsDoer)
-	if adminSystemMetricsHandler == nil {
-		// No GCP project (or no credentials): mount a backend-less handler so the
-		// endpoint answers 501 "metrics backend not configured" instead of 404,
-		// which the admin UI reads as a missing route.
-		slog.Warn("admin metrics query endpoint has no metrics backend",
-			"remediation", "set SMITHERS_METRICS_PROJECT_ID (or blob.gcs_project) and grant roles/monitoring.viewer")
-		adminSystemMetricsHandler = &routes.AdminSystemMetricsHandler{}
 	}
 	adminGitHubAppHandler := &routes.AdminGitHubAppHandler{
 		Service: repoConnectionService,
@@ -1119,7 +1034,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service:      agentService,
 		TokenQuerier: queries,
 	}
-	egressAuditService := services.NewSandboxEgressAuditService(hostedQueries)
+	var egressAuditService *services.SandboxEgressAuditService
+	if runtimeStores.EgressAudit != nil {
+		egressAuditService = services.NewSandboxEgressAuditService(runtimeStores.EgressAudit)
+	}
 	agentSessionHandler := &routes.AgentSessionHandler{
 		Service:     agentService,
 		EgressAudit: egressAuditService,
@@ -1166,18 +1084,25 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Metrics: smithersMetrics,
 	}
 	workspaceHandler := &routes.WorkspaceHandler{
-		Service:           workspaceService,
-		EgressAudit:       egressAuditService,
-		Broker:            sseBroker,
-		Metrics:           smithersMetrics,
-		Desktop:           &routes.WorkspaceDesktopHandler{Service: workspaceService, RelayToken: cfg.Sandbox.PreviewRelayToken},
-		EnvironmentImages: &routes.SandboxEnvironmentImageHandler{Service: environmentImageService},
+		Service:     workspaceService,
+		EgressAudit: egressAuditService,
+		Broker:      sseBroker,
+		Metrics:     smithersMetrics,
+		Desktop:     &routes.WorkspaceDesktopHandler{Service: workspaceService, RelayToken: cfg.Sandbox.PreviewRelayToken},
+	}
+	if environmentImageService != nil {
+		workspaceHandler.EnvironmentImages = &routes.SandboxEnvironmentImageHandler{Service: environmentImageService}
 	}
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
-	repositoryJobService := services.NewRepositoryJobService(queries, repoGatewayService, pool)
+	var repositoryJobGateway services.RepositoryJobGateway
+	if repoGatewayService != nil {
+		repositoryJobGateway = repoGatewayService
+	}
+	repositoryJobService := services.NewRepositoryJobService(queries, repositoryJobGateway, pool)
 	repositoryJobService.SetGitHubReadAccess(gitHubUserReposService)
-	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy)
+	repositorySetupService := services.NewRepositorySetupService(pool, repositoryJobService, workspaceService)
+	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy, repositorySetupService)
 	if err != nil {
 		return err
 	}
@@ -1185,6 +1110,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if flow != nil {
 		agentService.SetFlowDispatcher(flow.dispatcher)
 		repositoryJobService.SetFlowDispatcher(flow.dispatcher)
+		repositorySetupService.SetFlowDispatcher(flow.dispatcher)
 		if options.topology.workers() {
 			flowWorker = newCriticalWorker()
 		}
@@ -1222,14 +1148,18 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Service: workspaceService,
 	}
 	gitHubWebhookEventWorker.SetRepositoryJobs(repositoryJobService)
-	repoGatewayHandler := &routes.RepoGatewayHandler{
-		RepositoryJobs:  repositoryJobService,
-		SourceRetention: services.NewRepositorySourceRetentionService(queries, repositoryJobService, gitHubImportService),
-		Service:         repoGatewayService,
-		RelayService:    repoGatewayService,
-		RelayToken:      cfg.Sandbox.PreviewRelayToken,
-		WikiPublisher:   services.NewGatewayWikiPublisher(repoGatewayService, queries, wikiService),
-		PushTokens:      services.NewGatewayPushTokenService(repoGatewayService, queries, auditService),
+	var repoGatewayHandler *routes.RepoGatewayHandler
+	if repoGatewayService != nil {
+		repoGatewayHandler = &routes.RepoGatewayHandler{
+			RepositoryJobs:  repositoryJobService,
+			SourceRetention: services.NewRepositorySourceRetentionService(queries, repositoryJobService, gitHubImportService),
+			Service:         repoGatewayService,
+			RelayService:    repoGatewayService,
+			RelayToken:      cfg.Sandbox.PreviewRelayToken,
+			WikiPublisher:   services.NewGatewayWikiPublisher(repoGatewayService, queries, wikiService),
+			PushTokens:      services.NewGatewayPushTokenService(repoGatewayService, queries, auditService),
+		}
+
 	}
 
 	// Anonymous sandboxes (../multi SPEC.md §3): signed-out open of the
@@ -1352,9 +1282,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// The push callback only records the event; this worker runs its
 	// webhooks, change sync, workflow runs and indexing with retries.
 	repoPushEventWorker := services.NewRepoPushEventWorker(queries, pushHookHandler)
-	canaryReportHandler := &routes.CanaryReportHandler{
-		Store: hostedQueries,
-	}
 	workflowHandler := &routes.WorkflowHandler{
 		Service: workflowAPIService,
 	}
@@ -1375,25 +1302,13 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	adminUserService.SetRevocationPublisher(revocationPublisher)
 	orgService.SetRevocationPublisher(revocationPublisher)
 	pairSessionService.SetRevocationPublisher(revocationPublisher)
-	repoGatewayService.SetRevocationPublisher(revocationPublisher)
+	if repoGatewayService != nil {
+		repoGatewayService.SetRevocationPublisher(revocationPublisher)
+	}
 	agentService.SetRevocationPublisher(revocationPublisher)
 	repoService.SetRevocationPublisher(revocationPublisher)
 	sshKeyService.SetRevocationPublisher(revocationPublisher)
 	deployKeyService.SetRevocationPublisher(revocationPublisher)
-	if !options.topology.hosted() {
-		// These HTTP surfaces operate on fleet placement, runner, or canary
-		// state excluded from the single-owner product schema.
-		// The shared router already treats nil handlers as absent routes.
-		runnerHandler = nil
-		adminRunnerHandler = nil
-		adminSystemStatusHandler = nil
-		adminSystemCanariesHandler = nil
-		adminSystemIncidentsHandler = nil
-		adminSystemMetricsHandler = nil
-		canaryReportHandler = nil
-		repoGatewayHandler = nil
-	}
-
 	publicCatalog := routes.NewPublicRepositoryCatalog(queries)
 	var recommendationHandler *routes.RecommendationHandler
 	recommendationLog := options.RecommendationLog
@@ -1436,16 +1351,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		notificationHandler,
 		pairSessionHandler,
 
-		runnerHandler,
-		adminRunnerHandler,
 		adminUserHandler,
 		adminOrgHandler,
 		adminRepoHandler,
-		adminSystemHealthHandler,
-		adminSystemStatusHandler,
-		adminSystemCanariesHandler,
-		adminSystemIncidentsHandler,
-		adminSystemMetricsHandler,
 		adminGitHubAppHandler,
 		adminAuditHandler,
 		webhookHandler,
@@ -1463,7 +1371,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		approvalsHandler,
 		branchLockHandler,
 		pushHookHandler,
-		canaryReportHandler,
 		workflowHandler,
 		workflowCacheHandler,
 		workflowArtifactHandler,
@@ -1485,7 +1392,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		linearHandler,
 		gitHubWebhookHandler,
 		smithersMetrics,
-		alertRemediationWorker != nil,
 		routerExtras{Admission: billingPolicy, BillingCapabilities: billingCapabilities, Catalog: publicCatalog, Recommender: recommendationHandler, ModelStream: modelStreamHandler},
 	)
 	if flow != nil && options.topology.servesHTTP() {
@@ -1498,6 +1404,11 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 		router.With(flowAccess...).Post("/api/workflow/provision", browser.provision)
 		router.With(flowAccess...).Post("/api/workflow/rpc", browser.rpc)
+		setup := &repositorySetupAPI{repos: repoService, setup: repositorySetupService}
+		router.With(flowAccess...).Post("/api/repository-setup/{operation}", setup.serve)
+		setupReads := append([]func(http.Handler) http.Handler{}, flowAccess[:len(flowAccess)-1]...)
+		setupReads = append(setupReads, middleware.RequireScope(middleware.ScopeReadRepository))
+		router.With(setupReads...).Get("/api/repository-setup/{operation}", setup.serve)
 	}
 	if chatService != nil && options.topology.servesHTTP() {
 		mountChatPublic(router, chatService.runtime, queries, cfg)
@@ -1549,6 +1460,21 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	handler := requestTracker.Wrap(r)
 	srv := buildHTTPServer(cfg, handler)
 
+	if options.ReadyBindings != nil {
+		options.ReadyBindings(operations.Bindings{
+			Blobs:            blobStore,
+			WorkflowsEnabled: cfg.FeatureFlags.Workflows, WorkersRunning: options.topology.workers(), HTTPEnabled: options.topology.servesHTTP(),
+			Agents: agentService, Workspaces: workspaceService, Workflows: workflowRunService,
+			CommitStatuses: commitStatusService, GitHubChecks: gitHubCheckRunService,
+			GitHubInstallations: repoConnectionService, Secrets: secretInjector,
+			Webhooks: webhookDispatcher, Metrics: smithersMetrics, Streams: sseBroker,
+			Access: deploymentAccess(queries, cfg),
+			HTTP: operations.HTTPSettings{Address: srv.Addr, ReadTimeout: srv.ReadTimeout,
+				ReadHeaderTimeout: srv.ReadHeaderTimeout, WriteTimeout: srv.WriteTimeout,
+				IdleTimeout: srv.IdleTimeout, ShutdownTimeout: shutdownTimeout},
+		})
+	}
+
 	// Start landing worker in a background goroutine.
 	workerCtx, workerCancel := context.WithCancel(ctx)
 	defer workerCancel()
@@ -1594,27 +1520,20 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		launchWorker(func() { providerConnectionRefreshWorker.Start(workerCtx) })
 		launchWorker(func() { workflowLogBudgetBackfiller.Start(workerCtx) })
 	}
-	if options.topology.clusterWorkers() {
-		launchWorker(func() { runnerStaleSweeper.RunStaleSweeper(workerCtx, 30*time.Second) })
-	}
 	var gitHubImportWorker *joinedBackgroundWorker
 	if options.topology.workers() && (!options.topology.hosted() || provisioningEnforced) {
 		gitHubImportWorker = startJoinedBackgroundWorker(func() {
 			gitHubImportService.Start(workerCtx)
 		})
-	} else if options.topology.clusterWorkers() {
+	} else if options.topology.hosted() && options.topology.workers() {
 		slog.Error("durable GitHub import worker is disabled until repository provisioning enforcement is enabled")
 	}
 	if options.topology.workers() && cfg.FeatureFlags.Workflows {
 		launchWorker(func() { cronSchedulerWorker.Start(workerCtx) })
-		launchWorker(func() { runnerQueueTimeoutWorker.Start(workerCtx) })
 		launchWorker(func() { gitHubWebhookEventWorker.Start(workerCtx) })
 		launchWorker(func() { repositoryJobService.Start(workerCtx) })
-		if options.topology.clusterWorkers() {
+		if workflowSandboxSchedulerWorker != nil {
 			launchWorker(func() { workflowSandboxSchedulerWorker.Start(workerCtx) })
-		}
-		if options.topology.clusterWorkers() && alertRemediationWorker != nil {
-			launchWorker(func() { alertRemediationWorker.Start(workerCtx) })
 		}
 	}
 	if options.topology.workers() {
@@ -1640,14 +1559,18 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		auditCleaner.Start(workerCtx)
 		workspaceCleaner.Start(workerCtx)
 	}
-	if options.topology.clusterWorkers() {
+	if options.topology.hosted() && options.topology.workers() {
 		launchWorker(func() { repositoryStorageReconciler.Start(workerCtx) })
 		launchWorker(func() { repositoryProvisioningReconciler.Start(workerCtx) })
-		launchWorker(func() { repoGatewayService.StartReaper(workerCtx) })
-		launchWorker(func() { sandboxOrphanReaper.Start(workerCtx) })
-		storageDeletionCleaner.Start(workerCtx)
-		egressAuditCleaner.Start(workerCtx)
-		if cfg.Sandbox.GoldenSnapshotsEnabled {
+	}
+	if options.topology.workers() {
+		if repoGatewayService != nil {
+			launchWorker(func() { repoGatewayService.StartReaper(workerCtx) })
+		}
+		if sandboxOrphanReaper != nil {
+			launchWorker(func() { sandboxOrphanReaper.Start(workerCtx) })
+		}
+		if cfg.Sandbox.GoldenSnapshotsEnabled && goldenSnapshotService != nil {
 			goldenSnapshotService.Start(workerCtx)
 		}
 	}
@@ -1767,9 +1690,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			auditCleaner.Stop()
 			workspaceCleaner.Stop()
 		}
-		if options.topology.clusterWorkers() {
-			storageDeletionCleaner.Stop()
-			egressAuditCleaner.Stop()
+		if goldenSnapshotService != nil {
 			goldenSnapshotService.Stop()
 		}
 		// Release the LISTEN connection before run closes the shared pool.
@@ -1790,6 +1711,9 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		}
 		slog.Info(fmt.Sprintf("in-flight requests at SIGTERM: %d, drained: %d, killed: %d", inFlightAtSIGTERM, drained, killed), attrs...)
 	}()
+	if options.externalHTTP && options.BeforeShutdown != nil {
+		defer func() { runErr = errors.Join(runErr, options.BeforeShutdown()) }()
+	}
 	if options.externalHTTP || !options.topology.servesHTTP() {
 		if err := ctx.Err(); err != nil {
 			<-shutdownDone
@@ -1844,11 +1768,11 @@ func stopRevocationListener(cancel context.CancelFunc, bus *revocation.Bus, time
 
 // validateProductionBlobStore fails startup unless one durable adapter is
 // configured. Local filesystem storage is the ordinary self-hosted default;
-// GCS remains the cluster adapter.
+// Deployments with injected storage bypass this local-adapter validation.
 func validateProductionBlobStore(environment string, cfg config.BlobConfig) error {
 	if strings.EqualFold(strings.TrimSpace(environment), "production") &&
-		strings.TrimSpace(cfg.GCSBucket) == "" && strings.TrimSpace(cfg.DataDir) == "" {
-		return fmt.Errorf("SMITHERS_BLOB_DATA_DIR or SMITHERS_BLOB_GCS_BUCKET is required in production")
+		strings.TrimSpace(cfg.DataDir) == "" {
+		return fmt.Errorf("SMITHERS_BLOB_DATA_DIR or an injected blob adapter is required in production")
 	}
 	return nil
 }

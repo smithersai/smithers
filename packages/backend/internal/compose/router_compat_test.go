@@ -55,12 +55,9 @@ func buildRouterCompat(
 	wikiService routes.WikiService,
 	gitHandler *routes.GitSmartHandler,
 	notificationHandler *routes.NotificationHandler,
-	runnerHandler *routes.RunnerHandler,
-	adminRunnerHandler *routes.AdminRunnerHandler,
 	adminUserHandler *routes.AdminUserHandler,
 	adminOrgHandler *routes.AdminOrgHandler,
 	adminRepoHandler *routes.AdminRepoHandler,
-	adminSystemHealthHandler *routes.AdminSystemHealthHandler,
 	adminGitHubAppHandler *routes.AdminGitHubAppHandler,
 	adminAuditHandler *routes.AdminAuditHandler,
 	webhookHandler *routes.WebhookHandler,
@@ -109,18 +106,10 @@ func buildRouterCompat(
 		wikiService,
 		gitHandler,
 		notificationHandler,
-		nil, // pairSessionHandler
-		// subscriptionHandler
-		runnerHandler,
-		adminRunnerHandler,
+		nil,
 		adminUserHandler,
 		adminOrgHandler,
-		adminRepoHandler,
-		adminSystemHealthHandler,
-		nil, // adminSystemStatusHandler
-		nil, // adminSystemCanariesHandler
-		nil, // adminSystemIncidentsHandler
-		nil, // adminSystemMetricsHandler
+		adminRepoHandler, // adminSystemMetricsHandler
 		adminGitHubAppHandler,
 		adminAuditHandler,
 		webhookHandler,
@@ -135,10 +124,9 @@ func buildRouterCompat(
 		agentInternalHandler,
 		agentSessionHandler,
 		agentSessionStreamHandler,
-		nil, // approvalsHandler
-		nil, // branchLockHandler
-		pushHookHandler,
-		nil, // canaryReportHandler
+		nil,             // approvalsHandler
+		nil,             // branchLockHandler
+		pushHookHandler, // canaryReportHandler
 		workflowHandler,
 		nil, // workflowCacheHandler
 		nil, // workflowArtifactHandler

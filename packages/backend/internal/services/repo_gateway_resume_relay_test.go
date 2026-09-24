@@ -14,14 +14,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/previewgateway"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/previewgateway"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // The wave-11 wedge in one place: a gateway VM idle-suspends, the control plane
@@ -157,16 +158,16 @@ type relayRepoGatewayQuerier struct {
 	*fakeRepoGatewayQuerier
 }
 
-func (q *relayRepoGatewayQuerier) GetRepoGatewayByID(ctx context.Context, id string) (clusterdb.RepoGateway, error) {
+func (q *relayRepoGatewayQuerier) GetRepoGatewayByID(ctx context.Context, id string) (runtimeports.RepoGateway, error) {
 	for _, tombstoned := range q.getSoftDeleted() {
 		if tombstoned == id {
-			return clusterdb.RepoGateway{}, pgx.ErrNoRows
+			return runtimeports.RepoGateway{}, pgx.ErrNoRows
 		}
 	}
 	if q.active != nil && q.active.ID == id {
 		return *q.active, nil
 	}
-	return clusterdb.RepoGateway{}, pgx.ErrNoRows
+	return runtimeports.RepoGateway{}, pgx.ErrNoRows
 }
 
 func repoGatewayTokenHash(token string) string {
@@ -194,8 +195,8 @@ func relayThroughIngress(t *testing.T, svc *RepoGatewayService, ingress *httptes
 
 // idleSuspendedGatewayRow is the wave-11 shape: a live row that still says
 // 'running' because an idle suspend is invisible to the control plane.
-func idleSuspendedGatewayRow(gatewayID, vmID, token string) *clusterdb.RepoGateway {
-	return &clusterdb.RepoGateway{
+func idleSuspendedGatewayRow(gatewayID, vmID, token string) *runtimeports.RepoGateway {
+	return &runtimeports.RepoGateway{
 		ID:                  gatewayID,
 		RepositoryID:        200,
 		UserID:              1,
@@ -330,7 +331,7 @@ func TestRepoGatewayService_FailedResume_TombstonesRowAndStopsRelaying(t *testin
 func TestRepoGatewayService_ProvisionRace_UnrecoverableWinner_IsDiscarded(t *testing.T) {
 	t.Parallel()
 
-	winner := clusterdb.RepoGateway{
+	winner := runtimeports.RepoGateway{
 		ID: "gw-winner-dead", VmID: "vm-winner-dead", BaseUrl: "https://winner",
 		Status: "running", AuthTokenCiphertext: "smithers_gateway_winner",
 	}

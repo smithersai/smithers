@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -315,6 +316,85 @@ func (s *OAuth2Service) DeleteApplication(ctx context.Context, appID, ownerID in
 //
 //	requested_scopes ∩ app_registered_scopes ∩ caller_scopes (when non-nil)
 func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, redirectURI, scope, codeChallenge, codeChallengeMethod string, callerScopes []string) (OAuth2AuthorizeResult, error) {
+	return s.AuthorizeGrant(ctx, OAuth2AuthorizeInput{
+		UserID:              userID,
+		ClientID:            clientID,
+		RedirectURI:         redirectURI,
+		Scope:               scope,
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: codeChallengeMethod,
+		CallerScopes:        callerScopes,
+	})
+}
+
+// OAuth2AuthorizeInput is the authorize request as the service sees it.
+type OAuth2AuthorizeInput struct {
+	UserID              int64
+	ClientID            string
+	RedirectURI         string
+	Scope               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	// CallerScopes is nil for a session caller (unrestricted) and a non-nil
+	// slice for a token caller (the grant is bounded to those scopes).
+	CallerScopes []string
+	// SourceAccessTokenID is the personal access token that authorized the
+	// grant, 0 for browser-session consent. The code and every token minted
+	// from it record the source and die with it.
+	SourceAccessTokenID int64
+}
+
+// grantSource is the personal access token a grant descends from.
+type grantSource struct {
+	ID        int64
+	ExpiresAt pgtype.Timestamptz
+}
+
+func (g grantSource) param() pgtype.Int8 {
+	if g.ID <= 0 {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: g.ID, Valid: true}
+}
+
+// sourceAccessTokenReader locks the original credential through grant issuance.
+// A recorded source must never silently become an independent session grant.
+type sourceAccessTokenReader interface {
+	GetAccessTokenForOAuthGrant(context.Context, int64) (db.AccessToken, error)
+}
+
+var _ sourceAccessTokenReader = (*db.Queries)(nil)
+
+func (s *OAuth2Service) resolveGrantSource(ctx context.Context, q OAuth2Querier, sourceID pgtype.Int8, userID int64) (grantSource, error) {
+	if !sourceID.Valid {
+		return grantSource{}, nil
+	}
+	if sourceID.Int64 <= 0 {
+		return grantSource{}, pkgerrors.BadRequest("invalid grant source")
+	}
+	reader, ok := q.(sourceAccessTokenReader)
+	if !ok {
+		return grantSource{}, pkgerrors.Internal("grant source validation unavailable")
+	}
+	token, err := reader.GetAccessTokenForOAuthGrant(ctx, sourceID.Int64)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return grantSource{}, pkgerrors.BadRequest("grant must be reauthorized: its source token was revoked")
+	}
+	if err != nil {
+		return grantSource{}, pkgerrors.Internal("failed to load grant source token").WithCause(err)
+	}
+	if token.UserID != userID || token.SystemIssued {
+		return grantSource{}, pkgerrors.Forbidden("source token cannot authorize oauth2 grants")
+	}
+	if token.ExpiresAt.Valid && !token.ExpiresAt.Time.After(s.now()) {
+		return grantSource{}, pkgerrors.BadRequest("grant must be reauthorized: its source token expired")
+	}
+	return grantSource{ID: token.ID, ExpiresAt: token.ExpiresAt}, nil
+}
+
+func (s *OAuth2Service) AuthorizeGrant(ctx context.Context, in OAuth2AuthorizeInput) (OAuth2AuthorizeResult, error) {
+	userID, clientID, redirectURI, scope := in.UserID, in.ClientID, in.RedirectURI, in.Scope
+	codeChallenge, codeChallengeMethod, callerScopes := in.CodeChallenge, in.CodeChallengeMethod, in.CallerScopes
 	app, err := s.queries.GetOAuth2ApplicationByClientID(ctx, clientID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -401,18 +481,33 @@ func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, r
 	code := generateOAuth2Code()
 	codeHash := hashOAuth2Secret(code)
 
-	err = s.queries.CreateOAuth2AuthorizationCode(ctx, db.CreateOAuth2AuthorizationCodeParams{
-		CodeHash:            codeHash,
-		AppID:               app.ID,
-		UserID:              userID,
-		Scopes:              requestedScopes,
-		RedirectUri:         redirectURI,
-		CodeChallenge:       codeChallenge,
-		CodeChallengeMethod: codeChallengeMethod,
-		ExpiresAt:           s.now().Add(oauth2AuthCodeTTL),
+	err = s.transact(ctx, func(q OAuth2Querier) error {
+		source, err := s.resolveGrantSource(ctx, q, grantSource{ID: in.SourceAccessTokenID}.param(), userID)
+		if err != nil {
+			return err
+		}
+		expiresAt := s.now().Add(oauth2AuthCodeTTL)
+		if source.ExpiresAt.Valid && source.ExpiresAt.Time.Before(expiresAt) {
+			expiresAt = source.ExpiresAt.Time
+		}
+		err = q.CreateOAuth2AuthorizationCode(ctx, db.CreateOAuth2AuthorizationCodeParams{
+			CodeHash:            codeHash,
+			AppID:               app.ID,
+			UserID:              userID,
+			Scopes:              requestedScopes,
+			RedirectUri:         redirectURI,
+			CodeChallenge:       codeChallenge,
+			CodeChallengeMethod: codeChallengeMethod,
+			ExpiresAt:           expiresAt,
+			SourceAccessTokenID: source.param(),
+		})
+		if err != nil {
+			return pkgerrors.Internal("failed to create authorization code").WithCause(err)
+		}
+		return nil
 	})
 	if err != nil {
-		return OAuth2AuthorizeResult{}, pkgerrors.Internal("failed to create authorization code").WithCause(err)
+		return OAuth2AuthorizeResult{}, err
 	}
 
 	return OAuth2AuthorizeResult{
@@ -488,6 +583,11 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 	// redemptions race, exactly one wins and the other gets ErrNoRows.
 	var resp OAuth2TokenResponse
 	err = s.transact(ctx, func(q OAuth2Querier) error {
+		// Lock the source before its child grant, matching cascade-delete lock order.
+		source, err := s.resolveGrantSource(ctx, q, authCode.SourceAccessTokenID, authCode.UserID)
+		if err != nil {
+			return err
+		}
 		consumed, err := q.ConsumeOAuth2AuthorizationCode(ctx, codeHash)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -495,7 +595,7 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 			}
 			return pkgerrors.Internal("failed to consume authorization code").WithCause(err)
 		}
-		resp, err = s.issueTokenPair(ctx, q, app.ID, consumed.UserID, consumed.Scopes)
+		resp, err = s.issueTokenPair(ctx, q, app.ID, consumed.UserID, consumed.Scopes, source)
 		return err
 	})
 	if err != nil {
@@ -542,6 +642,11 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 	// failed insert leaves the old token usable.
 	var resp OAuth2TokenResponse
 	err = s.transact(ctx, func(q OAuth2Querier) error {
+		// Lock the source before its child grant, matching cascade-delete lock order.
+		source, err := s.resolveGrantSource(ctx, q, token.SourceAccessTokenID, token.UserID)
+		if err != nil {
+			return err
+		}
 		oldToken, err := q.ConsumeOAuth2RefreshToken(ctx, tokenHash)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -559,7 +664,7 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 		// no longer allowed. The new token may be same-or-narrower, never
 		// broader.
 		effectiveScopes := scopeIntersection(oldToken.Scopes, app.Scopes)
-		resp, err = s.issueTokenPair(ctx, q, app.ID, oldToken.UserID, effectiveScopes)
+		resp, err = s.issueTokenPair(ctx, q, app.ID, oldToken.UserID, effectiveScopes, source)
 		return err
 	})
 	if err != nil {
@@ -676,8 +781,17 @@ func (s *OAuth2Service) RevokeAllByAppAndUser(ctx context.Context, appID, userID
 }
 
 // issueTokenPair creates a new access token and refresh token pair.
-func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, appID, userID int64, scopes []string) (OAuth2TokenResponse, error) {
+func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, appID, userID int64, scopes []string, source grantSource) (OAuth2TokenResponse, error) {
 	now := s.now()
+	accessExpiry, refreshExpiry := now.Add(oauth2AccessTokenTTL), now.Add(oauth2RefreshTokenTTL)
+	if source.ExpiresAt.Valid {
+		if source.ExpiresAt.Time.Before(accessExpiry) {
+			accessExpiry = source.ExpiresAt.Time
+		}
+		if source.ExpiresAt.Time.Before(refreshExpiry) {
+			refreshExpiry = source.ExpiresAt.Time
+		}
+	}
 	if scopes == nil {
 		scopes = []string{}
 	}
@@ -688,11 +802,12 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, app
 	accessTokenHash := hashOAuth2Secret(accessToken)
 
 	_, err := q.CreateOAuth2AccessToken(ctx, db.CreateOAuth2AccessTokenParams{
-		TokenHash: accessTokenHash,
-		AppID:     appID,
-		UserID:    userID,
-		Scopes:    scopes,
-		ExpiresAt: now.Add(oauth2AccessTokenTTL),
+		TokenHash:           accessTokenHash,
+		AppID:               appID,
+		UserID:              userID,
+		Scopes:              scopes,
+		ExpiresAt:           accessExpiry,
+		SourceAccessTokenID: source.param(),
 	})
 	if err != nil {
 		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create access token").WithCause(err)
@@ -704,11 +819,12 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, app
 	refreshTokenHash := hashOAuth2Secret(newRefreshToken)
 
 	_, err = q.CreateOAuth2RefreshToken(ctx, db.CreateOAuth2RefreshTokenParams{
-		TokenHash: refreshTokenHash,
-		AppID:     appID,
-		UserID:    userID,
-		Scopes:    scopes,
-		ExpiresAt: now.Add(oauth2RefreshTokenTTL),
+		TokenHash:           refreshTokenHash,
+		AppID:               appID,
+		UserID:              userID,
+		Scopes:              scopes,
+		ExpiresAt:           refreshExpiry,
+		SourceAccessTokenID: source.param(),
 	})
 	if err != nil {
 		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to create refresh token").WithCause(err)
@@ -717,7 +833,7 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, app
 	return OAuth2TokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    "bearer",
-		ExpiresIn:    int64(oauth2AccessTokenTTL.Seconds()),
+		ExpiresIn:    int64(accessExpiry.Sub(now).Seconds()),
 		RefreshToken: newRefreshToken,
 		Scope:        strings.Join(scopes, " "),
 	}, nil

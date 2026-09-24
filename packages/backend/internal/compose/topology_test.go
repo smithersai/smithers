@@ -17,19 +17,19 @@ var (
 
 func TestTopologyResponsibilities(t *testing.T) {
 	cases := []struct {
-		name                            string
-		topology                        topology
-		serve, workers, cluster, hosted bool
+		name                   string
+		topology               topology
+		serve, workers, hosted bool
 	}{
-		{"single owner", localTopology, true, true, false, false},
-		{"multitenant combined", topology{multitenant: true}, true, true, true, true},
-		{"multitenant HTTP", hostedAPITopology, true, false, false, true},
-		{"multitenant workers", hostedWorkerTopology, false, true, true, true},
-		{"single owner workers", topology{duties: DutiesWorkers}, false, true, false, false},
+		{"single owner", localTopology, true, true, false},
+		{"multitenant combined", topology{multitenant: true}, true, true, true},
+		{"multitenant HTTP", hostedAPITopology, true, false, true},
+		{"multitenant workers", hostedWorkerTopology, false, true, true},
+		{"single owner workers", topology{duties: DutiesWorkers}, false, true, false},
 	}
 	for _, tc := range cases {
 		got := tc.topology
-		if got.servesHTTP() != tc.serve || got.workers() != tc.workers || got.clusterWorkers() != tc.cluster || got.hosted() != tc.hosted {
+		if got.servesHTTP() != tc.serve || got.workers() != tc.workers || got.hosted() != tc.hosted {
 			t.Fatalf("%s: incorrect responsibilities %+v", tc.name, got)
 		}
 	}

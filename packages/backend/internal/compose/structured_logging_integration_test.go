@@ -214,9 +214,7 @@ func TestStructuredLogging_AuthenticatedRequestCarriesUserID(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, nil, nil, nil, nil, nil, nil, // admin handlers
+		nil, nil, nil, nil, nil, nil, // admin handlers
 		nil, nil, nil, nil, // webhook, secret, variable, commitStatus
 		nil, nil, nil, nil, nil, nil, // lfs, jjVCS, agentInternal, agentSession, agentSessionStream, pushHook
 		nil, nil, nil, nil, // workflow, workspace, workspaceInternal, workspaceTerminal
@@ -311,9 +309,7 @@ func TestStructuredLogging_DesktopRelayTokenNeverReachesTelemetry(t *testing.T) 
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, nil, nil, nil, nil, nil, nil, // admin handlers
+		nil, nil, nil, nil, nil, nil, // admin handlers
 		nil, nil, nil, nil, // webhook, secret, variable, commitStatus
 		nil, nil, nil, nil, nil, nil, // lfs, jjVCS, agentInternal, agentSession, agentSessionStream, pushHook
 		nil, // workflowHandler

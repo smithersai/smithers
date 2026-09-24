@@ -10,9 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
@@ -30,10 +28,10 @@ const (
 )
 
 var (
-	errRepositoryProvisionConflict   = stdErrors.New("repository provisioning namespace is occupied")
-	errRepositoryProvisionMismatch   = stdErrors.New("repository provisioning retry does not match reserved operation")
-	errRepositoryProvisionMissing    = stdErrors.New("repository provisioning operation is missing")
-	errRepositoryProvisionInProgress = stdErrors.New("repository provisioning operation is already being processed")
+	ErrRepositoryProvisionConflict   = stdErrors.New("repository provisioning namespace is occupied")
+	ErrRepositoryProvisionMismatch   = stdErrors.New("repository provisioning retry does not match reserved operation")
+	ErrRepositoryProvisionMissing    = stdErrors.New("repository provisioning operation is missing")
+	ErrRepositoryProvisionInProgress = stdErrors.New("repository provisioning operation is already being processed")
 )
 
 func newRepositoryProvisionClaimToken() string {
@@ -49,7 +47,7 @@ type repoHostProvisioningClient interface {
 	AbortStagedProvision(context.Context, repohost.StagedProvision) error
 }
 
-type repositoryProvisioningOperation struct {
+type RepositoryProvisioningOperation struct {
 	RepositoryID       int64
 	OperationType      string
 	Token              string
@@ -81,6 +79,18 @@ type repositoryProvisioningOperation struct {
 	// rather than duplicated in the provisioning operation.
 	ImportJobID         string
 	ImportJobClaimToken string
+}
+
+// repositoryProvisioningOperation is the canonical operation value used by both
+// product import reservations and an injected deployment journal.
+type repositoryProvisioningOperation = RepositoryProvisioningOperation
+
+// RepositoryProvisioningStore supplies durable placement-journal operations.
+// Implementations retain their own transaction through publication or abort.
+type RepositoryProvisioningStore interface {
+	githubImportProvisioningStore
+	FindExact(context.Context, RepositoryProvisioningOperation) (RepositoryProvisioningOperation, bool, error)
+	ClaimReady(context.Context, string) ([]RepositoryProvisioningOperation, error)
 }
 
 func (operation repositoryProvisioningOperation) staged() repohost.StagedProvision {
@@ -146,572 +156,6 @@ type repositoryProvisionParams struct {
 	IsPublic        bool
 	DefaultBookmark string
 	AutoInit        bool
-}
-
-type postgresRepositoryProvisioningStore struct {
-	pool *pgxpool.Pool
-}
-
-func newPostgresRepositoryProvisioningStore(pool *pgxpool.Pool) *postgresRepositoryProvisioningStore {
-	return &postgresRepositoryProvisioningStore{pool: pool}
-}
-
-// Reserve creates the invisible durable identity before repo-host sees the
-// token. An exact retry adopts only this operation's reserved ID; owner/name
-// alone is never enough.
-func (s *postgresRepositoryProvisioningStore) Reserve(
-	ctx context.Context,
-	wanted repositoryProvisioningOperation,
-) (_ repositoryProvisioningOperation, retErr error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return repositoryProvisioningOperation{}, fmt.Errorf("begin repository provision reservation: %w", err)
-	}
-	defer func() {
-		rollbackErr := tx.Rollback(context.Background())
-		if rollbackErr != nil && !stdErrors.Is(rollbackErr, pgx.ErrTxClosed) && retErr == nil {
-			retErr = fmt.Errorf("rollback repository provision reservation: %w", rollbackErr)
-		}
-	}()
-	if err := verifyProvisionOwners(ctx, tx, wanted); err != nil {
-		return repositoryProvisioningOperation{}, err
-	}
-	if err := lockRepositoryProvisionNamespace(ctx, tx, wanted); err != nil {
-		return repositoryProvisioningOperation{}, err
-	}
-
-	existing, err := loadProvisionByOwnerName(ctx, tx, wanted)
-	if err == nil {
-		if !sameRepositoryProvision(existing, wanted) {
-			return repositoryProvisioningOperation{}, errRepositoryProvisionMismatch
-		}
-		if err := bindImportJobReservation(ctx, tx, existing, wanted); err != nil {
-			return repositoryProvisioningOperation{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return repositoryProvisioningOperation{}, fmt.Errorf("commit adopted repository provision: %w", err)
-		}
-		return existing, nil
-	}
-	if !stdErrors.Is(err, pgx.ErrNoRows) {
-		return repositoryProvisioningOperation{}, fmt.Errorf("load repository provision reservation: %w", err)
-	}
-
-	var occupied bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM repositories
-			WHERE lower_name = $1
-			  AND (($2::bigint IS NOT NULL AND user_id = $2)
-			       OR ($3::bigint IS NOT NULL AND org_id = $3))
-		)
-	`, wanted.LowerName, nullableInt8(wanted.UserID), nullableInt8(wanted.OrgID)).Scan(&occupied); err != nil {
-		return repositoryProvisioningOperation{}, fmt.Errorf("inspect repository provision namespace: %w", err)
-	}
-	if occupied {
-		return repositoryProvisioningOperation{}, errRepositoryProvisionConflict
-	}
-
-	if err := tx.QueryRow(ctx,
-		`SELECT nextval(pg_get_serial_sequence('repositories', 'id'))`).Scan(&wanted.RepositoryID); err != nil {
-		return repositoryProvisioningOperation{}, fmt.Errorf("reserve repository id: %w", err)
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO repository_provisioning_operations (
-			repository_id, operation_type, token, actor_id, storage_set_id,
-			owner_name, user_id, org_id, name, lower_name, description,
-			is_public, default_bookmark, auto_init, is_fork, fork_id,
-			source_repository_id, source_owner, source_repo, source_storage_set_id
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17, $18, $19, $20
-		)
-	`, wanted.RepositoryID, wanted.OperationType, wanted.Token, wanted.ActorID, wanted.StorageSetID,
-		wanted.OwnerName, nullableInt8(wanted.UserID), nullableInt8(wanted.OrgID),
-		wanted.Name, wanted.LowerName, wanted.Description, wanted.IsPublic,
-		wanted.DefaultBookmark, wanted.AutoInit, wanted.IsFork, nullableInt8(wanted.ForkID),
-		nullableInt8(wanted.SourceRepositoryID), nullableText(wanted.SourceOwner),
-		nullableText(wanted.SourceRepo), nullableText(wanted.SourceStorageSetID))
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if stdErrors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return repositoryProvisioningOperation{}, errRepositoryProvisionConflict
-		}
-		return repositoryProvisioningOperation{}, fmt.Errorf("insert repository provision reservation: %w", err)
-	}
-	if err := bindImportJobReservation(ctx, tx, wanted, wanted); err != nil {
-		return repositoryProvisioningOperation{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		// The commit result can be lost. Re-read only by the unguessable token
-		// and require the exact operation before reporting success.
-		recovered, recoverErr := s.GetByToken(context.WithoutCancel(ctx), wanted.Token)
-		if recoverErr == nil && sameRepositoryProvision(recovered, wanted) {
-			return recovered, nil
-		}
-		return repositoryProvisioningOperation{}, fmt.Errorf("commit repository provision reservation: %w", err)
-	}
-	return wanted, nil
-}
-
-func (s *postgresRepositoryProvisioningStore) FindExact(
-	ctx context.Context,
-	wanted repositoryProvisioningOperation,
-) (repositoryProvisioningOperation, bool, error) {
-	operation, err := scanRepositoryProvision(s.pool.QueryRow(ctx, repositoryProvisionSelect+`
-		WHERE lower_name = $1
-		  AND (($2::bigint IS NOT NULL AND user_id = $2)
-		       OR ($3::bigint IS NOT NULL AND org_id = $3))
-	`, wanted.LowerName, nullableInt8(wanted.UserID), nullableInt8(wanted.OrgID)))
-	if stdErrors.Is(err, pgx.ErrNoRows) {
-		return repositoryProvisioningOperation{}, false, nil
-	}
-	if err != nil {
-		return repositoryProvisioningOperation{}, false, err
-	}
-	if !sameRepositoryProvision(operation, wanted) {
-		return repositoryProvisioningOperation{}, false, errRepositoryProvisionMismatch
-	}
-	return operation, true, nil
-}
-
-func (s *postgresRepositoryProvisioningStore) MarkPublishReady(ctx context.Context, repositoryID int64, token, claimToken string) error {
-	result, err := s.pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET publish_ready = TRUE, updated_at = NOW(), last_error = NULL
-		WHERE repository_id = $1 AND token = $2 AND claim_token = $3
-		  AND claimed_at > NOW() - make_interval(secs => $4::int)
-	`, repositoryID, token, claimToken, durationSeconds(repositoryProvisionClaimLease))
-	if err != nil {
-		return fmt.Errorf("mark repository provision publish-ready: %w", err)
-	}
-	if result.RowsAffected() != 1 {
-		return errRepositoryProvisionInProgress
-	}
-	return nil
-}
-
-func (s *postgresRepositoryProvisioningStore) RenewClaim(
-	ctx context.Context,
-	repositoryID int64,
-	token string,
-	claimToken string,
-) error {
-	result, err := s.pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET claimed_at = NOW(), updated_at = NOW()
-		WHERE repository_id = $1 AND token = $2 AND claim_token = $3
-	`, repositoryID, token, claimToken)
-	if err != nil {
-		return fmt.Errorf("renew repository provision claim: %w", err)
-	}
-	if result.RowsAffected() != 1 {
-		return errRepositoryProvisionInProgress
-	}
-	return nil
-}
-
-func (s *postgresRepositoryProvisioningStore) AcquireProcessing(
-	ctx context.Context,
-	repositoryID int64,
-	token string,
-	claimToken string,
-) error {
-	result, err := s.pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET claim_token = $1, claimed_at = NOW(), attempts = attempts + 1, updated_at = NOW()
-		WHERE repository_id = $2 AND token = $3
-		  AND (claim_token IS NULL OR claimed_at <= NOW() - make_interval(secs => $4::int))
-	`, claimToken, repositoryID, token, durationSeconds(repositoryProvisionClaimLease))
-	if err != nil {
-		return fmt.Errorf("claim repository provision: %w", err)
-	}
-	if result.RowsAffected() == 1 {
-		return nil
-	}
-	var exists bool
-	if err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM repository_provisioning_operations
-			WHERE repository_id = $1 AND token = $2
-		)
-	`, repositoryID, token).Scan(&exists); err != nil {
-		return err
-	}
-	if !exists {
-		return errRepositoryProvisionMissing
-	}
-	return errRepositoryProvisionInProgress
-}
-
-func (s *postgresRepositoryProvisioningStore) Publish(
-	ctx context.Context,
-	operation repositoryProvisioningOperation,
-	claimToken string,
-) (_ db.Repository, retErr error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return db.Repository{}, fmt.Errorf("begin repository provision publication: %w", err)
-	}
-	defer func() {
-		rollbackErr := tx.Rollback(context.Background())
-		if rollbackErr != nil && !stdErrors.Is(rollbackErr, pgx.ErrTxClosed) && retErr == nil {
-			retErr = fmt.Errorf("rollback repository provision publication: %w", rollbackErr)
-		}
-	}()
-	if _, err := tx.Exec(ctx, repoOwnershipLockSQL, operation.RepositoryID); err != nil {
-		return db.Repository{}, fmt.Errorf("lock reserved repository id: %w", err)
-	}
-	if err := lockRepositoryProvisionNamespace(ctx, tx, operation); err != nil {
-		return db.Repository{}, err
-	}
-	current, err := loadProvisionByIDAndClaim(ctx, tx, operation.RepositoryID, claimToken)
-	if err != nil {
-		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return db.Repository{}, errRepositoryProvisionInProgress
-		}
-		return db.Repository{}, fmt.Errorf("load repository provision publication: %w", err)
-	}
-	if !sameRepositoryProvision(current, operation) || !current.PublishReady {
-		return db.Repository{}, errRepositoryProvisionMismatch
-	}
-
-	q := db.New(tx)
-	existing, err := q.GetRepoByID(ctx, operation.RepositoryID)
-	if err == nil {
-		if !repositoryMatchesProvision(existing, current) {
-			return db.Repository{}, errRepositoryProvisionConflict
-		}
-		if err := bindPublishedImportJob(ctx, tx, current, operation); err != nil {
-			return db.Repository{}, err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return db.Repository{}, fmt.Errorf("commit adopted repository publication: %w", err)
-		}
-		return existing, nil
-	}
-	if !stdErrors.Is(err, pgx.ErrNoRows) {
-		return db.Repository{}, fmt.Errorf("inspect reserved repository row: %w", err)
-	}
-	if _, err := tx.Exec(ctx,
-		`SELECT set_config('smithers.repository_provisioning_token', $1, TRUE)`, current.Token); err != nil {
-		return db.Repository{}, fmt.Errorf("authorize repository publication: %w", err)
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO repositories (
-			id, user_id, org_id, name, lower_name, description,
-			is_public, default_bookmark, is_fork, fork_id
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-	`, current.RepositoryID, nullableInt8(current.UserID), nullableInt8(current.OrgID),
-		current.Name, current.LowerName, current.Description,
-		current.IsPublic, current.DefaultBookmark, current.IsFork, nullableInt8(current.ForkID))
-	if err != nil {
-		return db.Repository{}, fmt.Errorf("publish reserved repository row: %w", err)
-	}
-	repository, err := q.GetRepoByID(ctx, current.RepositoryID)
-	if err != nil {
-		return db.Repository{}, fmt.Errorf("load published repository row: %w", err)
-	}
-	if err := bindPublishedImportJob(ctx, tx, current, operation); err != nil {
-		return db.Repository{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		// Publication may have committed. Reconcile only by reserved stable ID.
-		recovered, recoverErr := db.New(s.pool).GetRepoByID(context.WithoutCancel(ctx), current.RepositoryID)
-		if recoverErr == nil && repositoryMatchesProvision(recovered, current) {
-			return recovered, nil
-		}
-		return db.Repository{}, fmt.Errorf("commit repository publication: %w", err)
-	}
-	return repository, nil
-}
-
-func (s *postgresRepositoryProvisioningStore) Complete(ctx context.Context, repositoryID int64, token, claimToken string) error {
-	result, err := s.pool.Exec(ctx, `
-		DELETE FROM repository_provisioning_operations
-		WHERE repository_id = $1 AND token = $2 AND claim_token = $3
-		  AND claimed_at > NOW() - make_interval(secs => $4::int)
-	`, repositoryID, token, claimToken, durationSeconds(repositoryProvisionClaimLease))
-	if err != nil {
-		return fmt.Errorf("complete repository provision: %w", err)
-	}
-	if result.RowsAffected() != 1 {
-		return errRepositoryProvisionMissing
-	}
-	return nil
-}
-
-// Abort serializes storage compensation with publication by holding the same
-// provisioning row lock that the INSERT fence takes. Storage is never removed
-// after the reserved repository row can become visible.
-func (s *postgresRepositoryProvisioningStore) Abort(
-	ctx context.Context,
-	operation repositoryProvisioningOperation,
-	claimToken string,
-	abortStorage func(context.Context) error,
-) (retErr error) {
-	if abortStorage == nil {
-		return fmt.Errorf("repository provision abort requires storage callback")
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin repository provision abort: %w", err)
-	}
-	defer func() {
-		rollbackErr := tx.Rollback(context.Background())
-		if rollbackErr != nil && !stdErrors.Is(rollbackErr, pgx.ErrTxClosed) && retErr == nil {
-			retErr = fmt.Errorf("rollback repository provision abort: %w", rollbackErr)
-		}
-	}()
-	current, err := loadProvisionByIDAndClaim(ctx, tx, operation.RepositoryID, claimToken)
-	if err != nil {
-		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return errRepositoryProvisionInProgress
-		}
-		return err
-	}
-	if current.Token != operation.Token || !sameRepositoryProvision(current, operation) {
-		return errRepositoryProvisionMismatch
-	}
-	var published bool
-	if err := tx.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM repositories WHERE id = $1)`, operation.RepositoryID).Scan(&published); err != nil {
-		return err
-	}
-	if published {
-		return errRepositoryProvisionConflict
-	}
-	if err := abortStorage(ctx); err != nil {
-		return err
-	}
-	if current.OperationType == repositoryProvisionImport {
-		result, err := tx.Exec(ctx, `
-			UPDATE import_jobs
-			SET provisioning_repository_id = NULL,
-				provisioning_token = NULL,
-				updated_at = NOW()
-			WHERE provisioning_repository_id = $1
-			  AND provisioning_token = $2
-			  AND status = 'cloning'
-			  AND claim_token = $3
-		`, operation.RepositoryID, operation.Token, claimToken)
-		if err != nil {
-			return fmt.Errorf("clear aborted import reservation binding: %w", err)
-		}
-		if result.RowsAffected() != 1 {
-			return fmt.Errorf("clear aborted import reservation binding: claim or binding changed")
-		}
-	}
-	result, err := tx.Exec(ctx, `
-		DELETE FROM repository_provisioning_operations
-		WHERE repository_id = $1 AND token = $2
-	`, operation.RepositoryID, operation.Token)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() != 1 {
-		return errRepositoryProvisionMissing
-	}
-	return tx.Commit(ctx)
-}
-
-func bindImportJobReservation(
-	ctx context.Context,
-	tx pgx.Tx,
-	reserved repositoryProvisioningOperation,
-	request repositoryProvisioningOperation,
-) error {
-	if reserved.OperationType != repositoryProvisionImport {
-		return nil
-	}
-	if strings.TrimSpace(request.ImportJobID) == "" || strings.TrimSpace(request.ImportJobClaimToken) == "" {
-		return fmt.Errorf("import repository reservation requires a claimed import job")
-	}
-	result, err := tx.Exec(ctx, `
-		UPDATE import_jobs
-		SET provisioning_repository_id = $1,
-			provisioning_token = $2,
-			repo_name = $3,
-			updated_at = NOW()
-		WHERE id = $4
-		  AND user_id = $5
-		  AND status = 'cloning'
-		  AND claim_token = $6
-		  AND (provisioning_repository_id IS NULL OR provisioning_repository_id = $1)
-		  AND (provisioning_token IS NULL OR provisioning_token = $2)
-	`, reserved.RepositoryID, reserved.Token, reserved.Name, request.ImportJobID,
-		reserved.ActorID, request.ImportJobClaimToken)
-	if err != nil {
-		return fmt.Errorf("bind import job to repository reservation: %w", err)
-	}
-	if result.RowsAffected() != 1 {
-		return fmt.Errorf("bind import job to repository reservation: claim or binding changed")
-	}
-	return nil
-}
-
-func bindPublishedImportJob(
-	ctx context.Context,
-	tx pgx.Tx,
-	current repositoryProvisioningOperation,
-	request repositoryProvisioningOperation,
-) error {
-	if current.OperationType != repositoryProvisionImport {
-		return nil
-	}
-	if strings.TrimSpace(request.ImportJobID) == "" || strings.TrimSpace(request.ImportJobClaimToken) == "" {
-		return fmt.Errorf("import repository publication requires a claimed import job")
-	}
-	result, err := tx.Exec(ctx, `
-		UPDATE import_jobs
-		SET repository_id = $1, repo_name = $2, updated_at = NOW()
-		WHERE id = $3
-		  AND user_id = $4
-		  AND status = 'cloning'
-		  AND claim_token = $5
-		  AND provisioning_repository_id = $1
-		  AND provisioning_token = $6
-	`, current.RepositoryID, current.Name, request.ImportJobID, current.ActorID,
-		request.ImportJobClaimToken, current.Token)
-	if err != nil {
-		return fmt.Errorf("bind published repository to import job: %w", err)
-	}
-	if result.RowsAffected() != 1 {
-		return fmt.Errorf("bind published repository to import job: claim or binding changed")
-	}
-	return nil
-}
-
-func (s *postgresRepositoryProvisioningStore) GetByToken(ctx context.Context, token string) (repositoryProvisioningOperation, error) {
-	return scanRepositoryProvision(s.pool.QueryRow(ctx, repositoryProvisionSelect+` WHERE token = $1`, token))
-}
-
-func (s *postgresRepositoryProvisioningStore) GetPublished(
-	ctx context.Context,
-	operation repositoryProvisioningOperation,
-) (db.Repository, bool, error) {
-	repository, err := db.New(s.pool).GetRepoByID(ctx, operation.RepositoryID)
-	if stdErrors.Is(err, pgx.ErrNoRows) {
-		return db.Repository{}, false, nil
-	}
-	if err != nil {
-		return db.Repository{}, false, err
-	}
-	if !repositoryMatchesProvision(repository, operation) {
-		return db.Repository{}, false, errRepositoryProvisionConflict
-	}
-	return repository, true, nil
-}
-
-func (s *postgresRepositoryProvisioningStore) ClaimReady(ctx context.Context, claimToken string) ([]repositoryProvisioningOperation, error) {
-	rows, err := s.pool.Query(ctx, `
-		WITH candidates AS (
-			SELECT repository_id
-			FROM repository_provisioning_operations
-			WHERE operation_type IN ('init', 'fork')
-			  AND created_at <= NOW() - make_interval(secs => $1::int)
-			  AND (claim_token IS NULL OR claimed_at <= NOW() - make_interval(secs => $2::int))
-				-- Failed operations move behind untouched work because ReleaseClaim
-				-- advances updated_at. With LIMIT 1 this prevents one poison journal
-				-- from starving every later recovery forever.
-				ORDER BY updated_at, created_at, repository_id
-			FOR UPDATE SKIP LOCKED
-			LIMIT $3
-		)
-		UPDATE repository_provisioning_operations AS operation
-		SET claim_token = $4, claimed_at = NOW(), attempts = attempts + 1, updated_at = NOW()
-		FROM candidates
-		WHERE operation.repository_id = candidates.repository_id
-		RETURNING operation.repository_id, operation.operation_type, operation.token,
-			operation.actor_id, operation.storage_set_id, operation.owner_name, operation.user_id, operation.org_id,
-			operation.name, operation.lower_name, operation.description, operation.is_public,
-			operation.default_bookmark, operation.auto_init, operation.is_fork, operation.fork_id,
-			operation.source_repository_id, operation.source_owner, operation.source_repo,
-			operation.source_storage_set_id, operation.publish_ready, operation.claim_token,
-			operation.claimed_at, operation.attempts, operation.last_error,
-			operation.created_at, operation.updated_at
-	`, durationSeconds(repositoryProvisionGrace), durationSeconds(repositoryProvisionClaimLease),
-		repositoryProvisionBatchSize, claimToken)
-	if err != nil {
-		return nil, fmt.Errorf("list ready repository provisions: %w", err)
-	}
-	defer rows.Close()
-	operations := make([]repositoryProvisioningOperation, 0)
-	for rows.Next() {
-		operation, scanErr := scanRepositoryProvision(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		operations = append(operations, operation)
-	}
-	return operations, rows.Err()
-}
-
-func (s *postgresRepositoryProvisioningStore) ReleaseClaim(ctx context.Context, operation repositoryProvisioningOperation, claimToken string, processErr error) {
-	_, _ = s.pool.Exec(ctx, `
-		UPDATE repository_provisioning_operations
-		SET claim_token = NULL, claimed_at = NULL, last_error = $1, updated_at = NOW()
-		WHERE repository_id = $2 AND claim_token = $3
-	`, repositoryProvisionErrorText(processErr), operation.RepositoryID, claimToken)
-}
-
-func repositoryProvisionErrorText(err error) any {
-	if err == nil {
-		return nil
-	}
-	message := err.Error()
-	if len(message) > 4096 {
-		message = message[:4096]
-	}
-	return message
-}
-
-const repositoryProvisionSelect = `
-	SELECT repository_id, operation_type, token, actor_id, storage_set_id,
-		owner_name, user_id, org_id, name, lower_name, description,
-		is_public, default_bookmark, auto_init, is_fork, fork_id,
-		source_repository_id, source_owner, source_repo, source_storage_set_id,
-		publish_ready, claim_token, claimed_at, attempts, last_error, created_at, updated_at
-	FROM repository_provisioning_operations`
-
-type provisionScanner interface{ Scan(...any) error }
-
-func scanRepositoryProvision(row provisionScanner) (repositoryProvisioningOperation, error) {
-	var operation repositoryProvisioningOperation
-	err := row.Scan(
-		&operation.RepositoryID, &operation.OperationType, &operation.Token, &operation.ActorID, &operation.StorageSetID,
-		&operation.OwnerName, &operation.UserID, &operation.OrgID, &operation.Name,
-		&operation.LowerName, &operation.Description, &operation.IsPublic,
-		&operation.DefaultBookmark, &operation.AutoInit, &operation.IsFork, &operation.ForkID,
-		&operation.SourceRepositoryID, &operation.SourceOwner, &operation.SourceRepo,
-		&operation.SourceStorageSetID, &operation.PublishReady, &operation.ClaimToken,
-		&operation.ClaimedAt, &operation.Attempts, &operation.LastError,
-		&operation.CreatedAt, &operation.UpdatedAt,
-	)
-	return operation, err
-}
-
-func loadProvisionByOwnerName(ctx context.Context, tx pgx.Tx, operation repositoryProvisioningOperation) (repositoryProvisioningOperation, error) {
-	return scanRepositoryProvision(tx.QueryRow(ctx, repositoryProvisionSelect+`
-		WHERE lower_name = $1
-		  AND (($2::bigint IS NOT NULL AND user_id = $2)
-		       OR ($3::bigint IS NOT NULL AND org_id = $3))
-		FOR UPDATE
-	`, operation.LowerName, nullableInt8(operation.UserID), nullableInt8(operation.OrgID)))
-}
-
-func loadProvisionByIDAndClaim(
-	ctx context.Context,
-	tx pgx.Tx,
-	repositoryID int64,
-	claimToken string,
-) (repositoryProvisioningOperation, error) {
-	return scanRepositoryProvision(tx.QueryRow(ctx, repositoryProvisionSelect+`
-		WHERE repository_id = $1
-		  AND claim_token = $2
-		  AND claimed_at > NOW() - make_interval(secs => $3::int)
-		FOR UPDATE
-	`, repositoryID, claimToken, durationSeconds(repositoryProvisionClaimLease)))
 }
 
 func lockRepositoryProvisionNamespace(ctx context.Context, tx pgx.Tx, operation repositoryProvisioningOperation) error {
@@ -790,15 +234,15 @@ func repositoryMatchesProvision(repository db.Repository, operation repositoryPr
 // Import preparations remain invisible until their durable import job marks
 // the staged mirror ready; they are never auto-published as empty repositories.
 type RepositoryProvisioningReconciler struct {
-	store    *postgresRepositoryProvisioningStore
+	store    RepositoryProvisioningStore
 	repoHost repoHostProvisioningClient
 }
 
-func NewRepositoryProvisioningReconciler(pool *pgxpool.Pool, repoHost repoHostProvisioningClient) *RepositoryProvisioningReconciler {
-	if pool == nil || repoHost == nil {
+func NewRepositoryProvisioningReconciler(store RepositoryProvisioningStore, repoHost repoHostProvisioningClient) *RepositoryProvisioningReconciler {
+	if store == nil || repoHost == nil {
 		return nil
 	}
-	return &RepositoryProvisioningReconciler{store: newPostgresRepositoryProvisioningStore(pool), repoHost: repoHost}
+	return &RepositoryProvisioningReconciler{store: store, repoHost: repoHost}
 }
 
 func (r *RepositoryProvisioningReconciler) Start(ctx context.Context) {
@@ -912,4 +356,19 @@ func (r *RepositoryProvisioningReconciler) finish(
 		return err
 	}
 	return nil
+}
+
+var errRepositoryProvisionConflict = ErrRepositoryProvisionConflict
+
+var errRepositoryProvisionMismatch = ErrRepositoryProvisionMismatch
+
+var errRepositoryProvisionMissing = ErrRepositoryProvisionMissing
+
+var errRepositoryProvisionInProgress = ErrRepositoryProvisionInProgress
+
+func SameRepositoryProvision(a, b RepositoryProvisioningOperation) bool {
+	return sameRepositoryProvision(a, b)
+}
+func RepositoryMatchesProvision(r db.Repository, op RepositoryProvisioningOperation) bool {
+	return repositoryMatchesProvision(r, op)
 }

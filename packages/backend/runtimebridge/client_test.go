@@ -193,7 +193,7 @@ func TestClientObserveReconnectsFromOpaqueCursor(t *testing.T) {
 		_ = json.NewEncoder(response).Encode(map[string]any{
 			"protocol": flowruntime.FlowRuntimeProtocol, "ok": true,
 			"value": map[string]any{
-				"run":        map[string]any{"runId": "run-1", "flowId": "fixture/small", "status": "completed"},
+				"run":        map[string]any{"runId": "run-1", "flowId": "fixture/small", "status": "completed", "finalOutput": `{"requestId":"setup-1","phase":"completed"}`},
 				"events":     []any{map[string]any{"cursor": map[string]any{"sequence": 42}, "sequence": 42, "kind": "control.run.completed", "occurredAt": 1, "payload": nil}},
 				"nextCursor": "42", "hasMore": false, "terminal": true,
 			},
@@ -205,6 +205,9 @@ func TestClientObserveReconnectsFromOpaqueCursor(t *testing.T) {
 	}
 	if !result.Terminal || result.NextCursor != "42" || len(result.Events) != 1 || result.Events[0].Sequence != 42 {
 		t.Fatalf("observation = %#v", result)
+	}
+	if result.Run.FinalOutput == nil || *result.Run.FinalOutput != `{"requestId":"setup-1","phase":"completed"}` {
+		t.Fatalf("canonical final output was not retained: %#v", result.Run.FinalOutput)
 	}
 }
 

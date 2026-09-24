@@ -3,17 +3,17 @@ package services
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 type repoGatewayZVMClient struct {
@@ -34,37 +34,12 @@ type repoGatewayZWinnerErrQuerier struct {
 	calls int
 }
 
-func (q *repoGatewayZWinnerErrQuerier) GetActiveRepoGatewayForUserRepo(context.Context, clusterdb.GetActiveRepoGatewayForUserRepoParams) (clusterdb.RepoGateway, error) {
+func (q *repoGatewayZWinnerErrQuerier) GetActiveRepoGatewayForUserRepo(context.Context, runtimeports.GetActiveRepoGatewayForUserRepoParams) (runtimeports.RepoGateway, error) {
 	q.calls++
 	if q.calls == 1 {
-		return clusterdb.RepoGateway{}, pgx.ErrNoRows
+		return runtimeports.RepoGateway{}, pgx.ErrNoRows
 	}
-	return clusterdb.RepoGateway{}, errors.New("winner lookup failed")
-}
-
-type repoGatewayZGoldenRow struct{}
-
-func (repoGatewayZGoldenRow) Scan(dest ...any) error {
-	*(dest[0].(*string)) = "snap-1"
-	*(dest[1].(*time.Time)) = time.Now().UTC()
-	return nil
-}
-
-type repoGatewayZGoldenDB struct {
-	execs atomic.Int32
-}
-
-func (d *repoGatewayZGoldenDB) QueryRow(context.Context, string, ...any) pgx.Row {
-	return repoGatewayZGoldenRow{}
-}
-
-func (d *repoGatewayZGoldenDB) Query(context.Context, string, ...any) (pgx.Rows, error) {
-	return nil, errors.New("unused")
-}
-
-func (d *repoGatewayZGoldenDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
-	d.execs.Add(1)
-	return pgconn.CommandTag{}, nil
+	return runtimeports.RepoGateway{}, errors.New("winner lookup failed")
 }
 
 func TestRepoGateway_Z_ReuseDiscardAndProvisionCleanupBranches(t *testing.T) {
@@ -78,13 +53,13 @@ func TestRepoGateway_Z_ReuseDiscardAndProvisionCleanupBranches(t *testing.T) {
 			return sandbox.StartResult{}, &sandbox.StatusError{StatusCode: 404, Message: "gone"}
 		},
 	})
-	_, err := svc.reuseGateway(ctx, clusterdb.RepoGateway{ID: "gw", VmID: "vm-idle", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
+	_, err := svc.reuseGateway(ctx, runtimeports.RepoGateway{ID: "gw", VmID: "vm-idle", Status: "suspended", AuthTokenCiphertext: "smithers_gateway_token"})
 	require.ErrorIs(t, err, errRepoGatewayUnrecoverable)
 
 	q := &repoGatewayHStatusErrQuerier{fakeRepoGatewayQuerier: &fakeRepoGatewayQuerier{}, softErr: errors.New("soft failed")}
 	vm := &repoGatewayZVMClient{fakeRepoGatewayVMClient: &fakeRepoGatewayVMClient{}, deleteDomainErr: errors.New("unmap failed")}
 	svc = newTestRepoGatewayService(q, vm, WithRepoGatewaySandboxMetrics(&mockSandboxMetricsRecorder{}))
-	svc.discardGateway(ctx, clusterdb.RepoGateway{ID: "gw", VmID: "vm", Status: "running"})
+	svc.discardGateway(ctx, runtimeports.RepoGateway{ID: "gw", VmID: "vm", Status: "running"})
 	assert.Contains(t, vm.unmappedDomains, repoGatewayDomain("vm"))
 
 	qBase := &fakeRepoGatewayQuerier{executionInfoErr: errors.New("persist failed")}
@@ -115,7 +90,7 @@ func TestRepoGateway_Z_ReuseDiscardAndProvisionCleanupBranches(t *testing.T) {
 func TestRepoGateway_Z_GoldenSnapshotWorkspaceAndReaperBranches(t *testing.T) {
 	ctx := context.Background()
 
-	goldenDB := &repoGatewayZGoldenDB{}
+	goldenDB := &fakeGoldenDB{readyID: "snap-1", readyCreatedAt: time.Now()}
 	golden := &GoldenSnapshotService{db: goldenDB, cachedID: "snap-1", cachedAt: time.Now()}
 	createCalls := 0
 	vm := &fakeRepoGatewayVMClient{
@@ -133,7 +108,7 @@ func TestRepoGateway_Z_GoldenSnapshotWorkspaceAndReaperBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "vm-bare", created.ID)
 	assert.Equal(t, 2, createCalls)
-	assert.Equal(t, int32(1), goldenDB.execs.Load())
+	assert.Equal(t, []string{"snap-1"}, goldenDB.markedBadIDs)
 
 	err = newTestRepoGatewayService(&fakeRepoGatewayQuerier{}, &fakeRepoGatewayVMClient{}, WithRepoGatewayGitBaseURL("://bad")).prepareGatewayWorkspace(ctx, "vm", testRepoGatewayInput())
 	require.Equal(t, 500, apiStatus(t, err))
@@ -160,7 +135,7 @@ func TestRepoGateway_Z_GoldenSnapshotWorkspaceAndReaperBranches(t *testing.T) {
 		}
 	}, time.Second, time.Millisecond)
 
-	sweepQ := &fakeRepoGatewayQuerier{staleRows: []clusterdb.RepoGateway{{ID: "gw", VmID: "vm", Status: "starting"}}}
+	sweepQ := &fakeRepoGatewayQuerier{staleRows: []runtimeports.RepoGateway{{ID: "gw", VmID: "vm", Status: "starting"}}}
 	sweepVM := &repoGatewayZVMClient{
 		fakeRepoGatewayVMClient: &fakeRepoGatewayVMClient{
 			deleteVMFn: func(context.Context, string) error { return errors.New("delete failed") },

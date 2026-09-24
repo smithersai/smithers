@@ -15,7 +15,6 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
@@ -236,7 +235,7 @@ func (service *AgentService) ProjectFlowRuntime(ctx context.Context, update flow
 		if workspaceID == "" {
 			return errors.New("agent workspace is not ready for Flow receipt projection")
 		}
-		if _, err := service.dispatchQ.RecordWorkflowRunCodingHost(ctx, clusterdb.RecordWorkflowRunCodingHostParams{
+		if _, err := service.dispatchQ.RecordWorkflowRunCodingHost(ctx, db.RecordWorkflowRunCodingHostParams{
 			WorkflowRunID: projection.WorkflowRunID,
 			WorkspaceID:   workspaceID,
 			HostRunID:     update.Checkpoint.RunID,

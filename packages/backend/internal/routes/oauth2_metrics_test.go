@@ -212,3 +212,7 @@ func TestOAuth2Handler_PostRevokeAll_RecordsTokenOperation(t *testing.T) {
 	output := readMetricsOutput(t, metrics)
 	assert.Contains(t, output, `smithers_oauth2_token_operations_total{operation="revoke_all"} 1`)
 }
+
+func (m *mockOAuth2RouteService) AuthorizeGrant(ctx context.Context, in services.OAuth2AuthorizeInput) (services.OAuth2AuthorizeResult, error) {
+	return m.Authorize(ctx, in.UserID, in.ClientID, in.RedirectURI, in.Scope, in.CodeChallenge, in.CodeChallengeMethod, in.CallerScopes)
+}

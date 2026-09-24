@@ -5,10 +5,11 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
@@ -31,21 +32,21 @@ func (f *fakeRepoFileProbe) GetFileAtChange(_ context.Context, owner, repo, chan
 }
 
 type fakeEnvironmentImageResolver struct {
-	image clusterdb.SandboxEnvironmentImage
+	image runtimeports.SandboxEnvironmentImage
 	err   error
 	kinds []string
 }
 
-func (f *fakeEnvironmentImageResolver) Resolve(_ context.Context, _ int64, kind string) (clusterdb.SandboxEnvironmentImage, error) {
+func (f *fakeEnvironmentImageResolver) Resolve(_ context.Context, _ int64, kind string) (runtimeports.SandboxEnvironmentImage, error) {
 	f.kinds = append(f.kinds, kind)
 	if f.err != nil {
-		return clusterdb.SandboxEnvironmentImage{}, f.err
+		return runtimeports.SandboxEnvironmentImage{}, f.err
 	}
 	return f.image, nil
 }
 
-func repoScopedImage(repositoryID int64) clusterdb.SandboxEnvironmentImage {
-	return clusterdb.SandboxEnvironmentImage{
+func repoScopedImage(repositoryID int64) runtimeports.SandboxEnvironmentImage {
+	return runtimeports.SandboxEnvironmentImage{
 		RepositoryID: pgtype.Int8{Int64: repositoryID, Valid: true},
 		Kind:         "vm",
 		ClosureHash:  "0123456789abcdef0123456789abcdef",

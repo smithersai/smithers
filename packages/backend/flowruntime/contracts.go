@@ -29,6 +29,12 @@ type Resolver interface {
 	ResolveFlowRuntime(context.Context, Target) (Runtime, error)
 }
 
+// ExistingResolver inspects an already bound host. Reads must not create a
+// workspace, capture source, create/rebind an owner, or launch a process.
+type ExistingResolver interface {
+	ResolveExistingFlowRuntime(context.Context, Target) (Runtime, error)
+}
+
 type ResolverFunc func(context.Context, Target) (Runtime, error)
 
 func (resolve ResolverFunc) ResolveFlowRuntime(ctx context.Context, target Target) (Runtime, error) {
@@ -136,6 +142,9 @@ type Run struct {
 	OwnerID              string `json:"ownerId,omitempty"`
 	WaitingReason        string `json:"waitingReason,omitempty"`
 	ExecutionObservation string `json:"executionObservation,omitempty"`
+	// FinalOutput is the canonical committed root projection, when observed.
+	// Absence on a terminal run must never be interpreted as a successful result.
+	FinalOutput *string `json:"finalOutput,omitempty"`
 }
 
 type Observation struct {

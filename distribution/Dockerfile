@@ -100,7 +100,7 @@ RUN GOMAXPROCS=2 CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o /out/smith
 # This base supplies PostgreSQL 18 pg_dump/pg_restore/psql for maintenance.
 FROM postgres:18.6-bookworm
 ARG SMITHERS_DISTRIBUTION_VERSION=0.1.0
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libcurl4 libexpat1 libpcre2-8-0 libssl3 tini util-linux zlib1g && rm -rf /var/lib/apt/lists/* \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libatomic1 libcurl4 libexpat1 libpcre2-8-0 libssl3 tini util-linux zlib1g && rm -rf /var/lib/apt/lists/* \
   && groupadd --system smithers && useradd --system --gid smithers --home-dir /var/lib/smithers --shell /usr/sbin/nologin smithers \
   && install -d -o smithers -g smithers -m 0700 /var/lib/smithers \
   && install -d -o root -g root -m 0755 /opt/smithers /opt/smithers/bin /opt/smithers/lib /opt/smithers/web /opt/smithers/migrations /opt/smithers/licenses

@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // Closure-keyed golden snapshots back the NixOS compute path: every
@@ -50,11 +50,8 @@ func (s *GoldenSnapshotService) CurrentFor(ctx context.Context, key string) stri
 	}
 	s.mu.Unlock()
 
-	var (
-		id        string
-		createdAt time.Time
-	)
-	if err := s.db.QueryRow(ctx, latestReadyGoldenSnapshotSQL, key).Scan(&id, &createdAt); err != nil {
+	id, _, err := s.db.LatestReadyGoldenSnapshot(ctx, key)
+	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("keyed golden snapshot lookup failed", "key", key, "error", err)
 		}
@@ -80,7 +77,7 @@ func (s *GoldenSnapshotService) MarkBadFor(ctx context.Context, key, snapshotID 
 		return
 	}
 	bg := context.WithoutCancel(ctx)
-	if _, err := s.db.Exec(bg, markBadGoldenSnapshotSQL, key, snapshotID); err != nil {
+	if err := s.db.MarkBadGoldenSnapshot(bg, key, snapshotID); err != nil {
 		slog.Warn("keyed golden snapshot mark-bad failed", "key", key, "snapshot_id", snapshotID, "error", err)
 		return
 	}
@@ -123,11 +120,7 @@ func (s *GoldenSnapshotService) EnsureBake(ctx context.Context, key string, buil
 }
 
 func (s *GoldenSnapshotService) bakeKey(ctx context.Context, key string, build func() sandbox.CreateRequest) {
-	var (
-		id        string
-		createdAt time.Time
-	)
-	err := s.db.QueryRow(ctx, latestReadyGoldenSnapshotSQL, key).Scan(&id, &createdAt)
+	id, _, err := s.db.LatestReadyGoldenSnapshot(ctx, key)
 	if err == nil {
 		s.rememberKeyed(key, id)
 		return
@@ -138,8 +131,8 @@ func (s *GoldenSnapshotService) bakeKey(ctx context.Context, key string, build f
 	}
 	s.reclaimStaleBakingFor(ctx, key)
 
-	var rowID string
-	if err := s.db.QueryRow(ctx, insertGoldenSnapshotBakingSQL, key).Scan(&rowID); err != nil {
+	rowID, err := s.db.ClaimGoldenSnapshotBake(ctx, key)
+	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {
 			slog.Warn("keyed golden snapshot bake claim failed", "key", key, "error", err)
 		}
@@ -153,8 +146,8 @@ func (s *GoldenSnapshotService) bakeKey(ctx context.Context, key string, build f
 		snapshotID = ""
 		slog.Error("keyed golden snapshot bake failed", "key", key, "error", bakeErr)
 	}
-	var finished string
-	if err := s.db.QueryRow(ctx, finishGoldenSnapshotSQL, rowID, status, snapshotID).Scan(&finished); err != nil {
+	finished, err := s.db.FinishGoldenSnapshot(ctx, rowID, status, snapshotID)
+	if err != nil {
 		slog.Warn("keyed golden snapshot finish write failed", "key", key, "row_id", rowID, "error", err)
 		if bakeErr == nil {
 			delCtx, cancel := context.WithTimeout(ctx, 30*time.Second)

@@ -22,8 +22,7 @@ func TestInitInjectedExporterSetsGlobals(t *testing.T) {
 	defer otel.SetTextMapPropagator(originalPropagator)
 
 	provider, err := InitWithExporter(context.Background(), config.ObservabilityConfig{
-		CloudTraceProjectID: "coverage-project",
-		TraceSampleRate:     1,
+		TraceSampleRate: 1,
 	}, tracetest.NewInMemoryExporter())
 	require.NoError(t, err)
 	require.NotNil(t, provider)
@@ -45,7 +44,7 @@ func TestInitInjectedExporterSetsGlobals(t *testing.T) {
 }
 
 func TestInitCloudExporterRequiresInjection(t *testing.T) {
-	provider, err := Init(context.Background(), config.ObservabilityConfig{OTelExporter: "cloudtrace", CloudTraceProjectID: "project"})
+	provider, err := Init(context.Background(), config.ObservabilityConfig{OTelExporter: "cloudtrace"})
 	require.ErrorContains(t, err, "deployment-provided trace exporter")
 	assert.Nil(t, provider)
 }

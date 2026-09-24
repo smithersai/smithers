@@ -25,6 +25,48 @@ FORBIDDEN_LOCAL_GRAPH = (
 FORBIDDEN_TOPOLOGY = re.compile(
     r"\b(?:HostedRollout|RoleHostedAPI|RoleHostedWorker|hosted_api|hosted_worker|PLUE_BACKEND_ROLE|PLUE_CLI_VERSION)\b"
 )
+PRIVATE_PACKAGE_ROOTS = (
+    "packages/backend/internal/clusterdb",
+    "packages/backend/internal/deploymentdb",
+    "packages/backend/internal/clusterservices",
+    "packages/backend/internal/microsandbox",
+    "packages/backend/internal/runner",
+    "packages/backend/internal/runbooks",
+    "packages/backend/internal/services/alertregistry",
+    "packages/backend/cloud",
+)
+TESTKIT_IMPORT = "github.com/smithersai/smithers/packages/backend/testkit"
+
+# These journals and placement tables are owned by Plue. Exporting a neutral
+# collaborator is fine; embedding SQL against its private schema is not.
+PRIVATE_SQL_TABLES = (
+    "repository_provisioning_operations",
+    "repository_provisioning_control",
+    "legacy_mutation_fence_control",
+    "repo_storage_sets",
+)
+GO_LEXEMES = re.compile(r'//[^\n]*|/\*.*?\*/|`[^`]*`|"(?:\\.|[^"\\])*"', re.S)
+PRIVATE_SQL_REFERENCE = re.compile(
+    r'\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+(?:ONLY\s+)?'
+    r'(?:(?:public|"public")\s*\.\s*)?"?('
+    + "|".join(PRIVATE_SQL_TABLES) + r')"?\b', re.I
+)
+
+def private_sql_references(source: str) -> list[str]:
+    failures = []
+    for token in GO_LEXEMES.finditer(source):
+        literal = token.group()
+        if not literal.startswith(('`', '"')):
+            continue
+        # Interpret ordinary whitespace escapes so multiline quoted SQL is
+        # checked too; raw literals need no decoding.
+        body = literal[1:-1]
+        if literal.startswith('"'):
+            body = body.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+        for match in PRIVATE_SQL_REFERENCE.finditer(body):
+            failures.append(match.group(1).lower())
+    return failures
+
 
 
 def source_imports(root: Path = ROOT) -> list[str]:
@@ -36,6 +78,9 @@ def source_imports(root: Path = ROOT) -> list[str]:
     ):
         if (root / relative).exists():
             failures.append(f"{relative}: private schema belongs to Plue")
+    for relative in PRIVATE_PACKAGE_ROOTS:
+        if (root / relative).exists():
+            failures.append(f"{relative}: private package belongs to Plue")
     forbidden = "|".join(re.escape(prefix) for prefix in FORBIDDEN_SOURCE + FORBIDDEN_LOCAL_GRAPH)
     import_pattern = re.compile(r'^\s*(?:import\s+)?(?:[\w.]+\s+)?"(?:' + forbidden + r')')
     for source_root in (root / "packages", root / "apps"):
@@ -50,6 +95,15 @@ def source_imports(root: Path = ROOT) -> list[str]:
                 # Regression tests may assert that a private variable has no effect.
                 if not path.name.endswith("_test.go") and FORBIDDEN_TOPOLOGY.search(line):
                     failures.append(f"{path.relative_to(root)}:{line_number}: deployment-only topology: {line.strip()}")
+            if not path.name.endswith("_test.go"):
+                for table in private_sql_references(path.read_text()):
+                    failures.append(f"{path.relative_to(root)}: SQL table {table} belongs to Plue")
+            # A helper package importing testkit could otherwise hide it from
+            # a check of executable entry points. Only Go test files may use it.
+            if not path.name.endswith("_test.go") and re.search(
+                r'"' + re.escape(TESTKIT_IMPORT) + r'"', path.read_text()
+            ):
+                failures.append(f"{path.relative_to(root)}: production source imports testkit")
     return failures
 
 
@@ -62,11 +116,14 @@ def local_graph(root: Path = ROOT) -> list[str]:
     )
     if result.returncode:
         return ["go list ./apps/backend failed:", result.stderr.strip()]
-    return [
+    failures = [
         f"default backend imports deployment SDK {name}"
         for name in result.stdout.splitlines()
         if name.startswith(FORBIDDEN_LOCAL_GRAPH)
     ]
+    if TESTKIT_IMPORT in result.stdout.splitlines():
+        failures.append("default backend imports testkit")
+    return failures
 
 
 def main() -> int:

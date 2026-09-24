@@ -356,6 +356,19 @@ func (q *Queries) GetWorkflowCacheByScopeVersion(ctx context.Context, arg GetWor
 	return i, err
 }
 
+const getWorkflowCacheRepoUsage = `-- name: GetWorkflowCacheRepoUsage :one
+SELECT COALESCE(SUM(object_size_bytes), 0)::bigint
+FROM workflow_caches
+WHERE repository_id = $1 AND status IN ('pending', 'finalized', 'deleting')
+`
+
+func (q *Queries) GetWorkflowCacheRepoUsage(ctx context.Context, repositoryID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, getWorkflowCacheRepoUsage, repositoryID)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getWorkflowCacheStats = `-- name: GetWorkflowCacheStats :one
 SELECT
     COALESCE(COUNT(*) FILTER (WHERE status = 'finalized'), 0)::bigint AS cache_count,

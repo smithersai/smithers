@@ -230,13 +230,13 @@ func TestLoadRepoContext(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, rec.Code)
 	})
 
-	t.Run("repo-bound token resolves owner on its bound repository", func(t *testing.T) {
+	t.Run("repo-bound owner token is capped at write on its bound repository", func(t *testing.T) {
 		t.Parallel()
 		q := &mockRepoContextQuerier{getRepoByOwnerAndLowerNameFn: func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 			return privateRepo, nil
 		}}
 		h := LoadRepoContext(q)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, PermissionOwner, RepoPermissionFromContext(r.Context()))
+			assert.Equal(t, PermissionWrite, RepoPermissionFromContext(r.Context()))
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		req := withRepoRouteParams(httptest.NewRequest(http.MethodGet, "/api/repos/alice/secret", nil), "alice", "secret")

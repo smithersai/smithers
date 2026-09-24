@@ -7,6 +7,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -17,10 +20,10 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 )
 
-// recordingRouterDB answers like adminManageRouterDB and records the sqlc
+// recordingRouterDB answers like sseRouterFixtureDB and records the sqlc
 // query names it served.
 type recordingRouterDB struct {
-	adminManageRouterDB
+	sseRouterFixtureDB
 	mu    sync.Mutex
 	names []string
 }
@@ -33,7 +36,7 @@ func (d *recordingRouterDB) QueryRow(ctx context.Context, query string, args ...
 	d.mu.Lock()
 	d.names = append(d.names, name)
 	d.mu.Unlock()
-	return d.adminManageRouterDB.QueryRow(ctx, query, args...)
+	return d.sseRouterFixtureDB.QueryRow(ctx, query, args...)
 }
 
 func (d *recordingRouterDB) served() []string {
@@ -71,33 +74,30 @@ func TestServerRouter_DatabaseRouterRejectsHMACTickets(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notifHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notifHandler, // adminRunnerHandler
+		nil,          // adminUserHandler
+		nil,          // adminOrgHandler
+		nil,          // adminSystemHealthHandler
+		nil,          // adminGitHubAppHandler
+		nil,          // adminAuditHandler
+		nil,          // webhookHandler
+		nil,          // secretHandler
+		nil,          // variableHandler
+		nil,          // commitStatusHandler
+		nil,          // lfsHandler
+		nil,          // jjVCSHandler
+		nil,          // agentInternalHandler
+		nil,          // agentSessionHandler
+		nil,          // agentSessionStreamHandler
+		nil,          // pushHookHandler
+		nil,          // workflowHandler
+		nil,          // workspaceHandler
+		nil,          // workspaceInternalHandler
+		nil,          // workspaceTerminalHandler
+		nil,          // telemetryHandler
+		nil,          // featureFlagHandler
+		nil,          // oauth2Handler
+		nil,          // smithersMetrics
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/notifications?ticket="+ticket, nil)
@@ -106,4 +106,26 @@ func TestServerRouter_DatabaseRouterRejectsHMACTickets(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	assert.NotContains(t, store.served(), "GetUserByID",
 		"an HMAC ticket must not be validated against the user table on a database router")
+}
+
+// The router's global rate limiter runs before the admin middleware.
+type sseRouterFixtureDB struct{ db.DBTX }
+
+func (sseRouterFixtureDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
+	return pgconn.CommandTag{}, nil
+}
+func (sseRouterFixtureDB) QueryRow(_ context.Context, query string, _ ...any) pgx.Row {
+	return sseRouterFixtureRow{rateLimit: strings.Contains(query, "ConsumeSearchRateLimitToken")}
+}
+
+type sseRouterFixtureRow struct{ rateLimit bool }
+
+func (r sseRouterFixtureRow) Scan(dest ...any) error {
+	if !r.rateLimit {
+		return pgx.ErrNoRows
+	}
+	*dest[0].(*bool) = true
+	*dest[1].(*float64) = 1000
+	*dest[2].(*time.Time) = time.Now()
+	return nil
 }

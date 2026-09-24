@@ -12,7 +12,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // SuspendWorkspace suspends a running workspace.
@@ -936,6 +936,9 @@ func vmAlreadyStopped(err error) bool {
 // the caller; unlike vmAlreadyStopped, this does not treat a stopped sandbox as
 // gone. The self-hosted controller reports this condition as HTTP 404.
 func vmAlreadyGone(err error) bool {
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return true
+	}
 	var statusErr *sandbox.StatusError
 	if !errors.As(err, &statusErr) {
 		return false

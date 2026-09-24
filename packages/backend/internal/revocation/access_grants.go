@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 const accessGrantRevokeTimeout = 4 * time.Second

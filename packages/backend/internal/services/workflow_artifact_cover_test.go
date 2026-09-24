@@ -6,13 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -243,10 +244,10 @@ func TestWorkflowArtifact_Cov_ErrorAndCleanupBranches(t *testing.T) {
 		assert.Equal(t, 500, apiStatus(t, err))
 
 		deletedID := int64(0)
-		var cleared []clusterdb.ClearPurgedStorageDeletionByExactKeyParams
+		var cleared []runtimeports.ClearPurgedStorageDeletionByExactKeyParams
 		reserved := false
 		queries := &mockWorkflowArtifactQuerier{
-			clearPurgedStorageDeletionFn: func(_ context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+			clearPurgedStorageDeletionFn: func(_ context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 				cleared = append(cleared, arg)
 				return 1, nil
 			},

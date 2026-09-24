@@ -19,6 +19,7 @@ func ValidateServerStartup(cfg *Config) error {
 type StartupDependencies struct {
 	InProcessRepository bool
 	WorkspaceRuntime    bool
+	ComputeProvider     bool
 	MeteredAdmission    bool
 }
 
@@ -51,8 +52,8 @@ func ValidateServerStartupWithDependencies(cfg *Config, dependencies StartupDepe
 		cfg.FeatureFlags.Workspaces ||
 		cfg.FeatureFlags.Agents ||
 		cfg.FeatureFlags.RemoteSandboxEnabled {
-		if !dependencies.WorkspaceRuntime && strings.TrimSpace(cfg.Sandbox.MicrosandboxControlURL) == "" {
-			errs = append(errs, "sandbox.microsandbox_control_url is required when sandbox-backed features are enabled")
+		if !dependencies.WorkspaceRuntime && !dependencies.ComputeProvider {
+			errs = append(errs, "an injected workspace runtime or compute provider is required when sandbox-backed features are enabled")
 		}
 	}
 	if err := normalizeAgentAvailability(cfg); err != nil {
@@ -229,16 +230,6 @@ func validateCommonStartupWithRepository(cfg *Config, errs *[]string, requireRep
 		if err := validateURL(cfg.RepoHost.URL, true); err != nil {
 			*errs = append(*errs, fmt.Sprintf("repo_host.url is invalid: %v", err))
 		}
-	}
-	if strings.TrimSpace(cfg.Sandbox.MicrosandboxControlURL) != "" {
-		if err := validateURL(cfg.Sandbox.MicrosandboxControlURL, true); err != nil {
-			*errs = append(*errs, fmt.Sprintf("sandbox.microsandbox_control_url is invalid: %v", err))
-		}
-	}
-	switch strings.ToLower(strings.TrimSpace(cfg.Sandbox.Provider)) {
-	case "", "microsandbox":
-	default:
-		*errs = append(*errs, "sandbox.provider must be microsandbox when set")
 	}
 	switch strings.TrimSpace(cfg.Sandbox.WorkspacePersistence) {
 	case "", "ephemeral", "persistent":

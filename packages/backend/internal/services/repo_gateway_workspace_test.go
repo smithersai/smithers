@@ -13,17 +13,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 func boundGatewayFixture(t *testing.T) (*RepoGatewayService, *fakeRepoGatewayQuerier, *fakeRepoGatewayVMClient, *db.Workspace) {
@@ -60,15 +60,13 @@ func TestWorkspaceGateway_UsesOwnedVMAndModernService(t *testing.T) {
 	assert.Equal(t, defaultWorkspaceUser, spec.User)
 	assert.Equal(t, defaultWorkspaceClonePath, spec.Workdir)
 	assert.Equal(t, defaultWorkspaceHome, spec.Env["HOME"])
-	// The worker prefixes Exec with `exec ` and joins it with spaces, so the
-	// launch script must be one /bin/sh -c line (guest log otherwise reads
-	// "exec: set: not found" and the gateway never answers its health probe).
-	require.Len(t, spec.Exec, 1)
-	assert.True(t, strings.HasPrefix(spec.Exec[0], "/bin/sh -c '"), spec.Exec[0])
-	assert.Contains(t, spec.Exec[0], "serve --root /home/developer/workspace")
-	assert.Contains(t, spec.Exec[0], "--listen")
-	assert.NotContains(t, spec.Exec[0], info.Token)
-	assert.NotContains(t, spec.Exec[0], "bun x")
+	require.NoError(t, spec.ValidateExec())
+	require.Len(t, spec.Exec, 3)
+	assert.Equal(t, []string{"/bin/sh", "-c"}, spec.Exec[:2])
+	assert.Contains(t, spec.Exec[2], "serve --root /home/developer/workspace")
+	assert.Contains(t, spec.Exec[2], "--listen")
+	assert.NotContains(t, strings.Join(spec.Exec, " "), info.Token)
+	assert.NotContains(t, spec.Exec[2], "bun x")
 	assert.Equal(t, "smithers-gateway-"+info.GatewayID, spec.Name)
 	assert.Equal(t, []string{repoGatewayDomain(info.GatewayID)}, vm.mappedDomains)
 	require.Len(t, vm.execAwaitReqs, 1)
@@ -171,11 +169,11 @@ func TestWorkspaceGateway_ReaperNeverDeletesUserVM(t *testing.T) {
 	for _, status := range []string{"pending", "starting", "running", "failed"} {
 		t.Run(status, func(t *testing.T) {
 			s, q, vm, w := boundGatewayFixture(t)
-			g := clusterdb.RepoGateway{ID: uuid.NewString(), WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, VmID: w.VmID, Status: status, RepositoryID: w.RepositoryID, UserID: w.UserID}
+			g := runtimeports.RepoGateway{ID: uuid.NewString(), WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, VmID: w.VmID, Status: status, RepositoryID: w.RepositoryID, UserID: w.UserID}
 			if status == "running" {
 				s.discardGateway(context.Background(), g)
 			} else {
-				q.staleRows = []clusterdb.RepoGateway{g}
+				q.staleRows = []runtimeports.RepoGateway{g}
 				s.sweepStaleGateways(context.Background())
 			}
 			assert.Empty(t, vm.deletedVMIDs)
@@ -200,90 +198,6 @@ func TestWorkspaceGateway_BindingValidationBeforeSideEffects(t *testing.T) {
 	assert.Empty(t, q.created)
 	assert.Empty(t, vm.execAwaitReqs)
 	assert.Empty(t, vm.createVMReqs)
-}
-
-func TestWorkspaceGateway_PostgresBindingLifecycle(t *testing.T) {
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	q := deploymentdb.New(pool)
-	userID, repoID := setupTestUserAndRepo(t, pool)
-	workspace, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: userID, Name: "bound-gateway", TargetBookmark: "main", Kind: "vm", Status: "running"})
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE workspaces SET vm_id='owned-vm' WHERE id=$1`, workspace.ID)
-	require.NoError(t, err)
-	binding := pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}
-	legacy, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: userID, Status: "running"})
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE repo_gateways SET vm_id='legacy-vm' WHERE id=$1`, legacy.ID)
-	require.NoError(t, err)
-	bound, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: userID, WorkspaceID: binding, Status: "running"})
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE repo_gateways SET vm_id='owned-vm' WHERE id=$1`, bound.ID)
-	require.NoError(t, err)
-	landingToken, err := q.CreateAccessToken(ctx, db.CreateAccessTokenParams{
-		UserID: userID, Name: "gateway-landing", TokenHash: "test-landing-" + bound.ID,
-		TokenLastEight: "landing1", Scopes: "repo:read",
-	})
-	require.NoError(t, err)
-	require.NoError(t, q.SetRepoGatewayLandingTokenID(ctx, clusterdb.SetRepoGatewayLandingTokenIDParams{
-		ID: bound.ID, LandingTokenID: pgtype.Int8{Int64: landingToken.ID, Valid: true},
-	}))
-	read, err := q.GetActiveRepoGatewayForUserRepo(ctx, clusterdb.GetActiveRepoGatewayForUserRepoParams{RepositoryID: repoID, UserID: userID, WorkspaceID: binding})
-	require.NoError(t, err)
-	require.Equal(t, bound.ID, read.ID)
-	read, err = q.GetActiveRepoGatewayForUserRepo(ctx, clusterdb.GetActiveRepoGatewayForUserRepoParams{RepositoryID: repoID, UserID: userID})
-	require.NoError(t, err)
-	require.Equal(t, legacy.ID, read.ID)
-	byID, err := q.GetRepoGatewayByID(ctx, bound.ID)
-	require.NoError(t, err)
-	require.Equal(t, binding, byID.WorkspaceID)
-	require.Equal(t, landingToken.ID, byID.LandingTokenID.Int64)
-	rows, err := q.ListActiveRepoGateways(ctx)
-	require.NoError(t, err)
-	require.Contains(t, rows, byID)
-	// The sweep reads these same generated rows. It must see the credential
-	// reference so a discarded gateway can revoke its temporary token.
-	s := newTestRepoGatewayService(q, &fakeRepoGatewayVMClient{})
-	s.revokeWorkspaceGatewayLandingToken(ctx, byID)
-	var tokenCount int
-	require.NoError(t, pool.QueryRow(ctx, `SELECT count(*) FROM access_tokens WHERE id=$1`, landingToken.ID).Scan(&tokenCount))
-	require.Zero(t, tokenCount)
-	byID, err = q.GetRepoGatewayByID(ctx, bound.ID)
-	require.NoError(t, err)
-	require.False(t, byID.LandingTokenID.Valid)
-	count, err := q.CountActiveSandboxesForUser(ctx, userID)
-	require.NoError(t, err)
-	require.Equal(t, 2, count, "bound process must not count as a third VM")
-	_, err = q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: userID, WorkspaceID: binding, Status: "running"})
-	require.Error(t, err)
-	require.True(t, isRepoGatewayActiveUniqueViolation(err))
-	// The actual relation rejects unknown workspace IDs, not an inferred VM ID.
-	_, err = q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: userID, WorkspaceID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, Status: "pending"})
-	require.Error(t, err)
-	ws := NewWorkspaceService(q, WithWorkspaceSandboxClient(&mockWorkspaceSandboxVMClient{}))
-	s = newTestRepoGatewayService(q, &fakeRepoGatewayVMClient{}, WithRepoGatewayWorkspaces(ws))
-	token, hash, _ := generateRepoGatewayToken()
-	_, err = pool.Exec(ctx, `UPDATE repo_gateways SET auth_token_hash=$1 WHERE id=$2`, hash, bound.ID)
-	require.NoError(t, err)
-	target, err := s.AuthorizeRelay(ctx, bound.ID, token)
-	require.NoError(t, err)
-	require.Equal(t, workspace.ID, target.WorkspaceID)
-	require.Equal(t, repoGatewayDomain(bound.ID), target.Domain)
-	_, err = pool.Exec(ctx, `UPDATE workspaces SET vm_id='replacement-vm' WHERE id=$1`, workspace.ID)
-	require.NoError(t, err)
-	_, err = s.AuthorizeRelay(ctx, bound.ID, token)
-	assertAPIErrorStatus(t, err, http.StatusConflict)
-	_, err = q.SoftDeleteWorkspace(ctx, workspace.ID)
-	require.NoError(t, err)
-	_, err = s.AuthorizeRelay(ctx, bound.ID, token)
-	assertAPIErrorStatus(t, err, http.StatusNotFound)
-	_, err = pool.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, workspace.ID)
-	require.NoError(t, err)
-	_, err = q.GetRepoGatewayByID(ctx, bound.ID)
-	require.True(t, errors.Is(err, pgx.ErrNoRows))
-	_, err = q.GetRepoGatewayByID(ctx, legacy.ID)
-	require.NoError(t, err)
-	assert.False(t, strings.Contains(target.Domain, "owned-vm"))
 }
 
 func TestWorkspaceGateway_ReadinessRequiresRegisteredCodingHost(t *testing.T) {
@@ -330,79 +244,10 @@ func TestWorkspaceGateway_UnconfiguredProbeBlamesTheDeployment(t *testing.T) {
 
 // Exercise the real conditional status write at the last readiness boundary,
 // where a reaper can win after the service's last identity read.
-type tombstoneGatewayAtReadiness struct {
-	*deploymentdb.Queries
-	beforeRunning func()
-}
-
-func (q *tombstoneGatewayAtReadiness) UpdateRepoGatewayStatus(ctx context.Context, p clusterdb.UpdateRepoGatewayStatusParams) (clusterdb.RepoGateway, error) {
-	if p.Status == "running" && q.beforeRunning != nil {
-		q.beforeRunning()
-	}
-	return q.Queries.UpdateRepoGatewayStatus(ctx, p)
-}
-
-func TestWorkspaceGateway_PostgresReaperFencesReadiness(t *testing.T) {
-	prepareRuntimeTestHelper(t)
-	pool := getAgentTestPool(t)
-	ctx := context.Background()
-	q := &tombstoneGatewayAtReadiness{Queries: deploymentdb.New(pool)}
-	userID, repoID := setupTestUserAndRepo(t, pool)
-	workspace, err := q.CreateWorkspace(ctx, db.CreateWorkspaceParams{RepositoryID: repoID, UserID: userID, Name: "gateway-readiness-race", TargetBookmark: "main", Kind: "vm", Status: "running"})
-	require.NoError(t, err)
-	_, err = pool.Exec(ctx, `UPDATE workspaces SET vm_id='owned-vm' WHERE id=$1`, workspace.ID)
-	require.NoError(t, err)
-	binding := pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}
-	gateway, err := q.CreateRepoGateway(ctx, clusterdb.CreateRepoGatewayParams{RepositoryID: repoID, UserID: userID, WorkspaceID: binding, Status: "starting"})
-	require.NoError(t, err)
-	codec := &staticTestCodec{prefix: "enc:"}
-	token, hash, err := generateRepoGatewayToken()
-	require.NoError(t, err)
-	ciphertext, err := codec.EncryptString(token)
-	require.NoError(t, err)
-	gateway, err = q.UpdateRepoGatewayExecutionInfo(ctx, clusterdb.UpdateRepoGatewayExecutionInfoParams{ID: gateway.ID, VmID: "owned-vm", BaseUrl: "https://" + repoGatewayDomain(gateway.ID), AuthTokenHash: hash, AuthTokenCiphertext: ciphertext, Status: "starting"})
-	require.NoError(t, err)
-	vm := &fakeRepoGatewayVMClient{}
-	vm.execAwaitFn = func(_ context.Context, _ string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
-		zero := int32(0)
-		if req.TimeoutMS != nil && *req.TimeoutMS == 15000 {
-			return sandbox.ExecResult{StatusCode: &zero, Stdout: runtimeTestReceipt(t, workspace, "unchanged")}, nil
-		}
-		return sandbox.ExecResult{StatusCode: &zero}, nil
-	}
-	workspaceVM := &mockWorkspaceSandboxVMClient{execAwaitFn: func(_ context.Context, _ string, _ sandbox.ExecRequest) (sandbox.ExecResult, error) {
-		zero := int32(0)
-		return sandbox.ExecResult{StatusCode: &zero, Stdout: runtimeTestReceipt(t, workspace, "unchanged")}, nil
-	}}
-	ws := NewWorkspaceService(q, WithWorkspaceSandboxClient(workspaceVM))
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		root := sha256.Sum256([]byte(defaultWorkspaceClonePath))
-		_ = json.NewEncoder(w).Encode(map[string]any{"gatewayId": gateway.ID, "workspaceHash": hex.EncodeToString(root[:])[:16], "protocolVersion": "1", "version": "1.0.0-rc.0", "capabilities": []string{"coding-plan/v1"}})
-	}))
-	defer server.Close()
-	s := newTestRepoGatewayService(q, vm, WithRepoGatewayWorkspaces(ws), WithRepoGatewaySecretCodec(codec), WithRepoGatewayHealthProbe(server.URL, server.Client()))
-	q.beforeRunning = func() { s.discardGateway(ctx, gateway) }
-	_, err = s.reuseWorkspaceGateway(ctx, gateway)
-	assertAPIErrorStatus(t, err, http.StatusConflict)
-	var status string
-	var deleted bool
-	require.NoError(t, pool.QueryRow(ctx, `SELECT status, deleted_at IS NOT NULL FROM repo_gateways WHERE id=$1`, gateway.ID).Scan(&status, &deleted))
-	assert.Equal(t, "stopped", status)
-	assert.True(t, deleted)
-	assert.Empty(t, vm.deletedVMIDs)
-	require.Len(t, vm.systemdSpecs, 1)
-	assert.Equal(t, []string{repoGatewayDomain(gateway.ID), repoGatewayDomain(gateway.ID)}, vm.unmappedDomains)
-	for _, request := range vm.execAwaitReqs[1:] {
-		assert.Contains(t, request.Command, workspaceGatewayServiceName(gateway))
-	}
-	retained, err := q.GetWorkspaceByRepo(ctx, db.GetWorkspaceByRepoParams{ID: workspace.ID, RepositoryID: repoID})
-	require.NoError(t, err)
-	assert.Equal(t, "owned-vm", retained.VmID)
-}
 
 func TestWorkspaceGateway_ReplacementSharesProcessLockButNotCleanupIdentity(t *testing.T) {
 	_, _, _, workspace := boundGatewayFixture(t)
-	old := clusterdb.RepoGateway{ID: uuid.NewString(), WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}}
+	old := runtimeports.RepoGateway{ID: uuid.NewString(), WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(workspace.ID), Valid: true}}
 	replacement := old
 	replacement.ID = uuid.NewString()
 	assert.Equal(t, workspaceGatewayLockPath(old), workspaceGatewayLockPath(replacement))
@@ -441,7 +286,7 @@ func TestWorkspaceGateway_ProviderBootstrapPreservesHealthyHost(t *testing.T) {
 	first, err := s.GetRepoGatewayConnectionInfo(context.Background(), input)
 	require.NoError(t, err)
 	// This capture-only fixture does not persist writes automatically.
-	q.active = &clusterdb.RepoGateway{ID: first.GatewayID, RepositoryID: w.RepositoryID, UserID: w.UserID,
+	q.active = &runtimeports.RepoGateway{ID: first.GatewayID, RepositoryID: w.RepositoryID, UserID: w.UserID,
 		WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, VmID: w.VmID,
 		AuthTokenCiphertext: "enc:" + first.Token, Status: "running"}
 	WithWorkspaceProviderBootstrap(map[string]string{"OPENAI_API_KEY": "platform-private"}, "openai:gpt-6-luna")(s.workspaces)
@@ -469,7 +314,7 @@ func TestWorkspaceGateway_RequiredCapabilityPreservesOlderLiveHost(t *testing.T)
 	input := RepoGatewayConnectionInput{RepositoryID: w.RepositoryID, UserID: w.UserID, WorkspaceID: w.ID}
 	first, err := s.GetRepoGatewayConnectionInfo(context.Background(), input)
 	require.NoError(t, err)
-	q.active = &clusterdb.RepoGateway{ID: first.GatewayID, RepositoryID: w.RepositoryID, UserID: w.UserID,
+	q.active = &runtimeports.RepoGateway{ID: first.GatewayID, RepositoryID: w.RepositoryID, UserID: w.UserID,
 		WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, VmID: w.VmID,
 		AuthTokenCiphertext: "enc:" + first.Token, Status: "running"}
 	vm.execAwaitReqs, vm.systemdSpecs = nil, nil

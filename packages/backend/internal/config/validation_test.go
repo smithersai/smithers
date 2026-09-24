@@ -81,16 +81,15 @@ func TestValidateServerStartup_Valid(t *testing.T) {
 func TestValidateServerStartupWithInjectedLocalDependencies(t *testing.T) {
 	cfg := validStartupConfig()
 	cfg.RepoHost.URL = ""
-	cfg.Sandbox.MicrosandboxControlURL = ""
 	cfg.FeatureFlags.Sandboxes = true
 	require.ErrorContains(t, ValidateServerStartup(cfg), "repo_host.url is required")
-	require.ErrorContains(t, ValidateServerStartup(cfg), "sandbox.microsandbox_control_url is required")
+	require.ErrorContains(t, ValidateServerStartup(cfg), "an injected workspace runtime or compute provider is required")
 	require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
 		InProcessRepository: true, WorkspaceRuntime: true,
 	}))
 	require.ErrorContains(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{
 		InProcessRepository: true,
-	}), "sandbox.microsandbox_control_url is required")
+	}), "an injected workspace runtime or compute provider is required")
 }
 
 func TestValidateServerStartup_RejectsUnknownAuthMode(t *testing.T) {
@@ -160,7 +159,7 @@ func TestValidateServerStartup_AgentIdleTimeoutMustBePositive(t *testing.T) {
 	}
 }
 
-func TestValidateServerStartup_SandboxBackedFeaturesRequireProviderCredentials(t *testing.T) {
+func TestValidateServerStartup_SandboxBackedFeaturesRequireInjectedExecution(t *testing.T) {
 	t.Parallel()
 
 	for _, feature := range []struct {
@@ -180,11 +179,11 @@ func TestValidateServerStartup_SandboxBackedFeaturesRequireProviderCredentials(t
 
 			err := ValidateServerStartup(cfg)
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "sandbox.microsandbox_control_url is required")
+			assert.Contains(t, err.Error(), "an injected workspace runtime or compute provider is required")
 
-			cfg.Sandbox.MicrosandboxControlURL = "https://sandbox-control.example.test"
 			cfg.Sandbox.AgentSnapshotID = "snap-agent-test"
-			require.NoError(t, ValidateServerStartup(cfg))
+			require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{ComputeProvider: true}))
+			require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{WorkspaceRuntime: true}))
 		})
 	}
 }
@@ -193,15 +192,14 @@ func TestValidateServerStartup_AgentsRequireSnapshot(t *testing.T) {
 	t.Parallel()
 	cfg := validStartupConfig()
 	cfg.FeatureFlags.Agents = true
-	cfg.Sandbox.MicrosandboxControlURL = "https://sandbox-control.example.test"
 
-	err := ValidateServerStartup(cfg)
+	err := ValidateServerStartupWithDependencies(cfg, StartupDependencies{ComputeProvider: true})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "feature_flags.agents requires sandbox.agent_snapshot_id")
 	assert.Contains(t, err.Error(), "SMITHERS_SANDBOX_AGENT_SNAPSHOT_ID")
 
 	cfg.Sandbox.AgentSnapshotID = "snap-agent-test"
-	require.NoError(t, ValidateServerStartup(cfg))
+	require.NoError(t, ValidateServerStartupWithDependencies(cfg, StartupDependencies{ComputeProvider: true}))
 }
 
 func TestValidateServerStartup_EmptySecretRejected(t *testing.T) {

@@ -1,7 +1,9 @@
 package compose
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -30,9 +32,16 @@ var browserFlowProcedures = map[string]bool{
 }
 
 type browserFlowAPI struct {
-	repos      *services.RepoService
-	workspaces *services.WorkspaceService
-	queries    *db.Queries
+	repos interface {
+		GetRepoView(context.Context, *db.User, string, string) (services.RepoView, error)
+	}
+	workspaces interface {
+		CreateWorkspace(context.Context, services.CreateWorkspaceInput) (services.WorkspaceResponse, error)
+	}
+	queries interface {
+		GetWorkspaceForUserRepo(context.Context, db.GetWorkspaceForUserRepoParams) (db.Workspace, error)
+		GetActiveWorkspaceForUserRepo(context.Context, db.GetActiveWorkspaceForUserRepoParams) (db.Workspace, error)
+	}
 	dispatcher *flowdispatch.Service
 }
 
@@ -53,12 +62,16 @@ func browserFlowRefusal(w http.ResponseWriter, status int, message string) {
 	browserFlowJSON(w, status, map[string]any{"ok": false, "error": map[string]string{"message": message}})
 }
 
-func (api *browserFlowAPI) prepare(w http.ResponseWriter, r *http.Request) (browserFlowRequest, flowruntime.Target, bool) {
+func (api *browserFlowAPI) prepare(w http.ResponseWriter, r *http.Request, provision bool) (browserFlowRequest, flowruntime.Target, bool) {
 	var request browserFlowRequest
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	if decoder.Decode(&request) != nil || !browserFlowRepo.MatchString(request.Repo) ||
 		(request.WorkspaceID != "" && !validBrowserWorkspaceID(request.WorkspaceID)) {
 		browserFlowRefusal(w, http.StatusBadRequest, "Body must name a repository and an optional canonical workspaceId.")
+		return request, flowruntime.Target{}, false
+	}
+	if !provision && !browserFlowProcedures[request.Procedure] {
+		browserFlowRefusal(w, http.StatusBadRequest, "The workflow seam does not relay this procedure.")
 		return request, flowruntime.Target{}, false
 	}
 	user := middleware.UserFromContext(r.Context())
@@ -81,6 +94,15 @@ func (api *browserFlowAPI) prepare(w http.ResponseWriter, r *http.Request) (brow
 			browserFlowRefusal(w, http.StatusNotFound, "Workspace unavailable.")
 			return request, flowruntime.Target{}, false
 		}
+	} else if request.Procedure == "List" || request.Procedure == "Projection.Snapshot" {
+		workspace, err := api.queries.GetActiveWorkspaceForUserRepo(r.Context(), db.GetActiveWorkspaceForUserRepoParams{
+			RepositoryID: view.Repository.ID, UserID: user.ID,
+		})
+		if err != nil || workspace.Status != "running" {
+			browserFlowRefusal(w, http.StatusNotFound, "Workspace unavailable.")
+			return request, flowruntime.Target{}, false
+		}
+		workspaceID = workspace.ID
 	} else {
 		workspace, err := api.workspaces.CreateWorkspace(r.Context(), services.CreateWorkspaceInput{
 			RepositoryID: view.Repository.ID, UserID: user.ID, RepoOwner: owner, RepoName: name,
@@ -105,7 +127,7 @@ func validBrowserWorkspaceID(value string) bool {
 }
 
 func (api *browserFlowAPI) provision(w http.ResponseWriter, r *http.Request) {
-	_, target, ok := api.prepare(w, r)
+	_, target, ok := api.prepare(w, r, true)
 	if !ok {
 		return
 	}
@@ -115,18 +137,19 @@ func (api *browserFlowAPI) provision(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *browserFlowAPI) rpc(w http.ResponseWriter, r *http.Request) {
-	request, target, ok := api.prepare(w, r)
+	request, target, ok := api.prepare(w, r, false)
 	if !ok {
-		return
-	}
-	if !browserFlowProcedures[request.Procedure] {
-		browserFlowRefusal(w, http.StatusBadRequest, "The workflow seam does not relay this procedure.")
 		return
 	}
 	answer, err := api.dispatcher.CallRPC(r.Context(), target, request.Procedure, request.Payload)
 	if err != nil {
 		slog.Error("browser Flow RPC unavailable", "error", err, "procedure", request.Procedure)
-		if err == pgx.ErrNoRows {
+		var failure flowruntime.Failure
+		if errors.As(err, &failure) {
+			browserFlowJSON(w, http.StatusServiceUnavailable, map[string]any{"ok": false, "error": map[string]string{
+				"code": failure.FlowRuntimeCode(), "message": "Flow host unavailable.",
+			}})
+		} else if errors.Is(err, pgx.ErrNoRows) {
 			browserFlowRefusal(w, http.StatusNotFound, "Flow host unavailable.")
 		} else {
 			browserFlowRefusal(w, http.StatusServiceUnavailable, "Flow host unavailable.")

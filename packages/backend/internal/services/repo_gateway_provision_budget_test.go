@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // withTestProvisionBudgets shortens both provisioning budgets so these tests

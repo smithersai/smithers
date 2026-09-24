@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"net/http"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
@@ -81,6 +80,10 @@ type RepositoryEndpointResolver = repository.StorageSetResolver
 // storage set. Plue owns its placement table; product repository rows do not.
 type RepositoryPlacement = services.RepoPlacementLookup
 
+// RepositoryProvisioning is the actual durable reservation contract consumed by
+// repository creation, imports, and the common recovery worker.
+type RepositoryProvisioning = services.RepositoryProvisioningStore
+
 // BlobStore is the actual product blob contract consumed by the extracted
 // services. The alias prevents a second storage model from drifting away from
 // the routes and artifact/LFS semantics. The local adapter implements signed
@@ -106,12 +109,6 @@ var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
 // AgentLogStore persists archived session transcripts through the same
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
-
-// MetricsDoer is a deployment-authenticated HTTP client for hosted metrics.
-// Local deployments leave it nil.
-type MetricsDoer interface {
-	Do(*http.Request) (*http.Response, error)
-}
 
 // Workspace aliases keep the common runtime contract independent of composition.
 type IsolationLevel = workspace.IsolationLevel

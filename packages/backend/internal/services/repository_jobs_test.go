@@ -17,7 +17,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/flowdispatch"
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
@@ -245,10 +244,10 @@ func (g *repositoryJobTestGateway) projectPending(ctx context.Context) error {
 	return nil
 }
 
-func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *deploymentdb.Queries, *RepositoryJobService, *repositoryJobTestGateway, RegisterRepositoryJobInput) {
+func repositoryJobFixture(t *testing.T) (*pgxpool.Pool, *db.Queries, *RepositoryJobService, *repositoryJobTestGateway, RegisterRepositoryJobInput) {
 	t.Helper()
 	pool := getAgentTestPool(t)
-	q := deploymentdb.New(pool)
+	q := db.New(pool)
 	uid, rid := setupTestUserAndRepo(t, pool)
 	ctx := context.Background()
 	t.Cleanup(func() {
@@ -387,7 +386,7 @@ func TestRepositoryJobSignalProjectionIgnoresReplayedAttempt(t *testing.T) {
 func TestRepositoryJobFlowDispatchProductPostgres(t *testing.T) {
 	pool := newProductTestPool(t)
 	ctx := context.Background()
-	q := deploymentdb.New(pool)
+	q := db.New(pool)
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
 	owner, repoName := "owner"+suffix, "repo"+suffix
 	var userID, repositoryID int64

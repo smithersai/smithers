@@ -165,7 +165,7 @@ type RepoService struct {
 	billing             BillingPolicy
 	ownershipTx         repoOwnershipTxManager
 	storageOperations   repositoryStorageOperationStore
-	provisioning        *postgresRepositoryProvisioningStore
+	provisioning        RepositoryProvisioningStore
 	provisioner         repoHostProvisioningClient
 	provisioningEnabled bool
 	productOnly         bool
@@ -437,6 +437,12 @@ func NewProductRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, pool *pgxpo
 	return s
 }
 
+// WithRepoProvisioningStore injects the deployment journal. A staged host with
+// no journal refuses creates rather than running an unjournaled fallback.
+func WithRepoProvisioningStore(store RepositoryProvisioningStore) RepoServiceOption {
+	return func(s *RepoService) { s.provisioning = store }
+}
+
 // NewRepoServiceWithPool returns a RepoService whose ownership-sensitive
 // writes (transfer, delete, settings update) run inside a per-repository
 // advisory-locked transaction, so concurrent transfers serialize and stale
@@ -447,7 +453,6 @@ func NewRepoServiceWithPool(q RepoQuerier, rh RepoHostClient, activeStorageSet s
 		s.ownershipTx = &pgxRepoOwnershipTxManager{pool: pool}
 		s.storageOperations = newPostgresRepositoryStorageOperationStore(pool)
 		if provisioner, ok := rh.(repoHostProvisioningClient); ok {
-			s.provisioning = newPostgresRepositoryProvisioningStore(pool)
 			s.provisioner = provisioner
 		}
 	}
@@ -826,8 +831,8 @@ func (s *RepoService) CreateRepo(
 		_ = s.dispatchRepositoryEvent(ctx, repository, user, webhooks.EventTypeCreate, "created")
 		return repository, nil
 	}
-	if s.provisioning != nil && s.provisioner != nil {
-		if !s.provisioningEnabled {
+	if s.provisioner != nil {
+		if s.provisioning == nil || !s.provisioningEnabled {
 			return db.Repository{}, repositoryProvisioningRolloutError()
 		}
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
@@ -986,8 +991,8 @@ func (s *RepoService) CreateOrgRepo(
 		_ = s.dispatchRepositoryEvent(ctx, repository, actor, webhooks.EventTypeCreate, "created")
 		return repository, nil
 	}
-	if s.provisioning != nil && s.provisioner != nil {
-		if !s.provisioningEnabled {
+	if s.provisioner != nil {
+		if s.provisioning == nil || !s.provisioningEnabled {
 			return db.Repository{}, repositoryProvisioningRolloutError()
 		}
 		staged, prepareErr := s.provisioner.PrepareStagedInit(
@@ -1170,8 +1175,8 @@ func (s *RepoService) ForkRepo(ctx context.Context, actor *db.User, owner, repo 
 		_ = s.dispatchRepositoryEvent(ctx, repository, actor, webhooks.EventTypeCreate, "created")
 		return ForkOutcome{Repository: repository, Created: true}, nil
 	}
-	if s.provisioning != nil && s.provisioner != nil {
-		if !s.provisioningEnabled {
+	if s.provisioner != nil {
+		if s.provisioning == nil || !s.provisioningEnabled {
 			return ForkOutcome{}, repositoryProvisioningRolloutError()
 		}
 		if s.placementResolver == nil {

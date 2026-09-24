@@ -71,6 +71,7 @@ const (
 	CodeForbidden             Code = "forbidden"
 	CodeNotFound              Code = "not_found"
 	CodeConflict              Code = "conflict"
+	CodeSetupRequestReused    Code = "setup_request_reused"
 	CodeRequestEntityTooLarge Code = "request_entity_too_large"
 	CodeUnsupportedMediaType  Code = "unsupported_media_type"
 	CodeUnprocessableEntity   Code = "unprocessable_entity"
@@ -157,6 +158,7 @@ const (
 	CodeCodingFileConflict            Code = "coding_file_conflict"
 	CodeCodingFileRecoveryRequired    Code = "coding_file_recovery_required"
 	CodeCodingHostUpgradeRequired     Code = "coding_host_upgrade_required"
+	CodeWorkspaceSSHUserInvalid       Code = "workspace_ssh_user_invalid"
 	CodeWorkspaceVMMissing            Code = "workspace_vm_missing"
 	CodeRepositoryWorkspacePending    Code = "repository_workspace_pending"
 )
@@ -290,7 +292,8 @@ var registry = map[Code]Entry{
 	// it does.
 	CodeNotFound: {Status: http.StatusNotFound, Fault: FaultUser, RetryAfter: 0, Doc: "The addressed resource does not exist, or the caller may not see that it does."},
 	// The resource is in a state that refuses this operation right now.
-	CodeConflict: {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "The resource is in a state that refuses this operation right now."},
+	CodeSetupRequestReused: {Status: http.StatusConflict, Fault: FaultInfra, RetryAfter: 0, Doc: "The setup request identity was already admitted with different input."},
+	CodeConflict:           {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "The resource is in a state that refuses this operation right now."},
 	// The request body is larger than the endpoint accepts.
 	CodeRequestEntityTooLarge: {Status: http.StatusRequestEntityTooLarge, Fault: FaultUser, RetryAfter: 0, Doc: "The request body is larger than the endpoint accepts."},
 	// The request's Content-Type is not one this endpoint reads.
@@ -443,6 +446,7 @@ var registry = map[Code]Entry{
 	CodeCodingFileConflict:            {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "A file preimage, installed file or native snapshot changed during application. Displaced bytes remain in the private recovery directory; no rollback overwrites newer content."},
 	CodeCodingFileRecoveryRequired:    {Status: http.StatusConflict, Fault: FaultUser, RetryAfter: 0, Doc: "File installation was interrupted or could not safely finish. Inspect the retained preimages and proposed files before replanning; details contain the recovery receipt."},
 	CodeCodingHostUpgradeRequired:     {Status: http.StatusConflict, Fault: FaultInfra, RetryAfter: 0, Doc: "The existing live host lacks the requested capability. Existing runs and streams are preserved; initial setup may select a dedicated compatible workspace, while established bindings remain explicit."},
+	CodeWorkspaceSSHUserInvalid:       {Status: http.StatusBadRequest, Fault: FaultUser, RetryAfter: 0, Doc: "The requested workspace SSH user is not offered; ask for the workspace user or root."},
 	CodeWorkspaceVMMissing:            {Status: http.StatusConflict, Fault: FaultInfra, RetryAfter: 0, Doc: "The recorded workspace VM no longer exists. An unbound setup may select another compatible workspace within quota; established bindings remain explicit."},
 	CodeRepositoryWorkspacePending:    {Status: http.StatusConflict, Fault: FaultWait, RetryAfter: 2, Doc: "The repository workspace or gateway is still starting. Poll the same request; an unverified primary is not an authoritative workspace selection."},
 	// The guest refused the coding request as malformed.

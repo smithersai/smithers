@@ -3,25 +3,25 @@ package compose
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
-func TestInitializeAgentLogStore_MemoryWithoutGCSClient(t *testing.T) {
-	store := initializeAgentLogStore(nil, config.BlobConfig{GCSBucket: "smithers-blobs"})
-	_, isMemory := store.(*blob.MemoryAgentLogStore)
-	assert.True(t, isMemory, "no GCS client must fall back to the in-memory store")
+func TestSelectAgentLogStore_RequiresAdapterForInjectedBlobs(t *testing.T) {
+	store, err := selectAgentLogStore(blob.NewMemoryStore(), nil)
+	require.ErrorContains(t, err, "requires an injected agent-log adapter")
+	require.Nil(t, store)
 }
-
-func TestInitializeAgentLogStore_FilesystemWithoutGCSClient(t *testing.T) {
-	filesystem, err := blob.NewFilesystemStore(blob.FilesystemConfig{
-		Root: t.TempDir(), PublicBaseURL: "https://smithers.test", SigningKey: make([]byte, 32),
-	})
+func TestSelectAgentLogStore_PreservesInjectedAdapter(t *testing.T) {
+	provided := blob.NewMemoryAgentLogStore()
+	store, err := selectAgentLogStore(blob.NewMemoryStore(), provided)
 	require.NoError(t, err)
-	store := initializeAgentLogStore(nil, config.BlobConfig{}, filesystem)
-	_, ok := store.(*blob.FilesystemAgentLogStore)
-	assert.True(t, ok)
+	require.Same(t, provided, store)
+}
+func TestSelectAgentLogStore_DurableFilesystem(t *testing.T) {
+	filesystem, err := blob.NewFilesystemStore(blob.FilesystemConfig{Root: t.TempDir(), PublicBaseURL: "https://smithers.test", SigningKey: make([]byte, 32)})
+	require.NoError(t, err)
+	store, err := selectAgentLogStore(filesystem, nil)
+	require.NoError(t, err)
+	require.IsType(t, &blob.FilesystemAgentLogStore{}, store)
 }

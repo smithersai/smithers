@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	sandbox "github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	sandbox "github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // workspaceRaceMetricsRecorder captures active-VM gauge deltas for the

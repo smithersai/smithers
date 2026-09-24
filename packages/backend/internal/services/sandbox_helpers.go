@@ -14,7 +14,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // SandboxVMClient is the minimal sandbox provider VM API surface used by services.
@@ -146,6 +146,7 @@ func issueTemporaryRepoTokenWithTTL(ctx context.Context, store accessTokenStore,
 		Name:           name,
 		TokenHash:      tokenHash,
 		TokenLastEight: tokenLastEight,
+		SystemIssued:   true,
 		Scopes:         scopes,
 		ExpiresAt:      pgtype.Timestamptz{Time: expiresAt, Valid: true},
 	})

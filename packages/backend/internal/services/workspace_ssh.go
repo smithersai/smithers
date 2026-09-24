@@ -10,11 +10,39 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // GetWorkspaceSSHConnectionInfo returns tokenized SSH connection details for a workspace.
 func (s *WorkspaceService) GetWorkspaceSSHConnectionInfo(ctx context.Context, workspaceID string, repositoryID, userID int64) (WorkspaceSSHConnectionInfo, error) {
+	return s.GetWorkspaceSSHConnectionInfoAs(ctx, workspaceID, repositoryID, userID, "")
+}
+
+// workspaceRootSSHUser is the second guest user every workspace offers over
+// SSH, so a user can install packages or write outside the home directory
+// without a sudo binary in the image.
+const workspaceRootSSHUser = "root"
+
+// resolveWorkspaceSSHUser maps the requested guest user onto the two users a
+// workspace offers: the configured workspace user (the default) and root.
+func (s *WorkspaceService) resolveWorkspaceSSHUser(requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	switch requested {
+	case "", s.workspaceSSHUsername:
+		return s.workspaceSSHUsername, nil
+	case workspaceRootSSHUser:
+		return workspaceRootSSHUser, nil
+	}
+	return "", pkgerrors.New(pkgerrors.CodeWorkspaceSSHUserInvalid, fmt.Sprintf("workspace ssh user %q is not offered; use %q or %q", requested, s.workspaceSSHUsername, workspaceRootSSHUser))
+}
+
+// GetWorkspaceSSHConnectionInfoAs is GetWorkspaceSSHConnectionInfo for a
+// chosen guest user; the minted grant allows only that user.
+func (s *WorkspaceService) GetWorkspaceSSHConnectionInfoAs(ctx context.Context, workspaceID string, repositoryID, userID int64, guestUser string) (WorkspaceSSHConnectionInfo, error) {
+	guestUser, err := s.resolveWorkspaceSSHUser(guestUser)
+	if err != nil {
+		return WorkspaceSSHConnectionInfo{}, err
+	}
 	if s.q == nil {
 		return WorkspaceSSHConnectionInfo{}, pkgerrors.Internal("workspace store unavailable")
 	}
@@ -35,7 +63,7 @@ func (s *WorkspaceService) GetWorkspaceSSHConnectionInfo(ctx context.Context, wo
 		return WorkspaceSSHConnectionInfo{}, err
 	}
 
-	info, err := s.buildWorkspaceSSHConnectionInfo(ctx, workspace)
+	info, err := s.buildWorkspaceSSHConnectionInfoAs(ctx, workspace, guestUser)
 	if err != nil {
 		return WorkspaceSSHConnectionInfo{}, err
 	}
@@ -177,6 +205,12 @@ func (s *WorkspaceService) waitForWorkspaceGuestActivation(ctx context.Context, 
 }
 
 func (s *WorkspaceService) buildWorkspaceSSHConnectionInfo(ctx context.Context, workspace db.Workspace) (WorkspaceSSHConnectionInfo, error) {
+	return s.buildWorkspaceSSHConnectionInfoAs(ctx, workspace, s.workspaceSSHUsername)
+}
+
+// buildWorkspaceSSHConnectionInfoAs mints a grant bound to guestUser and
+// returns the connection details for it.
+func (s *WorkspaceService) buildWorkspaceSSHConnectionInfoAs(ctx context.Context, workspace db.Workspace, guestUser string) (WorkspaceSSHConnectionInfo, error) {
 	var (
 		identity sandbox.Identity
 		err      error
@@ -190,8 +224,8 @@ func (s *WorkspaceService) buildWorkspaceSSHConnectionInfo(ctx context.Context, 
 		return WorkspaceSSHConnectionInfo{}, pkgerrors.Internal("create sandbox access identity: " + err.Error())
 	}
 	grantReq := sandbox.GrantAccessRequest{}
-	if s.workspaceSSHUsername != "" && s.workspaceSSHUsername != "root" {
-		grantReq.AllowedUsers = []string{s.workspaceSSHUsername}
+	if guestUser != "" {
+		grantReq.AllowedUsers = []string{guestUser}
 	}
 	if _, err := s.sandbox.GrantAccess(ctx, identity.ID, workspace.VmID, grantReq); err != nil {
 		return WorkspaceSSHConnectionInfo{}, pkgerrors.Internal("grant sandbox ssh permission: " + err.Error())
@@ -202,7 +236,7 @@ func (s *WorkspaceService) buildWorkspaceSSHConnectionInfo(ctx context.Context, 
 	}
 
 	publicHost, dialHost, hostKeyLoader := s.workspaceSSHEndpoint()
-	sshHost := fmt.Sprintf("%s+%s@%s", workspace.VmID, s.workspaceSSHUsername, publicHost)
+	sshHost := fmt.Sprintf("%s+%s@%s", workspace.VmID, guestUser, publicHost)
 
 	hostKeys, err := s.loadAdvertisedHostKeys(hostKeyLoader)
 	if err != nil {
@@ -219,11 +253,11 @@ func (s *WorkspaceService) buildWorkspaceSSHConnectionInfo(ctx context.Context, 
 		Host:        publicHost,
 		DialHost:    dialHost,
 		SSHHost:     sshHost,
-		Username:    s.workspaceSSHUsername,
+		Username:    guestUser,
 		Port:        22,
 		Workdir:     defaultWorkspaceClonePath,
 		AccessToken: createdToken.Token,
-		Command:     fmt.Sprintf("ssh %s+%s:%s@%s", workspace.VmID, s.workspaceSSHUsername, createdToken.Token, publicHost),
+		Command:     fmt.Sprintf("ssh %s+%s:%s@%s", workspace.VmID, guestUser, createdToken.Token, publicHost),
 		HostKeys:    hostKeys,
 	}, nil
 }

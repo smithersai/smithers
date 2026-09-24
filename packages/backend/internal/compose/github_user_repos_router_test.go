@@ -73,41 +73,32 @@ func githubUserReposSecurityRouter(service routes.GitHubUserReposRouteService) h
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.PairSessionHandler{},
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminSystemStatusHandler
-		nil, // adminSystemCanariesHandler
-		nil, // adminSystemIncidentsHandler
-		nil, // adminSystemMetricsHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // providerConnectionHandler
-		nil, // variableHandler
-		nil, // billingHandler
-		nil, // protectedBookmarkHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // approvalsHandler
-		nil, // branchLockHandler
-		nil, // pushHookHandler
-		nil, // canaryReportHandler
-		nil, // workflowHandler
-		nil, // workflowCacheHandler
-		nil, // workflowArtifactHandler
-		nil, // issueEventHandler
+		nil,                          // notificationHandler
+		&routes.PairSessionHandler{}, // adminRunnerHandler
+		nil,                          // adminUserHandler
+		nil,                          // adminOrgHandler
+		nil,                          // adminSystemMetricsHandler
+		nil,                          // adminGitHubAppHandler
+		nil,                          // adminAuditHandler
+		nil,                          // webhookHandler
+		nil,                          // secretHandler
+		nil,                          // providerConnectionHandler
+		nil,                          // variableHandler
+		nil,                          // billingHandler
+		nil,                          // protectedBookmarkHandler
+		nil,                          // commitStatusHandler
+		nil,                          // lfsHandler
+		nil,                          // jjVCSHandler
+		nil,                          // agentInternalHandler
+		nil,                          // agentSessionHandler
+		nil,                          // agentSessionStreamHandler
+		nil,                          // approvalsHandler
+		nil,                          // branchLockHandler
+		nil,                          // canaryReportHandler
+		nil,                          // workflowHandler
+		nil,                          // workflowCacheHandler
+		nil,                          // workflowArtifactHandler
+		nil,                          // issueEventHandler
 		&routes.WorkspaceHandler{},
 		nil, // workspaceInternalHandler
 		nil, // repoGatewayHandler

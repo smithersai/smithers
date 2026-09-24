@@ -41,14 +41,7 @@ var allEnvKeys = []string{
 	"SMITHERS_PUSH_HOOK_CALLBACK_TOKEN",
 	// Sandbox
 	"SMITHERS_SANDBOX_PROVIDER",
-	"SMITHERS_MICROSANDBOX_CONTROL_URL",
-	"SMITHERS_MICROSANDBOX_API_KEY",
-	"SMITHERS_MICROSANDBOX_DEFAULT_IMAGE",
 	"SMITHERS_GOLDEN_SNAPSHOTS_ENABLED",
-	"SMITHERS_MICROSANDBOX_CLIENT_CERT_FILE",
-	"SMITHERS_MICROSANDBOX_CLIENT_KEY_FILE",
-	"SMITHERS_MICROSANDBOX_CA_FILE",
-	"SMITHERS_MICROSANDBOX_SERVER_NAME",
 	"SMITHERS_SANDBOX_AGENT_SNAPSHOT_ID",
 	"SMITHERS_GATEWAY_AGENT_CEREBRAS_API_KEY",
 	"SMITHERS_GATEWAY_AGENT_OPENROUTER_API_KEY",
@@ -146,12 +139,10 @@ var allEnvKeys = []string{
 	"SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL",
 	"SMITHERS_CLEANUP_SANDBOX_EGRESS_AUDIT_RETENTION_DAYS",
 	// Blob
-	"SMITHERS_BLOB_GCS_BUCKET",
 	"SMITHERS_BLOB_DATA_DIR",
 	"SMITHERS_BLOB_TRANSFER_SIGNING_KEY",
 	"SMITHERS_BLOB_MAX_BYTES",
 	"SMITHERS_BLOB_RESERVE_BYTES",
-	"SMITHERS_BLOB_GCS_PROJECT",
 	"SMITHERS_BLOB_SIGNED_URL_EXPIRY",
 	"SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX",
 	"SMITHERS_BLOB_WORKFLOW_CACHE_TTL",
@@ -161,10 +152,8 @@ var allEnvKeys = []string{
 	// Observability
 	"SMITHERS_LOG_LEVEL",
 	"SMITHERS_TRACE_SAMPLE_RATE",
-	"SMITHERS_CLOUD_TRACE_PROJECT_ID",
 	"SMITHERS_OTEL_EXPORTER",
 	"SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT",
-	"SMITHERS_METRICS_PROJECT_ID",
 	// Email
 	"SMITHERS_EMAIL_SMTP_HOST",
 	"SMITHERS_EMAIL_SMTP_PORT",
@@ -485,8 +474,6 @@ func TestLoad_BlobConfigDefaults(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 
-	assert.Equal(t, "", cfg.Blob.GCSBucket, "blob.gcs_bucket should default to empty string")
-	assert.Equal(t, "", cfg.Blob.GCSProject, "blob.gcs_project should default to empty string")
 	assert.Equal(t, "5m", cfg.Blob.SignedURLExpiry, "blob.signed_url_expiry should default to 5m")
 	assert.Equal(t, "workflow-cache", cfg.Blob.WorkflowCachePrefix, "blob.workflow_cache_prefix should default to workflow-cache")
 	assert.Equal(t, "168h", cfg.Blob.WorkflowCacheTTL, "blob.workflow_cache_ttl should default to 168h")
@@ -494,16 +481,14 @@ func TestLoad_BlobConfigDefaults(t *testing.T) {
 	assert.Equal(t, int64(1024*1024*1024), cfg.Blob.WorkflowCacheArchiveMaxBytes, "blob.workflow_cache_archive_max_bytes should default to 1 GiB")
 }
 
-// TestLoad_BlobConfigEnvOverrides verifies cluster and local adapter settings
+// TestLoad_BlobConfigEnvOverrides verifies local adapter settings
 // override their defaults.
 func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	clearConfigEnv(t)
-	t.Setenv("SMITHERS_BLOB_GCS_BUCKET", "smithers-blobs")
 	t.Setenv("SMITHERS_BLOB_DATA_DIR", "/var/lib/smithers/blobs")
 	t.Setenv("SMITHERS_BLOB_TRANSFER_SIGNING_KEY", "01234567890123456789012345678901")
 	t.Setenv("SMITHERS_BLOB_MAX_BYTES", "987654")
 	t.Setenv("SMITHERS_BLOB_RESERVE_BYTES", "456789")
-	t.Setenv("SMITHERS_BLOB_GCS_PROJECT", "smithers-prod")
 	t.Setenv("SMITHERS_BLOB_SIGNED_URL_EXPIRY", "15m")
 	t.Setenv("SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX", "wf-cache")
 	t.Setenv("SMITHERS_BLOB_WORKFLOW_CACHE_TTL", "24h")
@@ -513,17 +498,26 @@ func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	cfg, err := Load("")
 	require.NoError(t, err)
 
-	assert.Equal(t, "smithers-blobs", cfg.Blob.GCSBucket)
 	assert.Equal(t, "/var/lib/smithers/blobs", cfg.Blob.DataDir)
 	assert.Equal(t, "01234567890123456789012345678901", cfg.Blob.TransferSigningKey)
 	assert.Equal(t, int64(987654), cfg.Blob.MaxBytes)
 	assert.Equal(t, int64(456789), cfg.Blob.ReserveBytes)
-	assert.Equal(t, "smithers-prod", cfg.Blob.GCSProject)
 	assert.Equal(t, "15m", cfg.Blob.SignedURLExpiry)
 	assert.Equal(t, "wf-cache", cfg.Blob.WorkflowCachePrefix)
 	assert.Equal(t, "24h", cfg.Blob.WorkflowCacheTTL)
 	assert.Equal(t, int64(123456), cfg.Blob.WorkflowCacheRepoQuotaBytes)
 	assert.Equal(t, int64(654321), cfg.Blob.WorkflowCacheArchiveMaxBytes)
+}
+
+func TestLoad_CloudBlobSettingsDoNotConfigureProductStorage(t *testing.T) {
+	clearConfigEnv(t)
+	before, err := Load("")
+	require.NoError(t, err)
+	t.Setenv("SMITHERS_BLOB_GCS_BUCKET", "private-bucket")
+	t.Setenv("SMITHERS_BLOB_GCS_PROJECT", "private-project")
+	after, err := Load("")
+	require.NoError(t, err)
+	require.Equal(t, before.Blob, after.Blob)
 }
 
 func TestLoad_ObservabilityConfigDefaults(t *testing.T) {
@@ -533,75 +527,24 @@ func TestLoad_ObservabilityConfigDefaults(t *testing.T) {
 
 	assert.Equal(t, "info", cfg.Observability.LogLevel, "observability.log_level should default to 'info'")
 	assert.Equal(t, 0.01, cfg.Observability.TraceSampleRate, "observability.trace_sample_rate should default to 0.01")
-	assert.Equal(t, "", cfg.Observability.CloudTraceProjectID, "observability.cloud_trace_project_id should default to empty string")
 	assert.Equal(t, "none", cfg.Observability.OTelExporter, "observability.otel_exporter should default to none")
 	assert.Equal(t, "", cfg.Observability.OTLPEndpoint, "observability.otlp_endpoint should default to empty string")
-	assert.Equal(t, "", cfg.Observability.MetricsProjectID, "observability.metrics_project_id should default to empty string")
 }
 
 func TestLoad_ObservabilityConfigEnvOverrides(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("SMITHERS_LOG_LEVEL", "debug")
 	t.Setenv("SMITHERS_TRACE_SAMPLE_RATE", "1.0")
-	t.Setenv("SMITHERS_CLOUD_TRACE_PROJECT_ID", "smithers-observability-dev")
 	t.Setenv("SMITHERS_OTEL_EXPORTER", "otlp")
 	t.Setenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
-	t.Setenv("SMITHERS_METRICS_PROJECT_ID", "smithers-metrics-dev")
 
 	cfg, err := Load("")
 	require.NoError(t, err)
 
 	assert.Equal(t, "debug", cfg.Observability.LogLevel)
 	assert.Equal(t, 1.0, cfg.Observability.TraceSampleRate)
-	assert.Equal(t, "smithers-observability-dev", cfg.Observability.CloudTraceProjectID)
 	assert.Equal(t, "otlp", cfg.Observability.OTelExporter)
 	assert.Equal(t, "http://collector:4318", cfg.Observability.OTLPEndpoint)
-	assert.Equal(t, "smithers-metrics-dev", cfg.Observability.MetricsProjectID)
-}
-
-// TestConfig_MetricsQueryProjectID documents the project resolution order the
-// admin metrics query endpoint uses: the dedicated setting first, then the
-// deployment project Terraform already injects for blob storage, then empty
-// (endpoint disabled).
-func TestConfig_MetricsQueryProjectID(t *testing.T) {
-	tests := []struct {
-		name           string
-		metricsProject string
-		blobProject    string
-		want           string
-	}{
-		{
-			name:           "dedicated setting wins",
-			metricsProject: "metrics-project",
-			blobProject:    "blob-project",
-			want:           "metrics-project",
-		},
-		{
-			name:        "falls back to the blob project",
-			blobProject: "blob-project",
-			want:        "blob-project",
-		},
-		{
-			name:           "whitespace is not a project",
-			metricsProject: "   ",
-			blobProject:    "  blob-project  ",
-			want:           "blob-project",
-		},
-		{
-			name: "unset disables the endpoint",
-			want: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{}
-			cfg.Observability.MetricsProjectID = tt.metricsProject
-			cfg.Blob.GCSProject = tt.blobProject
-
-			assert.Equal(t, tt.want, cfg.MetricsQueryProjectID())
-		})
-	}
 }
 
 // TestLoad_AuthConfigDefaultsAndEnvOverrides is the original auth test, now using
@@ -775,7 +718,6 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			AuthToken: "",
 		},
 		Sandbox: SandboxConfig{
-			Provider:               "microsandbox",
 			GoldenSnapshotsEnabled: true,
 			AgentSnapshotID:        "",
 			AgentMemoryMB:          3072,
@@ -865,10 +807,8 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			SandboxEgressAuditRetentionDays: 30,
 		},
 		Blob: BlobConfig{
-			GCSBucket:                    "",
 			DataDir:                      "./data/blobs",
 			ReserveBytes:                 256 * 1024 * 1024,
-			GCSProject:                   "",
 			SignedURLExpiry:              "5m",
 			WorkflowCachePrefix:          "workflow-cache",
 			WorkflowCacheTTL:             "168h",
@@ -877,11 +817,10 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			BuildCacheArtifactMaxBytes:   16 * 1024 * 1024,
 		},
 		Observability: ObservabilityConfig{
-			LogLevel:            "info",
-			TraceSampleRate:     0.01,
-			CloudTraceProjectID: "",
-			OTelExporter:        "none",
-			OTLPEndpoint:        "",
+			LogLevel:        "info",
+			TraceSampleRate: 0.01,
+			OTelExporter:    "none",
+			OTLPEndpoint:    "",
 		},
 		Email: EmailConfig{
 			SMTPHost:                   "",
@@ -1371,18 +1310,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 		},
 		// Blob
 		{
-			envKey: "SMITHERS_BLOB_GCS_BUCKET", envValue: "my-custom-bucket",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "my-custom-bucket", cfg.Blob.GCSBucket)
-			},
-		},
-		{
-			envKey: "SMITHERS_BLOB_GCS_PROJECT", envValue: "my-gcp-project",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "my-gcp-project", cfg.Blob.GCSProject)
-			},
-		},
-		{
 			envKey: "SMITHERS_BLOB_SIGNED_URL_EXPIRY", envValue: "9m",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "9m", cfg.Blob.SignedURLExpiry)
@@ -1420,12 +1347,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			},
 		},
 		{
-			envKey: "SMITHERS_CLOUD_TRACE_PROJECT_ID", envValue: "test-gcp-project",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "test-gcp-project", cfg.Observability.CloudTraceProjectID)
-			},
-		},
-		{
 			envKey: "SMITHERS_OTEL_EXPORTER", envValue: "otlp",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "otlp", cfg.Observability.OTelExporter)
@@ -1441,13 +1362,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			envKey: "SMITHERS_LOG_LEVEL", envValue: "debug",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "debug", cfg.Observability.LogLevel)
-			},
-		},
-		{
-			envKey: "SMITHERS_METRICS_PROJECT_ID", envValue: "metrics-gcp-project",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "metrics-gcp-project", cfg.Observability.MetricsProjectID)
-				assert.Equal(t, "metrics-gcp-project", cfg.MetricsQueryProjectID())
 			},
 		},
 		// Email
@@ -1627,15 +1541,11 @@ func TestLoad_ConfigStructFieldCount(t *testing.T) {
 	assert.NotEmpty(t, cfg.Auth.SessionDuration, "Auth section present")
 	assert.NotEmpty(t, cfg.Cleanup.AuthInterval, "Cleanup section present")
 	// Blob defaults to empty strings, so we verify it's accessible
-	_ = cfg.Blob.GCSBucket
-	_ = cfg.Blob.GCSProject
 	// Observability checks
 	_ = cfg.Observability.LogLevel
 	_ = cfg.Observability.TraceSampleRate
-	_ = cfg.Observability.CloudTraceProjectID
 	_ = cfg.Observability.OTelExporter
 	_ = cfg.Observability.OTLPEndpoint
-	_ = cfg.Observability.MetricsProjectID
 	// Email checks
 	assert.Equal(t, 587, cfg.Email.SMTPPort, "Email section present")
 	assert.Equal(t, "noreply@smithers.sh", cfg.Email.SMTPFrom, "Email default from")

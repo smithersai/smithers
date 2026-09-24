@@ -35,11 +35,11 @@ func NewProductDatabase(t *testing.T, raw string) (*pgxpool.Pool, string) {
 		t.Fatal(err)
 	}
 	name := "smithers_product_" + hex.EncodeToString(suffix[:])
-	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`"`); err != nil {
+	if _, err := admin.Exec(ctx, `CREATE DATABASE "`+name+`" TEMPLATE template0 ENCODING 'UTF8'`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		closeCtx, closeCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer closeCancel()
 		if _, err := admin.Exec(closeCtx, `DROP DATABASE "`+name+`" WITH (FORCE)`); err != nil {
 			t.Errorf("drop product test database: %v", err)

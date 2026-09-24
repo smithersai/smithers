@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "digest": "sha256:3369fd6c63afd7d41bbb5d73050556eadf1ee511eb93d6632a47f4e6c62e3f96",
+  "digest": "sha256:f899a3de17ca0c051aa16f7126d94dd9a2cdd980a5456633905879e72c013703",
   "faults": [
     "user",
     "wait",
@@ -703,6 +703,13 @@
       "doc": "plue is up but a component it needs is not answering."
     },
     {
+      "code": "setup_request_reused",
+      "fault": "infra",
+      "status": 409,
+      "retry_after": 0,
+      "doc": "The setup request identity was already admitted with different input."
+    },
+    {
       "code": "snapshot_in_use",
       "fault": "user",
       "status": 409,
@@ -876,6 +883,13 @@
       "status": 503,
       "retry_after": 0,
       "doc": "plue could not verify the box's native source."
+    },
+    {
+      "code": "workspace_ssh_user_invalid",
+      "fault": "user",
+      "status": 400,
+      "retry_after": 0,
+      "doc": "The requested workspace SSH user is not offered; ask for the workspace user or root."
     },
     {
       "code": "workspace_vm_missing",

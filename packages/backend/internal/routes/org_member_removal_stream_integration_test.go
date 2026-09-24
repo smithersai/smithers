@@ -21,7 +21,6 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/deploymentdb"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
@@ -106,7 +105,7 @@ func TestOrgMemberRemoval_EndsPrivateRepositoryStream(t *testing.T) {
 	SetRevocationSource(bus)
 	t.Cleanup(func() { SetRevocationSource(previous) })
 
-	agentService := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(deploymentdb.New(pool)))
+	agentService := services.NewAgentServiceWithPool(queries, pool, services.WithAgentDispatchQuerier(queries))
 	server, _ := setupRoutesIntegrationServer(t, queries, routesIntegrationServerOptions{
 		agentSessionStreamService: agentService,
 		agentSessionStreamPool:    pool,

@@ -340,13 +340,14 @@ func loadTokenAuthByHash(ctx context.Context, queries AuthLoaderQuerier, tokenHa
 	}
 
 	return &AuthInfo{
-		User:        &user,
-		TokenID:     authRow.TokenID,
-		TokenHash:   tokenHash,
-		RawScopes:   authRow.TokenScopes,
-		Scopes:      ParseTokenScopes(authRow.TokenScopes),
-		IsTokenAuth: true,
-		TokenSource: TokenSourcePersonalAccessToken,
+		User:              &user,
+		TokenID:           authRow.TokenID,
+		TokenSystemIssued: authRow.TokenSystemIssued,
+		TokenHash:         tokenHash,
+		RawScopes:         authRow.TokenScopes,
+		Scopes:            ParseTokenScopes(authRow.TokenScopes),
+		IsTokenAuth:       true,
+		TokenSource:       TokenSourcePersonalAccessToken,
 	}, nil
 }
 

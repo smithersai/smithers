@@ -9,12 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
@@ -44,7 +45,7 @@ type mockWorkflowRunQuerier struct {
 	resumeTasksFn                 func(ctx context.Context, workflowRunID int64) error
 	resumeStepsFn                 func(ctx context.Context, workflowRunID int64) error
 	notifyRunFn                   func(ctx context.Context, arg db.NotifyWorkflowRunEventParams) error
-	bindAlertRunFn                func(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
+	bindAlertRunFn                func(ctx context.Context, arg runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error)
 	getBookmarkCommitFn           func(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error)
 
 	createRunCalls      []db.CreateWorkflowRunParams
@@ -62,7 +63,7 @@ type mockWorkflowRunQuerier struct {
 	resumeStepsCalls    []int64
 	listDefsCount       int
 	getDefCount         int
-	bindAlertRunCalls   []clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams
+	bindAlertRunCalls   []runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams
 }
 
 func (m *mockWorkflowRunQuerier) GetRepositoryBookmarkCommitID(ctx context.Context, arg db.GetRepositoryBookmarkCommitIDParams) (string, error) {
@@ -144,7 +145,7 @@ func (m *mockWorkflowRunQuerier) CreateWorkflowRun(ctx context.Context, arg db.C
 	}, nil
 }
 
-func (m *mockWorkflowRunQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
+func (m *mockWorkflowRunQuerier) BindAlertRemediationJobWorkflowRunAtAttempt(ctx context.Context, arg runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
 	m.bindAlertRunCalls = append(m.bindAlertRunCalls, arg)
 	if m.bindAlertRunFn != nil {
 		return m.bindAlertRunFn(ctx, arg)
@@ -625,7 +626,7 @@ func TestWorkflowRunService_AlertRemediationBindingFailureAbortsRowCreation(t *t
 		getDefFn: func(_ context.Context, _ db.GetWorkflowDefinitionParams) (db.WorkflowDefinition, error) {
 			return makeWorkflowDef(definitionID, 42, "remediate", true, `{"on":{"webhook":{"event":"monitoring_alert"}},"jobs":{"fix":{}}}`), nil
 		},
-		bindAlertRunFn: func(context.Context, clusterdb.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
+		bindAlertRunFn: func(context.Context, runtimeports.BindAlertRemediationJobWorkflowRunAtAttemptParams) (int64, error) {
 			return 0, nil
 		},
 	}
@@ -2069,7 +2070,7 @@ func (q *txBeginErrWorkflowRunQuerier) BeginTx(context.Context) (pgx.Tx, error) 
 	return nil, errors.New("begin tx unavailable")
 }
 
-func (q *txBeginErrWorkflowRunQuerier) WithTx(pgx.Tx) *db.Queries {
+func (q *txBeginErrWorkflowRunQuerier) RebindWorkflowRunQueries(pgx.Tx) WorkflowRunQuerier {
 	panic("WithTx must not be called when BeginTx fails")
 }
 

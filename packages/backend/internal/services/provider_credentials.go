@@ -3,7 +3,7 @@ package services
 import (
 	"strings"
 
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // AgentProviderCredentialEnvNames are the AI-provider credential environment

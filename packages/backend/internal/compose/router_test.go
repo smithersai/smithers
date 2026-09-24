@@ -17,12 +17,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterservices"
 	"github.com/smithersai/smithers/packages/backend/internal/config"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -45,12 +42,6 @@ type mockRouterGitService struct {
 type mockRouterSearchService struct{}
 
 type mockRouterAuthService struct{}
-type mockRouterRunnerService struct {
-	lastCompleteInput *clusterservices.RunnerCompleteTaskInput
-	lastClaimRunnerID int64
-	lastHeartbeatID   int64
-	lastTerminateID   int64
-}
 type mockRouterRepoService struct {
 	getRepoCalls  int
 	forkRepoCalls int
@@ -61,34 +52,6 @@ type mockRouterRepoGatewayService struct {
 type mockRouterCommitStatusService struct {
 	listCommitStatusesFn func(ctx context.Context, repositoryID int64, ref string, page, perPage int) ([]db.CommitStatus, int64, error)
 	createCommitStatusFn func(ctx context.Context, repositoryID int64, sha string, input services.CreateCommitStatusInput) (db.CommitStatus, error)
-}
-
-type stubRouterCanaryStore struct {
-	upserts []clusterdb.UpsertCanaryResultParams
-	results []clusterdb.CanaryResult
-}
-
-func (s *stubRouterCanaryStore) UpsertCanaryResult(_ context.Context, arg clusterdb.UpsertCanaryResultParams) (clusterdb.CanaryResult, error) {
-	s.upserts = append(s.upserts, arg)
-	result := clusterdb.CanaryResult{
-		Suite:           arg.Suite,
-		TestName:        arg.TestName,
-		Status:          arg.Status,
-		DurationSeconds: arg.DurationSeconds,
-		ErrorMessage:    arg.ErrorMessage,
-		RunID:           arg.RunID,
-		ReportedAt:      arg.ReportedAt,
-	}
-	s.results = append(s.results, result)
-	return result, nil
-}
-
-func (s *stubRouterCanaryStore) ListLatestCanaryStepStatuses(_ context.Context, _ string) ([]db.ListLatestCanaryStepStatusesRow, error) {
-	return nil, nil
-}
-
-func (s *stubRouterCanaryStore) ListCanaryResults(_ context.Context) ([]clusterdb.CanaryResult, error) {
-	return append([]clusterdb.CanaryResult(nil), s.results...), nil
 }
 
 type mockRouterWorkflowService struct {
@@ -210,38 +173,6 @@ func (m *mockRouterGitService) ProxyReceivePack(ctx context.Context, owner, repo
 	if m.proxyReceivePackFn != nil {
 		return m.proxyReceivePackFn(ctx, owner, repo, token, stdin, stdout)
 	}
-	return nil
-}
-
-func (m *mockRouterRunnerService) Register(ctx context.Context, input clusterservices.RunnerRegisterInput) (clusterservices.RunnerRegisterResult, error) {
-	return clusterservices.RunnerRegisterResult{RunnerID: 1}, nil
-}
-
-func (m *mockRouterRunnerService) ClaimTask(ctx context.Context, runnerID int64) (*clusterservices.RunnerAssignedTask, error) {
-	m.lastClaimRunnerID = runnerID
-	return nil, nil
-}
-
-func (m *mockRouterRunnerService) Heartbeat(ctx context.Context, runnerID int64) error {
-	m.lastHeartbeatID = runnerID
-	return nil
-}
-
-func (m *mockRouterRunnerService) Terminate(ctx context.Context, runnerID int64) error {
-	m.lastTerminateID = runnerID
-	return nil
-}
-
-func (m *mockRouterRunnerService) GetTaskRuntimeEnvironment(ctx context.Context, taskID int64) (map[string]string, error) {
-	return map[string]string{}, nil
-}
-
-func (m *mockRouterRunnerService) StreamEvents(ctx context.Context, input clusterservices.RunnerStreamEventsInput) error {
-	return nil
-}
-
-func (m *mockRouterRunnerService) CompleteTask(ctx context.Context, input clusterservices.RunnerCompleteTaskInput) error {
-	m.lastCompleteInput = &input
 	return nil
 }
 
@@ -442,12 +373,6 @@ func (m *mockRouterWikiService) ListWikiRevisions(ctx context.Context, viewer *d
 	return []services.WikiRevisionResponse{}, 0, nil
 }
 
-type mockAdminRunnerRouteService struct{}
-
-func (m *mockAdminRunnerRouteService) ListRunners(ctx context.Context, input clusterservices.RunnerAdminListInput) ([]clusterdb.RunnerPool, int64, error) {
-	return []clusterdb.RunnerPool{}, 0, nil
-}
-
 type mockAdminUserRouteService struct {
 	createUserCalls int
 }
@@ -552,12 +477,9 @@ func defaultRouter(gitHandler *routes.GitSmartHandler, lfsHandlers ...*routes.LF
 		&routes.IssueHandler{},
 		nil, // wikiService
 		gitHandler,
-		nil, // notificationHandler — pool is nil so SSE would 500; fine for non-SSE tests
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -610,41 +532,32 @@ func longTimeoutJSONCSRFCoverageRouter(repoGatewayServices ...routes.RepoGateway
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.PairSessionHandler{},
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminSystemStatusHandler
-		nil, // adminSystemCanariesHandler
-		nil, // adminSystemIncidentsHandler
-		nil, // adminSystemMetricsHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // providerConnectionHandler
-		nil, // variableHandler
-		nil, // billingHandler
-		nil, // protectedBookmarkHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // approvalsHandler
-		nil, // branchLockHandler
-		nil, // pushHookHandler
-		nil, // canaryReportHandler
-		nil, // workflowHandler
-		nil, // workflowCacheHandler
-		nil, // workflowArtifactHandler
-		nil, // issueEventHandler
+		nil,                          // notificationHandler
+		&routes.PairSessionHandler{}, // adminRunnerHandler
+		nil,                          // adminUserHandler
+		nil,                          // adminOrgHandler
+		nil,                          // adminSystemMetricsHandler
+		nil,                          // adminGitHubAppHandler
+		nil,                          // adminAuditHandler
+		nil,                          // webhookHandler
+		nil,                          // secretHandler
+		nil,                          // providerConnectionHandler
+		nil,                          // variableHandler
+		nil,                          // billingHandler
+		nil,                          // protectedBookmarkHandler
+		nil,                          // commitStatusHandler
+		nil,                          // lfsHandler
+		nil,                          // jjVCSHandler
+		nil,                          // agentInternalHandler
+		nil,                          // agentSessionHandler
+		nil,                          // agentSessionStreamHandler
+		nil,                          // approvalsHandler
+		nil,                          // branchLockHandler
+		nil,                          // canaryReportHandler
+		nil,                          // workflowHandler
+		nil,                          // workflowCacheHandler
+		nil,                          // workflowArtifactHandler
+		nil,                          // issueEventHandler
 		&routes.WorkspaceHandler{},
 		nil, // workspaceInternalHandler
 		repoGatewayHandler,
@@ -691,41 +604,32 @@ func buildCacheCSRFCoverageRouter() http.Handler {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.PairSessionHandler{},
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminSystemStatusHandler
-		nil, // adminSystemCanariesHandler
-		nil, // adminSystemIncidentsHandler
-		nil, // adminSystemMetricsHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // providerConnectionHandler
-		nil, // variableHandler
-		nil, // billingHandler
-		nil, // protectedBookmarkHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // approvalsHandler
-		nil, // branchLockHandler
-		nil, // pushHookHandler
-		nil, // canaryReportHandler
-		nil, // workflowHandler
-		nil, // workflowCacheHandler
-		nil, // workflowArtifactHandler
-		nil, // issueEventHandler
+		nil,                          // notificationHandler
+		&routes.PairSessionHandler{}, // adminRunnerHandler
+		nil,                          // adminUserHandler
+		nil,                          // adminOrgHandler
+		nil,                          // adminSystemMetricsHandler
+		nil,                          // adminGitHubAppHandler
+		nil,                          // adminAuditHandler
+		nil,                          // webhookHandler
+		nil,                          // secretHandler
+		nil,                          // providerConnectionHandler
+		nil,                          // variableHandler
+		nil,                          // billingHandler
+		nil,                          // protectedBookmarkHandler
+		nil,                          // commitStatusHandler
+		nil,                          // lfsHandler
+		nil,                          // jjVCSHandler
+		nil,                          // agentInternalHandler
+		nil,                          // agentSessionHandler
+		nil,                          // agentSessionStreamHandler
+		nil,                          // approvalsHandler
+		nil,                          // branchLockHandler
+		nil,                          // canaryReportHandler
+		nil,                          // workflowHandler
+		nil,                          // workflowCacheHandler
+		nil,                          // workflowArtifactHandler
+		nil,                          // issueEventHandler
 		&routes.WorkspaceHandler{},
 		nil, // workspaceInternalHandler
 		repoGatewayHandler,
@@ -742,82 +646,6 @@ func buildCacheCSRFCoverageRouter() http.Handler {
 		nil, // linearHandler
 		nil, // gitHubWebhookHandler
 		nil, // smithersMetrics
-	)
-}
-
-func canaryResultsRouterForTest(canaryReportHandler *routes.CanaryReportHandler, smithersMetrics *routes.SmithersMetrics) http.Handler {
-	return buildRouter(
-		testConfigAllFlagsOn(),
-		nil,
-		nil, // pool
-		&routes.RepoHandler{},
-		nil, // mirrorSyncHandler
-		&routes.AuthHandler{},
-		&routes.UserHandler{},
-		&routes.SSHKeyHandler{},
-		nil, // deployKeyHandler
-		&routes.LabelHandler{},
-
-		&routes.OrgHandler{},
-		&routes.LandingHandler{},
-		nil,
-		nil, // buildCacheHandler
-		nil, // stackHandler
-		&routes.SearchHandler{Service: &mockRouterSearchService{}},
-		&routes.IssueHandler{},
-		nil, // wikiService
-		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		nil, // pairSessionHandler
-		// subscriptionHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminSystemStatusHandler
-		nil, // adminSystemCanariesHandler
-		nil, // adminSystemIncidentsHandler
-		nil, // adminSystemMetricsHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // providerConnectionHandler
-		nil, // variableHandler
-		nil, // billingHandler
-		nil, // protectedBookmarkHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // approvalsHandler
-		nil, // branchLockHandler
-		nil, // pushHookHandler
-		canaryReportHandler,
-		nil, // workflowHandler
-		nil, // workflowCacheHandler
-		nil, // workflowArtifactHandler
-		nil, // issueEventHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // repoGatewayHandler
-		nil, // anonSandboxHandler
-		nil, // gitHubProxyHandler
-		nil, // gitHubRepoListHandler
-		nil, // gitHubUserReposHandler
-		nil, // gitHubSyncedReposHandler
-		nil, // gitHubImportHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // linearHandler
-		nil, // gitHubWebhookHandler
-		smithersMetrics,
 	)
 }
 
@@ -854,12 +682,9 @@ func routerWithFeatureFlags(flags config.FeatureFlagsConfig, workspaceHandler *r
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -901,33 +726,30 @@ func routerWithAuthAndNotifications(authHandler *routes.AuthHandler, notificatio
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notificationHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notificationHandler, // adminRunnerHandler
+		nil,                 // adminUserHandler
+		nil,                 // adminOrgHandler
+		nil,                 // adminSystemHealthHandler
+		nil,                 // adminGitHubAppHandler
+		nil,                 // adminAuditHandler
+		nil,                 // webhookHandler
+		nil,                 // secretHandler
+		nil,                 // variableHandler
+		nil,                 // commitStatusHandler
+		nil,                 // lfsHandler
+		nil,                 // jjVCSHandler
+		nil,                 // agentInternalHandler
+		nil,                 // agentSessionHandler
+		nil,                 // agentSessionStreamHandler
+		nil,                 // pushHookHandler
+		nil,                 // workflowHandler
+		nil,                 // workspaceHandler
+		nil,                 // workspaceInternalHandler
+		nil,                 // workspaceTerminalHandler
+		nil,                 // telemetryHandler
+		nil,                 // featureFlagHandler
+		nil,                 // oauth2Handler
+		nil,                 // smithersMetrics
 	)
 }
 
@@ -948,12 +770,9 @@ func defaultRouterWithCommitStatus(commitStatusHandler *routes.CommitStatusHandl
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -995,12 +814,9 @@ func defaultRouterWithWiki(wikiService routes.WikiService) http.Handler {
 		&routes.IssueHandler{},
 		wikiService,
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -1844,12 +1660,9 @@ func TestServerRouter_RepoForkRoute_RequiresWriteRepositoryScope(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -1952,12 +1765,9 @@ func TestServerRouter_RepoRoutesAreGroupedWithRepoContextMiddleware(t *testing.T
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2010,12 +1820,9 @@ func TestServerRouter_RepoSyncRoute_BypassesRepoContextLookup(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2071,12 +1878,9 @@ func TestServerRouter_AuthRateLimitApplied(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2250,33 +2054,30 @@ func TestServerRouter_NotificationListRouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notifHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notifHandler, // adminRunnerHandler
+		nil,          // adminUserHandler
+		nil,          // adminOrgHandler
+		nil,          // adminSystemHealthHandler
+		nil,          // adminGitHubAppHandler
+		nil,          // adminAuditHandler
+		nil,          // webhookHandler
+		nil,          // secretHandler
+		nil,          // variableHandler
+		nil,          // commitStatusHandler
+		nil,          // lfsHandler
+		nil,          // jjVCSHandler
+		nil,          // agentInternalHandler
+		nil,          // agentSessionHandler
+		nil,          // agentSessionStreamHandler
+		nil,          // pushHookHandler
+		nil,          // workflowHandler
+		nil,          // workspaceHandler
+		nil,          // workspaceInternalHandler
+		nil,          // workspaceTerminalHandler
+		nil,          // telemetryHandler
+		nil,          // featureFlagHandler
+		nil,          // oauth2Handler
+		nil,          // smithersMetrics
 	)
 
 	req2 := httptest.NewRequest(http.MethodGet, "/api/notifications/list", nil)
@@ -2310,33 +2111,30 @@ func TestServerRouter_NotificationSSERouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notifHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notifHandler, // adminRunnerHandler
+		nil,          // adminUserHandler
+		nil,          // adminOrgHandler
+		nil,          // adminSystemHealthHandler
+		nil,          // adminGitHubAppHandler
+		nil,          // adminAuditHandler
+		nil,          // webhookHandler
+		nil,          // secretHandler
+		nil,          // variableHandler
+		nil,          // commitStatusHandler
+		nil,          // lfsHandler
+		nil,          // jjVCSHandler
+		nil,          // agentInternalHandler
+		nil,          // agentSessionHandler
+		nil,          // agentSessionStreamHandler
+		nil,          // pushHookHandler
+		nil,          // workflowHandler
+		nil,          // workspaceHandler
+		nil,          // workspaceInternalHandler
+		nil,          // workspaceTerminalHandler
+		nil,          // telemetryHandler
+		nil,          // featureFlagHandler
+		nil,          // oauth2Handler
+		nil,          // smithersMetrics
 	)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/notifications", nil)
@@ -2436,12 +2234,9 @@ func TestServerRouter_WorkflowRunLogsSSERouteRegisteredAndBypassesTimeout(t *tes
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2502,12 +2297,9 @@ func TestServerRouter_WorkflowRunLogsSSERouteIncludesCORSHeaders(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2568,12 +2360,9 @@ func TestServerRouter_WorkflowRunCancelRouteRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -2605,146 +2394,6 @@ func TestServerRouter_WorkflowRunCancelRouteRegistered(t *testing.T) {
 }
 
 // ---- Internal runner routes ----
-
-func TestServerRouter_InternalRunnerRoutesRequireAgentToken(t *testing.T) {
-	t.Parallel()
-
-	router := defaultRouter(nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/runners/register", bytes.NewBufferString(`{"name":"runner-1"}`))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-
-	req2 := httptest.NewRequest(http.MethodPost, "/internal/runners/register", bytes.NewBufferString(`{"name":"runner-1"}`))
-	req2.Header.Set("Content-Type", "application/json")
-	req2.Header.Set("Authorization", "Bearer not-an-agent-token")
-	rec2 := httptest.NewRecorder()
-	router.ServeHTTP(rec2, req2)
-	assert.Equal(t, http.StatusUnauthorized, rec2.Code)
-}
-
-type mockAgentTokenQuerier struct {
-	getWorkflowRunByAgentTokenFn func(ctx context.Context, agentTokenHash pgtype.Text) (db.WorkflowRun, error)
-}
-
-func (m *mockAgentTokenQuerier) GetWorkflowRunByAgentToken(ctx context.Context, agentTokenHash pgtype.Text) (db.WorkflowRun, error) {
-	if m.getWorkflowRunByAgentTokenFn != nil {
-		return m.getWorkflowRunByAgentTokenFn(ctx, agentTokenHash)
-	}
-	return db.WorkflowRun{ID: 1}, nil
-}
-
-func TestServerRouter_InternalRunnerRoutes_AcceptValidAgentToken(t *testing.T) {
-	t.Parallel()
-
-	r := chi.NewRouter()
-	runnerSvc := &mockRouterRunnerService{}
-	runnerHandler := &routes.RunnerHandler{Service: runnerSvc}
-
-	mockQuerier := &mockAgentTokenQuerier{}
-	r.Route("/internal", func(r chi.Router) {
-		r.Use(middleware.RequireAgentToken(mockQuerier))
-		r.Post("/runners/register", runnerHandler.Register)
-		r.Post("/tasks/{task-id}/stream", runnerHandler.StreamEvents)
-		r.Post("/tasks/{task-id}/complete", runnerHandler.CompleteTask)
-	})
-	router := r
-
-	agentToken := "smithers_agent_0123456789abcdef0123456789abcdef01234567"
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/runners/register", bytes.NewBufferString("{"))
-	req.Header.Set("Authorization", "Bearer "+agentToken)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	// Valid token should pass auth middleware; handler then fails on invalid body.
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-
-	req2 := httptest.NewRequest(http.MethodPost, "/internal/tasks/123/stream", bytes.NewBufferString("{"))
-	req2.Header.Set("Authorization", "Bearer "+agentToken)
-	req2.Header.Set("Content-Type", "application/json")
-	rec2 := httptest.NewRecorder()
-	router.ServeHTTP(rec2, req2)
-	assert.Equal(t, http.StatusBadRequest, rec2.Code)
-}
-
-func TestServerRouter_InternalRunnerRoutes_ClaimHeartbeatAndTerminateForwardRunnerID(t *testing.T) {
-	t.Parallel()
-
-	r := chi.NewRouter()
-	runnerSvc := &mockRouterRunnerService{}
-	runnerHandler := &routes.RunnerHandler{Service: runnerSvc}
-
-	mockQuerier := &mockAgentTokenQuerier{}
-	r.Route("/internal", func(r chi.Router) {
-		r.Use(middleware.RequireAgentToken(mockQuerier))
-		r.Post("/runners/{id}/claim", runnerHandler.ClaimTask)
-		r.Post("/runners/{id}/heartbeat", runnerHandler.Heartbeat)
-		r.Post("/runners/{id}/terminate", runnerHandler.Terminate)
-	})
-
-	agentToken := "smithers_agent_0123456789abcdef0123456789abcdef01234567"
-
-	reqClaim := httptest.NewRequest(http.MethodPost, "/internal/runners/12/claim", nil)
-	reqClaim.Header.Set("Authorization", "Bearer "+agentToken)
-	recClaim := httptest.NewRecorder()
-	r.ServeHTTP(recClaim, reqClaim)
-	require.Equal(t, http.StatusNoContent, recClaim.Code)
-	assert.Equal(t, int64(12), runnerSvc.lastClaimRunnerID)
-
-	reqHeartbeat := httptest.NewRequest(http.MethodPost, "/internal/runners/13/heartbeat", nil)
-	reqHeartbeat.Header.Set("Authorization", "Bearer "+agentToken)
-	recHeartbeat := httptest.NewRecorder()
-	r.ServeHTTP(recHeartbeat, reqHeartbeat)
-	require.Equal(t, http.StatusNoContent, recHeartbeat.Code)
-	assert.Equal(t, int64(13), runnerSvc.lastHeartbeatID)
-
-	reqTerminate := httptest.NewRequest(http.MethodPost, "/internal/runners/14/terminate", nil)
-	reqTerminate.Header.Set("Authorization", "Bearer "+agentToken)
-	recTerminate := httptest.NewRecorder()
-	r.ServeHTTP(recTerminate, reqTerminate)
-	require.Equal(t, http.StatusNoContent, recTerminate.Code)
-	assert.Equal(t, int64(14), runnerSvc.lastTerminateID)
-}
-
-func TestServerRouter_InternalRunnerRoutes_UseKebabCaseTaskParam(t *testing.T) {
-	t.Parallel()
-
-	router := defaultRouter(nil)
-	chiRoutes, ok := router.(chi.Routes)
-	require.True(t, ok, "router must implement chi.Routes")
-
-	var (
-		foundKebabStream   bool
-		foundKebabComplete bool
-		foundSnakeStream   bool
-		foundSnakeComplete bool
-	)
-	err := chi.Walk(chiRoutes, func(method string, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
-		if method != http.MethodPost {
-			return nil
-		}
-		switch route {
-		case "/internal/tasks/{task-id}/stream":
-			foundKebabStream = true
-		case "/internal/tasks/{task-id}/complete":
-			foundKebabComplete = true
-		case "/internal/tasks/{task_id}/stream":
-			foundSnakeStream = true
-		case "/internal/tasks/{task_id}/complete":
-			foundSnakeComplete = true
-		}
-		return nil
-	})
-	require.NoError(t, err)
-	assert.True(t, foundKebabStream, "stream route should use kebab-case task-id param")
-	assert.True(t, foundKebabComplete, "complete route should use kebab-case task-id param")
-	assert.False(t, foundSnakeStream, "stream route should not use snake_case task_id param")
-	assert.False(t, foundSnakeComplete, "complete route should not use snake_case task_id param")
-}
 
 // ---- CSRF wiring tests ----
 
@@ -2996,33 +2645,30 @@ func TestServerRouter_CSRFWiredIntoTestNotificationEndpoint(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notifHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notifHandler, // adminRunnerHandler
+		nil,          // adminUserHandler
+		nil,          // adminOrgHandler
+		nil,          // adminSystemHealthHandler
+		nil,          // adminGitHubAppHandler
+		nil,          // adminAuditHandler
+		nil,          // webhookHandler
+		nil,          // secretHandler
+		nil,          // variableHandler
+		nil,          // commitStatusHandler
+		nil,          // lfsHandler
+		nil,          // jjVCSHandler
+		nil,          // agentInternalHandler
+		nil,          // agentSessionHandler
+		nil,          // agentSessionStreamHandler
+		nil,          // pushHookHandler
+		nil,          // workflowHandler
+		nil,          // workspaceHandler
+		nil,          // workspaceInternalHandler
+		nil,          // workspaceTerminalHandler
+		nil,          // telemetryHandler
+		nil,          // featureFlagHandler
+		nil,          // oauth2Handler
+		nil,          // smithersMetrics
 	)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/_test/notifications", bytes.NewBufferString(`{"source_type":"e2e","subject":"s","body":"b"}`))
@@ -3034,69 +2680,10 @@ func TestServerRouter_CSRFWiredIntoTestNotificationEndpoint(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rec.Code, "POST /api/_test/notifications without X-CSRF-Token must return 403 for session auth")
 }
 
-func TestServerRouter_AdminRunnerRouteRegistered(t *testing.T) {
-	t.Parallel()
-
-	adminRunnerHandler := &routes.AdminRunnerHandler{Service: &mockAdminRunnerRouteService{}}
-	router := buildRouterCompat(
-		&config.Config{},
-		nil,
-		nil,
-		&routes.RepoHandler{},
-		&routes.AuthHandler{},
-		&routes.UserHandler{},
-		&routes.SSHKeyHandler{},
-		&routes.LabelHandler{},
-
-		&routes.OrgHandler{},
-		&routes.LandingHandler{},
-		&routes.SearchHandler{Service: &mockRouterSearchService{}},
-		&routes.IssueHandler{},
-		nil, // wikiService
-		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		adminRunnerHandler,
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
-	)
-
-	// Without auth should return 401 (route registered).
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/runners", nil)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	assert.NotEqual(t, http.StatusNotFound, rec.Code, "GET /api/admin/runners must be registered")
-	assert.Equal(t, http.StatusUnauthorized, rec.Code, "unauthenticated GET /api/admin/runners must return 401")
-}
-
 func TestServerRouter_AdminRoutes_RequireAdminScopeForTokenAuth(t *testing.T) {
 	t.Parallel()
 
-	adminRunnerHandler := &routes.AdminRunnerHandler{Service: &mockAdminRunnerRouteService{}}
+	adminUserHandler := &routes.AdminUserHandler{Service: &mockAdminUserRouteService{}}
 	router := buildRouterCompat(
 		&config.Config{},
 		nil,
@@ -3114,35 +2701,32 @@ func TestServerRouter_AdminRoutes_RequireAdminScopeForTokenAuth(t *testing.T) {
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		adminRunnerHandler,
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		adminUserHandler, // adminUserHandler
+		nil,              // adminOrgHandler
+		nil,              // adminSystemHealthHandler
+		nil,              // adminGitHubAppHandler
+		nil,              // adminAuditHandler
+		nil,              // webhookHandler
+		nil,              // secretHandler
+		nil,              // variableHandler
+		nil,              // commitStatusHandler
+		nil,              // lfsHandler
+		nil,              // jjVCSHandler
+		nil,              // agentInternalHandler
+		nil,              // agentSessionHandler
+		nil,              // agentSessionStreamHandler
+		nil,              // pushHookHandler
+		nil,              // workflowHandler
+		nil,              // workspaceHandler
+		nil,              // workspaceInternalHandler
+		nil,              // workspaceTerminalHandler
+		nil,              // telemetryHandler
+		nil,              // featureFlagHandler
+		nil,              // oauth2Handler
+		nil,              // smithersMetrics
 	)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/runners", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users", nil)
 	req = withRouterAdminTokenAuth(req, true, middleware.TokenSourcePersonalAccessToken, middleware.ScopeReadRepository)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
@@ -3171,12 +2755,9 @@ func TestServerRouter_AdminRoutes_ReadOnlyScopeCannotMutate(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		adminUserHandler,
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -3232,36 +2813,6 @@ func TestServerRouter_AdminRunnerRouteAbsentWhenHandlerNil(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code, "GET /api/admin/runners should be absent when adminRunnerHandler is nil")
 }
 
-func TestServerRouter_InternalRunnerRoutes_CompleteTaskForwardsRunnerID(t *testing.T) {
-	t.Parallel()
-
-	r := chi.NewRouter()
-	runnerSvc := &mockRouterRunnerService{}
-	runnerHandler := &routes.RunnerHandler{Service: runnerSvc}
-
-	mockQuerier := &mockAgentTokenQuerier{}
-	r.Route("/internal", func(r chi.Router) {
-		r.Use(middleware.RequireAgentToken(mockQuerier))
-		r.Post("/tasks/{task-id}/complete", runnerHandler.CompleteTask)
-	})
-	router := r
-
-	agentToken := "smithers_agent_0123456789abcdef0123456789abcdef01234567"
-	body := `{"runner_id":42,"status":"done"}`
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/tasks/99/complete", bytes.NewBufferString(body))
-	req.Header.Set("Authorization", "Bearer "+agentToken)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusNoContent, rec.Code, "authenticated complete-task should return 204")
-	require.NotNil(t, runnerSvc.lastCompleteInput, "service should have been called")
-	assert.Equal(t, int64(99), runnerSvc.lastCompleteInput.TaskID)
-	assert.Equal(t, int64(42), runnerSvc.lastCompleteInput.RunnerID)
-	assert.Equal(t, "done", runnerSvc.lastCompleteInput.Status)
-}
-
 func TestServerRouter_InternalPushHookRouteRequiresSharedBearerToken(t *testing.T) {
 	t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN", "push-callback-secret")
 
@@ -3284,12 +2835,9 @@ func TestServerRouter_InternalPushHookRouteRequiresSharedBearerToken(t *testing.
 			nil, // issueHandler
 			nil, // wikiService
 			nil, // gitHandler
-			nil, // notificationHandler
-			nil, // runnerHandler
 			nil, // adminRunnerHandler
 			nil, // adminUserHandler
 			nil, // adminOrgHandler
-			nil, // adminRepoHandler
 			nil, // adminSystemHealthHandler
 			nil, // adminGitHubAppHandler
 			nil, // adminAuditHandler
@@ -3343,121 +2891,6 @@ func TestServerRouter_InternalPushHookRouteRequiresSharedBearerToken(t *testing.
 	assert.Equal(t, http.StatusUnauthorized, rec4.Code, "missing callback configuration must fail closed")
 }
 
-func TestServerRouter_InternalCanaryResultsRouteRequiresSharedBearerToken(t *testing.T) {
-	t.Setenv("SMITHERS_CANARY_REPORT_TOKEN", "canary-report-secret")
-	reportedAt := time.Unix(1_710_000_000, 0).UTC()
-	store := &stubRouterCanaryStore{}
-	router := canaryResultsRouterForTest(&routes.CanaryReportHandler{
-		Store: store,
-		Clock: func() time.Time { return reportedAt },
-	}, nil)
-
-	payload := `{
-		"suite":"playwright",
-		"run_id":"router-run-1",
-		"results":[
-			{"test":"ui-health","status":"success","duration_seconds":1.25},
-			{"test":"ui-auth-flow","status":"failure","duration_seconds":2.5,"error":"login failed"}
-		]
-	}`
-
-	for _, tc := range []struct {
-		name string
-		auth string
-	}{
-		{name: "missing bearer"},
-		{name: "wrong bearer", auth: "Bearer wrong-secret"},
-	} {
-		req := httptest.NewRequest(http.MethodPost, "/internal/canary/results", strings.NewReader(payload))
-		req.Header.Set("Content-Type", "application/json")
-		if tc.auth != "" {
-			req.Header.Set("Authorization", tc.auth)
-		}
-		rec := httptest.NewRecorder()
-
-		router.ServeHTTP(rec, req)
-
-		assert.Equal(t, http.StatusUnauthorized, rec.Code, tc.name)
-		assert.Empty(t, store.upserts, tc.name)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/canary/results", strings.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer canary-report-secret")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusAccepted, rec.Code)
-	require.Len(t, store.upserts, 2)
-	assert.Equal(t, "playwright", store.upserts[0].Suite)
-	assert.Equal(t, "ui-health", store.upserts[0].TestName)
-	assert.Equal(t, "success", store.upserts[0].Status)
-	assert.Equal(t, "router-run-1", store.upserts[0].RunID)
-	assert.Equal(t, reportedAt, store.upserts[0].ReportedAt)
-	assert.Equal(t, "ui-auth-flow", store.upserts[1].TestName)
-	assert.Equal(t, "failure", store.upserts[1].Status)
-	assert.Equal(t, "login failed", store.upserts[1].ErrorMessage)
-}
-
-func TestServerRouter_InternalCanaryResultsRouteFailsSafeWhenTokenUnset(t *testing.T) {
-	t.Setenv("SMITHERS_CANARY_REPORT_TOKEN", "")
-	store := &stubRouterCanaryStore{}
-	router := canaryResultsRouterForTest(&routes.CanaryReportHandler{
-		Store: store,
-	}, nil)
-
-	req := httptest.NewRequest(http.MethodPost, "/internal/canary/results", strings.NewReader(`{
-		"suite":"playwright",
-		"results":[{"test":"ui-health","status":"success"}]
-	}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer any-secret")
-	rec := httptest.NewRecorder()
-
-	router.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusUnauthorized, rec.Code)
-	assert.Empty(t, store.upserts)
-}
-
-func TestServerRouter_CanaryWebhookRouteRecordsReceiptMetric(t *testing.T) {
-	t.Setenv("SMITHERS_CANARY_WEBHOOK_SIGNING_KEY", "webhook-signing-secret")
-	t.Setenv("SMITHERS_METRICS_TOKEN", "metrics-secret")
-
-	metrics := routes.NewSmithersMetrics()
-	router := canaryResultsRouterForTest(nil, metrics)
-	token, err := routes.SignCanaryWebhookToken("webhook-signing-secret")
-	require.NoError(t, err)
-
-	beforeReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	beforeReq.Header.Set("Authorization", "Bearer metrics-secret")
-	beforeRec := httptest.NewRecorder()
-	router.ServeHTTP(beforeRec, beforeReq)
-	require.Equal(t, http.StatusOK, beforeRec.Code)
-	assert.Equal(
-		t,
-		float64(0),
-		prometheusMetricValue(t, beforeRec.Body.String(), "smithers_canary_webhook_last_received_timestamp_seconds"),
-	)
-
-	req := httptest.NewRequest(http.MethodPost, "/canary/webhook-receiver/"+token, nil)
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusNoContent, rec.Code)
-
-	afterReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-	afterReq.Header.Set("Authorization", "Bearer metrics-secret")
-	afterRec := httptest.NewRecorder()
-	router.ServeHTTP(afterRec, afterReq)
-	require.Equal(t, http.StatusOK, afterRec.Code)
-	assert.Greater(
-		t,
-		prometheusMetricValue(t, afterRec.Body.String(), "smithers_canary_webhook_last_received_timestamp_seconds"),
-		float64(0),
-	)
-}
-
 // ---------------------------------------------------------------------------
 // Observability: /metrics endpoint router tests
 // ---------------------------------------------------------------------------
@@ -3483,12 +2916,9 @@ func TestServerRouter_MetricsEndpointRegistered(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -3613,12 +3043,9 @@ func TestServerRouter_HTTPMetricsRecordsRequests(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler
@@ -3754,33 +3181,30 @@ func TestServerRouter_NotificationMark_RequiresWriteUserScope(t *testing.T) {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		notifHandler,
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
-		nil, // adminRunnerHandler
-		nil, // adminUserHandler
-		nil, // adminOrgHandler
-		nil, // adminRepoHandler
-		nil, // adminSystemHealthHandler
-		nil, // adminGitHubAppHandler
-		nil, // adminAuditHandler
-		nil, // webhookHandler
-		nil, // secretHandler
-		nil, // variableHandler
-		nil, // commitStatusHandler
-		nil, // lfsHandler
-		nil, // jjVCSHandler
-		nil, // agentInternalHandler
-		nil, // agentSessionHandler
-		nil, // agentSessionStreamHandler
-		nil, // pushHookHandler
-		nil, // workflowHandler
-		nil, // workspaceHandler
-		nil, // workspaceInternalHandler
-		nil, // workspaceTerminalHandler
-		nil, // telemetryHandler
-		nil, // featureFlagHandler
-		nil, // oauth2Handler
-		nil, // smithersMetrics
+		notifHandler, // adminRunnerHandler
+		nil,          // adminUserHandler
+		nil,          // adminOrgHandler
+		nil,          // adminSystemHealthHandler
+		nil,          // adminGitHubAppHandler
+		nil,          // adminAuditHandler
+		nil,          // webhookHandler
+		nil,          // secretHandler
+		nil,          // variableHandler
+		nil,          // commitStatusHandler
+		nil,          // lfsHandler
+		nil,          // jjVCSHandler
+		nil,          // agentInternalHandler
+		nil,          // agentSessionHandler
+		nil,          // agentSessionStreamHandler
+		nil,          // pushHookHandler
+		nil,          // workflowHandler
+		nil,          // workspaceHandler
+		nil,          // workspaceInternalHandler
+		nil,          // workspaceTerminalHandler
+		nil,          // telemetryHandler
+		nil,          // featureFlagHandler
+		nil,          // oauth2Handler
+		nil,          // smithersMetrics
 	)
 
 	t.Run("PATCH /api/notifications/{id} with read:user token returns 403", func(t *testing.T) {
@@ -3921,10 +3345,6 @@ func TestServerRouter_UserDevicesRequireWriteUserScope(t *testing.T) {
 	assert.NotEqual(t, http.StatusForbidden, rec.Code, "write:user token must pass the scope gate")
 }
 
-func (s *stubRouterCanaryStore) ResolveCanaryAlertIncidents(context.Context, clusterdb.ResolveCanaryAlertIncidentsParams) (int64, error) {
-	return 0, nil
-}
-
 // sseTicketMintRouter builds the production router with (queries != nil) or
 // without (queries == nil) a database, which is the switch that selects the
 // database-backed ticket handler over the process-local HMAC fallback.
@@ -3945,12 +3365,9 @@ func sseTicketMintRouter(queries *db.Queries) http.Handler {
 		&routes.IssueHandler{},
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
-		nil, // notificationHandler
-		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
 		nil, // adminRunnerHandler
 		nil, // adminUserHandler
 		nil, // adminOrgHandler
-		nil, // adminRepoHandler
 		nil, // adminSystemHealthHandler
 		nil, // adminGitHubAppHandler
 		nil, // adminAuditHandler

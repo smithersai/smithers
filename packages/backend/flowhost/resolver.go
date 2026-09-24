@@ -138,6 +138,14 @@ func validateAuthority(target flowruntime.Target, authority Authority) error {
 }
 
 func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowruntime.Target) (flowruntime.Runtime, error) {
+	return resolver.resolve(ctx, target, false)
+}
+
+func (resolver *Resolver) ResolveExistingFlowRuntime(ctx context.Context, target flowruntime.Target) (flowruntime.Runtime, error) {
+	return resolver.resolve(ctx, target, true)
+}
+
+func (resolver *Resolver) resolve(ctx context.Context, target flowruntime.Target, existingOnly bool) (flowruntime.Runtime, error) {
 	if resolver == nil || resolver.store == nil || resolver.targets == nil || resolver.launcher == nil {
 		return nil, failure{code: "runtime_resolver_unavailable", retryable: true}
 	}
@@ -152,8 +160,19 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 	if !ok {
 		return nil, failure{code: "runtime_catalog_unavailable"}
 	}
-	lease, err := resolver.store.Acquire(ctx, authority, catalog)
-	if errors.Is(err, ErrSourceRevisionRequired) {
+	acquire := resolver.store.Acquire
+	if existingOnly {
+		store, ok := resolver.store.(ExistingBindingStore)
+		if !ok {
+			return nil, failure{code: "runtime_read_unavailable"}
+		}
+		acquire = store.AcquireExisting
+	}
+	lease, err := acquire(ctx, authority, catalog)
+	if errors.Is(err, ErrHostNotRunning) {
+		return nil, failure{code: "runtime_host_not_running"}
+	}
+	if !existingOnly && errors.Is(err, ErrSourceRevisionRequired) {
 		source, ok := resolver.launcher.(SourceResolver)
 		if !ok {
 			return nil, failure{code: "runtime_source_revision_unavailable"}
@@ -174,6 +193,9 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 
 	binding := lease.Binding()
 	if superseded, ok := lease.Supersedes(); ok {
+		if existingOnly {
+			return nil, failure{code: "runtime_upgrade_required"}
+		}
 		binding, err = resolver.rebind(ctx, lease, superseded)
 		if err != nil {
 			return nil, err
@@ -187,13 +209,18 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 			// two owners. Retry/probe or surface its identity refusal instead.
 			return nil, err
 		}
-		if err := lease.MarkRunning(ctx); err != nil {
-			return nil, failure{code: "runtime_binding_checkpoint_failed", retryable: true}
+		if !existingOnly {
+			if err := lease.MarkRunning(ctx); err != nil {
+				return nil, failure{code: "runtime_binding_checkpoint_failed", retryable: true}
+			}
 		}
 		return client, nil
 	}
 	if !errors.Is(inspectErr, ErrHostNotRunning) {
 		return nil, refuse(ctx, "runtime_inspection_failed", inspectErr, binding)
+	}
+	if existingOnly {
+		return nil, failure{code: "runtime_host_not_running"}
 	}
 
 	replaceOwner := binding.State == "running" || binding.State == "failed"

@@ -24,7 +24,7 @@ type OAuth2Service interface {
 	ListApplications(ctx context.Context, ownerID int64) ([]services.OAuth2ApplicationResponse, error)
 	GetApplication(ctx context.Context, appID, ownerID int64) (services.OAuth2ApplicationResponse, error)
 	DeleteApplication(ctx context.Context, appID, ownerID int64) error
-	Authorize(ctx context.Context, userID int64, clientID, redirectURI, scope, codeChallenge, codeChallengeMethod string, callerScopes []string) (services.OAuth2AuthorizeResult, error)
+	AuthorizeGrant(ctx context.Context, in services.OAuth2AuthorizeInput) (services.OAuth2AuthorizeResult, error)
 	ExchangeCode(ctx context.Context, clientID, clientSecret, code, redirectURI, codeVerifier string) (services.OAuth2TokenResponse, error)
 	RefreshToken(ctx context.Context, clientID, clientSecret, refreshToken string) (services.OAuth2TokenResponse, error)
 	RevokeToken(ctx context.Context, clientID, clientSecret, token string) error
@@ -298,6 +298,10 @@ func (h *OAuth2Handler) GetAuthorize(w http.ResponseWriter, r *http.Request) {
 	var callerScopes []string
 	isTokenAuth := authInfo != nil && authInfo.IsTokenAuth
 	if isTokenAuth {
+		if authInfo.TokenSystemIssued {
+			errors.WriteError(w, errors.Forbidden("system-issued tokens cannot authorize oauth2 grants"))
+			return
+		}
 		if authInfo.TokenSource == middleware.TokenSourceOAuth2AccessToken {
 			errors.WriteError(w, errors.Forbidden("oauth2 access tokens cannot be used to authorize new oauth2 grants"))
 			return
@@ -327,7 +331,7 @@ func (h *OAuth2Handler) GetAuthorize(w http.ResponseWriter, r *http.Request) {
 	// Authorization header is never attached by a browser to a cross-site
 	// navigation), so they get the code directly.
 	if isTokenAuth {
-		h.issueAuthorizeCodeAndRedirect(w, r, req, user.ID, callerScopes)
+		h.issueAuthorizeCodeAndRedirectFrom(w, r, req, user.ID, callerScopes, authInfo.TokenID)
 		return
 	}
 
@@ -481,16 +485,23 @@ func (h *OAuth2Handler) validateAuthorizeRequest(w http.ResponseWriter, r *http.
 // validated redirect_uri with code + state (RFC 6749 §4.1.2), preserving any
 // existing query on the registered redirect_uri (RFC 6749 §3.1.2).
 func (h *OAuth2Handler) issueAuthorizeCodeAndRedirect(w http.ResponseWriter, r *http.Request, req authorizeRequest, userID int64, callerScopes []string) {
-	result, err := h.Service.Authorize(
-		r.Context(),
-		userID,
-		req.ClientID,
-		req.RedirectURI,
-		req.Scope,
-		req.CodeChallenge,
-		req.CodeChallengeMethod,
-		callerScopes,
-	)
+	h.issueAuthorizeCodeAndRedirectFrom(w, r, req, userID, callerScopes, 0)
+}
+
+// issueAuthorizeCodeAndRedirectFrom is issueAuthorizeCodeAndRedirect with the
+// personal access token that authorized the grant (0 for session consent);
+// the grant is bound to that token's life.
+func (h *OAuth2Handler) issueAuthorizeCodeAndRedirectFrom(w http.ResponseWriter, r *http.Request, req authorizeRequest, userID int64, callerScopes []string, sourceAccessTokenID int64) {
+	result, err := h.Service.AuthorizeGrant(r.Context(), services.OAuth2AuthorizeInput{
+		UserID:              userID,
+		ClientID:            req.ClientID,
+		RedirectURI:         req.RedirectURI,
+		Scope:               req.Scope,
+		CodeChallenge:       req.CodeChallenge,
+		CodeChallengeMethod: req.CodeChallengeMethod,
+		CallerScopes:        callerScopes,
+		SourceAccessTokenID: sourceAccessTokenID,
+	})
 	if err != nil {
 		writeRouteError(w, r, err)
 		return

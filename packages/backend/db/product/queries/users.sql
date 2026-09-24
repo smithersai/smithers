@@ -12,7 +12,8 @@ RETURNING *;
 SELECT
     u.*,
     t.id AS token_id,
-    t.scopes AS token_scopes
+    t.scopes AS token_scopes,
+    t.system_issued AS token_system_issued
 FROM access_tokens t
 JOIN users u ON t.user_id = u.id
 WHERE t.token_hash = $1

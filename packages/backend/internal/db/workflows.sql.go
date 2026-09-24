@@ -1041,48 +1041,6 @@ func (q *Queries) ListFailingLandingRevisionChecks(ctx context.Context, arg List
 	return items, nil
 }
 
-const listLatestCanaryStepStatuses = `-- name: ListLatestCanaryStepStatuses :many
-WITH latest_run AS (
-    SELECT wr.id
-    FROM workflow_runs wr
-    JOIN workflow_definitions wd ON wd.id = wr.workflow_definition_id
-    WHERE wd.path = $1
-      AND wr.completed_at IS NOT NULL
-    ORDER BY wr.completed_at DESC, wr.id DESC
-    LIMIT 1
-)
-SELECT ws.name, ws.status
-FROM latest_run lr
-JOIN workflow_steps ws ON ws.workflow_run_id = lr.id
-WHERE ws.name LIKE 'canary-%'
-ORDER BY ws.position ASC, ws.id ASC
-`
-
-type ListLatestCanaryStepStatusesRow struct {
-	Name   string `json:"name"`
-	Status string `json:"status"`
-}
-
-func (q *Queries) ListLatestCanaryStepStatuses(ctx context.Context, workflowPath string) ([]ListLatestCanaryStepStatusesRow, error) {
-	rows, err := q.db.Query(ctx, listLatestCanaryStepStatuses, workflowPath)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListLatestCanaryStepStatusesRow{}
-	for rows.Next() {
-		var i ListLatestCanaryStepStatusesRow
-		if err := rows.Scan(&i.Name, &i.Status); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listLatestCommitStatusesByChangeIDsAndContexts = `-- name: ListLatestCommitStatusesByChangeIDsAndContexts :many
 SELECT DISTINCT ON (cs.change_id, cs.context)
     COALESCE(cs.change_id, '')::text AS change_id,

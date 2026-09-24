@@ -5,8 +5,6 @@ package services
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -15,9 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
-	"github.com/smithersai/smithers/packages/backend/internal/microsandbox"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // A missing sandbox on the no-input resume path advises a fresh create instead
@@ -25,14 +22,7 @@ import (
 func TestWorkspaceService_EnsureExistingWorkspaceRunning_TreatsMissingSandboxAsGone(t *testing.T) {
 	t.Parallel()
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"sandbox not found"}}`))
-	}))
-	defer srv.Close()
-
-	realClient := microsandbox.NewClient(srv.URL, "test-key")
+	realClient := &mockWorkspaceSandboxVMClient{getVMFn: func(context.Context, string) (sandbox.Sandbox, error) { return sandbox.Sandbox{}, sandbox.ErrNotFound }}
 
 	svc := newWorkspaceServiceForTests(&mockWorkspaceQuerier{}, WithWorkspaceSandboxClient(realClient))
 

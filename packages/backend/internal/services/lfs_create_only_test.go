@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smithersai/smithers/packages/backend/runtimeports"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/smithersai/smithers/packages/backend/internal/blob"
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
 
@@ -236,7 +237,7 @@ func TestLFSService_BatchUpload_ReplacesExactDeletionAllocationWithoutDoubleChar
 	q.getLFSUploadReservationFn = func(context.Context, db.GetLFSUploadReservationParams) (db.LfsUploadReservation, error) {
 		return db.LfsUploadReservation{}, pgx.ErrNoRows
 	}
-	q.hasStorageDeletionAllocationFn = func(_ context.Context, arg clusterdb.HasStorageDeletionAllocationParams) (bool, error) {
+	q.hasStorageDeletionAllocationFn = func(_ context.Context, arg runtimeports.HasStorageDeletionAllocationParams) (bool, error) {
 		assert.Equal(t, repositoryID, arg.RepositoryID)
 		assert.Equal(t, lfsStorageAllocationKey(repositoryID, oid), arg.AllocationKey)
 		return true, nil
@@ -816,8 +817,8 @@ func TestLFSService_BatchUpload_SignerFailurePurgesAndReleasesOnlyFreshReservati
 		delete(reservations, arg.Oid)
 		return 1, nil
 	}
-	var cleared []clusterdb.ClearPurgedStorageDeletionByExactKeyParams
-	q.clearPurgedStorageDeletionFn = func(_ context.Context, arg clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+	var cleared []runtimeports.ClearPurgedStorageDeletionByExactKeyParams
+	q.clearPurgedStorageDeletionFn = func(_ context.Context, arg runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 		cleared = append(cleared, arg)
 		return 1, nil
 	}
@@ -881,7 +882,7 @@ func TestLFSService_BatchUpload_SignerFailureRetainsExistingReservation(t *testi
 		deleteCalls++
 		return 1, nil
 	}
-	q.clearPurgedStorageDeletionFn = func(context.Context, clusterdb.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
+	q.clearPurgedStorageDeletionFn = func(context.Context, runtimeports.ClearPurgedStorageDeletionByExactKeyParams) (int64, error) {
 		clearCalls++
 		return 1, nil
 	}
