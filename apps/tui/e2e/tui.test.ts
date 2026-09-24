@@ -5,13 +5,20 @@
  * through the replay seat, so no provider is called and the cells it carries
  * run for real against a scratch repository.
  */
-import { afterEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { spawnSync } from "node:child_process"
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import * as Session from "../src/session.ts"
 import { key, Tui } from "./zmux.ts"
+
+let previousSessionDirectory: string | undefined
+beforeEach(() => { previousSessionDirectory = process.env.SMITHERS_TUI_SESSION_DIR })
+afterEach(() => {
+  if (previousSessionDirectory === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessionDirectory
+})
 
 const app = resolve(import.meta.dir, "..")
 const fixture = join(app, "test", "fixtures", "fix-add.jsonl")

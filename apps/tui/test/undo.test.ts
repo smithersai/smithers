@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { Effect } from "effect"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -10,6 +10,13 @@ import * as Summary from "../src/summary.ts"
 import * as Transcript from "../src/transcript.ts"
 import * as Undo from "../src/undo.ts"
 import { Workspace } from "../src/workspace.ts"
+
+let previousSessionDirectory: string | undefined
+beforeEach(() => { previousSessionDirectory = process.env.SMITHERS_TUI_SESSION_DIR })
+afterEach(() => {
+  if (previousSessionDirectory === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessionDirectory
+})
 
 const scratch = () => mkdtempSync(join(tmpdir(), "tui-undo-"))
 const put = (cwd: string, path: string, content: string) => {

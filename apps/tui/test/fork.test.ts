@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { mkdtempSync, readFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -6,6 +6,13 @@ import type * as Host from "../src/host.ts"
 import * as Palette from "../src/palette.ts"
 import * as Session from "../src/session.ts"
 import { type Tab, Workspace } from "../src/workspace.ts"
+
+let previousSessionDirectory: string | undefined
+beforeEach(() => { previousSessionDirectory = process.env.SMITHERS_TUI_SESSION_DIR })
+afterEach(() => {
+  if (previousSessionDirectory === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessionDirectory
+})
 
 const host: Host.Host = {
   cwd: "/work/repo",

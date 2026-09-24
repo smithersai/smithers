@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -9,6 +9,13 @@ import * as Replay from "../src/replay.ts"
 import * as Session from "../src/session.ts"
 import * as Shell from "../src/shell.ts"
 import * as Steering from "../src/steering.ts"
+
+let previousSessionDirectory: string | undefined
+beforeEach(() => { previousSessionDirectory = process.env.SMITHERS_TUI_SESSION_DIR })
+afterEach(() => {
+  if (previousSessionDirectory === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessionDirectory
+})
 
 describe("History", () => {
   it("walks back from the newest prompt, returns the draft past the newest, and skips a repeat", () => {

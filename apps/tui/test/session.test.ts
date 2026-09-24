@@ -1,8 +1,15 @@
-import { beforeEach, describe, expect, it } from "bun:test"
+import { afterEach, beforeEach, describe, expect, it } from "bun:test"
 import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Session from "../src/session.ts"
+
+let previousSessionDirectory: string | undefined
+beforeEach(() => { previousSessionDirectory = process.env.SMITHERS_TUI_SESSION_DIR })
+afterEach(() => {
+  if (previousSessionDirectory === undefined) delete process.env.SMITHERS_TUI_SESSION_DIR
+  else process.env.SMITHERS_TUI_SESSION_DIR = previousSessionDirectory
+})
 
 beforeEach(() => {
   process.env.SMITHERS_TUI_SESSION_DIR = mkdtempSync(join(tmpdir(), "tui-sessions-"))
