@@ -203,17 +203,6 @@ func ContextWithSharedAgentToken(ctx context.Context) context.Context {
 	return context.WithValue(ctx, sharedAgentTokenContextKey, true)
 }
 
-func extractAgentToken(r *http.Request) (string, bool) {
-	token, ok := extractBearerCredential(r)
-	if !ok {
-		return "", false
-	}
-	if !isValidAgentToken(token) {
-		return "", false
-	}
-	return token, true
-}
-
 // extractBearerCredential returns the bearer credential without agent-token
 // format validation, so credential classes with no mandated format (the shared
 // runner-pod token) can be compared before the per-run format gate.

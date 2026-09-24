@@ -3,7 +3,6 @@ package middleware
 import (
 	"bufio"
 	"encoding/json"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -907,73 +906,6 @@ func TestMaxBodySize_NoBodyPassesThrough(t *testing.T) {
 
 	assert.True(t, nextCalled)
 	assert.Equal(t, http.StatusNoContent, rec.Code)
-}
-
-func TestMaxBodySizeWithOverrides_UsesOverrideForExactMethodAndPattern(t *testing.T) {
-	t.Parallel()
-
-	handler := MaxBodySizeWithOverrides(16, BodySizeOverride{
-		Method:      http.MethodPut,
-		PathPattern: "/api/repos/{owner}/{repo}/file-drafts",
-		Size:        64,
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.ReadAll(r.Body)
-		if IsMaxBytesError(err) {
-			w.WriteHeader(http.StatusRequestEntityTooLarge)
-			return
-		}
-		require.NoError(t, err)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	req := httptest.NewRequest(http.MethodPut, "/api/repos/acme/widgets/file-drafts", strings.NewReader(strings.Repeat("x", 32)))
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	assert.Equal(t, http.StatusNoContent, rec.Code)
-}
-
-func TestMaxBodySizeWithOverrides_DefaultLimitForOtherMethodsAndPaths(t *testing.T) {
-	t.Parallel()
-
-	handler := MaxBodySizeWithOverrides(16, BodySizeOverride{
-		Method:      http.MethodPut,
-		PathPattern: "/api/repos/{owner}/{repo}/file-drafts",
-		Size:        64,
-	})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := io.ReadAll(r.Body)
-		if IsMaxBytesError(err) {
-			w.WriteHeader(http.StatusRequestEntityTooLarge)
-			return
-		}
-		require.NoError(t, err)
-		w.WriteHeader(http.StatusNoContent)
-	}))
-
-	tests := []struct {
-		name   string
-		method string
-		path   string
-	}{
-		{name: "delete file drafts", method: http.MethodDelete, path: "/api/repos/acme/widgets/file-drafts"},
-		{name: "commit file drafts", method: http.MethodPost, path: "/api/repos/acme/widgets/file-drafts/commit"},
-		{name: "ordinary api route", method: http.MethodPost, path: "/api/user/repos"},
-		{name: "trailing slash does not match", method: http.MethodPut, path: "/api/repos/acme/widgets/file-drafts/"},
-		{name: "missing repo segment does not match", method: http.MethodPut, path: "/api/repos/acme/file-drafts"},
-	}
-
-	for _, tc := range tests {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(strings.Repeat("x", 32)))
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, req)
-
-			assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
-		})
-	}
 }
 
 func TestIsMaxBytesError_TrueForMaxBytesError(t *testing.T) {

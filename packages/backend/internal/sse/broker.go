@@ -294,7 +294,7 @@ func (b *Broker) Subscribe(ctx context.Context, channel string, userID int64) (*
 // SubscribeMulti registers a single subscriber fanned in from several
 // PostgreSQL channels at once. Every notification on any of the channels is
 // delivered to the one returned Subscription, with Event.Type set to the
-// originating channel — the same shape MultiListener produced.
+// originating channel.
 //
 // The whole subscription counts as ONE stream against the per-user cap. A
 // LISTEN is issued for each channel not already listened on the shared

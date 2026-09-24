@@ -42,12 +42,6 @@ func (s *rateLimitCovStaticStore) DeleteExpiredSearchRateLimits(context.Context,
 	return nil
 }
 
-func (s *rateLimitCovStaticStore) rateLimitCovCleanupCalls() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.cleanupCalls
-}
-
 func TestRateLimit_Cov_MiddlewareClampsRemainingAndNegativeReset(t *testing.T) {
 	t.Parallel()
 

@@ -58,7 +58,6 @@ func buildRouter(
 	wikiService routes.WikiService,
 	gitHandler *routes.GitSmartHandler,
 	notificationHandler *routes.NotificationHandler,
-	pairHandler *routes.PairHandler,
 	pairSessionHandler *routes.PairSessionHandler,
 
 	runnerHandler *routes.RunnerHandler,
@@ -192,18 +191,18 @@ func buildRouter(
 	// The API only verifies bridge credentials, so it must not depend on the
 	// public URL that is needed solely by the SSH issuer.
 	lfsAuthManager, _ := lfsauth.NewManager(cfg.Auth.LFSSigningSecret)
-	if authHandler != nil && authHandler.SSETickets == nil {
-		authHandler.SSETickets = sseauth.NewSSETicketManager(cfg.Auth.SessionSecret)
-	}
+	// The process-local HMAC ticket manager is only the fallback for routers
+	// built without queries. With a database, tickets are minted and redeemed
+	// only through the shared single-use store, so HMAC tickets are neither
+	// issued nor accepted.
 	var sseTicketValidators []middleware.SSETicketValidator
-	if authHandler != nil && authHandler.SSETickets != nil {
-		var ticketUsers middleware.SSETicketUserLoader
-		if queries != nil {
-			ticketUsers = queries
+	if queries == nil && authHandler != nil {
+		if authHandler.SSETickets == nil {
+			authHandler.SSETickets = sseauth.NewSSETicketManager(cfg.Auth.SessionSecret)
 		}
 		sseTicketValidators = append(
 			sseTicketValidators,
-			middleware.NewSSETicketManagerValidator(authHandler.SSETickets, ticketUsers),
+			middleware.NewSSETicketManagerValidator(authHandler.SSETickets, nil),
 		)
 	}
 	var ticketsIssued prometheus.Counter

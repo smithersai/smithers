@@ -612,7 +612,6 @@ func longTimeoutJSONCSRFCoverageRouter(repoGatewayServices ...routes.RepoGateway
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, // notificationHandler
-		nil, // pairHandler
 		&routes.PairSessionHandler{},
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
@@ -694,7 +693,6 @@ func buildCacheCSRFCoverageRouter() http.Handler {
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, // notificationHandler
-		nil, // pairHandler
 		&routes.PairSessionHandler{},
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},
@@ -771,7 +769,6 @@ func canaryResultsRouterForTest(canaryReportHandler *routes.CanaryReportHandler,
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, // notificationHandler
-		nil, // pairHandler
 		nil, // pairSessionHandler
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},

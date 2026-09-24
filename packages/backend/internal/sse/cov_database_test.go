@@ -42,14 +42,6 @@ const (
 	covConnectBudget  = 30 * time.Second
 	covAttemptTimeout = 5 * time.Second
 	covRetryDelay     = 250 * time.Millisecond
-	// covStimulusBudget bounds the test's own NOTIFY publication. A NOTIFY
-	// commits through the WAL, so on a shared server it waits behind every
-	// other session's WAL flush (observed: 170-470ms per round trip under
-	// load, 5.9s worst case, and minutes while another suite's DROP SCHEMA
-	// CASCADE held the WALWrite lock). The 2s it used to share with the
-	// delivery assertion bounded that flush, not the stream under test; the
-	// delivery wait after publication is unchanged.
-	covStimulusBudget = 30 * time.Second
 
 	pgCodeInvalidCatalogName = "3D000" // database does not exist
 	pgCodeDuplicateDatabase  = "42P04" // database already exists
@@ -185,15 +177,4 @@ func covPoolConfig(t *testing.T) *pgxpool.Config {
 	cfg, err := pgxpool.ParseConfig(covDatabaseURL())
 	require.NoError(t, err)
 	return cfg
-}
-
-// covNotify publishes payload on channel through pool and fails the test
-// when the server does not commit it within covStimulusBudget.
-func covNotify(t *testing.T, pool *pgxpool.Pool, channel, payload string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), covStimulusBudget)
-	defer cancel()
-	start := time.Now()
-	_, err := pool.Exec(ctx, "select pg_notify($1, $2)", channel, payload)
-	require.NoErrorf(t, err, "publishing the NOTIFY stimulus took %s: the PostgreSQL server is stalled, not the stream under test", time.Since(start).Round(time.Millisecond))
 }

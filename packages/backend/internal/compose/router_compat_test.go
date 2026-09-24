@@ -109,7 +109,6 @@ func buildRouterCompat(
 		wikiService,
 		gitHandler,
 		notificationHandler,
-		nil, // pairHandler
 		nil, // pairSessionHandler
 		// subscriptionHandler
 		runnerHandler,

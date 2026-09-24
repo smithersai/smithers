@@ -41,7 +41,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/sse"
-	"github.com/smithersai/smithers/packages/backend/internal/sseauth"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -377,7 +376,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		// account across ALL replicas, not just across goroutines in this one.
 		services.WithAuthGitHubRefreshLocker(services.NewPgGitHubRefreshLocker(pool)),
 	)
-	sseTicketManager := sseauth.NewSSETicketManager(cfg.Auth.SessionSecret)
 	auth0Configured := strings.TrimSpace(cfg.Auth.Auth0Domain) != "" &&
 		strings.TrimSpace(cfg.Auth.Auth0ClientID) != "" &&
 		strings.TrimSpace(cfg.Auth.Auth0ClientSecret) != ""
@@ -679,7 +677,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	if err := ensurePairSchema(pairService, ctx); err != nil {
 		slog.Warn("pair: ensure schema failed", "error", err)
 	}
-	pairHandler := routes.NewPairHandler(pairService, pool)
 
 	// Initialize agent log store (GCS-backed when available, in-memory fallback).
 	// Transcripts are retention-limited operational data: they belong in the
@@ -968,7 +965,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		AuthConfig:   cfg.Auth,
 		PublicOrigin: publicBaseURL,
 		AuditService: auditService,
-		SSETickets:   sseTicketManager,
 		// Login is a free warm of the per-user GitHub repo listing cache.
 		RepoListingWarmer: gitHubUserReposService,
 	}
@@ -1452,7 +1448,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		wikiService,
 		gitHandler,
 		notificationHandler,
-		pairHandler,
 		pairSessionHandler,
 
 		runnerHandler,

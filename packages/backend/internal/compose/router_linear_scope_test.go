@@ -71,7 +71,6 @@ func linearScopeRouter() http.Handler {
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, // notificationHandler
-		nil, // pairHandler
 		nil, // pairSessionHandler
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},

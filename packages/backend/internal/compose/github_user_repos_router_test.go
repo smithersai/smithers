@@ -74,7 +74,6 @@ func githubUserReposSecurityRouter(service routes.GitHubUserReposRouteService) h
 		nil, // wikiService
 		&routes.GitSmartHandler{Service: &mockRouterGitService{}},
 		nil, // notificationHandler
-		nil, // pairHandler
 		&routes.PairSessionHandler{},
 		// subscriptionHandler
 		&routes.RunnerHandler{Service: &mockRouterRunnerService{}},

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -109,11 +108,6 @@ func handlerCovChannel(prefix string) string {
 	return prefix + "_cov_" + strconv.FormatInt(time.Now().UnixNano(), 36) + "_" + strconv.FormatUint(n, 36)
 }
 
-func handlerCovNotify(t *testing.T, pool *pgxpool.Pool, channel, payload string) {
-	t.Helper()
-	covNotify(t, pool, channel, payload)
-}
-
 // handlerCovPoolWithApplicationName is a single-connection pool whose
 // backend the test can find in pg_stat_activity by applicationName and
 // terminate, on the prepared test database.
@@ -174,171 +168,6 @@ func handlerCovWaitBodyContains(t *testing.T, rec *handlerCovRecorder, substr st
 	require.Eventually(t, func() bool {
 		return strings.Contains(rec.handlerCovBody(), substr)
 	}, 2*time.Second, 10*time.Millisecond)
-}
-
-func TestHandler_Cov_ServeSSEWritesConfigurationErrors(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/events", nil)
-
-	plain := handlerCovNewPlainWriter()
-	ServeSSE(plain, req, StreamConfig{})
-	assert.Equal(t, http.StatusInternalServerError, plain.code)
-	assert.Equal(t, "application/json", plain.header.Get("Content-Type"))
-	assert.Contains(t, plain.body.String(), "streaming not supported")
-
-	nilPool := handlerCovNewRecorder()
-	ServeSSE(nilPool, req, StreamConfig{})
-	assert.Equal(t, http.StatusInternalServerError, nilPool.handlerCovCode())
-	assert.Contains(t, nilPool.handlerCovBody(), "pool is nil")
-
-	pool := brokerCovPool(t)
-
-	noChannels := handlerCovNewRecorder()
-	ServeSSE(noChannels, req, StreamConfig{Pool: pool})
-	assert.Equal(t, http.StatusInternalServerError, noChannels.handlerCovCode())
-	assert.Contains(t, noChannels.handlerCovBody(), "at least one channel")
-
-	// A failed LISTEN is 503, not 500: plue's event-stream tier refused the
-	// stream, nothing was established, and reconnecting is the right move. 500
-	// told the client plue is defective and gave it no pacing to come back on.
-	badSingle := handlerCovNewRecorder()
-	ServeSSE(badSingle, req, StreamConfig{Pool: pool, Channels: []string{"bad-channel"}})
-	assert.Equal(t, http.StatusServiceUnavailable, badSingle.handlerCovCode())
-	assert.Contains(t, badSingle.handlerCovBody(), "failed to start SSE listener")
-
-	badMulti := handlerCovNewRecorder()
-	ServeSSE(badMulti, req, StreamConfig{Pool: pool, Channels: []string{"good_channel", "bad-channel"}})
-	assert.Equal(t, http.StatusServiceUnavailable, badMulti.handlerCovCode())
-	assert.Contains(t, badMulti.handlerCovBody(), "failed to start SSE listener")
-}
-
-func TestHandler_Cov_ServeSSEStreamsSingleChannelEvent(t *testing.T) {
-	applicationName := handlerCovChannel("handler_single_app")
-	pool := handlerCovPoolWithApplicationName(t, applicationName)
-	adminPool := brokerCovPool(t)
-	channel := handlerCovChannel("handler_single")
-	gauge := prometheus.NewGauge(prometheus.GaugeOpts{Name: "handler_cov_single_active"})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req := httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx)
-	rec := handlerCovNewRecorder()
-	ready := make(chan struct{})
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ServeSSE(rec, req, StreamConfig{
-			Pool:              pool,
-			Channels:          []string{channel},
-			EventType:         "override",
-			ActiveConnections: gauge,
-			OnConnect: func(w http.ResponseWriter, _ *http.Request, flusher http.Flusher) {
-				_, _ = fmt.Fprint(w, ": connected\n\n")
-				flusher.Flush()
-				close(ready)
-			},
-			FormatEventID: func(payload string) string {
-				return "id_" + payload
-			},
-		})
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ServeSSE did not call OnConnect")
-	}
-	assert.Equal(t, http.StatusOK, rec.handlerCovCode())
-	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
-	assert.Equal(t, 1.0, testutil.ToFloat64(gauge))
-	assert.Contains(t, rec.handlerCovBody(), ": connected")
-
-	handlerCovNotify(t, adminPool, channel, "single_payload")
-	handlerCovWaitBodyContains(t, rec, "id: id_single_payload")
-	handlerCovWaitBodyContains(t, rec, "event: override")
-	handlerCovWaitBodyContains(t, rec, "data: single_payload")
-
-	handlerCovTerminateBackend(t, adminPool, handlerCovFindBackendPID(t, adminPool, applicationName))
-	handlerCovWaitDone(t, done)
-	cancel()
-	assert.Equal(t, 0.0, testutil.ToFloat64(gauge))
-}
-
-func TestHandler_Cov_ServeSSEStreamsMultiChannelEventAndKeepAlive(t *testing.T) {
-	applicationName := handlerCovChannel("handler_multi_app")
-	pool := handlerCovPoolWithApplicationName(t, applicationName)
-	adminPool := brokerCovPool(t)
-	first := handlerCovChannel("handler_multi_a")
-	second := handlerCovChannel("handler_multi_b")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	req := httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx)
-	rec := handlerCovNewRecorder()
-	ready := make(chan struct{})
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ServeSSE(rec, req, StreamConfig{
-			Pool:      pool,
-			Channels:  []string{first, second},
-			KeepAlive: 5 * time.Millisecond,
-			OnConnect: func(http.ResponseWriter, *http.Request, http.Flusher) {
-				close(ready)
-			},
-		})
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ServeSSE did not call OnConnect for multi-channel stream")
-	}
-
-	handlerCovNotify(t, adminPool, second, "multi_payload")
-	handlerCovWaitBodyContains(t, rec, "event: "+second)
-	handlerCovWaitBodyContains(t, rec, "data: multi_payload")
-	handlerCovWaitBodyContains(t, rec, ": keep-alive")
-
-	handlerCovTerminateBackend(t, adminPool, handlerCovFindBackendPID(t, adminPool, applicationName))
-	handlerCovWaitDone(t, done)
-	cancel()
-}
-
-func TestHandler_Cov_ServeSSEReturnsWhenListenerEventsClose(t *testing.T) {
-	applicationName := handlerCovChannel("handler_close_app")
-	streamPool := handlerCovPoolWithApplicationName(t, applicationName)
-	adminPool := brokerCovPool(t)
-	channel := handlerCovChannel("handler_close")
-
-	req := httptest.NewRequest(http.MethodGet, "/events", nil)
-	rec := handlerCovNewRecorder()
-	ready := make(chan struct{})
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		ServeSSE(rec, req, StreamConfig{
-			Pool:      streamPool,
-			Channels:  []string{channel},
-			KeepAlive: time.Hour,
-			OnConnect: func(http.ResponseWriter, *http.Request, http.Flusher) {
-				close(ready)
-			},
-		})
-	}()
-
-	select {
-	case <-ready:
-	case <-time.After(2 * time.Second):
-		t.Fatal("ServeSSE did not establish listener before backend termination")
-	}
-
-	handlerCovTerminateBackend(t, adminPool, handlerCovFindBackendPID(t, adminPool, applicationName))
-
-	handlerCovWaitDone(t, done)
-	assert.Equal(t, http.StatusOK, rec.handlerCovCode())
 }
 
 func TestHandler_Cov_ServeBrokerSSEWritesErrors(t *testing.T) {
