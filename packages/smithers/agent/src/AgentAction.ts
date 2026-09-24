@@ -113,6 +113,13 @@ export interface Host {
   readonly capabilityEnvelope?: ReadonlyArray<Capability.CapabilityPattern> | undefined
   readonly maxFrames?: number | undefined
   /**
+   * Forwarded to `Agent.Options.claimCap`.
+   *
+   * Zero disarms the completion claim brake for actions whose completions are
+   * answers rather than workspace claims.
+   */
+  readonly claimCap?: number | undefined
+  /**
    * How many times a decode miss may be re-prompted when an action declares no
    * budget of its own.
    *
@@ -697,6 +704,7 @@ export const make = <
               capabilityEnvelope: host.capabilityEnvelope,
               limits: host.limits,
               maxFrames: options.maxFrames ?? host.maxFrames
+              claimCap: host.claimCap
             }).pipe(
               Stream.provideService(AgentEvent.Observer, atSource ? observe : () => Effect.void),
               (stream) => agentOutcome(stream, atSource ? () => Effect.void : observe)
