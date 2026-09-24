@@ -6,6 +6,7 @@ import { createAppStore } from "../AppStore"
 import { createAuthBillingController } from "./auth-billing"
 import { createControllerContext } from "./context"
 import { createFailureController } from "./failures"
+import { ADMIN_ALLOWLIST_PATH, ADMIN_GRANT_PATH, ADMIN_HEALTH_PATH, ADMIN_REQUESTS_PATH, IDENTITY_REQUEST_ACCESS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 
 const memoryStorage = (): StorageApi => {
   const data = new Map<string, string>()
@@ -749,4 +750,103 @@ describe("identity re-probes", () => {
       expect(h.ctx.accountEpoch).toBe(epoch + 1)
     } finally { await h.dispose() }
   })
+})
+
+/*
+ * An account answer lands only on the account that asked. A reply that
+ * arrives after sign-out or another login describes an account this page no
+ * longer holds: it writes no card, no transcript line, no access state and
+ * no toast.
+ */
+describe("account answers that outlive their account", () => {
+  const setup = async (identity: { login: string; allowlisted: boolean; admin: boolean }) => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", ...identity, scopesPlain: null })
+      .isPersisted.promise
+    const held: Array<{ path: string; answer: (response: Response) => void }> = []
+    const ctx = createControllerContext(store, repositories, agent, {
+      fetchImpl: (input, init) => {
+        const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "https://app.test").pathname
+        if (path.endsWith("/auth/logout") && init?.method === "POST") return Promise.resolve(Response.json({}))
+        return new Promise<Response>(answer => { held.push({ path, answer }) })
+      },
+      toastDebounceMs: 0,
+      toastAutoDismissMs: 10_000
+    })
+    ctx.withToast = createFailureController(ctx).withToast
+    const until = async (ready: () => boolean) => {
+      for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) await new Promise(resolve => setTimeout(resolve, 0))
+      expect(ready()).toBe(true)
+    }
+    const written = () => ({
+      cards: [...store.collections.cards.keys()],
+      messages: [...store.collections.messages.values()].map(message => message.text),
+      toasts: [...store.collections.toasts.values()].map(toast => `${toast.status}:${toast.detail ?? toast.title}`)
+    })
+    return {
+      store, ctx, until, written,
+      controller: createAuthBillingController(ctx, () => 0),
+      answer: async (path: string, response: Response) => {
+        await until(() => held.some(request => request.path === path))
+        held.find(request => request.path === path)!.answer(response)
+      },
+      dispose: async () => { await ctx.dispose(); await store.dispose?.() }
+    }
+  }
+  const admin = { login: "will", allowlisted: true, admin: true }
+  const queue = { requests: [{ login: "stranger", note: "let me in", createdAt: "2026-09-23T00:00:00Z" }] }
+  const health = { services: [{ name: "billing", status: "failed", detail: "down" }], queueDepth: 1, checkedAt: "2026-09-23T00:00:00Z" }
+  const cases: ReadonlyArray<readonly [string, (controller: ReturnType<typeof createAuthBillingController>) => Promise<unknown>, string, () => Response]> = [
+    ["the request queue", (c) => c.adminRequests(), ADMIN_REQUESTS_PATH, () => Response.json(queue)],
+    ["a refused request queue", (c) => c.adminRequests(), ADMIN_REQUESTS_PATH, () => new Response("down", { status: 500 })],
+    ["service health", (c) => c.adminHealth(), ADMIN_HEALTH_PATH, () => Response.json(health)],
+    ["a refused service health read", (c) => c.adminHealth(), ADMIN_HEALTH_PATH, () => new Response("down", { status: 500 })],
+    ["an allowlist change", (c) => c.adminAllowlist("add", "stranger"), ADMIN_ALLOWLIST_PATH, () => Response.json({ applied: true })],
+    ["a queue approval", (c) => c.adminQueueApprove("stranger"), ADMIN_ALLOWLIST_PATH, () => new Response("down", { status: 500 })]
+  ]
+  for (const [name, act, path, response] of cases) {
+    test(`${name} answered after sign-out writes nothing`, async () => {
+      const h = await setup(admin)
+      try {
+        const acting = act(h.controller)
+        await h.until(() => h.store.collections.toasts.size > 0)
+        expect(await h.controller.signOut()).toBeUndefined()
+        const cleared = h.written()
+        await h.answer(path, response())
+        await acting
+        await new Promise(resolve => setTimeout(resolve, 0))
+        expect(h.written()).toEqual(cleared)
+      } finally { await h.dispose() }
+    })
+  }
+
+  test("a grant answered after sign-out writes nothing", async () => {
+    const h = await setup(admin)
+    try {
+      h.controller.adminGrant(10, "stranger")
+      const card = [...h.store.collections.cards.values()].find(row => row.kind === "grant-confirm")!
+      const granting = h.controller.adminGrantConfirm(card.id)
+      await h.until(() => h.store.collections.toasts.size > 0)
+      expect(await h.controller.signOut()).toBeUndefined()
+      const cleared = h.written()
+      await h.answer(ADMIN_GRANT_PATH, new Response("down", { status: 500 }))
+      await granting
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(h.written()).toEqual(cleared)
+    } finally { await h.dispose() }
+  })
+
+  for (const [name, response] of [["refused", () => new Response("down", { status: 500 })], ["filed", () => Response.json({})]] as const) {
+    test(`an access request ${name} after another login leaves the new account's access state alone`, async () => {
+      const h = await setup({ login: "will", allowlisted: false, admin: false })
+      try {
+        const requesting = h.controller.requestAccess()
+        await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+          allowlisted: false, admin: false, scopesPlain: null }).isPersisted.promise
+        await h.answer(IDENTITY_REQUEST_ACCESS_PATH, response())
+        expect(await requesting).toBeUndefined()
+        expect(h.store.collections.identitySessions.get("identity")).toMatchObject({ login: "other", accessRequested: false, accessError: null })
+      } finally { await h.dispose() }
+    })
+  }
 })

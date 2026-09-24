@@ -69,6 +69,22 @@ export const createAuthBillingController = (
   // The context declares the announcing arity; the controller behind it is the
   // one createFailureController returns, quiet mode included.
   const withToast: FailureController["withToast"] = ctx.withToast
+  /*
+   * An account answer lands only on the account that asked. Sign-out and
+   * another login advance the account epoch, so a reply after that describes
+   * an account this page no longer holds: it writes nothing and its toast
+   * leaves without a result.
+   */
+  const admitAccount = (): (() => boolean) => {
+    const epoch = ctx.accountEpoch
+    return () => !ctx.disposed && ctx.accountEpoch === epoch
+  }
+  /** An admin refusal goes to the transcript of the account that asked, or nowhere. */
+  const adminRefusal = (current: () => boolean, message: string): string | typeof TOAST_SUPERSEDED => {
+    if (!current()) return TOAST_SUPERSEDED
+    store.dispatch({ type: "message.appended", actor: "system", text: message })
+    return message
+  }
   const resumeWorkflowRuns = (): void => ctx.resumeWorkflowRuns()
   const resumeDeferredCommand = (): void => ctx.resumeDeferredCommand()
   const settleFirstRunTarget = (): void => ctx.settleFirstRunTarget()
@@ -632,6 +648,7 @@ export const createAuthBillingController = (
     if (identity.allowlisted) {
       return `You already have access as ${identity.login} — there is no request to file.`
     }
+    const current = admitAccount()
     try {
       const response = await http(`${baseUrl}${IDENTITY_REQUEST_ACCESS_PATH}`, {
         method: "POST",
@@ -639,22 +656,21 @@ export const createAuthBillingController = (
         body: JSON.stringify({ login: identity.login })
       })
       if (!response.ok) {
-        store.dispatch({
-          type: "identity.access.failed",
-          actor: "system",
-          message: await errorMessageOf(response, "The access request did not go through. Try again.")
-        })
+        const message = await errorMessageOf(response, "The access request did not go through. Try again.")
+        if (current()) store.dispatch({ type: "identity.access.failed", actor: "system", message })
         return
       }
     } catch {
-      store.dispatch({
-        type: "identity.access.failed",
-        actor: "system",
-        message: "The access request did not go through. Try again."
-      })
+      if (current()) {
+        store.dispatch({
+          type: "identity.access.failed",
+          actor: "system",
+          message: "The access request did not go through. Try again."
+        })
+      }
       return
     }
-    store.dispatch({ type: "identity.access.requested", actor: "user" })
+    if (current()) store.dispatch({ type: "identity.access.requested", actor: "user" })
   }
 
   /**
@@ -791,7 +807,11 @@ export const createAuthBillingController = (
    * answer 404-never-403 to non-admins; a 404 here therefore means "not an
    * admin (or not configured)" and is surfaced as an honest line.
    */
-  const adminAllowlistImpl = async (action: "add" | "remove", login: string): Promise<true | string> => {
+  const adminAllowlistImpl = async (
+    action: "add" | "remove",
+    login: string,
+    current: () => boolean
+  ): Promise<true | typeof TOAST_SUPERSEDED | string> => {
     try {
       const response = await http(`${baseUrl}${ADMIN_ALLOWLIST_PATH}`, {
         method: "POST",
@@ -799,13 +819,12 @@ export const createAuthBillingController = (
         body: JSON.stringify({ login, action })
       })
       if (!response.ok) {
-        const message = await errorMessageOf(response, "The allowlist change didn't go through.")
-        store.dispatch({ type: "message.appended", actor: "system", text: message })
-        return message
+        return adminRefusal(current, await errorMessageOf(response, "The allowlist change didn't go through."))
       }
       const echo = (await response.json().catch(() => undefined)) as
         | { applied?: unknown; duplicate?: unknown }
         | undefined
+      if (!current()) return TOAST_SUPERSEDED
       const verb = action === "add" ? "added to" : "removed from"
       store.dispatch({
         type: "message.appended",
@@ -815,22 +834,24 @@ export const createAuthBillingController = (
           : `${login} ${verb} the allowlist, recorded under your name.`
       })
     } catch {
-      const message = "The allowlist change didn't go through — the admin route didn't answer."
-      store.dispatch({ type: "message.appended", actor: "system", text: message })
-      return message
+      return adminRefusal(current, "The allowlist change didn't go through — the admin route didn't answer.")
     }
     return true
   }
 
-  const adminAllowlist = (action: "add" | "remove", login: string): Promise<string | void> =>
-    withToast(
+  const adminAllowlist = (action: "add" | "remove", login: string): Promise<string | void> => {
+    const current = admitAccount()
+    return withToast(
       "admin.allowlist",
       "Updating the allowlist…",
       "Allowlist updated",
-      () => adminAllowlistImpl(action, login)
+      () => adminAllowlistImpl(action, login, current),
+      false,
+      current
     ).then(
       () => undefined
     )
+  }
 
   const adminGrant = (amountUsd: number, login: string): string | void => {
     // Never post directly: the confirmation card states exactly what will happen first.
@@ -859,6 +880,7 @@ export const createAuthBillingController = (
       id: card.id,
       patch: { payload: { login, amountUsd, phase: "sending" } }
     })
+    const current = admitAccount()
     await withToast(
       "admin.grant",
       `Granting $${amountUsd} to ${login}…`,
@@ -875,6 +897,7 @@ export const createAuthBillingController = (
           })
           if (!response.ok) {
             const message = await errorMessageOf(response, "The grant didn't go through.")
+            if (!current()) return TOAST_SUPERSEDED
             store.dispatch({
               type: "card.updated",
               actor: "system",
@@ -886,6 +909,7 @@ export const createAuthBillingController = (
           const echo = (await response.json().catch(() => undefined)) as
             | { grantId?: unknown; duplicate?: unknown }
             | undefined
+          if (!current()) return TOAST_SUPERSEDED
           store.dispatch({
             type: "card.updated",
             actor: "system",
@@ -901,6 +925,7 @@ export const createAuthBillingController = (
             }
           })
         } catch {
+          if (!current()) return TOAST_SUPERSEDED
           const message = "The grant didn't go through — the admin route didn't answer."
           store.dispatch({
             type: "card.updated",
@@ -911,7 +936,9 @@ export const createAuthBillingController = (
           return message
         }
         return true
-      }
+      },
+      false,
+      current
     )
     return undefined
   }
@@ -927,17 +954,14 @@ export const createAuthBillingController = (
   const ADMIN_REQUESTS_CARD_ID = "admin-requests"
 
   /** Re-read the queue and refresh the queue card (also the post-approve refresh). */
-  const adminRequestsImpl = async (): Promise<true | string> => {
+  const adminRequestsImpl = async (current: () => boolean): Promise<true | typeof TOAST_SUPERSEDED | string> => {
     try {
       const response = await http(`${baseUrl}${ADMIN_REQUESTS_PATH}`)
-      if (!response.ok) {
-        const message = await errorMessageOf(response, "The request queue didn't answer.")
-        store.dispatch({ type: "message.appended", actor: "system", text: message })
-        return message
-      }
+      if (!response.ok) return adminRefusal(current, await errorMessageOf(response, "The request queue didn't answer."))
       const body = (await response.json().catch(() => undefined)) as
         | { requests?: Array<{ login?: unknown; note?: unknown; createdAt?: unknown }> }
         | undefined
+      if (!current()) return TOAST_SUPERSEDED
       const requests = (Array.isArray(body?.requests) ? body.requests : [])
         .filter((row) => typeof row.login === "string")
         .map((row) => ({
@@ -957,17 +981,16 @@ export const createAuthBillingController = (
       }
       store.dispatch({ type: "card.upsert", actor: "system", card })
     } catch {
-      const message = "The request queue didn't answer — the admin route is unreachable."
-      store.dispatch({ type: "message.appended", actor: "system", text: message })
-      return message
+      return adminRefusal(current, "The request queue didn't answer — the admin route is unreachable.")
     }
     return true
   }
 
-  const adminRequests = (): Promise<string | void> =>
-    withToast("admin.requests", "Reading the request queue…", "Request queue read", adminRequestsImpl).then(() =>
-      undefined
-    )
+  const adminRequests = (): Promise<string | void> => {
+    const current = admitAccount()
+    return withToast("admin.requests", "Reading the request queue…", "Request queue read", () => adminRequestsImpl(current), false, current)
+      .then(() => undefined)
+  }
 
   const adminQueueApprove = async (login: string): Promise<string | void> => {
     const card = store.collections.cards.get(ADMIN_REQUESTS_CARD_ID)
@@ -979,6 +1002,7 @@ export const createAuthBillingController = (
         patch: { payload: { ...card.payload, approving: login, error: undefined } }
       })
     }
+    const current = admitAccount()
     const post = await withToast("admin.queue.approve", `Approving ${login}…`, `${login} approved`, async () => {
       try {
         const response = await http(`${baseUrl}${ADMIN_ALLOWLIST_PATH}`, {
@@ -988,46 +1012,44 @@ export const createAuthBillingController = (
         })
         if (!response.ok) {
           const message = await errorMessageOf(response, `Approving ${login} didn't go through.`)
-          const current = store.collections.cards.get(ADMIN_REQUESTS_CARD_ID)
-          if (current !== undefined && current.kind === "request-queue") {
+          if (!current()) return TOAST_SUPERSEDED
+          const queue = store.collections.cards.get(ADMIN_REQUESTS_CARD_ID)
+          if (queue !== undefined && queue.kind === "request-queue") {
             store.dispatch({
               type: "card.updated",
               actor: "system",
-              id: current.id,
-              patch: { status: "error", payload: { ...current.payload, approving: null, error: message } }
+              id: queue.id,
+              patch: { status: "error", payload: { ...queue.payload, approving: null, error: message } }
             })
           }
           return message
         }
       } catch {
+        if (!current()) return TOAST_SUPERSEDED
         const message = `Approving ${login} didn't go through — the admin route didn't answer.`
-        const current = store.collections.cards.get(ADMIN_REQUESTS_CARD_ID)
-        if (current !== undefined && current.kind === "request-queue") {
+        const queue = store.collections.cards.get(ADMIN_REQUESTS_CARD_ID)
+        if (queue !== undefined && queue.kind === "request-queue") {
           store.dispatch({
             type: "card.updated",
             actor: "system",
-            id: current.id,
-            patch: { status: "error", payload: { ...current.payload, approving: null, error: message } }
+            id: queue.id,
+            patch: { status: "error", payload: { ...queue.payload, approving: null, error: message } }
           })
         }
         return message
       }
-      return true
-    })
+      return current() ? true : TOAST_SUPERSEDED
+    }, false, current)
     if (post !== true) return undefined
     // The queue card re-reads from the server — never from local optimism.
     await adminRequests()
     return undefined
   }
 
-  const adminHealthImpl = async (): Promise<true | string> => {
+  const adminHealthImpl = async (current: () => boolean): Promise<true | typeof TOAST_SUPERSEDED | string> => {
     try {
       const response = await http(`${baseUrl}${ADMIN_HEALTH_PATH}`)
-      if (!response.ok) {
-        const message = await errorMessageOf(response, "The health read didn't answer.")
-        store.dispatch({ type: "message.appended", actor: "system", text: message })
-        return message
-      }
+      if (!response.ok) return adminRefusal(current, await errorMessageOf(response, "The health read didn't answer."))
       const body = (await response.json().catch(() => undefined)) as
         | {
           services?: Array<{ name?: unknown; status?: unknown; detail?: unknown }>
@@ -1036,10 +1058,9 @@ export const createAuthBillingController = (
           checkedAt?: unknown
         }
         | undefined
+      if (!current()) return TOAST_SUPERSEDED
       if (!Array.isArray(body?.services)) {
-        const message = "The health read answered in a shape I didn't understand."
-        store.dispatch({ type: "message.appended", actor: "system", text: message })
-        return message
+        return adminRefusal(current, "The health read answered in a shape I didn't understand.")
       }
       const services = body.services
         .filter(
@@ -1076,15 +1097,16 @@ export const createAuthBillingController = (
       }
       store.dispatch({ type: "card.upsert", actor: "system", card })
     } catch {
-      const message = "The health read didn't answer — the admin route is unreachable."
-      store.dispatch({ type: "message.appended", actor: "system", text: message })
-      return message
+      return adminRefusal(current, "The health read didn't answer — the admin route is unreachable.")
     }
     return true
   }
 
-  const adminHealth = (): Promise<string | void> =>
-    withToast("admin.health", "Reading service health…", "Service health read", adminHealthImpl).then(() => undefined)
+  const adminHealth = (): Promise<string | void> => {
+    const current = admitAccount()
+    return withToast("admin.health", "Reading service health…", "Service health read", () => adminHealthImpl(current), false, current)
+      .then(() => undefined)
+  }
 
   /*
    * Chat is complimentary during the alpha: the billing seam records each

@@ -169,10 +169,15 @@ export const createWorkflowLaunchController = (
   const start = async (args: { repo: string; binding: GatewayWorkspaceBinding; workflow: string; input: Record<string, unknown>; actor: Actor }): Promise<string | { value: string }> => {
     const login = owner()
     if (!login) return "Sign in with GitHub first: flows run on your own workspace."
+    // A request belongs to the account that made it: sign-out forgets its card, so no await may save it again.
+    const epoch = ctx.accountEpoch
+    const admitted = () => !ctx.disposed && ctx.accountEpoch === epoch && owner() === login
+    const ended = "The account changed before the run was requested."
     const input = JSON.parse(canonicalStoredJsonValue(args.input)) as Record<string, unknown>
     const key = canonicalStoredJsonValue([login, args.repo, args.binding.workspaceId ?? null, args.workflow, input])
     // Admission is serialized through persistence, shared by button, slash and agent bindings.
     while (persisting.has(key)) await persisting.get(key)
+    if (!admitted()) return ended
     const prior = [...store.collections.cards.values()].find(card => {
       const held = workflowLaunchOf(card)
       return held && canonicalStoredJsonValue([held.owner, held.repo, held.workspaceId ?? null, held.workflow, held.input]) === key &&
@@ -193,6 +198,7 @@ export const createWorkflowLaunchController = (
         input: { ...request.input, _workflowLaunch: request } } } }).isPersisted.promise
     persisting.set(key, saving)
     try { await saving } catch { return "The run request could not be saved. Try again." } finally { persisting.delete(key) }
+    if (!admitted()) return ended
     send(id, request)
     return { value: `run-requested workflow=${args.workflow} request=${request.id} repo=${args.repo}` }
   }

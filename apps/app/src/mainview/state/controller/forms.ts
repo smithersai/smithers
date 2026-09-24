@@ -557,7 +557,18 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
      */
     const asAgent = via === "agent" || actor === "smithers"
     const continuation = invocation ?? continuationFor(card)
+    /*
+     * The submission belongs to the account that pressed Submit. Sign-out
+     * forgets the form and its draft, so work that outlives the account runs
+     * nothing new and writes nothing back.
+     */
+    const epoch = ctx.accountEpoch
+    const accountEnded = () => ctx.accountEpoch !== epoch
     await patch(card, { ...card.payload, submitting: true }, "active")
+    if (accountEnded()) {
+      continuations.delete(cardId)
+      return "The account changed before this form was submitted."
+    }
     /* Everything the doors say from here on belongs to this submission. */
     const saidBefore = latestOrdinal(collections)
     let outcome: CommandOutcome
@@ -573,15 +584,20 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     } catch (cause) {
       outcome = { status: "failed", error: card.payload.fields.some(field => field.kind === "write-only") ? "Submission failed." : cause instanceof Error ? cause.message : String(cause) }
     }
-    if (ctx.disposed || (outcome.status === "failed" && outcome.persistenceFailed)) return describe(outcome)
-    const current = formCard(cardId) ?? card
+    if (accountEnded()) continuations.delete(cardId)
+    if (ctx.disposed || accountEnded() || (outcome.status === "failed" && outcome.persistenceFailed)) return describe(outcome)
+    // A form the conversation cleared mid-submission stays cleared.
+    const current = formCard(cardId)
     if (outcome.status === "executed") {
       continuations.delete(cardId)
-      const { error: _dropped, ...payload } = current.payload
-      await patch(current, { ...payload, submitting: false }, "acted")
+      if (current !== undefined) {
+        const { error: _dropped, ...payload } = current.payload
+        await patch(current, { ...payload, submitting: false }, "acted")
+      }
       return { value: outcome.value ?? `submitted /${flow}${args === "" ? "" : ` ${args}`}` }
     }
     const error = describe(outcome)
+    if (current === undefined) return error
     const { error: _repeated, ...settledPayload } = current.payload
     /*
      * The row yields to a door's line by TAKING it, never by matching the
