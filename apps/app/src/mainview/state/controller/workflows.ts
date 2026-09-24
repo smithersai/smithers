@@ -200,10 +200,11 @@ export const createWorkflowController = (
   }
 
   const provisionWorkspaceImpl = async (repo: string, binding: GatewayWorkspaceBinding, signal?: AbortSignal): Promise<true | LaunchRefusal> => {
-    const login = store.collections.identitySessions.get("identity")?.login
+    const identity = store.collections.identitySessions.get("identity")
+    const owner = identity?.state === "signed-in" ? identity.login : null
     const epoch = ctx.accountEpoch
-    const current = () => !ctx.disposed && ctx.accountEpoch === epoch &&
-      store.collections.identitySessions.get("identity")?.state === "signed-in" && store.collections.identitySessions.get("identity")?.login === login
+    // Preparation starts signed in and survives an identity outage; only an owner change stops it.
+    const current = () => !ctx.disposed && owner !== null && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
     // The Worker absorbs the upstream 409 and answers 200 `{ status: "provisioning" }`
     // while a workspace is mid-provision (apps/server/src/index.ts): poll that
     // body to a bounded deadline, never stampede. Any non-2xx here is a failure.

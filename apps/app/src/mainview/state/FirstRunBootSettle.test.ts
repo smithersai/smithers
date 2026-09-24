@@ -61,7 +61,7 @@ test("a focus re-read during the boot identity read still offers sign-in for the
     expect(await controller.commands.run("issues.list")).toEqual({ status: "executed", value: "Requested" })
     bootIdentityRead(store, controller)
     // controller/auth-billing.ts watchIdentityAcrossTabs: window focus re-reads
-    // the session, bumps ctx.accountEpoch, and the boot read returns at its guard.
+    // the session, starts a newer probe, and the boot read returns at its guard.
     void controller.loadSession()
     identity.release()
 

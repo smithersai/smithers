@@ -30,7 +30,7 @@ export function createWorkflowCatalogController(ctx: ControllerContext, options:
     if (existing?.id === request.id && existing.epoch === epoch) return existing.work
     const current = () => {
       const latest = store.collections.cards.get(card.id)
-      return !ctx.disposed && ctx.accountEpoch === epoch && owner() === request.owner &&
+      return !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner &&
         latest?.kind === "workflow-list" && latest.payload.catalogRequest?.id === request.id
     }
     const binding = card.payload.workspaceId === undefined ? {} : { workspaceId: card.payload.workspaceId }
@@ -62,7 +62,7 @@ export function createWorkflowCatalogController(ctx: ControllerContext, options:
           ...card, loading: false, status: "active", body: undefined,
           payload: { ...card.payload, workflows, catalogRequest: undefined }
         } }).isPersisted.promise
-        return !ctx.disposed && ctx.accountEpoch === epoch && owner() === request.owner ? true : TOAST_SUPERSEDED
+        return !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner ? true : TOAST_SUPERSEDED
       } catch {
         try { return await fail("Flows could not be loaded. Try again.") }
         catch { return current() ? "Flows could not be saved. Try again." : TOAST_SUPERSEDED }
@@ -84,7 +84,7 @@ export function createWorkflowCatalogController(ctx: ControllerContext, options:
     if (!login) return "Sign in with GitHub first."
     const id = scope.binding.workspaceId === undefined ? `workflow-list-${scope.repo}`
       : `workflow-list@${encodeURIComponent(scope.repo)}@${encodeURIComponent(scope.binding.workspaceId)}`
-    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && owner() === login
+    const current = () => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === login
     for (let pending = shared.saving.get(id); pending; pending = shared.saving.get(id)) await pending.catch(() => {})
     if (!current()) return "The account changed. Open Flows again."
     const previous = store.collections.cards.get(id)

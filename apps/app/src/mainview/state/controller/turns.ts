@@ -642,29 +642,21 @@ export const createTurnController = (
     void pending.then(settled, settled)
   }
 
-  const accountOwner = (): string | null | undefined => {
-    const identity = store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
-  }
-  let owner = accountOwner()
-  let ownershipGeneration = 0
+  // A turn belongs to the account generation it started in (ctx.accountEpoch).
+  let owner = ctx.accountOwner()
   const turnGenerations = new WeakMap<ActiveTurn, number>()
   const ownTurn = (turn: ActiveTurn): ActiveTurn => {
-    turnGenerations.set(turn, ownershipGeneration)
+    turnGenerations.set(turn, ctx.accountEpoch)
     return turn
   }
-  const revokedTurn = (turn: ActiveTurn): boolean => ctx.disposed ||
-    turnGenerations.get(turn) !== ownershipGeneration || accountOwner() !== owner
+  const revokedTurn = (turn: ActiveTurn): boolean => ctx.disposed || turnGenerations.get(turn) !== ctx.accountEpoch
   const isCurrentTurn = (turn: ActiveTurn): boolean => !revokedTurn(turn) && ctx.activeTurn === turn &&
     store.session().turnId === turn.id && store.session().phase === "responding"
-  const ownershipCurrent = (generation: number): boolean => !ctx.disposed &&
-    generation === ownershipGeneration && accountOwner() === owner
+  const ownershipCurrent = (generation: number): boolean => !ctx.disposed && generation === ctx.accountEpoch
   const identitySubscription = store.collections.identitySessions.subscribeChanges(() => {
-    const nextOwner = accountOwner()
+    const nextOwner = ctx.accountOwner()
     if (nextOwner === owner) return
     owner = nextOwner
-    ownershipGeneration += 1
     const turn = ctx.activeTurn
     ctx.activeTurn = undefined
     // Cancel without rendering a terminal row into the replacement account.
@@ -1068,8 +1060,8 @@ export const createTurnController = (
 
   const send: TurnController["send"] = (text, admission) => {
     if (ctx.disposed) return
-    const generation = ownershipGeneration
-    if (admission && accountOwner() !== admission.owner) return
+    const generation = ctx.accountEpoch
+    if (admission && ctx.accountOwner() !== admission.owner) return
     // This lookup excludes optimistic rows, including a prior failed attempt.
     if (admission && store.committedHttpTurn(admission.turnId, admission.owner)) return Promise.resolve(true)
     const parsed = parseSubmit(text, ctx.commands.all())
@@ -1206,7 +1198,7 @@ export const createTurnController = (
 
   const commitApprovalDecision = (id: string, decision: "approved" | "denied", answer?: unknown): void => {
     if (ctx.disposed) return
-    const generation = ownershipGeneration
+    const generation = ctx.accountEpoch
     const rowTarget = parseApprovalActionId(id)
     if (rowTarget !== undefined) {
       void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer).catch(() => {})
@@ -1253,7 +1245,7 @@ export const createTurnController = (
     if (answer === undefined) { commitApprovalDecision(id, decision); return }
     const input = prepareApprovalAnswer(store, id, answer, question)
     if (input === undefined || decision !== "approved") return
-    const generation = ownershipGeneration
+    const generation = ctx.accountEpoch
     // An answer is never sent before its human input has a durable receipt.
     const receipt = store.dispatch({ type: "approval.answer.changed", actor: "user", ...input })
     void receipt.isPersisted.promise.then(() => {

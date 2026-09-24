@@ -115,3 +115,31 @@ test("boot reconnects a persisted catalog refresh once after identity adoption",
   expect(card?.kind === "models" && card.payload.refresh).toBeUndefined()
   expect(card?.kind === "models" && card.payload.host).toBe("observed")
 })
+
+test("a same-owner focus re-read while a model test is out sends no second provider call", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  let releaseTest!: (response: Response) => void
+  let calls = 0
+  const controller = createAppController(store, unavailableRepositories, silentAgent, {
+    toastDebounceMs: 0, toastAutoDismissMs: 60_000,
+    fetchImpl: async (input) => {
+      const path = new URL(String(input), "http://app.test").pathname
+      if (path === MODEL_TEST_PATH) { calls += 1; return new Promise<Response>((resolve) => { releaseTest = resolve }) }
+      if (path.endsWith("/auth/session")) return Response.json({ login: "will", allowlisted: true, admin: false })
+      if (path === MODEL_CATALOG_PATH) return Response.json(catalog)
+      return new Promise<Response>(() => {})
+    }
+  })
+  await controller.loadSession()
+  await store.dispatch({ type: "model.saved", actor: "user", model }).isPersisted.promise
+  await controller.commands.run("model.test", "lab")
+  await waitFor(() => calls === 1 && store.collections.toasts.get("toast-model.test:lab")?.status === "running")
+  await controller.loadSession()
+  await controller.loadSession()
+  await controller.observeModels()
+  expect(calls).toBe(1)
+  releaseTest(Response.json(passed))
+  await waitFor(() => store.collections.toasts.get("toast-model.test:lab")?.status === "ok")
+  expect(store.collections.models.get("lab")?.lastTest?.result).toEqual(passed)
+  expect(calls).toBe(1)
+})

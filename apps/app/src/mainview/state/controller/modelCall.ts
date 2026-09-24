@@ -19,6 +19,7 @@
  */
 import type { ModelCallDraft, ModelCallOutput, ModelCallPending, ModelCallProblem, ModelFieldKind, ModelQuestion, ModelQuestionType, ModelStateField } from "@smthrs/rpc/ConfiguredModel"
 import { MODEL_CALL_NAME_MAX, MODEL_CALL_STATE_MAX_BYTES, MODEL_CALL_TEMPERATURE_TEXT_MAX, MODEL_CALL_TEXT_MAX, MODEL_FIELD_KEY, MODEL_NAME_RESERVED, MODEL_QUESTION_TYPES, ModelCallDraftSchema, ModelFieldKindSchema, bindingOf, modelCallDefault, modelCallInputOf, modelCallProblemOf, modelKindOf, modelStateOf } from "@smthrs/rpc/ConfiguredModel"
+import { accountOwnerOf } from "../AccountOwner"
 import type { CommandResult } from "../../flows/entries/Declare"
 import { actorSharedState } from "../ActorBindings"
 import type { Card, StoredModel } from "../AppState"
@@ -265,10 +266,7 @@ export const createModelCallController = (ctx: ControllerContext, deps: ModelCal
   }
   const missing = (id: string): string => `There is no model ${id}.`
   /** Whose ask it is: the login, or null for a visitor and for a session not identified yet. */
-  const owner = (): string | null => {
-    const identity = collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
-  }
+  const owner = (): string | null => accountOwnerOf(collections.identitySessions.get("identity")) ?? null
 
   /** The card written, at the tail when it is new or someone asked for it, in place otherwise. */
   const write = (id: string, payload: Payload, toTail: boolean, actor: "user" | "smithers" | "system" = ctx.commandActor): Promise<unknown> => {

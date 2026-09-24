@@ -8,6 +8,7 @@ import { approvalQuestionKey } from "../cards/ApprovalQuestion"
 import { retiredLineageKey } from "../chain/LineageRetirement"
 import { PERSISTED_COLLECTION_BUDGET_BYTES } from "../chain/PersistenceBudget"
 import { framePath } from "../runtime/FrameHistory"
+import { accountOwnerOf } from "./AccountOwner"
 import { sameApproval } from "./ApprovalReference"
 import type {
 AppTransition,
@@ -633,10 +634,6 @@ const repositoryCapabilities = (
   ]
 }
 
-const accountOwner = (identity: AppProjectionRow<"identitySessions">): string | null | undefined =>
-  identity.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-    identity.state === "signed-in" ? identity.login : identity.state === "unavailable" ? undefined : null
-
 /** One account-boundary predicate governs projection cleanup and private journal rotation. */
 export const appTransitionErasesPrivateState = (snapshot: AppProjectionSnapshot, transition: AppTransition): boolean => {
   if (transition.type === "app.reset") return true
@@ -644,7 +641,7 @@ export const appTransitionErasesPrivateState = (snapshot: AppProjectionSnapshot,
   if (identity === undefined) return false
   if (transition.type === "identity.session.cleared") return true
   if (transition.type !== "identity.session.loaded") return false
-  const owner = accountOwner(identity)
+  const owner = accountOwnerOf(identity)
   return owner !== null && (transition.state === "signed-out" ||
     (transition.state === "signed-in" && owner !== transition.login))
 }
@@ -1327,8 +1324,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           if (transition.text.trim() === "" || (transition.retry && collections.messages.get(`message-${transition.turnId}-user`)?.text !== transition.text.trim())) return
           reduce(transition.retry ? { type: "message.retried", actor: "user", turnId: transition.turnId }
             : { type: "message.submitted", actor: transition.actor, turnId: transition.turnId, text: transition.text }, 0)
-          const identity = collections.identitySessions.get("identity")
-          const owner = identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
+          const owner = accountOwnerOf(collections.identitySessions.get("identity"))
           collections.httpTurns.insert({ id: transition.attemptId, turnId: transition.turnId, owner, legId: transition.journal.legId,
             status: "active", receivedText: false, askClass: impossibleAskOf(transition.text), claimBuffer: "", createdAt, revision })
           collections.httpTurnLegs.insert({ id: transition.journal.legId, attemptId: transition.attemptId, turnId: transition.turnId,
@@ -2537,7 +2533,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           // Availability is transient; ownership lasts until a definitive answer.
           // Legacy signed-in rows still name their owner. A legacy outage has
           // lost that name, so undefined conservatively means unknown owner.
-          const owner = accountOwner(existing)
+          const owner = accountOwnerOf(existing)
           if (appTransitionErasesPrivateState(previous, transition)) {
             forgetAccountState(collections, createdAt)
           }
@@ -3553,8 +3549,7 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
            */
           const existing = collections.recommendations.get(RECOMMENDATION_ID)
           if (existing === undefined) return
-          const identity = collections.identitySessions.get("identity")
-          const owner = identity === undefined ? undefined : accountOwner(identity)
+          const owner = accountOwnerOf(collections.identitySessions.get("identity"))
           if (owner === undefined) return
           collections.recommendations.update(RECOMMENDATION_ID, (draft) => {
             draft.retry = { at: transition.retryAt, owner, origin: transition.origin }

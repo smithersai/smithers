@@ -656,12 +656,6 @@ export const createRunsController = (
     inFlight: new Map<string, { readonly id: string; readonly owner: string; readonly epoch: number; readonly work: Promise<unknown> }>(),
     persisting: new Map<string, Promise<unknown>>()
   }))
-  /** The stable owner of retained account data (accountOwnerLogin survives an unavailable probe). */
-  const accountOwner = (): string | null | undefined => {
-    const identity = store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
-  }
   const inboxRequestFor = (key: string): ApprovalsInboxRequest | undefined =>
     (store.session().approvalsInboxRequests ?? []).find((row) => inboxCardIdFor(row.repo, row.workspaceId) === key)
 
@@ -713,7 +707,7 @@ export const createRunsController = (
     const binding = request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }
     // The fence at every boundary: the controller is open, the account is
     // the one that asked, and this request is still the one on record.
-    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === request.owner
+    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner
     const current = (): boolean => ownsAccount() && inboxRequestFor(key)?.id === request.id
     const settle = async (error?: string): Promise<boolean> => {
       if (!current()) return false
@@ -774,10 +768,10 @@ export const createRunsController = (
     const repo = target.repo
     const binding = gatewayBindingFor(store, repo)
     if ("error" in binding) return binding.error
-    const owner = accountOwner()
+    const owner = ctx.accountOwner()
     if (typeof owner !== "string") return "Sign in with GitHub first: flows run on your own workspace."
     const epoch = ctx.accountEpoch
-    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === owner
+    const ownsAccount = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
     const accountChanged = "The account changed before the approvals could be read. Run the command again."
     const key = inboxCardIdFor(repo, binding.workspaceId)
     const acknowledgment = { value: "Approvals requested." }
@@ -815,9 +809,9 @@ export const createRunsController = (
   const resumeApprovalRequests = (): void => {
     if (ctx.disposed) return
     const epoch = ctx.accountEpoch
-    const owner = accountOwner()
+    const owner = ctx.accountOwner()
     if (typeof owner !== "string") return
-    const current = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && accountOwner() === owner
+    const current = (): boolean => !ctx.disposed && ctx.accountEpoch === epoch && ctx.accountOwner() === owner
     /*
      * The identity answer that wakes this is an optimistic row until its
      * write settles, and provisioning compares that row by identity: a read

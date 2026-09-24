@@ -1941,7 +1941,7 @@ export const createAppController = (
       const commandEntry = store.session().repositoryCommandEntry
       const routeMatches = routeEntry != null && (explicitRepo === undefined || explicitRepo.toLowerCase() === routeEntry.repo.toLowerCase())
       const commandMatches = commandEntry !== undefined && explicitRepo?.toLowerCase() === commandEntry.repo.toLowerCase() &&
-        commandEntry.owner === (identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : signedIn ? identity.login : identity?.state === "signed-out" ? null : undefined)
+        commandEntry.owner === ctx.accountOwner()
       const entry = routeMatches ? routeEntry : commandMatches ? commandEntry : undefined
       const scope = routeMatches ? undefined : "command" as const
       const knownPublic = requestedRepo !== undefined && [...store.collections.repositories.values()].some(row => row.catalog === true && row.id.toLowerCase() === requestedRepo.toLowerCase())

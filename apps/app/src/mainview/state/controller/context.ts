@@ -1,5 +1,6 @@
 import { Effect } from "effect"
 import type { AgentChatMessage, FetchLike } from "@smthrs/rpc/NativeAgent"
+import { accountOwnerOf } from "../AccountOwner"
 import { gatewayBindingFor } from "../RepoContext"
 import { createGatewaySeam } from "./gateway"
 import type { CommandRegistry } from "../../flows/Commands"
@@ -84,7 +85,21 @@ export interface ControllerContext {
   readonly runPumps: Map<string, { stopped: boolean }>
   activeTurn: ActiveTurn | undefined
   commandActor: "user" | "smithers"
-  accountEpoch: number
+  /**
+   * The account generation: it increments exactly when `accountOwner()`
+   * changes (sign-in, sign-out, another login), and never on a re-probe that
+   * names the same owner or on an identity outage. Work in flight fences on
+   * the epoch it captured together with the owner it admitted.
+   */
+  readonly accountEpoch: number
+  /** The owner of this page's account data (state/AccountOwner.ts). */
+  readonly accountOwner: () => string | null | undefined
+  /**
+   * A completed sign-out ends the account generation at once, before local
+   * cleanup writes the signed-out row, and even when that cleanup fails: the
+   * session is gone, so no work admitted under it may land.
+   */
+  readonly endAccount: () => void
   identityChanged: () => void
   authReprobeAt: number
   loadSession: () => Promise<void>
@@ -140,14 +155,16 @@ export const createControllerContext = (
    * debug mode adds beyond what the app already stores.
    */
   const netRing: NetEntry[] = []
-  const networkOwner = (): string | null => {
-    const identity = store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin ?? identity?.login ?? null
+  const accountOwner = (): string | null | undefined => accountOwnerOf(store.collections.identitySessions.get("identity"))
+  let owner = accountOwner()
+  let accountEpoch = 0
+  const advance = (next: string | null | undefined): void => {
+    owner = next
+    accountEpoch += 1
+    netRing.length = 0
   }
-  let netOwner = networkOwner()
-  let netGeneration = 0
   const recordNet = (entry: NetEntry, generation: number): void => {
-    if (generation !== netGeneration) return
+    if (generation !== accountEpoch) return
     netRing.push(entry)
     if (netRing.length > 100) netRing.shift()
   }
@@ -184,7 +201,9 @@ export const createControllerContext = (
     runPumps: new Map<string, { stopped: boolean }>(),
     activeTurn: undefined,
     commandActor: "user",
-    accountEpoch: 0,
+    get accountEpoch() { return accountEpoch },
+    accountOwner,
+    endAccount: () => { advance(null) },
     identityChanged: () => {},
     authReprobeAt: 0,
     loadSession: async () => {},
@@ -241,15 +260,17 @@ export const createControllerContext = (
     errorMessageOf: undefined as unknown as ControllerContext["errorMessageOf"]
   } satisfies ControllerContext
 
-  // Match the persisted diagnostic scrub on account changes, including requests still in flight.
-  const netIdentity = store.collections.identitySessions.subscribeChanges(() => {
-    const owner = networkOwner()
-    if (owner === netOwner) return
-    netOwner = owner
-    netGeneration += 1
-    netRing.length = 0
+  /*
+   * The one producer of the account generation. Registered before any
+   * controller subscribes, so every later identity subscriber and every
+   * resume already reads the new epoch. The wire tap matches the persisted
+   * diagnostic scrub, including requests still in flight.
+   */
+  const ownerChanges = store.collections.identitySessions.subscribeChanges(() => {
+    const next = accountOwner()
+    if (next !== owner) advance(next)
   })
-  ctx.onDispose(() => { netIdentity.unsubscribe() })
+  ctx.onDispose(() => { ownerChanges.unsubscribe() })
 
   /*
    * Mid-session 401 recovery (multi's AUTH_REQUIRED discipline, one seam):
@@ -270,7 +291,7 @@ export const createControllerContext = (
   }
   ctx.http = async (input: RequestInfo | URL, init?: RequestInit) => {
     const started = Date.now()
-    const generation = netGeneration
+    const generation = accountEpoch
     const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
     try {
@@ -389,8 +410,8 @@ export const createControllerContext = (
   ctx.gateway = createGatewaySeam({
     baseUrl: ctx.baseUrl,
     observationGuard: () => {
-      const generation = netGeneration, owner = networkOwner()
-      return () => !ctx.disposed && generation === netGeneration && owner === networkOwner()
+      const generation = accountEpoch
+      return () => !ctx.disposed && generation === accountEpoch
     },
     bindingFor: (repo, runId) => gatewayBindingFor(ctx.store, repo, runId),
     fetch: (url, init) => ctx.boundedFetch(url, init),

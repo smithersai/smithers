@@ -9,11 +9,7 @@ export const createRepositoryReadiness = (
   refresh: (repo: string, requestId: string, isCurrent: () => boolean, scope?: "command") => Promise<string | void>
 ) => {
   const pending = () => ctx.store.session().pendingCommand
-  const accountOwner = () => {
-    const identity = ctx.store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
-  }
+  const accountOwner = ctx.accountOwner
   const target = (request: ReturnType<typeof pending>): { entry: RepositoryEntry; scope?: "command" } | undefined => {
     if (request?.requirement !== "repository-ready") return
     try {

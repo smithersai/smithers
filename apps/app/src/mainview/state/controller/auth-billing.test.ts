@@ -424,7 +424,8 @@ describe("a balance refresh the account outlives", () => {
     expect(store.collections.toasts.get("toast-billing.balance.refresh")?.status).toBe("running")
 
     // A focus re-read adopted a different session while the request was out.
-    ctx.accountEpoch += 1
+    await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     release(
       new Response(
         JSON.stringify({
@@ -632,7 +633,8 @@ describe("automatic balance refreshes", () => {
     h.controller.settleTurnBilling()
     await h.inFlight()
     await pastDebounce()
-    h.ctx.accountEpoch += 1
+    await h.ctx.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+      allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     h.release(Response.json(balanceOk))
     await pastDebounce()
     expect(h.balance()?.state).not.toBe("ok")
@@ -661,5 +663,90 @@ describe("automatic balance refreshes", () => {
     h.answer(0, Response.json(balanceOk))
     expect(await asked).toEqual({ value: "balance: $500 left; $0 spent across 0 turn(s)" })
     expect(h.toast()).toMatchObject({ title: "Balance is up to date", status: "ok" })
+  })
+})
+
+/*
+ * Window focus, a sibling tab's ping and any 401 re-read the session. Only an
+ * answer naming another owner is an account change: a re-probe of the same
+ * owner refreshes the row and fences nothing, while a probe that a later probe
+ * or a sign-out overtook writes nothing at all.
+ */
+describe("identity re-probes", () => {
+  const probes = async () => {
+    const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+    const answers: Array<(response: Response) => void> = []
+    const ctx = createControllerContext(store, repositories, agent, {
+      fetchImpl: (input, init) => {
+        const path = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "https://app.test").pathname
+        if (path.endsWith("/auth/session")) return new Promise<Response>(resolve => { answers.push(resolve) })
+        if (path.endsWith("/auth/logout") && init?.method === "POST") return Promise.resolve(Response.json({}))
+        // The balance read a signed-in answer starts is not under test: it never answers.
+        return new Promise<Response>(() => {})
+      }
+    })
+    ctx.withToast = async (_key, _title, _done, work) => work()
+    const controller = createAuthBillingController(ctx, () => 0)
+    const until = async (ready: () => boolean) => {
+      for (let attempt = 0; attempt < 100 && !ready(); attempt += 1) await new Promise(resolve => setTimeout(resolve, 0))
+      expect(ready()).toBe(true)
+    }
+    return {
+      ctx, controller,
+      identity: () => store.collections.identitySessions.get("identity"),
+      probe: async (answer: Record<string, unknown>) => {
+        const loading = controller.loadSession()
+        await until(() => answers.length > 0)
+        answers.shift()!(Response.json(answer))
+        await loading
+      },
+      held: async (count: number) => { await until(() => answers.length >= count); return answers.splice(0) },
+      dispose: async () => { await ctx.dispose(); await store.dispose?.() }
+    }
+  }
+
+  test("a same-login re-probe records the answer and changes no account", async () => {
+    const h = await probes()
+    try {
+      await h.probe(signedIn)
+      const epoch = h.ctx.accountEpoch
+      const observed = h.identity()?.sessionObservation?.revision ?? -1
+      await h.probe(signedIn)
+      await h.probe(signedIn)
+      expect(h.ctx.accountEpoch).toBe(epoch)
+      expect(h.identity()?.sessionObservation?.revision).toBeGreaterThan(observed)
+      await h.probe({ ...signedIn, login: "other" })
+      expect(h.ctx.accountEpoch).toBe(epoch + 1)
+    } finally { await h.dispose() }
+  })
+
+  test("a probe a later probe overtook writes nothing", async () => {
+    const h = await probes()
+    try {
+      const first = h.controller.loadSession()
+      const second = h.controller.loadSession()
+      const [older, newer] = await h.held(2)
+      newer!(Response.json({ ...signedIn, login: "newer" }))
+      await second
+      older!(Response.json({ ...signedIn, login: "older" }))
+      await first
+      expect(h.identity()).toMatchObject({ state: "signed-in", login: "newer" })
+    } finally { await h.dispose() }
+  })
+
+  test("signing out changes the account once and discards the probe it overtook", async () => {
+    const h = await probes()
+    try {
+      await h.probe(signedIn)
+      const epoch = h.ctx.accountEpoch
+      const reading = h.controller.loadSession()
+      const [late] = await h.held(1)
+      expect(await h.controller.signOut()).toBeUndefined()
+      expect(h.ctx.accountEpoch).toBe(epoch + 1)
+      late!(Response.json(signedIn))
+      await reading
+      expect(h.identity()).toMatchObject({ state: "signed-out", login: null })
+      expect(h.ctx.accountEpoch).toBe(epoch + 1)
+    } finally { await h.dispose() }
   })
 })

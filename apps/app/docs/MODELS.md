@@ -87,7 +87,7 @@ reads the number from the record, never a constant. NO retries: add the small
 provider-general `maxRetries` option to `@smthrs/model` `RequestExecutor` (the default
 ladder would turn one Test into many requests). The failure union carries codes,
 numbers, enums and the echoed credential NAME — no server free text.
-Recovery starts after identity loads or is adopted, using that account epoch.
+Recovery starts after identity loads or is adopted, using the account epoch, which moves only when the owner changes: a same-owner re-probe sends nothing again.
 `model.list` also returns `{ value: "Requested" }`: the card persists
 `refresh: { state: "requested" }` before the catalog fetch, and duplicate human
 and agent requests share the background work and the `model.list` toast. The

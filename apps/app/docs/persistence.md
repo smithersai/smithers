@@ -227,7 +227,10 @@ repository, opens its tree, or reads its default bookmark.
 Catalog absence retains the sign-in gate; an unavailable catalog remains
 retryable. After admission, the original payload re-enters the command registry
 and the shared progress toast follows the actual read. Request ID, account
-owner and account epoch fence late responses. Account replacement removes the
+owner and account epoch fence late responses. The account epoch counts owner
+changes only (sign-in, sign-out, another login); a re-probe of the same owner
+on focus, from a sibling tab or after a 401, and an identity outage, leave it
+unchanged. Account replacement removes the
 command receipt; route admission keeps its existing selection fence. Projector
 version 4 uses the existing atomic upgrade checkpoint, preserving prior cards,
 route receipts and deferred commands.

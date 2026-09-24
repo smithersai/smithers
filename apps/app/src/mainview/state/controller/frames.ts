@@ -95,11 +95,7 @@ export const createFramesController = (
   const forkFrame: FramesController["forkFrame"] = async () => {
     if (ctx.store.session().phase === "responding") return "Wait for the current turn to finish before forking."
     const accountEpoch = ctx.accountEpoch
-    const owner = () => {
-      const identity = ctx.store.collections.identitySessions.get("identity")
-      return identity?.accountOwnerLogin ?? identity?.login ?? null
-    }
-    const accountOwner = owner()
+    const accountOwner = ctx.accountOwner()
     // The address bar is updated in the same browser gesture as the store
     // dispatch. Prefer it while the live projection catches up so a fork made
     // immediately after maximize captures the card frame rather than the old
@@ -165,7 +161,7 @@ export const createFramesController = (
     await ctx.store.dispatch({ type: "frame.forked", actor: "user", branch, rootFrame, selectedFrame }).isPersisted.promise
     // A failed write cannot publish a durable address or a completion notice.
     // A later navigation or owner teardown also owns its own presentation.
-    if (ctx.disposed || ctx.accountEpoch !== accountEpoch || owner() !== accountOwner || !sameLocation(sessionLocation(ctx), {
+    if (ctx.disposed || ctx.accountEpoch !== accountEpoch || ctx.accountOwner() !== accountOwner || !sameLocation(sessionLocation(ctx), {
       workspaceId: source.workspaceId, branchId: id, frameId: selectedFrame.id
     })) return
     history?.push({ workspaceId: source.workspaceId, branchId: id, frameId: selectedFrame.id })

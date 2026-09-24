@@ -329,7 +329,10 @@ describe("local archive and append-only summary notes", () => {
       if (change === "draft") {
         await store.dispatch({ type: "composer.changed", actor: "user", draft: "New draft" }).isPersisted.promise
       }
-      if (change === "identity") ctx.accountEpoch++
+      if (change === "identity") {
+        await store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other",
+          allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
+      }
       if (change === "dispose") ctx.dispose()
       const before = state(store)
       finish(response())
@@ -338,6 +341,17 @@ describe("local archive and append-only summary notes", () => {
       ctx.dispose()
     })
   }
+
+  test("a re-probe naming the same owner while summarizing still clears", async () => {
+    let finish!: (response: Response) => void
+    const { store, world, ctx } = await fixture(async () => new Promise<Response>((resolve) => { finish = resolve }))
+    await signIn(store)
+    const pending = world.clearConversation({ summarize: true })
+    await signIn(store)
+    finish(response())
+    expect(await pending).toBeUndefined()
+    ctx.dispose()
+  })
 
   test("local clear supersedes a hanging summary without waiting for the provider", async () => {
     let started!: () => void

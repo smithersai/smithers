@@ -130,7 +130,7 @@ test("a catalog cached by the departed account cannot repopulate its credential 
   const t = await setup(() => Promise.resolve(Response.json(enrolled)))
   await t.models.listModels(); await t.settled()
   expect(t.card()?.payload.credentials[0]?.name).toBe("ALICE_ONLY")
-  t.ctx.accountEpoch++
+  Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
   await t.store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise
   t.models.newModelCredential()
   // Rendering before the next network response must not recover the old account's metadata.
@@ -251,7 +251,7 @@ test("a response for an account that left, or for a route that was edited meanwh
   await save(t)
   await t.models.testModel("mine")
   await tick()
-  t.ctx.accountEpoch += 1
+  Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
   host.releases[0]!(Response.json(passed))
   await t.settled()
   expect(t.store.collections.models.get("mine")?.lastTest).toBeUndefined()
@@ -296,7 +296,7 @@ test("a press after the account changed starts its own test, and its result is k
   await save(t)
   await t.models.testModel("mine")
   await tick()
-  t.ctx.accountEpoch += 1
+  Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
   expect(await t.models.testModel("mine")).toEqual({ value: "Requested" })
   expect(t.tests()).toHaveLength(2)
   // The account that left gets no say, and does not clear the test that is out now.
@@ -375,7 +375,7 @@ test("a catalog failure stays typed and retryable, and a departed account cannot
   expect(JSON.stringify(t.card())).not.toContain("private provider prose")
   await t.models.listModels()
   await tick()
-  t.ctx.accountEpoch += 1
+  Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
   await t.models.listModels()
   await tick()
   expect(releases).toHaveLength(3)

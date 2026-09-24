@@ -84,14 +84,18 @@ export const createAuthBillingController = (
     }).isPersisted.promise
     if (!ctx.disposed) selectedIdentity.settled?.()
   }
+  /*
+   * Session reads race: window focus, a sibling tab and a 401 each start one.
+   * Only the latest read may write the row, and a sign-out outranks every read
+   * already out. This sequence is private to the identity seam; the account
+   * generation (`ctx.accountEpoch`) moves only when the written owner changes.
+   */
+  let probe = 0
   // A definitive owner change revokes the old turn before any asynchronous
   // follow-up can deliver frames or restart a pending leg. Availability alone
   // does not revoke ownership: the persisted owner survives an outage.
   const fenceAccountTurn = (nextOwner: string | null, force = false): void => {
-    const identity = store.collections.identitySessions.get("identity")
-    const owner = identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
-    if (!force && owner === nextOwner) return
+    if (!force && ctx.accountOwner() === nextOwner) return
     const turn = ctx.activeTurn
     ctx.activeTurn = undefined
     if (turn !== undefined) void ctx.agent.cancelTurn(turn.id).catch(() => {})
@@ -148,11 +152,11 @@ export const createAuthBillingController = (
     }
   }
 
-  const dispatchSignedOut = async (epoch: number, signal?: AbortSignal): Promise<void> => {
-    if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
+  const dispatchSignedOut = async (mine: number, signal?: AbortSignal): Promise<void> => {
+    if (ctx.disposed || probe !== mine || signal?.aborted) return
     fenceAccountTurn(null)
     const scopesPlain = selectedIdentity === undefined ? await fetchScopesPlain(signal) : null
-    if (ctx.disposed || ctx.accountEpoch !== epoch || signal?.aborted) return
+    if (ctx.disposed || probe !== mine || signal?.aborted) return
     await store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -164,7 +168,7 @@ export const createAuthBillingController = (
     }).isPersisted.promise
     await mirrorSelectedCloud({ state: "signed-out", login: null, allowlisted: false, admin: false })
     // The read that WRITES the row makes the first run's target choice: a read
-    // that returned at its epoch guard has none to make, so a boot read raced
+    // that returned at its probe guard has none to make, so a boot read raced
     // by a focus re-read (watchIdentityAcrossTabs) leaves no command parked.
     settleFirstRunTarget()
     await refreshCloudSession?.()
@@ -186,11 +190,11 @@ export const createAuthBillingController = (
 
   const finishSignedInSession = async (
     session: Pick<ResolvedSession, "login" | "allowlisted" | "admin" | "scopes">,
-    previous: ReturnType<typeof store.collections.identitySessions.get>
+    previous: ReturnType<typeof store.collections.identitySessions.get>,
+    mine: number
   ): Promise<void> => {
-    if (ctx.disposed) return
+    if (ctx.disposed || probe !== mine) return
     fenceAccountTurn(session.login)
-    const epoch = ctx.accountEpoch
     const persisted = store.dispatch({
       type: "identity.session.loaded",
       actor: "system",
@@ -201,9 +205,9 @@ export const createAuthBillingController = (
       scopesPlain: null
     })
     await persisted.isPersisted.promise
-    if (ctx.disposed || ctx.accountEpoch !== epoch) return
+    if (ctx.disposed || probe !== mine) return
     await mirrorSelectedCloud({ state: "signed-in", ...session })
-    if (ctx.disposed || ctx.accountEpoch !== epoch) return
+    if (ctx.disposed || probe !== mine) return
     if (previous?.state !== "signed-in" || previous.login !== session.login) ctx.identityChanged()
     // The balance read is driven by the session answer, not fired blind at
     // boot: signed out it could only come back 401 — the expected state,
@@ -212,7 +216,7 @@ export const createAuthBillingController = (
     // On the web GitHub OAuth is also the Cloud login. Recheck its scope
     // verdict before a parked workspace act resumes, including tab refreshes.
     await refreshCloudSession?.()
-    if (disposed || ctx.accountEpoch !== epoch) return
+    if (disposed || probe !== mine) return
     if (session.allowlisted) {
       // Wave 11: a live run card's event pump resumes from its lastSeq.
       resumeWorkflowRuns()
@@ -225,10 +229,10 @@ export const createAuthBillingController = (
 
   const adoptSession = async (session: ResolvedSession): Promise<void> => {
     if (ctx.disposed) return
-    const epoch = ++ctx.accountEpoch
+    const mine = ++probe
     const previous = store.collections.identitySessions.get("identity")
     if (session.state === "signed-in" && typeof session.login === "string" && session.login.trim() !== "") {
-      await finishSignedInSession(session, previous)
+      await finishSignedInSession(session, previous, mine)
       return
     }
     if (session.state === "signed-out") {
@@ -239,7 +243,7 @@ export const createAuthBillingController = (
        * signed-out web visitor "the identity service isn't configured" on a
        * deployment where it is.
        */
-      await dispatchSignedOut(epoch)
+      await dispatchSignedOut(mine)
       return
     }
     dispatchUnavailable()
@@ -247,20 +251,20 @@ export const createAuthBillingController = (
 
   const loadSession = async (signal?: AbortSignal): Promise<void> => {
     if (ctx.disposed || signal?.aborted) return
-    const epoch = ++ctx.accountEpoch
+    const mine = ++probe
     const previous = store.collections.identitySessions.get("identity")
     if (selectedIdentity !== undefined) {
       let identity: Awaited<ReturnType<ApplicationIdentityClient["current"]>>
       try {
         identity = await selectedIdentity.current(signal)
       } catch {
-        if (ctx.accountEpoch !== epoch || signal?.aborted) return
+        if (probe !== mine || signal?.aborted) return
         dispatchUnavailable()
         return
       }
-      if (ctx.accountEpoch !== epoch || signal?.aborted) return
+      if (probe !== mine || signal?.aborted) return
       if (identity === null) {
-        await dispatchSignedOut(epoch, signal)
+        await dispatchSignedOut(mine, signal)
         return
       }
       await finishSignedInSession({
@@ -268,18 +272,18 @@ export const createAuthBillingController = (
         allowlisted: true,
         admin: identity.admin,
         scopes: identity.scopes
-      }, previous)
+      }, previous, mine)
       return
     }
     let response: Response
     try {
       response = await http(`${baseUrl}${AUTH_SESSION_PATH}`, { signal })
     } catch {
-      if (ctx.accountEpoch !== epoch || signal?.aborted) return
+      if (probe !== mine || signal?.aborted) return
       dispatchUnavailable()
       return
     }
-    if (ctx.accountEpoch !== epoch || signal?.aborted) return
+    if (probe !== mine || signal?.aborted) return
     // Signed-out is the expected resolved answer, never an error path: the
     // identity upstream states it as 401, the product Worker's seam restates
     // it as 200 { status: "signed-out" } so the browser never logs the
@@ -289,21 +293,21 @@ export const createAuthBillingController = (
     // owner erases the account's local state, so it falls to unavailable.
     if (response.status === 401) {
       await response.body?.cancel()
-      await dispatchSignedOut(epoch, signal)
+      await dispatchSignedOut(mine, signal)
       return
     }
     if (!response.ok) {
       await response.body?.cancel()
-      if (ctx.accountEpoch !== epoch || signal?.aborted) return
+      if (probe !== mine || signal?.aborted) return
       dispatchUnavailable()
       return
     }
     const body = (await response.json().catch(() => undefined)) as
       | { status?: unknown; state?: unknown; login?: unknown; allowlisted?: unknown; admission?: unknown; admin?: unknown }
       | undefined
-    if (ctx.accountEpoch !== epoch || signal?.aborted) return
+    if (probe !== mine || signal?.aborted) return
     if (body?.status === "signed-out" || body?.state === "signed-out") {
-      await dispatchSignedOut(epoch, signal)
+      await dispatchSignedOut(mine, signal)
       return
     }
     if (body == null || typeof body.login !== "string" || body.login.trim() === "" ||
@@ -314,7 +318,8 @@ export const createAuthBillingController = (
     }
     await finishSignedInSession(
       { login: body.login, allowlisted: body.allowlisted === true || body.admission === "public", admin: body.admin === true && body.allowlisted === true },
-      previous
+      previous,
+      mine
     )
   }
   ctx.loadSession = loadSession
@@ -599,7 +604,9 @@ export const createAuthBillingController = (
     } catch {
       return "Signing out didn't go through — the identity service didn't answer. You are still signed in."
     }
-    ctx.accountEpoch += 1
+    // Every session read already out describes the account this act ends.
+    probe += 1
+    ctx.endAccount()
     fenceAccountTurn(null, true)
     try {
       await store.dispatch({ type: "identity.session.cleared", actor: "user" }).isPersisted.promise

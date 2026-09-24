@@ -581,7 +581,7 @@ test.each(["pause", "account", "dispose"])("%s cancels and fences a pending chor
       await t.setup.runRepositorySetup("setup", "pause")
       await until(() => t.state().active?.enabled === false)
     } else if (stop === "account") {
-      t.ctx.accountEpoch++
+      Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
       await t.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "other", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
       t.setup.resumeRepositorySetups()
     } else await t.close()
@@ -812,7 +812,7 @@ test("pending recovery survives restart; late old-owner replies and edited draft
     const again = deferred()
     t.recovery.answer = async () => { await again.promise; return Response.json(recoveredInspection()) }
     await t.setup.openRepositorySetup("issues", "example/repo")
-    t.ctx.accountEpoch += 1
+    Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
     await t.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
     again.release(); await Promise.all(t.background)
     expect(setupCard(t)).toBeUndefined()
@@ -1016,7 +1016,7 @@ test("held recovery admission persists before network and duplicates cannot cros
     expect(t.recovery.calls).toEqual([])
     // The identity row remains after refused local sign-out cleanup, but the
     // account epoch already invalidates both waiting admissions.
-    t.ctx.accountEpoch += 1
+    Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
     held.release(); await Promise.all([first, duplicate])
     expect(t.recovery.calls).toEqual([])
     expect(t.calls).toEqual([])
@@ -1038,7 +1038,7 @@ test.each(["registration", "setup"] as const)("a held %s partial-response body c
   try {
     await t.setup.openRepositorySetup("issues", "example/repo")
     await until(() => reading)
-    t.ctx.accountEpoch += 1
+    Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
     await t.setup.openRepositorySetup("issues", "example/repo")
     expect(count).toBe(2)
     old.release(); await t.background[0]

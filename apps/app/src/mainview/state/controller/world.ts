@@ -70,8 +70,9 @@ export const createWorldController = (
     pendingClear?.abort()
   })
 
-  // Toasts and unrelated Wiki edits must not invalidate a summary. Changes
-  // to the conversation, its owner or identity do: never clear unseen input.
+  // Toasts, unrelated Wiki edits and a re-probe of the same owner must not
+  // invalidate a summary. Changes to the conversation or its owner do: never
+  // clear unseen input.
   const conversationVersion = (): string =>
     JSON.stringify({
       branch: ctx.store.session().activeBranchId,
@@ -79,7 +80,7 @@ export const createWorldController = (
       draft: ctx.store.session().draft,
       messages: [...ctx.store.collections.messages.values()],
       cards: [...ctx.store.collections.cards.values()],
-      identity: ctx.store.collections.identitySessions.get("identity"),
+      owner: ctx.accountOwner(),
       turn: ctx.activeTurn?.id,
       accountEpoch: ctx.accountEpoch
     })

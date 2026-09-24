@@ -5,6 +5,7 @@ import {
   type RepositoryJob, type RepositorySetup, type SetupDraft, type SetupManualRequest, type SetupRecoveryResponse
 } from "@smthrs/rpc/RepositorySetup"
 import { workerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
+import { accountOwnerOf } from "../AccountOwner"
 import type { Card } from "../AppState"
 import { actorSharedState } from "../ActorBindings"
 import { browserWriteRefusal } from "../BrowserWriteFailure"
@@ -238,10 +239,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
     const card = ctx.store.collections.cards.get(id)
     return card?.kind === "repository-setup" ? card : undefined
   }
-  const owner = () => {
-    const identity = ctx.store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
-  }
+  const owner = (): string | null => accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null
   const epoch = () => ctx.accountEpoch ?? 0
   /**
    * The pin a new request may carry. A workspace this repository's loaded

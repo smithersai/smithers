@@ -10,6 +10,7 @@
  * src/smithersCloud/githubImport.ts (startImport/pollImport) against plue
  * internal/routes/github_import.go.
  */
+import { accountOwnerOf } from "../AccountOwner"
 import type { Card } from "../AppState"
 import { resolveTargetRepo } from "../RepoContext"
 import type { GitHubRefusal, SeamContext } from "./SeamContext"
@@ -166,8 +167,7 @@ export const createRepoImportSeam = (ctx: SeamContext): RepoImportSeam => {
   const epochs = createRunEpochs(ctx, "repoimport-epochs")
   type Flight = { readonly work: Promise<unknown>; readonly admitted: Promise<unknown>; readonly current: () => boolean }
   const pending = actorSharedState(ctx, "repoimport-pending", () => new Map<string, Flight>())
-  const accountOwner = (): string | null => ctx.store.collections.identitySessions.get("identity")?.accountOwnerLogin ??
-    ctx.store.collections.identitySessions.get("identity")?.login ?? null
+  const accountOwner = (): string | null => accountOwnerOf(ctx.store.collections.identitySessions.get("identity")) ?? null
   const pendingKey = (repo: string): string => `${accountOwner() ?? "anonymous"}:${repo}`.toLowerCase()
   const activeFlight = (repo: string): Flight | undefined => {
     const key = pendingKey(repo)

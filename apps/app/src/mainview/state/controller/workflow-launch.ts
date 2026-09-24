@@ -50,7 +50,9 @@ export const createWorkflowLaunchController = (
     previous?.controller.abort()
     const controller = new AbortController()
     controllers.add(controller)
-    const current = () => !ctx.disposed && !controller.signal.aborted && ctx.accountEpoch === epoch && owner() === request.owner && workflowLaunchOf(read(id))?.id === request.id
+    // Admission needs a signed-in, allowlisted owner; work already admitted
+    // continues through an identity outage and stops only on an owner change.
+    const current = () => !ctx.disposed && !controller.signal.aborted && ctx.accountEpoch === epoch && ctx.accountOwner() === request.owner && workflowLaunchOf(read(id))?.id === request.id
     const preparationExpired = () => Date.now() - (request.preparationStartedAt ?? read(id)!.createdAt) >= ctx.workflowPreparationTimeoutMs
     const publish = async (next: WorkflowLaunch, patch: Partial<RunCard["payload"]> = {}) => {
       if (!current()) return

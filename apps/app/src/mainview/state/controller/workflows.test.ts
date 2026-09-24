@@ -24,6 +24,8 @@ async function fixture(options: { workflowPreparationTimeoutMs?: number } = {}) 
   await store.dispatch({ type: "repositories.loaded", actor: "system", repositories: [{ id: repo, org: "owner", ownerKind: "user", name: "launch-test", head: null }] }).isPersisted.promise
   const calls: Array<{ procedure: string; payload: Record<string, unknown>; repo: string; workspaceId?: string }> = []
   let provision = async () => json(200, { status: "ready" })
+  let provisions = 0
+  let session = (): Response => json(200, { login: "owner", allowlisted: true, admin: false })
   let run = async () => json(200, { ok: true, payload: { runId: "run-1" } })
   let status: RunSummaryRow["status"] = "running"
   let summaryRunId = "run-1"
@@ -34,7 +36,8 @@ async function fixture(options: { workflowPreparationTimeoutMs?: number } = {}) 
   const chat = scriptedToolAgent([() => [{ type: "delta", kind: "text", text: "Still here." }, { type: "done", reason: "stop" }]])
   const services = { workflowPollMs: 5, workflowPreparationTimeoutMs: options.workflowPreparationTimeoutMs, toastAutoDismissMs: 60_000, fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
     const path = String(url)
-    if (path.endsWith("/api/workflow/provision")) return provision()
+    if (path.endsWith("/api/auth/session")) return session()
+    if (path.endsWith("/api/workflow/provision")) { provisions += 1; return provision() }
     if (!path.endsWith("/api/workflow/rpc")) return json(404, {})
     const body = JSON.parse(String(init?.body))
     calls.push(body)
@@ -49,6 +52,7 @@ async function fixture(options: { workflowPreparationTimeoutMs?: number } = {}) 
   const toasts = () => [...store.collections.toasts.values()].filter(toast => toast.key.startsWith("flow.request."))
   return { store, storage, controller, services, calls, cards, toasts, chat,
     failNextWrite: () => { failNextWrite = true },
+    provisions: () => provisions, session: (fn: typeof session) => { session = fn },
     provision: (fn: typeof provision) => { provision = fn }, run: (fn: typeof run) => { run = fn }, status: (value: RunSummaryRow["status"]) => { status = value },
     summaryRunId: (value: string) => { summaryRunId = value }, failedVerdict: (value: string) => { failedVerdict = value } }
 }
@@ -254,6 +258,29 @@ test("reload reconnects a launch whose Run response was lost, using the same Pla
   expect([...restored.collections.cards.values()].filter(card => card.kind === "run-trace")).toHaveLength(1)
 })
 
+test("reload resumes a pending launch once through the boot's same-owner identity read", async () => {
+  const t = await fixture()
+  const held = deferred<Response>()
+  t.provision(() => held.promise)
+  await t.controller.commands.run("flow.run", `review ${repo}`)
+  await waitFor(() => t.provisions() === 1)
+  await t.controller.dispose()
+  await t.store.settled?.()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  const store = await createAppStore({ kind: "localStorage", storage: t.storage })
+  const controller = createAppController(store, unavailableRepositories, t.chat.agent, t.services)
+  try {
+    await waitFor(() => t.provisions() === 2)
+    await controller.loadSession()
+    await settle()
+    expect(t.provisions()).toBe(2)
+    gate.resolve(json(200, { status: "ready" }))
+    await waitFor(() => [...store.collections.cards.values()].some(card => card.kind === "run-trace" && card.payload.runId === "run-1"))
+    expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+  } finally { await controller.dispose(); await store.dispose?.() }
+})
+
 test("reload of a running remote job restores its toast without launching again", async () => {
   const t = await fixture()
   await t.controller.commands.run("flow.run", `review ${repo}`)
@@ -290,6 +317,75 @@ test("refreshing the same signed-in identity does not reject an unresolved prepa
   gate.resolve(json(200, { status: "ready" }))
   await waitFor(() => t.cards()[0]?.payload.runId === "run-1")
   expect(t.cards()[0]?.status).toBe("active")
+})
+
+/*
+ * Window focus, a sibling tab and any 401 re-read the session. A re-read that
+ * names the same owner is not an account change: the launch in flight keeps
+ * its one request and its toast until the job settles.
+ */
+test("a same-owner focus re-read mid-preparation sends the launch once and keeps its toast until the job settles", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.provisions() === 1 && t.toasts()[0]?.status === "running")
+    const toast = t.toasts()[0]!.id
+    await t.controller.loadSession()
+    await settle()
+    expect(t.provisions()).toBe(1)
+    expect(t.toasts().map(row => [row.id, row.status])).toEqual([[toast, "running"]])
+    gate.resolve(json(200, { status: "ready" }))
+    await waitFor(() => t.cards()[0]?.payload.phase === "running")
+    await t.controller.loadSession()
+    await settle()
+    expect(t.provisions()).toBe(1)
+    expect(t.calls.filter(call => call.procedure === "Plan")).toHaveLength(1)
+    expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+    expect(t.toasts().map(row => [row.id, row.status])).toEqual([[toast, "running"]])
+    t.status("completed")
+    await waitFor(() => t.toasts()[0]?.status === "ok")
+    expect(t.toasts()[0]?.id).toBe(toast)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
+
+test("an unavailable focus re-read keeps the admitted launch, which completes once", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  t.session(() => json(503, { status: "error" }))
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.provisions() === 1)
+    await t.controller.loadSession()
+    expect(t.store.collections.identitySessions.get("identity")?.state).toBe("unavailable")
+    gate.resolve(json(200, { status: "ready" }))
+    await waitFor(() => t.cards()[0]?.payload.phase === "running")
+    t.status("completed")
+    await waitFor(() => t.cards()[0]?.payload.phase === "completed")
+    await settle()
+    expect(t.toasts().filter(toast => toast.status !== "ok")).toEqual([])
+    expect(t.provisions()).toBe(1)
+    expect(t.calls.filter(call => call.procedure === "Run")).toHaveLength(1)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
+})
+
+test("a focus re-read naming another owner supersedes the launch without preparing again", async () => {
+  const t = await fixture()
+  const gate = deferred<Response>()
+  t.provision(() => gate.promise)
+  try {
+    await t.controller.commands.run("flow.run", `review ${repo}`)
+    await waitFor(() => t.provisions() === 1 && t.toasts()[0]?.status === "running")
+    t.session(() => json(200, { login: "different-owner", allowlisted: true, admin: false }))
+    await t.controller.loadSession()
+    gate.resolve(json(200, { status: "ready" }))
+    await settle()
+    expect(t.provisions()).toBe(1)
+    expect(t.calls.filter(call => call.procedure === "Plan" || call.procedure === "Run")).toHaveLength(0)
+    expect(t.toasts()).toHaveLength(0)
+  } finally { await t.controller.dispose(); await t.store.dispose?.() }
 })
 
 test("simultaneous equivalent inputs across the user and agent bindings share one launch", async () => {

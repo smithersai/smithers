@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db"
 import { useController } from "../ControllerContext"
 import { dynamicFlowAction, flowAction } from "../flows/FlowAction"
 import { unmetRequirements,visible,type CatalogItem,type CommandState } from "../flows/registry"
+import { accountOwnerOf } from "../state/AccountOwner"
 import { activeCatalogRepositoryId, activeRepositoryId } from "../state/RepoContext"
 import { repositoryJobOf, repositoryJobStates } from "../state/RepositoryJobs"
 import type { RunDynamicCommand } from "./CardFamily"
@@ -87,7 +88,7 @@ export function FirstRunActions({ commands }: { commands?: readonly CatalogItem[
   if (session?.dismissed ?? controller.store.session().firstRunDismissed) return null
   const identity = identities[0]
   const repo = session?.repositoryEntry?.repo ?? activeRepositoryId(controller.store) ?? undefined
-  const owner = identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin : identity?.state === "signed-in" ? identity.login : null
+  const owner = accountOwnerOf(identity) ?? null
   return <FirstRunActionsCard commands={commands ?? controller.commands.all()}
     repo={repo} jobStates={repo === undefined ? undefined : repositoryJobStates(cards, repo, owner)} state={{
     surface: session?.surface ?? "chat", typing: session?.phase === "responding", plugins: session?.plugins,

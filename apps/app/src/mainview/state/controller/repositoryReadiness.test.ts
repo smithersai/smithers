@@ -149,7 +149,7 @@ test("an unavailable cold catalog is retryable and a not-public answer never loo
   } finally { await h.close() }
 })
 
-for (const change of ["account", "epoch", "dispose", "target"] as const) {
+for (const change of ["account", "dispose", "target"] as const) {
   test(`a cold catalog response cannot cross ${change} ownership`, async () => {
     let release!: (response: Response) => void
     const gate = new Promise<Response>(resolve => { release = resolve })
@@ -165,7 +165,6 @@ for (const change of ["account", "epoch", "dispose", "target"] as const) {
       await h.controller.commands.run("files.list", `docs ${repo}`)
       await until(() => catalogs === 1)
       if (change === "account") await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
-      if (change === "epoch") await h.controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
       if (change === "dispose") await h.controller.dispose()
       if (change === "target") {
         await h.controller.commands.run("files.list", "other beta/two")
@@ -179,6 +178,27 @@ for (const change of ["account", "epoch", "dispose", "target"] as const) {
     } finally { release(json(503, {})); await h.close() }
   })
 }
+
+// Focus, a sibling tab and a 401 re-read the session: the same answer again is not an account change.
+test("a cold catalog response still serves its command through a same-owner identity answer", async () => {
+  let release!: (response: Response) => void
+  const gate = new Promise<Response>(resolve => { release = resolve })
+  let catalogs = 0
+  const reads: string[] = []
+  const h = await setup(undefined, async input => {
+    const url = String(input)
+    if (url === "/api/public/repos") return ++catalogs === 1 ? gate : json(200, { repos: [{ name: "beta/two" }] })
+    reads.push(url); return json(200, [])
+  })
+  try {
+    await h.store.dispatch({ type: "repository.entry.changed", actor: "system", entry: null }).isPersisted.promise
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    await until(() => catalogs === 1)
+    await h.controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
+    release(json(200, { repos: [{ name: repo }] }))
+    await until(() => h.store.collections.repositories.has(repo))
+  } finally { release(json(503, {})); await h.close() }
+})
 
 test("new arguments share a cold catalog request while keeping the latest exact target independent of selection", async () => {
   let release!: (response: Response) => void
@@ -406,7 +426,7 @@ for (const answer of ["private", "invalid", "offline"] as const) {
   })
 }
 
-for (const change of ["selection", "request", "account", "account-owner", "dispose"] as const) {
+for (const change of ["selection", "request", "account-owner", "dispose"] as const) {
   test(`${change} while deferral clear persists prevents stale submission`, async () => {
     const hits: string[] = []
     const h = await setup(undefined, async input => { hits.push(String(input)); return json(200, []) })
@@ -431,7 +451,6 @@ for (const change of ["selection", "request", "account", "account-owner", "dispo
         expect(h.store.session().activeRepoKey).toBe("beta/two")
       }
       if (change === "request") beginRepositoryEntry(h.store, "beta/two")
-      if (change === "account") await h.controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
       if (change === "account-owner") await h.store.dispatch({ type: "identity.session.loaded", actor: "system", state: "signed-in", login: "bob", allowlisted: true, admin: false, scopesPlain: null }).isPersisted.promise
       if (change === "dispose") await h.controller.dispose()
       release()
@@ -440,6 +459,30 @@ for (const change of ["selection", "request", "account", "account-owner", "dispo
     } finally { release(); spy.mockRestore(); await h.close() }
   })
 }
+
+test("a same-owner identity answer while deferral clear persists still submits the command", async () => {
+  const hits: string[] = []
+  const h = await setup(undefined, async input => { hits.push(String(input)); return json(200, []) })
+  let release!: () => void
+  const gate = new Promise<void>(resolve => release = resolve)
+  let clearing = false
+  const dispatch = h.store.dispatch.bind(h.store)
+  const spy = spyOn(h.store, "dispatch").mockImplementation(transition => {
+    const result = dispatch(transition)
+    if (transition.type !== "command.deferral.cleared") return result
+    clearing = true
+    const persisted = { ...result.isPersisted, promise: gate.then(() => result.isPersisted.promise) }
+    return new Proxy(result, { get: (target, key, receiver) => key === "isPersisted" ? persisted : Reflect.get(target, key, receiver) })
+  })
+  try {
+    await h.controller.commands.run("files.list", `docs ${repo}`)
+    await h.ready()
+    await until(() => clearing)
+    await h.controller.adoptSession({ state: "signed-out", login: null, allowlisted: false, admin: false })
+    release()
+    await until(() => hits.some(path => path.includes("contents/docs")))
+  } finally { release(); spy.mockRestore(); await h.close() }
+})
 
 test("catalog subscription resumes through the real SQLite projection boundary", async () => {
   const database = new Database(":memory:")

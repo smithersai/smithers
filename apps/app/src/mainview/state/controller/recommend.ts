@@ -100,11 +100,7 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
   let inflight: Flight | undefined
 
   /** Whose bucket a request spends: the persisted owner outlives an outage; a visitor is null; unknown is undefined. */
-  const accountOwner = (): string | null | undefined => {
-    const identity = store.collections.identitySessions.get("identity")
-    return identity?.accountOwnerLogin !== undefined ? identity.accountOwnerLogin :
-      identity?.state === "signed-in" ? identity.login : identity?.state === "signed-out" ? null : undefined
-  }
+  const accountOwner = ctx.accountOwner
 
   /** The row's retry window still binds this account and has not passed at `at`. */
   const closedFor = (owner: string | null | undefined, at: number): boolean => {

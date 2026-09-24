@@ -45,7 +45,7 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     const scope = ctx.store.session()
     const actor = ctx.commandActor
     const accountEpoch = ctx.accountEpoch
-    const accountLogin = ctx.store.collections.identitySessions.get("identity")?.login
+    const accountLogin = ctx.accountOwner() ?? null
     try {
       const plan = validateTutorialPlan(Schema.decodeUnknownSync(Plan)(await post("plan", { repo: target.repo, feature })))
       if (ctx.store.session().activeRepoKey !== scope.activeRepoKey || ctx.accountEpoch !== accountEpoch) return "The repository changed; request a new plan."
@@ -53,7 +53,7 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
       await ctx.store.dispatch({ type: "card.upsert", actor, card: {
         id, kind: "run-trace", title: plan.changes[0]!.title, status: "active", createdAt: Date.now(), ordinal: nextOrdinal(),
         payload: { repo: target.repo, runId: id, workflow: "tutorial-change", kind: "change-plan", phase: "completed", steps: [], result: null, lastSeq: 0,
-          input: { plan, tutorialScope: { repoKey: scope.activeRepoKey, playthrough: 0, accountEpoch, accountLogin } } }
+          input: { plan, tutorialScope: { repoKey: scope.activeRepoKey, playthrough: 0, accountLogin } } }
       } }).isPersisted.promise
       return { value: `Review the suggested feature and planned commit in ${id}.` }
     } catch (error) { return error instanceof Error ? error.message : String(error) }
@@ -66,9 +66,9 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
     if (guard) return guard
     try {
       const plan = validateTutorialPlan(Schema.decodeUnknownSync(Plan)(card.payload.input?.plan))
-      const scope = card.payload.input?.tutorialScope as { repoKey?: string; playthrough?: number; accountEpoch?: number; accountLogin?: string | null } | undefined
+      const scope = card.payload.input?.tutorialScope as { repoKey?: string; playthrough?: number; accountLogin?: string | null } | undefined
       const session = ctx.store.session()
-      if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (0) || scope.accountEpoch !== ctx.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return "The repository or tutorial changed; request a new plan."
+      if (!scope || scope.repoKey !== session.activeRepoKey || scope.playthrough !== (0) || scope.accountLogin !== (ctx.accountOwner() ?? null)) return "The repository or tutorial changed; request a new plan."
       // Consume before awaiting the seam: concurrent activation cannot execute twice.
       const { error: _stale, ...payload } = card.payload
       await ctx.store.dispatch({ type: "card.upsert", actor: ctx.commandActor, card: { ...card, status: "acted", payload } }).isPersisted.promise
@@ -107,10 +107,6 @@ export const createTutorialChangeController = (ctx: ControllerContext, flows: Wo
       if (current?.kind !== "run-trace" || current.payload.phase !== "completed") return
       await ctx.store.dispatch({ type: "card.updated", actor: "system", id: cardId,
         patch: { payload: { ...current.payload, input: { ...current.payload.input, tutorialReceipt: receipt } } } }).isPersisted.promise
-      const scope = card.payload.input?.tutorialScope as { repoKey?: string; playthrough?: number; accountEpoch?: number; accountLogin?: string | null } | undefined
-      const session = ctx.store.session()
-      if (!scope || session.activeRepoKey !== scope.repoKey || (0) !== scope.playthrough ||
-        ctx.accountEpoch !== scope.accountEpoch || scope.accountLogin !== ctx.store.collections.identitySessions.get("identity")?.login) return
     } catch (error) {
       const current = ctx.store.collections.cards.get(cardId)
       if (current?.kind === "run-trace") ctx.store.dispatch({ type: "card.updated", actor: "system", id: cardId,

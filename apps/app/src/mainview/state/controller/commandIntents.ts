@@ -49,8 +49,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       return { refusal: "This command belongs to retired execution history." }
     }
     const epoch = ctx.accountEpoch
-    const identity = ctx.store.collections.identitySessions.get("identity")
-    const owner = identity?.accountOwnerLogin ?? identity?.login ?? null
+    const owner = ctx.accountOwner() ?? null
     if (!currentHttpCall(ctx, request.httpCall)) {
       return { refusal: "This command belongs to a turn that is no longer active." }
     }

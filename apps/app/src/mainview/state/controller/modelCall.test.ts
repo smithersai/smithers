@@ -488,7 +488,7 @@ test("a failed answer is typed on the card and the toast offers Ask; a departed 
   expect(t.toast("judge")).toMatchObject({ status: "failed", detail: "refused · 429", action: { flow: "model.ask", args: "judge", label: "Ask" } })
   await t.composer.askModel("judge")
   await tick()
-  t.ctx.accountEpoch += 1
+  Object.assign(t.ctx, { accountEpoch: t.ctx.accountEpoch + 1 })
   host.releases[1]!(Response.json(yes))
   await t.settled()
   expect(t.card()?.payload.response?.result).toEqual(refused)
