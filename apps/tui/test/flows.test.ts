@@ -557,3 +557,24 @@ it("opens the host once in the background and exposes opening until ready", asyn
   expect(runs.opening).toBe(false)
   await runs.dispose()
 })
+
+it("reads restored events only when hydrated and retains a retryable failure", async () => {
+  const f = fake()
+  let broken = true
+  let calls = 0
+  const runs = new FlowRuns({ port: { ...f.port, events: async () => {
+    calls++
+    if (broken) throw new Error("control offline")
+    return []
+  } }, persist: () => {}, restored: [{ id: "r", flow: "review", by: "user", input: {}, requested: "{}", status: "done", startedAt: 1, runId: "remote" }] })
+  runs.panel("r")
+  expect(calls).toBe(0)
+  await runs.hydrate("r")
+  expect(calls).toBe(1)
+  expect(runs.panel("r").summary).toBe("Flow history unavailable")
+  broken = false
+  await runs.hydrate("r")
+  expect(calls).toBe(2)
+  expect(runs.panel("r").summary).toBe("Done.")
+  await runs.dispose()
+})

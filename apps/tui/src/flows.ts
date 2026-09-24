@@ -136,6 +136,7 @@ export class FlowRuns {
   /** Bumped by every restart of a run; a continuation from an older attempt drops its result. */
   private attempts = new Map<string, number>()
   private loaded = new Set<string>()
+  private historyFailures = new Map<string, string>()
   private cache: ReadonlyArray<Listed> = []
   private discoveryFailure: FlowDiscoveryFailed | undefined
   private discovered = false
@@ -482,20 +483,30 @@ export class FlowRuns {
     queueMicrotask(() => void this.prepare(id, attempt))
     return { id, status: "requested" }
   }
+  /** Read restored events outside render. A failed read is retryable on the next activation. */
+  hydrate = async (id: string): Promise<void> => {
+    const run = this.runs.get(id)
+    if (run?.runId === undefined || this.loaded.has(id) || this.closed || this.options.port === undefined) return
+    this.loaded.add(id)
+    const attempt = this.attempts.get(id)
+    try {
+      const events = await this.options.port.events(run.runId)
+      if (this.closed || this.attempts.get(id) !== attempt || this.events.get(id)?.length) return
+      this.events.set(id, [...events])
+      this.historyFailures.delete(id)
+      this.changed()
+    } catch (error) {
+      if (this.closed || this.attempts.get(id) !== attempt) return
+      this.loaded.delete(id)
+      this.historyFailures.set(id, "Flow history unavailable")
+      Log.write("flow.history", error)
+      this.changed()
+    }
+  }
   panel = (id: string): Panels.Panel => {
     const run = this.runs.get(id)
     if (run === undefined) return { id: `flow:${id}`, title: id, summary: "Unknown run.", rows: [] }
-    if (run.runId !== undefined && !this.loaded.has(id)) {
-      // A restored run: read its recorded events once, in the background.
-      this.loaded.add(id)
-      const attempt = this.attempts.get(id)
-      this.options.port?.events(run.runId).then((events) => {
-        if (this.attempts.get(id) !== attempt || this.events.get(id)?.length) return
-        this.events.set(id, [...events])
-        this.changed()
-      }, () => { /* The summary keeps the persisted status and message. */ })
-    }
-    const summary = run.message ??
+    const summary = this.historyFailures.get(id) ?? run.message ??
       (run.status === "done"
         ? Summary.sentence(run.answer ?? "Done.")
         : run.status === "requested"

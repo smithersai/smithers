@@ -603,6 +603,9 @@ export function App(props: AppProps) {
     if (liveForm.current !== undefined) changeForm(undefined)
     showTab(id)
   }
+  useEffect(() => {
+    if (surface.startsWith("flow:")) void runs.hydrate(surface.slice(5))
+  }, [surface, runs])
   const basePanel = surface === "summary"
     ? Summary.panel(transcript)
     : surface.startsWith("tab:")
