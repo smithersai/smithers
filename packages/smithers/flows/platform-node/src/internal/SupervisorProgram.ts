@@ -11,10 +11,17 @@ const net = require('node:net');
 const cp = require('node:child_process');
 const [socketPath, mode] = process.argv.slice(-2);
 const grouped = mode === 'group';
-const control = net.connect(socketPath);
+const channel = process.env.SMITHERS_PROCESS_CHANNEL ? JSON.parse(process.env.SMITHERS_PROCESS_CHANNEL) : undefined;
+delete process.env.SMITHERS_PROCESS_CHANNEL;
+const connect = path => channel === undefined ? net.connect(path) : require('node:tls').connect({
+  minVersion: 'TLSv1.3', maxVersion: 'TLSv1.3', ciphers: 'TLS_AES_128_GCM_SHA256',
+  host: '127.0.0.1', port: path.endsWith('/r') ? channel.requests : channel.status,
+  pskCallback: () => ({ identity: 'smithers-owner', psk: Buffer.from(channel.key, 'hex') })
+});
+const control = connect(socketPath);
 // A request write racing our exit may get EPIPE. Keep status on its own
 // connection so the host still receives the exit and cleanup already sent.
-const requests = net.connect(socketPath.replace(/\/s$/, '/r'));
+const requests = connect(socketPath.replace(/\/s$/, '/r'));
 let config;
 let target;
 let targetDone = false;

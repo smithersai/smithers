@@ -26,6 +26,7 @@ const program = (killSignal: string, escaped = true) => {
   const target = Object.assign(new EventEmitter(), { pid: 4102 })
   const runtime = Object.assign(new EventEmitter(), {
     pid: 4101,
+    env: {},
     argv: ["/fixture/s", "group"],
     kill: (pid: number, signal: string) => signals.push([pid, signal])
   })

@@ -7,6 +7,8 @@ import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effe
 import { once } from "node:events"
 import * as Fs from "node:fs"
 import * as Net from "node:net"
+import { parse } from "node:path"
+import * as Tls from "node:tls"
 import { vi } from "vitest"
 import * as Cleanup from "../src/internal/ProcessCleanup.ts"
 import * as Supervisor from "../src/internal/ProcessSupervisor.ts"
@@ -19,6 +21,12 @@ vi.mock("node:net", async (original) => {
   const actual = await original<typeof import("node:net")>()
   return { ...actual, createServer: vi.fn(actual.createServer) }
 })
+
+vi.mock("node:tls", async (original) => {
+  const actual = await original<typeof import("node:tls")>()
+  return { ...actual, createServer: vi.fn(actual.createServer) }
+})
+const serverFactory = (process.platform === "win32" ? Tls.createServer : Net.createServer) as typeof Net.createServer
 
 const promise = <A>() => {
   let resolve!: (value: A) => void
@@ -106,9 +114,9 @@ const fixture = (settings: Settings = {}) => {
       else {
         yield* Effect.tryPromise({
           try: async () => {
-            peer = Net.createConnection(path)
+            peer = Supervisor.connectOwner(path, command.options.env ?? {})
             peer.on("error", () => {})
-            requestPeer = Net.createConnection(path.replace(/\/s$/, "/r"))
+            requestPeer = Supervisor.connectOwner(path.replace(/\/s$/, "/r"), command.options.env ?? {})
             requestPeer.on("error", () => {})
             requestPeer.once("close", () => {
               if (settings.endOnDisconnect !== false) {
@@ -280,7 +288,11 @@ describe("failed process preparation", () => {
       expect(Exit.isSuccess(result.outcome)).toBe(true)
       expect(host.commands).toHaveLength(1)
       expect(host.commands[0]!.args.slice(0, 3)).toEqual(["--no-env-file", "--config=/dev/null", "-e"])
-      expect(host.commands[0]!.options).toMatchObject({ cwd: "/", extendEnv: false, shell: false })
+      expect(host.commands[0]!.options).toMatchObject({
+        cwd: parse(process.execPath).root,
+        extendEnv: false,
+        shell: false
+      })
       expect(host.requests.find((frame) => frame.type === "configure")).toMatchObject({
         command: "literal",
         args: ["original argument"]
@@ -362,20 +374,20 @@ describe("failed process preparation", () => {
         })
       }
       if (step === "request-server") {
-        vi.mocked(Net.createServer).mockImplementationOnce(vi.mocked(Net.createServer).getMockImplementation()!)
+        vi.mocked(serverFactory).mockImplementationOnce(vi.mocked(serverFactory).getMockImplementation()!)
       }
       if (step === "server" || step === "request-server") {
-        vi.mocked(Net.createServer).mockImplementationOnce(() => {
+        vi.mocked(serverFactory).mockImplementationOnce(() => {
           throw cause
         })
       }
       if (step === "listening") {
-        const server = Net.createServer()
+        const server = serverFactory()
         vi.spyOn(server, "listen").mockImplementation(() => {
           queueMicrotask(() => server.emit("error", cause))
           return server
         })
-        vi.mocked(Net.createServer).mockReturnValueOnce(server)
+        vi.mocked(serverFactory).mockReturnValueOnce(server)
       }
       const spawn = vi.fn(() => Effect.die("raw spawn must not run"))
       const outcome = await Effect.runPromise(

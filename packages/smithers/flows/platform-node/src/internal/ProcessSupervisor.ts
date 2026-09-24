@@ -12,9 +12,12 @@ import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { type ChildProcessHandle, ExitCode, makeHandle } from "effect/unstable/process/ChildProcessSpawner"
+import { randomBytes } from "node:crypto"
 import { chmodSync, mkdtempSync, rmdirSync, rmSync } from "node:fs"
-import { createServer, type Socket } from "node:net"
-import { resolve } from "node:path"
+import { createConnection, createServer, type Socket } from "node:net"
+import { tmpdir } from "node:os"
+import { join, parse, resolve } from "node:path"
+import * as Tls from "node:tls"
 import type { Policy, System } from "./ProcessCleanup.ts"
 import { source } from "./SupervisorProgram.ts"
 
@@ -111,6 +114,26 @@ export const bootstrapArguments = (runtime: { readonly bun: boolean; readonly ma
     )
     : Effect.succeed(runtime.bun ? ["--no-env-file", "--config=/dev/null"] : [])
 
+const channelEnvironment = "SMITHERS_PROCESS_CHANNEL"
+const tlsOptions = { minVersion: "TLSv1.3", maxVersion: "TLSv1.3", ciphers: "TLS_AES_128_GCM_SHA256" } as const
+
+/**
+ * Connect an owner to its authenticated private channel.
+ * @private
+ * @since 1.0.0
+ */
+export const connectOwner = (path: string, environment: Readonly<Record<string, string | undefined>>): Socket => {
+  const encoded = environment[channelEnvironment]
+  if (encoded === undefined) return createConnection(path)
+  const channel = JSON.parse(encoded) as { key: string; status: number; requests: number }
+  return Tls.connect({
+    ...tlsOptions,
+    host: "127.0.0.1",
+    port: path.endsWith("/r") ? channel.requests : channel.status,
+    pskCallback: () => ({ identity: "smithers-owner", psk: Buffer.from(channel.key, "hex") })
+  })
+}
+
 /**
  * Kept separate from Effect scopes so native socket callbacks only settle
  * promises; none can start an unowned fiber or signal an observed process id.
@@ -130,6 +153,8 @@ export class Control {
   readonly server
   readonly requestServer
   readonly listening: Promise<void>
+  private readonly key: Buffer | undefined
+  private readonly connections = new Set<Socket>()
   socket: Socket | undefined
   requestSocket: Socket | undefined
   targetDone = false
@@ -146,25 +171,28 @@ export class Control {
   private receivedStarted = false
   private withdrawn = false
 
-  constructor() {
-    this.directory = mkdtempSync("/tmp/sm-p-")
+  constructor(transport: "native" | "tls" = "native") {
+    this.key = transport === "tls" || process.platform === "win32" ? randomBytes(32) : undefined
+    this.directory = mkdtempSync(this.key === undefined ? "/tmp/sm-p-" : join(tmpdir(), "sm-p-"))
     this.path = `${this.directory}/s`
     this.requestPath = `${this.directory}/r`
     const servers: Array<ReturnType<typeof createServer>> = []
     try {
       chmodSync(this.directory, 0o700)
-      this.server = createServer((socket) => this.accept(socket))
+      this.server = this.makeServer((socket) => this.accept(socket))
       servers.push(this.server)
-      this.requestServer = createServer((socket) => this.acceptRequests(socket))
+      this.requestServer = this.makeServer((socket) => this.acceptRequests(socket))
       servers.push(this.requestServer)
       this.listening = Promise.all([
         new Promise<void>((resolve, reject) => {
           this.server.once("error", reject)
-          this.server.listen(this.path, resolve)
+          if (this.key === undefined) this.server.listen(this.path, resolve)
+          else this.server.listen(0, "127.0.0.1", resolve)
         }),
         new Promise<void>((resolve, reject) => {
           this.requestServer.once("error", reject)
-          this.requestServer.listen(this.requestPath, resolve)
+          if (this.key === undefined) this.requestServer.listen(this.requestPath, resolve)
+          else this.requestServer.listen(0, "127.0.0.1", resolve)
         })
       ]).then(() => {})
     } catch (cause) {
@@ -172,6 +200,40 @@ export class Control {
       rmSync(this.directory, { recursive: true, force: true })
       throw cause
     }
+  }
+
+  private makeServer(accept: (socket: Socket) => void): ReturnType<typeof createServer> {
+    if (this.key === undefined) return createServer(accept)
+    const server = Tls.createServer({
+      ...tlsOptions,
+      handshakeTimeout: startupMs,
+      pskCallback: (_socket, identity) => identity === "smithers-owner" ? this.key! : null
+    }, accept)
+    server.on("connection", (socket) => {
+      this.connections.add(socket)
+      socket.once("close", () => this.connections.delete(socket))
+    })
+    server.on("tlsClientError", (_error, socket) => socket.destroy())
+    return server
+  }
+
+  /** Only the trusted owner receives this environment; target configuration replaces it. */
+  environment(): Readonly<Record<string, string>> {
+    if (this.key === undefined) return {}
+    const status = this.server.address() as { port: number }
+    const requests = this.requestServer.address() as { port: number }
+    return {
+      [channelEnvironment]: JSON.stringify({
+        key: this.key.toString("hex"),
+        status: status.port,
+        requests: requests.port
+      })
+    }
+  }
+
+  /** The test peer uses the same authenticated transport as the isolated owner. */
+  connect(requests = false): Socket {
+    return connectOwner(requests ? this.requestPath : this.path, this.environment())
   }
 
   /** Validate the stored READY after the raw spawn effect has returned its pid. */
@@ -194,6 +256,7 @@ export class Control {
   }
 
   dispose(): void {
+    for (const socket of this.connections) socket.destroy()
     this.disconnect()
     this.socket?.destroy()
     this.server.close()
@@ -354,7 +417,8 @@ export const prepare = (
   policy: (
     options: ChildProcess.KillOptions,
     defaults?: ChildProcess.KillOptions
-  ) => Effect.Effect<Policy, PlatformError.PlatformError>
+  ) => Effect.Effect<Policy, PlatformError.PlatformError>,
+  transport: "native" | "tls" = "native"
 ): Lifecycle =>
 (command, spawn) =>
   Effect.gen(function*() {
@@ -371,7 +435,7 @@ export const prepare = (
     })
     const grouped = command.options.detached ?? true
     const control = yield* Effect.acquireRelease(
-      Effect.try({ try: () => new Control(), catch: (cause) => failure("spawn", command.command, cause) }),
+      Effect.try({ try: () => new Control(transport), catch: (cause) => failure("spawn", command.command, cause) }),
       (control) => Effect.sync(() => control.dispose())
     )
     yield* bounded(wait(control.listening, "spawn", command.command), startupMs, "spawn", command.command)
@@ -383,8 +447,14 @@ export const prepare = (
       grouped ? "group" : "direct"
     ], {
       ...command.options,
-      cwd: "/",
-      env: { PATH: "/usr/bin:/bin", HOME: "/", XDG_CONFIG_HOME: "/", BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+      cwd: parse(process.execPath).root,
+      env: {
+        PATH: "/usr/bin:/bin",
+        HOME: "/",
+        XDG_CONFIG_HOME: "/",
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
+        ...control.environment()
+      },
       extendEnv: false,
       shell: false,
       detached: grouped,
