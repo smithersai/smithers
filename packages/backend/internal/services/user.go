@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -241,6 +242,9 @@ func (s *UserService) GetUserByUsername(ctx context.Context, username string) (P
 	return mapPublicUserProfile(user), nil
 }
 
+// maxUserDisplayNameLength matches users.display_name varchar(255).
+const maxUserDisplayNameLength = 255
+
 func (s *UserService) UpdateAuthenticatedUser(ctx context.Context, userID int64, req UpdateUserRequest) (UserProfile, error) {
 	current, err := s.queries.GetUserByID(ctx, userID)
 	if err != nil {
@@ -258,6 +262,16 @@ func (s *UserService) UpdateAuthenticatedUser(ctx context.Context, userID int64,
 	bio := current.Bio
 	if req.Bio != nil {
 		bio = *req.Bio
+	}
+
+	if apiErr := validateSafeText("User", "display_name", displayName); apiErr != nil {
+		return UserProfile{}, apiErr
+	}
+	if utf8.RuneCountInString(displayName) > maxUserDisplayNameLength {
+		return UserProfile{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "User", Field: "display_name", Code: "invalid"})
+	}
+	if apiErr := validateSafeText("User", "bio", bio); apiErr != nil {
+		return UserProfile{}, apiErr
 	}
 
 	avatarURL := current.AvatarUrl

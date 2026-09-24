@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	stdErrors "errors"
+	"log/slog"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -328,7 +329,11 @@ func (s *VariableService) resolveRepoByOwnerAndName(ctx context.Context, owner, 
 		LowerName: lowerRepo,
 	})
 	if err != nil {
-		return db.Repository{}, pkgerrors.NotFound("repository not found")
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Repository{}, pkgerrors.NotFound("repository not found")
+		}
+		slog.Error("load repository failed", "owner", lowerOwner, "repo", lowerRepo, "error", err)
+		return db.Repository{}, pkgerrors.Internal("failed to load repository")
 	}
 	return repository, nil
 }
@@ -340,7 +345,11 @@ func (s *VariableService) resolveOrgByName(ctx context.Context, orgName string) 
 	}
 	org, err := s.queries.GetOrgByLowerName(ctx, lowerOrg)
 	if err != nil {
-		return db.Organization{}, pkgerrors.NotFound("organization not found")
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Organization{}, pkgerrors.NotFound("organization not found")
+		}
+		slog.Error("load organization failed", "org", lowerOrg, "error", err)
+		return db.Organization{}, pkgerrors.Internal("failed to load organization")
 	}
 	return org, nil
 }
@@ -356,6 +365,10 @@ func (s *VariableService) requireOrgOwnerAccess(ctx context.Context, org db.Orga
 		OrganizationID: org.ID,
 		UserID:         actor.ID,
 	})
+	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
+		slog.Error("load organization membership failed", "org_id", org.ID, "user_id", actor.ID, "error", err)
+		return pkgerrors.Internal("failed to load organization membership")
+	}
 	if err != nil || strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return pkgerrors.Forbidden("permission denied")
 	}

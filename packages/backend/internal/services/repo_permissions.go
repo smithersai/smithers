@@ -197,12 +197,6 @@ func canOwnRepo(ctx context.Context, q RepoPermQuerier, repository db.Repository
 	return isOwner, nil
 }
 
-// isRepoAdmin returns true when userID has admin-level access (owner, org owner,
-// team admin, or collaborator with admin).
-func isRepoAdmin(ctx context.Context, q RepoPermQuerier, repository db.Repository, userID int64) (bool, error) {
-	return canAdminRepo(ctx, q, repository, userID)
-}
-
 // CanAdminRepo reports whether userID has admin or owner access to repository.
 // It is the exported entry point to the canonical permission logic for callers
 // outside the services package (e.g. the push hook gating config-sync on the

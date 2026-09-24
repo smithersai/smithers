@@ -356,7 +356,7 @@ func TestOrg_Z_TeamMembershipRepoAndRemovalErrors(t *testing.T) {
 	dispatcher := &mockOrgDispatcher{dispatchFn: func(context.Context, int64, webhooks.EventType, any) error {
 		return errors.New("dispatch failed")
 	}}
-	assert.Equal(t, 500, apiStatus(t, NewOrgService(q, WithOrgWebhookDispatcher(dispatcher)).AddTeamRepo(ctx, actor, "acme", "ops", "acme", "demo")))
+	assert.NoError(t, NewOrgService(q, WithOrgWebhookDispatcher(dispatcher)).AddTeamRepo(ctx, actor, "acme", "ops", "acme", "demo"), "webhook enqueue is best effort after commit")
 
 	q = orgZQuerier()
 	q.getRepoByOwnerAndLowerNameFn = func(context.Context, db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
@@ -374,7 +374,7 @@ func TestOrg_Z_TeamMembershipRepoAndRemovalErrors(t *testing.T) {
 	dispatcher = &mockOrgDispatcher{dispatchFn: func(context.Context, int64, webhooks.EventType, any) error {
 		return errors.New("dispatch failed")
 	}}
-	assert.Equal(t, 500, apiStatus(t, NewOrgService(q, WithOrgWebhookDispatcher(dispatcher)).RemoveTeamRepo(ctx, actor, "acme", "ops", "acme", "demo")))
+	assert.NoError(t, NewOrgService(q, WithOrgWebhookDispatcher(dispatcher)).RemoveTeamRepo(ctx, actor, "acme", "ops", "acme", "demo"), "webhook enqueue is best effort after commit")
 
 	q = orgZQuerier()
 	q.getUserByLowerUsernameFn = func(context.Context, string) (db.User, error) {

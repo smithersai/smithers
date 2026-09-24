@@ -616,7 +616,7 @@ func (s *AgentEnvironmentService) requireAgentEnvironmentAdminAccess(ctx context
 	if actor.IsAdmin {
 		return nil
 	}
-	allowed, err := isRepoAdmin(ctx, s.queries, repository, actor.ID)
+	allowed, err := canAdminRepo(ctx, s.queries, repository, actor.ID)
 	if err != nil {
 		return err
 	}

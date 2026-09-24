@@ -89,30 +89,26 @@ func TestOAuth2Generators_FormatMatrix(t *testing.T) {
 
 	caseCount := 0
 	for i := 0; i < 64; i++ {
-		clientID, err := generateOAuth2ClientID()
-		require.NoError(t, err)
+		clientID := generateOAuth2ClientID()
 		require.Len(t, clientID, 40)
 		assert.True(t, isLowerHexForTest(clientID))
 		clientIDs[clientID] = struct{}{}
 		caseCount++
 
-		clientSecret, err := generateOAuth2ClientSecret()
-		require.NoError(t, err)
+		clientSecret := generateOAuth2ClientSecret()
 		require.True(t, strings.HasPrefix(clientSecret, "smithers_oas_"))
 		require.Len(t, clientSecret, len("smithers_oas_")+64)
 		assert.True(t, isLowerHexForTest(strings.TrimPrefix(clientSecret, "smithers_oas_")))
 		clientSecrets[clientSecret] = struct{}{}
 		caseCount++
 
-		code, err := generateOAuth2Code()
-		require.NoError(t, err)
+		code := generateOAuth2Code()
 		require.Len(t, code, 64)
 		assert.True(t, isLowerHexForTest(code))
 		codes[code] = struct{}{}
 		caseCount++
 
-		token, err := generateOAuth2Token()
-		require.NoError(t, err)
+		token := generateOAuth2Token()
 		require.Len(t, token, 64)
 		assert.True(t, isLowerHexForTest(token))
 		tokens[token] = struct{}{}

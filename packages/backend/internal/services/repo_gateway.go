@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -609,7 +610,25 @@ func (s *RepoGatewayService) resolveExistingGateway(ctx context.Context, existin
 		resolveCtx, cancelResolve := context.WithTimeout(context.WithoutCancel(ctx), backgroundBudget)
 		go func() {
 			defer cancelResolve()
-			info, reuseErr := s.reuseGateway(resolveCtx, existing, input)
+			var info RepoGatewayConnectionInfo
+			var reuseErr error = pkgerrors.Internal("repo gateway resolve failed")
+			defer func() {
+				// A panic must still fail this resolve and release the
+				// singleflight entry, or every later caller for this gateway
+				// joins a resolve that never completes.
+				if r := recover(); r != nil {
+					slog.Error("repo gateway resolve panicked", "gateway_id", existing.ID,
+						"panic", r, "stack", string(debug.Stack()))
+					info, reuseErr = RepoGatewayConnectionInfo{}, pkgerrors.Internal("repo gateway resolve failed")
+				}
+				resolve.info, resolve.err = info, reuseErr
+				// Drop the entry BEFORE publishing, so a caller arriving after
+				// this point starts a fresh resolve rather than adopting a
+				// finished one.
+				s.endGatewayResolve(existing.ID)
+				close(resolve.done)
+			}()
+			info, reuseErr = s.reuseGateway(resolveCtx, existing, input)
 			if errors.Is(reuseErr, errRepoGatewayUnrecoverable) {
 				// The row cannot serve: its token is unrecoverable, its VM is
 				// gone or stale-fenced, or it failed to resume. Tear it down
@@ -619,11 +638,6 @@ func (s *RepoGatewayService) resolveExistingGateway(ctx context.Context, existin
 				s.discardGatewayAfterReuse(resolveCtx, existing)
 				info, reuseErr = s.provisionGateway(resolveCtx, input)
 			}
-			resolve.info, resolve.err = info, reuseErr
-			// Drop the entry BEFORE publishing, so a caller arriving after this
-			// point starts a fresh resolve rather than adopting a finished one.
-			s.endGatewayResolve(existing.ID)
-			close(resolve.done)
 		}()
 	}
 
@@ -1190,8 +1204,15 @@ func (s *RepoGatewayService) provisionGateway(ctx context.Context, input RepoGat
 	done := make(chan provisionResult, 1)
 	go func() {
 		defer cancelProvision()
-		info, finishErr := s.finishGatewayProvision(provisionCtx, gateway.ID, vm, domain, baseURL, token, env, input)
-		done <- provisionResult{info: info, err: finishErr}
+		result := provisionResult{err: pkgerrors.Internal("repo gateway provisioning failed")}
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("repo gateway provisioning panicked", "gateway_id", gateway.ID, "vm_id", vm.ID,
+					"panic", r, "stack", string(debug.Stack()))
+			}
+			done <- result
+		}()
+		result.info, result.err = s.finishGatewayProvision(provisionCtx, gateway.ID, vm, domain, baseURL, token, env, input)
 	}()
 
 	responseBudget := s.provisionResponseBudget

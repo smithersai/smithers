@@ -142,9 +142,10 @@ func TestWebhook_Z_TestWebhookErrorBranches(t *testing.T) {
 		failedStatus = arg.Status
 		return nil
 	}
-	_, err = newWebhookService(t, q).TestWebhook(ctx, actor, "alice", "demo", 1)
-	require.Error(t, err)
-	assert.Equal(t, http.StatusInternalServerError, apiStatus(t, err))
+	result, err = newWebhookService(t, q).TestWebhook(ctx, actor, "alice", "demo", 1)
+	require.NoError(t, err, "an unreachable endpoint is the endpoint's fault, not a server error")
+	assert.Equal(t, 0, result.StatusCode)
+	assert.NotEmpty(t, result.Error)
 	assert.Equal(t, "failed", failedStatus)
 }
 

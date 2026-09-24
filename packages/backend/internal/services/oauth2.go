@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
@@ -109,6 +110,9 @@ type OAuth2Service struct {
 	queries     OAuth2Querier
 	revocations revocation.Publisher
 	now         func() time.Time
+	// inTx runs fn in one transaction and commits only when fn returns nil.
+	// Nil runs fn directly on queries (unit tests without a pool).
+	inTx func(ctx context.Context, fn func(q OAuth2Querier) error) error
 }
 
 // NewOAuth2Service creates a new OAuth2Service instance.
@@ -117,6 +121,39 @@ func NewOAuth2Service(q OAuth2Querier) *OAuth2Service {
 		queries: q,
 		now:     func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// NewOAuth2ServiceWithPool returns an OAuth2Service whose one-time grant
+// redemptions (authorization code, refresh token) consume the grant and write
+// the new token pair in one transaction, so a failed insert never spends the
+// grant.
+func NewOAuth2ServiceWithPool(q OAuth2Querier, pool *pgxpool.Pool) *OAuth2Service {
+	s := NewOAuth2Service(q)
+	if pool == nil {
+		return s
+	}
+	s.inTx = func(ctx context.Context, fn func(q OAuth2Querier) error) error {
+		tx, err := pool.Begin(ctx)
+		if err != nil {
+			return pkgerrors.Internal("failed to begin token transaction")
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if err := fn(db.New(tx)); err != nil {
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return pkgerrors.Internal("failed to commit token transaction")
+		}
+		return nil
+	}
+	return s
+}
+
+func (s *OAuth2Service) transact(ctx context.Context, fn func(q OAuth2Querier) error) error {
+	if s.inTx == nil {
+		return fn(s.queries)
+	}
+	return s.inTx(ctx, fn)
 }
 
 // CreateApplication registers a new OAuth2 application.
@@ -164,8 +201,8 @@ func (s *OAuth2Service) CreateApplication(ctx context.Context, ownerID int64, re
 	}
 	confidential := *req.Confidential
 
-	clientID, _ := generateOAuth2ClientID()
-	clientSecret, _ := generateOAuth2ClientSecret()
+	clientID := generateOAuth2ClientID()
+	clientSecret := generateOAuth2ClientSecret()
 	secretHash := hashOAuth2Secret(clientSecret)
 
 	scopes := req.Scopes
@@ -361,7 +398,7 @@ func (s *OAuth2Service) Authorize(ctx context.Context, userID int64, clientID, r
 	}
 
 	// Generate authorization code.
-	code, _ := generateOAuth2Code()
+	code := generateOAuth2Code()
 	codeHash := hashOAuth2Secret(code)
 
 	err = s.queries.CreateOAuth2AuthorizationCode(ctx, db.CreateOAuth2AuthorizationCodeParams{
@@ -449,15 +486,22 @@ func (s *OAuth2Service) ExchangeCode(ctx context.Context, clientID, clientSecret
 	// Consume the code only after every check passed. The consume query's
 	// used_at IS NULL guard keeps single-use atomic: if two fully-valid
 	// redemptions race, exactly one wins and the other gets ErrNoRows.
-	authCode, err = s.queries.ConsumeOAuth2AuthorizationCode(ctx, codeHash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired authorization code")
+	var resp OAuth2TokenResponse
+	err = s.transact(ctx, func(q OAuth2Querier) error {
+		consumed, err := q.ConsumeOAuth2AuthorizationCode(ctx, codeHash)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.BadRequest("invalid or expired authorization code")
+			}
+			return pkgerrors.Internal("failed to consume authorization code")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to consume authorization code")
+		resp, err = s.issueTokenPair(ctx, q, app.ID, consumed.UserID, consumed.Scopes)
+		return err
+	})
+	if err != nil {
+		return OAuth2TokenResponse{}, err
 	}
-
-	return s.issueTokenPair(ctx, app.ID, authCode.UserID, authCode.Scopes)
+	return resp, nil
 }
 
 // RefreshToken exchanges a refresh token for a new access token and refresh token pair.
@@ -493,25 +537,35 @@ func (s *OAuth2Service) RefreshToken(ctx context.Context, clientID, clientSecret
 		return OAuth2TokenResponse{}, pkgerrors.BadRequest("refresh token does not belong to this application")
 	}
 
-	// Consume the refresh token atomically so concurrent refresh attempts cannot replay it.
-	oldToken, err := s.queries.ConsumeOAuth2RefreshToken(ctx, tokenHash)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return OAuth2TokenResponse{}, pkgerrors.BadRequest("invalid or expired refresh token")
+	// Consume the refresh token atomically so concurrent refresh attempts
+	// cannot replay it, and in the same transaction as the new pair so a
+	// failed insert leaves the old token usable.
+	var resp OAuth2TokenResponse
+	err = s.transact(ctx, func(q OAuth2Querier) error {
+		oldToken, err := q.ConsumeOAuth2RefreshToken(ctx, tokenHash)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return pkgerrors.BadRequest("invalid or expired refresh token")
+			}
+			return pkgerrors.Internal("failed to validate refresh token")
 		}
-		return OAuth2TokenResponse{}, pkgerrors.Internal("failed to validate refresh token")
-	}
-	if oldToken.Scopes == nil {
-		return OAuth2TokenResponse{}, pkgerrors.BadRequest("refresh token must be reauthorized")
-	}
+		if oldToken.Scopes == nil {
+			return pkgerrors.BadRequest("refresh token must be reauthorized")
+		}
 
-	// Intersect the token's stored scopes with the app's current registered
-	// scopes. This ensures that if an app's scope registration was narrowed
-	// after the original grant, rotation cannot re-issue scopes that are no
-	// longer allowed. The new token may be same-or-narrower, never broader.
-	effectiveScopes := scopeIntersection(oldToken.Scopes, app.Scopes)
-
-	return s.issueTokenPair(ctx, app.ID, oldToken.UserID, effectiveScopes)
+		// Intersect the token's stored scopes with the app's current
+		// registered scopes. If an app's scope registration was narrowed
+		// after the original grant, rotation cannot re-issue scopes that are
+		// no longer allowed. The new token may be same-or-narrower, never
+		// broader.
+		effectiveScopes := scopeIntersection(oldToken.Scopes, app.Scopes)
+		resp, err = s.issueTokenPair(ctx, q, app.ID, oldToken.UserID, effectiveScopes)
+		return err
+	})
+	if err != nil {
+		return OAuth2TokenResponse{}, err
+	}
+	return resp, nil
 }
 
 // RevokeToken revokes an access token or refresh token.
@@ -622,18 +676,18 @@ func (s *OAuth2Service) RevokeAllByAppAndUser(ctx context.Context, appID, userID
 }
 
 // issueTokenPair creates a new access token and refresh token pair.
-func (s *OAuth2Service) issueTokenPair(ctx context.Context, appID, userID int64, scopes []string) (OAuth2TokenResponse, error) {
+func (s *OAuth2Service) issueTokenPair(ctx context.Context, q OAuth2Querier, appID, userID int64, scopes []string) (OAuth2TokenResponse, error) {
 	now := s.now()
 	if scopes == nil {
 		scopes = []string{}
 	}
 
 	// Generate access token.
-	accessTokenValue, _ := generateOAuth2Token()
+	accessTokenValue := generateOAuth2Token()
 	accessToken := "smithers_oat_" + accessTokenValue
 	accessTokenHash := hashOAuth2Secret(accessToken)
 
-	_, err := s.queries.CreateOAuth2AccessToken(ctx, db.CreateOAuth2AccessTokenParams{
+	_, err := q.CreateOAuth2AccessToken(ctx, db.CreateOAuth2AccessTokenParams{
 		TokenHash: accessTokenHash,
 		AppID:     appID,
 		UserID:    userID,
@@ -645,11 +699,11 @@ func (s *OAuth2Service) issueTokenPair(ctx context.Context, appID, userID int64,
 	}
 
 	// Generate refresh token.
-	refreshTokenValue, _ := generateOAuth2Token()
+	refreshTokenValue := generateOAuth2Token()
 	newRefreshToken := "smithers_ort_" + refreshTokenValue
 	refreshTokenHash := hashOAuth2Secret(newRefreshToken)
 
-	_, err = s.queries.CreateOAuth2RefreshToken(ctx, db.CreateOAuth2RefreshTokenParams{
+	_, err = q.CreateOAuth2RefreshToken(ctx, db.CreateOAuth2RefreshTokenParams{
 		TokenHash: refreshTokenHash,
 		AppID:     appID,
 		UserID:    userID,
@@ -805,23 +859,23 @@ func verifyPKCE(challenge, method, verifier string) bool {
 }
 
 // generateOAuth2ClientID generates a unique client ID.
-func generateOAuth2ClientID() (string, error) {
-	return randomHex(20), nil
+func generateOAuth2ClientID() string {
+	return randomHex(20)
 }
 
 // generateOAuth2ClientSecret generates a client secret.
-func generateOAuth2ClientSecret() (string, error) {
-	return "smithers_oas_" + randomHex(32), nil
+func generateOAuth2ClientSecret() string {
+	return "smithers_oas_" + randomHex(32)
 }
 
 // generateOAuth2Code generates an authorization code.
-func generateOAuth2Code() (string, error) {
-	return randomHex(32), nil
+func generateOAuth2Code() string {
+	return randomHex(32)
 }
 
 // generateOAuth2Token generates a token value.
-func generateOAuth2Token() (string, error) {
-	return randomHex(32), nil
+func generateOAuth2Token() string {
+	return randomHex(32)
 }
 
 // hashOAuth2Secret hashes a secret using SHA-256.

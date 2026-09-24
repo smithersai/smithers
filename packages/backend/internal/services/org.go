@@ -408,7 +408,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 		if err := tx.Commit(ctx); err != nil {
 			return db.Organization{}, pkgerrors.Internal("failed to commit organization creation")
 		}
-		_ = s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
+		s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
 		return org, nil
 	}
 
@@ -434,7 +434,7 @@ func (s *OrgService) CreateOrg(ctx context.Context, actor *db.User, req CreateOr
 		return db.Organization{}, pkgerrors.Internal("failed to add creator as organization owner")
 	}
 
-	_ = s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
+	s.dispatchOrganizationEvent(ctx, org.ID, actor, "created")
 	return org, nil
 }
 
@@ -643,7 +643,7 @@ func (s *OrgService) AddOrgMember(ctx context.Context, actor *db.User, orgName s
 		return pkgerrors.Internal("failed to add organization member")
 	}
 
-	_ = s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_added")
+	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_added")
 	s.reconcileSeats(ctx, org.ID)
 	return nil
 }
@@ -775,6 +775,10 @@ func (s *OrgService) UpdateTeam(ctx context.Context, actor *db.User, orgName, te
 		description = req.Description
 	}
 
+	var grants teamGrants
+	if repoPermissionRank(permission) < repoPermissionRank(team.Permission) {
+		grants = s.teamGrantsOf(ctx, team, nil, nil)
+	}
 	updated, err := s.queries.UpdateTeam(ctx, db.UpdateTeamParams{
 		ID:          team.ID,
 		Name:        name,
@@ -789,6 +793,7 @@ func (s *OrgService) UpdateTeam(ctx context.Context, actor *db.User, orgName, te
 		return db.Team{}, pkgerrors.Internal("failed to update team")
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "edited")
+	s.publishTeamAccessLost(ctx, grants, actor.ID, "team "+team.Name+" permission lowered")
 	return updated, nil
 }
 
@@ -807,10 +812,12 @@ func (s *OrgService) DeleteTeam(ctx context.Context, actor *db.User, orgName, te
 	if err != nil {
 		return err
 	}
+	grants := s.teamGrantsOf(ctx, team, nil, nil)
 	if err := s.queries.DeleteTeam(ctx, team.ID); err != nil {
 		return pkgerrors.Internal("failed to delete team")
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "deleted")
+	s.publishTeamAccessLost(ctx, grants, actor.ID, "team "+team.Name+" deleted")
 	return nil
 }
 
@@ -916,10 +923,12 @@ func (s *OrgService) RemoveTeamMember(ctx context.Context, actor *db.User, orgNa
 		return pkgerrors.Internal("failed to load user")
 	}
 
+	grants := s.teamGrantsOf(ctx, team, []int64{user.ID}, nil)
 	if err := s.queries.RemoveTeamMember(ctx, db.RemoveTeamMemberParams{TeamID: team.ID, UserID: user.ID}); err != nil {
 		return pkgerrors.Internal("failed to remove team member")
 	}
 	s.dispatchTeamLifecycleEvent(ctx, org.ID, actor, "member_removed")
+	s.publishTeamAccessLost(ctx, grants, actor.ID, "removed from team "+team.Name)
 	return nil
 }
 
@@ -991,9 +1000,7 @@ func (s *OrgService) AddTeamRepo(ctx context.Context, actor *db.User, orgName, t
 		}
 		return pkgerrors.Internal("failed to add team repository")
 	}
-	if err := s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_added"); err != nil {
-		return err
-	}
+	s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_added")
 	return nil
 }
 
@@ -1027,12 +1034,12 @@ func (s *OrgService) RemoveTeamRepo(ctx context.Context, actor *db.User, orgName
 		return pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "TeamRepo", Field: "repository", Code: "invalid"})
 	}
 
+	grants := s.teamGrantsOf(ctx, team, nil, []db.Repository{repository})
 	if err := s.queries.RemoveTeamRepo(ctx, db.RemoveTeamRepoParams{TeamID: team.ID, RepositoryID: repository.ID}); err != nil {
 		return pkgerrors.Internal("failed to remove team repository")
 	}
-	if err := s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_removed"); err != nil {
-		return err
-	}
+	s.publishTeamAccessLost(ctx, grants, actor.ID, "repository removed from team "+team.Name)
+	s.dispatchTeamRepositoryEvent(ctx, repository, owner, actor, "repo_removed")
 	return nil
 }
 
@@ -1105,7 +1112,7 @@ func (s *OrgService) RemoveOrgMember(ctx context.Context, actor *db.User, orgNam
 	}); err != nil {
 		return pkgerrors.Internal("failed to remove organization member")
 	}
-	_ = s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
+	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
 	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
 		Kind:           revocation.KindOrgMemberRemoved,
 		UserID:         user.ID,
@@ -1182,7 +1189,7 @@ func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization,
 	if err := tx.Commit(ctx); err != nil {
 		return pkgerrors.Internal("failed to remove organization member")
 	}
-	_ = s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
+	s.dispatchOrganizationEvent(ctx, org.ID, actor, "member_removed")
 	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
 		Kind:           revocation.KindOrgMemberRemoved,
 		UserID:         user.ID,
@@ -1195,14 +1202,17 @@ func (s *OrgService) removeOrgMemberTx(ctx context.Context, org db.Organization,
 	return nil
 }
 
+// Webhook dispatch runs after the mutation committed, so it is best effort: a
+// failed enqueue is logged and never fails the request, which would make the
+// client retry a change that already succeeded.
 func (s *OrgService) dispatchOrganizationEvent(
 	ctx context.Context,
 	orgID int64,
 	actor *db.User,
 	action string,
-) error {
+) {
 	if s.dispatcher == nil {
-		return nil
+		return
 	}
 
 	sender := webhooks.UserPayload{}
@@ -1218,9 +1228,8 @@ func (s *OrgService) dispatchOrganizationEvent(
 		Sender: sender,
 	}
 	if err := s.dispatcher.DispatchOrgEvent(ctx, orgID, webhooks.EventTypeOrganization, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue organization webhook delivery")
+		slog.Error("organization webhook enqueue failed", "org_id", orgID, "event", action, "error", err)
 	}
-	return nil
 }
 
 func (s *OrgService) dispatchTeamLifecycleEvent(
@@ -1245,7 +1254,9 @@ func (s *OrgService) dispatchTeamLifecycleEvent(
 		Action: action,
 		Sender: sender,
 	}
-	_ = s.dispatcher.DispatchOrgEvent(ctx, orgID, webhooks.EventTypeTeam, payload)
+	if err := s.dispatcher.DispatchOrgEvent(ctx, orgID, webhooks.EventTypeTeam, payload); err != nil {
+		slog.Error("team webhook enqueue failed", "org_id", orgID, "event", action, "error", err)
+	}
 }
 
 func (s *OrgService) dispatchTeamRepositoryEvent(
@@ -1254,9 +1265,9 @@ func (s *OrgService) dispatchTeamRepositoryEvent(
 	owner string,
 	actor *db.User,
 	action string,
-) error {
+) {
 	if s.dispatcher == nil {
-		return nil
+		return
 	}
 
 	sender := webhooks.UserPayload{}
@@ -1277,9 +1288,8 @@ func (s *OrgService) dispatchTeamRepositoryEvent(
 		Sender: sender,
 	}
 	if err := s.dispatcher.DispatchEvent(ctx, repository.ID, webhooks.EventTypeTeam, payload); err != nil {
-		return pkgerrors.Internal("failed to enqueue webhook delivery")
+		slog.Error("team repository webhook enqueue failed", "repo_id", repository.ID, "event", action, "error", err)
 	}
-	return nil
 }
 
 func isUniqueViolation(err error) bool {

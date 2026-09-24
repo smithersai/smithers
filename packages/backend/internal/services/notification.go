@@ -111,13 +111,18 @@ type NotificationService struct {
 	// so a burst of issue/landing creations on heavily-watched repositories
 	// cannot exhaust the connection pool.
 	fanoutSem chan struct{}
+	// fanoutQueue bounds how many fan-outs may be pending at once, running or
+	// waiting for fanoutSem. A fan-out that finds it full is dropped and
+	// logged instead of parking another goroutine.
+	fanoutQueue chan struct{}
 }
 
 // NewNotificationService returns a new NotificationService.
 func NewNotificationService(q NotificationQueries) *NotificationService {
 	return &NotificationService{
-		q:         q,
-		fanoutSem: make(chan struct{}, maxConcurrentWatcherFanouts),
+		q:           q,
+		fanoutSem:   make(chan struct{}, maxConcurrentWatcherFanouts),
+		fanoutQueue: make(chan struct{}, maxQueuedWatcherFanouts),
 	}
 }
 
@@ -132,7 +137,8 @@ func NewNotificationServiceWithPool(q NotificationQueries, pool *pgxpool.Pool) *
 		createTxManager: &pgxNotificationCreateTxManager{
 			pool: pool,
 		},
-		fanoutSem: make(chan struct{}, maxConcurrentWatcherFanouts),
+		fanoutSem:   make(chan struct{}, maxConcurrentWatcherFanouts),
+		fanoutQueue: make(chan struct{}, maxQueuedWatcherFanouts),
 	}
 }
 
@@ -551,6 +557,9 @@ const (
 	// sequentially, so total in-flight fan-out DB work is bounded regardless
 	// of how many issues/landing requests are created at once.
 	maxConcurrentWatcherFanouts = 4
+	// maxQueuedWatcherFanouts bounds running plus waiting fan-outs, so a burst
+	// of issue or landing creations cannot park unbounded goroutines.
+	maxQueuedWatcherFanouts = 256
 	// watcherFanoutTimeout bounds the total time a single watcher fan-out may
 	// spend once it starts running.
 	watcherFanoutTimeout = 5 * time.Minute
@@ -563,17 +572,26 @@ const (
 //
 // The fan-out runs in the background, detached from the request context, so a
 // repository with many watchers cannot tie up the request worker; at most
-// maxConcurrentWatcherFanouts fan-outs perform DB work at a time. Errors are
-// logged and never surfaced to the caller.
+// maxConcurrentWatcherFanouts fan-outs perform DB work at a time and at most
+// maxQueuedWatcherFanouts are pending; beyond that the fan-out is dropped.
+// Errors and panics are logged and never surfaced to the caller.
 func (s *NotificationService) NotifyWatchers(ctx context.Context, repositoryID int64, sourceType string, sourceID int64, subject, body string) {
+	select {
+	case s.fanoutQueue <- struct{}{}:
+	default:
+		slog.Error("notify watchers: fan-out queue full, dropping notification",
+			"repo_id", repositoryID, "source_type", sourceType, "source_id", sourceID)
+		return
+	}
 	ctx = context.WithoutCancel(ctx)
-	go func() {
+	SafeGo("notify-watchers", func() {
+		defer func() { <-s.fanoutQueue }()
 		s.fanoutSem <- struct{}{}
 		defer func() { <-s.fanoutSem }()
 		ctx, cancel := context.WithTimeout(ctx, watcherFanoutTimeout)
 		defer cancel()
 		s.notifyWatchersSync(ctx, repositoryID, sourceType, sourceID, subject, body)
-	}()
+	})
 }
 
 // notifyWatchersSync performs the actual watcher fan-out. A watch row is not

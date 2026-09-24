@@ -2,7 +2,11 @@ package services
 
 import (
 	"context"
+	stdErrors "errors"
+	"log/slog"
 	"strings"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -382,7 +386,11 @@ func (s *SecretService) resolveRepoByOwnerAndName(ctx context.Context, owner, re
 		LowerName: lowerRepo,
 	})
 	if err != nil {
-		return db.Repository{}, pkgerrors.NotFound("repository not found")
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Repository{}, pkgerrors.NotFound("repository not found")
+		}
+		slog.Error("load repository failed", "owner", lowerOwner, "repo", lowerRepo, "error", err)
+		return db.Repository{}, pkgerrors.Internal("failed to load repository")
 	}
 	return repository, nil
 }
@@ -394,7 +402,11 @@ func (s *SecretService) resolveOrgByName(ctx context.Context, orgName string) (d
 	}
 	org, err := s.queries.GetOrgByLowerName(ctx, lowerOrg)
 	if err != nil {
-		return db.Organization{}, pkgerrors.NotFound("organization not found")
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return db.Organization{}, pkgerrors.NotFound("organization not found")
+		}
+		slog.Error("load organization failed", "org", lowerOrg, "error", err)
+		return db.Organization{}, pkgerrors.Internal("failed to load organization")
 	}
 	return org, nil
 }
@@ -410,6 +422,10 @@ func (s *SecretService) requireOrgOwnerAccess(ctx context.Context, org db.Organi
 		OrganizationID: org.ID,
 		UserID:         actor.ID,
 	})
+	if err != nil && !stdErrors.Is(err, pgx.ErrNoRows) {
+		slog.Error("load organization membership failed", "org_id", org.ID, "user_id", actor.ID, "error", err)
+		return pkgerrors.Internal("failed to load organization membership")
+	}
 	if err != nil || strings.ToLower(strings.TrimSpace(member.Role)) != "owner" {
 		return pkgerrors.Forbidden("permission denied")
 	}
@@ -445,7 +461,7 @@ func (s *SecretService) requireWriteAccess(ctx context.Context, repository db.Re
 }
 
 func (s *SecretService) isRepoAdmin(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
-	return isRepoAdmin(ctx, s.queries, repository, userID)
+	return canAdminRepo(ctx, s.queries, repository, userID)
 }
 
 func (s *SecretService) canWriteRepo(ctx context.Context, repository db.Repository, userID int64) (bool, error) {

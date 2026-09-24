@@ -1874,8 +1874,8 @@ func (s *WorkspaceService) workspaceCloneDepth(ctx context.Context, repositoryID
 // buildWorkspaceCloneCommand clones the repository into a fresh workspace VM.
 //
 // The clone is shallow by default. A workspace agent reads at most the coding
-// flows' 100-commit history window, and coding.py fetches more on demand when
-// a flow asks past the shallow boundary, so the whole history is latency
+// flows' 100-commit history window, and `git fetch --deepen` fetches more on
+// demand when a flow asks past the shallow boundary, so the whole history is latency
 // nobody spends. Measured on the GitHub mirror of smithersai/plue on
 // 2026-09-15: 154.1s full against 29.1s at --depth 200. `depth` follows
 // sandbox.ResolveCloneDepth — zero is the platform default, negative is the

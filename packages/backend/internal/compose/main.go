@@ -1324,7 +1324,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		Config: cfg.FeatureFlags,
 	}
 
-	oauth2Service := services.NewOAuth2Service(queries)
+	oauth2Service := services.NewOAuth2ServiceWithPool(queries, pool)
 	// AlphaAccess checker is used by the OAuth2 authorize endpoint to gate
 	// code issuance behind the closed-alpha whitelist (ticket 0106). When
 	// the closed-alpha gate is disabled (Community Edition / open builds),

@@ -285,7 +285,7 @@ func TestVariable_H_HelperPermissionBranches(t *testing.T) {
 	require.NoError(t, svc.requireOrgOwnerAccess(ctx, variableHOrg(), admin))
 
 	err = NewVariableService(&variableHQuerier{getOrgMemberFn: func(context.Context, db.GetOrgMemberParams) (db.OrgMember, error) {
-		return db.OrgMember{}, assert.AnError
+		return db.OrgMember{}, pgx.ErrNoRows
 	}}).requireOrgOwnerAccess(ctx, variableHOrg(), variableHUser(2))
 	require.Equal(t, 403, variableHStatus(t, err))
 

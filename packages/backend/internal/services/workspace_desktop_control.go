@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -401,18 +402,21 @@ func (s *WorkspaceService) finishDesktopControl(ctx context.Context, workspace d
 		payload = []byte("{}")
 	}
 	actor := userID
-	go func() {
+	SafeGo("workspace-desktop-audit", func() {
 		auditCtx, cancel := context.WithTimeout(detached, desktopAuditTimeout)
 		defer cancel()
-		_ = recorder.InsertAuditLog(auditCtx, db.InsertAuditLogParams{
+		if err := recorder.InsertAuditLog(auditCtx, db.InsertAuditLogParams{
 			EventType:  eventType,
 			ActorID:    pgtype.Int8{Int64: actor, Valid: actor > 0},
 			TargetType: "workspace",
 			TargetName: workspace.ID,
 			Action:     strings.TrimPrefix(eventType, "workspace.desktop."),
 			Metadata:   json.RawMessage(payload),
-		})
-	}()
+		}); err != nil {
+			slog.Error("workspace desktop audit write failed", "workspace_id", workspace.ID,
+				"event_type", eventType, "actor_id", actor, "error", err)
+		}
+	})
 }
 
 // applyDesktopObserveTextSwitch turns off screen-text reading when the

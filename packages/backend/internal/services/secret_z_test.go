@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,7 +148,7 @@ func TestSecret_Z_OrgSecretErrorsAndHelpers(t *testing.T) {
 
 	_, err = NewSecretService(&mockSecretQuerier{
 		getOrgFn: func(context.Context, string) (db.Organization, error) {
-			return db.Organization{}, errors.New("missing")
+			return db.Organization{}, pgx.ErrNoRows
 		},
 	}, webhook.NoopSecretCodec{}).resolveOrgByName(ctx, "acme")
 	require.Error(t, err)
@@ -166,7 +167,7 @@ func TestSecret_Z_OrgSecretErrorsAndHelpers(t *testing.T) {
 	err = NewSecretService(&secretCovQuerier{
 		mockSecretQuerier: &mockSecretQuerier{
 			getOrgMemberFn: func(context.Context, db.GetOrgMemberParams) (db.OrgMember, error) {
-				return db.OrgMember{}, errors.New("member lookup failed")
+				return db.OrgMember{}, pgx.ErrNoRows
 			},
 		},
 	}, webhook.NoopSecretCodec{}).DeleteOrgSecret(ctx, actor, "acme", "KEY")

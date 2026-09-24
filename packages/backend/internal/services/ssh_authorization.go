@@ -4,10 +4,8 @@ import (
 	"context"
 	stdErrors "errors"
 	"fmt"
-	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -20,12 +18,11 @@ const (
 	AccessModeWrite AccessMode = "write"
 )
 
-// SSHAuthzQuerier defines the query surface needed for SSH authorization.
+// SSHAuthzQuerier defines the query surface needed for SSH authorization:
+// the repository lookup plus the canonical permission queries.
 type SSHAuthzQuerier interface {
+	RepoPermQuerier
 	GetRepoByOwnerAndName(ctx context.Context, arg db.GetRepoByOwnerAndNameParams) (db.GetRepoByOwnerAndNameRow, error)
-	IsOrgOwnerForRepoUser(ctx context.Context, arg db.IsOrgOwnerForRepoUserParams) (bool, error)
-	GetHighestTeamPermissionForRepoUser(ctx context.Context, arg db.GetHighestTeamPermissionForRepoUserParams) (string, error)
-	GetCollaboratorPermissionForRepoUser(ctx context.Context, arg db.GetCollaboratorPermissionForRepoUserParams) (string, error)
 }
 
 // SSHAuthorizer is implemented by services that can authorize SSH repository access.
@@ -79,42 +76,15 @@ func (s *SSHAuthorizationService) Authorize(ctx context.Context, userID int64, o
 		return nil
 	}
 
-	if repoRow.UserID.Valid && repoRow.UserID.Int64 == userID {
-		return grant()
-	}
-
-	if repoRow.OrgID.Valid {
-		isOwner, err := s.queries.IsOrgOwnerForRepoUser(ctx, db.IsOrgOwnerForRepoUserParams{
-			RepositoryID: repoRow.ID,
-			UserID:       userID,
-		})
-		if err != nil {
-			return errors.Internal("failed to resolve repository access")
-		}
-		if isOwner {
-			return grant()
-		}
-
-		permission, err := s.queries.GetHighestTeamPermissionForRepoUser(ctx, db.GetHighestTeamPermissionForRepoUserParams{
-			RepositoryID: repoRow.ID,
-			UserID:       userID,
-		})
-		if err != nil {
-			return errors.Internal("failed to resolve repository access")
-		}
-		if permissionAllows(strings.ToLower(strings.TrimSpace(permission)), mode) {
-			return grant()
-		}
-	}
-
-	collabPermission, err := s.queries.GetCollaboratorPermissionForRepoUser(ctx, db.GetCollaboratorPermissionForRepoUserParams{
-		RepositoryID: repoRow.ID,
-		UserID:       pgtype.Int8{Int64: userID, Valid: true},
-	})
+	permission, isOwner, err := repoPermissionForUser(ctx, s.queries, db.Repository{
+		ID:     repoRow.ID,
+		UserID: repoRow.UserID,
+		OrgID:  repoRow.OrgID,
+	}, userID)
 	if err != nil {
 		return errors.Internal("failed to resolve repository access")
 	}
-	if permissionAllows(strings.ToLower(strings.TrimSpace(collabPermission)), mode) {
+	if isOwner || permissionAllows(permission, mode) {
 		return grant()
 	}
 
@@ -128,9 +98,9 @@ func (s *SSHAuthorizationService) Authorize(ctx context.Context, userID int64, o
 func permissionAllows(permission string, mode AccessMode) bool {
 	switch mode {
 	case AccessModeRead:
-		return permission == "read" || permission == "write" || permission == "admin"
+		return repoPermissionRank(permission) >= repoPermissionRank("read")
 	case AccessModeWrite:
-		return permission == "write" || permission == "admin"
+		return repoPermissionRank(permission) >= repoPermissionRank("write")
 	default:
 		return false
 	}

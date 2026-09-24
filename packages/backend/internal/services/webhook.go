@@ -445,10 +445,12 @@ func redactWebhookSecret(h db.Webhook) db.Webhook {
 	return h
 }
 
-// TestWebhookResult holds the outcome of a test (ping) webhook delivery.
+// TestWebhookResult is the outcome of a ping delivery. Error is set, and
+// StatusCode is 0, when the endpoint could not be reached at all.
 type TestWebhookResult struct {
 	StatusCode int    `json:"status_code"`
 	Body       string `json:"body"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (s *WebhookService) TestWebhook(ctx context.Context, actor *db.User, owner, repo string, webhookID int64) (*TestWebhookResult, error) {
@@ -532,7 +534,9 @@ func (s *WebhookService) TestWebhook(ctx context.Context, actor *db.User, owner,
 	}
 
 	if deliveryErr != nil {
-		return nil, pkgerrors.Internal(fmt.Sprintf("test delivery failed: %v", deliveryErr))
+		// The endpoint, not the server, failed: report it as a result the
+		// admin can act on instead of a 500 blamed on the server.
+		return &TestWebhookResult{Error: deliveryErr.Error()}, nil
 	}
 
 	return &TestWebhookResult{
@@ -617,7 +621,7 @@ func (s *WebhookService) requireAdminAccess(ctx context.Context, repository db.R
 }
 
 func (s *WebhookService) isRepoAdmin(ctx context.Context, repository db.Repository, userID int64) (bool, error) {
-	return isRepoAdmin(ctx, s.queries, repository, userID)
+	return canAdminRepo(ctx, s.queries, repository, userID)
 }
 
 func toNullableInt4(statusCode int) pgtype.Int4 {

@@ -485,8 +485,9 @@ func TestOrg_Cov_MutationErrorBranches(t *testing.T) {
 				return db.TeamRepo{TeamID: 9, RepositoryID: 22}, nil
 			}
 		}), WithOrgWebhookDispatcher(dispatcher))
-		err = svc.AddTeamRepo(ctx, actor, "acme", "backend", "acme", "repo")
-		requireAPIErrorStatus(t, err, http.StatusInternalServerError)
+		// The team repo row is committed; a webhook enqueue failure is logged,
+		// never reported as a failed request.
+		require.NoError(t, svc.AddTeamRepo(ctx, actor, "acme", "backend", "acme", "repo"))
 
 		svc = NewOrgService(base(func(q *mockOrgQuerier) {
 			q.getRepoByOwnerAndLowerNameFn = func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
@@ -538,8 +539,8 @@ func TestOrg_Cov_DispatchAndUniqueHelpers(t *testing.T) {
 	ctx := context.Background()
 
 	svc := NewOrgService(&mockOrgQuerier{})
-	require.NoError(t, svc.dispatchOrganizationEvent(ctx, 7, nil, "created"))
-	require.NoError(t, svc.dispatchTeamRepositoryEvent(ctx, db.Repository{ID: 9, Name: "Repo"}, " ACME ", nil, "repo_added"))
+	svc.dispatchOrganizationEvent(ctx, 7, nil, "created")
+	svc.dispatchTeamRepositoryEvent(ctx, db.Repository{ID: 9, Name: "Repo"}, " ACME ", nil, "repo_added")
 	svc.dispatchTeamLifecycleEvent(ctx, 7, nil, "created")
 
 	dispatcher := &mockOrgDispatcher{
@@ -548,12 +549,11 @@ func TestOrg_Cov_DispatchAndUniqueHelpers(t *testing.T) {
 		},
 	}
 	svc = NewOrgService(&mockOrgQuerier{}, WithOrgWebhookDispatcher(dispatcher))
-	err := svc.dispatchOrganizationEvent(ctx, 7, testOrgUser(1, "alice"), "created")
-	requireAPIErrorStatus(t, err, http.StatusInternalServerError)
+	svc.dispatchOrganizationEvent(ctx, 7, testOrgUser(1, "alice"), "created") // logged, never fails the caller
 
 	dispatcher = &mockOrgDispatcher{}
 	svc = NewOrgService(&mockOrgQuerier{}, WithOrgWebhookDispatcher(dispatcher))
-	require.NoError(t, svc.dispatchTeamRepositoryEvent(ctx, db.Repository{ID: 9, Name: "Repo"}, " ACME ", nil, "repo_added"))
+	svc.dispatchTeamRepositoryEvent(ctx, db.Repository{ID: 9, Name: "Repo"}, " ACME ", nil, "repo_added")
 	require.Len(t, dispatcher.calls, 1)
 	payload, ok := dispatcher.calls[0].payload.(webhooks.RepositoryEventPayload)
 	require.True(t, ok)

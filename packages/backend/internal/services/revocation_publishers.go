@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -198,3 +199,174 @@ func (s *AgentService) SetRevocationPublisher(p revocation.Publisher) { s.revoca
 
 // SetRevocationPublisher announces collaborator removals.
 func (s *RepoService) SetRevocationPublisher(p revocation.Publisher) { s.revocations = p }
+
+// teamGrants is the access a team conferred before a mutation: every member
+// on every team repository, at the team's permission.
+type teamGrants struct {
+	permission string
+	userIDs    []int64
+	repos      []db.Repository
+}
+
+// teamGrantsOf snapshots a team's grants before a mutation removes some of
+// them. userIDs or repos narrow the snapshot; nil lists every team member or
+// team repository. It returns nothing when no publisher is wired.
+func (s *OrgService) teamGrantsOf(ctx context.Context, team db.Team, userIDs []int64, repos []db.Repository) teamGrants {
+	if s == nil || s.revocations == nil {
+		return teamGrants{}
+	}
+	if userIDs == nil {
+		for offset := int32(0); ; offset += 200 {
+			rows, err := s.queries.ListTeamMembers(ctx, db.ListTeamMembersParams{TeamID: team.ID, PageOffset: offset, PageSize: 200})
+			if err != nil {
+				slog.Error("list team members for revocation failed", "team_id", team.ID, "error", err)
+				break
+			}
+			for _, row := range rows {
+				userIDs = append(userIDs, row.ID)
+			}
+			if len(rows) < 200 {
+				break
+			}
+		}
+	}
+	if repos == nil {
+		for offset := int32(0); ; offset += 200 {
+			rows, err := s.queries.ListTeamRepos(ctx, db.ListTeamReposParams{TeamID: team.ID, PageOffset: offset, PageSize: 200})
+			if err != nil {
+				slog.Error("list team repositories for revocation failed", "team_id", team.ID, "error", err)
+				break
+			}
+			repos = append(repos, rows...)
+			if len(rows) < 200 {
+				break
+			}
+		}
+	}
+	return teamGrants{permission: team.Permission, userIDs: userIDs, repos: repos}
+}
+
+// publishTeamAccessLost announces every (user, repository) pair whose
+// effective permission fell below what the team granted before the mutation.
+// A user who keeps that access through ownership, another team or a
+// collaborator grant is left alone. When the permission cannot be resolved,
+// the pair is announced: ending a stream the user may reopen is safer than
+// leaving one open that should have closed.
+func (s *OrgService) publishTeamAccessLost(ctx context.Context, grants teamGrants, actorID int64, reason string) {
+	if s == nil || s.revocations == nil {
+		return
+	}
+	granted := repoPermissionRank(grants.permission)
+	perms, canResolve := s.queries.(RepoPermQuerier)
+	for _, repository := range grants.repos {
+		for _, userID := range grants.userIDs {
+			if canResolve {
+				permission, isOwner, err := repoPermissionForUser(ctx, perms, repository, userID)
+				if err == nil && (isOwner || repoPermissionRank(permission) >= granted) {
+					continue
+				}
+			}
+			revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+				Kind:         revocation.KindCollaboratorRemoved,
+				UserID:       userID,
+				RepositoryID: repository.ID,
+				SandboxIDs:   workspaceVMIDs(ctx, s.queries, repository.ID, userID),
+				Reason:       reason,
+				ActorID:      actorID,
+			})
+		}
+	}
+}
+
+type teamMemberLister interface {
+	ListTeamMembers(ctx context.Context, arg db.ListTeamMembersParams) ([]db.User, error)
+}
+
+type orgMemberLister interface {
+	ListOrgMembers(ctx context.Context, arg db.ListOrgMembersParams) ([]db.ListOrgMembersRow, error)
+}
+
+// ownershipAccessHoldersOf lists the users whose access to a repository comes
+// from its owner rather than a collaborator row: the personal owner, the
+// owning organization's owners, and members of teams granted the repository.
+// A transfer ends these grants, so the caller captures them before it.
+func (s *RepoService) ownershipAccessHoldersOf(ctx context.Context, repository db.Repository) []int64 {
+	if s == nil || s.revocations == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{})
+	var ids []int64
+	add := func(id int64) {
+		if _, ok := seen[id]; ok || id <= 0 {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if repository.UserID.Valid {
+		add(repository.UserID.Int64)
+	}
+	if !repository.OrgID.Valid {
+		return ids
+	}
+	if members, ok := s.queries.(orgMemberLister); ok {
+		for offset := int32(0); ; offset += 200 {
+			rows, err := members.ListOrgMembers(ctx, db.ListOrgMembersParams{OrganizationID: repository.OrgID.Int64, PageOffset: offset, PageSize: 200})
+			if err != nil {
+				slog.Error("list organization owners for revocation failed", "repo_id", repository.ID, "error", err)
+				break
+			}
+			for _, row := range rows {
+				if row.Role == "owner" {
+					add(row.ID)
+				}
+			}
+			if len(rows) < 200 {
+				break
+			}
+		}
+	}
+	if members, ok := s.queries.(teamMemberLister); ok {
+		teams, err := s.queries.ListTeamReposByRepo(ctx, repository.ID)
+		if err != nil {
+			slog.Error("list repository teams for revocation failed", "repo_id", repository.ID, "error", err)
+		}
+		for _, team := range teams {
+			for offset := int32(0); ; offset += 200 {
+				rows, err := members.ListTeamMembers(ctx, db.ListTeamMembersParams{TeamID: team.TeamID, PageOffset: offset, PageSize: 200})
+				if err != nil {
+					slog.Error("list team members for revocation failed", "team_id", team.TeamID, "error", err)
+					break
+				}
+				for _, row := range rows {
+					add(row.ID)
+				}
+				if len(rows) < 200 {
+					break
+				}
+			}
+		}
+	}
+	return ids
+}
+
+// publishAccessLost announces each user who holds no grant on repository
+// after an ownership change. repository is the post-change row.
+func (s *RepoService) publishAccessLost(ctx context.Context, repository db.Repository, userIDs []int64, reason string) {
+	if s == nil || s.revocations == nil {
+		return
+	}
+	for _, userID := range userIDs {
+		permission, isOwner, err := repoPermissionForUser(ctx, s.queries, repository, userID)
+		if err == nil && (isOwner || permission != "") {
+			continue
+		}
+		revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+			Kind:         revocation.KindCollaboratorRemoved,
+			UserID:       userID,
+			RepositoryID: repository.ID,
+			SandboxIDs:   workspaceVMIDs(ctx, s.queries, repository.ID, userID),
+			Reason:       reason,
+		})
+	}
+}

@@ -164,7 +164,7 @@ func TestOAuth2_Cov_AuthorizeExchangeRefreshAndRevokeWithDB(t *testing.T) {
 	require.Error(t, err)
 	oauth2CovAssertAPIStatus(t, err, 400)
 
-	pair, err := svc.issueTokenPair(ctx, app.ID, user.ID, []string{"read:user"})
+	pair, err := svc.issueTokenPair(ctx, svc.queries, app.ID, user.ID, []string{"read:user"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, pair.AccessToken)
 	require.NoError(t, svc.RevokeAllByAppAndUser(ctx, app.ID, user.ID))

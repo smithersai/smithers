@@ -604,8 +604,9 @@ func TestWebhookService_TestWebhook(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // caller context is already dead; delivery will fail immediately
 
-		_, err := svc.TestWebhook(ctx, actor, "alice", "demo", 1)
-		require.Error(t, err, "delivery itself fails on the cancelled context")
+		result, err := svc.TestWebhook(ctx, actor, "alice", "demo", 1)
+		require.NoError(t, err)
+		assert.NotEmpty(t, result.Error, "delivery itself fails on the cancelled context")
 		assert.NoError(t, resultCtxErr, "the delivery result must be written on a detached context")
 		assert.Equal(t, "failed", recordedStatus)
 	})

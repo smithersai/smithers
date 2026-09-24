@@ -411,13 +411,16 @@ func (s *RepoService) applyAndCommitRepoTransfer(
 	committedMove **repohost.StagedMove,
 ) (db.Repository, error) {
 	removedCollaborators := s.collaboratorsOf(ctx, repository.ID)
+	ownershipHolders := s.ownershipAccessHoldersOf(ctx, repository)
 	updated, err := target.applyTransfer(ctx, tx, repository.ID)
 	if err != nil {
 		return db.Repository{}, err
 	}
+	transferred := updated
 	defer func() {
 		if committed != nil && *committed {
 			s.publishCollaboratorsRemoved(ctx, repository.ID, removedCollaborators, 0, "repository transferred")
+			s.publishAccessLost(ctx, transferred, ownershipHolders, "repository transferred")
 		}
 	}()
 
@@ -633,6 +636,7 @@ func (s *RepoService) transferRepoCompensating(ctx context.Context, repository d
 	defer cancelWork()
 
 	removedCollaborators := s.collaboratorsOf(workCtx, repository.ID)
+	ownershipHolders := s.ownershipAccessHoldersOf(workCtx, repository)
 	updated, err := target.applyTransfer(workCtx, s.queries, repository.ID)
 	if err != nil {
 		compensationCtx, cancelCompensation := repoHostCompensationContext(workCtx)
@@ -641,6 +645,7 @@ func (s *RepoService) transferRepoCompensating(ctx context.Context, repository d
 		return db.Repository{}, err
 	}
 	s.publishCollaboratorsRemoved(workCtx, repository.ID, removedCollaborators, 0, "repository transferred")
+	s.publishAccessLost(workCtx, updated, ownershipHolders, "repository transferred")
 
 	// Move storage on repo-host; revert DB on failure.
 	if err := s.repoHost.MoveRepo(workCtx, owner, repo, target.ownerName, repo); err != nil {
