@@ -5,6 +5,7 @@ import * as Scrubber from "../src/scrubber.ts"
 import * as Transcript from "../src/transcript.ts"
 import * as Session from "../src/session.ts"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
+import { traceFromJournal } from "@smthrs/gateway/RunTrace"
 
 const events = readFileSync(new URL("./fixtures/fix-add.jsonl", import.meta.url), "utf8").trim().split("\n")
   .map(line => JSON.parse(line) as { event: AgentEvent; at: number })
@@ -47,5 +48,50 @@ describe("the shared terminal monitor", () => {
     expect(Activity.model(failed).root.status).toBe("failed")
     expect(Activity.model(stopped).root.status).toBe("cancelled")
     expect(Activity.finish(failed, "failed", 300, "broken")).toBe(failed)
+  })
+})
+
+/** A recorded session's events: `{ event, at }` rows, or the `event` records of a session file. */
+const recorded = (name: string): ReadonlyArray<{ event: AgentEvent; at: number }> =>
+  readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8").trim().split("\n")
+    .map(line => JSON.parse(line) as { type?: string; event?: AgentEvent; at: number })
+    .flatMap(row => row.event === undefined || (row.type !== undefined && row.type !== "event")
+      ? []
+      : [{ event: row.event, at: row.at }])
+
+describe("the incremental monitor trace", () => {
+  test.each(["fix-add.jsonl", "timeline-worker.jsonl"])(
+    "%s: the trace after every event equals a refold of the journal so far",
+    (name) => {
+      let transcript = Transcript.empty
+      let checked = 0
+      for (const { event, at } of recorded(name)) {
+        transcript = Transcript.apply(transcript, event, at)
+        const activity = transcript.activity
+        if (activity === undefined) continue
+        expect(Activity.model(activity)).toEqual(
+          traceFromJournal({ runId: "terminal", flowId: "chat", status: activity.status }, activity.records)
+        )
+        checked += 1
+      }
+      expect(checked).toBeGreaterThan(100)
+    },
+    // A refold of every prefix is quadratic by design; it is the reference.
+    120_000
+  )
+
+  test("an earlier activity of the same turn still reads its own prefix", () => {
+    const rows = recorded("fix-add.jsonl")
+    let transcript = Transcript.empty
+    const snapshots: Array<Activity.Activity> = []
+    for (const { event, at } of rows) {
+      transcript = Transcript.apply(transcript, event, at)
+      if (transcript.activity !== undefined) snapshots.push(transcript.activity)
+    }
+    const middle = snapshots[Math.floor(snapshots.length / 2)]!
+    Activity.model(snapshots.at(-1)!)
+    expect(Activity.model(middle)).toEqual(
+      traceFromJournal({ runId: "terminal", flowId: "chat", status: middle.status }, middle.records)
+    )
   })
 })

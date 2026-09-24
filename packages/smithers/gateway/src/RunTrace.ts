@@ -18,7 +18,8 @@
  */
 import { CallPresentation, FlowActivity, type FlowDescriptor } from "@smthrs/registry/Descriptor"
 import { Schema } from "effect"
-import { callScope, openCallIndex, uniqueCallEvents } from "./Diagnosis.js"
+import { callEventKey, callScope, openCallIndex } from "./Diagnosis.js"
+import { type CallEventFilter, callEventFilter, uniqueCallEvents } from "./internal/callEvents.js"
 import { engineTraceFromJournal } from "./EngineTrace.js"
 
 /** One control journal record, as the run card stores it (the run-events projection's row shape).
@@ -629,6 +630,8 @@ interface CallFacts {
   settled?:
     | { readonly failed: boolean; readonly result: string; readonly denied: boolean; readonly value: unknown }
     | undefined
+  /** What a repeat is matched on: the signature and the settlement. */
+  reading?: string | undefined
 }
 
 /** What one frame did, as its own records said it. */
@@ -681,17 +684,40 @@ const dominantCall = (entry: FrameFacts): CallFacts | undefined =>
  * @param runId the run, for the notes that land before any frame opened
  * @param ordered the journal, in sequence order, call events already deduplicated
  */
-const disciplineFold = (
-  runId: string,
-  ordered: ReadonlyArray<JournalRecord>
-): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes" | "owners"> => {
-  const frames: Array<FrameFacts> = []
-  const notes: Array<TraceNote> = []
-  const milestones: Array<Milestone> = []
-  const owners: Array<TraceOwner> = []
-  const open: Array<CallFacts> = []
-  let frame: FrameFacts | undefined
-  let lastAt = 0
+interface DisciplineState {
+  readonly runId: string
+  readonly frames: Array<FrameFacts>
+  readonly notes: Array<TraceNote>
+  readonly milestones: Array<Milestone>
+  readonly owners: Array<TraceOwner>
+  readonly open: Array<CallFacts>
+  frame: FrameFacts | undefined
+  lastAt: number
+  /** Each frame's line as last built, reused while its inputs are the same objects. */
+  readonly lineOf: WeakMap<FrameFacts, {
+    readonly call: CallFacts
+    readonly settled: CallFacts["settled"]
+    readonly repeatOf: number | undefined
+    readonly line: FrameLine
+  }>
+}
+
+const disciplineInit = (runId: string): DisciplineState => ({
+  runId,
+  frames: [],
+  notes: [],
+  milestones: [],
+  owners: [],
+  open: [],
+  frame: undefined,
+  lastAt: 0,
+  lineOf: new WeakMap()
+})
+
+/** One record of the discipline fold; the state is advanced in place. */
+const disciplineStep = (state: DisciplineState, record: JournalRecord): void => {
+  const { runId, frames, notes, milestones, owners, open } = state
+  let frame = state.frame
   /** Where a discipline record attaches: the open frame, else the run itself. */
   const here = (): string => frame?.id ?? `run:${runId}`
   const note = (
@@ -709,12 +735,12 @@ const disciplineFold = (
     milestones.push({ seq, at, label, tone, spanId: here() })
   }
 
-  for (const record of ordered) {
+  {
     const kind = record.kind ?? ""
     const payload = asRecord(record.payload)
     const at = timeOf(record, payload)
     const seq = record.sequence ?? 0
-    lastAt = Math.max(lastAt, at)
+    state.lastAt = Math.max(state.lastAt, at)
     if (frame !== undefined) frame.endedAt = Math.max(frame.endedAt, at)
     switch (kind) {
       case "control.agent.turn-opened": {
@@ -1044,6 +1070,22 @@ const disciplineFold = (
     // opened: the rule `here()` already gives a note and a pin.
     owners.push({ seq, spanId: here() })
   }
+  state.frame = frame
+}
+
+/**
+ * What {@link disciplineStep} has read so far, as the model's arrays.
+ *
+ * The derived rows are rebuilt from the frames; the recorded ones are copied,
+ * so a model taken now never sees a record stepped after it.
+ */
+const disciplineModel = (
+  state: DisciplineState
+): Pick<TraceModel, "bands" | "milestones" | "lines" | "notes" | "owners"> => {
+  const { frames, lastAt } = state
+  const notes = state.notes.slice()
+  const milestones = state.milestones.slice()
+  const owners = state.owners.slice()
 
   // A measured unchanged tree is authoritative even when a write succeeded.
   const changed = frames.map((entry) => entry.observedMutation ?? (entry.mutated === true || madeAWrite(entry)))
@@ -1070,7 +1112,9 @@ const disciplineFold = (
     const calls = entry.calls.filter((call) => call.flowName !== CHECKPOINT_FLOW)
     for (const call of calls) {
       if (call.settled === undefined) continue
-      const reading = `${call.signature} ${JSON.stringify(call.settled)}`
+      // A call settles once, so its reading is built once, not per model taken.
+      call.reading ??= `${call.signature} ${JSON.stringify(call.settled)}`
+      const reading = call.reading
       const seen = firstSeen.get(reading)
       if (seen === undefined) firstSeen.set(reading, entry.frame)
       else if (seen < entry.frame) repeatedFrom.set(call, seen)
@@ -1121,12 +1165,16 @@ const disciplineFold = (
     // A frame that called nothing has no line. Absence is absence.
     if (call === undefined) return []
     const repeatOf = stuck[index] === true ? repeatedFrom.get(call) : undefined
+    const held = state.lineOf.get(entry)
+    if (held !== undefined && held.call === call && held.settled === call.settled && held.repeatOf === repeatOf) {
+      return [held.line]
+    }
     const outcome = call.settled === undefined
       ? "pending"
       : call.settled.failed || call.settled.denied
       ? "failure"
       : "success"
-    return [{
+    const line: FrameLine = {
       spanId: entry.id,
       frame: entry.frame,
       verb: call.presentation?.verb[outcome] ??
@@ -1140,14 +1188,85 @@ const disciplineFold = (
       failed: call.settled?.failed === true,
       wrote: call.activity === "writes" && call.settled?.failed === false && !call.settled.denied,
       ...(repeatOf === undefined ? {} : { repeatOf })
-    }]
+    }
+    state.lineOf.set(entry, { call, settled: call.settled, repeatOf, line })
+    return [line]
   })
 
   return { bands, milestones, lines, notes, owners }
 }
 
+/** The run a fold belongs to; its status is read when a model is taken. */
+type TraceIdentity = Omit<TraceRun, "status">
+
 /**
- * Folds a run's journal into its trace.
+ * One dispatch's span fold, advanced one record at a time.
+ *
+ * Every field is what {@link foldStep} has read so far. The builders are live:
+ * a model is taken by freezing them, never by handing them out.
+ */
+interface FoldState {
+  readonly run: TraceIdentity
+  readonly root: Builder
+  frame: Builder | undefined
+  cell: Builder | undefined
+  frames: number
+  calls: number
+  seat: string | undefined
+  lastAt: number
+  /** Records stepped after deduplication: `ordered.length`. */
+  count: number
+  /** The journal's own verdict, from a `control.run.*` record. */
+  verdict: string | undefined
+  readonly openCalls: Array<{ readonly flowName: string; readonly callId?: string | undefined; readonly span: Builder }>
+  readonly approvals: Map<string, Builder>
+  readonly discipline: DisciplineState
+  /** Call-event keys already stepped: the fold's own `uniqueCallEvents` pass. */
+  readonly seen: Set<string>
+  /** The native rows of this fold's own input, in order. */
+  readonly engine: Array<JournalRecord>
+  /** {@link engineTraceFromJournal} of `engine`, until another row arrives. */
+  engineTrace: ReadonlyArray<Builder> | undefined
+  /** The span each builder last froze to. */
+  readonly frozen: WeakMap<Builder, TraceSpan>
+  /**
+   * The run's direct children a step may have changed since the last model.
+   * Every other child is a closed subtree, and its frozen span is reused as is.
+   */
+  readonly dirty: Set<Builder>
+  /** The run's direct child a call or approval span sits under, for {@link dirty}. */
+  readonly topOf: WeakMap<Builder, Builder>
+}
+
+const isEngineRow = (record: JournalRecord): boolean =>
+  record.kind === "control.engine.event" || record.kind === "control.engine.projection-gap"
+
+const foldInit = (run: TraceIdentity): FoldState => ({
+  run,
+  root: builder(`run:${run.runId}`, "run", `run ${run.runId} · ${run.flowId}`, "running", 0, {
+    ...(run.kind === undefined ? {} : { fields: { kind: run.kind } })
+  }),
+  frame: undefined,
+  cell: undefined,
+  frames: 0,
+  calls: 0,
+  seat: undefined,
+  lastAt: 0,
+  count: 0,
+  verdict: undefined,
+  openCalls: [],
+  approvals: new Map(),
+  discipline: disciplineInit(run.runId),
+  seen: new Set(),
+  engine: [],
+  engineTrace: undefined,
+  frozen: new WeakMap(),
+  dirty: new Set(),
+  topOf: new WeakMap()
+})
+
+/**
+ * Folds one record, in sequence order, into a dispatch's trace.
  *
  * Frames open on `turn-opened` and close when the next opens or the run ends;
  * cells open on `cell-produced` and close on `cell-settled`; calls open on
@@ -1158,31 +1277,28 @@ const disciplineFold = (
  * run root alone, wearing the run's status: the honest empty trace.
  *
  * The same records fold a second time, into what a person would say the run
- * was doing: see {@link disciplineFold}.
- *
- * @param run the run as its card knows it
- * @param records the run's journal, in sequence order
+ * was doing: see {@link disciplineStep}.
  */
-const foldJournal = (
-  run: TraceRun,
-  records: ReadonlyArray<JournalRecord>
-): TraceModel => {
-  const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
-  const ordered = uniqueCallEvents(rawOrdered)
-  const firstAt = ordered.length === 0 ? 0 : timeOf(ordered[0]!, asRecord(ordered[0]!.payload))
-  const root = builder(`run:${run.runId}`, "run", `run ${run.runId} · ${run.flowId}`, run.status, firstAt, {
-    ...(run.kind === undefined ? {} : { fields: { kind: run.kind } })
-  })
-  let frame: Builder | undefined
-  let cell: Builder | undefined
-  let frames = 0
-  let calls = 0
-  let seat: string | undefined
-  let lastAt = firstAt
-  const openCalls: Array<{ readonly flowName: string; readonly callId?: string | undefined; readonly span: Builder }> =
-    []
-  const approvals = new Map<string, Builder>()
-
+const foldStep = (state: FoldState, record: JournalRecord): void => {
+  if (isEngineRow(record)) {
+    state.engine.push(record)
+    state.engineTrace = undefined
+  }
+  // The input is already normalized, so this pass only drops repeats.
+  const key = callEventKey(record)
+  if (key !== undefined) {
+    if (state.seen.has(key)) return
+    state.seen.add(key)
+  }
+  const { root, openCalls, approvals, dirty, topOf } = state
+  let { frame, cell, frames, calls, seat } = state
+  const top = frame ?? cell
+  if (top !== undefined) dirty.add(top)
+  /** Marks the run's child that `span` sits under as changed. */
+  const touch = (span: Builder): void => {
+    const owner = topOf.get(span)
+    if (owner !== undefined) dirty.add(owner)
+  }
   /** Where a new span attaches: the open cell, else the open frame, else the run. */
   const parent = (): Builder => cell ?? frame ?? root
   const closeCell = (at: number, status: SpanStatus): void => {
@@ -1199,11 +1315,15 @@ const foldJournal = (
     frame = undefined
   }
 
-  for (const record of ordered) {
+  {
     const kind = record.kind ?? ""
     const payload = asRecord(record.payload)
     const at = timeOf(record, payload)
-    lastAt = Math.max(lastAt, at)
+    if (state.count === 0) {
+      root.startedAt = at
+      state.lastAt = at
+    } else state.lastAt = Math.max(state.lastAt, at)
+    state.count += 1
     const opened = { sequence: record.sequence, event: kind }
     switch (kind) {
       case "control.engine.event":
@@ -1280,6 +1400,7 @@ const foldJournal = (
           fields: restOf(payload, ["flowName", "input"])
         })
         openCalls.push({ flowName, callId: asString(payload.callId), span })
+        topOf.set(span, frame ?? cell ?? span)
         parent().children.push(span)
         break
       }
@@ -1288,6 +1409,7 @@ const foldJournal = (
         const settled = index < 0 ? undefined : openCalls.splice(index, 1)[0]
         if (settled === undefined) break
         const failed = asString(payload.outcome) === "failure"
+        touch(settled.span)
         settled.span.endedAt = at
         settled.span.status = failed ? "failed" : "completed"
         settled.span.detail = {
@@ -1343,6 +1465,7 @@ const foldJournal = (
           }
         )
         approvals.set(requestId, span)
+        topOf.set(span, frame ?? span)
         ;(frame ?? root).children.push(span)
         break
       }
@@ -1354,6 +1477,7 @@ const foldJournal = (
           ? [...approvals.values()].find((entry) => entry.status === "waiting")
           : approvals.get(key)
         if (span === undefined) break
+        touch(span)
         span.status = decided
         span.endedAt = at
         break
@@ -1364,7 +1488,7 @@ const foldJournal = (
         closeFrame(at)
         root.endedAt = at
         // The journal's own verdict outranks the card's phase word: a scrub to this record shows the run settled.
-        root.status = kind.slice("control.run.".length)
+        state.verdict = kind.slice("control.run.".length)
         break
       }
       default: {
@@ -1391,25 +1515,86 @@ const foldJournal = (
       }
     }
   }
-  root.children.push(...engineTraceFromJournal(rawOrdered))
-  // A settled run leaves no frame open: the last frame ends where the journal does.
-  if (TERMINAL_RUN.has(run.status)) {
-    closeFrame(lastAt)
-    if (root.endedAt === undefined && ordered.length > 0) root.endedAt = lastAt
-  }
+  Object.assign(state, { frame, cell, frames, calls, seat })
+  const after = frame ?? cell
+  if (after !== undefined) dirty.add(after)
+  disciplineStep(state.discipline, record)
+}
 
-  const freeze = (node: Builder, depth: number): TraceSpan => ({
-    id: node.id,
-    kind: node.kind,
-    label: node.label,
-    status: node.status,
-    startedAt: node.startedAt,
-    ...(node.endedAt === undefined ? {} : { endedAt: node.endedAt }),
-    depth,
-    children: node.children.map((child) => freeze(child, depth + 1)),
-    detail: node.detail
+/**
+ * The trace {@link foldStep} has read so far, as the run with `status` would
+ * show it.
+ *
+ * Nothing live is mutated. A settled run closes its open frame where the
+ * journal ends, so that close is applied to the frozen copy only.
+ */
+const foldModel = (
+  state: FoldState,
+  status: string,
+  journal: ReadonlyArray<JournalRecord>,
+  engine?: ReadonlyArray<Builder>
+): TraceModel => {
+  const { root, frame, cell, lastAt } = state
+  const closed = new Map<Builder, { readonly status: SpanStatus; readonly endedAt: number }>()
+  const statusOf = (node: Builder): SpanStatus => closed.get(node)?.status ?? node.status
+  // A settled run leaves no frame open: the last frame ends where the journal does.
+  const terminal = TERMINAL_RUN.has(status)
+  if (terminal && frame !== undefined) {
+    if (cell !== undefined) {
+      closed.set(cell, {
+        status: cell.children.some((child) => child.status === "failed") ? "failed" : "completed",
+        endedAt: lastAt
+      })
+    }
+    closed.set(frame, {
+      status: frame.children.some((child) => statusOf(child) === "failed") ? "failed" : "completed",
+      endedAt: lastAt
+    })
+  }
+  if (engine === undefined && state.engineTrace === undefined) state.engineTrace = engineTraceFromJournal(state.engine)
+  const children = [...root.children, ...(engine ?? state.engineTrace!)]
+  closed.set(root, {
+    status: state.verdict ?? status,
+    endedAt: root.endedAt ?? (terminal && state.count > 0 ? lastAt : Number.NaN)
   })
-  const frozenRoot = freeze(root, 0)
+
+  const freeze = (node: Builder, depth: number, members: ReadonlyArray<Builder>): TraceSpan =>
+    freezeWith(node, depth, members.map((child) => freeze(child, depth + 1, child.children)))
+  const freezeWith = (node: Builder, depth: number, frozenChildren: ReadonlyArray<TraceSpan>): TraceSpan => {
+    const override = closed.get(node)
+    const nodeStatus = override?.status ?? node.status
+    const endedAt = override === undefined || Number.isNaN(override.endedAt) ? node.endedAt : override.endedAt
+    const held = state.frozen.get(node)
+    if (
+      held !== undefined && held.depth === depth && held.label === node.label && held.status === nodeStatus &&
+      held.startedAt === node.startedAt && held.endedAt === endedAt && held.detail === node.detail &&
+      held.children.length === frozenChildren.length &&
+      held.children.every((child, index) => child === frozenChildren[index])
+    ) return held
+    const span: TraceSpan = {
+      id: node.id,
+      kind: node.kind,
+      label: node.label,
+      status: nodeStatus,
+      startedAt: node.startedAt,
+      ...(endedAt === undefined ? {} : { endedAt }),
+      depth,
+      children: frozenChildren,
+      detail: node.detail
+    }
+    state.frozen.set(node, span)
+    return span
+  }
+  // A child no step touched since the last model is a closed subtree: its
+  // frozen span stands, and nothing under it is walked again.
+  const settledChild = (child: Builder): TraceSpan | undefined => {
+    if (state.dirty.has(child) || closed.has(child)) return undefined
+    const held = state.frozen.get(child)
+    return held?.depth === 1 ? held : undefined
+  }
+  const frozenChildren = children.map((child) => settledChild(child) ?? freeze(child, 1, child.children))
+  state.dirty.clear()
+  const frozenRoot = freezeWith(root, 0, frozenChildren)
   const rows: Array<TraceSpan> = []
   const walk = (span: TraceSpan): void => {
     rows.push(span)
@@ -1418,71 +1603,222 @@ const foldJournal = (
   walk(frozenRoot)
   let start = Number.POSITIVE_INFINITY
   let end = 0
+  let running = 0
+  let failed = 0
   for (const span of rows) {
     start = Math.min(start, span.startedAt)
     end = Math.max(end, span.endedAt ?? span.startedAt)
+    if (span.kind !== "run" && span.status === "running") running += 1
+    if (span.kind !== "run" && span.status === "failed") failed += 1
   }
-  const extent = ordered.length === 0 || !Number.isFinite(start)
+  const extent = state.count === 0 || !Number.isFinite(start)
     ? { start: 0, end: 0 }
     : { start, end: Math.max(end, start) }
   return {
-    journal: rawOrdered,
+    journal,
     root: frozenRoot,
     rows,
     extent,
-    counts: {
-      spans: rows.length - 1,
-      running: rows.filter((span) => span.kind !== "run" && span.status === "running").length,
-      failed: rows.filter((span) => span.kind !== "run" && span.status === "failed").length
-    },
-    ...disciplineFold(run.runId, ordered)
+    counts: { spans: rows.length - 1, running, failed },
+    ...disciplineModel(state.discipline)
   }
 }
 
 /**
- * Fold each recorded dispatch independently, keeping prompt-run addresses unchanged.
+ * A run's trace fold, advanced one record at a time.
  *
- * The options the card carries are accepted and read by nothing: a plan's
- * check targets are a coverage requirement, and a requirement is not evidence
- * that any call ran it. Every word this fold says is read off a record.
+ * {@link traceFromJournal} is {@link traceFold} over the whole journal and then
+ * {@link traceFoldModel}; a live reader keeps the fold and hands it each new
+ * record with {@link traceFoldStep}, so a record costs its own work rather than
+ * a refold of the journal before it. The fold is mutable: stepping it consumes
+ * the value it was, and a reader that needs an older trace takes a model first.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface TraceFold {
+  readonly run: Omit<TraceRun, "status">
+  /** Every record stepped, in sequence order: the model's `journal`. */
+  readonly journal: ReadonlyArray<JournalRecord>
+}
+
+interface FoldTop extends TraceFold {
+  /** Records as they arrived, so a refold sorts exactly what the batch sorts. */
+  arrived: Array<JournalRecord>
+  journal: Array<JournalRecord>
+  filter: CallEventFilter<JournalRecord>
+  base: FoldState
+  groups: Map<string, FoldState>
+  /** The native rows of the raw journal, read while no record names a step. */
+  engine: Array<JournalRecord>
+  engineTrace: ReadonlyArray<Builder> | undefined
+  firstAt: number
+  terminal: JournalRecord | undefined
+  /** The records array {@link traceFoldSync} last matched. */
+  source: ReadonlyArray<JournalRecord> | undefined
+  memo: { readonly status: string; readonly model: TraceModel } | undefined
+}
+
+const sequenceOf = (record: JournalRecord): number => record.sequence ?? 0
+
+const TERMINAL_KINDS: ReadonlySet<string> = new Set([
+  "control.run.completed",
+  "control.run.failed",
+  "control.run.cancelled"
+])
+
+/** One deduplicated record to the fold of the dispatch it was recorded under. */
+const route = (state: FoldTop, record: JournalRecord): void => {
+  state.firstAt = Math.min(state.firstAt, timeOf(record, asRecord(record.payload)))
+  if (TERMINAL_KINDS.has(record.kind ?? "")) state.terminal = record
+  const scope = callScope(record)
+  if (scope === undefined) return foldStep(state.base, record)
+  let group = state.groups.get(scope)
+  if (group === undefined) {
+    group = foldInit(state.run)
+    state.groups.set(scope, group)
+  }
+  foldStep(group, record)
+}
+
+/** Refolds `arrived` from nothing: the batch rules, exactly. */
+const reseed = (state: FoldTop, arrived: Array<JournalRecord>): void => {
+  const journal = [...arrived].sort((left, right) => sequenceOf(left) - sequenceOf(right))
+  const filter = callEventFilter<JournalRecord>()
+  for (const record of journal) filter.push(record)
+  Object.assign(state, {
+    arrived,
+    journal,
+    filter,
+    base: foldInit(state.run),
+    groups: new Map(),
+    engine: journal.filter(isEngineRow),
+    engineTrace: undefined,
+    firstAt: Number.POSITIVE_INFINITY,
+    terminal: undefined,
+    memo: undefined
+  })
+  for (const record of uniqueCallEvents(journal)) route(state, record)
+}
+
+/**
+ * Folds `records` into a fold that later records can be stepped onto.
+ *
+ * @param run the run the journal belongs to
+ * @param records its journal so far, in any order
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const traceFold = (run: Omit<TraceRun, "status">, records: ReadonlyArray<JournalRecord> = []): TraceFold => {
+  const state = { run: { runId: run.runId, flowId: run.flowId, ...(run.kind === undefined ? {} : { kind: run.kind }) } } as
+    FoldTop
+  state.source = undefined
+  reseed(state, [...records])
+  return state
+}
+
+/**
+ * Folds one more record onto `fold`, which it returns.
+ *
+ * A record in sequence order costs its own work. One that arrives before a
+ * sequence already stepped, or a native fact that supersedes telemetry the
+ * fold already placed, refolds the journal, because the batch rules move an
+ * earlier record for both.
+ *
+ * @param fold the fold; consumed
+ * @param record the next journal record
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const traceFoldStep = (fold: TraceFold, record: JournalRecord): TraceFold => {
+  const state = fold as FoldTop
+  state.memo = undefined
+  state.arrived.push(record)
+  const last = state.journal.at(-1)
+  if (last !== undefined && !(sequenceOf(record) >= sequenceOf(last))) {
+    reseed(state, state.arrived)
+    return fold
+  }
+  state.journal.push(record)
+  if (isEngineRow(record)) {
+    state.engine.push(record)
+    state.engineTrace = undefined
+  }
+  const verdict = state.filter.push(record)
+  if (verdict._tag === "rewrite") reseed(state, state.arrived)
+  else if (verdict._tag === "keep") route(state, verdict.event)
+  return fold
+}
+
+/**
+ * Brings `fold` up to `records`, stepping only what it has not read.
+ *
+ * `records` extends the array the fold last read when every earlier element is
+ * the same object; anything else, or a different run, starts a new fold. A
+ * reader that re-renders one growing journal therefore pays per new record.
+ *
+ * @param fold the fold the reader holds, if any; consumed
+ * @param run the run the journal belongs to
+ * @param records the whole journal as the reader now holds it
+ *
+ * @category combinators
+ * @since 1.0.0
+ */
+export const traceFoldSync = (
+  fold: TraceFold | undefined,
+  run: Omit<TraceRun, "status">,
+  records: ReadonlyArray<JournalRecord>
+): TraceFold => {
+  const held = fold as FoldTop | undefined
+  const source = held?.source
+  const extends_ = held !== undefined && source !== undefined && held.run.runId === run.runId &&
+    held.run.flowId === run.flowId && held.run.kind === run.kind && records.length >= source.length &&
+    source.every((record, index) => records[index] === record)
+  const next = extends_ ? held : traceFold(run) as FoldTop
+  for (let index = extends_ ? source.length : 0; index < records.length; index++) traceFoldStep(next, records[index]!)
+  next.source = records
+  return next
+}
+
+/**
+ * The trace a fold has read, as the run with `status` shows it.
+ *
+ * Taken again without a step between, it is the same object.
+ *
+ * @param fold the fold
+ * @param status the run card's phase word
  *
  * @category utilities
  * @since 1.0.0
  */
-export const traceFromJournal = (
-  run: TraceRun,
-  records: ReadonlyArray<JournalRecord>,
-  _options: TraceOptions = {}
-): TraceModel => {
-  const rawOrdered = [...records].sort((left, right) => (left.sequence ?? 0) - (right.sequence ?? 0))
-  const ordered = uniqueCallEvents(rawOrdered)
-  const groups = new Map<string, Array<JournalRecord>>()
-  const unscoped: Array<JournalRecord> = []
-  for (const record of ordered) {
-    const scope = callScope(record)
-    if (scope === undefined) unscoped.push(record)
-    else {
-      const group = groups.get(scope) ?? []
-      group.push(record)
-      groups.set(scope, group)
-    }
+export const traceFoldModel = (fold: TraceFold, status: string): TraceModel => {
+  const state = fold as FoldTop
+  if (state.memo?.status === status) return state.memo.model
+  const model = mergeModel(state, status)
+  state.memo = { status, model }
+  return model
+}
+
+const mergeModel = (state: FoldTop, status: string): TraceModel => {
+  const journal = state.journal.slice()
+  if (state.groups.size === 0) {
+    if (state.engineTrace === undefined) state.engineTrace = engineTraceFromJournal(state.engine)
+    return foldModel(state.base, status, journal, state.engineTrace)
   }
-  if (groups.size === 0) return foldJournal(run, records)
-  const base = foldJournal(run, unscoped)
+  const base = foldModel(state.base, status, journal)
   const children = [...base.root.children]
   const bands = [...base.bands]
   const milestones = [...base.milestones]
   const lines = [...base.lines]
   const notes = [...base.notes]
   const owners = [...base.owners]
-  const terminal = [...ordered].reverse().find((record) =>
-    record.kind === "control.run.completed" || record.kind === "control.run.failed" ||
-    record.kind === "control.run.cancelled"
-  )
+  const terminal = state.terminal
   const terminalAt = terminal === undefined ? undefined : timeOf(terminal, asRecord(terminal.payload))
-  for (const [scope, group] of groups) {
+  for (const [scope, group] of state.groups) {
     const prefix = `step:${encodeURIComponent(scope)}/`
-    const scoped = foldJournal({ ...run, status: "running" }, group)
+    const scoped = foldModel(group, "running", journal)
     const rename = (span: TraceSpan): TraceSpan => ({
       ...span,
       id: `${prefix}${span.id}`,
@@ -1511,11 +1847,7 @@ export const traceFromJournal = (
   children.sort((left, right) =>
     left.startedAt - right.startedAt || (left.detail.sequence ?? 0) - (right.detail.sequence ?? 0)
   )
-  const root = {
-    ...base.root,
-    startedAt: Math.min(...ordered.map((record) => timeOf(record, asRecord(record.payload)))),
-    children
-  }
+  const root = { ...base.root, startedAt: state.firstAt, children }
   const rows: Array<TraceSpan> = []
   const walk = (span: TraceSpan): void => {
     rows.push(span)
@@ -1530,14 +1862,17 @@ export const traceFromJournal = (
   const merged = lines.sort((left, right) => positions.get(left.spanId)! - positions.get(right.spanId)!)
   const stepOf = (spanId: string): string => spanId.slice(0, spanId.lastIndexOf("/") + 1)
   const renumbered = new Map(merged.map((line, index) => [`${stepOf(line.spanId)}${line.frame}`, index + 1]))
+  let start = Number.POSITIVE_INFINITY
+  let end = Number.NEGATIVE_INFINITY
+  for (const span of rows) {
+    start = Math.min(start, span.startedAt)
+    end = Math.max(end, span.endedAt ?? span.startedAt)
+  }
   return {
-    journal: rawOrdered,
+    journal,
     root,
     rows,
-    extent: {
-      start: Math.min(...rows.map((span) => span.startedAt)),
-      end: Math.max(...rows.map((span) => span.endedAt ?? span.startedAt))
-    },
+    extent: { start, end },
     counts: {
       spans: rows.length - 1,
       running: rows.filter((span) => span.kind !== "run" && span.status === "running").length,
@@ -1556,6 +1891,25 @@ export const traceFromJournal = (
     owners: owners.sort((left, right) => left.seq - right.seq)
   }
 }
+
+/**
+ * Fold each recorded dispatch independently, keeping prompt-run addresses unchanged.
+ *
+ * The same fold a live reader advances with {@link traceFoldStep}, taken over
+ * the whole journal at once.
+ *
+ * The options the card carries are accepted and read by nothing: a plan's
+ * check targets are a coverage requirement, and a requirement is not evidence
+ * that any call ran it. Every word this fold says is read off a record.
+ *
+ * @category utilities
+ * @since 1.0.0
+ */
+export const traceFromJournal = (
+  run: TraceRun,
+  records: ReadonlyArray<JournalRecord>,
+  _options: TraceOptions = {}
+): TraceModel => traceFoldModel(traceFold(run, records), run.status)
 
 /**
  * One span's bar on the shared axis, as percentages. An open span runs to the

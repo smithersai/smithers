@@ -187,3 +187,70 @@ export const uniqueCallEvents = <Event extends CallObservation>(
     return [preferred === undefined ? event : { ...preferred, sequence: event.sequence }]
   })
 }
+
+/**
+ * What {@link CallEventFilter} did with one event.
+ *
+ * `rewrite` means the event superseded one the filter already kept: the batch
+ * rule replaces the earlier event in place, so a reader holding the earlier
+ * output must refold from the whole journal.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+export type CallEventVerdict<Event> =
+  | { readonly _tag: "keep"; readonly event: Event }
+  | { readonly _tag: "drop" }
+  | { readonly _tag: "rewrite" }
+
+/**
+ * {@link uniqueCallEvents} one event at a time, for a journal read in order.
+ *
+ * The sets are exactly the ones the batch builds, so a filter fed a whole
+ * journal holds the state the batch ended with. Only one case cannot be
+ * answered in order: a native fact whose key an earlier telemetry event
+ * already claimed. That verdict is `rewrite`.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+export interface CallEventFilter<Event extends CallObservation> {
+  readonly push: (event: Event) => CallEventVerdict<Event>
+}
+
+/**
+ * Builds an empty {@link CallEventFilter}.
+ *
+ * @category projections
+ * @since 1.0.0
+ */
+export const callEventFilter = <Event extends CallObservation>(): CallEventFilter<Event> => {
+  const native = new Map<string, Event>()
+  const seen = new Set<string>()
+  const stepSeen = new Set<string>()
+  return {
+    push: (original) => {
+      const step = nativeStepEvent(original)
+      const fact = step ?? nativeCallEvent(original)
+      const event = fact ?? original
+      const key = callEventKey(original)
+      if (fact !== undefined && key !== undefined && !native.has(key)) {
+        native.set(key, fact)
+        // The batch hands this fact to the event that first claimed the key.
+        if (seen.has(key)) return { _tag: "rewrite" }
+      }
+      if (step !== undefined) {
+        const envelope = original.payload as Record<string, unknown>
+        const payload = envelope.payload as Record<string, unknown>
+        const identity = JSON.stringify([original.runId, callScope(event), envelope.sourceSequence, payload.generation])
+        if (stepSeen.has(identity)) return { _tag: "drop" }
+        stepSeen.add(identity)
+      }
+      if (key === undefined) return { _tag: "keep", event }
+      if (seen.has(key)) return { _tag: "drop" }
+      seen.add(key)
+      const preferred = native.get(key)
+      return { _tag: "keep", event: preferred === undefined ? event : { ...preferred, sequence: event.sequence } }
+    }
+  }
+}

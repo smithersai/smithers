@@ -1028,8 +1028,14 @@ describe("the timeline reads as phases, then what each frame did", () => {
     // The fold is the walk `codingEvidenceOf` and `traceFromJournal` make over
     // the journal: holding it by payload is what stops every render repeating it.
     expect(traceOf(card)).toBe(traceOf(card))
-    expect(traceOf(runCard({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN }, events: PHASED })))
-      .not.toBe(traceOf(card))
+    // A new payload over the same journal reuses its fold; a grown one steps it.
+    const same = runCard({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN }, events: PHASED })
+    expect(traceOf(same)).toBe(traceOf(card))
+    const grown = runCard({ workflow: "coding", phase: "completed", input: { plan: CODING_PLAN },
+      events: [...PHASED, stamp(99, "control.agent.checkpoint-minted", { ref: "abc" }, 9900)] })
+    expect(traceOf(grown)).not.toBe(traceOf(card))
+    expect(traceOf(grown)).toEqual(traceFromJournal({ runId: grown.payload.runId, flowId: "coding", status: "completed" },
+      grown.payload.events!))
   })
 
   test("the primary view shares the band, pins and human rows", () => {

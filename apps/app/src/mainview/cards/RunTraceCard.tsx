@@ -22,7 +22,10 @@ import {
   spanMatches,
   spanPath,
   type TraceFilter,
+  type TraceFold,
   traceFiltersFor,
+  traceFoldModel,
+  traceFoldSync,
   traceFromJournal,
   type TraceModel,
   type TraceNote,
@@ -87,6 +90,12 @@ const checkTargetsOf = (card: RunTraceCard): ReadonlyArray<string> => {
  */
 const folds = new WeakMap<RunTraceCard["payload"], { readonly model: TraceModel; readonly whole: TraceModel }>()
 
+/**
+ * The live fold of each journal, keyed by its first record. A payload that
+ * appends to the journal the last one held steps only the new records.
+ */
+const journalFolds = new WeakMap<object, TraceFold>()
+
 const foldsOf = (card: RunTraceCard): { readonly model: TraceModel; readonly whole: TraceModel } => {
   const held = folds.get(card.payload)
   if (held !== undefined) return held
@@ -95,7 +104,10 @@ const foldsOf = (card: RunTraceCard): { readonly model: TraceModel; readonly who
   const targets = checkTargetsOf(card)
   const options = targets.length === 0 ? undefined : { checkTargets: targets }
   const run = (status: string) => ({ runId, flowId: workflow, status, ...(kind === undefined ? {} : { kind }) })
-  const whole = traceFromJournal(run(phase), journal, options)
+  const first = journal[0]
+  const live = traceFoldSync(first === undefined ? undefined : journalFolds.get(first), run(phase), journal)
+  if (first !== undefined) journalFolds.set(first, live)
+  const whole = traceFoldModel(live, phase)
   const latest = journal.reduce((max, record) => Math.max(max, sequenceOf(record)), 0)
   const scrubbed = cursorSeq !== undefined && cursorSeq < latest
   const fold = {

@@ -416,6 +416,12 @@ evidence do not acquire invented phases, successful checks, or file changes.
 
 - `traceFromJournal(run, records, options?)` builds a `TraceModel`: nested
   spans, frame summaries, phase bands, milestone pins, and discipline notes.
+- `traceFold(run, records?)` holds the same fold open. `traceFoldStep(fold,
+  record)` adds one record at the cost of that record; `traceFoldSync(fold, run,
+  records)` steps only what a grown journal appended; `traceFoldModel(fold,
+  status)` returns the model `traceFromJournal` would build for the same records.
+  A record out of sequence order, or a native fact that supersedes earlier
+  telemetry, refolds the journal. `TraceFold` types the handle.
 - `turnNarratives(model)` derives concise recorded turn text. `spanPath(model,
   id)` finds recorded ancestry. `durationWords(ms)` formats elapsed time.
 - `waterfallGeometry`, `phaseExtent`, and `phaseBandGeometry` calculate layout

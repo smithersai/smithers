@@ -3,7 +3,15 @@ import { trace } from "@smthrs/agent/AgentSession"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
 import { CallIdentity, displayDescriptor } from "@smthrs/harness/Cell"
 import { Schema } from "effect"
-import { phaseExtent, traceFromJournal, type JournalRecord, type TraceModel, type Milestone } from "@smthrs/gateway/RunTrace"
+import {
+  phaseExtent,
+  traceFoldModel,
+  traceFoldSync,
+  type JournalRecord,
+  type Milestone,
+  type TraceFold,
+  type TraceModel
+} from "@smthrs/gateway/RunTrace"
 
 export interface Activity {
   readonly records: ReadonlyArray<JournalRecord>
@@ -56,10 +64,16 @@ export const finish = (activity: Activity, status: "failed" | "cancelled", at: n
 }
 
 const models = new WeakMap<Activity, TraceModel>()
+/** One fold per journal, keyed by its first record: each event steps it once. */
+const folds = new WeakMap<JournalRecord, TraceFold>()
+const run = { runId: "terminal", flowId: "chat" }
 export const model = (activity: Activity): TraceModel => {
   let value = models.get(activity)
   if (value === undefined) {
-    value = traceFromJournal({ runId: "terminal", flowId: "chat", status: activity.status }, activity.records)
+    const first = activity.records[0]
+    const fold = traceFoldSync(first === undefined ? undefined : folds.get(first), run, activity.records)
+    if (first !== undefined) folds.set(first, fold)
+    value = traceFoldModel(fold, activity.status)
     models.set(activity, value)
   }
   return value
