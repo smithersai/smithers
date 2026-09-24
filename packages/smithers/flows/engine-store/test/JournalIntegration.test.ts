@@ -55,7 +55,7 @@ describe("engine-store journal integration", () => {
       const entries = yield* withCrypto(program)
       // Every attempt now anchors its frame, not only a compensable one: a sealed
       // dispatch records a `carried` tier-2 pointer so a rewind to this frame has
-      // an address to restore (`docs/pages/concepts/time-travel.md`).
+      // an address to restore.
       expect(entries.entries.map((entry) => entry.eventType)).toEqual([
         "flows.engine.attempt-started",
         "flows.engine.snapshot-identified",

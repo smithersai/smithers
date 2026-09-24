@@ -1595,8 +1595,20 @@ export const make = (options: Options): Service => {
           for (const { intent } of recoveredMerges) yield* emitSettlement(nodesById.get(intent.nodeId)!, 0)
           yield* Effect.flatMap(advance, admit)
           while (graph.remaining > 0) {
-            /* v8 ignore next -- compiled plans are acyclic, inferred edges refuse cycle closure, and discovered edges point only from undispatched nodes to the already-settled node whose verdict added them; pending work with no in-flight producer therefore cannot have an empty ready set */
-            if (inFlightSteps === 0) break
+            // Compiled plans are acyclic, inferred edges refuse cycle closure,
+            // and discovered edges point only from undispatched nodes to the
+            // already-settled node whose verdict added them, so pending work
+            // with nothing in flight cannot have an empty ready set. If an
+            // invariant breaks anyway, fail loudly: returning here would
+            // report unsettled nodes with their initial outcome as success.
+            /* v8 ignore next 7 -- unreachable while the invariants above hold */
+            if (inFlightSteps === 0) {
+              return yield* Effect.die(
+                new Error(
+                  `PlanScheduler invariant broken: ${graph.remaining} nodes are pending and nothing is in flight`
+                )
+              )
+            }
             const event = yield* nextSettlement
             if (Exit.isFailure(event.exit)) return yield* Effect.failCause(event.exit.cause)
 

@@ -18,6 +18,7 @@ import { ArtifactStore, ArtifactSweep } from "@smthrs/artifacts"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
@@ -391,6 +392,25 @@ describe("mark: durable roots keep their referenced blobs", () => {
 })
 
 describe("sweep: grace period, pins, and policy", () => {
+  it.live("layerFileSystem sweeps the objects directory it is given", () =>
+    Effect.gen(function*() {
+      // The composition `smthrs gc` runs: the collector with the filesystem
+      // sweep beneath it, needing only the database and the host filesystem.
+      const host = memoryFs()
+      const garbage = host.seedBlob("filesystem-orphan", 100 * dayMs)
+      const report = yield* withCrypto(
+        gc({ graceMs: dayMs }).pipe(
+          Effect.provide(
+            ArtifactGc.layerFileSystem({ directory: objectsDirectory, coordination: "process" }).pipe(
+              Layer.provide(Layer.mergeAll(TestStores.database, Layer.succeed(FileSystem.FileSystem)(host.fs)))
+            )
+          )
+        )
+      )
+      expect(report.sweptDigests).toEqual([garbage])
+      expect(host.hasBlob(garbage)).toBe(false)
+    }))
+
   it.live("honours the grace period from options, policy, and the default", () =>
     Effect.gen(function*() {
       const host = memoryFs()

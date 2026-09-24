@@ -1,7 +1,7 @@
 /**
  * Initial durable deferred-completion and clock-deadline schema.
  *
- * Schema boundary: `docs/pages/concepts/durable-execution-model.md`.
+ * Schema boundary: `packages/smithers/flows/engine-store/docs/concepts/durable-waits.md`.
  *
  * @since 0.1.0
  */

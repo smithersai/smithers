@@ -13,7 +13,7 @@
  * or corrupt its consumers. Meta's Predictive Test Selection (ICSE-SEIP 2019)
  * skips tests under exactly this restriction: tests are sinks.
  *
- * Four v1 laws bound what a verdict may do, and the scheduler's tests assert
+ * Seven v1 laws bound what a verdict may do, and the scheduler's tests assert
  * each:
  *
  * 1. A verdict never enters key material and never changes a cache row: an

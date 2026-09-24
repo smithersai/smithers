@@ -513,6 +513,117 @@ describe("Retention.collect", () => {
       expect(yield* count("flows_attempts")).toBe(0)
     })))
 
+  it.effect("makes progress on every pass over a continuation lineage longer than the bound", () =>
+    migrated(Effect.gen(function*() {
+      // A trampoline parent always finishes before its successor, so an
+      // oldest-first window over a lineage longer than the bound held only
+      // ancestors, each pinned by the round just outside it. Every pass then
+      // deleted nothing and selected the same window again.
+      const rounds = ["r0", "r1", "r2", "r3", "r4"]
+      yield* Effect.forEach(
+        rounds,
+        (runId, index) => insertRun(runId, "completed", index + 1, index === 0 ? undefined : rounds[index - 1]),
+        { discard: true }
+      )
+      yield* insertAttempt("r0")
+
+      const remaining = new Set(rounds)
+      while (remaining.size > 0) {
+        const planned = yield* Retention.collect({ olderThanMs: 1000, limit: 2, dryRun: true })
+        const report = yield* Retention.collect({ olderThanMs: 1000, limit: 2 })
+        expect(report.runs).toEqual(planned.runs)
+        expect(report.runs.length).toBeGreaterThan(0)
+        expect(report.runs.length).toBeLessThanOrEqual(2)
+        for (const runId of report.runs) expect(remaining.delete(runId)).toBe(true)
+        expect(yield* count("flows_runs")).toBe(remaining.size)
+      }
+      expect(yield* count("flows_attempts")).toBe(0)
+    })))
+
+  it.effect("pins a handed candidate whose child is outside the list, and every ancestor of it", () =>
+    migrated(Effect.gen(function*() {
+      // The candidate query never hands deleteRuns such a list, because a
+      // blocked child blocks its ancestors before the bound. deleteRuns still
+      // owns the foreign key for whatever list it is given.
+      const sql = yield* SqlClient.SqlClient
+      yield* insertRun("root", "completed", 100)
+      yield* insertRun("middle", "completed", 200, "root")
+      yield* insertRun("leaf", "completed", 300, "middle")
+
+      const report = yield* RetentionOps.deleteRuns(
+        sql,
+        [{ runId: "root", parentRunId: null }, { runId: "middle", parentRunId: "root" }],
+        { dryRun: false, assumeLadder: false }
+      )
+
+      expect(report.runIds).toEqual([])
+      expect([...report.pinned].sort()).toEqual(["middle", "root"])
+      expect(yield* count("flows_runs")).toBe(3)
+    })))
+
+  it.effect("sweeps compacted journal identities with the run they name", () =>
+    migrated(Effect.gen(function*() {
+      const sql = yield* SqlClient.SqlClient
+      yield* insertRun("old", "completed", 100)
+      yield* insertRun("recent", "completed", 900)
+      for (const runId of ["old", "recent"]) {
+        yield* sql`INSERT INTO flows_journal_dedup ${
+          sql.insert({
+            run_id: runId,
+            source_id: "source",
+            source_seq: 0,
+            event_id: `${runId}-0`,
+            seq: 0,
+            content_hash: "0".repeat(64)
+          })
+        }`
+      }
+
+      const report = yield* Retention.collect({ olderThanMs: 500 })
+
+      expect(report.runs).toEqual(["old"])
+      expect(report.deleted["flows_journal_dedup"]).toBe(1)
+      expect(yield* sql`SELECT run_id FROM flows_journal_dedup`).toEqual([{ run_id: "recent" }])
+    })))
+
+  it.effect("accounts for every run-naming table the ladder installs", () =>
+    migrated(Effect.gen(function*() {
+      // A table that names a run and is in none of these sets is a table
+      // retention leaks forever. Listing is deliberate, so this pins the list
+      // against the catalog rather than trusting it.
+      const sql = yield* SqlClient.SqlClient
+      const rows = yield* sql<{ readonly table_name: string; readonly column_name: string }>`
+        SELECT m.name AS table_name, c.name AS column_name
+        FROM sqlite_master AS m, pragma_table_info(m.name) AS c
+        WHERE m.type = 'table'
+          AND (c.name LIKE '%run_id' OR c.name IN ('execution_id', 'child_id', 'parent_id'))
+      `
+      const cascades = new Set(
+        (yield* sql<{ readonly table_name: string }>`
+          SELECT m.name AS table_name
+          FROM sqlite_master AS m, pragma_foreign_key_list(m.name) AS f
+          WHERE m.type = 'table' AND f."table" = 'flows_runs' AND f.on_delete = 'CASCADE'
+        `).map((row) => row.table_name)
+      )
+      const inventory = new Set(Retention.runScopedTables.map((entry) => `${entry.table}.${entry.column}`))
+      const exempt = new Set([
+        // The run row itself, deleted last in generation order.
+        "flows_runs.run_id",
+        "flows_runs.parent_run_id",
+        // Dropped with each run row by the `flows_run_parents_gc` trigger.
+        "flows_run_parents.child_id",
+        "flows_run_parents.parent_id",
+        // Deletion tombstones the change feed reads after the row is gone.
+        "flows_run_changes.run_id",
+        // The shared step cache outlives the run that first recorded an entry.
+        "flows_step_cache.recorded_run_id"
+      ])
+      const unaccounted = rows
+        .map((row) => `${row.table_name}.${row.column_name}`)
+        .filter((key) => !inventory.has(key) && !exempt.has(key) && !cascades.has(key.split(".")[0]!))
+      expect(unaccounted).toEqual([])
+    })))
+
   it.effect("reports nothing on a database with no run table at all", () =>
     Effect.gen(function*() {
       const report = yield* Retention.collect({ olderThanMs: 500 }).pipe(Effect.provide(TestDatabase.layer))
@@ -549,6 +660,7 @@ describe("Retention.collect", () => {
       "flows_attempts",
       "flows_journal_events",
       "flows_journal_checkpoints",
+      "flows_journal_dedup",
       "flows_step_cache_recorded",
       "flows_time_travel_archive",
       "flows_time_travel_snapshots",
@@ -566,6 +678,7 @@ describe("Retention.collect", () => {
       "flows_attempts",
       "flows_journal_events",
       "flows_journal_checkpoints",
+      "flows_journal_dedup",
       "flows_step_cache_recorded"
     ])
   })

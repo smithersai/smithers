@@ -4,7 +4,37 @@ import { describe, expect, it } from "vitest"
 
 const readDoc = (path: string): string => readFileSync(new URL(`../docs/${path}`, import.meta.url), "utf8")
 
+const packageRoot = new URL("../", import.meta.url)
+const repoRoot = new URL("../../../../../", import.meta.url)
+
+/** Every file under `directory` whose name ends in one of `extensions`. */
+const sourceFiles = (directory: URL, extensions: ReadonlyArray<string>): Array<URL> =>
+  readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory()
+      ? sourceFiles(new URL(`${entry.name}/`, directory), extensions)
+      : extensions.some((extension) => entry.name.endsWith(extension))
+      ? [new URL(entry.name, directory)]
+      : []
+  )
+
 describe("documentation contracts", () => {
+  it("cites only documentation pages that exist", () => {
+    // A cited page is where a reader goes next. The retired docs/pages tree
+    // left twenty citations pointing at nothing, including the operator
+    // script's own procedure. Citations are backticked; quoted paths in
+    // tests are fixtures, not citations.
+    const files = ["src/", "scripts/", "test/"].flatMap((directory) =>
+      sourceFiles(new URL(directory, packageRoot), [".ts", ".mjs"])
+    )
+    const dangling = files.flatMap((file) =>
+      [...readFileSync(file, "utf8").matchAll(/`((?:packages\/[\w./-]+\/)?docs\/[\w./-]+\.mdx?)`/g)]
+        .map((match) => match[1]!)
+        .filter((cited) => !existsSync(new URL(cited, cited.startsWith("packages/") ? repoRoot : packageRoot)))
+        .map((cited) => `${file.pathname.slice(packageRoot.pathname.length)}: ${cited}`)
+    )
+    expect(dangling).toEqual([])
+  })
+
   it("describes the strict default and both explicit inconsistency layers", () => {
     const row = readDoc("guides/compose-a-durable-engine.md").split("\n")
       .find((line) => /^\|\s*`Inconsistency`\s*\|/.test(line))

@@ -15,6 +15,7 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import * as ArtifactSync from "../src/ArtifactSync.ts"
 import * as CachePublication from "../src/internal/CachePublication.ts"
 import * as StepBoundary from "../src/StepBoundary.ts"
@@ -35,6 +36,17 @@ const errorOf = (exit: Exit.Exit<unknown, unknown>): unknown => {
   const reason = Exit.isFailure(exit) ? exit.cause.reasons[0] : undefined
   return (reason as { readonly error: unknown }).error
 }
+
+/** Runs `effect` and returns its value with every warning it logged. */
+const warningsOf = <A, E>(effect: Effect.Effect<A, E>) =>
+  Effect.gen(function*() {
+    const warnings: Array<string> = []
+    const capture = Logger.make((options) => {
+      if (options.logLevel === "Warn") warnings.push(String(options.message))
+    })
+    const value = yield* effect.pipe(Effect.provide(Logger.layer([capture])))
+    return { value, warnings }
+  })
 
 describe("referencedDigests", () => {
   it("names the digests evidence references rather than inlines", () => {
@@ -213,13 +225,21 @@ describe("hydrate", () => {
         local: ArtifactStore.makeMemory(),
         remote: ArtifactStore.makeMemory()
       })
-      expect(yield* withCrypto(sync.hydrate([digest]))).toBe(false)
+      const { value, warnings } = yield* warningsOf(withCrypto(sync.hydrate([digest])))
+      expect(value).toBe(false)
+      // A replay that silently re-executes is the only symptom of a broken
+      // shared tier, so the fallback says why.
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(digest)
     }))
 
   it.effect("reports failure when the local tier cannot even be probed", () =>
     Effect.gen(function*() {
       const sync = ArtifactSync.make({ local: ArtifactStore.makeNoop(), remote: ArtifactStore.makeMemory() })
-      expect(yield* withCrypto(sync.hydrate([digest]))).toBe(false)
+      const { value, warnings } = yield* warningsOf(withCrypto(sync.hydrate([digest])))
+      expect(value).toBe(false)
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain("local")
     }))
 })
 
@@ -405,7 +425,10 @@ describe("the download policy", () => {
         remote: ArtifactStore.makeNoop(),
         downloadPolicy: "minimal"
       })
-      expect(yield* withCrypto(sync.hydrate([digest]))).toBe(false)
+      const { value, warnings } = yield* warningsOf(withCrypto(sync.hydrate([digest])))
+      expect(value).toBe(false)
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain("shared")
     }))
 
   it.effect("layer carries the declared policy through to hydrate", () =>

@@ -104,7 +104,7 @@ export const shipped: ReadonlyArray<Verb> = [
   // a terminal run's fence is exactly what retention deletes, so the two run
   // in the wrong order to be one pass. The contract's the shipped-command contract wording is
   // the thing that has to change; this verb says what it does.
-  verb("gc", "Delete terminal runs older than a threshold, with the rows they own"),
+  verb("gc", "Delete terminal runs older than a threshold, with the rows and artifacts they own"),
   verb("memory", "Read and write namespaced facts in the control database"),
   verb("claude", "Claude Code plugin mirror protocol"),
   verb("mcp", "Wire the Smithers MCP server into an agent"),

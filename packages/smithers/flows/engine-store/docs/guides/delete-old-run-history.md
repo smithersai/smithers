@@ -138,7 +138,9 @@ for a tool that wants to show them before deleting anything.
 [`smthrs gc`](/cli/gc) is `collect` over a project's databases, with
 `--older-than` defaulting to 30 days and `--dry-run` available. It refuses
 `--older-than 0s`, because that is "delete all history" wearing the spelling of
-a retention policy.
+a retention policy. After retention it runs `ArtifactGc` over the engine's
+`.flows/objects` directory with the default 14-day grace, so blobs the deleted
+runs were the last to reference are collected too.
 
 Nothing schedules any of this. Automatic retention stays opt-in, for the same
 reason artifact collection does: deletion is the irreversible direction, and a

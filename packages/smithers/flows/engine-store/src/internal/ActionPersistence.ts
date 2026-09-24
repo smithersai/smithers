@@ -1,9 +1,7 @@
 /**
  * Durable action dispatch at the engine encoded seam.
  *
- * Governing designs: `docs/pages/internals.md`,
- * `docs/pages/concepts/step-keys.md`, and
- * `docs/pages/concepts/action-graph.md`.
+ * Governing design: `packages/smithers/flows/plan/docs/concepts/step-keys.md`.
  *
  * @since 0.1.0
  */
@@ -746,8 +744,7 @@ export const make = (deps: Dependencies) => {
   const recordedAgeVerdict = deps.cacheAgeVerdict ?? CacheAgeVerdicts.make(deps.runId)
   // The lineage every record this executor writes addresses itself to.
   // An action is a node inside its run's root lineage, not a lineage of
-  // its own: a lineage segment is minted only where a separate run is
-  // (`docs/pages/concepts/subflows.md`).
+  // its own: a lineage segment is minted only where a separate run is.
   const lineageId = FlowEngine.Lineage.root(deps.runId)
   return Effect.fn("ActionPersistence.execute")((input: ActionInput) =>
     Effect.gen(function*() {
@@ -1123,9 +1120,8 @@ export const make = (deps: Dependencies) => {
             }
             const receiverOption = yield* Effect.serviceOption(Inconsistency.Inconsistency)
             // Core default is STRICT: journal the conflict and fail the run,
-            // which is Skyframe's throwing `GraphInconsistencyReceiver`
-            // (`docs/pages/release/support-matrix.md`, cache-conflict
-            // receiver). Providing `Inconsistency.layerTolerant` opts out.
+            // which is Skyframe's throwing `GraphInconsistencyReceiver`.
+            // Providing `Inconsistency.layerTolerant` opts out.
             const receiver = Option.isSome(receiverOption)
               ? receiverOption.value
               : Inconsistency.make({ journal, verdict: "fail", owner: deps.owner })
@@ -2034,7 +2030,7 @@ export const make = (deps: Dependencies) => {
             /**
              * THE TIER-2 ANCHOR FOR AN ORDINARY FRAME.
              *
-             * `docs/pages/concepts/time-travel.md` requires the jj pointer
+             * Time travel (`packages/smithers/flows/time-travel/docs/README.md`) requires the jj pointer
              * current when a seq was journaled to be recorded at the frame,
              * because replay cannot derive it. Only compensable work took a
              * fresh snapshot, so every other frame had no anchor at all and a
@@ -2180,7 +2176,7 @@ export const make = (deps: Dependencies) => {
            * before the body starts, and the terminal record commits after it
            * settles — `succeeded` with the recorded result, `unknown` for a
            * failure, defect, or interruption whose external outcome nobody can
-           * testify to (`docs/pages/concepts/time-travel.md`).
+           * testify to.
            *
            * The compensable record is what makes the tier-2 restore REAL: a
            * rewind classifies the doomed suffix by its boundary rows, so a
@@ -2367,7 +2363,7 @@ export const make = (deps: Dependencies) => {
           }
           if (settlement !== undefined) {
             // Forensics requires both halves as journal facts, never inferred
-            // from an absence (`docs/pages/concepts/journal.md`): what the
+            // from an absence: what the
             // transaction proposed, and that it reached the host.
             yield* emitConverging(
               JournalRecords.diffBundleCaptured(attemptSource("diff-bundle"), {

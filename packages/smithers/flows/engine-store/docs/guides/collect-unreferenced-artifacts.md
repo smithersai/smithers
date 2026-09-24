@@ -9,7 +9,8 @@ Boundary evidence spills large outputs to the artifact store by digest. When
 the attempt rows and cache entries that referenced those blobs are deleted, the
 blobs stay. `ArtifactGc` is the explicit pass that removes them.
 
-Collection never runs automatically. `gc()` is a verb a caller invokes.
+Collection never runs automatically. `gc()` is a verb a caller invokes, and
+[`smthrs gc`](/cli/gc) invokes it after its retention pass.
 
 ## Run a collection
 
@@ -24,8 +25,12 @@ const sweep = Effect.gen(function*() {
 ```
 
 `ArtifactGc.layer(options?)` provides the service and needs `SqlClient` and
-[`@smthrs/artifacts`](/api/artifacts)'s `ArtifactSweep`. `MakeOptions.pageSize`
-sets how many rows one mark-phase page holds; it defaults to 500.
+[`@smthrs/artifacts`](/api/artifacts)'s `ArtifactSweep`.
+`ArtifactGc.layerFileSystem(options?)` provides the filesystem sweep too and
+needs `SqlClient` and `FileSystem`; give it the same `directory` and
+`coordination` as the `ArtifactStore.layerFileSystem` it collects behind.
+`MakeOptions.pageSize` sets how many rows one mark-phase page holds; it defaults
+to 500.
 
 `GcOptions` takes `graceMs`, `pins`, and `dryRun`. A `GcReport` comes back with
 `scannedBlobs`, `liveDigests`, the `sweptDigests` list, `reclaimedBytes`,

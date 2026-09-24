@@ -27,7 +27,7 @@ export interface EventOptions {
    * The journal lineage this record addresses itself to — minted by the engine
    * (`FlowEngine.Lineage`) and carried on every engine record.
    *
-   * `docs/pages/concepts/time-travel.md` makes a frame the position
+   * Time travel (`packages/smithers/flows/time-travel/docs/README.md`) makes a frame the position
    * `(lineageId, seq)`, and time travel's replay skips any entry whose
    * `meta.lineageId` names a different lineage. An engine record without it is
    * a record no frame can address, which is why this is required rather than
@@ -166,7 +166,7 @@ export const expectedSetDeviation = (options: EventOptions, payload: unknown) =>
 /**
  * An isolated execution produced a diff bundle: its content address, the paths
  * it changed, and the deviations the declaration did not predict. One of the
- * two record types `docs/pages/concepts/journal.md` names for copy-back.
+ * two record types copy-back writes.
  *
  * It is written once the attempt's copy-back has settled, not before it — the
  * rebase loop owns the window in between, and a bundle that lost every race
@@ -194,7 +194,7 @@ export const copyBackSettled = (options: EventOptions, payload: unknown) =>
 /**
  * A plan was recorded and a run is about to be driven under it. Carries the
  * plan id, its generation-0 digest, and its node count, so
- * `docs/pages/api/plan.md` asks the audit question, "show me the plan this ran
+ * `packages/smithers/flows/plan/docs/api.md` asks the audit question, "show me the plan this ran
  * under". This record answers it exactly rather than reconstructing it.
  *
  * @since 0.1.0
@@ -215,8 +215,7 @@ export const subgraphAppended = (options: EventOptions, payload: EngineEvent.Sub
 /**
  * A plan node was admitted to the scheduler: its caps and seats allowed it,
  * and its effective priority selected it. Paired with `node-settled`, this is
- * the queue-time evidence `docs/pages/concepts/concurrency.md` asks the journal
- * to measure.
+ * the queue-time evidence the journal measures.
  *
  * @since 0.1.0
  * @category events

@@ -654,14 +654,30 @@ export const backup = <R = never, E = never>(
       return manifest
     })
 
-    return options.objectsDirectory === undefined
-      ? yield* capture
-      : yield* ArtifactBackupLease.withLease(
+    // The directory was empty when the capture began, so everything in it is
+    // this capture's: the snapshot, any SQLite sidecar the inspection
+    // connection left, and the copied blobs. A failed capture removes them and
+    // leaves the directory reusable for a retry. Cleanup is best effort; the
+    // original failure is the one reported.
+    const discardPartial = fs.readDirectory(options.directory).pipe(
+      Effect.flatMap((entries) =>
+        Effect.forEach(
+          entries,
+          (entry) => fs.remove(`${options.directory}/${entry}`, { recursive: true, force: true }),
+          { discard: true }
+        )
+      ),
+      Effect.ignore
+    )
+
+    return yield* (options.objectsDirectory === undefined
+      ? capture
+      : ArtifactBackupLease.withLease(
         fs,
         options.objectsDirectory,
         capture,
         ioFailure("backup", `coordinating artifact backup in ${options.objectsDirectory}`)
-      )
+      )).pipe(Effect.onError(() => discardPartial))
   }).pipe(Effect.withSpan("DisasterRecovery.backup"))
 
 /**

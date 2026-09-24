@@ -374,33 +374,28 @@ export type RecordRunParentOutcome =
  * Minimal durable state missing from the current `@smthrs/journal` contract.
  *
  * A successful mutation means the row is durable. Callers may therefore
- * journal and schedule a wake only after the mutation returns.
+ * journal and schedule a wake only after the mutation returns. Deferred and
+ * clock state belong to this package for 1.0.
  *
  * @since 0.1.0
  * @category models
  */
 export interface Service {
-  // TODO(piece-6): fold into @smthrs/journal — needs DeferredStore.get(flowName, executionId, deferredName).
   readonly deferred: (address: DeferredAddress) => Effect.Effect<Option.Option<DeferredRow>>
   /** Marks an existing result observed without removing its replay evidence. */
   readonly consumeDeferred: (address: DeferredAddress, consumedAtMs: number) => Effect.Effect<void>
-  // TODO(piece-6): fold into @smthrs/journal — needs DeferredStore.completeFirstWriterWins(row).
   readonly completeDeferred: (row: DeferredRow) => Effect.Effect<CompleteDeferredOutcome>
-  // TODO(piece-6): fold into @smthrs/journal — needs ClockStore.get(flowName, executionId, clockName).
   readonly clock: (address: ClockAddress) => Effect.Effect<Option.Option<ClockRow>>
-  // TODO(piece-6): fold into @smthrs/journal — needs ClockStore.scheduleFirstWriterWins(rowWithAbsoluteDueAtMs).
   /**
    * Schedules a clock while the execution is running under the supplied owner.
    * An existing clock wins unchanged, even after ownership is lost. If no
    * clock exists and the ownership fence fails, the effect self-interrupts.
    */
   readonly scheduleClock: (row: ClockRow, owner: OwnerId) => Effect.Effect<ScheduleClockOutcome>
-  // TODO(piece-6): fold into @smthrs/journal — needs ClockStore.completeOnce(address, completedAtMs).
   readonly completeClock: (
     address: ClockAddress,
     completedAtMs: number
   ) => Effect.Effect<CompleteClockOutcome>
-  // TODO(piece-6): fold into @smthrs/journal — needs ClockStore.due(nowMs).
   readonly dueClocks: (nowMs: number) => Effect.Effect<ReadonlyArray<ClockRow>>
   /**
    * Completes every uncompleted clock row of one run in a single statement.
@@ -852,7 +847,6 @@ const deferredAddressRowKey = (row: Record<string, unknown>): string =>
 /** The primary key of a run-parent edge, read the same way. */
 const runParentRowKey = (row: Record<string, unknown>): string => JSON.stringify([row["childId"], row["parentId"]])
 
-/** The primary key of a parked run's waiting payload, read the same way. */
 /**
  * The deepest nesting {@link Service.waitingTree} walks.
  *
@@ -867,6 +861,7 @@ const runParentRowKey = (row: Record<string, unknown>): string => JSON.stringify
  */
 export const waitingTreeMaxDepth = 64
 
+/** The primary key of a parked run's waiting payload, read the same way. */
 const waitingRowKey = (row: Record<string, unknown>): string => JSON.stringify([row["runId"]])
 
 /**

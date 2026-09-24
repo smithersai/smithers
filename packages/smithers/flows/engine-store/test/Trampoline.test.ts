@@ -2,7 +2,7 @@
  * The trampoline against the durable store: what a lineage leaves behind, and
  * what survives a process that dies in the middle of one.
  *
- * `docs/pages/api/engine.md` makes each round its own
+ * `packages/smithers/flows/engine/docs/concepts/trampoline-rounds.md` makes each round its own
  * execution, chained under one lineage. That is four durable claims, and each
  * has a case here: the chain is `parent_run_id` plus the lineage pair and NOT
  * a `flows_run_parents` edge; the next round's id is derived, so a re-drive

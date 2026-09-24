@@ -12,7 +12,9 @@ const projection = yield * EngineJournalProjection.make({
   executionId,
   engineJournal,
   controlJournal,
-  engineState // existing DurableEngineState.runChildren
+  engineState, // existing DurableEngineState.runChildren
+  runLineage, // optional RunStore.lineage: trampoline rounds of one lineage
+  onRecord // optional hook, called before each native record is copied
 })
 const follower = yield * Effect.forkScoped(projection.follow)
 // Execute through the existing registered engine/catalog.
@@ -25,8 +27,22 @@ the run row not existing yet, waits while the root is nonterminal, then performs
 another catch-up after reading the committed terminal row. A handler-scoped
 follower is insufficient: the driver commits the handler's terminal result after
 the handler returns. The host may keep ordinary `follow` alive for detached work
-that outlives the native root. Trampoline continuation rows are not automatically
-traversed as spawn edges; this helper does not infer them from execution IDs.
+that outlives the native root.
+
+When `runLineage` is supplied, each traversal also visits every round of the
+root's trampoline lineage, the rows `RunStore.lineage` returns for it, so a
+continuation's events reach the same control run as the round that started it.
+A lineage read that omits the requested run or returns a member of another
+lineage fails with `decode_failed` rather than being guessed at. The
+supervisor passes the native RunStore's `lineage`; a legacy adapter may omit
+it, and then only spawn edges are traversed. Nothing is inferred from
+execution IDs.
+
+`onRecord(entry, generation)` runs for each native record BEFORE that record is
+copied into the control journal, so a client that reads the copied record can
+act on it knowing the host already has. Recovery rereads pages, so the hook can
+fire more than once for one record and must be repeatable. Its failures are the
+caller's to absorb.
 
 The host owns the scope and can share one follower per control run through its
 existing resource map. `catchUp` completes after the copied entries have durable
@@ -36,6 +52,13 @@ prove that an already-executed native effect failed or authorize repeating it.
 This helper alone does not install the host wiring or render coding statuses.
 
 ## Internal event envelopes
+
+Every `catchUp` first emits `control.engine.bound` into the control run, with
+payload `{ version: 1, controlRunId, executionId }` under a deterministic
+producer ID, so repeats deduplicate. It is the one record that associates a
+control run with its native root; gateway projections and execution facts read
+it to find the native execution. Only the supervisor's validated native root
+creates it.
 
 `control.engine.event` uses the existing open `ControlEvent.payload` contract:
 
@@ -143,7 +166,7 @@ identity. A missing row after acceptance is awaited; a control run that settles
 without a native row produces a visible gap. Foreign rows never disclose their
 events through a coincidentally equal control ID.
 
-The settled marker is written only after the projector sees the native terminal
+The settled marker, `control.engine.projection-settled`, is written only after the projector sees the native terminal
 commit and drains its final events. Both markers carry
 `{ version: 1, executionId, generation }` and reuse deterministic producer IDs.
 Recovery includes terminal control/native rows with missing observation, checks

@@ -41,6 +41,7 @@ import * as ArtifactSweep from "@smthrs/artifacts/ArtifactSweep"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
+import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -388,3 +389,19 @@ export const layer = (
   options: MakeOptions = {}
 ): Layer.Layer<ArtifactGc, never, SqlClient.SqlClient | ArtifactSweep.ArtifactSweep> =>
   Layer.effect(ArtifactGc)(make(options))
+
+/**
+ * Provides the artifact garbage collector over a filesystem objects directory:
+ * {@link layer} with `ArtifactSweep.layerFileSystem` beneath it. Pass the same
+ * `directory` and `coordination` the paired `ArtifactStore.layerFileSystem`
+ * publishes with.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export const layerFileSystem = (
+  options: MakeOptions & ArtifactSweep.SweepOptions = {}
+): Layer.Layer<ArtifactGc, never, SqlClient.SqlClient | FileSystem.FileSystem> =>
+  layer(options).pipe(
+    Layer.provide(ArtifactSweep.layerFileSystem({ directory: options.directory, coordination: options.coordination }))
+  )

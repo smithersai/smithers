@@ -4,8 +4,8 @@
  * verifies a backup's recorded digests, and restores a backup into a fresh
  * store directory with every pre-backup ownership fence invalidated. The
  * mechanics live in `@smthrs/engine-store/DisasterRecovery`; this script only
- * parses arguments and composes the Node host layers. Cadence and procedure:
- * `docs/pages/disaster-recovery.mdx`.
+ * parses arguments and composes the Node host layers. Procedure:
+ * `packages/smithers/flows/engine-store/docs/guides/back-up-and-restore.md`.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
@@ -17,21 +17,37 @@ import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 
 const usage = `usage:
-  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs backup <database-file> <backup-directory> [objects-directory]
-  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs verify <backup-directory>
-  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs restore <backup-directory> <target-directory>`
+  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs backup <database-file> <backup-directory> [objects-directory] [--max-file-size <bytes>]
+  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs verify <backup-directory> [--max-file-size <bytes>]
+  node packages/smithers/flows/engine-store/scripts/flows-backup.mjs restore <backup-directory> <target-directory> [--max-file-size <bytes>]
+
+--max-file-size raises the largest database or blob file hashed in memory (default 512 MiB).`
+
+/**
+ * Splits a trailing `--max-file-size <bytes>` off the positional arguments.
+ * The byte count is passed through as a number; `DisasterRecovery` refuses
+ * anything that is not a non-negative safe integer with `invalid_options`.
+ */
+const splitMaxFileSize = (argv) => {
+  const index = argv.indexOf("--max-file-size")
+  if (index === -1) return { positional: argv, maxFileSizeBytes: undefined }
+  const value = argv[index + 1]
+  if (index !== argv.length - 2 || value === undefined || !/^[0-9]+$/.test(value)) throw new Error(usage)
+  return { positional: argv.slice(0, index), maxFileSizeBytes: Number(value) }
+}
 
 /** Parses `process.argv.slice(2)` into one of the three invocations. */
 export const parseArguments = (argv) => {
-  const [command, first, second, third] = argv
-  if (command === "backup" && first !== undefined && second !== undefined && argv.length <= 4) {
-    return { command, databaseFile: first, backupDirectory: second, objectsDirectory: third }
+  const { positional, maxFileSizeBytes } = splitMaxFileSize(argv)
+  const [command, first, second, third] = positional
+  if (command === "backup" && first !== undefined && second !== undefined && positional.length <= 4) {
+    return { command, databaseFile: first, backupDirectory: second, objectsDirectory: third, maxFileSizeBytes }
   }
-  if (command === "verify" && first !== undefined && argv.length === 2) {
-    return { command, backupDirectory: first }
+  if (command === "verify" && first !== undefined && positional.length === 2) {
+    return { command, backupDirectory: first, maxFileSizeBytes }
   }
-  if (command === "restore" && first !== undefined && second !== undefined && argv.length === 3) {
-    return { command, backupDirectory: first, targetDirectory: second }
+  if (command === "restore" && first !== undefined && second !== undefined && positional.length === 3) {
+    return { command, backupDirectory: first, targetDirectory: second, maxFileSizeBytes }
   }
   throw new Error(usage)
 }
@@ -45,6 +61,7 @@ export const program = (invocation) => {
       return DisasterRecovery.backup({
         directory: invocation.backupDirectory,
         objectsDirectory: invocation.objectsDirectory,
+        maxFileSizeBytes: invocation.maxFileSizeBytes,
         snapshotDatabaseLayer: (databaseFile) => NodeDatabase.layer({ filename: databaseFile })
       }).pipe(
         Effect.provide(Layer.mergeAll(host, NodeDatabase.layer({ filename: invocation.databaseFile }))),
@@ -55,7 +72,7 @@ export const program = (invocation) => {
         )
       )
     case "verify":
-      return DisasterRecovery.verify(invocation.backupDirectory).pipe(
+      return DisasterRecovery.verify(invocation.backupDirectory, { maxFileSizeBytes: invocation.maxFileSizeBytes }).pipe(
         Effect.provide(host),
         Effect.map((manifest) =>
           `backup verified: database sha256 ${manifest.database.sha256}, ` +
@@ -66,6 +83,7 @@ export const program = (invocation) => {
       return DisasterRecovery.restoreAndFence({
         backupDirectory: invocation.backupDirectory,
         targetDirectory: invocation.targetDirectory,
+        maxFileSizeBytes: invocation.maxFileSizeBytes,
         databaseLayer: (databaseFile) =>
           Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename: databaseFile }))
       }).pipe(

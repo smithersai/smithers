@@ -7,9 +7,7 @@
  * the composed migration sets from `../Migrations.ts` run first, then the four
  * services bind to the same in-memory SQLite connection.
  *
- * Governing designs: `docs/pages/concepts/journal.md`,
- * `docs/pages/internals.md`, and
- * `docs/pages/architecture/package-map.md`.
+ * Governing design: `packages/smithers/flows/journal/docs/README.md`.
  *
  * @since 0.1.0
  */

@@ -208,27 +208,39 @@ export const make = (options: {
       }
     }),
     hydrate: Effect.fn("ArtifactSync.hydrate")(function*(digests) {
-      const missing = yield* local.findMissing(digests).pipe(Effect.catch(() => Effect.succeed(undefined)))
-      if (missing === undefined) return false
+      // Every refusal below falls back to re-executing the step, which is
+      // correct and silent. The warning is the operator's only signal that a
+      // tier stopped serving replays.
+      const fallBack = (message: string, digests: ReadonlyArray<string>) => (cause: { readonly message: string }) =>
+        Effect.logWarning(`artifact hydration falls back to re-execution: ${message}: ${digests.join(", ")}`).pipe(
+          Effect.annotateLogs({ reason: cause.message })
+        )
+      const missing = yield* local.findMissing(digests).pipe(
+        Effect.tapError(fallBack("the local tier refused a probe", digests)),
+        Effect.option
+      )
+      if (missing._tag === "None") return false
       if (downloadPolicy !== "all") {
-        if (missing.length === 0) return true
+        if (missing.value.length === 0) return true
         // One batched probe, no body transfer: the answer these policies owe
         // the caller is "can this replay be satisfied", and `findMissing`
         // answers exactly that. A tier that refuses the probe is
         // indistinguishable from one that holds nothing, so the replay is
         // refused either way.
-        const elsewhere = yield* remote.findMissing(missing).pipe(
-          Effect.catch(() => Effect.succeed(undefined))
+        const elsewhere = yield* remote.findMissing(missing.value).pipe(
+          Effect.tapError(fallBack("the shared tier refused a probe", missing.value)),
+          Effect.option
         )
-        return elsewhere !== undefined && elsewhere.length === 0
+        return elsewhere._tag === "Some" && elsewhere.value.length === 0
       }
-      for (const digest of missing) {
+      for (const digest of missing.value) {
         // Read-through, one artifact at a time and only on demand: the remote
         // read is digest-verified by `RemoteArtifacts`, and the local `put`
         // re-addresses the bytes, so a tier serving wrong content cannot get
         // them written into this workspace.
         const written = yield* remote.get(digest).pipe(
           Effect.flatMap((bytes) => local.put(bytes)),
+          Effect.tapError(fallBack("the artifact could not be fetched", [digest])),
           Effect.option
         )
         if (written._tag === "None") return false

@@ -47,7 +47,7 @@
  *
  * ## The three limits
  *
- * `docs/pages/concepts/concurrency.md` explains why the same number must never
+ * The same number must never
  * stand in for graph width, scheduler admission, and provider capacity. This
  * module owns the middle one only: `concurrency.steps` is the leaf-execution
  * cap, and `concurrency.agents` is the subset cap an agent node consumes in
@@ -63,7 +63,7 @@
  *
  * ## Observing the world exactly once
  *
- * `docs/pages/release/support-matrix.md` records the torn-run rule: never re-observe the
+ * The torn-run rule: never re-observe the
  * world mid-run. Reads with no preceding writer are **source** inputs; their
  * digests and glob membership are durably recorded before dispatch and restored
  * on reopening. Preceding producers' outputs are measured after settlement —
@@ -128,7 +128,7 @@ import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
  *   splits failure by version instead; a content-addressed store never serves
  *   a failure from cache, so that split has no meaning here and this one does.
  * - `deferred`: a selection guess postponed this sink
- *   (`docs/pages/selection.md`). It never dispatched,
+ *   (`packages/smithers/flows/engine-store/docs/guides/defer-work-with-selection.md`). It never dispatched,
  *   wrote no cache row, and is journaled as a debt for a later guess-free
  *   pass. Distinct from `skipped` — the work was runnable, a guess postponed
  *   it — and never reported as passed.
@@ -521,7 +521,7 @@ export const make = (options: Options): Service => {
   )
 
   // Every scheduler record addresses the run's root lineage, so a frame can
-  // reach it (`docs/pages/concepts/time-travel.md`).
+  // reach it.
   const lineageId = FlowEngine.Lineage.root(options.runId)
   const source = (suffix: string) => ({ runId: options.runId, sourceId: `${options.sourceId}/${suffix}`, lineageId })
 
@@ -1261,9 +1261,7 @@ export const make = (options: Options): Service => {
        * through an explicit merge node appended to the SAME plan, as an
        * ordinary elaboration. The merge critical section uses this module's
        * restart-or-fail landing contract, so the merge node carries no rebase
-       * budget of its own: it lands, or the run has a failed node. The removed
-       * worktree-lane surface is documented in
-       * `docs/pages/release/known-limitations.md`.
+       * budget of its own: it lands, or the run has a failed node.
        */
       const appendMerge = (intent: PlanMergeStore.Intent) =>
         Effect.gen(function*() {
@@ -1457,7 +1455,7 @@ export const make = (options: Options): Service => {
 
       /**
        * The selection consult, once per run, against the initial plan and the
-       * pinned belief snapshot (`docs/pages/selection.md`). Only sinks,
+       * pinned belief snapshot. Only sinks,
        * nodes nothing in the plan depends on,
        * are offered, because deferring a node something consumes would block
        * or corrupt its consumers. A verdict may postpone or propose, never

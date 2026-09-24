@@ -456,9 +456,9 @@ const makeWithEngineJj = (
       // run settled — resumes the waiting caller immediately, with the
       // polling schedule as the bounded fallback. The bus is edge-triggered
       // and miss-tolerant (`WakeBus.ts`); a wake published before the caller
-      // re-subscribes only costs one poll interval. Cross-process wakes stay
-      // on the polling schedule and the heartbeat sweeps until the journal
-      // exposes a committed event-driven subscription (piece-6).
+      // re-subscribes only costs one poll interval. Cross-process wakes ride
+      // the polling schedule and the heartbeat sweeps: the bus is in-process,
+      // and the journal offers no committed cross-process subscription.
       resumeSignal: (_flow, executionId) => wakeBus.awaitWake(executionId)
     }
     const service = FlowEngine.makeUnsafe(encoded)

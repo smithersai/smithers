@@ -722,6 +722,13 @@ describe("retention", () => {
         const refused = yield* retain.retain({ olderThanMs: thresholdMs, limit: -1 })
         expect(refused.runs).toBe(0)
         expect(refused.runIds).toEqual([])
+        // A bound that is not an integer is refused the same way, and the
+        // way `Retention.collect` refuses it, instead of reaching SQLite as
+        // `LIMIT NaN` and failing as a scan error.
+        for (const limit of [Number.NaN, 1.5, Number.POSITIVE_INFINITY]) {
+          const invalid = yield* retain.retain({ olderThanMs: thresholdMs, limit })
+          expect(invalid.runIds).toEqual([])
+        }
 
         const first = yield* retain.retain({ olderThanMs: thresholdMs, limit: 2 })
         const second = yield* retain.retain({ olderThanMs: thresholdMs, limit: 2 })

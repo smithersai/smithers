@@ -3,9 +3,7 @@
  * copy its diff bundle back, and rebase a bounded number of times when the
  * host moved underneath it.
  *
- * `docs/pages/release/known-limitations.md` documents that copy-back has no
- * human review gate. `docs/pages/concepts/action-graph.md` governs boundary
- * evidence and copy-back.
+ * Copy-back has no human review gate.
  *
  * @since 0.1.0
  */
@@ -51,9 +49,8 @@ export interface Settlement {
  * How many times a losing copy-back re-runs the body from a fresh base.
  *
  * Bounded on purpose: an unbounded rebase against a workspace under sustained
- * concurrent modification never converges. The removed worktree-lane surface
- * is documented in `docs/pages/release/known-limitations.md`; this retry budget
- * does not recreate it.
+ * concurrent modification never converges. This retry budget does not
+ * recreate the removed worktree-lane surface.
  *
  * @since 0.1.0
  * @category models

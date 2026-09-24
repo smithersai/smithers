@@ -21,23 +21,40 @@ test("parseArguments accepts the three invocations", () => {
     command: "backup",
     databaseFile: "db.sqlite3",
     backupDirectory: "backups/1",
-    objectsDirectory: undefined
+    objectsDirectory: undefined,
+    maxFileSizeBytes: undefined
   })
   assert.deepEqual(parseArguments(["backup", "db.sqlite3", "backups/1", ".flows/objects"]), {
     command: "backup",
     databaseFile: "db.sqlite3",
     backupDirectory: "backups/1",
-    objectsDirectory: ".flows/objects"
+    objectsDirectory: ".flows/objects",
+    maxFileSizeBytes: undefined
   })
   assert.deepEqual(parseArguments(["verify", "backups/1"]), {
     command: "verify",
-    backupDirectory: "backups/1"
+    backupDirectory: "backups/1",
+    maxFileSizeBytes: undefined
   })
   assert.deepEqual(parseArguments(["restore", "backups/1", "restored"]), {
     command: "restore",
     backupDirectory: "backups/1",
-    targetDirectory: "restored"
+    targetDirectory: "restored",
+    maxFileSizeBytes: undefined
   })
+})
+
+test("parseArguments passes --max-file-size to every command", () => {
+  const limit = "2147483648"
+  assert.equal(
+    parseArguments(["backup", "db.sqlite3", "backups/1", ".flows/objects", "--max-file-size", limit]).maxFileSizeBytes,
+    2_147_483_648
+  )
+  assert.equal(parseArguments(["verify", "backups/1", "--max-file-size", limit]).maxFileSizeBytes, 2_147_483_648)
+  assert.equal(
+    parseArguments(["restore", "backups/1", "restored", "--max-file-size", limit]).maxFileSizeBytes,
+    2_147_483_648
+  )
 })
 
 test("parseArguments refuses anything else", () => {
@@ -51,7 +68,11 @@ test("parseArguments refuses anything else", () => {
       ["verify"],
       ["verify", "backups/1", "extra"],
       ["restore", "backups/1"],
-      ["restore", "backups/1", "restored", "extra"]
+      ["restore", "backups/1", "restored", "extra"],
+      ["verify", "backups/1", "--max-file-size"],
+      ["verify", "backups/1", "--max-file-size", "-1"],
+      ["verify", "backups/1", "--max-file-size", "1.5"],
+      ["verify", "--max-file-size", "10", "backups/1"]
     ]
   ) {
     assert.throws(() => parseArguments(argv), /usage:/)

@@ -149,9 +149,10 @@ Full model: [Ownership and fencing](/concepts/ownership-and-fencing/) and
 
 [src/DurableEngineState.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/DurableEngineState.ts)
 
-Durable deferreds, clocks, waiting rows, and the run parent DAG. A successful
-mutation means the row is durable, so callers may journal and schedule a wake
-only after the mutation returns.
+Durable deferreds, clocks, waiting rows, and the run parent DAG. This package
+owns deferred and clock state for 1.0. A successful mutation means the row is
+durable, so callers may journal and schedule a wake only after the mutation
+returns.
 
 Work that needs both this state and the journal opens `transaction` OUTSIDE
 `Journal.transact`, never the other way around. The SQL implementation shares
@@ -870,18 +871,19 @@ reason.
 [src/ArtifactGc.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine-store/src/ArtifactGc.ts)
 
 Explicit mark and sweep collection of unreferenced blobs. Collection never runs
-automatically.
+automatically; [`smthrs gc`](https://smithers.sh/docs/reference/cli/gc/) runs it after retention.
 
-| Export             | Signature                                                                         | Meaning                                                 |
-| ------------------ | --------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `ArtifactGc`       | `Context.Service<Service>`                                                        | Service tag.                                            |
-| `Service`          | `{ gc: (options?: GcOptions) => Effect<GcReport, ArtifactGcError> }`              | Marks the live set from the durable roots, then sweeps. |
-| `make`             | `(options?: MakeOptions) => Effect<Service, never, SqlClient \| ArtifactSweep>`   | Builds the collector.                                   |
-| `layer`            | `(options?: MakeOptions) => Layer<ArtifactGc, never, SqlClient \| ArtifactSweep>` | Provides it.                                            |
-| `ArtifactGcPolicy` | `Context.Service<Policy>`                                                         | The opt-in collection policy.                           |
-| `layerPolicy`      | `(policy: Policy) => Layer<ArtifactGcPolicy>`                                     | Installs it.                                            |
-| `defaultGraceMs`   | 14 days                                                                           | Git's `gc.pruneExpire` default.                         |
-| `ArtifactGcError`  | `code` of `invalid_options`, `mark_failed`, or `sweep_failed`                     |                                                         |
+| Export             | Signature                                                                                     | Meaning                                                 |
+| ------------------ | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `ArtifactGc`       | `Context.Service<Service>`                                                                    | Service tag.                                            |
+| `Service`          | `{ gc: (options?: GcOptions) => Effect<GcReport, ArtifactGcError> }`                          | Marks the live set from the durable roots, then sweeps. |
+| `make`             | `(options?: MakeOptions) => Effect<Service, never, SqlClient \| ArtifactSweep>`               | Builds the collector.                                   |
+| `layer`            | `(options?: MakeOptions) => Layer<ArtifactGc, never, SqlClient \| ArtifactSweep>`             | Provides it.                                            |
+| `layerFileSystem`  | `(options?: MakeOptions & SweepOptions) => Layer<ArtifactGc, never, SqlClient \| FileSystem>` | Provides it over a filesystem objects directory.        |
+| `ArtifactGcPolicy` | `Context.Service<Policy>`                                                                     | The opt-in collection policy.                           |
+| `layerPolicy`      | `(policy: Policy) => Layer<ArtifactGcPolicy>`                                                 | Installs it.                                            |
+| `defaultGraceMs`   | 14 days                                                                                       | Git's `gc.pruneExpire` default.                         |
+| `ArtifactGcError`  | `code` of `invalid_options`, `mark_failed`, or `sweep_failed`                                 |                                                         |
 
 | Type          | Fields                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -918,12 +920,12 @@ Explicit deletion of finished run state. Nothing schedules any of it.
 | `runScopedTables`  | `ReadonlyArray<RunScopedTable>`                                                                | Every table a deleted run leaves rows in, and the column naming the run. |
 | `RetentionError`   | `code` of `scan_failed` or `delete_failed`                                                     |                                                                          |
 
-| Type                      | Fields                                                                                                                                                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RetainOptions`           | `olderThanMs` (a duration: how long a run must have been finished), `limit?`, `dryRun?`. A negative value in either number is read as zero.                                                                                           |
-| `RetainReport`            | `cutoffMs`, `runIds`, `retainedForLiveDescendants`, `retainedForLiveAncestors`, `runs`, `attempts`, `clockDeadlines`, `deferredCompletions`, `journalEntries`, `journalCheckpoints`, `archiveEntries`, `timeTravelReceipts`, `dryRun` |
-| `Options` (for `collect`) | `olderThanMs` (an absolute epoch millisecond threshold), `dryRun?`, `database?`, `limit?`                                                                                                                                             |
-| `Report` (from `collect`) | `database`, `olderThanMs`, `runs`, `deleted` (empty under a dry run), `dryRun`                                                                                                                                                        |
+| Type                      | Fields                                                                                                                                                                                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RetainOptions`           | `olderThanMs` (a duration: how long a run must have been finished), `limit?`, `dryRun?`. A negative `olderThanMs` is read as zero; a `limit` that is not a non-negative safe integer is read as zero.                                                      |
+| `RetainReport`            | `cutoffMs`, `runIds`, `retainedForLiveDescendants`, `retainedForLiveAncestors`, `runs`, `attempts`, `clockDeadlines`, `deferredCompletions`, `journalEntries`, `journalCheckpoints`, `journalIdentities`, `archiveEntries`, `timeTravelReceipts`, `dryRun` |
+| `Options` (for `collect`) | `olderThanMs` (an absolute epoch millisecond threshold), `dryRun?`, `database?`, `limit?`                                                                                                                                                                  |
+| `Report` (from `collect`) | `database`, `olderThanMs`, `runs`, `deleted` (empty under a dry run), `dryRun`                                                                                                                                                                             |
 
 A run is a candidate only when its status is terminal and it finished before the
 cutoff, and it is retained whenever a live run stands above or below it in the
@@ -931,6 +933,9 @@ lineage, over both the `flows_run_parents` edge a spawned child records and the
 `parent_run_id` column a trampoline lineage is chained through. `collect` runs
 the same deletion and the same guard, and drops the edge-table half of the walk
 for a database that does not carry it, such as the control plane's.
+
+Both passes select children before parents, so a trampoline lineage longer
+than `limit` still loses at least one run every pass.
 
 `collect` is the pass [`smthrs gc`](https://smithers.sh/docs/reference/cli/gc/) runs over one database file.
 

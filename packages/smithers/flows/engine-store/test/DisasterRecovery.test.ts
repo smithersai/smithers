@@ -22,7 +22,7 @@ import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, normalize, sep } from "node:path"
 import * as DisasterRecovery from "../src/DisasterRecovery.ts"
@@ -102,6 +102,22 @@ describe("backup", () => {
         backup({ directory: join(root(), "backup"), maxFileSizeBytes: Number.MAX_SAFE_INTEGER })
       )
       expect(manifest.formatVersion).toBe(1)
+    }))
+
+  it.effect("leaves the backup directory empty after a failed capture, so a retry can reuse it", () =>
+    Effect.gen(function*() {
+      const base = root()
+      const objects = join(base, "objects")
+      plantBlob(objects, "retry-artifact")
+      const backupDirectory = join(base, "backup")
+      const exit = yield* run(
+        backup({ directory: backupDirectory, objectsDirectory: objects, maxFileSizeBytes: 0 }).pipe(Effect.exit)
+      )
+      expect(failure(exit).code).toBe("io")
+      expect(readdirSync(backupDirectory)).toEqual([])
+
+      const manifest = yield* run(backup({ directory: backupDirectory, objectsDirectory: objects }))
+      expect(manifest.artifacts).toHaveLength(1)
     }))
 
   it.effect("captures the database, the artifact blobs, and a manifest written last", () =>

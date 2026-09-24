@@ -56,6 +56,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/unstable/sql/SqlClient"
+import type { SqlError } from "effect/unstable/sql/SqlError"
 
 /**
  * Stable error codes returned by retention.
@@ -152,6 +153,8 @@ export interface RetainReport {
   readonly deferredCompletions: number
   readonly journalEntries: number
   readonly journalCheckpoints: number
+  /** Producer identities journal compaction kept after deleting event payloads. */
+  readonly journalIdentities: number
   /** Time-travel archive rows; always zero where that table is not installed. */
   readonly archiveEntries: number
   /** Time-travel receipt rows reached through their audits. */
@@ -250,6 +253,7 @@ export const runScopedTables: ReadonlyArray<RunScopedTable> = [
   { table: "flows_attempts", column: "run_id", ladder: true },
   { table: "flows_journal_events", column: "run_id", ladder: true },
   { table: "flows_journal_checkpoints", column: "run_id", ladder: true },
+  { table: "flows_journal_dedup", column: "run_id", ladder: true },
   { table: "flows_step_cache_recorded", column: "recorded_run_id", ladder: true },
   { table: "flows_time_travel_archive", column: "run_id", ladder: false },
   { table: "flows_time_travel_snapshots", column: "run_id", ladder: false },
@@ -307,7 +311,7 @@ const terminalList = terminalStatuses.map((status) => `'${status}'`).join(", ")
  * @since 0.1.0
  */
 export const lineagePrelude = (
-  options: { readonly parentEdges: boolean } = { parentEdges: true }
+  options: { readonly parentEdges: boolean }
 ): string => `
       WITH RECURSIVE
         link(child_id, parent_id) AS (
@@ -333,6 +337,106 @@ export const lineagePrelude = (
           SELECT link.parent_id FROM link JOIN over_live ON over_live.run_id = link.child_id
         )
     `
+
+/**
+ * The bound one pass may delete, as both passes read it.
+ *
+ * Clamped, not interpolated: SQLite reads a negative `LIMIT` as no limit at
+ * all, which would make a mistyped bound a full sweep, and rejects `NaN` or a
+ * fraction as a datatype mismatch. Anything that is not a non-negative safe
+ * integer is read as zero, so the pass deletes nothing.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const normalizeLimit = (limit: number | undefined): number => {
+  const bound = limit ?? defaultLimit
+  return Number.isSafeInteger(bound) && bound >= 0 ? bound : 0
+}
+
+/**
+ * Which runs a pass may delete, and which it must keep, as CTEs.
+ *
+ * `eligible` is every terminal run older than the cutoff that no live run
+ * stands above or below. `blocked` is every other run plus every ancestor of
+ * one over `parent_run_id`: a continuation parent must outlive every child
+ * excluded by age or live lineage, and this propagates that exclusion before
+ * any bound is applied. `inclusive` says whether a run finished exactly at
+ * the cutoff is old enough.
+ */
+const scanPrelude = (
+  sql: SqlClient.SqlClient,
+  options: { readonly cutoffMs: number; readonly inclusive: boolean; readonly parentEdges: boolean }
+) =>
+  sql`
+      ${sql.unsafe(lineagePrelude({ parentEdges: options.parentEdges }))},
+      eligible(run_id) AS (
+        SELECT run_id FROM flows_runs
+        WHERE ${sql.in("status", terminalStatuses)}
+          AND ${
+    options.inclusive
+      ? sql`COALESCE(finished_at_ms, created_at_ms) <= ${options.cutoffMs}`
+      : sql`COALESCE(finished_at_ms, created_at_ms) < ${options.cutoffMs}`
+  }
+          AND run_id NOT IN (SELECT run_id FROM under_live)
+          AND run_id NOT IN (SELECT run_id FROM over_live)
+      ),
+      blocked(run_id) AS (
+        SELECT run_id FROM flows_runs WHERE run_id NOT IN (SELECT run_id FROM eligible)
+        UNION
+        SELECT runs.parent_run_id FROM flows_runs AS runs
+        JOIN blocked ON blocked.run_id = runs.run_id
+        WHERE runs.parent_run_id IS NOT NULL
+      )
+    `
+
+/**
+ * The runs one pass deletes: at most `limit` of them, children before parents.
+ *
+ * The one candidate query, shared by {@link Service.retain} and
+ * `Retention.collect`. A trampoline parent always finishes before its
+ * successor, so an oldest-first window over a lineage longer than the bound
+ * held only ancestors, each pinned by the round just outside the window, and
+ * every later pass selected the same window and deleted nothing. Depth walks
+ * from roots, visiting each continuation row once; corrupt cycles have no
+ * root and cannot enter the deletion set. Excluded runs and their ancestors
+ * are dropped before the bound, so pinned parents cannot consume it. The
+ * result is presented oldest first.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const candidatesOf = (
+  sql: SqlClient.SqlClient,
+  options: {
+    readonly cutoffMs: number
+    readonly inclusive: boolean
+    readonly parentEdges: boolean
+    readonly limit: number
+  }
+): Effect.Effect<ReadonlyArray<Candidate>, SqlError> =>
+  sql<{ readonly run_id: string; readonly parent_run_id: string | null }>`
+    ${scanPrelude(sql, options)},
+    depths(run_id, depth) AS (
+      SELECT run_id, 0 FROM flows_runs WHERE parent_run_id IS NULL
+      UNION ALL
+      SELECT runs.run_id, depths.depth + 1 FROM flows_runs AS runs
+      JOIN depths ON runs.parent_run_id = depths.run_id
+    ),
+    selected AS (
+      SELECT runs.run_id, runs.parent_run_id,
+        COALESCE(runs.finished_at_ms, runs.created_at_ms) AS finished_at_ms
+      FROM flows_runs AS runs JOIN depths ON depths.run_id = runs.run_id
+      WHERE runs.run_id NOT IN (SELECT run_id FROM blocked)
+      ORDER BY depths.depth DESC, COALESCE(runs.finished_at_ms, runs.created_at_ms), runs.run_id
+      LIMIT ${normalizeLimit(options.limit)}
+    )
+    SELECT run_id, parent_run_id FROM selected ORDER BY finished_at_ms, run_id
+  `.pipe(
+    Effect.map((rows): ReadonlyArray<Candidate> =>
+      rows.map((row) => ({ runId: row.run_id, parentRunId: row.parent_run_id }))
+    )
+  )
 
 /** Classifies a read of the scan phase, where nothing has been deleted yet. */
 const scanning = (what: string) => (cause: unknown): RetentionError =>
@@ -627,59 +731,6 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const journal = yield* Journal.Journal
 
-    // A continuation parent must outlive every child excluded by age or
-    // live lineage. Propagate that exclusion before applying the pass bound.
-    const scanPrelude = (cutoffMs: number) =>
-      sql`
-      ${sql.unsafe(lineagePrelude())},
-      eligible(run_id) AS (
-        SELECT run_id FROM flows_runs
-        WHERE ${sql.in("status", terminalStatuses)}
-          AND COALESCE(finished_at_ms, created_at_ms) <= ${cutoffMs}
-          AND run_id NOT IN (SELECT run_id FROM under_live)
-          AND run_id NOT IN (SELECT run_id FROM over_live)
-      ),
-      blocked(run_id) AS (
-        SELECT run_id FROM flows_runs WHERE run_id NOT IN (SELECT run_id FROM eligible)
-        UNION
-        SELECT runs.parent_run_id FROM flows_runs AS runs
-        JOIN blocked ON blocked.run_id = runs.run_id
-        WHERE runs.parent_run_id IS NOT NULL
-      )
-    `
-
-    /**
-     * Select children before parents so every bounded window is deletable.
-     * Depth walks from roots, visiting each continuation row once; corrupt
-     * cycles have no root and cannot enter the deletion set. Live-lineage and
-     * age exclusions propagate upward before LIMIT, so pinned parents cannot
-     * consume the bound. The report still presents selected runs oldest first.
-     */
-    const candidatesOf = (cutoffMs: number, limit: number) =>
-      sql<{ readonly run_id: string; readonly parent_run_id: string | null }>`
-        ${scanPrelude(cutoffMs)},
-        depths(run_id, depth) AS (
-          SELECT run_id, 0 FROM flows_runs WHERE parent_run_id IS NULL
-          UNION ALL
-          SELECT runs.run_id, depths.depth + 1 FROM flows_runs AS runs
-          JOIN depths ON runs.parent_run_id = depths.run_id
-        ),
-        selected AS (
-          SELECT runs.run_id, runs.parent_run_id,
-            COALESCE(runs.finished_at_ms, runs.created_at_ms) AS finished_at_ms
-          FROM flows_runs AS runs JOIN depths ON depths.run_id = runs.run_id
-          WHERE runs.run_id NOT IN (SELECT run_id FROM blocked)
-          ORDER BY depths.depth DESC, COALESCE(runs.finished_at_ms, runs.created_at_ms), runs.run_id
-          LIMIT ${limit}
-        )
-        SELECT run_id, parent_run_id FROM selected ORDER BY finished_at_ms, run_id
-      `.pipe(
-        Effect.map((rows): ReadonlyArray<Candidate> =>
-          rows.map((row) => ({ runId: row.run_id, parentRunId: row.parent_run_id }))
-        ),
-        Effect.mapError(scanning("the run table"))
-      )
-
     /**
      * Aged terminal runs held by live lineage or an excluded continuation
      * descendant. An upward exclusion takes precedence over a live ancestor.
@@ -691,7 +742,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
      */
     const retainedByLineage = (cutoffMs: number, limit: number) =>
       sql<{ readonly run_id: string; readonly live_descendant: number }>`
-        ${scanPrelude(cutoffMs)}
+        ${scanPrelude(sql, { cutoffMs, inclusive: true, parentEdges: true })}
         SELECT
           run_id,
           (run_id IN (SELECT run_id FROM over_live) OR EXISTS (
@@ -709,10 +760,10 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
 
     const pass = (options: RetainOptions, cutoffMs: number) =>
       Effect.gen(function*() {
-        // Clamped, not interpolated: SQLite reads a negative `LIMIT` as no
-        // limit at all, which would make a mistyped bound a full sweep.
-        const limit = Math.max(0, options.limit ?? defaultLimit)
-        const candidates = yield* candidatesOf(cutoffMs, limit)
+        const limit = normalizeLimit(options.limit)
+        const candidates = yield* candidatesOf(sql, { cutoffMs, inclusive: true, parentEdges: true, limit }).pipe(
+          Effect.mapError(scanning("the run table"))
+        )
         const retained = new Set<string>()
         const retainedAbove = new Set<string>()
         // Why the workspace kept aged runs this pass. These never entered the
@@ -742,6 +793,7 @@ export const make = (): Effect.Effect<Service, never, SqlClient.SqlClient | Jour
           deferredCompletions: removed.deleted["flows_deferred_completions"] ?? 0,
           journalEntries: removed.deleted["flows_journal_events"] ?? 0,
           journalCheckpoints: removed.deleted["flows_journal_checkpoints"] ?? 0,
+          journalIdentities: removed.deleted["flows_journal_dedup"] ?? 0,
           archiveEntries: removed.deleted["flows_time_travel_archive"] ?? 0,
           timeTravelReceipts: removed.deleted["flows_time_travel_receipts"] ?? 0,
           dryRun: options.dryRun === true

@@ -1,8 +1,6 @@
 /**
  * Coordinates keyed drain executions.
  *
- * Governing design: `docs/pages/internals.md`.
- *
  * Adapted nearly verbatim from
  * `reference/opencode/packages/smithers/flows/core/src/session/run-coordinator.ts`:
  * `Deferred` joins, `FiberSet` ownership, coalesced wakes, and

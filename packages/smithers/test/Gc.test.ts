@@ -10,7 +10,8 @@
  * row, and collecting it is data loss the operator did not ask for.
  */
 import { Cause, Effect, Exit } from "effect"
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { existsSync, mkdirSync, mkdtempSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
@@ -121,11 +122,11 @@ describe("the retention window", () => {
 
   it("renders singular and plural database failures", () => {
     expect(Gc.failureMessage([{ database: "control.db", reason: "locked" }]))
-      .toContain("1 database, so nothing was collected from it")
+      .toContain("could not collect from 1 store:")
     expect(Gc.failureMessage([
       { database: "control.db", reason: "locked" },
       { database: "engine.db", reason: "corrupt" }
-    ])).toContain("2 databases, so nothing was collected from them")
+    ])).toContain("could not collect from 2 stores:")
   })
 })
 
@@ -261,5 +262,59 @@ describe("the sweep", () => {
     const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
     expect(error).toBeInstanceOf(CliError.UsageError)
     expect((error as CliError.UsageError).message).toContain("--older-than must be a duration")
+  })
+
+  it("collects artifact blobs no run references once they are past the grace period", async () => {
+    // Retention deletes the attempt and cache rows that were the only roots
+    // of a spilled output, and nothing else ever deletes a published blob.
+    const root = engineProject([{ runId: "settled", status: "completed", finishedAtMs: 1 }], [])
+    const database = new DatabaseSync(join(root, ".flows", "engine.db"))
+    database.exec("CREATE TABLE flows_step_cache (key_digest TEXT PRIMARY KEY, meta_json TEXT NOT NULL)")
+    database.exec(`CREATE TABLE flows_attempts (
+      run_id TEXT NOT NULL,
+      step_key_digest TEXT NOT NULL,
+      attempt INTEGER NOT NULL,
+      checkpoint_json TEXT,
+      meta_json TEXT NOT NULL,
+      PRIMARY KEY (run_id, step_key_digest, attempt)
+    )`)
+    database.close()
+    const plant = (bytes: string, ageMs: number): string => {
+      const digest = createHash("sha256").update(bytes).digest("hex")
+      const directory = join(root, ".flows", "objects", digest.slice(0, 2))
+      mkdirSync(directory, { recursive: true })
+      writeFileSync(join(directory, digest), bytes)
+      const seconds = (Date.now() - ageMs) / 1000
+      utimesSync(join(directory, digest), seconds, seconds)
+      return digest
+    }
+    const orphaned = plant("orphaned output", 30 * 24 * 60 * 60 * 1000)
+    const fresh = plant("fresh output", 0)
+    const blob = (digest: string) => join(root, ".flows", "objects", digest.slice(0, 2), digest)
+
+    const planned = await Effect.runPromise(Gc.sweep(root, { olderThan: "1s", dryRun: true, now: 60_000 }))
+    expect(planned.failures).toEqual([])
+    expect(planned.artifacts?.sweptDigests).toEqual([orphaned])
+    expect(planned.artifacts?.dryRun).toBe(true)
+    expect(existsSync(blob(orphaned))).toBe(true)
+
+    const swept = await Effect.runPromise(Gc.sweep(root, { olderThan: "1s", dryRun: false, now: 60_000 }))
+    expect(swept.failures).toEqual([])
+    expect(swept.artifacts?.sweptDigests).toEqual([orphaned])
+    expect(swept.artifacts?.keptByGrace).toBe(1)
+    expect(existsSync(blob(orphaned))).toBe(false)
+    expect(existsSync(blob(fresh))).toBe(true)
+  })
+
+  it("reports an artifact pass it could not run as a failure", async () => {
+    // The engine database here has no attempt table, so the mark cannot prove
+    // which blobs are live. Sweeping anyway would delete live outputs.
+    const root = engineProject([{ runId: "settled", status: "completed", finishedAtMs: 1 }], [])
+    mkdirSync(join(root, ".flows", "objects"))
+
+    const result = await Effect.runPromise(Gc.sweep(root, { olderThan: "1s", dryRun: true, now: 60_000 }))
+
+    expect(result.failures.map((failure) => failure.database)).toEqual([join(root, ".flows", "objects")])
+    expect(result.artifacts).toBeUndefined()
   })
 })

@@ -1,17 +1,24 @@
 /**
- * `smthrs gc`: the retention pass, over this project's databases.
+ * `smthrs gc`: the retention pass over this project's databases, then the
+ * artifact pass over its objects directory.
  *
- * `@smthrs/engine-store`'s `Retention` owns what a pass deletes; this module
- * owns which files it runs against and how an operator spells the threshold.
- * A project has two databases — the control plane's and the engine's — and a
- * sweep of one without the other leaves half of a deleted run behind.
+ * `@smthrs/engine-store`'s `Retention` and `ArtifactGc` own what a pass
+ * deletes; this module owns which files they run against and how an operator
+ * spells the threshold. A project has two databases — the control plane's and
+ * the engine's — and a sweep of one without the other leaves half of a
+ * deleted run behind. Retention deletes the attempt and cache rows that were
+ * the only roots of a spilled output, and nothing else deletes a published
+ * blob, so the artifact pass runs in the same verb.
  *
  * @since 1.0.0
  */
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
+import * as ArtifactGc from "@smthrs/engine-store/ArtifactGc"
 import * as Retention from "@smthrs/engine-store/Retention"
 import { Cause, Effect, Layer } from "effect"
 import { existsSync } from "node:fs"
+import { dirname, join } from "node:path"
 import * as CliError from "./CliError.ts"
 import * as NodeControl from "./NodeControl.ts"
 
@@ -65,7 +72,18 @@ export const databases = (root: string): ReadonlyArray<string> =>
     .filter((file) => existsSync(file))
 
 /**
- * One database the sweep could not open, and why.
+ * The content-addressed objects directory the engine spills large outputs
+ * into, beside its database.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const objectsDirectory = (root: string): string =>
+  join(dirname(NodeControl.executionDatabasePath(root)), "objects")
+
+/**
+ * One store the sweep could not collect from, and why: a database it could
+ * not open, or an objects directory whose artifact pass failed.
  *
  * @category models
  * @since 1.0.0
@@ -85,12 +103,18 @@ export interface Sweep {
   readonly olderThan: string
   readonly dryRun: boolean
   readonly reports: ReadonlyArray<Retention.Report>
-  /** Databases the pass could not open. Empty on a clean sweep. */
+  /**
+   * The artifact pass over {@link objectsDirectory}. Absent when the project
+   * has no objects directory or no engine database, or when the pass failed.
+   */
+  readonly artifacts?: ArtifactGc.GcReport | undefined
+  /** Stores the sweep could not collect from. Empty on a clean sweep. */
   readonly failures: ReadonlyArray<Failure>
 }
 
 /**
- * Runs the retention pass over every database this project has.
+ * Runs the retention pass over every database this project has, then the
+ * artifact pass over the engine's objects directory.
  *
  * A project with no `.flows/` reports an empty sweep rather than failing: `gc`
  * on a project that has never run anything is a no-op, not an error. That is
@@ -105,6 +129,11 @@ export interface Sweep {
  * control rows and leave its engine rows behind, which no verb afterwards
  * converges. Refusing to start costs the operator a retry; a half-swept run
  * costs them the run. The caller decides the exit status from `failures`.
+ *
+ * The artifact pass runs last, over the engine database's roots, and only
+ * when both the engine database and its objects directory exist. Under
+ * `dryRun` it marks from rows retention has not deleted yet, so it can name
+ * fewer blobs than the real pass then collects.
  *
  * @category constructors
  * @since 1.0.0
@@ -138,24 +167,40 @@ export const sweep = (
     if (failures.length > 0) {
       return { olderThan: options.olderThan, dryRun: options.dryRun, reports: [], failures }
     }
-    if (options.dryRun) {
-      return {
-        olderThan: options.olderThan,
-        dryRun: true,
-        reports: probed.filter((entry): entry is Retention.Report => !isFailure(entry)),
-        failures: []
-      }
-    }
-    const swept = yield* Effect.forEach(files, (file) => pass(file, false))
-    return {
+    const reports = options.dryRun
+      ? probed.filter((entry): entry is Retention.Report => !isFailure(entry))
+      : yield* Effect.forEach(files, (file) => pass(file, false))
+    const retained = {
       olderThan: options.olderThan,
-      dryRun: false,
-      reports: swept.filter((entry): entry is Retention.Report => !isFailure(entry)),
-      failures: swept.filter(isFailure)
+      dryRun: options.dryRun,
+      reports: reports.filter((entry): entry is Retention.Report => !isFailure(entry)),
+      failures: reports.filter(isFailure)
     }
+    // After retention, so the rows it just deleted no longer root their
+    // blobs. The grace period, not `--older-than`, protects recent blobs: a
+    // running step's spilled output is unreferenced until its attempt row
+    // finishes.
+    const engine = NodeControl.executionDatabasePath(root)
+    const objects = objectsDirectory(root)
+    if (retained.failures.length > 0 || !existsSync(engine) || !existsSync(objects)) return retained
+    const artifacts = yield* Effect.gen(function*() {
+      const collector = yield* ArtifactGc.ArtifactGc
+      return yield* collector.gc({ dryRun: options.dryRun })
+    }).pipe(
+      Effect.provide(
+        ArtifactGc.layerFileSystem({ directory: objects }).pipe(
+          Layer.provide([NodeDatabase.layer({ filename: engine }), NodeFileSystem.layer])
+        )
+      ),
+      Effect.map((report): ArtifactGc.GcReport | Failure => report),
+      Effect.catchCause((cause) => Effect.succeed<Failure>({ database: objects, reason: reasonOf(cause) }))
+    )
+    return isFailure(artifacts)
+      ? { ...retained, failures: [artifacts] }
+      : { ...retained, artifacts }
   })
 
-const isFailure = (entry: Retention.Report | Failure): entry is Failure =>
+const isFailure = (entry: Retention.Report | ArtifactGc.GcReport | Failure): entry is Failure =>
   (entry as { readonly reason?: unknown }).reason !== undefined
 
 /** The one sentence a reader can act on, out of whatever the open threw. */
@@ -174,6 +219,5 @@ const reasonOf = (cause: Cause.Cause<unknown>): string => {
  * @since 1.0.0
  */
 export const failureMessage = (failures: ReadonlyArray<Failure>): string =>
-  `gc could not open ${failures.length} database${failures.length === 1 ? "" : "s"}, so nothing was collected ` +
-  `from ${failures.length === 1 ? "it" : "them"}:\n` +
+  `gc could not collect from ${failures.length} store${failures.length === 1 ? "" : "s"}:\n` +
   failures.map((failure) => `  ${failure.database}: ${failure.reason}`).join("\n")

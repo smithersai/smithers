@@ -2,7 +2,7 @@
  * Effect-boundary evidence, emitted by the engine at the point an irreversible
  * action crosses into the outside world.
  *
- * `docs/pages/concepts/time-travel.md` requires one durable
+ * Time travel (`packages/smithers/flows/time-travel/docs/README.md`) requires one durable
  * journal entry recorded **before the adapter begins**, whose status then moves
  * only forward (`intended` → `succeeded` | `unknown`). Rewind reads exactly
  * these records to classify the doomed suffix as blocking, revertible, or
@@ -71,7 +71,7 @@ export interface Descriptor {
   readonly changeId?: string | undefined
   /**
    * The stable compensation descriptor the adapter owns, when it declares one.
-   * `docs/pages/concepts/time-travel.md` puts it in the entry so a
+   * Time travel puts it in the entry so a
    * rewind's handler resolution is a lookup over recorded evidence rather than
    * a guess from the effect kind alone.
    */

@@ -101,19 +101,21 @@ const hasTable = (table: string): Effect.Effect<boolean, SqlError, SqlClient.Sql
   })
 
 /**
- * The terminal runs eligible for deletion, oldest first, each with the run it
- * names as its parent.
+ * The runs one pass would delete, oldest first, each with the run it names as
+ * its parent.
  *
- * A run is excluded whenever a live run stands above or below it in the
- * lineage. Downward, deleting a parent whose child is still running would
- * break the `parent_run_id` foreign key and drop the live child's edges with
- * the `flows_run_parents_gc` trigger. Upward, a parked parent still reads a
+ * The same candidate query `retain` runs: children before parents, so a
+ * trampoline lineage longer than the bound still loses a run every pass, and
+ * a run is excluded whenever a live run stands above or below it. Downward,
+ * deleting a parent whose child is still running would break the
+ * `parent_run_id` foreign key and drop the live child's edges with the
+ * `flows_run_parents_gc` trigger. Upward, a parked parent still reads a
  * settled child's result out of its run row through `agent/await`, and it can
  * be parked for longer than the threshold before it ever asks.
  */
 const eligibleCandidates = (
   olderThanMs: number,
-  limit: number
+  limit: number | undefined
 ): Effect.Effect<ReadonlyArray<RetentionOps.Candidate>, SqlError, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
@@ -122,22 +124,16 @@ const eligibleCandidates = (
     // migrates the run store and the journal and nothing else. The prelude
     // drops that half of the walk there and keeps the `parent_run_id` half, so
     // one guard covers both files.
-    const prelude = RetentionOps.lineagePrelude({ parentEdges: yield* hasTable("flows_run_parents") })
-    const rows = yield* sql<{ readonly run_id: string; readonly parent_run_id: string | null }>`
-      ${sql.unsafe(prelude)}
-      SELECT run_id, parent_run_id FROM flows_runs
-      WHERE ${sql.in("status", RetentionOps.terminalStatuses)}
-        AND COALESCE(finished_at_ms, created_at_ms) < ${olderThanMs}
-        AND run_id NOT IN (SELECT run_id FROM under_live)
-        AND run_id NOT IN (SELECT run_id FROM over_live)
-      ORDER BY COALESCE(finished_at_ms, created_at_ms) ASC
-      LIMIT ${limit}
-    `
-    return rows.map((row) => ({ runId: row.run_id, parentRunId: row.parent_run_id }))
+    return yield* RetentionOps.candidatesOf(sql, {
+      cutoffMs: olderThanMs,
+      inclusive: false,
+      parentEdges: yield* hasTable("flows_run_parents"),
+      limit: RetentionOps.normalizeLimit(limit)
+    })
   })
 
 /**
- * The terminal runs eligible for deletion, oldest first.
+ * The terminal runs one pass would delete, oldest first.
  *
  * @category getters
  * @since 1.0.0
@@ -147,10 +143,7 @@ export const eligible = (
   limit = RetentionOps.defaultLimit
 ): Effect.Effect<ReadonlyArray<string>, SqlError, SqlClient.SqlClient> =>
   Effect.map(
-    eligibleCandidates(
-      olderThanMs,
-      Number.isSafeInteger(limit) && limit >= 0 ? limit : 0
-    ),
+    eligibleCandidates(olderThanMs, limit),
     (candidates) => candidates.map((candidate) => candidate.runId)
   )
 
@@ -186,13 +179,9 @@ export const collect = (
 ): Effect.Effect<Report, SqlError | RetentionOps.RetentionError, SqlClient.SqlClient> =>
   Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
-    const limit = options.limit ?? RetentionOps.defaultLimit
     const dryRun = options.dryRun === true
     const pass = Effect.gen(function*() {
-      const candidates = yield* eligibleCandidates(
-        options.olderThanMs,
-        Number.isSafeInteger(limit) && limit >= 0 ? limit : 0
-      )
+      const candidates = yield* eligibleCandidates(options.olderThanMs, options.limit)
       return yield* RetentionOps.deleteRuns(sql, candidates, { dryRun, assumeLadder: false })
     })
     const removed = yield* (dryRun ? sql.withTransaction(pass) : DurableWriter.make(sql).write(pass).pipe(

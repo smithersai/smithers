@@ -27,10 +27,13 @@ operations directly. It parses arguments and composes the Node host layers, and
 nothing else. Once copied, it takes three commands:
 
 ```bash
-node flows-backup.mjs backup <database-file> <backup-directory> [objects-directory]
-node flows-backup.mjs verify <backup-directory>
-node flows-backup.mjs restore <backup-directory> <target-directory>
+node flows-backup.mjs backup <database-file> <backup-directory> [objects-directory] [--max-file-size <bytes>]
+node flows-backup.mjs verify <backup-directory> [--max-file-size <bytes>]
+node flows-backup.mjs restore <backup-directory> <target-directory> [--max-file-size <bytes>]
 ```
+
+`--max-file-size` sets `maxFileSizeBytes`, described below. Raise it when the
+database file or a blob is larger than 512 MiB.
 
 Its `restore` command calls `restoreAndFence`, so the restored file is fenced
 before the command returns.
@@ -54,7 +57,8 @@ time. The artifact walk runs after it, so every digest the snapshot references
 is captured, because publication always precedes reference. Blobs are
 digest-verified as they are copied: a blob whose bytes no longer hash to its
 address fails the backup loudly rather than capturing corruption. The manifest
-is written last, so a partial backup is detectable by its absence.
+is written last, so a partial backup is detectable by its absence. A failed
+backup removes what it wrote, so you can retry into the same directory.
 
 `snapshotDatabaseLayer` opens the frozen file so the backup can enumerate
 artifact roots and migrations from that exact snapshot, independently of the
@@ -72,6 +76,8 @@ give `ArtifactStore.layerFileSystem`.
 buffer for hashing or copying. It defaults to
 `DisasterRecovery.defaultMaxFileSizeBytes`, which is 512 MiB. An oversized file
 fails with the typed `io` code instead of reaching the host's allocation limit.
+Each file is read whole into memory, so set the limit above your largest
+database or blob and below the memory the host can spare.
 
 ## Verify a backup without restoring it
 
