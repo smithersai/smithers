@@ -303,11 +303,17 @@ export const heartbeatLoop = (
     const toleranceMs = Duration.toMillis(heartbeatWriteTolerance)
     const intervalMs = Duration.toMillis(heartbeatInterval)
     let lastConfirmedPulseMs = yield* Clock.currentTimeMillis
+    let failing = false
     const deadline = Effect.gen(function*() {
       while (true) {
         const nowMs = yield* Clock.currentTimeMillis
         const remainingMs = lastConfirmedPulseMs + toleranceMs - nowMs
-        if (remainingMs <= 0) return yield* Effect.interrupt
+        if (remainingMs <= 0) {
+          yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(
+            Effect.annotateLogs({ runId, unconfirmedMs: nowMs - lastConfirmedPulseMs })
+          )
+          return yield* Effect.interrupt
+        }
         // Check alongside pulse intervals, with a shorter final wait when needed.
         yield* Effect.sleep(Math.min(remainingMs, intervalMs))
       }
@@ -320,11 +326,19 @@ export const heartbeatLoop = (
             outcome._tag === "Updated"
               ? Effect.sync(() => {
                 lastConfirmedPulseMs = nowMs
+                failing = false
               })
               : Effect.interrupt
           ),
-          // eslint-disable-next-line no-restricted-syntax -- Failed writes preserve the confirmed lease; the independent deadline supervises its expiry.
-          Effect.catch(() => Effect.void)
+          // A failed write keeps the confirmed lease; the independent deadline
+          // supervises its expiry. Warn on the first failure of an outage.
+          Effect.catch((error) => {
+            if (failing) return Effect.void
+            failing = true
+            return Effect.logWarning("run heartbeat write failed").pipe(
+              Effect.annotateLogs({ runId, code: error.code })
+            )
+          })
         )
       ),
       Effect.forever

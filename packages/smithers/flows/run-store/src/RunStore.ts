@@ -1350,7 +1350,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           return classifyClaimLoss(current[0], nowMs)
         })
       )
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.claim[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.claim[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "claim" })
+    ))
   )
 
   const claimAndOwn = Effect.fn("RunStore.claimAndOwn")((
@@ -1431,7 +1434,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           })
         )
       })
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.claimAndOwn[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.claimAndOwn[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "claim_and_own" })
+    ))
   )
 
   const activate = Effect.fn("RunStore.activate")((
@@ -1501,7 +1507,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           return snapshotChanged
         })
       )
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.activate[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.activate[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "activate" })
+    ))
   )
 
   const abandonClaim = Effect.fn("RunStore.abandonClaim")((
@@ -1534,7 +1543,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           (rows) => rows.length > 0 ? abandoned : claimLost
         )
       )
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.abandonClaim[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.abandonClaim[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "abandon_claim" })
+    ))
   )
 
   const recoverClaim = Effect.fn("RunStore.recoverClaim")((
@@ -1589,7 +1601,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           })
         )
       })
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.recoverClaim[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.recoverClaim[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "recover_claim" })
+    ))
   )
 
   const heartbeat = Effect.fn("RunStore.heartbeat")((
@@ -1634,7 +1649,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           return current.length === 0 ? notFound : fenceLost
         })
       )
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.heartbeat[outcome._tag]))
+    }).pipe(observeOutcome((outcome) => RunStoreMetrics.heartbeat[outcome._tag], RunStoreMetrics.heartbeats))
   )
 
   const transitionOwned = Effect.fn("RunStore.transitionOwned")((
@@ -1729,8 +1744,7 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
       observeOutcome((outcome) =>
         Metric.withAttributes(RunStoreMetrics.transition[outcome._tag], {
           to: toStatusInput
-        })
-      )
+        }), Metric.withAttributes(RunStoreMetrics.transitions, { to: toStatusInput }))
     )
   )
 
@@ -1787,7 +1801,10 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
           })
         )
       })
-    }).pipe(observeOutcome((outcome) => RunStoreMetrics.steal[outcome._tag]))
+    }).pipe(observeOutcome(
+      (outcome) => RunStoreMetrics.steal[outcome._tag],
+      Metric.withAttributes(RunStoreMetrics.claims, { op: "steal" })
+    ))
   )
 
   const acknowledgeCancel: Service["acknowledgeCancel"] = Effect.fn("RunStore.acknowledgeCancel")((
@@ -1798,8 +1815,8 @@ export const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlCl
     Effect.gen(function*() {
       const runId = yield* snapshotRunId("acknowledgeCancel", id)
       const owner = yield* snapshotOwner("acknowledgeCancel", "owner", ownerInput)
-      yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId })
       const observedAtMs = yield* snapshotTimestamp("acknowledgeCancel", "nowMs", time)
+      yield* Effect.annotateCurrentSpan({ runId, ownerHostId: owner.hostId })
       const acknowledgement = JSON.stringify({ observedAtMs, owner })
       return yield* write(
         "acknowledgeCancel",

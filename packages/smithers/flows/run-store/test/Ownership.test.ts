@@ -12,7 +12,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import type { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Cause, Clock, Duration, Effect, Exit, Fiber } from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, Logger, References } from "effect"
 import { TestClock } from "effect/testing"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
 import { spawn } from "node:child_process"
@@ -364,6 +364,46 @@ describe("heartbeatLoop write deadline", () => {
         expect(calls).toBe(1)
       }))
   }
+
+  it.effect("warns once per outage when heartbeat writes fail, and again when the lease lapses", () =>
+    Effect.gen(function*() {
+      const warnings: Array<{ readonly message: string; readonly annotations: Record<string, unknown> }> = []
+      const logger = Logger.make<unknown, void>(({ fiber, logLevel, message }) => {
+        if (logLevel !== "Warn") return
+        warnings.push({
+          message: (Array.isArray(message) ? message : [message]).map(String).join(" "),
+          annotations: { ...fiber.getRef(References.CurrentLogAnnotations) }
+        })
+      })
+      let calls = 0
+      const owning = yield* Effect.raceFirst(Effect.never, heartbeatLoop("failing-heartbeat", ownerA)).pipe(
+        Effect.provide(RunStoreLive.layerNoop({
+          heartbeat: () => {
+            calls++
+            return Effect.fail(heartbeatFailure)
+          }
+        })),
+        Effect.provide(Logger.layer([logger])),
+        Effect.forkChild({ startImmediately: true })
+      )
+
+      yield* TestClock.adjust(intervalMs * 3)
+      expect(calls).toBe(3)
+      expect(warnings).toEqual([{
+        message: "run heartbeat write failed",
+        annotations: { runId: "failing-heartbeat", code: "persistence_failed" }
+      }])
+
+      yield* TestClock.adjust(toleranceMs - intervalMs * 3)
+      yield* Effect.yieldNow
+      const exit = owning.pollUnsafe()
+      expect(exit !== undefined && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBe(true)
+      expect(warnings[1]).toEqual({
+        message: "run lease lapsed; interrupting owned work",
+        annotations: { runId: "failing-heartbeat", unconfirmedMs: toleranceMs }
+      })
+      expect(warnings).toHaveLength(2)
+    }))
 
   it.effect("re-arms a delayed success from its persisted timestamp, not its completion time", () =>
     Effect.gen(function*() {

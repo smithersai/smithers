@@ -954,13 +954,13 @@ export const makeWith = (
     ) =>
       Effect.gen(function*() {
         const owner = yield* snapshotOwner("heartbeat", ownerInput)
-        yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
         yield* validateId("heartbeat", { runId, stepKeyDigest, attempt })
         if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
           return yield* Effect.fail(
             error("heartbeat", "invalid_attempt", "nowMs must be a non-negative safe integer")
           )
         }
+        yield* Effect.annotateCurrentSpan({ runId, stepKeyDigest, attempt, ownerHostId: owner.hostId })
         const checkpoint = yield* heartbeatEncodeCheckpoint(checkpointValue)
         return yield* writer.write(
           Effect.gen(function*() {

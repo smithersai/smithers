@@ -6,7 +6,7 @@ import { describe, expect, it } from "@effect/vitest"
 import type { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
-import { Clock, Effect, Metric } from "effect"
+import { Clock, Effect, Exit, Metric } from "effect"
 import { TestClock } from "effect/testing"
 import type * as SqlClient from "effect/unstable/sql/SqlClient"
 import * as Migrations from "../src/Migrations.ts"
@@ -180,6 +180,27 @@ describe("RunStoreMetrics", () => {
           yield* count(Metric.withAttributes(RunStoreMetrics.transition.FenceLost, { to: "completed" }))
         ).toBe(1)
         expect(yield* count(ObservabilityMetric.runThroughput)).toBe(1)
+      }))
+    }))
+
+  it.effect("counts failed claim, heartbeat, and transition calls under outcome failure", () =>
+    Effect.gen(function*() {
+      yield* migrated(Effect.gen(function*() {
+        const store = yield* RunStore
+        yield* store.create("run-metrics-failed", "{}")
+        const pending = snapshot(yield* store.get("run-metrics-failed"))
+
+        // A negative lease reading is refused before the write, so each call fails.
+        expect(Exit.isFailure(yield* Effect.exit(store.claim("run-metrics-failed", pending, ownerA, -1)))).toBe(true)
+        expect(Exit.isFailure(yield* Effect.exit(store.heartbeat("run-metrics-failed", ownerA, -1)))).toBe(true)
+        expect(Exit.isFailure(yield* Effect.exit(store.transitionOwned("", ownerA, "completed")))).toBe(true)
+
+        expect(yield* count(Metric.withAttributes(RunStoreMetrics.claims, { op: "claim", outcome: "failure" })))
+          .toBe(1)
+        expect(yield* count(Metric.withAttributes(RunStoreMetrics.heartbeats, { outcome: "failure" }))).toBe(1)
+        expect(
+          yield* count(Metric.withAttributes(RunStoreMetrics.transitions, { outcome: "failure", to: "completed" }))
+        ).toBe(1)
       }))
     }))
 

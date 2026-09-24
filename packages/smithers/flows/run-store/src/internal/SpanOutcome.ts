@@ -21,25 +21,34 @@ const causeOutcome = <E>(cause: Cause.Cause<E>): "failure" | "interrupt" =>
  * Observes a store operation's exit onto its span, and, when the operation
  * has an outcome-keyed counter, updates it in the same observation: the
  * domain tag (`claimed`, `fence_lost`) on success, `failure` or `interrupt`
- * otherwise, so a span never closes without saying how. `Effect.onExit` only
- * reads the exit; the value, cause, and interruption propagate
- * byte-identically.
+ * otherwise, so a span never closes without saying how and a failed write
+ * still lands in the counter. `exitMetric` is the counter view carrying every
+ * attribute but `outcome`, which this observer adds for a non-success exit.
+ * `Effect.onExit` only reads the exit; the value, cause, and interruption
+ * propagate byte-identically.
  *
  * @since 1.0.0-rc.0
  * @private
  */
 export const observeOutcome = <A extends { readonly _tag: string }>(
-  metricOf?: ((outcome: A) => Metric.Metric<number, Metric.CounterState<number>>) | undefined
+  metricOf?: ((outcome: A) => Metric.Metric<number, Metric.CounterState<number>>) | undefined,
+  exitMetric?: Metric.Metric<number, Metric.CounterState<number>> | undefined
 ) =>
 <E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   effect.pipe(
-    Effect.onExit((exit) =>
-      exit._tag === "Success"
-        ? Effect.annotateCurrentSpan({ outcome: outcomeValue(exit.value._tag) }).pipe(
+    Effect.onExit((exit) => {
+      if (exit._tag === "Success") {
+        return Effect.annotateCurrentSpan({ outcome: outcomeValue(exit.value._tag) }).pipe(
           Effect.andThen(metricOf === undefined ? Effect.void : Metric.update(metricOf(exit.value), 1))
         )
-        : Effect.annotateCurrentSpan({ outcome: causeOutcome(exit.cause) })
-    )
+      }
+      const outcome = causeOutcome(exit.cause)
+      return Effect.annotateCurrentSpan({ outcome }).pipe(
+        Effect.andThen(
+          exitMetric === undefined ? Effect.void : Metric.update(Metric.withAttributes(exitMetric, { outcome }), 1)
+        )
+      )
+    })
   )
 
 /**

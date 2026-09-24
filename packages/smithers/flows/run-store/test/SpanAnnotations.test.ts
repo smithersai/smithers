@@ -192,6 +192,11 @@ describe("SpanAnnotations", () => {
         // A terminal state on `finish` is required, so `running` fails before any write.
         const failure = yield* Effect.exit(attempts.finish({ ...id, state: "running", finishedAtMs: 4 }, owner))
         expect(failure._tag).toBe("Failure")
+        // Invalid identity or lease reading is refused before any identity reaches the span.
+        const badIdentity = yield* Effect.exit(attempts.heartbeat("\ud800", id.stepKeyDigest, id.attempt, owner, 5))
+        expect(badIdentity._tag).toBe("Failure")
+        const badReading = yield* Effect.exit(attempts.heartbeat(id.runId, id.stepKeyDigest, id.attempt, owner, -1))
+        expect(badReading._tag).toBe("Failure")
       }).pipe(Effect.provideService(Tracer.Tracer, tracer))
     )
 
@@ -205,7 +210,9 @@ describe("SpanAnnotations", () => {
       ["AttemptStore.patch", { ...identity, ownerHostId: owner.hostId, outcome: "patched" }],
       ["AttemptStore.finish", { ...identity, ownerHostId: owner.hostId, outcome: "finished" }],
       ["AttemptStore.get", { ...identity, outcome: "success" }],
-      ["AttemptStore.finish", { ...identity, ownerHostId: owner.hostId, outcome: "failure" }]
+      ["AttemptStore.finish", { ...identity, ownerHostId: owner.hostId, outcome: "failure" }],
+      ["AttemptStore.heartbeat", { outcome: "failure" }],
+      ["AttemptStore.heartbeat", { outcome: "failure" }]
     ])
   })
 
@@ -248,7 +255,7 @@ describe("SpanAnnotations", () => {
     expect(attributes).toEqual([
       { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
       { runId: "run-ack", ownerHostId: owner.hostId, outcome: "success" },
-      { runId: "run-ack", ownerHostId: owner.hostId, outcome: "failure" }
+      { outcome: "failure" }
     ])
   })
 })

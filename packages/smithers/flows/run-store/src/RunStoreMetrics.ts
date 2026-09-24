@@ -20,7 +20,8 @@ import * as Metric from "effect/Metric"
  * Counter over ownership claim compare-and-swaps, dimensioned by `op`
  * (`claim`, `claim_and_own`, `activate`, `abandon_claim`, `recover_claim`, or
  * `steal`) and `outcome` (the
- * operation's result tag in snake case).
+ * operation's result tag in snake case, or `failure` or `interrupt` when the
+ * call did not return one).
  *
  * @category metrics
  * @since 0.1.0
@@ -31,8 +32,8 @@ export const claims = Metric.counter("flows_run_claims", {
 
 /**
  * Counter over fenced run state transitions, dimensioned by `outcome`
- * (`transitioned`, `fence_lost`, `not_found`, or `guard_failed`) and `to`
- * (the requested target status).
+ * (`transitioned`, `fence_lost`, `not_found`, `guard_failed`, `failure`, or
+ * `interrupt`) and `to` (the requested target status).
  *
  * @category metrics
  * @since 0.1.0
@@ -43,8 +44,9 @@ export const transitions = Metric.counter("flows_run_transitions", {
 
 /**
  * Counter over fenced ownership heartbeats, dimensioned by `outcome`
- * (`updated`, `fence_lost`, or `not_found`). A `fence_lost` heartbeat is the
- * fencing event: the writer discovered another owner holds the run.
+ * (`updated`, `fence_lost`, `not_found`, `failure`, or `interrupt`). A
+ * `fence_lost` heartbeat is the fencing event: the writer discovered another
+ * owner holds the run.
  *
  * @category metrics
  * @since 0.1.0

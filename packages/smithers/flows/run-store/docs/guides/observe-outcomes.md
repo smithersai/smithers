@@ -27,20 +27,27 @@ counters.
 `abandon_claim`, `recover_claim`, or `steal`. `outcome` is the result tag in
 snake case, so `HeartbeatFresh` is recorded as `heartbeat_fresh`. `to` on a
 transition is the target status you asked for, whether or not the write won.
+A call that fails or is interrupted still counts, under `outcome="failure"` or
+`outcome="interrupt"`, so a database refusing writes shows up as a failure rate
+rather than a silent drop.
 
-Three of those series are the ones worth alerting on:
+Four of those series are the ones worth alerting on:
 
 - `flows_run_heartbeats{outcome="fence_lost"}` is the fencing event: an owner
   discovered another process holds its run.
 - `flows_run_claims{op="activate",outcome="claim_lost"}` means a held claim was
   recovered or replaced before its activation ran.
+- `flows_run_heartbeats{outcome="failure"}` is a lease write the database
+  refused. `heartbeatLoop` also logs `run heartbeat write failed` on the first
+  failure of an outage, and `run lease lapsed; interrupting owned work` when
+  the write tolerance runs out.
 - `flows_run_claims{op="steal",outcome="claimed"}` is a takeover. A steady rate
   of these is a host that keeps dying, or two hosts with clocks far enough apart
   to take runs from each other.
 
 A terminal transition also advances `runThroughput` from
 [`@smthrs/observability`](/api/observability), published as
-`flows/run/throughput`, so finished runs are counted in the same place as the
+`flows_run_throughput`, so finished runs are counted in the same place as the
 rest of the runtime. See
 [Read the runtime metrics](/pkg/observability/guides/read-runtime-metrics).
 
