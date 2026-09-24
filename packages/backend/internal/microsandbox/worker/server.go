@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,14 +27,19 @@ import (
 )
 
 type ServerConfig struct {
-	WorkerID           string
-	SSHBridgeBin       string
-	State              *State
-	Runtime            Runtime
-	Logger             *slog.Logger
+	WorkerID     string
+	SSHBridgeBin string
+	State        *State
+	Runtime      Runtime
+	Logger       *slog.Logger
+	// ControllerIdentity is the mTLS client CommonName allowed to call the
+	// internal routes. Empty refuses them unless AllowInsecureDev is set.
 	ControllerIdentity string
-	TransferDir        string
-	StateChanged       func()
+	// AllowInsecureDev serves the internal routes to any caller when no
+	// ControllerIdentity is configured. Local development and tests only.
+	AllowInsecureDev bool
+	TransferDir      string
+	StateChanged     func()
 }
 
 var ErrSnapshotArchiveTooLarge = errors.New("snapshot archive exceeds worker transfer limit")
@@ -56,6 +62,7 @@ type Server struct {
 	runtime            Runtime
 	logger             *slog.Logger
 	controllerIdentity string
+	allowInsecureDev   bool
 	transferDir        string
 	router             http.Handler
 	authorizedUntil    atomic.Int64
@@ -76,6 +83,7 @@ func NewServer(config ServerConfig) *Server {
 		workerID: config.WorkerID, sshBridgeBin: strings.TrimSpace(config.SSHBridgeBin), state: config.State,
 		runtime: config.Runtime, logger: logger,
 		controllerIdentity: strings.TrimSpace(config.ControllerIdentity),
+		allowInsecureDev:   config.AllowInsecureDev,
 		transferDir:        strings.TrimSpace(config.TransferDir),
 		stateChanged:       config.StateChanged,
 	}
@@ -122,11 +130,16 @@ func (s *Server) routes() http.Handler {
 
 func (s *Server) requireControllerIdentity(next http.Handler) http.Handler {
 	if s.controllerIdentity == "" {
-		return next
+		if s.allowInsecureDev {
+			return next
+		}
+		return http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writeError(writer, http.StatusServiceUnavailable, "authentication_not_configured", "mTLS controller identity is not configured")
+		})
 	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.TLS == nil || len(request.TLS.PeerCertificates) == 0 ||
-			request.TLS.PeerCertificates[0].Subject.CommonName != s.controllerIdentity {
+			subtle.ConstantTimeCompare([]byte(request.TLS.PeerCertificates[0].Subject.CommonName), []byte(s.controllerIdentity)) != 1 {
 			writeError(writer, http.StatusForbidden, "peer_identity_denied", "mTLS peer identity is not authorized for worker operations")
 			return
 		}

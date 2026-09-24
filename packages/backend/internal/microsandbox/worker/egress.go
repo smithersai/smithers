@@ -2,6 +2,7 @@ package worker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,21 +92,24 @@ type egressProxyProcess struct {
 	// still in flight must kill its child instead of publishing it.
 	cmd     *exec.Cmd
 	stopped bool
-	done    chan struct{}
+	// releasedCmd is cmd as it stood when releaseLocked unpublished the
+	// process; terminate reads it without the lock.
+	releasedCmd *exec.Cmd
+	done        chan struct{}
 	// exitErr is written before done closes and read only after it closes.
 	exitErr error
 	// startedAt is when the proxy was reserved for its sandbox. The runtime
-	// only learns about the sandbox after its create completes, so a proxy
-	// younger than egressProxyReapGrace is never an orphan.
+	// only reports the guest as running after its create or start completes,
+	// so a proxy younger than egressProxyReapGrace is never an orphan.
 	startedAt time.Time
 }
 
-// egressProxyReapGrace is how long after a proxy starts ReapOrphans treats a
-// runtime "not found" as the create still being in flight rather than as a
-// vanished guest. Create starts the proxy BEFORE the runtime registers the
-// sandbox (the guest boots with the proxy endpoint), so a reaper tick landing
-// in that window used to stop the proxy under a booting guest, which then had
-// no egress at all: every clone failed with "Couldn't connect to server".
+// egressProxyReapGrace is how long after a proxy starts ReapOrphans leaves it
+// alone. Create starts the proxy BEFORE the runtime registers the sandbox, and
+// StartWithEgress resumes it BEFORE the runtime restarts a stopped guest (the
+// guest boots with the proxy endpoint). A reaper tick landing in either window
+// used to stop the proxy under a booting guest, which then had no egress at
+// all: every clone failed with "Couldn't connect to server".
 const egressProxyReapGrace = 3 * time.Minute
 
 // EgressProxyManager spawns and supervises one iron-proxy process per
@@ -215,8 +220,17 @@ func (m *EgressProxyManager) start(ctx context.Context, sandboxID string, policy
 		return EgressProxyEndpoint{}, fmt.Errorf("%w: %v", ErrEgressProxyUnavailable, err)
 	}
 	m.mu.Lock()
-	if existing, ok := m.procs[sandboxID]; ok {
-		m.stopLocked(sandboxID, existing)
+	// Replace any running proxy. Its exit is awaited outside the lock, and a
+	// concurrent Start may publish a new one meanwhile, so re-check each time.
+	for {
+		existing, ok := m.procs[sandboxID]
+		if !ok {
+			break
+		}
+		m.releaseLocked(sandboxID, existing)
+		m.mu.Unlock()
+		existing.terminate()
+		m.mu.Lock()
 	}
 	// A fresh Start re-authorizes the sandbox; clear any earlier revocation.
 	delete(m.revoked, sandboxID)
@@ -333,8 +347,15 @@ func (m *EgressProxyManager) spawn(ctx context.Context, sandboxID string, proc *
 		return EgressProxyEndpoint{}, fmt.Errorf("%w: start iron-proxy: %v", ErrEgressProxyUnavailable, err)
 	}
 	logger := m.config.Logger.With("sandbox_id", sandboxID, "egress_proxy_port", proc.port)
-	go m.relayLogs(logger, sandboxID, stdout)
+	relayed := make(chan struct{})
 	go func() {
+		defer close(relayed)
+		m.relayLogs(logger, sandboxID, stdout)
+	}()
+	go func() {
+		// os/exec: Wait closes the stdout pipe, so it must follow the last
+		// read or the proxy's final audit lines are lost.
+		<-relayed
 		proc.exitErr = cmd.Wait()
 		close(proc.done)
 		if proc.exitErr != nil {
@@ -387,25 +408,66 @@ func (m *EgressProxyManager) waitListening(ctx context.Context, listen string, p
 	}
 }
 
+// maxEgressLogLine bounds one relayed proxy log line. Longer lines are
+// dropped, never truncated into a partial record, and the relay keeps reading.
+const maxEgressLogLine = 1 << 20
+
 // relayLogs forwards iron-proxy's JSON audit lines into the worker log. The
 // proxy never prints credential values (that is an upstream invariant we
-// rely on), but the relay redacts bearer/basic-shaped tokens anyway.
+// rely on), but the relay redacts bearer/basic-shaped tokens anyway. It reads
+// until EOF whatever the lines contain: a child whose output pipe stops being
+// drained blocks inside its logger and stalls every request it proxies.
 func (m *EgressProxyManager) relayLogs(logger *slog.Logger, sandboxID string, reader io.Reader) {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
-	for scanner.Scan() {
-		line := scanner.Text()
-		logger.Info("egress proxy", "line", redactCredentialShapes(line))
-		record, err := parseEgressAuditRecord(sandboxID, []byte(line))
+	buffered := bufio.NewReaderSize(reader, 64<<10)
+	for {
+		line, oversized, err := readBoundedLine(buffered, maxEgressLogLine)
+		if oversized {
+			logger.Warn("egress proxy log line dropped: too long", "limit_bytes", maxEgressLogLine)
+			if m.config.AuditDropped != nil {
+				m.config.AuditDropped("oversized")
+			}
+		} else if len(line) > 0 {
+			m.relayLine(logger, sandboxID, line)
+		}
 		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				logger.Warn("egress proxy log relay stopped", "error", err)
+			}
+			return
+		}
+	}
+}
+
+// readBoundedLine returns the next line without its newline. A line longer
+// than limit is consumed and reported as oversized with no content.
+func readBoundedLine(reader *bufio.Reader, limit int) (line []byte, oversized bool, err error) {
+	for {
+		chunk, readErr := reader.ReadSlice('\n')
+		if !oversized {
+			if len(line)+len(chunk) > limit+1 {
+				oversized, line = true, nil
+			} else {
+				line = append(line, chunk...)
+			}
+		}
+		if errors.Is(readErr, bufio.ErrBufferFull) {
 			continue
 		}
-		select {
-		case m.audit <- record:
-		default:
-			if m.config.AuditDropped != nil {
-				m.config.AuditDropped("backpressure")
-			}
+		return bytes.TrimRight(line, "\r\n"), oversized, readErr
+	}
+}
+
+func (m *EgressProxyManager) relayLine(logger *slog.Logger, sandboxID string, line []byte) {
+	logger.Info("egress proxy", "line", redactCredentialShapes(string(line)))
+	record, err := parseEgressAuditRecord(sandboxID, line)
+	if err != nil {
+		return
+	}
+	select {
+	case m.audit <- record:
+	default:
+		if m.config.AuditDropped != nil {
+			m.config.AuditDropped("backpressure")
 		}
 	}
 }
@@ -667,26 +729,52 @@ func (m *EgressProxyManager) Revoked(sandboxID string) (string, bool) {
 // environment) but keeps the marker: the sandbox remains proxy-backed, so a
 // later Start fails closed until its secrets are supplied again.
 func (m *EgressProxyManager) Suspend(sandboxID string) {
-	m.mu.Lock()
-	proc, ok := m.procs[sandboxID]
-	if ok {
-		m.stopLocked(sandboxID, proc)
-	}
-	m.mu.Unlock()
-	_ = os.RemoveAll(m.sandboxDir(sandboxID))
+	m.suspendIf(sandboxID, nil)
 }
 
-func (m *EgressProxyManager) stopLocked(sandboxID string, proc *egressProxyProcess) {
+// suspendIf suspends sandboxID's proxy. With a non-nil want it acts only while
+// want is still the published process, so a caller holding a stale snapshot
+// never stops a replacement. It reports whether it released a process.
+func (m *EgressProxyManager) suspendIf(sandboxID string, want *egressProxyProcess) bool {
+	m.mu.Lock()
+	proc, ok := m.procs[sandboxID]
+	if want != nil && (!ok || proc != want) {
+		m.mu.Unlock()
+		return false
+	}
+	if ok {
+		m.releaseLocked(sandboxID, proc)
+	}
+	m.mu.Unlock()
+	if ok {
+		proc.terminate()
+	}
+	_ = os.RemoveAll(m.sandboxDir(sandboxID))
+	return ok
+}
+
+// releaseLocked unpublishes proc so no caller can reach it. The caller then
+// runs proc.terminate after unlocking: waiting for a child to exit under the
+// worker-wide lock would stall every other sandbox's proxy operations.
+func (m *EgressProxyManager) releaseLocked(sandboxID string, proc *egressProxyProcess) {
 	delete(m.procs, sandboxID)
 	proc.stopped = true
-	if proc.cmd == nil || proc.cmd.Process == nil {
+	proc.releasedCmd = proc.cmd
+}
+
+// terminate interrupts a released proxy and waits for it to exit, killing it
+// after a grace period. A proxy released before its child started has no
+// process; spawn sees stopped and kills that child itself.
+func (proc *egressProxyProcess) terminate() {
+	cmd := proc.releasedCmd
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	_ = proc.cmd.Process.Signal(os.Interrupt)
+	_ = cmd.Process.Signal(os.Interrupt)
 	select {
 	case <-proc.done:
 	case <-time.After(3 * time.Second):
-		_ = proc.cmd.Process.Kill()
+		_ = cmd.Process.Kill()
 		<-proc.done
 	}
 }
@@ -697,31 +785,37 @@ func (m *EgressProxyManager) stopLocked(sandboxID string, proc *egressProxyProce
 // would otherwise outlive it. lookup is the runtime's Get; a not-found error
 // forgets the sandbox, a non-running state suspends it (marker kept so a
 // later Start still fails closed), and any other error leaves it alone.
+//
+// A proxy younger than egressProxyReapGrace is never reaped: Create and
+// StartWithEgress both start the proxy before the runtime reports the guest
+// as running. Each decision applies only to the process that was inspected,
+// so a proxy that replaced it during the lookup survives.
 func (m *EgressProxyManager) ReapOrphans(ctx context.Context, lookup func(context.Context, string) (sandbox.Sandbox, error)) (stopped, suspended int) {
 	m.mu.Lock()
-	ids := make([]string, 0, len(m.procs))
-	started := make(map[string]time.Time, len(m.procs))
+	seen := make(map[string]*egressProxyProcess, len(m.procs))
 	for id, proc := range m.procs {
-		ids = append(ids, id)
-		started[id] = proc.startedAt
+		seen[id] = proc
 	}
 	m.mu.Unlock()
-	for _, id := range ids {
+	for id, proc := range seen {
+		if time.Since(proc.startedAt) < egressProxyReapGrace {
+			continue
+		}
 		current, err := lookup(ctx, id)
 		switch {
-		case err != nil && runtimeNotFound(err) && time.Since(started[id]) < egressProxyReapGrace:
-			// Create in flight: the runtime has not registered the guest yet.
-			continue
 		case err != nil && runtimeNotFound(err):
-			m.config.Logger.Info("egress proxy reaped: guest no longer exists", "sandbox_id", id)
-			m.Stop(id)
-			stopped++
+			if m.suspendIf(id, proc) {
+				m.config.Logger.Info("egress proxy reaped: guest no longer exists", "sandbox_id", id)
+				_ = os.Remove(m.markerPath(id))
+				stopped++
+			}
 		case err != nil:
 			continue
 		case current.State != sandbox.StateRunning:
-			m.config.Logger.Info("egress proxy suspended: guest is not running", "sandbox_id", id, "state", string(current.State))
-			m.Suspend(id)
-			suspended++
+			if m.suspendIf(id, proc) {
+				m.config.Logger.Info("egress proxy suspended: guest is not running", "sandbox_id", id, "state", string(current.State))
+				suspended++
+			}
 		}
 	}
 	return stopped, suspended
@@ -790,17 +884,13 @@ func (m *EgressProxyManager) markerPath(sandboxID string) string {
 	return filepath.Join(m.markers, safeName(sandboxID)+".port")
 }
 
+// credentialShape matches a bearer or basic scheme and its token in plain
+// text and inside JSON strings, where the separator may be a JSON escape
+// (`\t`) and the token ends at a quote, comma, or brace.
+var credentialShape = regexp.MustCompile(`(?i)\b(bearer|basic)((?:\s|\\[tnr])+)[^\s"',}\]\\]+`)
+
 func redactCredentialShapes(line string) string {
-	fields := strings.Fields(line)
-	for index, field := range fields {
-		lower := strings.ToLower(field)
-		if strings.HasPrefix(lower, "bearer") || strings.HasPrefix(lower, "basic") {
-			if index+1 < len(fields) {
-				fields[index+1] = "[redacted]"
-			}
-		}
-	}
-	return strings.Join(fields, " ")
+	return credentialShape.ReplaceAllString(line, "${1}${2}[redacted]")
 }
 
 // egressTrustStoreHook installs the proxy CA into a distribution trust store

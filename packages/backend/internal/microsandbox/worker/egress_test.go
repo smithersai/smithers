@@ -209,7 +209,9 @@ func TestEgressProxyManagerReapsProxiesWhoseGuestIsGone(t *testing.T) {
 	// msb_gone vanished long ago; msb_creating started just now and the runtime
 	// does not know it yet because Create registers the guest after the proxy.
 	manager.mu.Lock()
-	manager.procs["msb_gone"].startedAt = time.Now().Add(-egressProxyReapGrace - time.Minute)
+	for _, id := range []string{"msb_gone", "msb_stopped", "msb_live", "msb_unknown"} {
+		manager.procs[id].startedAt = time.Now().Add(-egressProxyReapGrace - time.Minute)
+	}
 	manager.mu.Unlock()
 	lookup := func(_ context.Context, id string) (sandbox.Sandbox, error) {
 		switch id {

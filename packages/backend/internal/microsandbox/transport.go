@@ -57,7 +57,7 @@ func (c *Client) createSandbox(ctx context.Context, req sandbox.CreateRequest) (
 // ForkSandbox creates a sandbox from a stopped sandbox disk.
 func (c *Client) ForkSandbox(ctx context.Context, sourceSandboxID string, req sandbox.ForkRequest) (sandbox.CreateResult, error) {
 	var resp sandbox.CreateResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sourceSandboxID+"/fork", "/v1/sandboxes/{id}/fork", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sourceSandboxID)+"/fork", "/v1/sandboxes/{id}/fork", req, &resp)
 	if err != nil {
 		return sandbox.CreateResult{}, err
 	}
@@ -70,59 +70,59 @@ func (c *Client) ForkSandbox(ctx context.Context, sourceSandboxID string, req sa
 // InspectSandbox returns the current sandbox state.
 func (c *Client) InspectSandbox(ctx context.Context, sandboxID string) (sandbox.Sandbox, error) {
 	var resp sandbox.Sandbox
-	err := c.doJSON(ctx, http.MethodGet, "/v1/sandboxes/"+sandboxID, "/v1/sandboxes/{id}", nil, &resp)
+	err := c.doJSON(ctx, http.MethodGet, "/v1/sandboxes/"+pathSegment(sandboxID), "/v1/sandboxes/{id}", nil, &resp)
 	return resp, err
 }
 
 // DeleteSandbox deletes a VM.
 func (c *Client) DeleteSandbox(ctx context.Context, sandboxID string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/"+sandboxID, "/v1/sandboxes/{id}", nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/"+pathSegment(sandboxID), "/v1/sandboxes/{id}", nil, nil)
 }
 
 // PublishIngress routes an HTTPS hostname to a sandbox port.
 func (c *Client) PublishIngress(ctx context.Context, domain string, req sandbox.PublishIngressRequest) (sandbox.IngressRoute, error) {
 	var resp sandbox.IngressRoute
-	err := c.doJSON(ctx, http.MethodPost, "/v1/ingress/"+url.PathEscape(domain), "/v1/ingress/{domain}", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/ingress/"+pathSegment(domain), "/v1/ingress/{domain}", req, &resp)
 	return resp, err
 }
 
 // RevokeIngress removes a hostname-to-sandbox route.
 func (c *Client) RevokeIngress(ctx context.Context, domain string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/v1/ingress/"+url.PathEscape(domain), "/v1/ingress/{domain}", nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/v1/ingress/"+pathSegment(domain), "/v1/ingress/{domain}", nil, nil)
 }
 
 // StartSandbox resumes or starts a VM.
 func (c *Client) StartSandbox(ctx context.Context, sandboxID string, req sandbox.StartRequest) (sandbox.StartResult, error) {
 	var resp sandbox.StartResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/start", "/v1/sandboxes/{id}/start", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/start", "/v1/sandboxes/{id}/start", req, &resp)
 	return resp, err
 }
 
 // StopSandbox stops a VM.
 func (c *Client) StopSandbox(ctx context.Context, sandboxID string) (sandbox.StopResult, error) {
 	var resp sandbox.StopResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/stop", "/v1/sandboxes/{id}/stop", nil, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/stop", "/v1/sandboxes/{id}/stop", nil, &resp)
 	return resp, err
 }
 
 // SuspendSandbox suspends a VM.
 func (c *Client) SuspendSandbox(ctx context.Context, sandboxID string) (sandbox.SuspendResult, error) {
 	var resp sandbox.SuspendResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/suspend", "/v1/sandboxes/{id}/suspend", nil, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/suspend", "/v1/sandboxes/{id}/suspend", nil, &resp)
 	return resp, err
 }
 
 // Execute runs a command inside a sandbox and waits for completion.
 func (c *Client) Execute(ctx context.Context, sandboxID string, req sandbox.ExecRequest) (sandbox.ExecResult, error) {
 	var resp sandbox.ExecResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/exec", "/v1/sandboxes/{id}/exec", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/exec", "/v1/sandboxes/{id}/exec", req, &resp)
 	return resp, err
 }
 
 // SnapshotSandbox creates a snapshot from a running VM.
 func (c *Client) SnapshotSandbox(ctx context.Context, sandboxID string, req sandbox.SnapshotRequest) (sandbox.SnapshotResult, error) {
 	var resp sandbox.SnapshotResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/snapshot", "/v1/sandboxes/{id}/snapshot", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/snapshot", "/v1/sandboxes/{id}/snapshot", req, &resp)
 	return resp, err
 }
 
@@ -135,7 +135,7 @@ func (c *Client) CreateSnapshot(ctx context.Context, req sandbox.CreateSnapshotR
 
 // DeleteSnapshot deletes a reusable snapshot.
 func (c *Client) DeleteSnapshot(ctx context.Context, snapshotID string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/snapshots/"+snapshotID, "/v1/sandboxes/snapshots/{id}", nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/snapshots/"+pathSegment(snapshotID), "/v1/sandboxes/snapshots/{id}", nil, nil)
 }
 
 // WriteFile writes content into an existing sandbox.
@@ -144,13 +144,13 @@ func (c *Client) WriteFile(ctx context.Context, sandboxID, filepath string, req 
 	if err != nil {
 		return err
 	}
-	return c.doJSON(ctx, http.MethodPut, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/files/"+escapedPath, "/v1/sandboxes/{id}/files/{path}", req, nil)
+	return c.doJSON(ctx, http.MethodPut, "/v1/sandboxes/"+pathSegment(sandboxID)+"/files/"+escapedPath, "/v1/sandboxes/{id}/files/{path}", req, nil)
 }
 
 // CreateService creates a dynamic systemd unit in a sandbox.
 func (c *Client) CreateService(ctx context.Context, sandboxID string, req sandbox.ServiceSpec) (sandbox.CreateServiceResult, error) {
 	var resp sandbox.CreateServiceResult
-	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+sandboxID+"/services", "/v1/sandboxes/{id}/services", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+pathSegment(sandboxID)+"/services", "/v1/sandboxes/{id}/services", req, &resp)
 	return resp, err
 }
 
@@ -164,14 +164,14 @@ func (c *Client) CreateIdentity(ctx context.Context) (sandbox.Identity, error) {
 // GrantAccess grants an identity access to a VM.
 func (c *Client) GrantAccess(ctx context.Context, identityID, sandboxID string, req sandbox.GrantAccessRequest) (sandbox.AccessGrant, error) {
 	var resp sandbox.AccessGrant
-	err := c.doJSON(ctx, http.MethodPost, "/v1/access/identities/"+identityID+"/permissions/sandbox/"+sandboxID, "/v1/access/identities/{id}/permissions/sandbox/{sandbox_id}", req, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/access/identities/"+pathSegment(identityID)+"/permissions/sandbox/"+pathSegment(sandboxID), "/v1/access/identities/{id}/permissions/sandbox/{sandbox_id}", req, &resp)
 	return resp, err
 }
 
 // CreateIdentityToken mints an SSH-capable access token for an identity.
 func (c *Client) CreateIdentityToken(ctx context.Context, identityID string) (sandbox.CreatedToken, error) {
 	var resp sandbox.CreatedToken
-	err := c.doJSON(ctx, http.MethodPost, "/v1/access/identities/"+identityID+"/tokens", "/v1/access/identities/{id}/tokens", nil, &resp)
+	err := c.doJSON(ctx, http.MethodPost, "/v1/access/identities/"+pathSegment(identityID)+"/tokens", "/v1/access/identities/{id}/tokens", nil, &resp)
 	return resp, err
 }
 
@@ -179,7 +179,16 @@ func (c *Client) CreateIdentityToken(ctx context.Context, identityID string) (sa
 // sandbox. Revocation events already carry sandbox ids, including grants
 // minted by a different API process before a restart.
 func (c *Client) RevokeAccessGrant(ctx context.Context, sandboxID string) error {
-	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/"+url.PathEscape(sandboxID)+"/access-grants", "/v1/sandboxes/{id}/access-grants", nil, nil)
+	return c.doJSON(ctx, http.MethodDelete, "/v1/sandboxes/"+pathSegment(sandboxID)+"/access-grants", "/v1/sandboxes/{id}/access-grants", nil, nil)
+}
+
+// pathSegment escapes one caller-supplied ID into exactly one path segment.
+// "." and ".." are escaped too, so no ID can step to a sibling route.
+func pathSegment(id string) string {
+	if id == "." || id == ".." {
+		return strings.ReplaceAll(id, ".", "%2E")
+	}
+	return url.PathEscape(id)
 }
 
 // doJSON issues a request to path. endpointLabel is the templated form of

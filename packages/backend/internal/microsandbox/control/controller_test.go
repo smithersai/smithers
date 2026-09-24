@@ -219,7 +219,7 @@ func TestCreateRequestRoundTripsControllerAndWorkerDecoders(t *testing.T) {
 	state, err := msbworker.LoadState(t.TempDir() + "/state.json")
 	require.NoError(t, err)
 	runtime := &createContractRuntime{}
-	worker := msbworker.NewServer(msbworker.ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	worker := msbworker.NewServer(msbworker.ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	worker.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	workerServer := httptest.NewServer(worker)
 	defer workerServer.Close()

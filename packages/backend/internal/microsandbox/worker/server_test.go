@@ -146,7 +146,7 @@ func TestExecWithSecretsFailsClosedThroughRealRuntime(t *testing.T) {
 	require.NoError(t, state.Register("msb_secret", Allocation{
 		Generation: 1, ObservedState: "running", BootstrapComplete: true,
 	}))
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: NewSDKRuntime()})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: NewSDKRuntime()})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	headers := http.Header{}
 	headers.Set(msb.WorkerIDHeader, "worker-a")
@@ -166,7 +166,7 @@ func TestCreateWithEgressProxyFailsClosedThroughRealRuntimeWithoutEchoingValues(
 	// and never echo the credential value or the placeholder mapping.
 	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
 	require.NoError(t, err)
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: NewSDKRuntime()})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: NewSDKRuntime()})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	headers := http.Header{}
 	headers.Set(msb.WorkerIDHeader, "worker-a")
@@ -196,7 +196,7 @@ func TestPostRelocationMutationCarryingPriorGenerationIsRejectedWithoutSideEffec
 		Generation: 2, ObservedState: "running", BootstrapComplete: true,
 	}))
 	runtime := &mutationRecordingRuntime{serverTestRuntime: &serverTestRuntime{}}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	headers := http.Header{}
 	headers.Set(msb.WorkerIDHeader, "worker-a")
@@ -240,7 +240,7 @@ func TestWorkerPromotesRetainedStoppedDiskUnderNewGeneration(t *testing.T) {
 		Generation: 1, ObservedState: "stopped", BootstrapComplete: true,
 	}))
 	runtime := &serverTestRuntime{state: sandbox.StateStopped}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	payload, err := json.Marshal(msb.WorkerCreateRequest{
 		SandboxID: "msb_retained", Generation: 2, ReuseStoppedDisk: true,
@@ -277,7 +277,7 @@ func TestWorkerRetainedDiskPromotionFailsClosedWithoutStoppedAllocation(t *testi
 		state, loadErr := LoadState(filepath.Join(t.TempDir(), "state.json"))
 		require.NoError(t, loadErr)
 		runtime := &serverTestRuntime{state: sandbox.StateStopped}
-		server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+		server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 		server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 
 		response := workerRequest(server, http.MethodPost, "/internal/v1/sandboxes", string(payload), nil)
@@ -294,7 +294,7 @@ func TestWorkerRetainedDiskPromotionFailsClosedWithoutStoppedAllocation(t *testi
 			Generation: 1, ObservedState: "running", BootstrapComplete: true,
 		}))
 		runtime := &serverTestRuntime{state: sandbox.StateRunning}
-		server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+		server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 		server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 
 		response := workerRequest(server, http.MethodPost, "/internal/v1/sandboxes", string(payload), nil)
@@ -310,7 +310,7 @@ func TestWorkerStartsFencedAndDrainingRejectsAdmission(t *testing.T) {
 	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
 	require.NoError(t, err)
 	runtime := &serverTestRuntime{}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	payload, err := json.Marshal(msb.WorkerCreateRequest{SandboxID: "msb_test", Generation: 1, Request: sandbox.CreateRequest{Image: "image"}})
 	require.NoError(t, err)
 
@@ -342,7 +342,7 @@ func TestWorkerRecreatesRuntimeWhoseBootstrapWasInterrupted(t *testing.T) {
 	state, err = LoadState(path)
 	require.NoError(t, err)
 	runtime := &serverTestRuntime{}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	payload, err := json.Marshal(msb.WorkerCreateRequest{
 		SandboxID: "msb_interrupted", Generation: 1,
@@ -364,7 +364,7 @@ func TestWorkerReplacesLingeringOlderGeneration(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, state.Register("msb_returning", Allocation{Generation: 2, ObservedState: "running"}))
 	runtime := &serverTestRuntime{}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	payload, err := json.Marshal(msb.WorkerCreateRequest{
 		SandboxID: "msb_returning", Generation: 5,
@@ -394,7 +394,7 @@ func TestWorkerDrainsExecBeforeReplacingGenerationAndDiscardsStaleOutput(t *test
 		entered:           make(chan struct{}),
 		stopped:           make(chan struct{}),
 	}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	headers := http.Header{}
 	headers.Set(msb.WorkerIDHeader, "worker-a")
@@ -440,7 +440,7 @@ func TestWorkerRejectsStalePlacementGeneration(t *testing.T) {
 	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
 	require.NoError(t, err)
 	require.NoError(t, state.Register("msb_test", Allocation{Generation: 3}))
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: &serverTestRuntime{}})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: &serverTestRuntime{}})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
 
 	headers := http.Header{}
@@ -456,7 +456,7 @@ func TestWorkerOrphanCleanupHonorsPersistedGeneration(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, state.Register("msb_old", Allocation{Generation: 4}))
 	runtime := &serverTestRuntime{}
-	server := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	server := NewServer(ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	server.ScheduleOrphanDeletion(context.Background(), []msb.WorkerInventoryItem{
 		{SandboxID: "msb_old", Generation: 3},
 		{SandboxID: "msb_old", Generation: 4},
@@ -493,7 +493,7 @@ func TestWorkerSerializesConcurrentImportsForSameSnapshot(t *testing.T) {
 	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
 	require.NoError(t, err)
 	runtime := &blockingSnapshotRuntime{entered: make(chan struct{}, 2), release: make(chan struct{}, 2)}
-	server := NewServer(ServerConfig{
+	server := NewServer(ServerConfig{AllowInsecureDev: true,
 		WorkerID: "worker-a", State: state, Runtime: runtime, TransferDir: t.TempDir(),
 	})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
@@ -537,7 +537,7 @@ func TestWorkerSSHBridgeRequiresAndPropagatesGrantBoundGuestUser(t *testing.T) {
 	bridgePath := filepath.Join(t.TempDir(), "bridge.sh")
 	script := "#!/bin/sh\nprintf '%s\\n' \"$HOME\" > " + shellQuote(homePath) + "\nprintf '%s\\n' \"$@\" > " + shellQuote(argsPath) + "\ncat\n"
 	require.NoError(t, os.WriteFile(bridgePath, []byte(script), 0o700))
-	server := NewServer(ServerConfig{
+	server := NewServer(ServerConfig{AllowInsecureDev: true,
 		WorkerID: "worker-a", State: state, Runtime: &serverTestRuntime{}, SSHBridgeBin: bridgePath,
 	})
 	server.AuthorizeUntil(time.Now().Add(time.Minute), true)
@@ -595,4 +595,27 @@ func workerRequest(handler http.Handler, method, path, body string, headers http
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	return recorder
+}
+
+// The worker executes code and writes files for whoever reaches its internal
+// routes, so a missing controller identity must refuse them, as the
+// controller's own peer check does, unless dev mode is explicit.
+func TestWorkerRefusesInternalRoutesWithoutControllerIdentity(t *testing.T) {
+	state, err := LoadState(filepath.Join(t.TempDir(), "state.json"))
+	require.NoError(t, err)
+	require.NoError(t, state.Register("msb_open", Allocation{Generation: 1, ObservedState: "running"}))
+	headers := http.Header{}
+	headers.Set(msb.WorkerIDHeader, "worker-a")
+	headers.Set(msb.PlacementGenerationHeader, "1")
+
+	closed := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: &serverTestRuntime{}})
+	closed.AuthorizeUntil(time.Now().Add(time.Minute), true)
+	refused := workerRequest(closed, http.MethodGet, "/internal/v1/sandboxes/msb_open", "", headers)
+	assert.Equal(t, http.StatusServiceUnavailable, refused.Code)
+	assert.Contains(t, refused.Body.String(), "authentication_not_configured")
+	assert.Equal(t, http.StatusOK, workerRequest(closed, http.MethodGet, "/healthz", "", nil).Code)
+
+	dev := NewServer(ServerConfig{WorkerID: "worker-a", State: state, Runtime: &serverTestRuntime{}, AllowInsecureDev: true})
+	dev.AuthorizeUntil(time.Now().Add(time.Minute), true)
+	assert.NotEqual(t, http.StatusServiceUnavailable, workerRequest(dev, http.MethodGet, "/internal/v1/sandboxes/msb_open", "", headers).Code)
 }

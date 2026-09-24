@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/coder/websocket"
 
@@ -72,7 +73,11 @@ type Handler struct {
 	allowedSuffixes []string
 	relayToken      string
 	logger          *slog.Logger
+	metrics         *Metrics
 }
+
+// SetMetrics records every request's outcome and latency. Nil disables it.
+func (h *Handler) SetMetrics(metrics *Metrics) { h.metrics = metrics }
 
 // SetRelayToken installs the credential platform domains must present. An
 // empty token fails closed: every smithers-gw-* and smithers-desk-* request is
@@ -107,7 +112,11 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		_, _ = writer.Write([]byte(`{"status":"ok"}`))
 		return
 	}
+	startedAt := time.Now()
+	outcome := outcomeServed
+	defer func() { h.metrics.observe(outcome, time.Since(startedAt)) }()
 	if !ok {
+		outcome = outcomeNotFound
 		// The one envelope, not http.NotFound's text/plain: a preview URL is
 		// fetched by the same app that reads every other plue failure, and it
 		// branches on `code`, never on a sentence.
@@ -115,10 +124,16 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	if isPlatformDomain(domain) && !h.relayAuthorized(request) {
+		outcome = outcomeUnauthorized
+		// The domain, never the presented or expected token.
+		h.logger.Warn("preview relay credential refused", "domain", domain,
+			"token_configured", h.relayToken != "", "token_presented", request.Header.Get(RelayTokenHeader) != "")
 		pkgerrors.WriteError(writer, pkgerrors.Unauthorized("preview relay credential required"))
 		return
 	}
 	if h.dialer == nil {
+		outcome = outcomeUnavailable
+		h.logger.Error("preview gateway has no port dialer", "domain", domain)
 		pkgerrors.WriteError(writer, pkgerrors.New(pkgerrors.CodeServiceUnavailable,
 			"preview gateway unavailable"))
 		return
@@ -154,6 +169,7 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			}
 		},
 		ErrorHandler: func(response http.ResponseWriter, _ *http.Request, err error) {
+			outcome = outcomeUpstreamError
 			h.logger.Warn("preview proxy failed", "domain", domain, "error", err)
 			// preview_unavailable is registered as infra: the box is the
 			// caller's, but plue could not reach the port it is serving.

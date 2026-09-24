@@ -33,7 +33,7 @@ func TestStartEgressBindingsRoundTripWithoutPersistence(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, state.Register("msb_resume", msbworker.Allocation{Generation: 1, ObservedState: "stopped"}))
 	runtime := &startEgressRuntime{}
-	worker := msbworker.NewServer(msbworker.ServerConfig{WorkerID: "worker-a", State: state, Runtime: runtime})
+	worker := msbworker.NewServer(msbworker.ServerConfig{AllowInsecureDev: true, WorkerID: "worker-a", State: state, Runtime: runtime})
 	worker.AuthorizeUntil(time.Now().Add(time.Minute), true)
 	workerServer := httptest.NewServer(worker)
 	defer workerServer.Close()
