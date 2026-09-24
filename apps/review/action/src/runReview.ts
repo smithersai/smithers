@@ -23,6 +23,8 @@ export interface RunReviewInput {
   ghToken?: string;
   /** Reviewer comprehension quiz mode; omitted = the CLI's default. */
   quiz?: "off" | "auto" | "on";
+  /** Maximum simultaneous file reviews; omitted = the CLI's default. */
+  concurrency?: number;
   /** The Node binary to run the bin with. Defaults to `node` on PATH. */
   nodePath?: string;
   /** When set, the CLI writes a machine-readable outcome JSON here. */
@@ -33,6 +35,7 @@ export async function runReview(input: RunReviewInput): Promise<number> {
   const cliPath = join(input.smithersRoot, "apps", "review", "bin", "smithers-review.mjs");
   const args = [cliPath, input.workspace, "--pr", String(input.prNumber), "--publish"];
   if (input.quiz) args.push("--quiz", input.quiz);
+  if (input.concurrency !== undefined) args.push("--concurrency", String(input.concurrency));
 
   return new Promise<number>((resolve, reject) => {
     // cwd must be the smithers checkout, never the workspace: the bin resolves

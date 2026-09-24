@@ -197,6 +197,7 @@ async function main(): Promise<void> {
     publishToken: session.token,
     ghToken: process.env.GH_TOKEN,
     quiz: resolveQuizMode(process.env.SMITHERS_REVIEW_QUIZ, session.quiz),
+    ...(inference.concurrency !== undefined ? { concurrency: inference.concurrency } : {}),
     summaryPath,
   });
 

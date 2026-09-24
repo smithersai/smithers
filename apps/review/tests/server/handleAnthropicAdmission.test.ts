@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import type { ReviewWorkerEnv } from "../../src/server/env.ts";
 import { sha256Hex } from "../../src/server/sha256Hex.ts";
 import { handleAnthropic, type HandleAnthropicDeps } from "../../src/server/proxy/handleAnthropic.ts";
+import { PROXY_IN_FLIGHT_LIMIT } from "../../src/server/proxy/proxyInFlightLimit.ts";
 import { buildTestEnv } from "./helpers/buildTestEnv.ts";
 const REPO = "octo/widgets";
 function createReviewWorker(deps: HandleAnthropicDeps & { jwksUrl: string }) {
@@ -91,12 +92,18 @@ for (const [credential, repoCap, sessionCap, keyCap] of [
       spend: number;
     }>();
     release();
-    await Promise.all(responses.map((r) => r.text()));
+    const bodies = await Promise.all(responses.map((r) => r.text()));
     await Promise.all(meterings);
     expect(forwarded).toBe(1);
     expect(reserved!.spend).toBeGreaterThan(0);
     expect(reserved!.spend).toBeLessThanOrEqual(1);
-    expect(responses.filter((r) => r.status === 402)).toHaveLength(5);
+    // An exhausted budget is restored by a person, not a timer: 402, no Retry-After.
+    const refused = responses.flatMap((r, i) => (r.status === 200 ? [] : [{ r, body: JSON.parse(bodies[i]!) }]));
+    expect(refused.map(({ r }) => r.status)).toEqual([402, 402, 402, 402, 402]);
+    for (const { r, body } of refused) {
+      expect(r.headers.get("retry-after")).toBeNull();
+      expect(body.error).toBe("spend cap prevents reservation");
+    }
     const spend = await env.DB.prepare("SELECT SUM(cost_usd) AS spend FROM usage_events").first<{ spend: number }>();
     expect(spend!.spend).toBeLessThanOrEqual(1);
     const session = await env.DB.prepare("SELECT spent_usd FROM sessions").first<{ spent_usd: number }>();
@@ -217,12 +224,21 @@ test("in-flight cap holds ambiguous failures and releases definite rejections", 
   await rejected.text();
   await Promise.all(pending);
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(0);
-  const responses = await Promise.all(Array.from({ length: 6 }, request));
-  await Promise.all(responses.map((r) => r.text()));
+  const responses = await Promise.all(Array.from({ length: PROXY_IN_FLIGHT_LIMIT + 2 }, request));
+  const bodies = await Promise.all(responses.map((r) => r.text()));
   await Promise.all(pending);
-  expect(responses.filter((r) => r.status === 200)).toHaveLength(4);
-  expect(responses.filter((r) => r.status === 402)).toHaveLength(2);
-  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(4);
+  expect(responses.filter((r) => r.status === 200)).toHaveLength(PROXY_IN_FLIGHT_LIMIT);
+  // A full in-flight window reopens when a hold settles, so it is a rate
+  // limit the client parks on, never the terminal 402 of an empty budget.
+  const refused = responses.flatMap((r, i) => (r.status === 200 ? [] : [{ r, body: JSON.parse(bodies[i]!) }]));
+  expect(refused.map(({ r }) => r.status)).toEqual([429, 429]);
+  for (const { r, body } of refused) {
+    expect(Number(r.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(body).toEqual({ error: "in-flight limit reached", repo: REPO, inFlightLimit: PROXY_IN_FLIGHT_LIMIT });
+  }
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(
+    PROXY_IN_FLIGHT_LIMIT,
+  );
 });
 
 test("a truncated stream or a JSON response without usage retains the budget hold", async () => {
@@ -386,8 +402,8 @@ test("holds older than the upstream deadline settle at their reserved cost and f
     await Promise.all(pending);
     return res.status;
   };
-  for (let i = 0; i < 4; i++) expect(await request()).toBe(200);
-  expect(await request()).toBe(402);
+  for (let i = 0; i < PROXY_IN_FLIGHT_LIMIT; i++) expect(await request()).toBe(200);
+  expect(await request()).toBe(429);
   const reserved = (await env.DB.prepare("SELECT SUM(cost_usd) AS usd FROM usage_reservations").first<{ usd: number }>())!
     .usd;
 

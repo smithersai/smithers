@@ -1,3 +1,5 @@
+import { PROXY_IN_FLIGHT_LIMIT } from "../../src/server/proxy/proxyInFlightLimit.ts";
+
 /**
  * Decides how the review subprocess reaches a model, in priority order:
  *
@@ -45,6 +47,8 @@ export interface ResolvedInferenceEnv {
   mode: "byo-anthropic" | "byo-openai" | "proxy";
   /** Env overrides for the review subprocess (merged over `process.env`). */
   env: Record<string, string>;
+  /** The CLI's `--concurrency`; omitted = the CLI's default. */
+  concurrency?: number;
 }
 
 /**
@@ -83,6 +87,8 @@ export function resolveInferenceEnv(input: ResolveInferenceEnvInput): ResolvedIn
   }
   return {
     mode: "proxy",
+    // The proxy refuses calls beyond its per-repo in-flight limit.
+    concurrency: PROXY_IN_FLIGHT_LIMIT,
     env: {
       ANTHROPIC_BASE_URL: input.anthropicBaseUrl,
       ANTHROPIC_API_KEY: input.sessionToken,

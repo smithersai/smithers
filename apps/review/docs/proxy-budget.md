@@ -16,8 +16,11 @@ of four tokens per serialized byte and 4096 framing tokens. All input is
 reserved at the highest input/cache rate. A single conditional SQL insert
 checks session spend and repository month-to-date spend plus all outstanding
 reservations. API-key caps also include reservations. At most four requests
-per repository may be outstanding. Insufficient headroom returns 402;
-unavailable accounting returns 503. Small completed spend alone does not
+per repository may be outstanding (`PROXY_IN_FLIGHT_LIMIT` in
+`src/server/proxy/proxyInFlightLimit.ts`); a fifth returns 429 with
+`Retry-After: 10` so the client parks and retries, and the GitHub Action runs
+the CLI with `--concurrency` at that limit in proxy mode. Insufficient budget
+headroom returns 402; unavailable accounting returns 503. Small completed spend alone does not
 imply enough headroom for another request.
 
 Each admission generates a request ID. Settlement uses it as the usage-event

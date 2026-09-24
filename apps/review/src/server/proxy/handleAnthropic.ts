@@ -9,6 +9,7 @@ import { randomTokenHex } from "../randomTokenHex.ts";
 import { modelPrices } from "./modelPrices.ts";
 import { priceRequest } from "./priceRequest.ts";
 import { reserveUsage } from "./reserveUsage.ts";
+import { PROXY_IN_FLIGHT_LIMIT } from "./proxyInFlightLimit.ts";
 import { retryUsage } from "./retryUsage.ts";
 import { expireHolds } from "./expireHolds.ts";
 import { recordUsage } from "./recordUsage.ts";
@@ -31,6 +32,9 @@ const FORWARDED_HEADERS = new Set(["content-type", "accept", "accept-encoding", 
 
 // Clients need these to back off correctly and to reference upstream errors.
 const PASSTHROUGH_RESPONSE_HEADERS = ["retry-after", "x-request-id"];
+
+// Seconds a client waits before retrying a call refused at the in-flight limit.
+const IN_FLIGHT_RETRY_AFTER_SECONDS = 10;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECT_HOPS = 5;
@@ -206,21 +210,24 @@ export async function handleAnthropic(
   try {
     await retryUsage(env.DB, repo);
     await expireHolds(env.DB, repo, now);
-    if (
-      !(await reserveUsage(env.DB, {
-        requestId,
-        repo,
-        sessionHash,
-        model: priced.model,
-        repoCapUsd,
-        costUsd: priced.costUsd,
-        now,
-      }))
-    ) {
-      return jsonError(402, "spend cap or in-flight limit prevents reservation", {
-        repo,
-        reservedCostUsd: priced.costUsd,
-      });
+    const reservation = await reserveUsage(env.DB, {
+      requestId,
+      repo,
+      sessionHash,
+      model: priced.model,
+      repoCapUsd,
+      costUsd: priced.costUsd,
+      now,
+    });
+    if (reservation === "in_flight_limit") {
+      // The window reopens when an outstanding call settles, so this is a rate
+      // limit the client parks on; a 402 would end the call for good.
+      const refusal = jsonError(429, "in-flight limit reached", { repo, inFlightLimit: PROXY_IN_FLIGHT_LIMIT });
+      refusal.headers.set("retry-after", String(IN_FLIGHT_RETRY_AFTER_SECONDS));
+      return refusal;
+    }
+    if (reservation === "spend_cap") {
+      return jsonError(402, "spend cap prevents reservation", { repo, reservedCostUsd: priced.costUsd });
     }
   } catch (err) {
     return jsonError(503, "budget admission unavailable", { detail: String(err) });

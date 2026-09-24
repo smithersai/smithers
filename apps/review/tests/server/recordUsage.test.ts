@@ -87,9 +87,9 @@ test("outstanding reservations still constrain repository budget after UTC month
     costUsd: 0.6,
     now: Date.UTC(2026, 7, 31, 23, 59),
   };
-  expect(await reserveUsage(env.DB, options)).toBe(true);
-  expect(await reserveUsage(env.DB, { ...options, requestId: "after", now: Date.UTC(2026, 8, 1) })).toBe(false);
-  expect(await reserveUsage(env.DB, options)).toBe(false);
+  expect(await reserveUsage(env.DB, options)).toBe("reserved");
+  expect(await reserveUsage(env.DB, { ...options, requestId: "after", now: Date.UTC(2026, 8, 1) })).toBe("spend_cap");
+  expect(await reserveUsage(env.DB, options)).toBe("spend_cap");
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(1);
 });
 

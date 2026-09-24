@@ -10,7 +10,10 @@ The metered Anthropic proxy (`POST /anthropic/v1/messages` only).
 - `priceRequest.ts`: validate bounded text/local-tool requests and calculate
   a conservative input-plus-output reservation.
 - `reserveUsage.ts`: atomically enforce session, repository and API-key
-  budgets, including outstanding calls and a four-call repository limit.
+  budgets, including outstanding calls, and report whether a refusal is the
+  in-flight limit (429) or spend (402).
+- `proxyInFlightLimit.ts`: the per-repository outstanding-call limit, shared
+  with the action's `--concurrency`.
 - `completedUsage.ts`: require final usage before settling a hold.
 - `parseUsageFromJson.ts` / `parseUsageFromSse.ts`: extract token usage.
 - `recordUsage.ts`: atomically debit, insert an idempotent usage event and

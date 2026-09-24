@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import * as Seat from "@smthrs/agent/Seat";
 import * as DeferredTools from "@smthrs/model/DeferredTools";
 import { resolveInferenceEnv } from "../../action/src/resolveInferenceEnv.ts";
+import { PROXY_IN_FLIGHT_LIMIT } from "../../src/server/proxy/proxyInFlightLimit.ts";
 import { liveSuiteGate } from "../support/liveSuite.ts";
 
 const session = { anthropicBaseUrl: "https://review.test/api/anthropic", sessionToken: "srs_tok" };
@@ -40,6 +41,14 @@ describe("resolveInferenceEnv", () => {
       ANTHROPIC_BASE_URL: "https://review.test/api/anthropic",
       ANTHROPIC_API_KEY: "srs_tok",
     });
+  });
+
+  test("the proxy mode never runs more file reviews than the proxy admits at once", () => {
+    // More simultaneous calls than the proxy's per-repo in-flight limit only
+    // buys 429 parks; the bring-your-own modes keep the CLI's default width.
+    expect(resolveInferenceEnv(session).concurrency).toBe(PROXY_IN_FLIGHT_LIMIT);
+    expect(resolveInferenceEnv({ ...session, anthropicApiKey: "sk-ant" }).concurrency).toBeUndefined();
+    expect(resolveInferenceEnv({ ...session, openaiApiKey: "sk-oai" }).concurrency).toBeUndefined();
   });
 });
 

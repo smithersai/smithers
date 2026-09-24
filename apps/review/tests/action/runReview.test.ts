@@ -127,6 +127,32 @@ describe("runReview", () => {
     }
   }, SPAWN_BUDGET);
 
+  test("appends --concurrency <n> when concurrency is set, and omits it otherwise", async () => {
+    const tmp = await mkdtemp(join(tmpdir(), "smithers-root-"));
+    const log = join(tmp, "node-log.json");
+    process.env.SMITHERS_FAKE_NODE_LOG = log;
+    const base = {
+      smithersRoot: tmp,
+      workspace: "/some/workspace",
+      prNumber: 55,
+      inferenceEnv: {},
+      publishUrl: "https://review.test",
+      publishToken: "srs_tok",
+      nodePath: FAKE_NODE,
+    };
+    try {
+      await runReview({ ...base, concurrency: 4 });
+      let logged = (await Bun.file(log).json()) as { args: string[] };
+      expect(logged.args.slice(-2)).toEqual(["--concurrency", "4"]);
+
+      await runReview(base);
+      logged = (await Bun.file(log).json()) as { args: string[] };
+      expect(logged.args).not.toContain("--concurrency");
+    } finally {
+      await rm(tmp, { recursive: true, force: true });
+    }
+  }, SPAWN_BUDGET);
+
   test("runs with smithersRoot as cwd, not the workspace", async () => {
     const tmp = await mkdtemp(join(tmpdir(), "smithers-root-"));
     const log = join(tmp, "node-log.json");
