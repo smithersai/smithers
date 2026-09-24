@@ -1,4 +1,6 @@
 import { createModelTurnHandler, environmentModelResolver, MODEL_HOST_PROTOCOL } from "@smthrs/model-host"
+import { createModelProbe } from "../../app/src/bun/ModelProbe.ts"
+import { MODEL_TEST_BODY_MAX_BYTES, ModelTestRequestSchema } from "@smthrs/rpc/ConfiguredModel"
 import { createServer } from "node:http"
 import type { IncomingMessage, ServerResponse } from "node:http"
 import { parseArgs } from "node:util"
@@ -44,6 +46,19 @@ const handle = createModelTurnHandler({
   callbackBaseUrl,
   resolve: environmentModelResolver({ binding, env: process.env, maxTokens: requestedMaxTokens })
 })
+const modelProbe = createModelProbe({ env: process.env, egress: true })
+const testModel = async (request: Request): Promise<Response> => {
+  if (request.headers.get("authorization") !== `Bearer ${authorization}`) {
+    return Response.json({ code: "unauthorized" }, { status: 401 })
+  }
+  const bytes = await request.arrayBuffer()
+  if (bytes.byteLength > MODEL_TEST_BODY_MAX_BYTES) return Response.json({ code: "request_invalid" }, { status: 400 })
+  let body: unknown
+  try { body = JSON.parse(new TextDecoder().decode(bytes)) } catch { return Response.json({ code: "request_invalid" }, { status: 400 }) }
+  const parsed = ModelTestRequestSchema.safeParse(body)
+  if (!parsed.success) return Response.json({ code: "request_invalid" }, { status: 400 })
+  return Response.json(await modelProbe.test(parsed.data.model, parsed.data.input))
+}
 const MAX_BODY_BYTES = 2 * 1024 * 1024
 const refuse = (outgoing: ServerResponse, status: number, code: string): void => {
   if (!outgoing.headersSent) outgoing.writeHead(status, { "content-type": "application/json", connection: "close" })
@@ -87,7 +102,9 @@ const server = createServer(async (incoming, outgoing) => {
       ...(method === "GET" || method === "HEAD" ? {} : { body: bytes }),
       signal: abort.signal
     })
-    const response = await handle(request)
+    const response = new URL(request.url).pathname === "/v1/model/test" && method === "POST"
+      ? await testModel(request)
+      : await handle(request)
     outgoing.writeHead(response.status, Object.fromEntries(response.headers.entries()))
     outgoing.end(Buffer.from(await response.arrayBuffer()))
   } catch {
