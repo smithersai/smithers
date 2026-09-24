@@ -57,6 +57,9 @@ import type * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { spawnSync } from "node:child_process"
 import { uptime } from "node:os"
+import { parse } from "node:path"
+import { packageRoot, resolveDefaultExecutable } from "./internal/AtomicFileSystemExecutable.ts"
+import { usableExecutable } from "./internal/AtomicFileSystemTransport.ts"
 import * as PipedProcess from "./internal/PipedProcess.ts"
 import * as ProcessCleanup from "./internal/ProcessCleanup.ts"
 import * as ProcSnapshot from "./internal/ProcSnapshot.ts"
@@ -401,6 +404,8 @@ export interface SystemOptions {
    * ignores it.
    */
   readonly psExecutable?: string | undefined
+  /** Absolute native helper for Windows process identity queries; never a PATH lookup. */
+  readonly processExecutable?: string | undefined
   /**
    * The pid this system must never signal, nor signal the group of. Default
    * `process.pid`. {@link Options.ownerPid} is the same identity at the sweep
@@ -556,9 +561,35 @@ export const posixSystem: System = posixSystemWith()
  */
 export const windowsSystemWith = (options?: SystemOptions): System => {
   const ownerPid = options?.ownerPid ?? process.pid
+  const startedAtMs = (pid: number): StartTime => {
+    if (!Number.isSafeInteger(pid) || pid <= 1 || pid > 0xffff_ffff) return { _tag: "unavailable" }
+    try {
+      const configured = options?.processExecutable ?? process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+      const executable = configured === undefined
+        ? resolveDefaultExecutable(packageRoot, undefined)
+        : usableExecutable(configured, undefined)
+      const result = spawnSync(executable, ["--process-info", String(pid)], {
+        cwd: parse(process.execPath).root,
+        env: {},
+        encoding: "utf8",
+        timeout: psTimeoutMs,
+        killSignal: "SIGKILL",
+        maxBuffer: 4096
+      })
+      if (result.error !== undefined || result.signal !== null || result.status !== 0) return { _tag: "unavailable" }
+      const value = JSON.parse(result.stdout) as { readonly status?: unknown; readonly startedAtMs?: unknown } | null
+      if (value?.status === "gone") return { _tag: "gone" }
+      return value?.status === "started" && typeof value.startedAtMs === "number" &&
+          Number.isSafeInteger(value.startedAtMs) && value.startedAtMs >= 0
+        ? { _tag: "started", startedAtMs: value.startedAtMs }
+        : { _tag: "unavailable" }
+    } catch {
+      return { _tag: "unavailable" }
+    }
+  }
   return {
     isAlive: liveness,
-    startedAtMs: () => ({ _tag: "unsupported" }),
+    startedAtMs,
     ownGroup: () => null,
     bootedAtMs,
     refuseTarget: refuseWindowsTarget,
@@ -581,17 +612,15 @@ export const windowsSystemWith = (options?: SystemOptions): System => {
  * Reaping on Windows, which has no process groups: `taskkill /T /F` by pid.
  *
  * **Windows is outside the 1.0.0-rc.0 support contract**
- * (`docs/pages/installation.md`), and `AtomicFileSystem` fails every filesystem
- * call closed there, so nothing in this repository runs this path in
- * production. It is kept — and reachable through {@link reap} rather than only
+ * (`docs/pages/installation.md`). Full Windows process containment remains
+ * under verification. It is kept — and reachable through {@link reap} rather than only
  * by calling it directly — because a reaper that silently retired every win32
  * record would be the "excluded feature that appears to work partially" the
  * release policy forbids. Treat it as unsupported best-effort.
  *
- * Windows has no `lstart` and no process groups, so two of the guards above
- * cannot be answered here: the identity check falls back to the boot-time
- * comparison alone, and there is no own-group refusal to make. That is a
- * documented weaker guarantee, not an oversight.
+ * The packaged native helper reads creation time from a pinned process handle.
+ * A missing helper, malformed reply, or denied query keeps the durable record
+ * for retry. Windows has no process groups, so own-group refusal uses the pid.
  *
  * @category constructors
  * @since 0.1.0

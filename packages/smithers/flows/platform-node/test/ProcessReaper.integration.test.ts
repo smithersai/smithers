@@ -14,10 +14,12 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { ProcessLedger } from "@smthrs/kernel"
 import { Effect } from "effect"
 import type * as Scope from "effect/Scope"
-import { spawn } from "node:child_process"
+import NativeMutable, { spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { vi } from "vitest"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
@@ -93,9 +95,30 @@ const psShim = (name: string, printed: string, status = 0): string => {
 /** A POSIX system whose identity probe runs `executable`. */
 const withPs = (executable: string) => ProcessReaper.posixSystemWith({ psExecutable: executable })
 
-/** Runs `body` with a `taskkill` on PATH that exits with `status`. */
-const withTaskkill = <A>(status: number, body: () => A): A =>
-  withShim(`taskkill-${status}`, "taskkill", `#!/bin/sh\nexit ${status}\n`, body)
+/** Exercises the native taskkill result without signalling a real process. */
+const withTaskkill = <A>(status: number | Error, body: () => A): A => {
+  const original = NativeMutable.spawnSync
+  const mocked = vi.spyOn(NativeMutable, "spawnSync").mockImplementation((...args: Parameters<typeof original>) => {
+    if (args[0] !== "taskkill") throw new Error("unexpected executable")
+    expect(args[1]).toEqual(["/pid", "4321", "/T", "/F"])
+    return {
+      pid: 0,
+      output: [],
+      stdout: "",
+      stderr: "",
+      signal: null,
+      status: typeof status === "number" ? status : null,
+      ...(status instanceof Error ? { error: status } : {})
+    }
+  })
+  syncBuiltinESMExports()
+  try {
+    return body()
+  } finally {
+    mocked.mockRestore()
+    syncBuiltinESMExports()
+  }
+}
 
 /** Writes one scripted executable and returns the directory holding it. */
 const shimBin = (name: string, command: string, script: string): string => {
@@ -427,18 +450,34 @@ describe("ProcessReaper", () => {
     Effect.gen(function*() {
       const record = { ...target(4321, null, "agent.exe"), startedAtMs: Date.now() }
       const ledger = spyLedger([record])
-      const bin = shimBin("taskkill-reap", "taskkill", `#!/bin/sh\nexit 0\n`)
-      const previous = process.env["PATH"]
-      process.env["PATH"] = `${bin}:${previous ?? ""}`
+      const query = vi.spyOn(NativeMutable, "spawnSync").mockImplementation((executable, args) => {
+        if (args?.[0] === "--process-info") {
+          expect(args).toEqual(["--process-info", "4321"])
+          return {
+            pid: 0,
+            output: [],
+            stdout: JSON.stringify({ status: "started", startedAtMs: record.startedAtMs }),
+            stderr: "",
+            status: 0,
+            signal: null
+          }
+        }
+        expect(executable).toBe("taskkill")
+        expect(args).toEqual(["/pid", "4321", "/T", "/F"])
+        return { pid: 0, output: [], stdout: "", stderr: "", status: 0, signal: null }
+      })
+      syncBuiltinESMExports()
       try {
         const reaped = yield* ProcessReaper.reap({
           ownerPid: 1,
-          system: ProcessReaper.systemFor("win32")
+          system: ProcessReaper.windowsSystemWith({ processExecutable: process.execPath })
         }).pipe(Effect.provideService(ProcessLedger.ProcessLedger, ledger.service))
         expect(reaped).toEqual([{ record, killed: true }])
         expect(ledger.reaped).toEqual([4321])
+        expect(query).toHaveBeenCalledTimes(2)
       } finally {
-        process.env["PATH"] = previous
+        query.mockRestore()
+        syncBuiltinESMExports()
       }
     }))
 
@@ -629,18 +668,19 @@ describe("ProcessReaper", () => {
   })
 
   it("ends a Windows process tree with taskkill, and reads the status it reports", () => {
-    // `taskkill` does not exist on this host, so `spawnSync` reports ENOENT in
-    // its result. A kill that never ran is a kill that failed.
-    expect(ProcessReaper.windowsSystem.killTree(windowsRecord)).toBe("failed")
+    // A native launch refusal must not count as successful cleanup.
+    expect(withTaskkill(new Error("launch refused"), () => ProcessReaper.windowsSystem.killTree(windowsRecord))).toBe(
+      "failed"
+    )
 
-    // The three statuses `taskkill` actually returns, driven against a stand-in
-    // on PATH — the same way `NodeJjClassification` scripts a fake `jj`. This
-    // is the only way the Windows branch is ever exercised in this repository.
+    // Drive all native result statuses without targeting an unrelated pid.
     expect(withTaskkill(0, () => ProcessReaper.windowsSystem.killTree(windowsRecord))).toBe("signalled")
     expect(withTaskkill(128, () => ProcessReaper.windowsSystem.killTree(windowsRecord))).toBe("already-gone")
     expect(withTaskkill(1, () => ProcessReaper.windowsSystem.killTree(windowsRecord))).toBe("failed")
 
-    expect(ProcessReaper.windowsSystem.startedAtMs(process.pid)).toEqual({ _tag: "unsupported" })
+    expect(ProcessReaper.windowsSystem.startedAtMs(process.pid)).toMatchObject({
+      _tag: process.platform === "win32" ? "started" : "unavailable"
+    })
     expect(ProcessReaper.windowsSystem.ownGroup()).toBeNull()
     expect(ProcessReaper.systemFor("win32")).toBe(ProcessReaper.windowsSystem)
     expect(ProcessReaper.systemFor("darwin")).toBe(ProcessReaper.posixSystem)

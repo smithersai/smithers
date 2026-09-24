@@ -1,11 +1,18 @@
 import { ProcessLedger } from "@smthrs/kernel"
 import { Effect, Layer } from "effect"
-import { execFileSync, spawn } from "node:child_process"
+import NativeMutable, { execFileSync, spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, parse } from "node:path"
 import { describe, expect, it, vi } from "vitest"
+import { resolveDefaultExecutable } from "../src/internal/AtomicFileSystemExecutable.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
+
+vi.mock("../src/internal/AtomicFileSystemExecutable.ts", async (original) => {
+  const module = await original<typeof import("../src/internal/AtomicFileSystemExecutable.ts")>()
+  return { ...module, resolveDefaultExecutable: vi.fn(module.resolveDefaultExecutable) }
+})
 
 describe.skipIf(process.platform === "win32")("ProcessReaper start-time timezone", () => {
   it.each(["UTC", "Pacific/Honolulu", "America/New_York"])(
@@ -155,5 +162,105 @@ describe("ProcessReaper over an unreadable ledger history", () => {
       )
     )
     expect(touched).toEqual([])
+  })
+})
+
+describe("Windows native process identity", () => {
+  it("queries a trusted executable with bounded output and no inherited environment", () => {
+    const query = vi.spyOn(NativeMutable, "spawnSync").mockReturnValue({
+      pid: 100,
+      output: [],
+      stdout: JSON.stringify({ status: "started", startedAtMs: 123456 }),
+      stderr: "",
+      status: 0,
+      signal: null
+    })
+    syncBuiltinESMExports()
+    try {
+      const system = ProcessReaper.windowsSystemWith({ processExecutable: process.execPath })
+      expect(system.startedAtMs(4242)).toEqual({ _tag: "started", startedAtMs: 123456 })
+      expect(query).toHaveBeenCalledWith(expect.any(String), ["--process-info", "4242"], {
+        cwd: parse(process.execPath).root,
+        env: {},
+        encoding: "utf8",
+        timeout: 5000,
+        killSignal: "SIGKILL",
+        maxBuffer: 4096
+      })
+      query.mockReturnValueOnce({
+        pid: 100,
+        output: [],
+        stdout: "{\"status\":\"gone\"}",
+        stderr: "",
+        status: 0,
+        signal: null
+      })
+      expect(system.startedAtMs(4242)).toEqual({ _tag: "gone" })
+      const previous = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+      delete process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+      vi.mocked(resolveDefaultExecutable).mockReturnValueOnce(process.execPath)
+      try {
+        expect(ProcessReaper.windowsSystemWith().startedAtMs(4242)).toEqual({ _tag: "started", startedAtMs: 123456 })
+        expect(resolveDefaultExecutable).toHaveBeenCalledWith(expect.any(String), undefined)
+      } finally {
+        if (previous === undefined) delete process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
+        else process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY = previous
+      }
+      query.mockClear()
+      for (const pid of [0, 1, -1, 1.5, NaN, Infinity, 0x1_0000_0000]) {
+        expect(system.startedAtMs(pid)).toEqual({ _tag: "unavailable" })
+      }
+      expect(query).not.toHaveBeenCalled()
+    } finally {
+      query.mockRestore()
+      syncBuiltinESMExports()
+    }
+  })
+
+  it("keeps identity unavailable for denied, interrupted, or malformed queries", () => {
+    const query = vi.spyOn(NativeMutable, "spawnSync")
+    syncBuiltinESMExports()
+    try {
+      const system = ProcessReaper.windowsSystemWith({ processExecutable: process.execPath })
+      const reply = { pid: 100, output: [], stdout: "{}", stderr: "", status: 0, signal: null }
+      for (
+        const stdout of [
+          "invalid",
+          "null",
+          "[]",
+          "{}",
+          "{\"status\":\"unknown\"}",
+          "{\"status\":\"started\"}",
+          "{\"status\":\"started\",\"startedAtMs\":\"1\"}",
+          "{\"status\":\"started\",\"startedAtMs\":-1}",
+          "{\"status\":\"started\",\"startedAtMs\":1.5}",
+          "{\"status\":\"started\",\"startedAtMs\":9007199254740992}"
+        ]
+      ) {
+        query.mockReturnValueOnce({ ...reply, stdout })
+        expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
+      }
+      for (
+        const result of [{ ...reply, error: new Error("denied") }, { ...reply, signal: "SIGKILL" as const }, {
+          ...reply,
+          status: 1
+        }]
+      ) {
+        query.mockReturnValueOnce(result)
+        expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
+      }
+      query.mockImplementationOnce(() => {
+        throw new Error("spawn refused")
+      })
+      expect(system.startedAtMs(4242)).toEqual({ _tag: "unavailable" })
+      query.mockClear()
+      expect(ProcessReaper.windowsSystemWith({ processExecutable: "relative-helper" }).startedAtMs(4242)).toEqual({
+        _tag: "unavailable"
+      })
+      expect(query).not.toHaveBeenCalled()
+    } finally {
+      query.mockRestore()
+      syncBuiltinESMExports()
+    }
   })
 })
