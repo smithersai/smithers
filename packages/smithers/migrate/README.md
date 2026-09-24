@@ -29,24 +29,6 @@ The executable takes the same flags either way, so the rest of this page reads t
 
 ## The shortest real example
 
-`@smthrs/migrate` is not a compatibility library. It rewrites application source onto `Flow`, `Action`, and Effect, archives the sources it replaced, and records every construct it translated, every construct it refused to translate, and every decision left for you. It never recreates the JSX runtime, never embeds a scheduler in application code, never hides an untranslatable construct behind `any`, and never rewrites or resumes 0.x run state.
-
-## Availability
-
-The Smithers 1.0 packages are not on npm yet, so `npx @smthrs/migrate@next` resolves once they publish. Until then, run the tool from a source checkout of the [smithers repository](https://github.com/smithersai/smithers):
-
-```sh
-git clone https://github.com/smithersai/smithers.git
-cd smithers
-pnpm install
-pnpm --filter @smthrs/migrate build
-node packages/smithers/migrate/dist/esm/flow/bin.js --root /path/to/project
-```
-
-The executable takes the same flags either way, so the rest of this page reads the same from a checkout as it will from a registry.
-
-## The shortest real example
-
 ```sh
 npx @smthrs/migrate@next
 ```
