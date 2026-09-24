@@ -76,7 +76,7 @@ it("plans an explicit Filegroup cwd without crossing nested packages or changing
       first.workList.find((node) => (node.attrs as { cwd?: string }).cwd === "other")!
         .declaredInputs[0]!.files[0]!.path
     ).toBe("other/src/value.ts")
-    expect((await TargetIndex.build(index, "//flows:external")).targets[0]!.inputs).toEqual([
+    expect((await TargetIndex.build(index, "//flows:external", process.env)).targets[0]!.inputs).toEqual([
       { kind: "glob", pattern: "lib/src/**/*.ts", exclude: ["lib/**/generated.ts"] }
     ])
     expect(Affected.select(index, "//flows:consumer", ["lib/src/value.ts"])).toMatchObject({

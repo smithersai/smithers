@@ -19,6 +19,7 @@ import { serve } from "./helpers/ServeCli.ts"
 
 const executeFile = promisify(execFile)
 const fixture = NodePath.join(import.meta.dirname, "fixtures", "multi-repo")
+const credentialsFixture = NodePath.join(import.meta.dirname, "fixtures", "multi-repo-credentials")
 const cli = NodePath.resolve(import.meta.dirname, "../src/main.js")
 const temporaryDirectories: Array<string> = []
 
@@ -30,10 +31,10 @@ const git = async (root: string, args: ReadonlyArray<string>): Promise<void> => 
   await executeFile("git", ["-C", root, ...args])
 }
 
-const workspace = async (): Promise<string> => {
+const workspace = async (source: string = fixture): Promise<string> => {
   const root = await Fs.realpath(await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-multi-repo-")))
   temporaryDirectories.push(root)
-  await Fs.cp(fixture, root, { recursive: true })
+  await Fs.cp(source, root, { recursive: true })
   const child = NodePath.join(root, "child")
   await git(child, ["init", "--quiet"])
   await git(child, ["config", "user.name", "Smithers Test"])
@@ -45,12 +46,13 @@ const workspace = async (): Promise<string> => {
 
 const runCli = async (
   cwd: string,
-  args: ReadonlyArray<string>
+  args: ReadonlyArray<string>,
+  environment: Readonly<Record<string, string>> = {}
 ): Promise<{ readonly exitCode: number; readonly stdout: string; readonly stderr: string }> => {
   try {
     const result = await executeFile(process.execPath, [cli, ...args], {
       cwd,
-      env: { ...process.env, NO_COLOR: "1" },
+      env: { ...process.env, ...environment, NO_COLOR: "1" },
       maxBuffer: 4 * 1024 * 1024
     })
     return { exitCode: 0, stdout: result.stdout, stderr: result.stderr }
@@ -73,14 +75,72 @@ const serveCli = async (
   return { exitCode, stdout: output, stderr: logs }
 }
 
+/** Every credential the parent workspace holds; none may reach the child. */
+const parentCredentials = {
+  MY_CACHE_TOKEN: "parent-read-secret",
+  MY_CACHE_WRITE_TOKEN: "parent-write-secret",
+  SMITHERS_CACHE_TOKEN: "parent-default-secret"
+} as const
+
+describe("child repositories never inherit the parent's cache credentials", () => {
+  it("withholds them over the process entry", async () => {
+    const root = await workspace(credentialsFixture)
+    const query = await runCli(root, ["query", "//:childTest", "--format", "json"], parentCredentials)
+    expect(`${query.stdout}\n${query.stderr}`).not.toContain("leaked")
+    expect(query.exitCode).toBe(0)
+    const plan = await runCli(root, ["//:childTest", "--plan"], parentCredentials)
+    expect(`${plan.stdout}\n${plan.stderr}`).not.toContain("leaked")
+    expect(plan.exitCode).toBe(0)
+    const run = await runCli(root, ["//:childTest"], parentCredentials)
+    expect(`${run.stdout}\n${run.stderr}`).not.toContain("leaked")
+    // The child's tool exits 3 on a leak, so a green run proves its env clean.
+    expect(run.stdout).toMatch(/"\/\/:childTest",Repo\.Target,ran,/)
+    expect(run.exitCode).toBe(0)
+  })
+
+  it("withholds them over the in-process CLI, from the host and the injected environment", async () => {
+    const root = await workspace(credentialsFixture)
+    const saved = Object.fromEntries(Object.keys(parentCredentials).map((name) => [name, process.env[name]]))
+    Object.assign(process.env, parentCredentials)
+    try {
+      const run = await serveCli(root, ["//:childTest"])
+      expect(`${run.stdout}\n${run.stderr}`).not.toContain("leaked")
+      expect(`${run.stdout}\n${run.stderr}`).toContain("child repository clean")
+      expect(run.exitCode).toBe(0)
+    } finally {
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[name]
+        else process.env[name] = value
+      }
+    }
+    const injected = await serve(root, ["query", "//:childTest", "--format", "json"], {
+      environment: { ...process.env, ...parentCredentials }
+    })
+    expect(`${injected.output}\n${injected.logs}`).not.toContain("leaked")
+    expect(injected.exitCode).toBe(0)
+  })
+
+  it("keeps process.env out of the repository spawn seam", async () => {
+    const source = await Fs.readFile(NodePath.resolve(import.meta.dirname, "../src/RepoResolution.ts"), "utf8")
+    expect(source).not.toMatch(/process\.env/)
+  })
+
+  it("scrubs the resolver environment of every declared credential name", async () => {
+    const root = await workspace(credentialsFixture)
+    const index = await openPackageIndex({ workspace: root })
+    const resolver = RepoResolution.resolver(index, { ...parentCredentials, SMITHERS_CACHE_URL: "u", KEEP: "1" })
+    expect(resolver.environment).toEqual({ KEEP: "1" })
+  })
+})
+
 describe("opaque local repositories", () => {
   it("memoizes undeclared repository refusals without starting a child", async () => {
     const root = await workspace()
     const index = await openPackageIndex({ workspace: root })
     const target = RepoTarget.Target("missing", "//:test")
-    const cache: RepoResolution.ResolutionCache = new Map()
-    const first = RepoResolution.resolve(index, target, cache)
-    expect(RepoResolution.resolve(index, target, cache)).toBe(first)
+    const resolver = RepoResolution.resolver(index, process.env)
+    const first = RepoResolution.resolve(resolver, target)
+    expect(RepoResolution.resolve(resolver, target)).toBe(first)
     expect(await first).toMatchObject({
       kinds: [],
       refusal: "Repo.Target repository \"missing\" is not declared in Workspace repos"
@@ -93,16 +153,18 @@ describe("opaque local repositories", () => {
     const target = index.resolve("//:childTest")[0]!.target
     const reason = new Error("repository operation cancelled")
     const signal = AbortSignal.abort(reason)
-    const resolution = await RepoResolution.resolve(index, target, new Map(), signal)
+    const resolver = RepoResolution.resolver(index, process.env)
+    const resolution = await RepoResolution.resolve(resolver, target, signal)
     expect(resolution.refusal).toContain(reason.message)
-    await expect(RepoResolution.execute(resolution, { signal })).rejects.toBe(reason)
+    await expect(RepoResolution.execute(resolver, resolution, { signal })).rejects.toBe(reason)
   })
 
   it("reports a non-repository git lookup as a failure, never a clean cache key", async () => {
     const root = await workspace()
     const index = await openPackageIndex({ workspace: root })
-    const resolution = await RepoResolution.resolve(index, RepoTarget.Target("missing", "//:test"), new Map())
-    await expect(RepoResolution.gitState(resolution)).rejects.toThrow("could not read child repository HEAD")
+    const resolver = RepoResolution.resolver(index, process.env)
+    const resolution = await RepoResolution.resolve(resolver, RepoTarget.Target("missing", "//:test"))
+    await expect(RepoResolution.gitState(resolver, resolution)).rejects.toThrow("could not read child repository HEAD")
   })
 
   it("prunes declared repositories from package discovery", async () => {

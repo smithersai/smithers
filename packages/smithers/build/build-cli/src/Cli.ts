@@ -371,7 +371,8 @@ export const openPackageIndex = async (
 /** Evaluates a query against the target index. */
 const packageQuery = async (
   index: PackageIndex.PackageIndex,
-  expression: string
+  expression: string,
+  environment: Readonly<Record<string, string | undefined>>
 ): Promise<Query.Listing | Query.Dependencies | Query.Dependents | Query.PackageOwners> => {
   const dependentsMatch = expression.match(/^rdeps\((.+)\)$/)
   if (dependentsMatch?.[1] !== undefined) {
@@ -421,19 +422,19 @@ const packageQuery = async (
       edges: index.edges(rows)
     }
   }
-  const cache: RepoResolution.ResolutionCache = new Map()
+  const resolver = RepoResolution.resolver(index, environment)
   const rows = index.resolve(expression)
   return {
     query: expression,
     targets: await Promise.all(rows.map(async (row) => {
       const metadata = Target.metadata(row.target)
       const resolution = metadata.target === "Repo.Target"
-        ? await RepoResolution.resolve(index, row.target, cache)
+        ? await RepoResolution.resolve(resolver, row.target)
         : undefined
       return {
         label: row.label,
         target: metadata.target,
-        kinds: await RepoResolution.effectiveKinds(index, row.target, cache),
+        kinds: await RepoResolution.effectiveKinds(resolver, row.target),
         ...presentationOf(metadata),
         ...(resolution?.refusal === undefined ? {} : { refusal: resolution.refusal })
       }
@@ -451,7 +452,8 @@ const presentationOf = (metadata: Target.Metadata): { readonly summary?: string;
 const packageGraph = async (
   index: PackageIndex.PackageIndex,
   pattern: string,
-  mermaid: boolean
+  mermaid: boolean,
+  environment: Readonly<Record<string, string | undefined>>
 ): Promise<{
   readonly rows: ReadonlyArray<GraphOutput.PackageRow>
   readonly edges: ReadonlyArray<GraphOutput.PackageEdge>
@@ -459,10 +461,10 @@ const packageGraph = async (
 }> => {
   const rows = index.resolve(pattern)
   const localEdges = index.edges(rows)
-  const cache: RepoResolution.ResolutionCache = new Map()
+  const resolver = RepoResolution.resolver(index, environment)
   const resolutions = await Promise.all(rows.map(async (row) =>
     Target.metadata(row.target).target === "Repo.Target"
-      ? { row, resolution: await RepoResolution.resolve(index, row.target, cache) }
+      ? { row, resolution: await RepoResolution.resolve(resolver, row.target) }
       : undefined
   ))
   const repositoryEdges = resolutions
@@ -483,7 +485,7 @@ const packageGraph = async (
     return {
       label: row.label,
       target: metadata.target,
-      kinds: await RepoResolution.effectiveKinds(index, row.target, cache),
+      kinds: await RepoResolution.effectiveKinds(resolver, row.target),
       ...presentationOf(metadata),
       ...(resolution?.refusal === undefined ? {} : { refusal: resolution.refusal })
     }
@@ -870,11 +872,11 @@ const runSelected = async (
   }
   const plans: Array<PackageExec.PackagePlan> = []
   const selectedLabels = new Set(labels)
-  const resolutionCache: RepoResolution.ResolutionCache = new Map()
+  const resolver = RepoResolution.resolver(index, environmentOf(config))
   const rows = await Promise.all(
     index.resolve(pattern).map(async (row) => ({
       row,
-      kinds: await RepoResolution.effectiveKinds(index, row.target, resolutionCache)
+      kinds: await RepoResolution.effectiveKinds(resolver, row.target)
     }))
   )
   for (const kind of verb === "ci" ? ciKinds : [verb]) {
@@ -1080,7 +1082,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       options: workspaceOption,
       async run(context) {
         try {
-          const result = await packageQuery(await openPackageIndex(context.options, config), context.args.pattern)
+          const result = await packageQuery(await openPackageIndex(context.options, config), context.args.pattern, environmentOf(config))
           return present(context, config, result, (style) => Query.text(result, style))
         } catch (cause) {
           return context.error({ code: "targets_failed", message: Diagnostic.describe(cause) })
@@ -1131,10 +1133,10 @@ export const makeCli = (config: RuntimeConfig = {}) =>
           })
           const changed = Affected.select(index, context.args.pattern, files)
           const kinds = context.args.verb === "ci" ? ciKinds : [context.args.verb]
-          const resolutionCache: RepoResolution.ResolutionCache = new Map()
+          const resolver = RepoResolution.resolver(index, environmentOf(config))
           const eligibility = await Promise.all(changed.targets.map(async (target) => ({
             target,
-            kinds: await RepoResolution.effectiveKinds(index, index.resolve(target.label)[0]!.target, resolutionCache)
+            kinds: await RepoResolution.effectiveKinds(resolver, index.resolve(target.label)[0]!.target)
           })))
           const selection = {
             ...changed,
@@ -1466,7 +1468,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       async run(context) {
         try {
           const index = await openPackageIndex(context.options, config)
-          const result = await packageQuery(index, context.args.expr)
+          const result = await packageQuery(index, context.args.expr, environmentOf(config))
           return present(context, config, result, (style) => Query.text(result, style))
         } catch (cause) {
           return context.error({ code: "query_failed", exitCode: 1, message: Diagnostic.describe(cause) })
@@ -1482,7 +1484,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       async run(context) {
         try {
           const index = await openPackageIndex(context.options, config)
-          const listing = await TargetIndex.build(index, context.args.pattern, config.signal)
+          const listing = await TargetIndex.build(index, context.args.pattern, environmentOf(config), config.signal)
           return present(context, config, listing, (style) => TargetIndex.text(listing, style))
         } catch (cause) {
           return context.error({ code: "index_failed", exitCode: 1, message: Diagnostic.describe(cause) })
@@ -1525,7 +1527,7 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       async run(context) {
         try {
           const index = await openPackageIndex(context.options, config)
-          const { data, edges, rows } = await packageGraph(index, context.args.pattern, context.options.mermaid)
+          const { data, edges, rows } = await packageGraph(index, context.args.pattern, context.options.mermaid, environmentOf(config))
           // Mermaid is meant for a file or a renderer, never a terminal.
           if (context.options.mermaid) return data
           return present(context, config, data, (style) => GraphOutput.packageText(rows, edges, style))

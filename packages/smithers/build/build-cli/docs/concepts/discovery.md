@@ -131,6 +131,11 @@ child refuses, the row carries a `refusal`. `query` and `graph` both render it
 for a person and carry it in the envelope, so an unresolvable child is visible
 rather than silently absent.
 
+A child repository never inherits the parent's cache credentials. Every child
+spawn drops `SMITHERS_CACHE_URL`, `SMITHERS_CACHE_TOKEN`, and each variable the
+parent workspace names for its remote-cache tokens, so a child that uses a
+remote cache needs a credential under a name the parent does not declare.
+
 ## Where this leaves you
 
 - What a verb can run is exactly what the index holds. If `query '//...'` does

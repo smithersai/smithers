@@ -121,6 +121,8 @@ const sourceOf = (root: string, metadata: Target.Metadata): { readonly file: str
  * Nothing here plans or keys a target: the rows come from the loaded
  * declarations and the index's labeled edges, plus the repository resolution
  * a `Repo.Target` row needs to state its effective kinds or its refusal.
+ * `environment` is the caller's host environment; a child repository query
+ * sees it only after the workspace's cache credentials are withheld.
  *
  * @category querying
  * @since 0.1.0
@@ -128,6 +130,7 @@ const sourceOf = (root: string, metadata: Target.Metadata): { readonly file: str
 export const build = async (
   index: PackageIndex.PackageIndex,
   pattern: string,
+  environment: Readonly<Record<string, string | undefined>>,
   signal?: AbortSignal | undefined
 ): Promise<Listing> => {
   const rows = index.resolve(pattern)
@@ -137,11 +140,11 @@ export const build = async (
     found.add(edge.to)
     dependencies.set(edge.from, found)
   }
-  const cache: RepoResolution.ResolutionCache = new Map()
+  const resolver = RepoResolution.resolver(index, environment)
   const targets = await Promise.all(rows.map(async (row): Promise<Row> => {
     const metadata = Target.metadata(row.target)
     const resolution = metadata.target === "Repo.Target"
-      ? await RepoResolution.resolve(index, row.target, cache, signal)
+      ? await RepoResolution.resolve(resolver, row.target, signal)
       : undefined
     const mode = attrMember(metadata.attrs, "mode")
     const source = sourceOf(index.root, metadata)
@@ -150,7 +153,7 @@ export const build = async (
       package: row.packagePath,
       name: row.label.slice(row.label.lastIndexOf(":") + 1),
       rule: metadata.target,
-      kinds: await RepoResolution.effectiveKinds(index, row.target, cache, signal),
+      kinds: await RepoResolution.effectiveKinds(resolver, row.target, signal),
       ...(metadata.summary === undefined ? {} : { summary: metadata.summary }),
       ...(metadata.featured ? { featured: true as const } : {}),
       ...(typeof mode === "string" ? { mode } : {}),

@@ -288,7 +288,7 @@ interface PlanContext {
   /** Bundler resolve label → resolved graph digest (plan-time, memoized). */
   readonly graphDigests: Map<string, string>
   /** Repo.Target declaration → child query result for this operation. */
-  readonly repoResolutions: RepoResolution.ResolutionCache
+  readonly repoResolutions: RepoResolution.Resolver
   /** Whether Repo.Target must ask the child CLI for its inert plan. */
   readonly childPlan: boolean
   /** Receives the child CLI's plan output, so it reaches the run's terminals. */
@@ -1299,7 +1299,7 @@ const visit = async (
       ),
       context.index.factory
     ),
-    context.index,
+    context.repoResolutions,
     context.signal
   )
 
@@ -1391,23 +1391,22 @@ const visit = async (
     // and reduce a refusing child to node data rather than a parent-load error.
     RepoTarget.attrsOf(target)
     repositoryResolution = await RepoResolution.resolve(
-      context.index,
-      target,
       context.repoResolutions,
+      target,
       context.signal
     )
     if (repositoryResolution.refusal !== undefined) {
       noteRefusal(repositoryResolution.refusal)
     } else {
       try {
-        repositoryState = await RepoResolution.gitState(repositoryResolution, context.signal)
+        repositoryState = await RepoResolution.gitState(context.repoResolutions, repositoryResolution, context.signal)
       } catch (cause) {
         noteRefusal(`child repository @${repositoryResolution.repoName}: ${Diagnostic.describe(cause)}`)
       }
       if (context.childPlan && refusal === undefined) {
         const childLabel = `@${repositoryResolution.repoName}${repositoryResolution.label}`
         try {
-          await RepoResolution.execute(repositoryResolution, {
+          await RepoResolution.execute(context.repoResolutions, repositoryResolution, {
             plan: true,
             write: context.write,
             signal: context.signal,
@@ -2833,9 +2832,8 @@ const visit = async (
     label,
     target: rule,
     kinds: await RepoResolution.effectiveKinds(
-      context.index,
-      target,
       context.repoResolutions,
+      target,
       context.signal
     ),
     attrs,
@@ -3006,12 +3004,17 @@ const withFactory = (rule: string, attrs: unknown, factory: PackageIndexModule.P
 const withTargetIndex = async (
   rule: string,
   attrs: unknown,
-  index: PackageIndexModule.PackageIndex,
+  resolver: RepoResolution.Resolver,
   signal: AbortSignal | undefined
 ): Promise<unknown> => {
   if (rule !== "TargetIndex" || typeof attrs !== "object" || attrs === null) return attrs
   const pattern = (attrs as { readonly pattern?: unknown }).pattern
-  const listing = await TargetIndex.build(index, typeof pattern === "string" ? pattern : "//...", signal)
+  const listing = await TargetIndex.build(
+    resolver.index,
+    typeof pattern === "string" ? pattern : "//...",
+    resolver.environment,
+    signal
+  )
   return { ...attrs, targets: listing.targets }
 }
 
@@ -3071,41 +3074,6 @@ const managerBinaryOf = (workspace: PackageIndexModule.PackageIndex["workspace"]
 }
 
 /**
- * The host environment plan-time tools may see.
- *
- * Execution withholds the default cache names and every name the workspace
- * declares for a remote-cache credential from each spawn. Planning spawns host
- * tools too, over workspace-controlled input: `forge config` evaluates
- * `foundry.toml` and its profile, `go env` honours `GOFLAGS` and `GOTOOLCHAIN`,
- * `nix develop` runs the flake's `shellHook`, and `docker info` talks to the
- * daemon. Stripping only at execution left a declared write token readable by
- * all of them, so the strip happens once here, before the environment is
- * captured, and every plan-time spawn draws from this record rather than from
- * `process.env`.
- *
- * @category planning
- * @since 0.1.0
- */
-export const planEnvironment = (
-  environment: Readonly<Record<string, string | undefined>>,
-  remoteCache: Workspace.RemoteCacheAccess | undefined
-): Readonly<Record<string, string | undefined>> => {
-  const key = (name: string): string => process.platform === "win32" ? name.toUpperCase() : name
-  const withheld = new Set(
-    [
-      "SMITHERS_CACHE_URL",
-      "SMITHERS_CACHE_TOKEN",
-      ...(remoteCache === undefined ? [] : Workspace.credentialEnvNames(remoteCache.credentials))
-    ].map(key)
-  )
-  const scrubbed: Record<string, string | undefined> = {}
-  for (const [name, value] of Object.entries(environment)) {
-    if (!withheld.has(key(name))) scrubbed[name] = value
-  }
-  return scrubbed
-}
-
-/**
  * Plans one PACKAGE.ts invocation: resolves roots, walks the graph,
  * resolves tools, and keys every node.
  *
@@ -3123,12 +3091,12 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
   const rows = index.resolve(options.pattern).filter((row) =>
     !omitExclusive || !Target.isExclusive(Target.metadata(row.target).attrs)
   )
-  const repoResolutions: RepoResolution.ResolutionCache = new Map()
+  const repoResolutions = RepoResolution.resolver(index, options.environment ?? process.env)
   const eligible = verb === "auto"
     ? rows
     : (await Promise.all(rows.map(async (row) => ({
       row,
-      kinds: await RepoResolution.effectiveKinds(index, row.target, repoResolutions, options.signal)
+      kinds: await RepoResolution.effectiveKinds(repoResolutions, row.target, options.signal)
     })))).filter((entry) => entry.kinds.includes(verb)).map((entry) => entry.row)
   // `ci` plans each kind it aggregates with the bare verb, so a rule that
   // spawns an agent under `docs` would be selected by the aggregate's `docs`
@@ -3168,7 +3136,7 @@ export const plan = async (options: RunOptions): Promise<PackagePlan> => {
   // A declared environment resolves once per plan and fails closed: the
   // host's PATH is never consulted for a tool the workspace said comes from
   // the closure.
-  const hostEnvironment = planEnvironment(options.environment ?? process.env, options.remoteCache)
+  const hostEnvironment = Workspace.withheldEnvironment(options.environment ?? process.env, options.remoteCache?.credentials)
   const nixDeclaration = WorkspaceDeclaration.nixEnvironment(workspace)
   const nixEnvironment = nixDeclaration === undefined
     ? undefined

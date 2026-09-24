@@ -115,6 +115,38 @@ export const credentialEnvNames = (
 }
 
 /**
+ * The host environment a child process may see.
+ *
+ * Withholds the default cache names and every name the workspace declares for
+ * a remote-cache credential. Planning spawns host tools over workspace-controlled
+ * input (`forge config`, `go env`, `nix develop`, `docker info`), and a
+ * `Repo.Target` spawns this CLI in a child repository that evaluates its own
+ * declarations. Every such spawn draws from this record rather than from
+ * `process.env`, so a declared token never reaches code it was not meant for.
+ *
+ * @category discovery
+ * @since 0.1.0
+ */
+export const withheldEnvironment = (
+  environment: Readonly<Record<string, string | undefined>>,
+  credentials: ResolvedRemoteCacheCredentials | undefined
+): Readonly<Record<string, string | undefined>> => {
+  const key = (name: string): string => process.platform === "win32" ? name.toUpperCase() : name
+  const withheld = new Set(
+    [
+      "SMITHERS_CACHE_URL",
+      "SMITHERS_CACHE_TOKEN",
+      ...(credentials === undefined ? [] : credentialEnvNames(credentials))
+    ].map(key)
+  )
+  const scrubbed: Record<string, string | undefined> = {}
+  for (const [name, value] of Object.entries(environment)) {
+    if (!withheld.has(key(name))) scrubbed[name] = value
+  }
+  return scrubbed
+}
+
+/**
  * A resolved remote cache with the readers that fetch its credentials.
  *
  * The readers are invoked only while an outbound request is being built, so a

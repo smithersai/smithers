@@ -13,6 +13,7 @@ import * as Target from "@smthrs/targets/Target"
 import { spawn } from "node:child_process"
 import * as NodePath from "node:path"
 import type * as PackageIndex from "./PackageIndex.ts"
+import * as Workspace from "./Workspace.ts"
 
 /**
  * The source entry point every child invocation executes.
@@ -75,12 +76,54 @@ export class ExecutionError extends Error {
 }
 
 /**
- * Per-operation repository resolution promises, keyed by target identity.
+ * One operation's view of the workspace's child repositories: the index, the
+ * environment every child spawn inherits, and the memoized resolutions keyed
+ * by target identity.
+ *
+ * The environment is scrubbed on construction, so no child repository ever
+ * inherits the parent's remote-cache credentials. Only `resolver` builds one.
  *
  * @category models
  * @since 0.1.0
  */
-export type ResolutionCache = Map<Target.AnyTarget, Promise<Resolution>>
+export class Resolver {
+  readonly index: PackageIndex.PackageIndex
+  readonly environment: Readonly<Record<string, string | undefined>>
+  readonly cache = new Map<Target.AnyTarget, Promise<Resolution>>()
+
+  private constructor(
+    index: PackageIndex.PackageIndex,
+    environment: Readonly<Record<string, string | undefined>>
+  ) {
+    this.index = index
+    this.environment = environment
+  }
+
+  /** @internal */
+  static make(
+    index: PackageIndex.PackageIndex,
+    environment: Readonly<Record<string, string | undefined>>
+  ): Resolver {
+    return new Resolver(index, environment)
+  }
+}
+
+/**
+ * Builds the resolver one operation shares. `ambient` is the caller's host
+ * environment; the default cache names and every credential name the
+ * workspace declares are withheld from it before any child sees it.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const resolver = (
+  index: PackageIndex.PackageIndex,
+  ambient: Readonly<Record<string, string | undefined>>
+): Resolver =>
+  Resolver.make(
+    index,
+    Workspace.withheldEnvironment(ambient, Workspace.remoteCacheOf(index.workspace.cache.remote)?.credentials)
+  )
 
 interface ProcessResult {
   readonly exitCode: number
@@ -95,11 +138,12 @@ const diagnosticTail = 8 * 1024
 const runProcess = (
   cwd: string,
   argv: readonly [string, ...Array<string>],
+  env: Readonly<Record<string, string | undefined>>,
   signal?: AbortSignal | undefined
 ): Promise<ProcessResult> =>
   new Promise((resolve, reject) => {
     const [command, ...args] = argv
-    const child = spawn(command, args, { cwd, env: process.env, stdio: ["ignore", "pipe", "pipe"] })
+    const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] })
     const stdout: Array<Buffer> = []
     const stderr: Array<Buffer> = []
     let bytes = 0
@@ -173,10 +217,11 @@ const refused = (
 })
 
 const query = async (
-  index: PackageIndex.PackageIndex,
+  resolver: Resolver,
   target: Target.AnyTarget,
   signal?: AbortSignal | undefined
 ): Promise<Resolution> => {
+  const index = resolver.index
   const attrs = RepoTarget.attrsOf(target)
   const repository = repositoryOf(index, attrs.repo)
   if (repository === undefined) {
@@ -201,6 +246,7 @@ const query = async (
     const result = await runProcess(
       absolutePath,
       [process.execPath, buildCliPath, "query", attrs.label, "--workspace", absolutePath, "--format", "json"],
+      resolver.environment,
       signal
     )
     if (result.exitCode !== 0) {
@@ -245,15 +291,14 @@ const query = async (
  * @since 0.1.0
  */
 export const resolve = (
-  index: PackageIndex.PackageIndex,
+  resolver: Resolver,
   target: Target.AnyTarget,
-  cache: ResolutionCache,
   signal?: AbortSignal | undefined
 ): Promise<Resolution> => {
-  const existing = cache.get(target)
+  const existing = resolver.cache.get(target)
   if (existing !== undefined) return existing
-  const pending = query(index, target, signal)
-  cache.set(target, pending)
+  const pending = query(resolver, target, signal)
+  resolver.cache.set(target, pending)
   return pending
 }
 
@@ -265,15 +310,14 @@ export const resolve = (
  * @since 0.1.0
  */
 export const effectiveKinds = async (
-  index: PackageIndex.PackageIndex,
+  resolver: Resolver,
   target: Target.AnyTarget,
-  cache: ResolutionCache,
   signal?: AbortSignal | undefined
 ): Promise<ReadonlyArray<Target.Kind>> => {
   const metadata = Target.metadata(target)
-  if (metadata.target === "Repo.Target") return (await resolve(index, target, cache, signal)).kinds
+  if (metadata.target === "Repo.Target") return (await resolve(resolver, target, signal)).kinds
   if (metadata.target === "Alias" && metadata.dependencies[0] !== undefined) {
-    return effectiveKinds(index, metadata.dependencies[0], cache, signal)
+    return effectiveKinds(resolver, metadata.dependencies[0], signal)
   }
   return metadata.kinds
 }
@@ -285,18 +329,21 @@ export const effectiveKinds = async (
  * @since 0.1.0
  */
 export const gitState = async (
+  resolver: Resolver,
   resolution: Resolution,
   signal?: AbortSignal | undefined
 ): Promise<GitState> => {
   const head = await runProcess(
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "rev-parse", "HEAD"],
+    resolver.environment,
     signal
   )
   if (head.exitCode !== 0) throw new Error(`could not read child repository HEAD: ${tail(head.stderr || head.stdout)}`)
   const status = await runProcess(
     resolution.absolutePath,
     ["git", "-C", resolution.absolutePath, "status", "--porcelain"],
+    resolver.environment,
     signal
   )
   if (status.exitCode !== 0) {
@@ -306,7 +353,8 @@ export const gitState = async (
 }
 
 /**
- * Executes one repository target through this CLI and streams both output
+ * Executes one repository target through this CLI, under the resolver's
+ * scrubbed environment, and streams both output
  * pipes to `output` while retaining a bounded diagnostic tail. `output`
  * defaults to the parent process streams; a run passes its reporter so an
  * injected terminal receives the child's output.
@@ -315,6 +363,7 @@ export const gitState = async (
  * @since 0.1.0
  */
 export const execute = (
+  resolver: Resolver,
   resolution: Resolution,
   options: {
     readonly write?: boolean | undefined
@@ -336,7 +385,7 @@ export const execute = (
     const child = spawn(process.execPath, args, {
       cwd: resolution.absolutePath,
       detached: true,
-      env: { ...process.env, SMTHRS_REPO_CHILD: "1" },
+      env: { ...resolver.environment, SMTHRS_REPO_CHILD: "1" },
       stdio: ["ignore", "pipe", "pipe"]
     })
     let stderrTail = ""

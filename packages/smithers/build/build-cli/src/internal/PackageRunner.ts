@@ -63,7 +63,6 @@ import {
   decodeStoredResolve,
   keyMaterialWithGraph,
   managerFilesOf,
-  planEnvironment,
   staticPrefixOf,
   takesExclusiveTreePermit,
   workspaceRootToken
@@ -319,6 +318,9 @@ export const executeEffect = (
     const credentialNames = options.remoteCache === undefined
       ? []
       : Workspace.credentialEnvNames(options.remoteCache.credentials)
+    // A child repository runs this CLI over its own declarations; it inherits
+    // the same scrubbed environment, never the parent's cache credentials.
+    const repoResolutions = RepoResolution.resolver(index, options.environment ?? process.env)
     const reports = new Map<string, Executor.TargetReport>()
     const notGreen = new Set<string>()
     const byLabel = new Map(planned.workList.map((node) => [node.label, node]))
@@ -740,7 +742,7 @@ export const executeEffect = (
               label: key,
               cwd: Exec.resolveWorkspacePath(treeRoot, serveNode.cwd),
               attrs,
-              environment: planEnvironment(options.environment ?? process.env, options.remoteCache)
+              environment: Workspace.withheldEnvironment(options.environment ?? process.env, options.remoteCache?.credentials)
             })
           )
         }
@@ -1935,7 +1937,7 @@ export const executeEffect = (
                 )
               }
               yield* joined((signal) =>
-                RepoResolution.execute(lane.resolution, {
+                RepoResolution.execute(repoResolutions, lane.resolution, {
                   write: options.write,
                   signal,
                   output: (stream, text) => reporter.toolOutput(node.label, stream, text)

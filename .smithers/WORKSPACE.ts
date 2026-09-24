@@ -63,6 +63,9 @@ export const Workspace = S.Workspace("smithers", {
     "fixture-chain-exec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/chain-exec"),
     "fixture-force-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/force-spec"),
     "fixture-multi-repo": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/multi-repo"),
+    "fixture-multi-repo-credentials": S.LocalRepository(
+      "packages/smithers/build/build-cli/test/fixtures/multi-repo-credentials"
+    ),
     "fixture-steps-form": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/steps-form"),
     "fixture-target-body": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/target-body"),
     "fixture-viem-node-spec": S.LocalRepository("packages/smithers/build/build-cli/test/fixtures/viem-node-spec"),
