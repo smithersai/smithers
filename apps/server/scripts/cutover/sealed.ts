@@ -1,7 +1,11 @@
 import type { SealedSnapshot } from "../../src/SealedSnapshot"
 
 const bytes = (value: string) => Uint8Array.from(atob(value), char => char.charCodeAt(0))
-export interface SnapshotPayload { entries: Array<[string, unknown]>; alarm: number | null; migrationContext?: { keyVersion: "model-vault:v1"; modelVaultKey: string | null } }
+export interface SnapshotPayload {
+  entries: Array<[string, unknown]>; alarm: number | null; migrationContext?: { keyVersion: "model-vault:v1"; modelVaultKey: string | null }
+  /** Raw rows of the reserved fenced-alarm table; never part of product `entries`. */
+  cutoverAlarmMarkers?: string[]
+}
 export const openSnapshot = async (sealed: SealedSnapshot, privateJwk: JsonWebKey): Promise<SnapshotPayload> => {
   if (sealed.algorithm !== "RSA-OAEP-256+A256GCM" || sealed.metadata.version !== 1 || sealed.metadata.schema !== "smithers-do-storage/v1") throw new Error("Unsupported encrypted snapshot")
   const privateKey = await crypto.subtle.importKey("jwk", privateJwk, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["unwrapKey"])

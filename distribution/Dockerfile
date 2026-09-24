@@ -65,10 +65,10 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc .pnpmfile.mjs tsconf
 COPY patches patches
 COPY packages packages
 COPY flows flows
+COPY factory factory
 COPY evals evals
 COPY apps apps
 COPY examples examples
-COPY evals evals
 COPY scripts scripts
 COPY distribution/flow-host-manifest.mjs distribution/flow-host-manifest.mjs
 COPY --from=flows-jj /src/packages/smithers/flows/jj/wasm/flows_jj.wasm packages/smithers/flows/jj/wasm/flows_jj.wasm

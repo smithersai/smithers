@@ -35,14 +35,38 @@
  * read afterwards, so `scripts/canary/build-probe.ts` can hold the deployment
  * to the claim.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { WORKER_IDENTITY } from "../src/workerIdentity"
 import { judgeRevision, readRevisionFacts, wranglerDeployArgs } from "./deployRevision"
+import { readWranglerConfig } from "../src/wranglerConfig"
+import { artifactDigest, authorizeActivation, classifyLocal, DeployGuardRefusal, liveFactsFromCloudflare, preflightDeploy, sha256, verifyActivated, type ActivationAuthorization, type GuardDecision } from "./deployGuard"
 
 const dryRun = process.argv.includes("--dry-run")
+
+/*
+ * Cutover interlock (scripts/deployGuard.ts). The first act of a real deploy,
+ * before any revision read, build or wrangler spawn: this checkout's entry
+ * against the live version's entry and annotations. Normal CI cannot undo a
+ * live cutover-installer version, cannot bring the legacy writer back over the
+ * shared edge, and cannot activate the edge except over the final fence with
+ * the release gate's authorization. Anything unrecognized refuses.
+ */
+const guardRefused = (error: unknown): never => {
+  console.error(`[deploy] cutover interlock refused: ${error instanceof DeployGuardRefusal ? error.message : "DEPLOY_GUARD_UNCLASSIFIED"}`)
+  process.exit(1)
+}
+let guard: GuardDecision | null = null
+try {
+  const local = classifyLocal(readWranglerConfig().main, WORKER_IDENTITY.entry)
+  if (dryRun) console.log(`[deploy] cutover interlock: dry run of the ${local} entry; the live version is not read.`)
+  else {
+    guard = await preflightDeploy(WORKER_IDENTITY.name, readWranglerConfig().main, WORKER_IDENTITY.entry)
+    console.log(`[deploy] cutover interlock: ${guard.mode} (local ${guard.local}, live ${guard.live} ${guard.liveVersion})`)
+  }
+} catch (error) { guardRefused(error) }
 
 const serverDir = fileURLToPath(new URL("..", import.meta.url))
 const uiDir = fileURLToPath(new URL("../../app", import.meta.url))
@@ -138,6 +162,8 @@ const accountId = process.env.CLOUDFLARE_ACCOUNT_ID ?? WORKER_IDENTITY.accountId
 const wranglerEnv = { CLOUDFLARE_ACCOUNT_ID: accountId }
 
 let versionId: string | null = null
+let activation: (ActivationAuthorization & { readonly artifactSHA256: string }) | null = null
+let dryRunArtifactSHA256: string | null = null
 
 if (dryRun) {
   const outdir = mkdtempSync(join(tmpdir(), "smithers-mvp-web-dry-run-"))
@@ -148,10 +174,33 @@ if (dryRun) {
     process.exit(plan.exitCode)
   }
   console.log("[deploy] the dry run reads no live script; run `bun scripts/adopt-durable-objects.ts` for the identity verdict.")
+  // The digest an edge activation must match: the release gate records it from this rehearsal.
+  dryRunArtifactSHA256 = artifactDigest(Object.fromEntries(readdirSync(outdir).filter(name => name.endsWith(".js")).map(name => [name, sha256(readFileSync(join(outdir, name)))])))
+  console.log(`[deploy] artifact ${dryRunArtifactSHA256}`)
 } else {
   if (apiToken === undefined || apiToken === "") {
     console.error("[deploy] CLOUDFLARE_API_TOKEN is unset; a real deploy needs it (see DEPLOY.md).")
     process.exit(1)
+  }
+  /*
+   * Edge activation replaces the final fence with the exact artifact the
+   * release gate rehearsed: bundle it, digest its code modules, and ask the
+   * gate, which holds the production lease and the verified cutover and
+   * import receipts. No authorization, no deploy.
+   */
+  if (guard?.mode === "activation") {
+    const outdir = mkdtempSync(join(tmpdir(), "smithers-mvp-web-activation-"))
+    const bundle = await run(wrangler("deploy", "--dry-run", "--outdir", outdir), { cwd: serverDir, env: wranglerEnv })
+    if (bundle.exitCode !== 0) {
+      console.error("[deploy] the activation artifact could not be bundled.")
+      process.exit(bundle.exitCode)
+    }
+    const artifactSHA256 = artifactDigest(Object.fromEntries(readdirSync(outdir).filter(name => name.endsWith(".js")).map(name => [name, sha256(readFileSync(join(outdir, name)))])))
+    try {
+      activation = { ...authorizeActivation({ schema: "smithers-edge-activation-request/v1", worker: WORKER_IDENTITY.name, smithersRevision: gitSha, artifactSHA256,
+        liveVersion: guard.liveVersion, cutoverExecutionID: guard.executionID }), artifactSHA256 }
+    } catch (error) { guardRefused(error) }
+    console.log(`[deploy] edge activation authorized by lease ${activation!.lockTag} for artifact ${artifactSHA256}`)
   }
   console.log("[deploy] identity preflight (scripts/adopt-durable-objects.ts)...")
   const preflight = await run(["bun", "scripts/adopt-durable-objects.ts"], { cwd: serverDir, env: wranglerEnv })
@@ -159,6 +208,10 @@ if (dryRun) {
     console.error("[deploy] the preflight is red; not deploying. A Durable Object mismatch is data loss.")
     process.exit(preflight.exitCode)
   }
+  // The live version the interlock judged must still be the one being replaced.
+  try {
+    if ((await liveFactsFromCloudflare(WORKER_IDENTITY.name)).versionId !== guard!.liveVersion) throw new DeployGuardRefusal("DEPLOY_GUARD_LIVE_CHANGED", "the live version changed after the interlock judged it")
+  } catch (error) { guardRefused(error) }
   console.log(`[deploy] wrangler deploy --tag ${verdict.tag} ...`)
   const deploy = await run(wrangler(...wranglerDeployArgs(verdict)), { cwd: serverDir, env: wranglerEnv, capture: true })
   if (deploy.exitCode !== 0) {
@@ -181,6 +234,9 @@ if (dryRun) {
     console.error("[deploy] Check the account with `bun scripts/canary/rollback-probe.ts`, then re-run, or record the id by hand.")
     process.exit(1)
   }
+  if (activation) {
+    try { verifyActivated(await liveFactsFromCloudflare(WORKER_IDENTITY.name), activation.artifactSHA256) } catch (error) { guardRefused(error) }
+  }
 }
 
 /*
@@ -198,7 +254,9 @@ const receipt = {
   wranglerVersionId: versionId,
   versionTag: verdict.tag,
   versionMessage: verdict.message,
-  runUrl
+  runUrl,
+  artifactSHA256: dryRun ? dryRunArtifactSHA256 : activation?.artifactSHA256 ?? null,
+  cutoverInterlock: guard === null ? null : { ...guard, activation }
 }
 
 const receiptDir = dryRun ? `${serverDir}deploy-receipts/dry-run` : `${serverDir}deploy-receipts`

@@ -8,7 +8,10 @@ import { authenticatedExport, encodeStored, sealSnapshot, SnapshotFailure } from
 import type { NativeRecommendStorage } from "./recommend"
 
 export const EXPORT_PATH = "/__maintenance/state-export"
-export const EXPORT_BINDINGS = ["TURN_CANCELS", "GATEWAY_SESSIONS", "TURN_LIMITS", "CLIENT_ERRORS", "RECOMMEND_LOG", "MODEL_VAULTS", "IDENTITY"] as const
+/** Reserved maintenance table written only by a fenced alarm. SQLite-only; product KV reads never see it. */
+export const ALARM_MARKER_TABLE = "_smithers_cutover_alarm_v1"
+export interface MarkerSql { exec(query: string, ...bindings: unknown[]): { toArray(): Array<Record<string, unknown>> } }
+export const EXPORT_BINDINGS = ["TURN_CANCELS", "GATEWAY_SESSIONS", "TURN_LIMITS", "CLIENT_ERRORS", "RECOMMEND_LOG", "MODEL_VAULTS", "IDENTITY", "ACCOUNTS", "CHAT_HISTORY", "PUSH_SUBSCRIPTIONS", "BRANCH_SYNC", "HOOKS", "OWNERS", "RECO", "GUARDIAN_STORE", "PAIR_DO", "REPO_DO", "WORKSPACE_DO"] as const
 export interface ExportSettings {
   readonly SMITHERS_EXPORT_TOKEN?: string
   readonly SMITHERS_EXPORT_RECIPIENT?: string
@@ -23,6 +26,19 @@ interface SnapshotStorage extends NativeStorage, NativeRecommendStorage {
   readonly delete: (key: string) => Promise<boolean>
   readonly put: (key: string | Record<string, unknown>, value?: unknown) => Promise<void>
   readonly list: <T>(options: { prefix: string; limit: number; startAfter?: string; reverse?: boolean }) => Promise<Map<string, T>>
+  readonly sql?: MarkerSql
+  readonly sync?: () => Promise<void>
+}
+/** Read-only: never creates the table, so exporting an object that was never fenced changes nothing. */
+const alarmMarkers = (storage: SnapshotStorage): string[] => {
+  const sql = sqlOf(storage)
+  if (!sql) return []
+  if (!sql.exec("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", ALARM_MARKER_TABLE).toArray().length) return []
+  return sql.exec(`SELECT marker FROM ${ALARM_MARKER_TABLE} ORDER BY execution_id`).toArray().map(row => String(row.marker))
+}
+/** On a KV-backed object the platform's `sql` getter itself throws; such an object cannot hold markers. */
+export const sqlOf = (storage: { readonly sql?: MarkerSql } | undefined): MarkerSql | undefined => {
+  try { return storage?.sql } catch { return undefined }
 }
 interface ExportContext {
   readonly id: { readonly toString: () => string }
@@ -31,7 +47,7 @@ interface ExportContext {
 }
 interface LegacyObject {
   fetch(request: Request): Promise<Response>
-  alarm?(): Promise<void>
+  alarm?(info?: { readonly retryCount?: number }): Promise<void>
 }
 type LegacyClass = new (ctx: ExportContext, env: MaintenanceEnv) => LegacyObject
 
@@ -42,7 +58,7 @@ const enabled = (env: ExportSettings): boolean => {
   const expires = Date.parse(env.SMITHERS_EXPORT_EXPIRES_AT ?? "")
   const remaining = expires - Date.now()
   return remaining > 0 && remaining <= 86_400_000 && !!env.SMITHERS_EXPORT_RECIPIENT &&
-    /^[a-f0-9]{40}$/.test(env.SMITHERS_EXPORT_SOURCE_REVISION ?? "") &&
+    /^(?:[a-f0-9]{40}|sha256:[a-f0-9]{64})$/.test(env.SMITHERS_EXPORT_SOURCE_REVISION ?? "") &&
     z.uuid().safeParse(env.SMITHERS_EXPORT_SOURCE_VERSION).success
 }
 const authorized = (request: Request, env: ExportSettings) =>
@@ -78,7 +94,7 @@ const objectSnapshot = (ctx: ExportContext, env: ExportSettings, binding: string
   const recipient = yield* Effect.try({ try: () => JSON.parse(env.SMITHERS_EXPORT_RECIPIENT!) as JsonWebKey, catch: () => new SnapshotFailure({ code: "invalid_export_recipient" }) })
   const sealed = yield* sealSnapshot({ version: 1, schema: "smithers-do-storage/v1", keyVersion: binding === "MODEL_VAULTS" ? "model-vault:v1" : null,
     ...input, sourceRevision: env.SMITHERS_EXPORT_SOURCE_REVISION!, sourceVersion: env.SMITHERS_EXPORT_SOURCE_VERSION!, capturedAt: new Date().toISOString() },
-    { entries, alarm, ...(binding === "MODEL_VAULTS" ? { migrationContext: { keyVersion: "model-vault:v1", modelVaultKey: env.MODEL_VAULT_KEY ?? null } } : {}) }, recipient)
+    { entries, alarm, cutoverAlarmMarkers: yield* Effect.try({ try: () => alarmMarkers(ctx.storage), catch: () => new SnapshotFailure({ code: "snapshot_read_failed" }) }), ...(binding === "MODEL_VAULTS" ? { migrationContext: { keyVersion: "model-vault:v1", modelVaultKey: env.MODEL_VAULT_KEY ?? null } } : {}) }, recipient)
   return Response.json(sealed, { headers: { "cache-control": "no-store" } })
 }).pipe(Effect.catch(() => Effect.succeed(response(503, "snapshot_unavailable"))))
 
@@ -103,7 +119,7 @@ export const maintenanceExport = (request: Request, env: MaintenanceEnv): Promis
   if (!(yield* authorized(request, env))) return response(404, "not_found")
   if (request.method !== "POST") return response(405, "method_not_allowed")
   const input: ExportInput = yield* decode(request)
-  const namespace = env[input.binding] as unknown as ByIdNamespace | undefined
+  const namespace = (env as unknown as Record<string, ByIdNamespace | undefined>)[input.binding]
   if (!namespace || typeof namespace.idFromString !== "function") return response(503, "export_binding_unavailable")
   return yield* Effect.tryPromise({
     try: () => namespace.get(namespace.idFromString(input.objectId)).fetch(new Request(`https://state-export.internal${EXPORT_PATH}`, {

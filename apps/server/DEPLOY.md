@@ -711,3 +711,14 @@ Deploy the Worker **and site assets** through `bun apps/server/scripts/deploy.ts
 this change needs both the route and the web identity refresh wiring. The
 real-router regression lives in `apps/app/src/mainview/state/seams/CloudSeam.test.ts`;
 `apps/server/src/cloudSession.test.ts` covers exchange and scope failures.
+
+## Cutover interlock
+
+Every real deploy first runs `scripts/deployGuard.ts`, before it reads the revision, builds or spawns wrangler. It compares this checkout's entry (`src/index.ts` legacy, `src/edge.ts` shared edge) with the live version's entry module and annotations:
+
+| checkout \ live | legacy `index.js` | edge `edge.js` | cutover admission / maintenance export | cutover fence |
+| --- | --- | --- | --- | --- |
+| legacy | deploys | refuses | refuses | refuses |
+| edge | refuses | deploys | refuses | activation only |
+
+Activation replaces the final fence with the exact artifact the release gate rehearsed. Its digest is in `deploy.ts --dry-run`'s receipt (`artifactSHA256`). The gate's hook (`SMITHERS_EDGE_ACTIVATION_AUTHORIZE`, subcommand `authorize-edge`) must authorize it while holding the production lease and naming the verified cutover and import receipts. There is no override flag. An unrecognized or contradictory live version refuses. While the shared edge is on main before the cutover, CI deploys refuse with `DEPLOY_GUARD_EDGE_BEFORE_CUTOVER`.
