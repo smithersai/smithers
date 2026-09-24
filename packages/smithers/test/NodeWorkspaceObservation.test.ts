@@ -84,6 +84,16 @@ describe("NodeWorkspaceObservation.host", () => {
     expect((await native(root)).digest).not.toBe(before.digest)
   })
 
+  it("skips workspace caches and worktrees", async () => {
+    const root = workspace()
+    write(root, "kept.ts", "one")
+    const before = await native(root)
+    for (const name of [".artifacts", ".backend-go-modcache", ".pnpm-store", ".worktrees", "worktrees"]) {
+      write(root, `${name}/generated.ts`, "generated")
+    }
+    expect(await native(root)).toEqual(before)
+  })
+
   it("reports a missing directory as NotFound, so the walk reads it as movement", async () => {
     const root = workspace()
 

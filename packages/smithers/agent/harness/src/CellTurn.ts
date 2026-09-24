@@ -2661,7 +2661,11 @@ const frame = (
         text: ran.frame.prints
       })
     )
-    const closed = yield* witness(engine, state, cell.digest, "close")
+    // A partial prefix cannot provide a workspace digest. Carry it forward
+    // without paying for another walk on this or later frames.
+    const closed = Option.isSome(opened) && !opened.value.complete
+      ? opened
+      : yield* witness(engine, state, cell.digest, "close")
     yield* emit(
       new AgentEvent.CellSettled({
         eventType: eventType.cellSettled,

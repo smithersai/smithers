@@ -1635,7 +1635,7 @@ describe("CellTurn observed mutation", () => {
   })
 
   it("sets aside a measurement that stopped at its path bound", async () => {
-    const { events, failure } = await shell(
+    const { events, failure, engine } = await shell(
       [declaring, declaring, declaring, declaring, declaring],
       Array.from({ length: 5 }, () => ({ _tag: "Success", value: null }) as const),
       { cap: 2, tree: "prefix-of-the-tree", treeComplete: false, maxFrames: 5 }
@@ -1647,6 +1647,7 @@ describe("CellTurn observed mutation", () => {
     // likely to be a tool's own churn.
     expect(of(events, "mutation-observed").every((event) => event.basis === "partial")).toBe(true)
     expect(of(events, "mutation-observed").map((event) => event.mutated)).toEqual([true, true, true, true, true])
+    expect(engine.recorder.records.filter((record) => record.name.startsWith("workspace-"))).toHaveLength(1)
     expect(failure).toBeUndefined()
   })
 

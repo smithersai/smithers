@@ -27,7 +27,7 @@ of `/workspace` is read as the root-relative path `workspace/tests/**`.
 duplicates the root, the root-relative pattern you probably meant. The other
 reasons it reports are a directory that does not exist, a directory that is
 never descended into (`.git`, `node_modules`, the checkpoint and test-baseline
-scratch checkouts, and fifteen more), and a hidden path
+scratch checkouts, and other caches or worktrees), and a hidden path
 with `hidden` left false.
 
 ## A search found nothing, and the result says retriedAsLiteral

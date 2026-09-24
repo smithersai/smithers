@@ -121,10 +121,11 @@ says, because `rg` searches a path given on its command line without consulting
 
 ## What a walk skips
 
-Twelve directory names are never descended into: `.git`, `.hg`, `.jj`, `.svn`,
-`.flows`, `node_modules`, `__pycache__`, `.venv`, `.tox`, `.mypy_cache`,
-`.pytest_cache`, and `.ruff_cache`. Skipping applies to descent and never to
-what the caller named, so naming one of them as the `root` still searches it.
+Repository internals, dependency trees, caches, and worktrees are never
+descended into. This includes `.artifacts`, `.backend-go-modcache`,
+`.pnpm-store`, `.worktrees`, and `worktrees`. Skipping applies to descent and
+never to what the caller named, so naming one of them as the `root` still
+searches it.
 
 A walk also skips what it cannot read: a dangling symlink, a link cycle, a
 directory the process may not list. One unreadable entry never fails the call,
