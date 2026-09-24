@@ -156,7 +156,7 @@ describe("native public process I/O options", () => {
       const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* spawn([
           "-e",
-          "const fs=require('node:fs');const read=fd=>new Promise((resolve,reject)=>{const chunks=[];const s=fs.createReadStream('',{fd});s.on('data',b=>chunks.push(b));s.on('error',reject);s.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')))});Promise.all([read(3),read(4)]).then(([a,b])=>{fs.writeSync(6,a);fs.writeSync(9,b);process.stdout.write('finished')})"
+          "const fs=require('node:fs');const net=require('node:net');const read=fd=>new Promise((resolve,reject)=>{const chunks=[];const s=new net.Socket({fd,readable:true,writable:false});s.on('data',b=>chunks.push(b));s.on('error',reject);s.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')))});Promise.all([read(3),read(4)]).then(([a,b])=>{fs.writeSync(6,a);fs.writeSync(9,b);process.stdout.write('finished')})"
         ], {
           additionalFds: {
             fd9: { type: "output", sink: transform("auto:") },
