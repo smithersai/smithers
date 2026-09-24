@@ -46,11 +46,12 @@ test("the app shell fits a 400px viewport with no horizontal overflow", async ({
 test("mounted cards stay inside the transcript column at 400px", async ({ page }) => {
   await page.setViewportSize({ width: 400, height: 800 })
   await page.goto("/")
-  await page.waitForTimeout(2000)
+  await expect(page.getByRole("button", { name: "Chat", exact: true })).toBeVisible()
+  await expect(page.getByTestId("first-run-actions")).toBeVisible()
 
   const overflowing = await page.evaluate(() => {
     const out: string[] = []
-    for (const card of document.querySelectorAll<HTMLElement>(".smithers-card")) {
+    for (const card of document.querySelectorAll<HTMLElement>('.smithers-card, [data-testid="first-run-actions"]')) {
       const column = card.parentElement
       if (!column) continue
       const edge = column.getBoundingClientRect().right
@@ -64,8 +65,3 @@ test("mounted cards stay inside the transcript column at 400px", async ({ page }
 
   expect(overflowing).toEqual([])
 })
-
-
-// Measure before tapping: locator.tap() can scroll overflow:hidden ancestors,
-// making a pill that a real finger cannot reach appear to work.
-

@@ -16,7 +16,7 @@ const send = async (page: Page, text: string) => {
   await page.getByTestId("composer-send").click()
 }
 
-test("collaborative Wiki stays embedded, edits through the flow, and restores the same view after reload", async ({ page }) => {
+test("collaborative Wiki stays embedded, edits through the flow, and restores the same view after reload", async ({ page }, testInfo) => {
   const doc = new Y.Doc()
   doc.getText("markdown").insert(
     0,
@@ -75,7 +75,8 @@ test("collaborative Wiki stays embedded, edits through the flow, and restores th
   await expect(card.getByRole("list", { name: "Page outline" })).toContainText("Runtime")
   await expect(page.getByTestId("composer-input")).toBeHidden()
   await expect(card.locator(".world-card-sidebar")).not.toContainText("wiki:")
-  await page.screenshot({ path: "/tmp/smithers-wiki-outline.png", fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath("smithers-wiki-outline.png"), fullPage: true })
+  await testInfo.attach("smithers-wiki-outline.png", { path: testInfo.outputPath("smithers-wiki-outline.png"), contentType: "image/png" })
   await card.getByRole("button", { name: "Document", exact: true }).click()
   const editor = card.locator(".ProseMirror[contenteditable=\"true\"]")
   await expect(editor).toBeVisible()

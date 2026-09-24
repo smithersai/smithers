@@ -219,7 +219,7 @@ const tabTo = async (page: Page, target: Locator): Promise<void> => {
   throw new Error("The coding control was not reachable with Tab")
 }
 
-test("T1: early review feedback opens durable debugger detail through the keyboard", async ({ page }) => {
+test("T1: early review feedback opens durable debugger detail through the keyboard", async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   // Synthetic producer-shaped evidence; the browser exercises the actual
   // controller, persisted selection and existing frame presentation.
@@ -266,11 +266,12 @@ test("T1: early review feedback opens durable debugger detail through the keyboa
   await expect(page.getByTestId("composer-input")).toBeVisible()
   await expect(card).toHaveCSS("opacity", "1")
   await expect(card).toHaveCSS("transform", "none")
-  await page.screenshot({ path: "/tmp/smithers-coding-early-feedback-ui.png", fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath("smithers-coding-early-feedback-ui.png"), fullPage: true })
+  await testInfo.attach("smithers-coding-early-feedback-ui.png", { path: testInfo.outputPath("smithers-coding-early-feedback-ui.png"), contentType: "image/png" })
 })
 
 
-test("T1: real retained prototype source and feedback remain embedded and keyboard accessible", async ({ page }) => {
+test("T1: real retained prototype source and feedback remain embedded and keyboard accessible", async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   const records = readFileSync(join(__dirname, "../../src/mainview/cards/fixtures/CodingPocHostDecisions.ndjson"), "utf8").trim().split("\n").map(line => JSON.parse(line))
   const events = JSON.parse(JSON.stringify(records).replaceAll('"run-1"', JSON.stringify(RUN_ID)))
@@ -289,7 +290,8 @@ test("T1: real retained prototype source and feedback remain embedded and keyboa
   await page.keyboard.press("Enter")
   await expect(poc.getByRole("region", { name: "hello.txt", exact: true })).toContainText("prototype greeting")
   await expect(poc.locator("iframe, script, img")).toHaveCount(0)
-  await page.screenshot({ path: "/tmp/smithers-coding-poc-source-ui.png", fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath("smithers-coding-poc-source-ui.png"), fullPage: true })
+  await testInfo.attach("smithers-coding-poc-source-ui.png", { path: testInfo.outputPath("smithers-coding-poc-source-ui.png"), contentType: "image/png" })
   const feedback = poc.getByRole("button", { name: "Give prototype feedback", exact: true })
   await tabTo(page, feedback)
   await page.keyboard.press("Enter")
@@ -315,7 +317,7 @@ test("T1: real retained prototype source and feedback remain embedded and keyboa
   await expect(card).toHaveAttribute("data-maximized", "false")
 })
 
-test("T1: bounded long prototype values keep the summary compact and source keyboard-scrollable", async ({ page }) => {
+test("T1: bounded long prototype values keep the summary compact and source keyboard-scrollable", async ({ page }, testInfo) => {
   test.setTimeout(120_000)
   // Synthetic display bounds around the real producer envelope; this test
   // makes no claim that these deliberately long values were a native POC.
@@ -344,7 +346,8 @@ test("T1: bounded long prototype values keep the summary compact and source keyb
   expect((await source.boundingBox())!.height).toBeLessThanOrEqual(162)
   await page.keyboard.press("PageDown")
   await expect.poll(() => source.evaluate(node => node.scrollTop)).toBeGreaterThan(0)
-  await page.screenshot({ path: "/tmp/smithers-coding-poc-long-source-ui.png", fullPage: true })
+  await page.screenshot({ path: testInfo.outputPath("smithers-coding-poc-long-source-ui.png"), fullPage: true })
+  await testInfo.attach("smithers-coding-poc-long-source-ui.png", { path: testInfo.outputPath("smithers-coding-poc-long-source-ui.png"), contentType: "image/png" })
 })
 
 test("health: gateway observations distinguish working, idle and input, then expire offline without changing execution", async ({ page }) => {
