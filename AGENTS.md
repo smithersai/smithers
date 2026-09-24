@@ -1,5 +1,11 @@
 # Permanent product interaction rules
 
+Task-specific maintenance guidance lives in
+[the repository skill](.agents/skills/smithers-maintenance/SKILL.md): use it for
+workspace graph changes, generated docs, benchmarks, and flow authoring.
+Read the scoped `AGENTS.md` for app, server, or TUI files. Keep `AGENTS.md`
+rules to behavior that applies throughout their directory trees.
+
 ## Maintainer workflow (Will, 2026-09-24)
 
 - Keep communication brief; take ownership and ask only necessary questions.

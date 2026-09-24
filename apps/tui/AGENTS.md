@@ -1,0 +1,9 @@
+# TUI work
+
+Read [README.md](README.md) before changing interaction, session, worker, or flow behavior; it is the current feature and command contract for this subtree. Verify the relevant implementation and tests on the revision being edited.
+
+- Keep chat usable while a requested worker or flow runs. Persist a delegation request before returning `requested`; settle status from real execution and restore unfinished work from journal/session state after restart.
+- Workers share the working directory. Assign parallel edits to disjoint files and keep queued work's captured context. Waiting for children releases a worker seat.
+- The timeline and panels project persisted events. Inspection at a selected event cannot reveal later outcomes. `ui.publish` updates a validated panel without taking focus; an action on a panel runs only after the user invokes it.
+- Flow listing is distinct from execution. A `flow.ts` edit after host warmup needs a restart before running it; do not run concurrent `smthrs` executors in the same directory.
+- Preserve undo's refusal cases for changed files, unsupported diffs, and shell edits that could include another worker's changes. Changes outside a repository have no automatic shell diff.
