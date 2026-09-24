@@ -44,8 +44,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plue-matrix-preflight:
+    name: Plue product target preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Use the workflow revision's helper even when rehearsing an older
+      # sourceRef. The result is target diagnostics, not a parity receipt.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Check Plue bootstrap and authenticated product API
+        env:
+          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
+          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
+          SMITHERS_RELEASE_SOURCE_REF: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
+          SMITHERS_RELEASE_WORKFLOW_SHA: ${{ github.sha }}
+        run: node scripts/release-plue-preflight.mjs "$RUNNER_TEMP/plue-preflight/receipt.json"
+      - name: Upload Plue target diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-plue-preflight
+          path: ${{ runner.temp }}/plue-preflight
+          if-no-files-found: error
   native-helper:
     name: native helper (${{ matrix.platform }})
+    needs: plue-matrix-preflight
     strategy:
       matrix:
         include:
@@ -77,16 +100,10 @@ jobs:
           path: ${{ runner.temp }}/native-helper/*
   native-mode-matrix:
     name: packaged native topology and persistence
+    needs: plue-matrix-preflight
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
-      - name: Require Plue matrix target
-        env:
-          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
-          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
-        run: |
-          test -n "$SMITHERS_MODE_MATRIX_PLUE_URL" || { echo 'SMITHERS_MODE_MATRIX_PLUE_URL is required for release' >&2; exit 1; }
-          test -n "$SMITHERS_MODE_MATRIX_PLUE_TOKEN" || { echo 'SMITHERS_MODE_MATRIX_PLUE_TOKEN is required for release' >&2; exit 1; }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ inputs.sourceRef != '' && inputs.sourceRef || inputs.releaseTag != '' && inputs.releaseTag || github.ref }}
@@ -177,13 +194,6 @@ jobs:
           echo "Run attempt $GITHUB_RUN_ATTEMPT would rebuild the candidate and then collide with this run's release-candidate-$GITHUB_RUN_ID artifact." >&2
           echo "Dispatch Release again with releaseTag=$RELEASE_TAG instead. To resume the archived candidate, pass candidateRunId=$GITHUB_RUN_ID and candidateArtifactId=<the release-candidate-$GITHUB_RUN_ID artifact ID> (scripts/release-resume.md)." >&2
           exit 1
-      - name: Require Plue matrix target
-        env:
-          SMITHERS_MODE_MATRIX_PLUE_URL: ${{ vars.SMITHERS_MODE_MATRIX_PLUE_URL }}
-          SMITHERS_MODE_MATRIX_PLUE_TOKEN: ${{ secrets.SMITHERS_MODE_MATRIX_PLUE_TOKEN }}
-        run: |
-          test -n "$SMITHERS_MODE_MATRIX_PLUE_URL" || { echo 'SMITHERS_MODE_MATRIX_PLUE_URL is required for release' >&2; exit 1; }
-          test -n "$SMITHERS_MODE_MATRIX_PLUE_TOKEN" || { echo 'SMITHERS_MODE_MATRIX_PLUE_TOKEN is required for release' >&2; exit 1; }
       # This guard is inline so the workflow can validate an older source SHA
       # that does not contain a newly added release helper.
       - name: Validate explicit dry-run source

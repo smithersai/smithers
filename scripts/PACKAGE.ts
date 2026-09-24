@@ -113,6 +113,7 @@ const releaseRehearsal = Smithers.NodeTest({
     Smithers.file("//scripts/release-peer-ranges.test.mjs"),
     Smithers.file("//scripts/release-registry.test.mjs"),
     Smithers.file("//scripts/release-process.test.mjs"),
+    Smithers.file("//scripts/release-plue-preflight.test.mjs"),
     Smithers.file("//scripts/release-graph.test.mjs"),
     Smithers.file("//scripts/release-gates.test.mjs"),
     Smithers.file("//scripts/runtime-node-support.test.mjs"),

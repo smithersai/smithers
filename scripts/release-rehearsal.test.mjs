@@ -18,6 +18,21 @@ const release = parseWorkflow(
   readFileSync(join(repoRoot, ".github", "workflows", "release.yml"), "utf8")
 )
 
+test("both release matrices require product target preflight and retain failed diagnostics", () => {
+  const preflight = release.jobs["plue-matrix-preflight"]
+  assert.equal(release.jobs["native-helper"].needs, "plue-matrix-preflight")
+  assert.equal(release.jobs["native-mode-matrix"].needs, "plue-matrix-preflight")
+  assert.equal(release.jobs.publish.needs, "native-helper")
+  const probe = preflight.steps.find((candidate) => candidate.name === "Check Plue bootstrap and authenticated product API")
+  assert.equal(probe.run, 'node scripts/release-plue-preflight.mjs "$RUNNER_TEMP/plue-preflight/receipt.json"')
+  assert.equal(probe["continue-on-error"], undefined)
+  const upload = preflight.steps.find((candidate) => candidate.name === "Upload Plue target diagnostics")
+  assert.equal(upload.if, "always()")
+  assert.equal(upload.with["if-no-files-found"], "error")
+  assert.equal(upload.with.name, "release-plue-preflight")
+  assert.equal(preflight.steps[0].with?.ref, undefined, "helper comes from workflow source even when sourceRef predates it")
+})
+
 /**
  * Copies the driver into a fixture root so its steps run against that tree,
  * and links the repository's node_modules beside it so the copy still resolves
