@@ -9,6 +9,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { vi } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
+import { targetPidOf } from "../src/internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import * as ScopedProcess from "../src/ScopedProcess.ts"
 
@@ -19,6 +20,10 @@ vi.mock("../src/ProcessReaper.ts", async (original) => {
 vi.mock("../src/internal/PipedProcess.ts", async (original) => {
   const actual = await original<typeof import("../src/internal/PipedProcess.ts")>()
   return { ...actual, spawn: vi.fn(actual.spawn) }
+})
+vi.mock("../src/internal/ProcessSupervisor.ts", async (original) => {
+  const actual = await original<typeof import("../src/internal/ProcessSupervisor.ts")>()
+  return { ...actual, targetPidOf: vi.fn(actual.targetPidOf) }
 })
 
 const text = (stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>) =>
@@ -61,6 +66,22 @@ const fakeHandle = (exitCode: Effect.Effect<ExitCode, PlatformError.PlatformErro
   })
 
 describe("scoped transient processes", () => {
+  it.live("applies verbatim argument quoting to the target without corrupting the owner program", () =>
+    Effect.gen(function*() {
+      const script = "process.stdout.write(process.argv[1])"
+      const argument = "literal argument é🙂"
+      const args = [script, argument].map((value) => process.platform === "win32" ? JSON.stringify(value) : value)
+      const result = yield* Effect.scoped(Effect.gen(function*() {
+        const handle = yield* ScopedProcess.spawn({
+          command: process.execPath,
+          args: ["-e", ...args],
+          windowsVerbatimArguments: true
+        })
+        return yield* Effect.all([text(handle.stdout), ScopedProcess.status(handle)], { concurrency: "unbounded" })
+      }))
+      expect(result).toEqual([argument, { code: 0, signal: null }])
+    }))
+
   it.live("preserves target identity, literal arguments, input and a nonzero status", () =>
     Effect.gen(function*() {
       const directory = mkdtempSync(join(tmpdir(), "scoped-command-"))
@@ -106,7 +127,7 @@ describe("scoped transient processes", () => {
         expect(result.stderr).toBe("diagnostic")
         expect(result.status).toEqual({ code: 23, signal: null })
         expect(result.targetPid).toBeGreaterThan(1)
-        if (process.platform !== "win32") expect(result.ownerPid).not.toBe(result.targetPid)
+        expect(result.ownerPid).not.toBe(result.targetPid)
       } finally {
         rmSync(directory, { recursive: true, force: true })
       }
@@ -250,11 +271,12 @@ describe("scoped transient processes", () => {
       }
     }))
 
-  it.effect("uses the native target PID on the Windows lifecycle and preserves verbatim arguments", () =>
+  it.effect("keeps Windows verbatim arguments on the target and requests mapped owner pipes", () =>
     Effect.gen(function*() {
       const handle = fakeHandle()
       const raw = vi.mocked(PipedProcess.spawn)
       raw.mockReturnValueOnce(Effect.succeed(handle))
+      vi.mocked(targetPidOf).mockReturnValueOnce(900_102)
       vi.mocked(ProcessReaper.processLifecycle).mockImplementationOnce((command, spawn) =>
         Effect.map(spawn(command), (handle) => ({ handle, activate: Effect.void, settled: Effect.succeed(true) }))
       )
@@ -266,12 +288,13 @@ describe("scoped transient processes", () => {
           args: ["/d", "/s", "/c", "\"literal argument\""],
           windowsVerbatimArguments: true
         }))
-        expect(result.targetPid).toBe(handle.pid)
-        expect(raw.mock.calls.at(-1)?.[1]).toBe(true)
+        expect(result.targetPid).toBe(900_102)
+        expect(raw.mock.calls.at(-1)?.[1]).toBe(false)
+        expect(raw.mock.calls.at(-1)?.[2]).toBe(true)
         expect(raw.mock.calls.at(-1)?.[0]).toMatchObject({
           command: "cmd.exe",
           args: ["/d", "/s", "/c", "\"literal argument\""],
-          options: { detached: false, stdin: "ignore" }
+          options: { detached: false, stdin: "ignore", windowsVerbatimArguments: true }
         })
       } finally {
         Object.defineProperty(process, "platform", platform)

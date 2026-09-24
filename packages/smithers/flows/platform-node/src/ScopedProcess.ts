@@ -39,7 +39,7 @@ export interface Handle extends ChildProcessHandle {
 
 /**
  * Starts a pipe-based command and contains its lifetime inside the caller's
- * scope. On POSIX the returned pid names the live supervisor; exitCode reports
+ * scope. The returned pid names the live supervisor; exitCode reports
  * the actual target. The private parent connection stops the tree on host loss.
  * Transient commands have no durable ledger; durable hosts use NodeHost instead.
  *
@@ -68,17 +68,18 @@ export const spawn = (
         detached: process.platform !== "win32",
         killSignal: options.killSignal ?? "SIGTERM",
         forceKillAfter: options.forceKillAfter ?? 2000,
-        windowsHide: options.windowsHide ?? true
+        windowsHide: options.windowsHide ?? true,
+        // Preserve the target's native option through the private protocol.
+        ...{ windowsVerbatimArguments: options.windowsVerbatimArguments }
       })
       return yield* restore(
         Effect.gen(function*() {
           const prepared = yield* ProcessReaper.processLifecycle(
             command,
-            (command) => PipedProcess.spawn(command, options.windowsVerbatimArguments)
+            (command) => PipedProcess.spawn(command, false, true)
           )
           yield* prepared.activate
-          const targetPid = targetPidOf(prepared.handle) ??
-            (process.platform === "win32" ? prepared.handle.pid : undefined)
+          const targetPid = targetPidOf(prepared.handle)
           if (targetPid === undefined) {
             return yield* Effect.fail(
               PipedProcess.failure("spawn", new Error("The supervisor did not identify its target"))

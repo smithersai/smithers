@@ -197,7 +197,9 @@ requests.on('data', (data) => {
       }
       try {
         target = cp.spawn(config.command, config.args, {
-          cwd: config.cwd, env: config.env, shell: config.shell, detached: false, stdio: descriptors
+          cwd: config.cwd, env: config.env, shell: config.shell,
+          windowsHide: config.windowsHide, windowsVerbatimArguments: config.windowsVerbatimArguments,
+          detached: false, stdio: descriptors
         });
       } catch (error) { spawnError(error); continue; }
       target.once('spawn', () => {

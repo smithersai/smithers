@@ -642,6 +642,10 @@ export const prepare = (
           cwd: resolve(options.cwd ?? process.cwd()),
           env,
           shell: options.shell,
+          windowsHide: options.windowsHide ?? true,
+          windowsVerbatimArguments:
+            (options as ChildProcess.CommandOptions & { readonly windowsVerbatimArguments?: boolean })
+              .windowsVerbatimArguments,
           standardFds: standardFdsOf(raw),
           userFds: [
             ...new Set(
