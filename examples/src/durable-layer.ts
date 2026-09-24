@@ -25,7 +25,7 @@ import { dirname } from "node:path"
 export const stubJj = Layer.succeed(
   Jj.Jj,
   Jj.make({
-    snapshot: () => Effect.succeed({ changeId: "examples-snapshot" as never }),
+    snapshot: () => Effect.succeed({ changeId: "examples-snapshot" as never, commitId: "examples-snapshot" as never }),
     restore: () => Effect.void,
     diff: () => Effect.succeed(""),
     workspaceAdd: () => Effect.void,

@@ -94,7 +94,8 @@ export const directoryJj = (options: {
           }
           taken.set(changeId, describe(message))
           options.log.snapshots.push(describe(message))
-          return { changeId: changeId as never }
+          // Published directory snapshots are immutable; both names resolve to this pre-image.
+          return { changeId: changeId as never, commitId: changeId as never }
         }),
       restore: (changeId) =>
         Effect.sync(() => {
