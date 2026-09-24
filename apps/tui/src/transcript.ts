@@ -377,7 +377,7 @@ const onlyDone = (cell: CellItem): boolean =>
   /^(?:return\s+)?(?:await\s+)?ctx\.done\([\s\S]*\)\s*;?$/.test(cell.source.trim())
 
 /** Folds one harness event, observed at `at` milliseconds, into the transcript. */
-export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
+export const apply = (transcript: Transcript, event: Activity.Observed, at: number): Transcript => {
   if (event._tag === "seat-failed-over") {
     const provider = event.from.startsWith("openai:") ? "ChatGPT" : event.from.split(":")[0] ?? "provider"
     return note(transcript, `↪ switched to ${event.to} · ${provider} limit`, at)
@@ -388,7 +388,7 @@ export const apply = (transcript: Transcript, event: AgentEvent.AgentEvent, at: 
   return applyEvent(activity === transcript.activity ? transcript : { ...transcript, activity }, event, at)
 }
 
-const applyEvent = (transcript: Transcript, event: AgentEvent.AgentEvent, at: number): Transcript => {
+const applyEvent = (transcript: Transcript, event: Activity.Observed, at: number): Transcript => {
   switch (event._tag) {
     case "supervisor-settled":
       if (event.outdatedContext === undefined && event.irrelevantContext === undefined) return transcript

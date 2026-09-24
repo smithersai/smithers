@@ -13,6 +13,12 @@ import {
   type TraceModel
 } from "@smthrs/gateway/RunTrace"
 
+/** Stored model calls keep timing and identity without the growing request. */
+export type Unrequested = Omit<Extract<AgentEvent, { _tag: "model-requested" }>, "request"> & { readonly request?: undefined }
+export type Observed = AgentEvent | Unrequested
+const unrequested = (event: Observed): event is Unrequested =>
+  event._tag === "model-requested" && event.request === undefined
+
 export interface Activity {
   readonly records: ReadonlyArray<JournalRecord>
   readonly status: "running" | "completed" | "failed" | "cancelled"
@@ -20,10 +26,10 @@ export interface Activity {
 export const empty: Activity = { records: [], status: "running" }
 const hasIdentity = Schema.is(CallIdentity)
 
-export const apply = (activity: Activity, event: AgentEvent, at: number): Activity => {
+export const apply = (activity: Activity, event: Observed, at: number): Activity => {
   // Older session files predate captured model requests. Keep their recorded
   // request time without manufacturing a prompt or throwing during restore.
-  const record = event._tag === "model-requested" && event.request === undefined
+  const record = unrequested(event)
     ? { eventType: "control.agent.model-requested", payload: { seat: event.seat, scope: event.scope, frame: event.frame } }
     : event._tag === "cell-call-started" && !hasIdentity(event.call.identity)
     ? { eventType: "control.agent.cell-call-started", payload: {

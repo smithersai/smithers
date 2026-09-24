@@ -7,7 +7,7 @@
  * again rebuilds the screen and the conversation the next turn is told.
  * Credential shapes in that text are redacted before a line reaches the disk.
  */
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import type * as Activity from "./activity.ts"
 import * as Redaction from "@smthrs/journal/Redaction"
 import { createHash, randomUUID } from "node:crypto"
 import { appendFileSync, chmodSync, closeSync, existsSync, openSync, readSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
@@ -60,7 +60,7 @@ export type Record =
   }
   | { readonly type: "name"; readonly name: string }
   | { readonly type: "user"; readonly at: number; readonly text: string; readonly steered?: boolean }
-  | { readonly type: "event"; readonly at: number; readonly event: AgentEvent.AgentEvent }
+  | { readonly type: "event"; readonly at: number; readonly event: Activity.Observed }
   | {
     readonly type: "outcome"
     readonly at: number
@@ -137,6 +137,11 @@ const said = <A extends { readonly answer?: string; readonly message?: string }>
  */
 const line = (record: Record): string => {
   switch (record.type) {
+    case "event": {
+      if (record.event._tag !== "model-requested") return strings(record) + "\n"
+      const { request: _request, ...event } = record.event
+      return strings({ ...record, event }) + "\n"
+    }
     case "session":
     case "patch":
     case "undo":

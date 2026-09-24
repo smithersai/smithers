@@ -244,3 +244,22 @@ it("restores cards in place, runtime status and keys, and a worker's card placem
     { owner: "runtime:fix", contribution: (records[5] as Extract<Session.Record, { type: "contribution" }>).contribution }
   ])
 })
+
+it("stores model-call timing without duplicating the prompt and conversation", () => {
+  for (const kind of ["chat", "worker"] as const) {
+    const writer = Session.create("/work/private", kind)
+    for (let frame = 0; frame < 20; frame++) {
+      writer.append({ type: "event", at: frame, event: {
+        _tag: "model-requested", seat: "test", scope: "root", frame,
+        request: { system: "private instruction".repeat(1000), messages: ["conversation".repeat(frame * 1000)] }
+      } as never })
+    }
+    const saved = readFileSync(writer.file, "utf8")
+    expect(saved.includes("private instruction")).toBe(false)
+    expect(saved.includes("conversation")).toBe(false)
+    expect(saved.length).toBeLessThan(8000)
+    expect(Session.restore(Session.load(writer.file)).transcript.activity?.records.filter((r) => r.kind === "control.agent.model-requested")).toHaveLength(20)
+    expect(statSync(writer.file).mode & 0o777).toBe(0o600)
+    expect(statSync(Session.directory("/work/private")).mode & 0o777).toBe(0o700)
+  }
+})
