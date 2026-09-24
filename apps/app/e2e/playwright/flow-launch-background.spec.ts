@@ -60,7 +60,10 @@ test("flow launch leaves Chat usable through preparation, launch, reload and rem
   await expect(card).toHaveAttribute("data-run-id", "background-run")
   await expect(card).toHaveAttribute("data-testid", id!)
   await expect(toast).toBeVisible()
+  const snapshotsBeforeDuplicate = calls.filter(call => call.procedure === "Projection.Snapshot").length
   await send(page, `/flow.run review-pr ${repo} {"args":"inspect"}`)
+  // Let the running request complete another projection cycle before checking deduplication.
+  await expect.poll(() => calls.filter(call => call.procedure === "Projection.Snapshot").length, { timeout: 15_000 }).toBeGreaterThan(snapshotsBeforeDuplicate)
   expect(calls.filter(call => call.procedure === "Run")).toHaveLength(1)
   await page.reload()
   await expect(card).toHaveAttribute("data-run-id", "background-run")
