@@ -101,6 +101,12 @@ Cloudflare's REST object API ignores conditional headers, so it cannot hold the
 lock. The shared `alchemy-state-store` Worker is not used because reading its
 bearer needs Cloudflare Secrets Store access.
 
+The compare-and-swap needs the object's plain ETag. R2 serves a GET that
+accepts gzip compressed, with a weak ETag (`W/"…"`) that no `If-Match`
+satisfies, so the wrapper reads state with `accept-encoding: identity` and
+refuses a weak ETag with `WeakEtagError` instead of reporting a false
+concurrent change.
+
 The stack program refuses to run unless the wrapper started it
 (`SMITHERS_BUILD_INFRA_STATE_SYNCED`), so `alchemy deploy` or `alchemy plan`
 run directly fail before they read unsynced local state. The state bucket is

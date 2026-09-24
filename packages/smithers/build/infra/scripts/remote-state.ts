@@ -133,6 +133,31 @@ export interface R2StateBucketOptions {
   readonly fetch: typeof globalThis.fetch
 }
 
+/**
+ * A refusal to condition a state write on a weak ETag.
+ *
+ * R2 serves a gzip-compressed object with a weak ETag (`W/"…"`) and answers
+ * every `If-Match` on a weak ETag with 412, so a compare-and-swap on one can
+ * never succeed and would read as a concurrent deployment.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export class WeakEtagError extends Error {
+  readonly _tag = "WeakEtagError"
+  readonly key: string
+  readonly etag: string
+
+  constructor(key: string, etag: string) {
+    super(`R2 state ${key} carries the weak ETag ${etag}, which R2 never matches on a conditional write`)
+    this.name = "WeakEtagError"
+    this.key = key
+    this.etag = etag
+  }
+}
+
+const isWeakEtag = (etag: string): boolean => etag.startsWith("W/")
+
 const describeFailure = async (method: string, key: string, response: Response): Promise<Error> =>
   new Error(`R2 state ${method} ${key} answered ${response.status}: ${(await response.text()).slice(0, 200)}`)
 
@@ -140,6 +165,11 @@ const describeFailure = async (method: string, key: string, response: Response):
  * A {@link StateBucket} over R2's S3 API, which honours `If-Match` and
  * `If-None-Match` on writes. Cloudflare's REST object API ignores both, so it
  * cannot hold a lock or a compare-and-swap.
+ *
+ * Reads ask for `accept-encoding: identity`. Otherwise R2 serves the object
+ * gzip-compressed with a weak ETag that no `If-Match` accepts, and the state
+ * could never be saved back. A weak ETag is refused with a
+ * {@link WeakEtagError} on read and as a write condition.
  *
  * @category constructors
  * @since 0.1.0
@@ -159,7 +189,7 @@ export const r2StateBucket = (options: R2StateBucketOptions): StateBucket => {
   const send = async (key: string, init: RequestInit): Promise<Response> => fetch(await client.sign(url(key), init))
   return {
     get: async (key) => {
-      const response = await send(key, { method: "GET" })
+      const response = await send(key, { method: "GET", headers: { "accept-encoding": "identity" } })
       if (response.status === 404) {
         await response.body?.cancel()
         return undefined
@@ -168,9 +198,11 @@ export const r2StateBucket = (options: R2StateBucketOptions): StateBucket => {
       const etag = response.headers.get("etag")
       const body = await response.text()
       if (etag === null) throw new Error(`R2 state GET ${key} returned no ETag, so no write can be conditioned on it`)
+      if (isWeakEtag(etag)) throw new WeakEtagError(key, etag)
       return { body, etag }
     },
     put: async (key, body, condition) => {
+      if ("ifMatch" in condition && isWeakEtag(condition.ifMatch)) throw new WeakEtagError(key, condition.ifMatch)
       const headers = "ifAbsent" in condition ? { "if-none-match": "*" } : { "if-match": condition.ifMatch }
       const response = await send(key, {
         method: "PUT",

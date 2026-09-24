@@ -14,6 +14,7 @@ import {
   remoteStateFromEnvironment,
   stateBucketName,
   stateObjectKey,
+  WeakEtagError,
   writeStateSnapshot
 } from "./remote-state.ts"
 
@@ -319,6 +320,55 @@ describe("the R2 state bucket", () => {
 
     status = 500
     await expect(bucket.put("k", "three", { ifAbsent: true })).rejects.toThrow(/PUT k.*500/)
+  })
+
+  it("pulls state with a plain ETag and saves it back over R2's compressed responses", async () => {
+    // R2 as observed live: a GET that accepts gzip gets the compressed object
+    // and a weak ETag, which never satisfies If-Match; `identity` gets the
+    // plain ETag, and only an exact plain match lets a PUT through.
+    let stored = { body: JSON.stringify({ format: "smithers-alchemy-state/1", files: {} }), version: 1 }
+    const { fetch, requests } = recordingFetch((request) => {
+      const etag = `"v${stored.version}"`
+      if (request.method === "GET" && request.url.endsWith("/alchemy/Stack.json")) {
+        const identity = request.headers.get("accept-encoding") === "identity"
+        return new Response(stored.body, { status: 200, headers: { etag: identity ? etag : `W/${etag}` } })
+      }
+      if (request.method === "PUT" && request.url.endsWith("/alchemy/Stack.json")) {
+        if (request.headers.get("if-match") !== etag) return new Response("", { status: 412 })
+        stored = { body: request.body!, version: stored.version + 1 }
+        return new Response("", { status: 200 })
+      }
+      return new Response(null, { status: request.method === "DELETE" ? 204 : 200 })
+    })
+    const session = await openRemoteState(
+      { bucket: r2StateBucket({ ...r2Options, fetch }), key: "alchemy/Stack.json" },
+      directory,
+      holder
+    )
+    await put("prod/CacheWorker.json", `{"bundle":"af764b35"}`)
+
+    expect(await session.push()).toBe("published")
+    await session.release()
+    expect(JSON.parse(stored.body).files["prod/CacheWorker.json"]).toBe(`{"bundle":"af764b35"}`)
+    const pull = requests.find((request) => request.method === "GET" && request.url.endsWith("/alchemy/Stack.json"))
+    expect(pull!.headers.get("accept-encoding")).toBe("identity")
+  })
+
+  it("refuses a weak ETag as a write condition without sending the write", async () => {
+    const { fetch, requests } = recordingFetch(() => new Response("", { status: 200 }))
+    const bucket = r2StateBucket({ ...r2Options, fetch })
+
+    const refusal = bucket.put("k", "body", { ifMatch: `W/"7fed332f"` })
+    await expect(refusal).rejects.toThrow(WeakEtagError)
+    await expect(refusal).rejects.toThrow(/state k carries the weak ETag W\/"7fed332f"/)
+    expect(requests).toEqual([])
+  })
+
+  it("refuses a pulled object that still carries a weak ETag, before anything is deployed", async () => {
+    const { fetch } = recordingFetch(() => new Response("body", { status: 200, headers: { etag: `W/"e1"` } }))
+    const error = await r2StateBucket({ ...r2Options, fetch }).get("k").catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(WeakEtagError)
+    expect(error).toMatchObject({ _tag: "WeakEtagError", key: "k", etag: `W/"e1"` })
   })
 
   it("deletes an object, and treats one already gone as deleted", async () => {
