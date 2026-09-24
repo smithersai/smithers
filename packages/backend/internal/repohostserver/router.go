@@ -744,6 +744,9 @@ func (s *Server) infoRefs(w http.ResponseWriter, r *http.Request) error {
 	cmdCtx, cancelCmd := context.WithCancel(r.Context())
 	defer cancelCmd()
 	cmd := exec.CommandContext(cmdCtx, "git", gitCommand, "--stateless-rpc", "--advertise-refs", gitDir)
+	if gitCommand == "receive-pack" {
+		cmd.Env = receivePackEnv()
+	}
 	var refStderr bytes.Buffer
 	cmd.Stderr = &refStderr
 	stdout, err := cmd.StdoutPipe()

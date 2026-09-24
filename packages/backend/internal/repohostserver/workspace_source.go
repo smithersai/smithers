@@ -16,6 +16,8 @@ type workspaceSourceFFI interface {
 }
 
 func (s *Server) readWorkspaceSource(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("ReadWorkspaceSource")
+	defer done()
 	path, err := s.repoPathFromID(chi.URLParam(r, "id"))
 	if err != nil {
 		return err

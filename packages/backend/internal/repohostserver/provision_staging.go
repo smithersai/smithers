@@ -458,6 +458,8 @@ func (s *Server) lockStagedImportRepository(r *http.Request) (string, string, fu
 }
 
 func (s *Server) stagedProvisionInfoRefs(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("StagedProvisionInfoRefs")
+	defer done()
 	repoPath, gitDir, release, err := s.lockStagedImportRepository(r)
 	if err != nil {
 		return err
@@ -479,6 +481,7 @@ func (s *Server) stagedProvisionInfoRefs(w http.ResponseWriter, r *http.Request)
 	cmdCtx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	cmd := exec.CommandContext(cmdCtx, "git", "receive-pack", "--stateless-rpc", "--advertise-refs", gitDir)
+	cmd.Env = receivePackEnv()
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
@@ -514,6 +517,8 @@ func (s *Server) stagedProvisionInfoRefs(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) stagedProvisionReceivePack(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("StagedProvisionReceivePack")
+	defer done()
 	repoPath, gitDir, release, err := s.lockStagedImportRepository(r)
 	if err != nil {
 		return err

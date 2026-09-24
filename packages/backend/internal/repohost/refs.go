@@ -12,6 +12,11 @@ import (
 // and only the control plane's own credentials may write to it.
 const ReservedRefPrefix = "refs/smithers/"
 
+// JJRefPrefix is the git ref namespace jj itself writes (refs/jj/keep/*
+// retention pins among them). Pushes may not create, move, or delete refs
+// there.
+const JJRefPrefix = "refs/jj/"
+
 // WorkspaceHeadRefPrefix holds one ref per workspace,
 // refs/smithers/workspaces/<workspace id>/head, force-updated by the
 // workspace's guest head reporter on every jj snapshot (RFD-004).
@@ -66,6 +71,8 @@ func WorkspaceIDFromHeadRef(ref string) (string, bool) {
 //
 // workspaceID is the workspace a workspace-restricted credential is bound to
 // ("" for every other credential). Rules:
+//   - nothing may write under refs/jj/: jj owns that namespace, and its
+//     refs/jj/keep/* pins are what keep jj-only commits safe from git gc;
 //   - a ref under refs/smithers/ must be a workspace head ref, and only the
 //     owning workspace's credential may update it;
 //   - a workspace credential may update nothing but its own head ref.
@@ -73,6 +80,9 @@ func ReservedRefViolation(commands []ReceivePackCommand, workspaceID string) str
 	workspaceID = strings.ToLower(strings.TrimSpace(workspaceID))
 	for _, command := range commands {
 		ref := strings.TrimSpace(command.RefName)
+		if strings.HasPrefix(ref, JJRefPrefix) {
+			return "refs/jj/ is managed by jj and cannot be pushed"
+		}
 		if !strings.HasPrefix(ref, ReservedRefPrefix) {
 			if workspaceID != "" {
 				return "workspace credentials may only update the workspace head ref"

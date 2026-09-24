@@ -214,28 +214,54 @@ func collectTouchedPaths(ctx context.Context, gitDir string, include, exclude []
 	return nil
 }
 
+// restoreGitRefs puts every ref the push changed back to its before value
+// in one `git update-ref --stdin` transaction. Only refs whose value differs
+// between the listings are written, so a repository holding thousands of
+// refs/jj/keep/* pins still rolls back with a single git process. Each
+// command names the after value as the expected old value: a ref that moved
+// again since the listing aborts the whole transaction instead of being
+// clobbered.
 func restoreGitRefs(ctx context.Context, gitDir string, before, after map[string]string) error {
-	for refName := range after {
+	var commands bytes.Buffer
+	for _, refName := range sortedRefNames(before, after) {
 		oldOID, existed := before[refName]
-		var cmd *exec.Cmd
-		if existed {
-			cmd = exec.CommandContext(ctx, "git", "--git-dir", gitDir, "update-ref", refName, oldOID)
-		} else {
-			cmd = exec.CommandContext(ctx, "git", "--git-dir", gitDir, "update-ref", "-d", refName)
-		}
-		if out, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("restore %s: %w: %s", refName, err, strings.TrimSpace(string(out)))
+		newOID, exists := after[refName]
+		switch {
+		case existed && exists && oldOID == newOID:
+			continue
+		case existed && exists:
+			fmt.Fprintf(&commands, "update %s\x00%s\x00%s\x00", refName, oldOID, newOID)
+		case existed:
+			fmt.Fprintf(&commands, "create %s\x00%s\x00", refName, oldOID)
+		default:
+			fmt.Fprintf(&commands, "delete %s\x00%s\x00", refName, newOID)
 		}
 	}
-	for refName, oldOID := range before {
-		if _, exists := after[refName]; exists {
-			continue
-		}
-		if out, err := exec.CommandContext(ctx, "git", "--git-dir", gitDir, "update-ref", refName, oldOID).CombinedOutput(); err != nil {
-			return fmt.Errorf("restore deleted %s: %w: %s", refName, err, strings.TrimSpace(string(out)))
-		}
+	if commands.Len() == 0 {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "git", "--git-dir", gitDir, "update-ref", "--stdin", "-z")
+	cmd.Stdin = &commands
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("restore refs: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// sortedRefNames returns the union of both listings' ref names, sorted so
+// the rollback transaction is deterministic.
+func sortedRefNames(a, b map[string]string) []string {
+	names := make([]string, 0, len(a))
+	for name := range a {
+		names = append(names, name)
+	}
+	for name := range b {
+		if _, ok := a[name]; !ok {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func rollBackPublishedPush(ctx context.Context, gitDir string, before, after map[string]string, cause error) error {

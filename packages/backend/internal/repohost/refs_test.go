@@ -73,6 +73,9 @@ func TestReservedRefViolation(t *testing.T) {
 		{"workspace pushes bookmark", []string{"refs/heads/main"}, mine, true},
 		{"workspace pushes head and bookmark", []string{WorkspaceHeadRef(mine), "refs/heads/main"}, mine, true},
 		{"workspace pushes malformed reserved ref", []string{"refs/smithers/workspaces/" + mine}, mine, true},
+		{"user deletes jj retention pin", []string{"refs/jj/keep/0123456789abcdef0123456789abcdef01234567"}, "", true},
+		{"user plants jj ref", []string{"refs/jj/anything"}, "", true},
+		{"workspace pushes jj retention pin", []string{"refs/jj/keep/0123456789abcdef0123456789abcdef01234567"}, mine, true},
 		{"empty command list", nil, mine, false},
 	}
 	for _, tc := range cases {

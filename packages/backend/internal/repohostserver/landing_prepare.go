@@ -13,6 +13,8 @@ type appendPreparationFFI interface {
 }
 
 func (s *Server) prepareLandAppend(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("PrepareLandAppend")
+	defer done()
 	path, err := s.repoPathFromID(chi.URLParam(r, "id"))
 	if err != nil {
 		return err

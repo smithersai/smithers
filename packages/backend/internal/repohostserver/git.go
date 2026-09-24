@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/internal/repohost"
 )
 
 var streamGitCommandContext = exec.CommandContext
@@ -51,6 +53,23 @@ func (d *idleDeadlineWriter) Write(p []byte) (int, error) {
 	return d.w.Write(p)
 }
 
+// receivePackEnv is the environment for every git receive-pack process,
+// advertisement included. Environment configuration keeps the subprocess
+// arguments free of protocol-specific overrides.
+//
+//   - receive.maxInputSize: git enforces it before publishing refs, including
+//     identity-encoded streams that bypass the gzip decoder's cap.
+//   - receive.hideRefs=refs/jj/: jj's refs/jj/keep/* retention pins are not
+//     advertised, so a `git push --mirror` never tries to prune them, and git
+//     itself refuses an update to them if one slips past the command peek.
+func receivePackEnv() []string {
+	return append(os.Environ(), "GIT_CONFIG_COUNT=2",
+		"GIT_CONFIG_KEY_0=receive.maxInputSize",
+		fmt.Sprintf("GIT_CONFIG_VALUE_0=%d", maxDecompressedGitRequestSize),
+		"GIT_CONFIG_KEY_1=receive.hideRefs",
+		"GIT_CONFIG_VALUE_1="+repohost.JJRefPrefix)
+}
+
 // streamGitRPC runs a git smart-HTTP RPC and streams its stdout directly to dst
 // using io.Copy with a 32 KB buffer so large packfiles are never accumulated in
 // memory. The function returns once the git subprocess has exited.
@@ -58,11 +77,7 @@ func streamGitRPC(ctx context.Context, gitDir, command string, body io.Reader, d
 	args := []string{command, "--stateless-rpc", gitDir}
 	cmd := streamGitCommandContext(ctx, "git", args...)
 	if command == "receive-pack" {
-		// Git enforces this before publishing refs, including identity-encoded
-		// streams that bypass the gzip decoder's cap. Environment configuration
-		// keeps the subprocess arguments free of protocol-specific overrides.
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=receive.maxInputSize",
-			fmt.Sprintf("GIT_CONFIG_VALUE_0=%d", maxDecompressedGitRequestSize))
+		cmd.Env = receivePackEnv()
 	}
 
 	stdin, err := cmd.StdinPipe()

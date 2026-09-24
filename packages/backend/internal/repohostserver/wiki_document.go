@@ -27,6 +27,8 @@ func (s *Server) mergeWikiDocument(w http.ResponseWriter, r *http.Request) error
 }
 
 func (s *Server) projectWikiRevision(w http.ResponseWriter, r *http.Request) error {
+	done := s.metrics.StartOperation("ProjectWikiRevision")
+	defer done()
 	owner, repo, err := parseRepoID(chi.URLParam(r, "id"))
 	if err != nil {
 		return err

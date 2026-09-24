@@ -1819,8 +1819,8 @@ func TestJSONResponsesHaveCorrectContentType(t *testing.T) {
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, req)
 
-			if w.Code >= 400 {
-				t.Skipf("skipping content-type check for status %d", w.Code)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d: %s", w.Code, http.StatusOK, w.Body.String())
 			}
 
 			ct := w.Header().Get("Content-Type")

@@ -38,6 +38,11 @@ var operationLabels = []string{
 	"LandChanges",
 	"ListOperations",
 	"CreateSnapshot",
+	"StagedProvisionInfoRefs",
+	"StagedProvisionReceivePack",
+	"ReadWorkspaceSource",
+	"PrepareLandAppend",
+	"ProjectWikiRevision",
 }
 
 type Metrics struct {
