@@ -55,8 +55,8 @@ jobs:
 ```
 
 Keep the workflow on `pull_request`. Never switch it to
-`pull_request_target`: the review agents execute the PR's code, and
-`pull_request_target` would hand that code elevated credentials.
+`pull_request_target`. Review seats receive untrusted diffs and have no tools
+or repository access. Keep the job on the less-privileged PR event.
 
 3. **Trigger a review.** Comment on any PR:
 
@@ -66,7 +66,7 @@ Keep the workflow on `pull_request`. Never switch it to
 
 Only owners, members, and collaborators can trigger reviews. Repos
 registered in `auto` mode skip the comment and review every non-draft PR
-push; `comment` mode is the default. The mode is a server-side setting on
+push. Registration requires an explicit `auto` or `comment` mode. It is set on
 your registration, so switching never touches your workflow file.
 
 ### Reviewer quiz

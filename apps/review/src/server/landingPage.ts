@@ -24,7 +24,7 @@ p { max-width: 65ch; }
 <h2>Get access</h2>
 <p>Install the GitHub Action so GitHub OIDC can mint a short-lived session with <code>POST /api/sessions</code>. An operator registers the repo before the action can publish walkthroughs.</p>
 <h2>Check plan &amp; quota</h2>
-<p>Use <code>GET /api/plan</code> from an authorized session to see the repo plan, publish quota, and current usage.</p>
+<p>Use <code>GET /api/plan</code> from an authorized session to see the repo plan and current usage.</p>
 <p>Part of <a href="https://github.com/smithersai/smithers">smithers</a>.</p>
 </main>
 </body>

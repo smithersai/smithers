@@ -104,3 +104,15 @@ describe("review action manifest", () => {
     expect(checkout).toBeGreaterThanOrEqual(0);
   });
 });
+
+
+test("the manual setup example pins actions and installs the review closure", () => {
+  const guide = readFileSync(new URL("../../CONTRIBUTING.md", import.meta.url), "utf8");
+  const yaml = [...guide.matchAll(/```yaml\n([\s\S]*?)\n```/g)].map((match) => parse(match[1]!));
+  const steps = yaml.flatMap((document) => document.jobs?.review?.steps ?? []) as ActionStep[];
+  expect(steps.length).toBeGreaterThan(0);
+  for (const step of steps.filter((step) => step.uses)) expect(step.uses).toMatch(/@[a-f0-9]{40}$/);
+  expect(steps.find((step) => step.uses?.startsWith("actions/setup-node"))?.with?.["node-version"])
+    .toBe(readSteps().find((step) => step.uses?.startsWith("actions/setup-node"))?.with?.["node-version"]);
+  expect(steps.find((step) => step.run?.includes("install"))?.run).toContain("--filter @smthrs/review...");
+});

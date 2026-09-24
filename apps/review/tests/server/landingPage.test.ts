@@ -26,6 +26,7 @@ describe("landing page", () => {
     expect(body).toContain("--publish");
     expect(body).toContain("/api/sessions");
     expect(body).toContain("/api/plan");
+    expect(body).not.toContain("publish quota");
     expect(body).toContain("/w/");
     expect(body).toContain(standaloneThemeCss());
   });

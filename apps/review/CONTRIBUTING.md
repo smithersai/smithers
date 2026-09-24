@@ -15,7 +15,8 @@ One durable Flow, in four stages. `Flow.to` ends a round and starts the next
 one with its payload as real data, which is what lets round 2 fan out over a
 file list round 1 discovers:
 
-1. `Review` resolves the target, filters files, and hands off. `ReviewFiles`
+1. `PrepareReview` resolves the target and loads one snapshot, including
+   review-excluded files. `Review` hands off. `ReviewFiles`
    then runs one `ReviewFile` cell per changed file, in `--concurrency`-wide
    batches, on the `review` seat with the prompt in
    `src/review/buildFileReviewPrompt.ts`. Each batch runs in its own durable round;
@@ -23,17 +24,16 @@ file list round 1 discovers:
    `--concurrency` bounds the simultaneous file-review calls per run (default
    8). Completed batches survive a resume. `VerifyReview` adjudicates the
    findings on the `review-verify` seat when `--verify` is on.
-2. `collect-changes` loads the full diff for every changed file, including
-   files the review filters skip (tests, docs, configs). The walkthrough shows
-   everything.
-3. `narrate` (an agent) writes the story as block streams: prose explanation
+2. `changesFromDiffs` builds walkthrough changes from that same snapshot,
+   including files skipped by review filters.
+3. `NarrateChanges` (an agent) writes the story as block streams: prose explanation
    (markdown), diff blocks that embed each file's diff at the right point in
    the narrative, and Mermaid diagrams wherever structure or flow changed.
    Chapters open with the central change and follow dependency order; prose
    between diffs carries the thread. `normalizeStory` enforces that every
    changed file appears in exactly one diff block; a deterministic fallback
    story covers agent failure and `--no-narrate`.
-4. `walkthrough` renders self-contained HTML (inline CSS, no external assets)
+4. `RenderWalkthrough` renders self-contained HTML (inline CSS, no external assets)
    and writes it to `--out`. Diffs are rendered with `@pierre/diffs` (syntax
    highlighting, word-level diffs, line numbers, unified or `--split` view);
    diagrams render via an inlined Mermaid runtime (only included when the
@@ -51,8 +51,8 @@ the narrative summary (headline, synopsis, reading order, walkthrough link
 when `--publish` ran) as the body, and every anchorable finding as an inline
 comment with a ` ```suggestion ` fence when replacement code exists. If
 GitHub rejects the inline batch, the findings are folded into the body and
-the review still posts. The PR's head must exist locally (check out the
-branch or fetch it first).
+the review still posts. The CLI fetches the PR head and base refs before
+loading the review snapshot.
 
 ## CI
 
@@ -111,21 +111,22 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0 # the review diffs origin/<base>..<head>; merge-base needs history
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: smithersai/smithers
+          ref: v1.0.0-rc.0
           path: .smithers-review-tool
-      - uses: pnpm/action-setup@v6.0.8
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 11.25.0
           run_install: false
-      - uses: actions/setup-node@v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          node-version: 22
-      - run: pnpm -C .smithers-review-tool install --frozen-lockfile
+          node-version: 26.4.0
+      - run: pnpm -C .smithers-review-tool --filter @smthrs/review... install --frozen-lockfile
       - name: Review the PR
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -286,3 +287,6 @@ Audit pre-existing R2 objects without walkthrough rows separately during adoptio
 Revoke a leaked key with authenticated `POST /api/admin/keys/:sha256/revoke`.
 It immediately invalidates the key and sessions issued from it. Admin usage
 accepts `?days=1..90` (default 30).
+
+Review seats use their configured provider credentials, including verification.
+`AI_GATEWAY_API_KEY` is not read by this app.
