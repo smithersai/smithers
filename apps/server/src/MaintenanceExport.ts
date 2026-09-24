@@ -8,7 +8,7 @@ import { authenticatedExport, encodeStored, sealSnapshot, SnapshotFailure } from
 import type { NativeRecommendStorage } from "./recommend"
 
 export const EXPORT_PATH = "/__maintenance/state-export"
-export const EXPORT_BINDINGS = ["TURN_CANCELS", "GATEWAY_SESSIONS", "TURN_LIMITS", "CLIENT_ERRORS", "RECOMMEND_LOG", "MODEL_VAULTS"] as const
+export const EXPORT_BINDINGS = ["TURN_CANCELS", "GATEWAY_SESSIONS", "TURN_LIMITS", "CLIENT_ERRORS", "RECOMMEND_LOG", "MODEL_VAULTS", "IDENTITY"] as const
 export interface ExportSettings {
   readonly SMITHERS_EXPORT_TOKEN?: string
   readonly SMITHERS_EXPORT_RECIPIENT?: string
@@ -17,7 +17,7 @@ export interface ExportSettings {
   readonly SMITHERS_EXPORT_SOURCE_VERSION?: string
   readonly MODEL_VAULT_KEY?: string
 }
-export type MaintenanceEnv = WorkerEnv & ExportSettings
+export type MaintenanceEnv = WorkerEnv & ExportSettings & { readonly IDENTITY?: ByIdNamespace }
 interface SnapshotStorage extends NativeStorage, NativeRecommendStorage {
   readonly getAlarm: () => Promise<number | null>
   readonly delete: (key: string) => Promise<boolean>

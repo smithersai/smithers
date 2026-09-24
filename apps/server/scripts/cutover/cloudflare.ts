@@ -1,7 +1,8 @@
 import { WORKER_IDENTITY } from "../../src/workerIdentity"
+import { target, type ExportTarget } from "./targets"
 
 export const accountURL = `https://api.cloudflare.com/client/v4/accounts/${WORKER_IDENTITY.accountId}`
-export const scriptPath = `/workers/scripts/${WORKER_IDENTITY.name}`
+export const scriptPath = `/workers/scripts/${target.name}`
 export interface Binding { type: string; name: string; namespace_id?: string; class_name?: string; script_name?: string; [key: string]: unknown }
 export interface Settings { bindings: Binding[]; compatibility_date: string; compatibility_flags: string[]; [key: string]: unknown }
 export interface Envelope<T> { result: T; success: boolean; result_info?: { cursor?: string; total_pages?: number } }
@@ -15,12 +16,12 @@ export const api = async <T>(path: string, init?: RequestInit): Promise<Envelope
   if (!body.success) throw new Error("Cloudflare request refused; response withheld")
   return body
 }
-export const validateBindings = (settings: Settings) => {
+export const validateBindings = (settings: Settings, selected: ExportTarget = target) => {
   const owned = settings.bindings.filter(binding => binding.type === "durable_object_namespace")
-  if (owned.length !== WORKER_IDENTITY.durableObjects.length) throw new Error("Durable Object set drifted")
-  for (const expected of WORKER_IDENTITY.durableObjects) {
+  if (owned.length !== selected.durableObjects.length) throw new Error("Durable Object set drifted")
+  for (const expected of selected.durableObjects) {
     const matches = owned.filter(binding => binding.name === expected.binding && binding.class_name === expected.className &&
-      (binding.script_name === undefined || binding.script_name === WORKER_IDENTITY.name) && /^[a-f0-9]{32}$/.test(binding.namespace_id ?? ""))
+      (binding.script_name === undefined || binding.script_name === selected.name) && /^[a-f0-9]{32}$/.test(binding.namespace_id ?? ""))
     if (matches.length !== 1) throw new Error("Durable Object identity drifted")
   }
   return owned

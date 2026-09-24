@@ -3,11 +3,13 @@ import { createHash } from "node:crypto"
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { accountURL, api, scriptPath, validateBindings, type Settings } from "./cloudflare"
+import { target } from "./targets"
+import { verifyReproducedSource, type ReproducedSourceProof } from "./provenance"
 import { maintenanceNames, metadataFor, stable, uploadModuleType, uploadedVersion, wrapperFor } from "./deployment"
 
 interface Deployment { id: string; annotations?: Record<string, string>; versions: Array<{ version_id: string; percentage: number }> }
 interface Module { name: string; file: string; type: string; sha256: string }
-interface Plan { sourceRevision: string; sourceVersion: string; sourceDeployment: string; settingsHash: string; maintenanceMetadataHash: string; originalMetadataHash: string; modules: Module[]; originalModules: Module[]; entry: string }
+interface Plan { target: string; sourceRevision: string; sourceVersion: string; sourceDeployment: string; settingsHash: string; maintenanceMetadataHash: string; originalMetadataHash: string; modules: Module[]; originalModules: Module[]; entry: string }
 const hash = (value: string | Uint8Array) => createHash("sha256").update(value).digest("hex")
 const [mode, directory] = process.argv.slice(2)
 if (!directory || process.argv.length !== 4 || !["prepare", "apply", "restore"].includes(mode!)) throw new Error("Usage: bun scripts/cutover/deploy.ts prepare|apply|restore PRIVATE_DIRECTORY")
@@ -24,10 +26,10 @@ const settings = (await api<Settings>(scriptPath + "/settings")).result
 validateBindings(settings)
 if (mode === "prepare") {
   const deployment = await current()
-  const sourceRevision = deployment.annotations?.["workers/message"]?.match(/^([a-f0-9]{40})\b/)?.[1]
-  if (!sourceRevision) throw new Error("Live deployment has no immutable source revision")
+  let sourceRevision = deployment.annotations?.["workers/message"]?.match(/^([a-f0-9]{40})\b/)?.[1]
+  if (!sourceRevision && target.kind !== "identity") throw new Error("Live deployment has no immutable source revision")
   const originalMessage = (settings.annotations as Record<string, unknown> | undefined)?.["workers/message"]
-  if (typeof originalMessage !== "string" || !originalMessage.startsWith(sourceRevision)) throw new Error("Original source annotation differs from live deployment")
+  if (sourceRevision && (typeof originalMessage !== "string" || !originalMessage.startsWith(sourceRevision))) throw new Error("Original source annotation differs from live deployment")
   mkdirSync(folder, { mode: 0o700 })
   const response = await fetch(accountURL + scriptPath + "/content/v2", { redirect: "error", signal: AbortSignal.timeout(60_000),
     headers: { authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}` } })
@@ -45,6 +47,13 @@ if (mode === "prepare") {
     modules.push({ name, file: local, type: uploadModuleType(name, file.type, entry), sha256: hash(content) })
   }
   if (!modules.some(module => module.name === entry)) throw new Error("Original entry module is missing")
+  if (!sourceRevision) {
+    const proofPath = resolve(directory, "source-proof.json"), proofStat = lstatSync(proofPath)
+    if (!proofStat.isFile() || proofStat.isSymbolicLink() || proofStat.size > 65536 || (proofStat.mode & 0o077) !== 0) throw new Error("Source proof must be an owner-only file")
+    const proofBytes = readFileSync(proofPath)
+    sourceRevision = verifyReproducedSource(target, deployment.versions[0]!.version_id, modules, JSON.parse(proofBytes.toString()) as ReproducedSourceProof, directory)
+    save("verified-source-proof.json", proofBytes)
+  }
   if ((await current()).id !== deployment.id) throw new Error("Live deployment changed during prepare")
   const built = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../src/MaintenanceExport.ts")], target: "browser", format: "esm", minify: true })
   if (!built.success || built.outputs.length !== 1) throw new Error("Exporter helper bundle failed")
@@ -63,13 +72,14 @@ if (mode === "prepare") {
   save("maintenance-metadata.json", maintenanceMetadata)
   save("original-metadata.json", originalMetadata)
   save("original-settings.json", JSON.stringify(settings))
-  const plan: Plan = { sourceRevision, sourceVersion: deployment.versions[0]!.version_id, sourceDeployment: deployment.id,
+  const plan: Plan = { target: target.name, sourceRevision, sourceVersion: deployment.versions[0]!.version_id, sourceDeployment: deployment.id,
     settingsHash: hash(stable(settings)), maintenanceMetadataHash: hash(maintenanceMetadata), originalMetadataHash: hash(originalMetadata), modules, originalModules, entry }
   save("plan.json", JSON.stringify(plan, null, 2))
   console.log(JSON.stringify({ prepared: true, sourceRevision, sourceVersion: plan.sourceVersion, unchangedOriginalModules: originalModules.length,
-    newModules: 2, originalDurableBindings: 6, keepAssets: true, migrations: 0 }))
+    newModules: 2, originalDurableBindings: target.durableObjects.length, keepAssets: true, migrations: 0 }))
 } else {
   const plan = JSON.parse(readFileSync(resolve(folder, "plan.json"), "utf8")) as Plan
+  if (plan.target !== target.name) throw new Error("Prepared target differs from selected Worker")
   const deployment = await current()
   if (mode === "apply") {
     if (deployment.id !== plan.sourceDeployment || hash(stable(settings)) !== plan.settingsHash) throw new Error("Live deployment/settings drifted; prepare again")
