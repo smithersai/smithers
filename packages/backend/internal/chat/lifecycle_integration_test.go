@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -102,26 +105,187 @@ func TestDispatcherRecordsHostFailureCause(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fastRetries(dispatcher)
 	var logs bytes.Buffer
 	dispatcher.logger = slog.New(slog.NewJSONHandler(&logs, nil))
 	if state := runDispatcherUntilTerminal(t, store, dispatcher, scope, accepted.TurnID); state != StateFailed {
 		t.Fatalf("failed host ended %s", state)
 	}
+	// Recovery also runs other tests' leftover turns, so count this turn's
+	// records rather than the process-wide counters.
 	var record map[string]any
+	attempts := 0
 	for line := range strings.Lines(logs.String()) {
 		var candidate map[string]any
 		if json.Unmarshal([]byte(line), &candidate) == nil && candidate["turn_id"] == accepted.TurnID && candidate["code"] == "host_failed" {
 			record = candidate
+			attempts++
 		}
 	}
-	if record == nil || !strings.Contains(record["error"].(string), "sandbox quota") || record["generation"] != float64(1) {
+	if record == nil || record["msg"] != "chat turn failed" || !strings.Contains(record["error"].(string), "sandbox quota") || record["generation"] != float64(maxProducerAttempts) {
 		t.Fatalf("host failure was not logged with its cause: %s", logs.String())
 	}
-	if got := testutil.ToFloat64(dispatcher.metrics.failures.WithLabelValues("host_failed")); got != 1 {
+	if attempts != maxProducerAttempts {
+		t.Fatalf("host ran %d times, want %d", attempts, maxProducerAttempts)
+	}
+	if got := testutil.ToFloat64(dispatcher.metrics.failures.WithLabelValues("host_failed")); got < maxProducerAttempts {
 		t.Fatalf("host_failed counter = %v", got)
 	}
-	if got := testutil.ToFloat64(dispatcher.metrics.claims); got != 1 {
-		t.Fatalf("claims counter = %v", got)
+}
+
+// fastRetries makes recovery rerun a turn at once, so attempt bounds are
+// tested without waiting out the production backoff.
+func fastRetries(dispatcher *Dispatcher) {
+	dispatcher.backoff = func(int64) time.Duration { return 0 }
+	dispatcher.scan = 20 * time.Millisecond
+}
+
+// flakyHost refuses its first calls for one turn the way a restarting model
+// host does, before any provider starts, then streams a healthy turn.
+type flakyHost struct {
+	turnID   string
+	calls    atomic.Int32
+	refusals int32
+	healthy  streamingHost
+}
+
+func (h *flakyHost) RunTurn(ctx context.Context, grant ProducerGrant) error {
+	if grant.TurnID != h.turnID {
+		return errors.New("not this test's turn")
+	}
+	if h.calls.Add(1) <= h.refusals {
+		return errors.New("run chat model host: dial tcp 10.0.0.7:8080: connect: connection refused")
+	}
+	return h.healthy.RunTurn(ctx, grant)
+}
+
+func TestDispatcherRerunsTurnWhenHostFailsBeforeProvider(t *testing.T) {
+	store := needStore(t)
+	scope, runID, journal := testScope(), "flaky-"+uuid.NewString(), testJournal()
+	accepted := admit(t, store, scope, runID, journal)
+	host := &flakyHost{turnID: accepted.TurnID, refusals: 2, healthy: streamingHost{store: store, ticks: 1, every: time.Millisecond}}
+	dispatcher, err := NewDispatcher(store, host, 1, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fastRetries(dispatcher)
+	if state := runDispatcherUntilTerminal(t, store, dispatcher, scope, accepted.TurnID); state != StateCompleted {
+		t.Fatalf("turn admitted during a host restart ended %s, want completed", state)
+	}
+	if got := host.calls.Load(); got != 3 {
+		t.Fatalf("host ran the turn %d times, want 3", got)
+	}
+}
+
+func TestRetryProducerSealsStartedProviderUncertain(t *testing.T) {
+	store := needStore(t)
+	scope, runID, journal := testScope(), "retry-started-"+uuid.NewString(), testJournal()
+	accepted := admit(t, store, scope, runID, journal)
+	grant, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = store.MarkProviderStarted(context.Background(), grant); err != nil {
+		t.Fatal(err)
+	}
+	retrying, err := store.RetryProducer(context.Background(), grant, "host_failed", 0)
+	if err != nil || retrying {
+		t.Fatalf("retry after provider start: retrying=%v err=%v", retrying, err)
+	}
+	if state, terminal, _ := store.GetState(context.Background(), scope, accepted.TurnID); state != StateUncertain || !terminal {
+		t.Fatalf("state = %s terminal=%v, want uncertain", state, terminal)
+	}
+}
+
+// A turn whose journal no longer verifies fails Claim every time. It must
+// leave the oldest-first recovery scan instead of starving newer turns.
+func TestDispatcherQuarantinesUnclaimableTurn(t *testing.T) {
+	store, clock := clockedStore(needStore(t))
+	scope := testScope()
+	poison := admit(t, store, scope, "poison-"+uuid.NewString(), testJournal())
+	if _, err := store.pool.Exec(context.Background(), `UPDATE chat_turns SET head_hash=repeat('0',64) WHERE id=$1`, poison.TurnID); err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := NewDispatcher(store, failingHost{err: errors.New("unused")}, 1, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher.logger = slog.New(slog.DiscardHandler)
+	dispatcher.runOne(context.Background(), Candidate{Scope: scope, TurnID: poison.TurnID})
+	if recoveryHas(t, store, poison.TurnID) {
+		t.Fatal("an unclaimable turn stayed in the recovery scan")
+	}
+	if got := testutil.ToFloat64(dispatcher.metrics.failures.WithLabelValues("quarantined_corrupt")); got != 1 {
+		t.Fatalf("quarantine counter = %v", got)
+	}
+	later := admit(t, store, scope, "later-"+uuid.NewString(), testJournal())
+	if !recoveryHas(t, store, later.TurnID) {
+		t.Fatal("a newer turn is not recoverable")
+	}
+	clock.advance(quarantineDelay + time.Second)
+	if !recoveryHas(t, store, poison.TurnID) {
+		t.Fatal("quarantine never ends, so a repaired turn is never retried")
+	}
+}
+
+// blockingHost holds one turn until its context ends and reports that.
+type blockingHost struct {
+	turnID  string
+	entered chan struct{}
+	stopped chan struct{}
+}
+
+func (h blockingHost) RunTurn(ctx context.Context, grant ProducerGrant) error {
+	if grant.TurnID != h.turnID {
+		return errors.New("not this test's turn")
+	}
+	close(h.entered)
+	<-ctx.Done()
+	close(h.stopped)
+	return ctx.Err()
+}
+
+// A cancel served by another replica must stop the host on the replica that
+// runs the turn, well before the lease renewal would notice.
+func TestCancelOnAnotherReplicaStopsTheRunningHost(t *testing.T) {
+	store := needStore(t)
+	scope, runID, journal := testScope(), "xcancel-"+uuid.NewString(), testJournal()
+	accepted := admit(t, store, scope, runID, journal)
+	host := blockingHost{turnID: accepted.TurnID, entered: make(chan struct{}), stopped: make(chan struct{})}
+	owner, err := NewDispatcher(store, host, 2, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner.scan = 20 * time.Millisecond
+	other, err := NewDispatcher(store, failingHost{err: errors.New("unused")}, 1, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	finished := make(chan error, 1)
+	go func() { finished <- owner.Run(ctx, 1) }()
+	defer func() {
+		cancel()
+		<-finished
+	}()
+	owner.Enqueue(Candidate{Scope: scope, TurnID: accepted.TurnID})
+	select {
+	case <-host.entered:
+	case <-time.After(dbWait):
+		t.Fatal("host did not start")
+	}
+	server := httptest.NewServer(authenticatedRoutes(&Handler{Store: store, Dispatcher: other}, scope.UserID, scope.Owner))
+	defer server.Close()
+	body, _ := json.Marshal(cancelRequest{RunID: runID})
+	response := postJSON(t, server.Client(), server.URL+CancelPath, body)
+	_ = response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("cancel status %d", response.StatusCode)
+	}
+	select {
+	case <-host.stopped:
+	case <-time.After(dbWait):
+		t.Fatal("the owning replica kept its host running after a cancel elsewhere")
 	}
 }
 
@@ -141,7 +305,7 @@ func TestCommitWakesTurnWatchers(t *testing.T) {
 	}
 	select {
 	case <-changed:
-	case <-time.After(time.Second):
+	case <-time.After(dbWait):
 		t.Fatal("commit did not wake its watcher")
 	}
 	changed, stop2 := store.watch(accepted.TurnID)
@@ -151,7 +315,7 @@ func TestCommitWakesTurnWatchers(t *testing.T) {
 	}
 	select {
 	case <-changed:
-	case <-time.After(time.Second):
+	case <-time.After(dbWait):
 		t.Fatal("terminal append did not wake its watcher")
 	}
 }

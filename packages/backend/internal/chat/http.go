@@ -25,6 +25,10 @@ const (
 	journalHeader       = "x-smithers-turn-journal"
 )
 
+// maxTurnRequestBytes is the public route's body cap. The route middleware
+// enforces it too, so the two cannot disagree.
+const maxTurnRequestBytes = middleware.MaxRequestBodySize
+
 // streamPoll is the fallback wake for a turn stream. Commits wake streams
 // directly; the poll covers a missed cross-replica notification.
 const streamPoll = time.Second
@@ -75,7 +79,11 @@ type producerRequest struct {
 func decodeBounded(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder := json.NewDecoder(io.LimitReader(r.Body, maxPayloadBytes+maxBatchBytes+4097))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(target) != nil {
+	if err := decoder.Decode(target); err != nil {
+		if middleware.IsMaxBytesError(err) {
+			writeProblem(w, http.StatusRequestEntityTooLarge, "request_too_large")
+			return false
+		}
 		writeProblem(w, http.StatusBadRequest, "request_invalid")
 		return false
 	}
@@ -88,8 +96,12 @@ func decodeBounded(w http.ResponseWriter, r *http.Request, target any) bool {
 }
 
 func readTurnRequest(w http.ResponseWriter, r *http.Request) (string, JournalRequest, json.RawMessage, bool) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, maxPayloadBytes+1))
-	if err != nil || len(raw) == 0 || len(raw) > maxPayloadBytes {
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxTurnRequestBytes+1))
+	if middleware.IsMaxBytesError(err) || int64(len(raw)) > maxTurnRequestBytes {
+		writeProblem(w, http.StatusRequestEntityTooLarge, "request_too_large")
+		return "", JournalRequest{}, nil, false
+	}
+	if err != nil || len(raw) == 0 {
 		writeProblem(w, http.StatusBadRequest, "request_invalid")
 		return "", JournalRequest{}, nil, false
 	}
@@ -176,14 +188,21 @@ func publicError(w http.ResponseWriter, err error) {
 
 func producerError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrProducerFenced), errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrProducerFenced), errors.Is(err, ErrNotFound), errors.Is(err, ErrForbidden):
 		writeProblem(w, http.StatusUnauthorized, "producer_fenced")
 	case errors.Is(err, ErrInvalidRequest), errors.Is(err, ErrInvalidFrame):
 		writeProblem(w, http.StatusBadRequest, "frame_invalid")
 	case errors.Is(err, ErrLimit):
 		writeProblem(w, http.StatusConflict, "limit")
-	case errors.Is(err, ErrConflict), errors.Is(err, ErrCursorConflict), errors.Is(err, ErrTerminal):
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrCursorConflict), errors.Is(err, ErrTerminal),
+		errors.Is(err, ErrProducerBusy), errors.Is(err, ErrUncertain):
 		writeProblem(w, http.StatusConflict, "producer_conflict")
+	case errors.Is(err, ErrRetired):
+		// The user retired the leg while its producer ran. That is not an
+		// infrastructure failure.
+		writeProblem(w, http.StatusGone, "retired")
+	case errors.Is(err, ErrCorrupt):
+		writeProblem(w, http.StatusInternalServerError, "corrupt")
 	default:
 		writeProblem(w, http.StatusServiceUnavailable, "storage_failed")
 	}

@@ -3,11 +3,14 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
@@ -69,5 +72,87 @@ func TestHTTPChatHostReportsRefusalBody(t *testing.T) {
 	}
 	if len(err.Error()) > 1024 {
 		t.Fatalf("refusal error is unbounded: %d bytes", len(err.Error()))
+	}
+}
+
+func TestHTTPChatHostKeepsBaseURLPathPrefix(t *testing.T) {
+	for base, want := range map[string]string{
+		"http://host.internal":         ModelHostTurnPath,
+		"http://host.internal/":        ModelHostTurnPath,
+		"http://host.internal/model":   "/model" + ModelHostTurnPath,
+		"http://host.internal/model/":  "/model" + ModelHostTurnPath,
+		"https://host.internal/a/b%2F": "/a/b%2F" + ModelHostTurnPath,
+	} {
+		host, err := NewHTTPChatHost(base, nil, "host-token")
+		if err != nil {
+			t.Fatalf("%s: %v", base, err)
+		}
+		if got := host.endpoint.EscapedPath(); got != want {
+			t.Fatalf("%s posts to %s, want %s", base, got, want)
+		}
+	}
+}
+
+// Every store sentinel a producer callback can see must keep its meaning on
+// the wire. Only an unclassified storage error is a 503.
+func TestProducerErrorMapsEverySentinel(t *testing.T) {
+	cases := map[error]struct {
+		status int
+		code   string
+	}{
+		ErrProducerFenced: {http.StatusUnauthorized, "producer_fenced"},
+		ErrNotFound:       {http.StatusUnauthorized, "producer_fenced"},
+		ErrForbidden:      {http.StatusUnauthorized, "producer_fenced"},
+		ErrInvalidRequest: {http.StatusBadRequest, "frame_invalid"},
+		ErrInvalidFrame:   {http.StatusBadRequest, "frame_invalid"},
+		ErrLimit:          {http.StatusConflict, "limit"},
+		ErrConflict:       {http.StatusConflict, "producer_conflict"},
+		ErrCursorConflict: {http.StatusConflict, "producer_conflict"},
+		ErrTerminal:       {http.StatusConflict, "producer_conflict"},
+		ErrProducerBusy:   {http.StatusConflict, "producer_conflict"},
+		ErrUncertain:      {http.StatusConflict, "producer_conflict"},
+		ErrRetired:        {http.StatusGone, "retired"},
+		ErrCorrupt:        {http.StatusInternalServerError, "corrupt"},
+	}
+	for err, want := range cases {
+		recorder := httptest.NewRecorder()
+		producerError(recorder, fmt.Errorf("wrapped: %w", err))
+		var body map[string]string
+		_ = json.Unmarshal(recorder.Body.Bytes(), &body)
+		if recorder.Code != want.status || body["code"] != want.code {
+			t.Fatalf("%v -> %d %q, want %d %q", err, recorder.Code, body["code"], want.status, want.code)
+		}
+	}
+}
+
+// The public route caps bodies at middleware.MaxRequestBodySize. A turn
+// request over that cap is a 413, whether the handler or the route cuts it.
+func TestTurnRequestOverRouteCapIsTooLarge(t *testing.T) {
+	oversized := `{"runId":"r","instructions":"","messages":[],"pad":"` + strings.Repeat("x", int(middleware.MaxRequestBodySize)) + `"}`
+	for name, wrap := range map[string]func(http.ResponseWriter, *http.Request){
+		"handler": func(http.ResponseWriter, *http.Request) {},
+		"route": func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, middleware.MaxRequestBodySize)
+		},
+	} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, TurnPath, strings.NewReader(oversized))
+		wrap(recorder, request)
+		if _, _, _, ok := readTurnRequest(recorder, request); ok || recorder.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("%s: oversized turn -> ok=%v status %d, want 413", name, ok, recorder.Code)
+		}
+	}
+}
+
+func TestTestDatabaseNamesCarryTheirAge(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	created, ok := testDatabaseCreated(testDatabaseName(now))
+	if !ok || !created.Equal(now) {
+		t.Fatalf("created = %v ok=%v", created, ok)
+	}
+	for _, name := range []string{"smithers_chat_0123abcd", "smithers_chat_x_y", "other_1_2"} {
+		if _, ok := testDatabaseCreated(name); ok {
+			t.Fatalf("%s parsed as a dated test database", name)
+		}
 	}
 }

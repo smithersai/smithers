@@ -102,23 +102,6 @@ func bodyWithContent(runID, content string, journal JournalRequest) []byte {
 	return body
 }
 
-func readDeliveries(t *testing.T, body io.Reader) []Delivery {
-	t.Helper()
-	scanner := bufio.NewScanner(body)
-	var values []Delivery
-	for scanner.Scan() {
-		var value Delivery
-		if err := json.Unmarshal(scanner.Bytes(), &value); err != nil {
-			t.Fatalf("decode journal delivery %q: %v", scanner.Text(), err)
-		}
-		values = append(values, value)
-	}
-	if err := scanner.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return values
-}
-
 func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 	store := needStore(t)
 	scope := testScope()
@@ -201,14 +184,14 @@ func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 	}
 
 	duplicate := postJSON(t, server.Client(), server.URL+TurnPath, bodyWithContent(runID, "__held__", journal))
-	defer duplicate.Body.Close()
+	defer func() { _ = duplicate.Body.Close() }()
 	var existing AdmitResult
 	if duplicate.StatusCode != http.StatusOK || json.NewDecoder(duplicate.Body).Decode(&existing) != nil || existing.Status != "existing" {
 		t.Fatalf("duplicate turn did not join: %d %#v", duplicate.StatusCode, existing)
 	}
 	replayRequestBody, _ := json.Marshal(replayRequest{RunID: runID, Journal: journal, After: &accepted.Cursor})
 	replay := postJSON(t, server.Client(), server.URL+ReplayPath, replayRequestBody)
-	defer replay.Body.Close()
+	defer func() { _ = replay.Body.Close() }()
 	var page ReplayResult
 	if replay.StatusCode != http.StatusOK || json.NewDecoder(replay.Body).Decode(&page) != nil || !page.Terminal || len(page.Batches) == 0 {
 		t.Fatalf("reload replay: %d %#v", replay.StatusCode, page)
@@ -251,7 +234,7 @@ func TestGoAdmissionThroughTypeScriptHostPersistsRendererJournal(t *testing.T) {
 	_ = settledCancel.Body.Close()
 	cancelReplayBody, _ := json.Marshal(replayRequest{RunID: cancelRun, Journal: cancelJournal, After: &cancelAccepted.Cursor})
 	cancelReplay := postJSON(t, server.Client(), server.URL+ReplayPath, cancelReplayBody)
-	defer cancelReplay.Body.Close()
+	defer func() { _ = cancelReplay.Body.Close() }()
 	var cancelled ReplayResult
 	if cancelReplay.StatusCode != http.StatusOK || json.NewDecoder(cancelReplay.Body).Decode(&cancelled) != nil || !cancelled.Terminal || len(cancelled.Batches) != 1 || !frameHasStringField(cancelled.Batches[0].Frames[0], "reason", "cancelled") {
 		t.Fatalf("cancel replay after disconnect: %d %#v", cancelReplay.StatusCode, cancelled)

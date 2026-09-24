@@ -13,6 +13,19 @@ import (
 // releaseTimeout bounds the lease hand-back a shutting down process makes.
 const releaseTimeout = 5 * time.Second
 
+// quarantineDelay keeps a turn Claim cannot take out of recovery. Such a turn
+// needs an operator, so a slow recheck costs nothing.
+const quarantineDelay = time.Hour
+
+// retryDelay backs off reruns of a turn whose host failed before its provider
+// started: 1 s, 2 s, 4 s, ... up to a minute.
+func retryDelay(generation int64) time.Duration {
+	if generation < 1 {
+		generation = 1
+	}
+	return min(time.Second<<min(generation-1, 6), time.Minute)
+}
+
 type Host interface {
 	RunTurn(context.Context, ProducerGrant) error
 }
@@ -29,6 +42,10 @@ type Dispatcher struct {
 	queue   chan Candidate
 	logger  *slog.Logger
 	metrics *metrics
+	// backoff is the rerun delay for a generation. Tests shorten it.
+	backoff func(generation int64) time.Duration
+	// scan is the recovery and interruption poll interval.
+	scan    time.Duration
 	mu      sync.Mutex
 	running map[string]runningTurn
 }
@@ -37,7 +54,7 @@ func NewDispatcher(store *Store, host Host, queueSize int, lease time.Duration) 
 	if store == nil || host == nil || queueSize <= 0 || lease <= 0 {
 		return nil, errors.New("invalid chat dispatcher configuration")
 	}
-	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), running: map[string]runningTurn{}}
+	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), backoff: retryDelay, scan: time.Second, running: map[string]runningTurn{}}
 	d.metrics = newMetrics(func() float64 { return float64(len(d.queue)) })
 	return d, nil
 }
@@ -72,6 +89,14 @@ func (d *Dispatcher) claim(ctx context.Context, candidate Candidate) (ProducerGr
 	case errors.Is(err, ErrUncertain):
 		d.metrics.failures.WithLabelValues("uncertain").Inc()
 		d.logger.Warn("chat turn sealed uncertain after its producer stopped", "turn_id", candidate.TurnID)
+	case errors.Is(err, ErrCorrupt), errors.Is(err, ErrLimit), errors.Is(err, ErrInvalidRequest):
+		// Claim fails the same way every time. Keep the turn out of the
+		// oldest-first recovery scan so it cannot starve live turns.
+		d.metrics.failures.WithLabelValues("quarantined_" + errorCode(err)).Inc()
+		d.logger.Error("chat turn quarantined because it cannot be claimed", "turn_id", candidate.TurnID, "code", errorCode(err), "error", err)
+		if quarantineErr := d.store.Quarantine(context.WithoutCancel(ctx), candidate, quarantineDelay); quarantineErr != nil {
+			d.logger.Error("chat turn quarantine was not recorded", "turn_id", candidate.TurnID, "code", errorCode(quarantineErr), "error", quarantineErr)
+		}
 	default:
 		d.metrics.failures.WithLabelValues("claim_" + errorCode(err)).Inc()
 		d.logger.Error("chat turn claim failed", "turn_id", candidate.TurnID, "code", errorCode(err), "error", err)
@@ -108,6 +133,61 @@ func (d *Dispatcher) fail(ctx context.Context, grant ProducerGrant, code string,
 	d.logger.Error("chat turn failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", code, "error", cause)
 	if err := d.store.FailProducer(ctx, grant, code); err != nil && !errors.Is(err, ErrProducerFenced) {
 		d.logger.Error("chat turn failure was not recorded", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(err), "error", err)
+	}
+}
+
+// retry hands a turn whose host failed before its provider started back to
+// recovery. The store seals it instead once the provider started or the turn
+// is out of attempts.
+func (d *Dispatcher) retry(ctx context.Context, grant ProducerGrant, code string, cause error) {
+	retrying, err := d.store.RetryProducer(ctx, grant, code, d.backoff(grant.Generation))
+	if err != nil {
+		if !errors.Is(err, ErrProducerFenced) {
+			d.logger.Error("chat turn failure was not recorded", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(err), "error", err)
+		}
+		return
+	}
+	d.metrics.failures.WithLabelValues(code).Inc()
+	if retrying {
+		d.logger.Warn("chat turn will rerun after its host failed before the provider started", "turn_id", grant.TurnID, "generation", grant.Generation, "code", code, "error", cause)
+		return
+	}
+	d.logger.Error("chat turn failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", code, "error", cause)
+}
+
+// watchEnded polls for running turns that ended elsewhere. It has its own
+// loop because the dispatch loop blocks while every worker is busy.
+func (d *Dispatcher) watchEnded(ctx context.Context) {
+	ticker := time.NewTicker(d.scan)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			d.interruptEnded(ctx)
+		}
+	}
+}
+
+// interruptEnded stops local hosts whose turns ended elsewhere, such as a
+// cancel or retire that another replica served.
+func (d *Dispatcher) interruptEnded(ctx context.Context) {
+	d.mu.Lock()
+	ids := make([]string, 0, len(d.running))
+	for id := range d.running {
+		ids = append(ids, id)
+	}
+	d.mu.Unlock()
+	ended, err := d.store.EndedAmong(ctx, ids)
+	if err != nil {
+		if ctx.Err() == nil {
+			d.logger.Warn("chat running turn check failed", "code", errorCode(err), "error", err)
+		}
+		return
+	}
+	for _, id := range ended {
+		d.CancelRunning(id)
 	}
 }
 
@@ -148,12 +228,12 @@ func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
 	}
 	if err != nil {
 		// An explicit user cancel has already committed its terminal batch
-		// before interrupting this host, so FailProducer leaves it unchanged.
-		code := "host_failed"
+		// before interrupting this host, so the store leaves it unchanged.
 		if errors.Is(err, ports.ErrModelCredentialMissing) {
-			code = "credential_missing"
+			d.fail(detached, grant, "credential_missing", err)
+			return
 		}
-		d.fail(detached, grant, code, err)
+		d.retry(detached, grant, "host_failed", err)
 		return
 	}
 	_, terminal, getErr := d.store.GetState(detached, candidate.Scope, candidate.TurnID)
@@ -181,11 +261,16 @@ func (d *Dispatcher) Run(ctx context.Context, concurrency int) error {
 			}
 		}()
 	}
-	ticker := time.NewTicker(time.Second)
+	var watcher sync.WaitGroup
+	watchCtx, stopWatching := context.WithCancel(ctx)
+	watcher.Go(func() { d.watchEnded(watchCtx) })
+	ticker := time.NewTicker(d.scan)
 	defer ticker.Stop()
 	defer func() {
 		close(work)
 		workers.Wait()
+		stopWatching()
+		watcher.Wait()
 	}()
 	for {
 		select {

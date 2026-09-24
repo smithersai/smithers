@@ -3,7 +3,8 @@ package chat
 import (
 	"encoding/json"
 	"errors"
-	"time"
+
+	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
 var (
@@ -53,14 +54,9 @@ type JournalRequest struct {
 	Token   string `json:"token"`
 }
 
-type Cursor struct {
-	Version  int    `json:"version"`
-	RunID    string `json:"runId"`
-	LegID    string `json:"legId"`
-	Batch    int64  `json:"batch"`
-	Position int64  `json:"position"`
-	Hash     string `json:"hash"`
-}
+// Cursor names a committed journal boundary. It is the host wire type, so a
+// grant needs no field-by-field copy.
+type Cursor = ports.ChatTurnCursor
 
 type Batch struct {
 	Version      int               `json:"version"`
@@ -99,19 +95,8 @@ type AdmitResult struct {
 	TurnID   string `json:"-"`
 }
 
-type ProducerGrant struct {
-	TurnID          string          `json:"turnId"`
-	OwnerID         int64           `json:"ownerId"`
-	RepositoryID    int64           `json:"repositoryId,omitempty"`
-	RunID           string          `json:"runId"`
-	LegID           string          `json:"legId"`
-	Generation      int64           `json:"generation"`
-	Token           string          `json:"token"`
-	Cursor          Cursor          `json:"cursor"`
-	ExpiresAt       time.Time       `json:"expiresAt"`
-	Request         json.RawMessage `json:"request"`
-	ProducerBaseURL string          `json:"producerBaseUrl,omitempty"`
-}
+// ProducerGrant is the host wire grant. PortHost fills ProducerBaseURL.
+type ProducerGrant = ports.ChatTurnGrant
 
 type Candidate struct {
 	Scope  Scope

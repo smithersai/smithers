@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,12 +21,18 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 )
 
 var testStore *Store
+
+// dbWait bounds a wait that includes PostgreSQL round trips. A slow database
+// must not read as a lost turn.
+const dbWait = 10 * time.Second
+
 var scopeID atomic.Int64
 
 func TestMain(m *testing.M) {
@@ -38,7 +45,8 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	database := "smithers_chat_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	sweepStaleDatabases(ctx, admin, time.Now())
+	database := testDatabaseName(time.Now())
 	if _, err = admin.Exec(ctx, `CREATE DATABASE `+database); err != nil {
 		panic(err)
 	}
@@ -64,17 +72,81 @@ func TestMain(m *testing.M) {
 	}
 	code := m.Run()
 	pool.Close()
-	dropped := make(chan struct{})
-	go func() {
-		_, _ = admin.Exec(ctx, `DROP DATABASE `+database+` WITH (FORCE)`)
-		close(dropped)
-	}()
-	select {
-	case <-dropped:
-		admin.Close()
-	case <-time.After(10 * time.Second):
+	drop, stop := context.WithTimeout(ctx, time.Minute)
+	if _, err = admin.Exec(drop, `DROP DATABASE `+database+` WITH (FORCE)`); err != nil {
+		fmt.Fprintf(os.Stderr, "chat test database %s was not dropped; the next run sweeps it: %v\n", database, err)
 	}
+	stop()
+	admin.Close()
 	os.Exit(code)
+}
+
+// staleTestDatabase is the age after which a run's database is an orphan: a
+// test panic or a killed process skipped its drop.
+const staleTestDatabase = time.Hour
+
+const testDatabasePrefix = "smithers_chat_"
+
+func testDatabaseName(now time.Time) string {
+	return fmt.Sprintf("%s%d_%s", testDatabasePrefix, now.Unix(), strings.ReplaceAll(uuid.NewString(), "-", ""))
+}
+
+// sweepStaleDatabases drops the databases of earlier runs that never dropped
+// their own. Only names older than staleTestDatabase are touched, so a
+// concurrent run keeps its database.
+func sweepStaleDatabases(ctx context.Context, admin *pgxpool.Pool, now time.Time) {
+	rows, err := admin.Query(ctx, `SELECT datname FROM pg_database WHERE starts_with(datname,$1)`, testDatabasePrefix)
+	if err != nil {
+		return
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		created, ok := testDatabaseCreated(name)
+		if !ok || now.Sub(created) < staleTestDatabase {
+			continue
+		}
+		_, _ = admin.Exec(ctx, `DROP DATABASE IF EXISTS `+pgx.Identifier{name}.Sanitize()+` WITH (FORCE)`)
+	}
+}
+
+func testDatabaseCreated(name string) (time.Time, bool) {
+	stamp, _, ok := strings.Cut(strings.TrimPrefix(name, testDatabasePrefix), "_")
+	if !ok || !strings.HasPrefix(name, testDatabasePrefix) {
+		return time.Time{}, false
+	}
+	seconds, err := strconv.ParseInt(stamp, 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(seconds, 0), true
+}
+
+// testClock is a store clock a test moves by hand.
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *testClock) advance(by time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(by)
+}
+
+// clockedStore shares the test database but reads time from a clock the test
+// controls, so lease expiry never races the database's speed.
+func clockedStore(shared *Store) (*Store, *testClock) {
+	clock := &testClock{now: time.Now()}
+	return &Store{pool: shared.pool, now: clock.Now}, clock
 }
 
 func needStore(t *testing.T) *Store {
@@ -300,17 +372,20 @@ func TestCancelAndExpiredProviderAreDurableTerminalBatches(t *testing.T) {
 		t.Fatalf("cancel race should be idempotent: %v", err)
 	}
 
+	// Lease expiry follows the store clock, so a slow database cannot fence
+	// the grant before the provider starts.
+	clocked, clock := clockedStore(store)
 	runID, journal = "uncertain-"+uuid.NewString(), testJournal()
-	accepted = admit(t, store, scope, runID, journal)
-	grant, err = store.Claim(context.Background(), scope, accepted.TurnID, 20*time.Millisecond)
+	accepted = admit(t, clocked, scope, runID, journal)
+	grant, err = clocked.Claim(context.Background(), scope, accepted.TurnID, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = store.MarkProviderStarted(context.Background(), grant); err != nil {
+	if err = clocked.MarkProviderStarted(context.Background(), grant); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(30 * time.Millisecond)
-	if _, err = store.Claim(context.Background(), scope, accepted.TurnID, time.Minute); !errors.Is(err, ErrUncertain) {
+	clock.advance(2 * time.Minute)
+	if _, err = clocked.Claim(context.Background(), scope, accepted.TurnID, time.Minute); !errors.Is(err, ErrUncertain) {
 		t.Fatalf("post-provider reclaim = %v", err)
 	}
 	page, err = store.Replay(context.Background(), ReplayInput{Scope: scope, RunID: runID, Journal: journal})
@@ -353,7 +428,7 @@ func TestDispatcherShutdownLeavesUnstartedTurnRecoverable(t *testing.T) {
 	}
 	select {
 	case <-host.entered:
-	case <-time.After(time.Second):
+	case <-time.After(dbWait):
 		t.Fatal("host did not receive admitted turn")
 	}
 	cancel()
@@ -362,7 +437,7 @@ func TestDispatcherShutdownLeavesUnstartedTurnRecoverable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(dbWait):
 		t.Fatal("dispatcher did not stop")
 	}
 	state, terminal, err := store.GetState(context.Background(), scope, accepted.TurnID)
@@ -468,7 +543,7 @@ func TestRendererRoutesAcknowledgeBeforeHostAndReconnectExactly(t *testing.T) {
 	}
 	select {
 	case <-host.entered:
-	case <-time.After(time.Second):
+	case <-time.After(dbWait):
 		t.Fatal("model host was not launched")
 	}
 	select {
@@ -494,21 +569,21 @@ func TestRendererRoutesAcknowledgeBeforeHostAndReconnectExactly(t *testing.T) {
 	}
 
 	duplicate := postJSON(t, server.Client(), server.URL+TurnPath, body)
-	defer duplicate.Body.Close()
+	defer func() { _ = duplicate.Body.Close() }()
 	var existing AdmitResult
 	if duplicate.StatusCode != http.StatusOK || !strings.Contains(duplicate.Header.Get("content-type"), "application/json") || json.NewDecoder(duplicate.Body).Decode(&existing) != nil || existing.Status != "existing" {
 		t.Fatalf("duplicate did not join: %d %#v", duplicate.StatusCode, existing)
 	}
 	replayBody, _ := json.Marshal(replayRequest{RunID: runID, Journal: journal, After: &accepted.Cursor})
 	replayed := postJSON(t, server.Client(), server.URL+ReplayPath, replayBody)
-	defer replayed.Body.Close()
+	defer func() { _ = replayed.Body.Close() }()
 	var page ReplayResult
 	if replayed.StatusCode != http.StatusOK || json.NewDecoder(replayed.Body).Decode(&page) != nil || len(page.Batches) != 1 || !page.Terminal {
 		t.Fatalf("replay after reload: %d %#v", replayed.StatusCode, page)
 	}
 	retireBody, _ := json.Marshal(map[string]any{"runId": runID, "journal": journal})
 	retired := postJSON(t, server.Client(), server.URL+RetirePath, retireBody)
-	defer retired.Body.Close()
+	defer func() { _ = retired.Body.Close() }()
 	if retired.StatusCode != http.StatusOK {
 		raw, _ := io.ReadAll(retired.Body)
 		t.Fatalf("retire: %d %s", retired.StatusCode, raw)
@@ -518,4 +593,40 @@ func TestRendererRoutesAcknowledgeBeforeHostAndReconnectExactly(t *testing.T) {
 func frameHasStringField(frame json.RawMessage, field, expected string) bool {
 	var value map[string]any
 	return json.Unmarshal(frame, &value) == nil && value[field] == expected
+}
+
+func recoveryHas(t *testing.T, store *Store, turnID string) bool {
+	t.Helper()
+	candidates, err := store.RecoveryCandidates(context.Background(), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range candidates {
+		if candidate.TurnID == turnID {
+			return true
+		}
+	}
+	return false
+}
+
+// Recovery and Claim must read lease expiry from one clock. Otherwise a
+// replica whose clock runs apart from PostgreSQL re-selects a turn Claim
+// still calls busy, or never selects one Claim would take.
+func TestRecoveryAndClaimShareOneClock(t *testing.T) {
+	store, clock := clockedStore(needStore(t))
+	scope, runID, journal := testScope(), "clock-"+uuid.NewString(), testJournal()
+	accepted := admit(t, store, scope, runID, journal)
+	if _, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if recoveryHas(t, store, accepted.TurnID) {
+		t.Fatal("recovery selected a turn under a live lease")
+	}
+	clock.advance(2 * time.Minute)
+	if !recoveryHas(t, store, accepted.TurnID) {
+		t.Fatal("recovery ignored a lease the store clock says has expired")
+	}
+	if recovered, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute); err != nil || recovered.Generation != 2 {
+		t.Fatalf("reclaim after expiry: %#v err=%v", recovered, err)
+	}
 }

@@ -553,7 +553,7 @@ func (s *Store) RenewProducer(ctx context.Context, grant ProducerGrant, lease ti
 // Claim decides from producer_started_at whether to rerun it or seal it
 // uncertain.
 func (s *Store) ReleaseProducer(ctx context.Context, grant ProducerGrant) error {
-	result, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=LEAST(now(),$4::timestamptz)
+	result, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=$4
 		WHERE id=$1 AND producer_generation=$2 AND producer_token_hash=$3 AND state='running' AND NOT terminal`,
 		grant.TurnID, grant.Generation, hashToken(grant.Token), s.now().UTC())
 	if err != nil {
@@ -1220,7 +1220,10 @@ func (s *Store) RecoveryCandidates(ctx context.Context, limit int) ([]Candidate,
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	rows, err := s.pool.Query(ctx, `SELECT repository_id,user_id,id FROM chat_turns WHERE state='accepted' OR (state='running' AND producer_lease_expires_at<=now()) ORDER BY created_at LIMIT $1`, limit)
+	// A lease is a live producer, a retry backoff or a quarantine. Its expiry
+	// uses the Go clock, as Claim does, so clock skew between a replica and
+	// PostgreSQL cannot make recovery and Claim disagree.
+	rows, err := s.pool.Query(ctx, `SELECT repository_id,user_id,id FROM chat_turns WHERE state IN ('accepted','running') AND (producer_lease_expires_at IS NULL OR producer_lease_expires_at<=$2) ORDER BY created_at LIMIT $1`, limit, s.now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -1236,26 +1239,56 @@ func (s *Store) RecoveryCandidates(ctx context.Context, limit int) ([]Candidate,
 	return values, rows.Err()
 }
 
+// maxProducerAttempts bounds how many producer generations a turn gets while
+// its provider has never started.
+const maxProducerAttempts = 5
+
+// FailProducer seals a turn whose producer stopped without a terminal batch.
 func (s *Store) FailProducer(ctx context.Context, grant ProducerGrant, code string) error {
+	_, err := s.stopProducer(ctx, grant, code, -1)
+	return err
+}
+
+// RetryProducer hands a turn back for another attempt after delay when its
+// host failed before any provider started, such as a model host that was
+// restarting. Nothing reached a provider, so a rerun is safe. The old
+// generation is fenced. A started provider, or a turn out of attempts, is
+// sealed as FailProducer would. It reports whether the turn will rerun.
+func (s *Store) RetryProducer(ctx context.Context, grant ProducerGrant, code string, delay time.Duration) (bool, error) {
+	if delay < 0 {
+		return false, ErrInvalidRequest
+	}
+	return s.stopProducer(ctx, grant, code, delay)
+}
+
+// stopProducer ends one producer generation. A negative delay never retries.
+func (s *Store) stopProducer(ctx context.Context, grant ProducerGrant, code string, delay time.Duration) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
 	turn, err := scanTurn(tx.QueryRow(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE id=$1 FOR UPDATE`, grant.TurnID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
+		return false, ErrNotFound
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if turn.ProducerGeneration != grant.Generation || turn.ProducerTokenHash == nil || !equalSecret(*turn.ProducerTokenHash, hashToken(grant.Token)) {
-		return ErrProducerFenced
+		return false, ErrProducerFenced
 	}
 	if turn.Terminal {
-		return tx.Commit(ctx)
+		return false, tx.Commit(ctx)
 	}
 	now := s.now().UTC()
+	if delay >= 0 && turn.ProducerStartedAt == nil && turn.ProducerGeneration < maxProducerAttempts {
+		if _, err = tx.Exec(ctx, `UPDATE chat_turns SET producer_token_hash=NULL,producer_lease_expires_at=$2,updated_at=$3 WHERE id=$1`,
+			turn.ID, now.Add(delay), now); err != nil {
+			return false, err
+		}
+		return true, tx.Commit(ctx)
+	}
 	state := StateFailed
 	frame := errorFrame(turn.RunID, "The model host stopped before completing the turn.")
 	if code == "credential_missing" {
@@ -1265,13 +1298,38 @@ func (s *Store) FailProducer(ctx context.Context, grant ProducerGrant, code stri
 		state = StateUncertain
 	}
 	if err = s.appendTerminalTx(ctx, tx, &turn, frame, state, now); err != nil {
-		return err
+		return false, err
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return err
+		return false, err
 	}
 	s.signals.notify(turn.ID)
-	return nil
+	return false, nil
+}
+
+// Quarantine keeps a turn Claim cannot take, such as one whose journal no
+// longer verifies, out of recovery for delay, so it cannot crowd live turns
+// out of the oldest-first recovery scan.
+func (s *Store) Quarantine(ctx context.Context, candidate Candidate, delay time.Duration) error {
+	now := s.now().UTC()
+	_, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=$3,updated_at=$4
+		WHERE id=$1 AND user_id=$2 AND NOT terminal AND state IN ('accepted','running')
+		AND (producer_lease_expires_at IS NULL OR producer_lease_expires_at<=$4)`,
+		candidate.TurnID, candidate.Scope.UserID, now.Add(delay), now)
+	return err
+}
+
+// EndedAmong returns the turns among ids that are terminal, so a dispatcher
+// can stop a host whose turn another replica cancelled or retired.
+func (s *Store) EndedAmong(ctx context.Context, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id FROM chat_turns WHERE id = ANY($1) AND terminal`, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 func (s *Store) GetState(ctx context.Context, scope Scope, turnID string) (State, bool, error) {

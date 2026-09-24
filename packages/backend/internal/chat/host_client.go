@@ -34,8 +34,11 @@ func NewHTTPChatHost(baseURL string, client *http.Client, authorization string) 
 	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" || endpoint.User != nil || endpoint.RawQuery != "" || endpoint.Fragment != "" {
 		return nil, errors.New("chat model host URL is invalid")
 	}
-	endpoint.Path = ModelHostTurnPath
-	endpoint.RawPath = ""
+	// Keep any prefix the host is served under, such as an ingress path.
+	if endpoint.Path == "" {
+		endpoint.Path = "/"
+	}
+	endpoint = endpoint.JoinPath(ModelHostTurnPath)
 	if client == nil {
 		// A turn has no fixed length. The dispatcher context ends it.
 		client = &http.Client{}
@@ -62,7 +65,7 @@ func (h *HTTPChatHost) RunChatTurn(ctx context.Context, grant ports.ChatTurnGran
 	if err != nil {
 		return fmt.Errorf("run chat model host: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	detail, _ := io.ReadAll(io.LimitReader(response.Body, maxRefusalDetailBytes))
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
