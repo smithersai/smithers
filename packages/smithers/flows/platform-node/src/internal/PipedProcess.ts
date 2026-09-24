@@ -13,6 +13,16 @@ import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import * as Native from "node:child_process"
 
+const ownerDescriptors = new WeakMap<ChildProcessHandle, ReadonlyArray<number | "ignore">>()
+
+/**
+ * Windows owners receive caller streams above the reserved CRT standard slots.
+ * @private
+ * @since 1.0.0
+ */
+export const standardFdsOf = (handle: ChildProcessHandle): ReadonlyArray<number | "ignore"> | undefined =>
+  ownerDescriptors.get(handle)
+
 const promise = <A>() => {
   let resolve!: (value: A) => void
   let reject!: (cause: unknown) => void
@@ -94,13 +104,27 @@ const descriptorConfig = (options: ChildProcess.CommandOptions) => {
  */
 export const spawn = (
   command: ChildProcess.StandardCommand,
-  windowsVerbatimArguments: boolean | undefined
+  windowsVerbatimArguments: boolean | undefined,
+  owner = false
 ): Effect.Effect<ChildProcessHandle, PlatformError.PlatformError, Scope.Scope> =>
   Effect.gen(function*() {
     const descriptors = yield* Effect.try({
       try: () => descriptorConfig(command.options),
       catch: (cause) => failure("spawn", cause)
     })
+    const standardFds: Array<number | "ignore"> = [0, 1, 2]
+    const physicalFds = [0, 1, 2]
+    const stdio: Array<Native.IOType | number> = [...descriptors.stdio]
+    if (owner && process.platform === "win32") {
+      const first = stdio.length
+      for (const fd of [0, 1, 2]) {
+        const mode = stdio[fd]!
+        physicalFds[fd] = first + fd
+        standardFds[fd] = mode === "ignore" ? "ignore" : first + fd
+        stdio.push(mode === "inherit" ? fd : mode)
+        stdio[fd] = "ignore"
+      }
+    }
     const state = yield* Effect.acquireRelease(
       Effect.try({
         try: () => {
@@ -120,7 +144,7 @@ export const spawn = (
             detached: options.detached ?? process.platform !== "win32",
             windowsHide: options.windowsHide ?? true,
             windowsVerbatimArguments,
-            stdio: descriptors.stdio
+            stdio
           })
           const state = {
             child,
@@ -175,8 +199,8 @@ export const spawn = (
           // mark still applies backpressure until NodeStream pulls the bytes.
           for (
             const fd of [
-              1,
-              2,
+              physicalFds[1]!,
+              physicalFds[2]!,
               ...descriptors.additional.filter(({ config }) => config.type === "output").map(({ fd }) => fd)
             ]
           ) {
@@ -279,9 +303,9 @@ export const spawn = (
         : Stream.empty
       return Sink.isSink(transform) ? Stream.transduce(stream, transform) : stream
     }
-    const stdin = input(0, descriptors.stdin)
-    const stdout = output(1, descriptors.stdout)
-    const stderr = output(2, descriptors.stderr)
+    const stdin = input(physicalFds[0]!, descriptors.stdin)
+    const stdout = output(physicalFds[1]!, descriptors.stdout)
+    const stderr = output(physicalFds[2]!, descriptors.stderr)
     if (Stream.isStream(descriptors.stdin.stream)) {
       yield* Stream.run(descriptors.stdin.stream, stdin).pipe(Effect.forkScoped)
     }
@@ -294,7 +318,7 @@ export const spawn = (
         if (config.stream !== undefined) yield* Stream.run(config.stream, sink).pipe(Effect.forkScoped)
       } else outputs.set(fd, output(fd, config.sink))
     }
-    return makeHandle({
+    const handle = makeHandle({
       pid: ProcessId(state.child.pid!),
       exitCode: wait.pipe(Effect.flatMap(([code, signal]) =>
         code === null
@@ -323,4 +347,6 @@ export const spawn = (
         })
       })
     })
+    if (owner && process.platform === "win32") ownerDescriptors.set(handle, standardFds)
+    return handle
   })

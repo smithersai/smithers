@@ -75,6 +75,59 @@ const withNativePipes = async (
 }
 
 describe("native public process I/O options", () => {
+  it("maps Windows owner streams above custom descriptors and preserves public stream handles", async () => {
+    const original = Object.getOwnPropertyDescriptor(process, "platform")!
+    Object.defineProperty(process, "platform", { ...original, value: "win32" })
+    try {
+      await withNativePipes(
+        ["ignore", "ignore", "ignore", "pipe", "pipe", "pipe", "pipe"],
+        async (child, pipes, calls) => {
+          await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+            const handle = yield* PipedProcess.spawn(
+              ChildProcess.make("owner", [], {
+                additionalFds: { fd3: { type: "output" } }
+              }),
+              undefined,
+              true
+            )
+            expect(calls[0]![2]?.stdio).toEqual(["ignore", "ignore", "ignore", "pipe", "pipe", "pipe", "pipe"])
+            expect(PipedProcess.standardFdsOf(handle)).toEqual([4, 5, 6])
+            for (const [fd, value] of [[3, "custom"], [5, "out"], [6, "err"]] as const) {
+              pipes[fd]!.push(bytes(value))
+              pipes[fd]!.push(null)
+            }
+            yield* Stream.run(input("in"), handle.stdin)
+            expect(pipes[4]!.writableEnded).toBe(true)
+            child.emit("exit", 0, null)
+            expect(yield* output(handle.stdout)).toBe("out")
+            expect(yield* output(handle.stderr)).toBe("err")
+            expect(yield* output(handle.getOutputFd(3))).toBe("custom")
+          })))
+        }
+      )
+      await withNativePipes(
+        ["ignore", "ignore", "ignore", "ignore", "ignore", "ignore"],
+        async (_child, _pipes, calls) => {
+          await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+            const handle = yield* PipedProcess.spawn(
+              ChildProcess.make("owner", [], {
+                stdin: "ignore",
+                stdout: "inherit",
+                stderr: "ignore"
+              }),
+              undefined,
+              true
+            )
+            expect(calls[0]![2]?.stdio).toEqual(["ignore", "ignore", "ignore", "ignore", 1, "ignore"])
+            expect(PipedProcess.standardFdsOf(handle)).toEqual(["ignore", 4, "ignore"])
+          })))
+        }
+      )
+    } finally {
+      Object.defineProperty(process, "platform", original)
+    }
+  })
+
   it.each(["linux", "win32"])("keeps the extra output reader alive on %s", async (platform) => {
     const original = Object.getOwnPropertyDescriptor(process, "platform")!
     Object.defineProperty(process, "platform", { ...original, value: platform })

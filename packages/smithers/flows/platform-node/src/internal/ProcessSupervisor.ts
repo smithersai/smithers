@@ -18,6 +18,7 @@ import { createConnection, createServer, type Socket } from "node:net"
 import { tmpdir } from "node:os"
 import { join, parse, resolve } from "node:path"
 import * as Tls from "node:tls"
+import { standardFdsOf } from "./PipedProcess.ts"
 import type { Policy, System } from "./ProcessCleanup.ts"
 import { source } from "./SupervisorProgram.ts"
 
@@ -601,6 +602,7 @@ export const prepare = (
           cwd: resolve(options.cwd ?? process.cwd()),
           env,
           shell: options.shell,
+          standardFds: standardFdsOf(raw),
           userFds: [
             ...new Set(
               Object.keys(options.additionalFds ?? {}).map(ChildProcess.parseFdName)

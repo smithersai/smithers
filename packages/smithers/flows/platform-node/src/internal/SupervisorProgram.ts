@@ -176,6 +176,9 @@ requests.on('data', (data) => {
       if (config === undefined || target !== undefined || stopping) throw new Error('Invalid activation');
       const descriptors = Array.from({ length: Math.max(2, ...config.userFds) + 1 }, () => 'ignore');
       for (const fd of [0, 1, 2, ...config.userFds]) descriptors[fd] = fd;
+      if (config.standardFds !== undefined) {
+        for (const fd of [0, 1, 2]) descriptors[fd] = config.standardFds[fd];
+      }
       try {
         target = cp.spawn(config.command, config.args, {
           cwd: config.cwd, env: config.env, shell: config.shell, detached: false, stdio: descriptors
@@ -184,10 +187,16 @@ requests.on('data', (data) => {
       target.once('spawn', () => {
         // Release every caller pipe copy. Keep the runtime's standard slots
         // valid so a later internal allocation cannot reuse a closed 0/1/2.
-        for (const fd of [0, 1, 2]) {
-          fs.closeSync(fd);
-          const replacement = fs.openSync(require('node:os').devNull, fd === 0 ? 'r' : 'w');
-          if (replacement !== fd) throw new Error('Could not detach supervisor standard streams');
+        if (config.standardFds !== undefined) {
+          // libuv intentionally does not close Windows CRT descriptors 0..2.
+          // Caller pipes arrive in separate slots; the reserved slots are NUL.
+          for (const fd of config.standardFds) if (fd !== 'ignore') fs.closeSync(fd);
+        } else {
+          for (const fd of [0, 1, 2]) {
+            fs.closeSync(fd);
+            const replacement = fs.openSync(require('node:os').devNull, fd === 0 ? 'r' : 'w');
+            if (replacement !== fd) throw new Error('Could not detach supervisor standard streams');
+          }
         }
         for (const fd of config.userFds) fs.closeSync(fd);
         send({ type: 'spawned', pid: target.pid });

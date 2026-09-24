@@ -11,7 +11,12 @@ const schedules = ["target exit", "status EOF", "request EOF"] as const
 
 // Execute the shipped source with manual event/timer delivery. No OS signals
 // occur here; recorded calls expose escalation before the grace timer runs.
-const program = (killSignal: string, escaped = true, platform = "linux") => {
+const program = (
+  killSignal: string,
+  escaped = true,
+  platform = "linux",
+  standardFds?: ReadonlyArray<number | "ignore">
+) => {
   const released: Array<number> = []
   const replacements: Array<readonly [string, string]> = []
   const signals: Array<readonly [number, string]> = []
@@ -64,12 +69,18 @@ const program = (killSignal: string, escaped = true, platform = "linux") => {
     clearTimeout: () => {}
   })
   const send = (message: unknown) => requests.emit("data", JSON.stringify(message) + "\n")
-  send({ type: "configure", command: "fixture", args: [], userFds: [], killSignal, graceMs: 25 })
+  send({ type: "configure", command: "fixture", args: [], userFds: [], standardFds, killSignal, graceMs: 25 })
   send({ type: "start" })
   return { signals, timers, status, requests, target, send, released, replacements }
 }
 
 describe("supervisor stop policy", () => {
+  it("closes remapped Windows caller pipes without touching reserved CRT slots", () => {
+    const helper = program("SIGTERM", false, "win32", [3, "ignore", 5])
+    helper.target.emit("spawn")
+    expect(helper.released).toEqual([3, 5])
+    expect(helper.replacements).toEqual([])
+  })
   for (const platform of ["linux", "darwin", "win32"]) {
     it(`releases inherited pipes into the native null device on ${platform}`, () => {
       const helper = program("SIGTERM", false, platform)

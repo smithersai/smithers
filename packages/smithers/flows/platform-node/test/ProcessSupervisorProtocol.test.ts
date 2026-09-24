@@ -403,7 +403,7 @@ describe("authenticated loopback process channels", () => {
           env: { ONLY: "target" },
           extendEnv: false
         }),
-        (command) => PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined)
+        (command) => PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined, true)
       )
       yield* prepared.activate
       return yield* Effect.all([
