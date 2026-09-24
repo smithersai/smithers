@@ -40,9 +40,8 @@ import { commitsFlows } from "./entries/commits"
 import { browserFlows } from "./entries/browser"
 import { cardFlows } from "./entries/card"
 import { changeFlows, changeOpenFlows } from "./entries/change"
-import { chatCopyFlows, chatFlows, chatReloadFlows, chatSurfacesFlows } from "./entries/chat"
+import { chatCopyFlows, chatFlows, chatReloadFlows } from "./entries/chat"
 import { cloudFlows } from "./entries/cloud"
-import { composerFlows } from "./entries/composer"
 import { connectSurfaceFlows } from "./entries/connector"
 import { debugFlows, debugVerboseFlows } from "./entries/debug"
 import { egressFlows } from "./entries/egress"
@@ -123,7 +122,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...flowsSurfaceFlows(actions),
   ...(actions.snapshot?.()?.pluginLibrary === true ? pluginsSurfaceFlows(actions) : []),
   ...appearanceFlows(actions),
-  ...chatSurfacesFlows(actions),
   ...debugVerboseFlows(actions),
   ...systemFlows(actions),
   ...chatFlows(actions),
@@ -183,7 +181,6 @@ export const baseFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => 
   ...repoFlows(actions),
   ...tutorialRepositoryFlows(actions),
   ...workspaceRenameFlows(actions),
-  ...composerFlows(actions),
   ...filesAddFlows(actions),
   ...smithersFlows(actions),
   ...searchFlows(actions),

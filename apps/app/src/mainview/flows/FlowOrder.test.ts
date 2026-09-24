@@ -27,7 +27,6 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "flows",
   "appearance.theme",
   "appearance.dark-mode",
-  "chat.surfaces",
   "debug.verbose",
   "system.recommend",
   "chat",
@@ -174,7 +173,6 @@ const PRE_SPLIT_BASE: ReadonlyArray<string> = [
   "repo.tree",
   "workspace.rename",
   "workspace.rename.edit",
-  "composer.add",
   "files.add"
 ]
 

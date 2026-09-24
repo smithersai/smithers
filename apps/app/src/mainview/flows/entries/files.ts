@@ -63,7 +63,7 @@ export const filesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> =>
   })
 ]
 
-/** `files.add`, registered beside `composer.add`. */
+/** The file attachment flow. */
 export const filesAddFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => [
   flow({
     name: "files.add",

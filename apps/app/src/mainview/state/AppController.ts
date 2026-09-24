@@ -373,7 +373,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
   /** Report what drives a turn (admin /debug.backend; DESIGN.md §14). */
   readonly describeAgentBackend: (backend: string) => string | { readonly value: string }
   /* The composer surfaces menu — the /surfaces command's open state. */
-  readonly toggleSurfacesMenu: () => void
   readonly toggleChatFilterMenu: () => { readonly value: string }
   readonly toggleChatFilter: (target: string) => string | { readonly value: string }
   readonly grepChatFilter: (query: string) => { readonly value: string }
@@ -405,11 +404,6 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
    * pointer affordance, not a registry entry — but the state is still the
    * store's, reached through the dispatcher with the actor recorded.
    */
-  readonly toggleConnectMenu: () => void
-  readonly closeConnectMenu: () => void
-  /* The composer `+` menu — the /composer.add command's open state. */
-  readonly toggleAddMenu: () => void
-  readonly closeAddMenu: () => void
   /** /files.add — attachments, or the honest answer that this host has none. */
   readonly addFiles: () => void
   readonly debugSnapshot: () => { readonly value: string }
@@ -1014,15 +1008,10 @@ export const createAppController = (
     showWorld,
     showConnectors,
     toggleDevtools,
-    toggleSurfacesMenu,
     toggleChatFilterMenu,
     toggleChatFilter,
     grepChatFilter,
     resetChatFilter,
-    toggleConnectMenu,
-    closeConnectMenu,
-    toggleAddMenu,
-    closeAddMenu,
     addFiles,
     askReset,
     cancelReset,
@@ -1762,7 +1751,6 @@ export const createAppController = (
     notePtyExit,
     cloudTerminal,
     toggleDevtools,
-    toggleSurfacesMenu,
     toggleChatFilterMenu,
     toggleChatFilter,
     grepChatFilter,
@@ -1779,10 +1767,6 @@ export const createAppController = (
     togglePaletteActions,
     notePaletteItemOpened,
     paletteRecent,
-    toggleConnectMenu,
-    closeConnectMenu,
-    toggleAddMenu,
-    closeAddMenu,
     addFiles,
     describeAgentBackend,
     debugSnapshot,

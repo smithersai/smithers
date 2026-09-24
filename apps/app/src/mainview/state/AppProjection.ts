@@ -1862,22 +1862,10 @@ export const projectAppEvent = (previous: AppProjectionSnapshot, context: AppPro
           // trace after the switch. The session row moves like every dispatch.
           break
 
+        // Existing journals can contain these retired chrome events.
         case "surfaces-menu.toggled":
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.surfacesMenuOpen = transition.open
-          })
-          break
-
         case "connect-menu.toggled":
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.connectMenuOpen = transition.open
-          })
-          break
-
         case "add-menu.toggled":
-          collections.sessions.update(SESSION_ID, (draft) => {
-            draft.addMenuOpen = transition.open
-          })
           break
 
         case "chat-filter.menu.toggled":

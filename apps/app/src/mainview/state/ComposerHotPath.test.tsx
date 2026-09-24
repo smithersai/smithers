@@ -4,7 +4,6 @@ import { Profiler } from "react"
 import { flushSync } from "react-dom"
 import { createRoot } from "react-dom/client"
 import App from "../App"
-import { SidebarRepositoryPicker } from "../Composer"
 import { ControllerTestProvider } from "../ControllerContext"
 import * as VaultAdapter from "../wiki/VaultAdapter"
 import { scopedControllers } from "./ControllerTestScope"
@@ -61,7 +60,7 @@ interface Counted {
 }
 
 /** Mount App behind a controller whose registry read counts the shell's renders. */
-const mountCounted = async (sidebar = false): Promise<Counted> => {
+const mountCounted = async (): Promise<Counted> => {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   const real = createAppController(store, unavailableRepositories, unavailableAgent, { recommender: { debounceMs: 0 } })
   // Initial onboarding now crosses a durable command receipt. Finish that
@@ -92,7 +91,6 @@ const mountCounted = async (sidebar = false): Promise<Counted> => {
       <ControllerTestProvider controller={controller}>
         <Profiler id="shell" onRender={() => { commits += 1 }}>
           <App />
-          {sidebar && <SidebarRepositoryPicker />}
         </Profiler>
       </ControllerTestProvider>
     )
@@ -175,22 +173,7 @@ describe("the composer hot path: typing never re-renders the transcript", () => 
     expect(view.renders()).toBe(renders)
   })
 
-  test("Escape outside the connect menu closes its session state", async () => {
-    const view = await mountCounted()
-    const shell = view.host.querySelector<HTMLElement>(".app-shell")
-    expect(shell).not.toBeNull()
 
-    await view.act(() => view.controller.toggleConnectMenu())
-    expect(view.controller.store.session().connectMenuOpen).toBe(true)
-
-    document.body.focus()
-    flushSync(() => {
-      shell?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
-    })
-    await view.act(() => {})
-
-    expect(view.controller.store.session().connectMenuOpen).toBe(false)
-  })
 })
 
 /*
@@ -282,88 +265,3 @@ describe("the streaming hot path: a message delta re-derives only what the trans
  * that have to reach the store rather than a local setter.
  */
 
-/** Let a `requestAnimationFrame`-deferred focus call land before asserting. */
-const frame = (): Promise<void> =>
-  new Promise((resolve) => {
-    requestAnimationFrame(() => resolve())
-  })
-
-const connectTrigger = (host: HTMLElement): HTMLButtonElement | null =>
-  host.querySelector<HTMLButtonElement>(".composer-connect-trigger")
-
-const connectList = (host: HTMLElement): HTMLElement | null => host.querySelector<HTMLElement>(".composer-connect-list")
-
-describe("the connect menu's open state lives in the store", () => {
-  test("the open state round-trips through the connect-menu.toggled transition", async () => {
-    const view = await mountCounted(true)
-    const { store } = view.controller
-    expect(store.session().connectMenuOpen).toBe(false)
-    expect(connectList(view.host)).toBeNull()
-
-    // Dispatched at the store, with no component involved at all: the menu
-    // is a projection of the session, so this alone has to open it.
-    await view.act(() => store.dispatch({ type: "connect-menu.toggled", actor: "user", open: true }))
-
-    expect(store.session().connectMenuOpen).toBe(true)
-    expect(connectList(view.host)).not.toBeNull()
-    expect(connectTrigger(view.host)?.getAttribute("aria-expanded")).toBe("true")
-
-    await view.act(() => store.dispatch({ type: "connect-menu.toggled", actor: "user", open: false }))
-
-    expect(store.session().connectMenuOpen).toBe(false)
-    expect(connectList(view.host)).toBeNull()
-    expect(connectTrigger(view.host)?.getAttribute("aria-expanded")).toBe("false")
-
-    // Both ends were recorded — the journal is what a store-owned menu buys.
-    const toggles = [...store.collections.transitions.values()].filter(
-      (record) => record.type === "connect-menu.toggled"
-    )
-    expect(toggles.sort((left, right) => left.revision - right.revision).map((record) => JSON.parse(record.payload).open)).toEqual([true, false])
-  })
-
-  test("opening from the trigger, then a pointer press outside, closes it", async () => {
-    const view = await mountCounted(true)
-    const { store } = view.controller
-
-    await view.act(() => connectTrigger(view.host)?.click())
-    expect(store.session().connectMenuOpen).toBe(true)
-    expect(connectList(view.host)).not.toBeNull()
-
-    // A press inside the menu is not a dismissal.
-    await view.act(() => {
-      connectList(view.host)?.dispatchEvent(new Event("pointerdown", { bubbles: true }))
-    })
-    expect(store.session().connectMenuOpen).toBe(true)
-
-    const transcript = view.host.querySelector<HTMLElement>(".smithers-transcript")
-    expect(transcript).not.toBeNull()
-    await view.act(() => {
-      transcript?.dispatchEvent(new Event("pointerdown", { bubbles: true }))
-    })
-
-    expect(store.session().connectMenuOpen).toBe(false)
-    expect(connectList(view.host)).toBeNull()
-  })
-
-  test("opening from the trigger, then Escape, closes it and returns focus", async () => {
-    const view = await mountCounted(true)
-    const { store } = view.controller
-
-    await view.act(() => connectTrigger(view.host)?.click())
-    expect(store.session().connectMenuOpen).toBe(true)
-    const list = connectList(view.host)
-    expect(list).not.toBeNull()
-
-    await view.act(() => {
-      list?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }))
-    })
-    await frame()
-
-    expect(store.session().connectMenuOpen).toBe(false)
-    expect(connectList(view.host)).toBeNull()
-    // Escape must not strand focus on a node that no longer exists.
-    const trigger = connectTrigger(view.host)
-    expect(trigger).not.toBeNull()
-    expect(document.activeElement).toBe(trigger)
-  })
-})

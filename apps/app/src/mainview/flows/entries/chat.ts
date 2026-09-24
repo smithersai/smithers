@@ -19,24 +19,6 @@ export const recommendations: ReadonlyArray<Recommendation> = [
   { name: "chat", when: (state) => state.surface !== "chat", rank: () => 0 }
 ]
 
-/** `chat.surfaces`, the composer's surfaces menu, registered beside the appearance flows. */
-export const chatSurfacesFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
-  const SURFACES = {
-    name: "chat.surfaces",
-    summary: "Open the surfaces menu",
-    input: NoPayload,
-    handler: () => actions.toggleSurfacesMenu()
-  }
-  return [
-  /*
-   * `chat.*` — the conversation's own controls. C-1 (wave 13): the composer's
-   * surfaces-menu trigger is a flow like every other affordance — the button
-   * dispatches /chat.surfaces, and the name typed opens the same menu.
-   */
-  flow(SURFACES)
-  ]
-}
-
 /** The bare `chat` switch and the conversation's own controls. */
 export const chatFlows = (actions: CommandActions): ReadonlyArray<FlowEntry> => {
   const RETRY = {

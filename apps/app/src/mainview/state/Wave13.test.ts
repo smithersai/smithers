@@ -377,35 +377,13 @@ describe("wave 13 §F — capability theater in a launch turn is caught determin
   })
 })
 
-describe("wave 13 C-1 — the surfaces menu is a command", () => {
-  test("/surfaces toggles the menu state through the registry", async () => {
-    const store = await webStore()
-    const { agent } = scriptedToolAgent([() => []])
-    const controller = createAppController(store, unavailableRepositories, agent)
-    expect(store.session().surfacesMenuOpen).toBe(false)
-    expect(controller.runCommand("chat.surfaces")).toBe(true)
-    await settle(2)
-    expect(store.session().surfacesMenuOpen).toBe(true)
-    expect(controller.runCommand("chat.surfaces")).toBe(true)
-    await settle(2)
-    expect(store.session().surfacesMenuOpen).toBe(false)
-  })
-
-  // Re-pinned 2026-09-01. This asserted the agent could not reach the menu until
-  // 1e18cb3339 narrowed the user-only set to USER_ONLY_VISIBLE, so that every
-  // flow the slash menu lists is also a tool call. The menu is listed chrome
-  // with no destructive effect, so it is callable now, and what the test pins is
-  // that the agent's call goes through the same toggle the human's does.
-  test("the agent reaches the menu through the same toggle the human uses", async () => {
-    const store = await webStore()
-    const { agent } = scriptedToolAgent([() => []])
-    const controller = createAppController(store, unavailableRepositories, agent)
-    const result = await controller.commands.executeForAgent({
-      name: "commands",
-      arguments: JSON.stringify({ action: "execute", name: "chat.surfaces" })
-    })
-    expect(result.startsWith("failed:")).toBe(false)
-    await settle(2)
-    expect(store.session().surfacesMenuOpen).toBe(true)
-  })
+test("retired composer menus are absent from both command doors", async () => {
+  const store = await webStore()
+  const { agent } = scriptedToolAgent([() => []])
+  const controller = createAppController(store, unavailableRepositories, agent)
+  for (const name of ["chat.surfaces", "composer.add"]) {
+    expect(controller.commands.find(name)).toBeUndefined()
+    expect(controller.runCommand(name)).toBe(false)
+    expect(await controller.commands.executeForAgent({ name: "commands", arguments: JSON.stringify({ action: "execute", name }) })).toContain("unknown")
+  }
 })

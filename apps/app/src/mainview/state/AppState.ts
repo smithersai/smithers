@@ -780,21 +780,6 @@ export const SessionSchema = z.object({
   activeFrameId: z.string().optional(),
   /** The admin dev-tools panel (§2b/§2d) — only ever true for admin sessions. */
   devtoolsOpen: z.boolean(),
-  /** The composer surfaces menu (the /surfaces command's open state). */
-  surfacesMenuOpen: z.boolean(),
-  /*
-   * The composer connect menu's open state. A component is a projection and
-   * never an authority, so the menu that used to live in a `useState` lives
-   * here — opened and closed through the transition dispatcher with the actor
-   * recorded, exactly like surfacesMenuOpen above. Optional (missing = closed)
-   * so sessions persisted before the field parse without a schema reset.
-   *
-   * `initialSession` supplies false for new sessions. The storage openers now
-   * run schema decoders, but this remains optional for older snapshots and
-   * in-memory producers too. Every read uses `=== true` / `!== true`, so an
-   * omitted field consistently means closed at all of those boundaries.
-   */
-  connectMenuOpen: z.boolean().optional(),
   /** Admin reset confirmation; optional for sessions persisted before this field. */
   resetConfirmOpen: z.boolean().optional(),
   /*
@@ -858,7 +843,7 @@ export const SessionSchema = z.object({
   /*
    * The local-app tab strip (docs/LOCAL-APP.md "Tabs"). The selected tab,
    * the `+` menu's open state, and the tab a close is asking about all live
-   * here for the same reason as connectMenuOpen and pendingWorldDeleteId: a
+   * here for the same reason as pendingWorldDeleteId: a
    * component is a projection, never an authority. Optional (missing =
    * main / closed / none) so sessions persisted before the fields parse.
    */
@@ -881,8 +866,6 @@ export const SessionSchema = z.object({
   turnId: z.string().nullable().optional(),
   tabMenuOpen: z.boolean().optional(),
   pendingTabCloseId: z.string().nullable().optional(),
-  /** The composer's `+` menu (the /composer.add command's open state); optional like the menus above. */
-  addMenuOpen: z.boolean().optional(),
   /** Durable chat log filter; absent means every source and kind is shown. */
   chatFilter: z.object({ sources: z.array(z.string()), kinds: z.array(z.enum(CHAT_KINDS)), query: z.string() }).optional(),
   chatFilterMenuOpen: z.boolean().optional(),
@@ -1315,6 +1298,7 @@ export type AppTransition =
     detail: string | null
     durationMs: number
   }
+  // Historical menu events remain decodable when replaying an existing journal.
   | {
     /* The composer surfaces menu opens/closes (the surfaces command). */
     type: "surfaces-menu.toggled"
@@ -1812,8 +1796,6 @@ export const initialSession = (theme: Session["theme"]): Session => ({
   activeBranchId: DEFAULT_BRANCH_ID,
   activeFrameId: rootFrameId(DEFAULT_BRANCH_ID),
   devtoolsOpen: false,
-  surfacesMenuOpen: false,
-  connectMenuOpen: false,
   resetConfirmOpen: false,
   verbose: false,
   pendingWorldDeleteId: null,
@@ -1823,7 +1805,6 @@ export const initialSession = (theme: Session["theme"]): Session => ({
   activeTabId: MAIN_TAB_ID,
   tabMenuOpen: false,
   pendingTabCloseId: null,
-  addMenuOpen: false,
   chatFilterMenuOpen: false,
   activeRepoKey: null,
   revision: 0

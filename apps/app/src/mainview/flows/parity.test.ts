@@ -124,7 +124,6 @@ const literalBindings = (source: string): Array<{ readonly prop: string; readonl
 const PRESENTATION_ONLY = [
   "setSlashMenu", // slash-menu hover highlight: local presentation state
   "setCopied", // copy feedback flash; the clipboard write routes via onCopy
-  "toggleConnectMenu", // opens the composer's connect origins menu; every entry inside dispatches its own command
   "setSelectedPath", // world card doc selection: which note the embedded editor shows — local presentation state
   "onDismissDrawer(", // graph card detail drawer close: local presentation state (which node is focused)
   "setOpenLog(", // run timeline log panel: which row's log is open — local presentation state
@@ -136,12 +135,7 @@ const PRESENTATION_ONLY = [
   // that replaces the one pressed, so Escape keeps a shell to land on.
   "maximizeThenFocus",
   "minimizeThenFocus",
-  // C-1 (wave 13): these two are NOT local state — calling either dispatches
-  // runCommand("chat.surfaces"). The wrappers stay listed only
-  // because the registry call is one indirection away from the onClick.
-  "openNamespace", // slash-menu tree: opening a namespace rewrites the draft to `/ns.` — a draft edit, never a command
-  "openMenu", // dispatches runCommand("chat.surfaces") — the /chat.surfaces command
-  "closeMenu", // dispatches runCommand("chat.surfaces"); the entry itself runs its own command
+  "openNamespace", // slash-menu namespace draft edit
   "onCopy(", // delegated: TranscriptMessage.tsx binds it to runCommand("chat.copy-message", ...)
   "onDownload}", // delegated: TranscriptMessage.tsx binds StorageRecoveryButton to storage.recovery.export
   "onDecideApproval(", // delegated: App.tsx binds it to approval.approve / approval.deny
@@ -339,7 +333,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../plugins/PluginRail.tsx": 1,
       "../plugins/PluginsSurface.tsx": 1,
       /* 11 = 10 + the origin chip's "rev N exists · view" (lane change step 4; renders only when both seqs are known). */
-      "../Composer.tsx": 9,
+      "../Composer.tsx": 2,
       /*
        * 3 — the GitHub connect / disconnect pair and the empty state's own
        * import affordance (§11.6). The connected list carries no control.

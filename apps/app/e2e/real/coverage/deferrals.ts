@@ -22,7 +22,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
   browser: [
     "app.download.prompt", "app.experimental", "app.first-run.dismiss", "app.hint.dismiss", "change.pick",
     "chat", "chat.dictate", "chat.filter", "chat.filter.grep", "chat.filter.reset", "chat.filter.toggle",
-    "chat.reload", "chat.surfaces", "cloud.prompt", "composer.add", "experimental.set", "flow.plan.select",
+    "chat.reload", "cloud.prompt", "experimental.set", "flow.plan.select",
     "flow.plan.tab", "flow.repo.choose", "input.mode", "palette.actions", "palette.recent",
     "runs.coding.select", "runs.graph.follow", "runs.graph.select", "runs.graph.tab", "setup.view",
     "smithers.who", "storage.recovery.export", "storage.recovery.reset", "sync.ops.show-more",

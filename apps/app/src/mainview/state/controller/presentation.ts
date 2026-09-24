@@ -1,5 +1,4 @@
 import { TOOLS_BROWSER_FETCH_PATH } from "@smthrs/rpc/AgentApiRoutes"
-import { catalogRepository,PUBLIC_REPOS_PATH } from "../../RepoLink"
 import { foldLineages } from "../../chain/DebugFolds"
 import type { Card,Palette } from "../AppState"
 import { DEFAULT_PALETTE,isPalette,PALETTES,WIKI_DISPLAY_NAME } from "../AppState"
@@ -13,15 +12,10 @@ export interface PresentationController {
   readonly showWorld: () => void
   readonly showConnectors: () => void
   readonly toggleDevtools: () => void
-  readonly toggleSurfacesMenu: () => void
   readonly toggleChatFilterMenu: () => { readonly value: string }
   readonly toggleChatFilter: (target: string) => string | { readonly value: string }
   readonly grepChatFilter: (query: string) => { readonly value: string }
   readonly resetChatFilter: () => { readonly value: string }
-  readonly toggleConnectMenu: () => void
-  readonly closeConnectMenu: () => void
-  readonly toggleAddMenu: () => void
-  readonly closeAddMenu: () => void
   readonly addFiles: () => void
   readonly askReset: () => void
   readonly cancelReset: () => void
@@ -110,14 +104,6 @@ export const createPresentationController = (
     ctx.store.dispatch({ type: "devtools.toggled", actor: "user", open: !ctx.store.session().devtoolsOpen })
   }
 
-  const toggleSurfacesMenu = (): void => {
-    ctx.store.dispatch({
-      type: "surfaces-menu.toggled",
-      actor: "user",
-      open: !ctx.store.session().surfacesMenuOpen
-    })
-  }
-
   const toggleChatFilterMenu = (): { readonly value: string } => {
     const open = ctx.store.session().chatFilterMenuOpen !== true
     ctx.store.dispatch({ type: "chat-filter.menu.toggled", actor: ctx.commandActor, open })
@@ -140,62 +126,6 @@ export const createPresentationController = (
   const resetChatFilter = (): { readonly value: string } => {
     ctx.store.dispatch({ type: "chat-filter.changed", actor: ctx.commandActor, filter: { sources: [], kinds: [], query: "" } })
     return { value: "Showing all." }
-  }
-
-  let catalogRead: Promise<void> | undefined
-  const loadCatalog = (): Promise<void> => catalogRead ??= (async () => {
-    try {
-      const response = await ctx.boundedFetch(`${ctx.baseUrl}${PUBLIC_REPOS_PATH}`)
-      if (!response.ok) return
-      const catalog = await response.json()
-      if (!Array.isArray(catalog?.repos)) return
-      for (const entry of catalog.repos) {
-        if (typeof entry?.name !== "string") continue
-        const repository = catalogRepository(catalog, entry.name)
-        if (repository === null || ctx.store.collections.repositories.has(repository.id)) continue
-        ctx.store.dispatch({
-          type: "repository.upserted", actor: "system",
-          repository: { ...repository, ownerKind: "user", head: null, catalog: true }
-        })
-      }
-    } catch {
-      // Preserve cached repositories; reopening retries a failed catalog read.
-    } finally {
-      catalogRead = undefined
-    }
-  })()
-
-  const toggleConnectMenu = (): void => {
-    if (ctx.store.session().connectMenuOpen !== true) void loadCatalog()
-    ctx.store.dispatch({
-      type: "connect-menu.toggled",
-      actor: "user",
-      open: ctx.store.session().connectMenuOpen !== true
-    })
-  }
-
-  /*
-   * Escape, an outside press, and picking an entry all CLOSE — they are not
-   * toggles, and dispatching one against an already-closed menu would write a
-   * transition that changed nothing into the journal.
-   */
-  const closeConnectMenu = (): void => {
-    if (ctx.store.session().connectMenuOpen !== true) return
-    ctx.store.dispatch({ type: "connect-menu.toggled", actor: "user", open: false })
-  }
-
-  /* The composer `+` menu: same store-owned open state, same close-is-not-a-toggle rule. */
-  const toggleAddMenu = (): void => {
-    ctx.store.dispatch({
-      type: "add-menu.toggled",
-      actor: "user",
-      open: ctx.store.session().addMenuOpen !== true
-    })
-  }
-
-  const closeAddMenu = (): void => {
-    if (ctx.store.session().addMenuOpen !== true) return
-    ctx.store.dispatch({ type: "add-menu.toggled", actor: "user", open: false })
   }
 
   /*
@@ -583,15 +513,10 @@ export const createPresentationController = (
     showWorld,
     showConnectors,
     toggleDevtools,
-    toggleSurfacesMenu,
     toggleChatFilterMenu,
     toggleChatFilter,
     grepChatFilter,
     resetChatFilter,
-    toggleConnectMenu,
-    closeConnectMenu,
-    toggleAddMenu,
-    closeAddMenu,
     addFiles,
     askReset,
     cancelReset,

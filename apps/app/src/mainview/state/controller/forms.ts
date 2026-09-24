@@ -411,9 +411,6 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
       const session = store.session()
       const menus = [
         ["tab.menu.toggled", session.tabMenuOpen],
-        ["add-menu.toggled", session.addMenuOpen],
-        ["connect-menu.toggled", session.connectMenuOpen],
-        ["surfaces-menu.toggled", session.surfacesMenuOpen]
       ] as const
       for (const [type, open] of menus) {
         if (open === true) store.dispatch({ type, actor: "user", open: false })

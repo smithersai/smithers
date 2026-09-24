@@ -96,11 +96,8 @@ function AppContent() {
       activeBranchId: session.activeBranchId,
       activeFrameId: session.activeFrameId,
       devtoolsOpen: session.devtoolsOpen,
-      surfacesMenuOpen: session.surfacesMenuOpen,
-      connectMenuOpen: session.connectMenuOpen,
       activeTabId: session.activeTabId,
       tabMenuOpen: session.tabMenuOpen,
-      addMenuOpen: session.addMenuOpen,
       chatFilter: session.chatFilter,
       chatFilterMenuOpen: session.chatFilterMenuOpen,
       paletteOpen: session.paletteOpen,
@@ -127,16 +124,10 @@ function AppContent() {
   const { data: repoRows } = useLiveQuery(collections.repos)
   const { data: repositoryRows } = useLiveQuery(collections.repositories)
   const { data: recommendationRows } = useLiveQuery(collections.recommendations)
-  /* The surfaces trigger, refocused by this shell's Escape and by the menu itself. */
-  const surfacesTriggerRef = useRef<HTMLButtonElement>(null)
   /* The composer wrap: Cmd+K focuses the textarea inside it (the palette opens on the composer). */
   const composerWrapRef = useRef<HTMLDivElement>(null)
   const chatTriggerRef = useRef<HTMLButtonElement>(null)
   const readRequestRef = useRef(0)
-  /* The connect trigger has the same shell-level Escape exit as surfaces. */
-  const connectTriggerRef = useRef<HTMLButtonElement>(null)
-  /* The composer's `+` menu is the third session menu the shell closes the same way. */
-  const addTriggerRef = useRef<HTMLButtonElement>(null)
   const session = sessionRows[0] ?? controller.store.session()
   /*
    * The conversation on screen (docs/LOCAL-APP.md "Tabs"): there is ONE
@@ -176,27 +167,11 @@ function AppContent() {
     focusChatDoor()
   }
 
-  /*
-   * Outside-pointer dismissal belongs to the shell that owns both menus.
-   * Capture keeps the original click working and removes global listeners —
-   * React remains a projection, and controller disposal owns every external
-   * subscription. If focus was inside Surfaces, return it to its trigger.
-   */
+  /** Dismiss open chrome without swallowing the original press. */
   const onShellPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>): void => {
     const target = event.target
     if (!(target instanceof Element)) return
     if (session.paletteOpen === true && target.matches(".composer-overlay")) dismissComposer()
-    if (session.surfacesMenuOpen && target.closest(".composer-surfaces") === null) {
-      const heldFocus = document.activeElement?.closest(".composer-surfaces") !== null
-      controller.runCommand("chat.surfaces")
-      if (heldFocus) requestAnimationFrame(() => surfacesTriggerRef.current?.focus())
-    }
-    if (session.connectMenuOpen === true && target.closest(".composer-connect") === null) {
-      controller.closeConnectMenu()
-    }
-    if (session.addMenuOpen === true && target.closest(".composer-add") === null) {
-      controller.closeAddMenu()
-    }
     if (session.chatFilterMenuOpen === true && target.closest(".chat-filter-control") === null) {
       controller.runCommand("chat.filter")
     }
@@ -399,15 +374,7 @@ function AppContent() {
   const composerWrap = (
     <div className="composer-wrap" data-keyboard-pane="Chat input" ref={composerWrapRef} hidden={session.paletteOpen !== true}>
       <Composer
-        minimal
         typing={typing}
-        surface={session.surface}
-        surfacesMenuOpen={session.surfacesMenuOpen}
-        connectMenuOpen={session.connectMenuOpen === true}
-        addMenuOpen={session.addMenuOpen === true}
-        surfacesTriggerRef={surfacesTriggerRef}
-        connectTriggerRef={connectTriggerRef}
-        addTriggerRef={addTriggerRef}
         autoFocus={authMessage === undefined}
         placeholder="Ask Smithers to work on something…"
       />
@@ -467,7 +434,7 @@ function AppContent() {
           if (event.key === "Escape" && session.paletteOpen === true && controller.store.session().paletteOpen !== true) focusChatDoor()
           return
         }
-        // The `+` menu is one more session menu the shell closes on Escape.
+        // Close visible menus before dismissing Chat.
         if (event.key === "Escape" && session.tabMenuOpen === true) {
           event.preventDefault()
           controller.runCommand("tab.menu")
@@ -476,32 +443,6 @@ function AppContent() {
         if (event.key === "Escape" && session.chatFilterMenuOpen === true) {
           event.preventDefault()
           controller.runCommand("chat.filter")
-          return
-        }
-        // §21.4 — an open menu closes before anything else the shell owns.
-        if (event.key === "Escape" && session.surfacesMenuOpen) {
-          event.preventDefault()
-          controller.runCommand("chat.surfaces")
-          requestAnimationFrame(() => {
-            surfacesTriggerRef.current?.focus()
-          })
-          return
-        }
-        // §21.4: both menus are session state now, so the shell closes whichever is open.
-        if (event.key === "Escape" && session.connectMenuOpen === true) {
-          event.preventDefault()
-          controller.closeConnectMenu()
-          requestAnimationFrame(() => {
-            connectTriggerRef.current?.focus()
-          })
-          return
-        }
-        if (event.key === "Escape" && session.addMenuOpen === true) {
-          event.preventDefault()
-          controller.closeAddMenu()
-          requestAnimationFrame(() => {
-            addTriggerRef.current?.focus()
-          })
           return
         }
         if (event.key === "Escape" && event.target instanceof Element && event.target.closest(".input-mode-menu")) return

@@ -46,12 +46,12 @@ const boot = async (fetchImpl?: AppServices["fetchImpl"]) => {
 describe("review regressions: concurrent commands and working-copy identity", () => {
   test("a human form releases menu backdrops while an agent form leaves human chrome alone", async () => {
     const { store, controller } = await boot()
-    const menuTypes = ["tab.menu.toggled", "add-menu.toggled", "connect-menu.toggled", "surfaces-menu.toggled"] as const
+    const menuTypes = ["tab.menu.toggled"] as const
     for (const type of menuTypes) store.dispatch({ type, actor: "user", open: true })
     expect((await controller.commands.run("browser.open")).status).toBe("form")
-    expect(store.session()).toMatchObject({ tabMenuOpen: false, addMenuOpen: false, connectMenuOpen: false, surfacesMenuOpen: false })
+    expect(store.session()).toMatchObject({ tabMenuOpen: false })
     const closed = [...store.collections.transitions.values()].filter((row) => menuTypes.includes(row.type as typeof menuTypes[number]) && JSON.parse(row.payload).open === false)
-    expect(closed).toHaveLength(4)
+    expect(closed).toHaveLength(1)
     expect(closed.every((row) => row.actor === "user")).toBe(true)
 
     store.dispatch({ type: "tab.menu.toggled", actor: "user", open: true })
