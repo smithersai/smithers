@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer"
 import { runDurable } from "./Boundary"
 import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
+import { WORKER_FAILURES } from "@smthrs/rpc/WorkerFailureCodes"
 import type { WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import { CryptoFailure } from "./Failures"
 /**
@@ -144,11 +145,16 @@ interface TurnLimitWindow {
 
 const WINDOW_KEY = "window"
 
-/** What a spend check answered. `retryAt` is set only when refused. */
+/**
+ * What a spend check answered. `retryAt` is set only when refused.
+ * `unavailable` marks a refusal because the bucket's object could not answer,
+ * not because the bucket is spent.
+ */
 export interface TurnBudget {
   readonly allowed: boolean
   readonly remaining: number
   readonly retryAt?: number
+  readonly unavailable?: true
 }
 
 /** A positive integer ceiling parameter, or the default when absent or malformed. */
@@ -246,10 +252,18 @@ const isBudget = (value: unknown): value is TurnBudget =>
  * local dev or a stub stack, where there is no real model credential to
  * protect; refusing every turn there would break the e2e suites to guard
  * nothing. The binding is declared in `wrangler.jsonc`, so the deployed Worker
- * always has it. It also fails open when the object cannot be reached or
- * answers something unreadable: our own infrastructure hiccuping must never
- * lock a person out.
+ * always has it.
+ *
+ * When a bound object cannot be reached or answers something unreadable, a
+ * login's or an erasure's ceiling admits: our own infrastructure hiccuping
+ * must never lock a person out. The anonymous and recommend ceilings are COST
+ * caps on the deployment's credentials, so they refuse as `unavailable`
+ * instead: a flood that knocks the shared bucket over must not lift the cap.
  */
+const COST_CEILINGS: ReadonlySet<TurnCeiling["kind"]> = new Set(["anonymous", "anonymous-all", "recommend"])
+
+const UNAVAILABLE: TurnBudget = { allowed: false, remaining: 0, unavailable: true }
+
 export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.Layer<TurnLimits> => {
   const call = (path: "spend" | "peek") =>
     Effect.fn(`TurnLimits.${path}`)(function*(key: string, ceiling: TurnCeiling = LOGIN_CEILING) {
@@ -267,13 +281,14 @@ export const turnLimitsLayer = (namespace: NativeNamespace | undefined): Layer.L
         Effect.catch((failure) =>
           Effect.sync(() => {
             // A rejected fetch, a refusal, or an unreadable answer is an
-            // infrastructure fault, not a signal about this user: admit the
-            // turn and log the cause (a refusal names its status and body).
+            // infrastructure fault, not a signal about this user: log the
+            // cause (a refusal names its status and body).
             console.error(`turn-limit ${path} failed:`, failure.cause)
             return undefined
           }))
       )
-      return isBudget(budget) ? budget : open
+      if (isBudget(budget)) return budget
+      return COST_CEILINGS.has(ceiling.kind) ? UNAVAILABLE : open
     })
   return Layer.succeed(TurnLimits, { spend: call("spend"), peek: call("peek") })
 }
@@ -336,13 +351,29 @@ const waitLabel = (seconds: number): string =>
  * The refusal a spent budget answers with. For a login: a bug report, never a
  * sales pitch. For a visitor: the end of exploring, and the one way on. For
  * a visitor refused by the deployment-wide bucket: the same way on, and that
- * they did nothing wrong.
+ * they did nothing wrong. A cost ceiling whose object could not answer is an
+ * infra 503 that blames Smithers, never the caller's own limit.
  */
 export const turnLimitResponse = (
   budget: TurnBudget,
   isolationHeaders: Record<string, string>,
   ceiling: TurnCeiling = LOGIN_CEILING
 ): Response => {
+  if (budget.unavailable === true) {
+    return new Response(
+      JSON.stringify({
+        status: "error",
+        code: "service_temporarily_unavailable" satisfies WorkerFailureCode,
+        message: ceiling.kind === "recommend"
+          ? "Command suggestions are paused while Smithers recovers. Not your fault. Chat keeps working. Nothing was charged."
+          : "Exploring without signing in is paused while Smithers recovers. Not your fault. Sign in with GitHub to keep going. Nothing was charged."
+      }),
+      {
+        status: WORKER_FAILURES.service_temporarily_unavailable.status,
+        headers: { "content-type": "application/json", ...isolationHeaders }
+      }
+    )
+  }
   const retryAt = budget.retryAt ?? Date.now() + ceiling.windowMs
   const seconds = Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))
   return new Response(

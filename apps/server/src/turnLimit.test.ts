@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { TestClock } from "effect/testing"
 import { memoryStorage, storageLayer } from "./DurableStorage"
+import { RECOMMEND_ALL_CEILING, RECOMMEND_CEILING } from "./recommend"
 import type { NativeNamespace } from "./DurableStorage"
 import {
   ANONYMOUS_ALL_CEILING,
@@ -11,6 +12,7 @@ import {
   ANONYMOUS_CEILING,
   ANONYMOUS_TURN_MAX,
   anonymousBucketAddress,
+  ERASE_CEILING,
   anonymousTurnKey,
   TURN_WINDOW_MAX,
   TURN_WINDOW_MS,
@@ -192,7 +194,7 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     expect((await spendTurn(broken, "will")).allowed).toBe(true)
   })
 
-  test("a rejected Durable Object spend admits the turn and logs the cause", async () => {
+  test("a rejected Durable Object spend admits a login's turn and logs the cause", async () => {
     const cause = new Error("Durable Object reset because its code was updated.")
     const broken: NativeNamespace = {
       idFromName: (name) => name,
@@ -204,11 +206,62 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     }
     const logged = spyOn(console, "error").mockImplementation(() => {})
     try {
-      expect(await spendTurn(broken, "will", ANONYMOUS_CEILING)).toEqual({ allowed: true, remaining: ANONYMOUS_CEILING.max })
-      expect(logged).toHaveBeenCalledWith("turn-limit spend failed:", cause)
       expect(await spendTurn(broken, "will")).toEqual({ allowed: true, remaining: TURN_WINDOW_MAX })
+      expect(await spendTurn(broken, "will", ERASE_CEILING)).toEqual({ allowed: true, remaining: ERASE_CEILING.max })
+      expect(logged).toHaveBeenCalledWith("turn-limit spend failed:", cause)
     } finally {
       logged.mockRestore()
+    }
+  })
+
+  /*
+   * The anonymous and recommend ceilings are COST caps on the deployment's
+   * own credentials. Admitting while their object is down would lift the cap
+   * exactly when a flood has knocked it over, so each refuses as unavailable.
+   */
+  const brokenAnswers: ReadonlyArray<readonly [string, () => Promise<Response>]> = [
+    ["a rejected fetch", async () => {
+      throw new Error("Durable Object is overloaded.")
+    }],
+    ["a non-2xx answer", async () => new Response("storage is sealed", { status: 500 })],
+    ["an unreadable 200", async () => new Response("not json at all", { status: 200 })]
+  ]
+  for (const ceiling of [ANONYMOUS_CEILING, ANONYMOUS_ALL_CEILING, RECOMMEND_CEILING, RECOMMEND_ALL_CEILING]) {
+    for (const [what, fetch] of brokenAnswers) {
+      test(`the ${ceiling.kind} cost ceiling (max ${ceiling.max}) refuses on ${what}`, async () => {
+        const broken: NativeNamespace = { idFromName: (name) => name, get: () => ({ fetch }) }
+        const logged = spyOn(console, "error").mockImplementation(() => {})
+        try {
+          expect(await spendTurn(broken, "anonymous:abc", ceiling)).toEqual({ allowed: false, remaining: 0, unavailable: true })
+          expect(logged).toHaveBeenCalledTimes(1)
+          expect(logged.mock.calls[0]![0]).toBe("turn-limit spend failed:")
+        } finally {
+          logged.mockRestore()
+        }
+      })
+    }
+  }
+
+  test("a cost ceiling with no namespace bound still admits: local dev has no credential to protect", async () => {
+    expect(await spendTurn(undefined, "anonymous:abc", ANONYMOUS_ALL_CEILING)).toEqual({
+      allowed: true,
+      remaining: ANONYMOUS_ALL_CEILING.max
+    })
+  })
+
+  test("an unavailable budget is a 503 that blames our infrastructure, never the visitor's own limit", async () => {
+    for (const ceiling of [ANONYMOUS_CEILING, ANONYMOUS_ALL_CEILING, RECOMMEND_CEILING]) {
+      const response = turnLimitResponse({ allowed: false, remaining: 0, unavailable: true }, { "x-iso": "1" }, ceiling)
+      expect(response.status).toBe(503)
+      expect(response.headers.get("x-iso")).toBe("1")
+      expect(response.headers.get("retry-after")).toBeNull()
+      const body = (await response.json()) as { status: string; code: string; message: string; retryAt?: string }
+      expect(body.status).toBe("error")
+      expect(body.code).toBe("service_temporarily_unavailable")
+      expect(body.retryAt).toBeUndefined()
+      expect(body.message).toContain("Not your fault")
+      expect(body.message).toContain("Nothing was charged")
+      expect(body.message).not.toContain("daily limit")
     }
   })
 

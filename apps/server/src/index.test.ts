@@ -1438,6 +1438,38 @@ describe("anonymous exploring of a public catalog repository", () => {
     expect(seen?.get("x-smithers-service-token")).toBeNull()
   })
 
+  test("a signed-out catalog turn is a 503 and spends no credential when the turn limiter cannot answer", async () => {
+    let upstreamCalls = 0
+    const env: WorkerEnv = {
+      ...identityEnv,
+      TURN_LIMITS: {
+        idFromName: (name) => name,
+        get: () => ({ fetch: async () => { throw new Error("Durable Object is overloaded.") } })
+      }
+    }
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      await withMockedFetch(
+        (request) => {
+          const refusal = signedOut(request)
+          if (refusal !== undefined) return refusal
+          upstreamCalls += 1
+          return ndjsonUpstream([{ type: "done" }])
+        },
+        async () => {
+          const response = await worker.fetch(post("/api/agent/turn", exploring("smithersai/smithers", "explore-limiter-down")), env)
+          expect(response.status).toBe(503)
+          expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin")
+          expect(((await response.json()) as { code: string }).code).toBe("service_temporarily_unavailable")
+        }
+      )
+      expect(logged).toHaveBeenCalledWith("turn-limit spend failed:", expect.any(Error))
+    } finally {
+      logged.mockRestore()
+    }
+    expect(upstreamCalls).toBe(0)
+  })
+
   test("a signed-out turn about anything else, or about nothing, keeps the sign-in 401", async () => {
     let upstreamCalls = 0
     await withMockedFetch(

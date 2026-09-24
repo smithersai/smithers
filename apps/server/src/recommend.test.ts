@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
@@ -583,6 +583,22 @@ describe("the recommendation ceilings", () => {
     expect(response.status).toBe(200)
     expect(limits.keys()).toContain("recommend:login:will")
     expect(limits.keys()).not.toContain("will")
+  })
+
+  test("a turn limiter that cannot answer is a 503 and Jev is never asked", async () => {
+    const limits: NativeNamespace = {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => { throw new Error("Durable Object is overloaded.") } })
+    }
+    const logged = spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const { response, calls } = await recommend(post("/api/recommend", goodBody), { jev, limits })
+      expect(response.status).toBe(503)
+      expect(calls.length).toBe(0)
+      expect(((await response.json()) as { code: string }).code).toBe("service_temporarily_unavailable")
+    } finally {
+      logged.mockRestore()
+    }
   })
 
   test("with no TURN_LIMITS binding the route still answers", async () => {
