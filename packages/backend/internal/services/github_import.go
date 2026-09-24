@@ -291,6 +291,7 @@ type GitHubImportService struct {
 	decrypter    OAuthAccessTokenDecrypter
 	refresher    GitHubUserTokenRefresher
 	appTokens    GitHubImportInstallationTokenIssuer
+	readAccess   RepositoryJobGitHubReadAccess
 	httpClient   *http.Client
 	gitBaseURL   string
 	metrics      GitHubImportMetrics
@@ -403,6 +404,14 @@ func WithGitHubImportTokenRefresher(refresher GitHubUserTokenRefresher) GitHubIm
 // credentials over a user's OAuth token when the repository is connected.
 func WithGitHubImportInstallationTokens(issuer GitHubImportInstallationTokenIssuer) GitHubImportOption {
 	return func(s *GitHubImportService) { s.appTokens = issuer }
+}
+
+// WithGitHubImportReadAccess wires the proof that the importer's own GitHub
+// credential still reads a private source. An installation token reads every
+// repo the App is installed on, so it cannot answer that. Without it, a private
+// source reached through an installation token fails closed.
+func WithGitHubImportReadAccess(access RepositoryJobGitHubReadAccess) GitHubImportOption {
+	return func(s *GitHubImportService) { s.readAccess = access }
 }
 
 func withGitHubImportCloneMirror(fn func(ctx context.Context, owner, repo, sourceToken, pushURL, pushToken, jobID string) error) GitHubImportOption {
@@ -2232,7 +2241,7 @@ func gitHubImportSizeExceeded(sizeKB, maxMB int64) (bool, int64) {
 }
 
 func (s *GitHubImportService) githubCloneInfoForRepo(ctx context.Context, userID int64, owner, repo string) (string, bool, string, error) {
-	token, account, err := s.githubImportSourceToken(ctx, userID, owner, repo)
+	token, account, installation, err := s.githubImportSourceToken(ctx, userID, owner, repo)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", false, "", err
 	}
@@ -2284,6 +2293,19 @@ func (s *GitHubImportService) githubCloneInfoForRepo(ctx context.Context, userID
 	if metadata.Private && token == "" {
 		return "", false, "", pkgerrors.Unauthorized("GitHub credential is required for private repository import; install the GitHub App or link a GitHub account")
 	}
+	// The installation token comes from a repo connection that proved access
+	// once, and it keeps reading the repo after the importer loses access. Every
+	// import, reopen refresh and source retention passes through here, so the
+	// importer's own credential must still read a private source before any
+	// upstream commit reaches their repository.
+	if metadata.Private && installation && (s.readAccess == nil || !s.readAccess.GitHubRepoReadAuthorized(ctx, userID, owner, repo)) {
+		slog.Warn("github.source.read_access_lost", "user_id", userID, "github_owner", owner, "github_repo", repo)
+		if s.metrics != nil {
+			s.metrics.ObserveMirrorFailure("github_access", "reconnect_required")
+		}
+		return "", false, "", pkgerrors.GitHubReconnectRequired(fmt.Sprintf(
+			"your GitHub account can no longer read %s/%s; reconnect GitHub with an account that can read it. Your existing Smithers copy is unchanged", owner, repo))
+	}
 	maxMB := githubImportMaxSizeMB()
 	if exceeded, sizeMB := gitHubImportSizeExceeded(metadata.SizeKB, maxMB); exceeded {
 		// Refuse BEFORE the clone: the mirror clone is what fills the pod's
@@ -2303,14 +2325,17 @@ func (s *GitHubImportService) githubCloneInfoForRepo(ctx context.Context, userID
 // repo_connection exists. Absence of either credential is not itself an error:
 // the anonymous metadata probe below keeps public imports working and produces
 // a terminal, user-visible error if GitHub hides a private repository with 404.
-func (s *GitHubImportService) githubImportSourceToken(ctx context.Context, userID int64, owner, repo string) (string, db.OauthAccount, error) {
+// The bool reports an installation token, which proves nothing about the
+// user's own access.
+func (s *GitHubImportService) githubImportSourceToken(ctx context.Context, userID int64, owner, repo string) (string, db.OauthAccount, bool, error) {
 	if s.appTokens != nil {
 		installation, err := s.appTokens.CreateGitHubInstallationToken(ctx, userID, owner, repo)
 		if err == nil && strings.TrimSpace(installation.Token) != "" {
-			return strings.TrimSpace(installation.Token), db.OauthAccount{}, nil
+			return strings.TrimSpace(installation.Token), db.OauthAccount{}, true, nil
 		}
 	}
-	return s.loadGitHubOAuthToken(ctx, userID)
+	token, account, err := s.loadGitHubOAuthToken(ctx, userID)
+	return token, account, false, err
 }
 
 type githubRepoMetadata struct {

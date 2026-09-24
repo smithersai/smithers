@@ -852,6 +852,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		services.WithGitHubImportWorkspaceProvisioner(workspaceService),
 		services.WithGitHubImportTokenRefresher(authService),
 		services.WithGitHubImportInstallationTokens(repoConnectionService),
+		services.WithGitHubImportReadAccess(gitHubUserReposService),
 		services.WithGitHubImportSyncedRepos(gitHubSyncedRepoService),
 	)
 	gitHubSyncedRepoService.SetMirrorer(gitHubImportService)

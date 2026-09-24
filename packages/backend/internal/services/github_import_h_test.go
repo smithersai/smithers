@@ -498,6 +498,7 @@ func TestGitHubImport_H_GitHubCloneInfoAndTokenBranches(t *testing.T) {
 	appSvc := NewGitHubImportService(nil, nil, githubImportHTokenDB{}, &githubImportHRepoHost{}, githubImportHDecrypter{}, "https://plue.test",
 		WithGitHubImportHTTPClient(api.Client()),
 		WithGitHubImportInstallationTokens(githubImportHInstallationTokens{token: " ghs_installation "}),
+		WithGitHubImportReadAccess(&repositoryJobGitHubReadStub{allowed: map[string]bool{"7/octo/demo": true}}),
 	)
 	cloneToken, private, _, err := appSvc.githubCloneInfoForRepo(ctx, 7, "octo", "demo")
 	require.NoError(t, err)
