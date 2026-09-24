@@ -154,3 +154,25 @@ test("removing repo registration cannot bypass an inherited key cap", async () =
   expect((await ctx.proxy(token)).status).toBe(403);
   expect(ctx.calls()).toBe(0);
 });
+
+test("case variants preserve key scope, session identity and the billing ledger", async () => {
+  const ctx = await setup(3);
+  await ctx.env.DB.prepare("UPDATE api_keys SET repos_json = ?").bind(JSON.stringify(["OCTO/WIDGETS"])).run();
+  const token = await ctx.session();
+  await ctx.spend(2);
+  for (const credential of [KEY, token]) {
+    const response = await ctx.worker.fetch(new Request("https://review.test/api/plan?repo=Octo/Widgets", {
+      headers: { "x-api-key": credential },
+    }), ctx.env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ repo: REPO, quota: { monthlySpendUsd: 2 } });
+  }
+  const response = await ctx.worker.fetch(new Request("https://review.test/anthropic/v1/messages", {
+    method: "POST", headers: { "x-api-key": KEY, "x-smithers-repo": "Octo/Widgets" },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 1, messages: [] }),
+  }), ctx.env);
+  expect(response.status).toBe(200);
+  await response.text();
+  await Promise.all(ctx.pending);
+  expect((await ctx.env.DB.prepare("SELECT DISTINCT repo FROM usage_events").all()).results).toEqual([{ repo: REPO }]);
+});

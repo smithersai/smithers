@@ -17,7 +17,7 @@ Subdirectories:
 - `walkthroughs/` — walkthrough upload to R2.
 
 Root helpers: `d1.ts` (narrow D1 interface tests implement over bun:sqlite),
-`env.ts` (bindings), `migrations.ts` (idempotent schema + additive columns),
+`env.ts` (bindings), `migrations.ts` (immutable deploy-time migrations),
 `monthKey.ts` / `repoMonthlyCapUsd.ts` / `repoMonthlySpendUsd.ts`
 (calendar-month quota math), `sha256Hex.ts`, `randomTokenHex.ts`,
 `timingSafeStringEqual.ts`, `jsonError.ts`, `landingPage.ts`.

@@ -1,3 +1,4 @@
+import { sameRepoName } from "../sameRepoName.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { jsonError } from "../jsonError.ts";
 import { monthKey } from "../monthKey.ts";
@@ -13,13 +14,14 @@ export async function handlePlan(request: Request, env: ReviewWorkerEnv, url: UR
   const credential = await authenticateProxyRequest(request, env, now);
   if (!credential) return jsonError(401, "unauthorized");
 
-  const repo = url.searchParams.get("repo") ?? (credential.kind === "session" ? credential.repo : null);
+  let repo = url.searchParams.get("repo") ?? (credential.kind === "session" ? credential.repo : null);
   if (!repo) return jsonError(400, "repo query parameter is required");
   if (!canAccessRepo(credential, repo)) return jsonError(403, "forbidden");
 
   const registration = await lookupRepo(env.DB, repo);
   if (!registration) return jsonError(404, "repo not registered");
 
+  repo = registration.repo;
   const budget = await assertRepoUnderMonthlyCap(env.DB, registration, repo, now);
   if (budget instanceof Response) return budget;
   const { monthlyCapUsd, monthSpendUsd: monthlySpendUsd } = budget;
@@ -48,6 +50,6 @@ export async function handlePlan(request: Request, env: ReviewWorkerEnv, url: UR
 }
 
 function canAccessRepo(credential: ProxyAuth, repo: string): boolean {
-  if (credential.kind === "session") return credential.repo === repo;
-  return credential.repos.includes(repo);
+  if (credential.kind === "session") return sameRepoName(credential.repo, repo);
+  return credential.repos.some((name) => sameRepoName(name, repo));
 }

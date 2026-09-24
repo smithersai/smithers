@@ -182,7 +182,7 @@ describe("runAction (subprocess)", () => {
     const jwks = serveJwks([keypair.publicJwk]);
     const env = await buildTestEnv();
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, '1', '7')",
     )
       .bind("octo/widgets", mode, 5, 25, Date.now())
       .run();
@@ -199,6 +199,7 @@ describe("runAction (subprocess)", () => {
       exp: Math.floor(Date.now() / 1000) + 600,
       iat: Math.floor(Date.now() / 1000),
       repository: "octo/widgets",
+      repository_id: "1", repository_owner_id: "7",
       repository_owner: "octo",
       ref: "refs/pull/42/merge",
       event_name: "pull_request",

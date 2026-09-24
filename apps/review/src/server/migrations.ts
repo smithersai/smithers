@@ -100,4 +100,11 @@ export const REVIEW_MIGRATIONS = [{
       SELECT repo, model, SUM(input_tokens), SUM(output_tokens), SUM(cache_creation_tokens), SUM(cache_read_tokens), SUM(cost_usd)
       FROM usage_events WHERE NOT EXISTS (SELECT 1 FROM usage_totals) GROUP BY repo, model`,
   ].join(";\n") + ";\n",
+}, {
+  name: "0002_repository_identity.sql",
+  sql: `ALTER TABLE repos ADD COLUMN repository_id TEXT;
+ALTER TABLE repos ADD COLUMN owner_id TEXT;
+CREATE UNIQUE INDEX repos_repository_id_idx ON repos(repository_id);
+CREATE UNIQUE INDEX repos_name_idx ON repos(repo COLLATE NOCASE);
+`,
 }] as const;

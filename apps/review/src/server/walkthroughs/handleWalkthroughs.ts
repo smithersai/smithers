@@ -1,3 +1,4 @@
+import { sameRepoName } from "../sameRepoName.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { jsonError } from "../jsonError.ts";
 import { authenticateProxyRequest, type ProxyAuth } from "../proxy/authenticateProxyRequest.ts";
@@ -121,7 +122,7 @@ async function handleHistory(request: Request, env: ReviewWorkerEnv, url: URL, n
   if (!canAccessRepo(credential, repo)) return jsonError(403, "forbidden");
 
   const rows = await env.DB.prepare(
-    "SELECT id, repo, pr, bytes, created_at, status FROM walkthroughs WHERE repo = ? ORDER BY created_at DESC LIMIT 50",
+    "SELECT id, repo, pr, bytes, created_at, status FROM walkthroughs WHERE repo = ? COLLATE NOCASE ORDER BY created_at DESC LIMIT 50",
   )
     .bind(repo)
     .all<WalkthroughRow>();
@@ -170,8 +171,8 @@ function publishAttribution(credential: ProxyAuth | null): PublishAttribution {
 }
 
 function canAccessRepo(credential: ProxyAuth, repo: string): boolean {
-  if (credential.kind === "session") return credential.repo === repo;
-  return credential.repos.includes(repo);
+  if (credential.kind === "session") return sameRepoName(credential.repo, repo);
+  return credential.repos.some((name) => sameRepoName(name, repo));
 }
 
 function isPublishToken(request: Request, env: ReviewWorkerEnv): boolean {

@@ -1,3 +1,4 @@
+import { sameRepoName } from "../sameRepoName.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { jsonError } from "../jsonError.ts";
 import { assertRepoUnderMonthlyCap } from "../assertRepoUnderMonthlyCap.ts";
@@ -139,12 +140,11 @@ export async function handleAnthropic(
     }
     // The per-session cap above resets whenever a session is re-minted; the
     // per-repo month-to-date total does not. Enforce it so re-minted sessions
-    // cannot drive unbounded spend on an already-reviewed PR. Skipped when the
-    // repo has no live registration for a legacy or OIDC session. Sessions
-    // issued by an API key still require the same registered repo as the key.
+    // cannot drive unbounded spend on an already-reviewed PR. Every session
+    // requires a live registration.
     const registration = await lookupRepo(env.DB, repo);
-    if (!registration && auth.apiKey) return jsonError(403, "repo not registered", { repo });
-    if (registration) {
+    if (!registration) return jsonError(403, "repo not registered", { repo });
+    {
       const budget = await assertRepoUnderMonthlyCap(env.DB, registration, repo, now);
       if (budget instanceof Response) return budget;
       repoCapUsd = Math.min(budget.monthlyCapUsd, auth.apiKey?.spendCapUsd ?? budget.monthlyCapUsd);
@@ -169,7 +169,7 @@ export async function handleAnthropic(
       });
     }
     if (repoHint) {
-      if (!auth.repos.includes(repoHint)) {
+      if (!auth.repos.some((repo) => sameRepoName(repo, repoHint))) {
         return jsonError(403, "api key not authorized for repo", { repo: repoHint });
       }
       repo = repoHint;
@@ -182,6 +182,7 @@ export async function handleAnthropic(
     if (!registration) {
       return jsonError(403, "repo not registered", { repo });
     }
+    repo = registration.repo;
     const budget = await assertRepoUnderMonthlyCap(env.DB, registration, repo, now);
     if (budget instanceof Response) return budget;
     const { monthlyCapUsd, monthSpendUsd } = budget;

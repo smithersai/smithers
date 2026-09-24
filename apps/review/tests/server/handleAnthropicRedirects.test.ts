@@ -27,6 +27,7 @@ const SSE_USAGE = [
 ].join("\n");
 
 async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) {
+  await env.DB.prepare("INSERT OR IGNORE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, 'auto', 100, 100, 0)").bind(repo).run();
   const token = "srs_testsessiontoken";
   const hash = await sha256Hex(token);
   await env.DB.prepare(

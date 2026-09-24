@@ -11,6 +11,7 @@ function createReviewWorker(deps: HandleAnthropicDeps & { jwksUrl: string }) {
   };
 }
 async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) {
+  await env.DB.prepare("INSERT OR IGNORE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, 'auto', 100, 100, 0)").bind(repo).run();
   const token = "srs_testsessiontoken";
   const hash = await sha256Hex(token);
   await env.DB.prepare(
@@ -23,7 +24,7 @@ async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) 
 
 async function registerRepo(env: ReviewWorkerEnv, repo: string, prsPerMonth = 5, spendCapUsd = 1) {
   await env.DB.prepare(
-    "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
   )
     .bind(repo, "auto", prsPerMonth, spendCapUsd, Date.now())
     .run();
@@ -366,6 +367,7 @@ test("the next admission retries a failed settlement before reserving more budge
 
 test("holds older than the upstream deadline settle at their reserved cost and free the in-flight slots", async () => {
   const env = await buildTestEnv();
+  await registerRepo(env, REPO, 100, 100);
   const token = "srs_expiringholds";
   const hash = await sha256Hex(token);
   const start = Date.UTC(2026, 8, 30, 23, 50);

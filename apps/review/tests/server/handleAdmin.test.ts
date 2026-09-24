@@ -21,7 +21,7 @@ describe("admin endpoints", () => {
       new Request("https://review.test/api/admin/repos", {
         method: "POST",
         headers: { authorization: "Bearer test-admin", "content-type": "application/json" },
-        body: JSON.stringify({ repo: "octo/widgets", mode: "auto", prsPerMonth: 10, spendCapUsd: 25 }),
+        body: JSON.stringify({ repo: "octo/widgets", repositoryId: "1", ownerId: "7", mode: "auto", prsPerMonth: 10, spendCapUsd: 25 }),
       }),
       env,
     );
@@ -45,7 +45,7 @@ describe("admin endpoints", () => {
       new Request("https://review.test/api/admin/repos", {
         method: "POST",
         headers: { authorization: "Bearer test-admin", "content-type": "application/json" },
-        body: JSON.stringify({ repo: "octo/widgets", mode: "auto", quiz: "on", prsPerMonth: 10, spendCapUsd: 25 }),
+        body: JSON.stringify({ repo: "octo/widgets", repositoryId: "1", ownerId: "7", mode: "auto", quiz: "on", prsPerMonth: 10, spendCapUsd: 25 }),
       }),
       env,
     );
@@ -75,7 +75,7 @@ describe("admin endpoints", () => {
       new Request("https://review.test/api/admin/repos", {
         method: "POST",
         headers: { authorization: "Bearer test-admin", "content-type": "application/json" },
-        body: JSON.stringify({ repo: "octo/widgets", mode: "comment", prsPerMonth: 5, spendCapUsd: 25 }),
+        body: JSON.stringify({ repo: "octo/widgets", repositoryId: "1", ownerId: "7", mode: "comment", prsPerMonth: 5, spendCapUsd: 25 }),
       }),
       env,
     );
@@ -139,7 +139,7 @@ describe("admin endpoints", () => {
       new Request("https://review.test/api/admin/repos", {
         method: "POST",
         headers: { authorization: "Bearer test-admin", "content-type": "application/json" },
-        body: JSON.stringify({ repo: "octo/widgets", mode: "comment", prsPerMonth: 5, spendCapUsd: 25 }),
+        body: JSON.stringify({ repo: "octo/widgets", repositoryId: "1", ownerId: "7", mode: "comment", prsPerMonth: 5, spendCapUsd: 25 }),
       }),
       env,
     );
@@ -261,4 +261,22 @@ test("retention keeps a failed R2 deletion retryable", async () => {
   env.WALKTHROUGHS = original;
   await worker.scheduled({}, env);
   expect(await env.DB.prepare("SELECT id FROM walkthroughs").first<{ id: string }>()).toBeNull();
+});
+
+
+test("registration binds identity once and normalizes new names", async () => {
+  const env = await buildTestEnv();
+  const worker = makeWorker();
+  const post = (body: object) => worker.fetch(new Request("https://review.test/api/admin/repos", {
+    method: "POST", headers: { authorization: "Bearer test-admin" },
+    body: JSON.stringify({ repo: "Octo/Widgets", repositoryId: "1", ownerId: "7", mode: "auto", prsPerMonth: 1, spendCapUsd: 10, ...body }),
+  }), env);
+  expect((await post({ repositoryId: null })).status).toBe(400);
+  expect((await post({})).status).toBe(200);
+  expect((await post({ repo: "OCTO/WIDGETS", quiz: "on" })).status).toBe(200);
+  expect((await post({ repositoryId: "2" })).status).toBe(409);
+  expect((await post({ ownerId: "8" })).status).toBe(409);
+  expect((await post({ repo: "octo/renamed" })).status).toBe(409);
+  const rows = await env.DB.prepare("SELECT repo, repository_id, owner_id, quiz FROM repos").all();
+  expect(rows.results).toEqual([{ repo: "octo/widgets", repository_id: "1", owner_id: "7", quiz: "on" }]);
 });

@@ -32,6 +32,7 @@ afterEach(() => {
 });
 
 async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) {
+  await env.DB.prepare("INSERT OR IGNORE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, 'auto', 100, 100, 0)").bind(repo).run();
   const token = "srs_gaptoken";
   const hash = await sha256Hex(token);
   await env.DB.prepare(
@@ -120,7 +121,7 @@ describe("handleAdminRepos gaps", () => {
     const worker = fixedWorker({});
     const now = Date.now();
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
     )
       .bind("octo/widgets", "auto", 5, 25, now)
       .run();

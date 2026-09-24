@@ -1,3 +1,5 @@
+import { githubRepositoryId } from "../githubRepositoryId.ts";
+import { lookupRepo } from "../sessions/lookupRepo.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { jsonError } from "../jsonError.ts";
 import { monthKey } from "../monthKey.ts";
@@ -5,6 +7,8 @@ import { timingSafeStringEqual } from "../timingSafeStringEqual.ts";
 
 interface UpsertBody {
   repo?: unknown;
+  repositoryId?: unknown;
+  ownerId?: unknown;
   mode?: unknown;
   quiz?: unknown;
   prsPerMonth?: unknown;
@@ -13,6 +17,8 @@ interface UpsertBody {
 
 interface RepoListRow {
   repo: string;
+  repository_id: string | null;
+  owner_id: string | null;
   mode: string;
   quiz: string;
   prs_per_month: number;
@@ -53,21 +59,45 @@ export async function handleAdminRepos(request: Request, env: ReviewWorkerEnv, n
     if (quiz !== "off" && quiz !== "auto" && quiz !== "on") return jsonError(400, "quiz must be off|auto|on");
     if (typeof body.prsPerMonth !== "number" || body.prsPerMonth <= 0) return jsonError(400, "prsPerMonth must be > 0");
     if (typeof body.spendCapUsd !== "number" || body.spendCapUsd <= 0) return jsonError(400, "spendCapUsd must be > 0");
-    await env.DB.prepare(
-      `INSERT INTO repos (repo, mode, quiz, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(repo) DO UPDATE SET mode = excluded.mode, quiz = excluded.quiz, prs_per_month = excluded.prs_per_month, spend_cap_usd = excluded.spend_cap_usd`,
-    )
-      .bind(body.repo, body.mode, quiz, body.prsPerMonth, body.spendCapUsd, now)
-      .run();
+    const repositoryId = githubRepositoryId(body.repositoryId);
+    const ownerId = githubRepositoryId(body.ownerId);
+    if (!repositoryId || !ownerId) return jsonError(400, "repositoryId and ownerId must be positive integer IDs");
+    const existing = await lookupRepo(env.DB, body.repo);
+    const repo = existing?.repo ?? body.repo.toLowerCase();
+    if ((existing?.repository_id && existing.repository_id !== repositoryId) ||
+        (existing?.owner_id && existing.owner_id !== ownerId)) {
+      return jsonError(409, "repository identity is already bound");
+    }
+    const bound = await env.DB.prepare("SELECT repo FROM repos WHERE repository_id = ?")
+      .bind(repositoryId).first<{ repo: string }>();
+    if (bound && bound.repo !== repo) return jsonError(409, "repository identity is already bound");
+    let changed: number | undefined;
+    try {
+      const result = await env.DB.prepare(
+        `INSERT INTO repos (repo, mode, quiz, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(repo) DO UPDATE SET mode = excluded.mode, quiz = excluded.quiz, prs_per_month = excluded.prs_per_month, spend_cap_usd = excluded.spend_cap_usd, repository_id = excluded.repository_id, owner_id = excluded.owner_id
+         WHERE (repos.repository_id IS NULL OR repos.repository_id = excluded.repository_id)
+           AND (repos.owner_id IS NULL OR repos.owner_id = excluded.owner_id)`,
+      )
+        .bind(repo, body.mode, quiz, body.prsPerMonth, body.spendCapUsd, now, repositoryId, ownerId)
+        .run();
+      changed = result.meta.changes;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("UNIQUE constraint failed: repos.")) {
+        return jsonError(409, "repository identity is already bound");
+      }
+      throw error;
+    }
+    if (changed === 0) return jsonError(409, "repository identity is already bound");
     return Response.json(
-      { repo: body.repo, mode: body.mode, quiz, prsPerMonth: body.prsPerMonth, spendCapUsd: body.spendCapUsd },
+      { repo: repo.toLowerCase(), repositoryId, ownerId, mode: body.mode, quiz, prsPerMonth: body.prsPerMonth, spendCapUsd: body.spendCapUsd },
       { status: 200 },
     );
   }
   if (request.method === "GET") {
     const month = monthKey(now);
     const repos = await env.DB.prepare(
-      "SELECT repo, mode, quiz, prs_per_month, spend_cap_usd, created_at FROM repos ORDER BY repo",
+      "SELECT repo, repository_id, owner_id, mode, quiz, prs_per_month, spend_cap_usd, created_at FROM repos ORDER BY repo",
     ).all<RepoListRow>();
     const usage = await env.DB.prepare(
       "SELECT repo, SUM(cost_usd) AS cost_usd FROM usage_events WHERE created_at >= ? GROUP BY repo",
@@ -84,7 +114,9 @@ export async function handleAdminRepos(request: Request, env: ReviewWorkerEnv, n
     return Response.json({
       month,
       repos: repos.results.map((r) => ({
-        repo: r.repo,
+        repo: r.repo.toLowerCase(),
+        repositoryId: r.repository_id,
+        ownerId: r.owner_id,
         mode: r.mode,
         quiz: r.quiz,
         prsPerMonth: r.prs_per_month,

@@ -1,3 +1,5 @@
+import { githubRepositoryId } from "../githubRepositoryId.ts";
+import { sameRepoName } from "../sameRepoName.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { jsonError } from "../jsonError.ts";
 import { assertRepoUnderMonthlyCap } from "../assertRepoUnderMonthlyCap.ts";
@@ -87,6 +89,7 @@ export async function handleSessions(
   let repo: string;
   let pr: number;
   let apiKey: ApiKeyRecord | null = null;
+  let oidcIdentity: { repositoryId: string; ownerId: string } | undefined;
   let oidcEventName: string | undefined;
 
   if (typeof body.oidcToken === "string" && body.oidcToken.length > 0) {
@@ -101,6 +104,10 @@ export async function handleSessions(
     if (typeof claims.repository !== "string" || claims.repository.length === 0) {
       return jsonError(401, "oidc: missing repository claim");
     }
+    const repositoryId = githubRepositoryId(claims.repository_id);
+    const ownerId = githubRepositoryId(claims.repository_owner_id);
+    if (!repositoryId || !ownerId) return jsonError(401, "oidc: missing repository identity");
+    oidcIdentity = { repositoryId, ownerId };
     repo = claims.repository;
     const resolvedPr = resolveOidcPullRequestNumber(claims, body.pr);
     if (!resolvedPr.ok) return jsonError(400, resolvedPr.message);
@@ -118,7 +125,7 @@ export async function handleSessions(
     if (record.repos.length === 0) {
       return jsonError(403, "api key is not scoped to any repo; mint a repo-scoped key", { repo: body.repo });
     }
-    if (!record.repos.includes(body.repo)) {
+    if (!record.repos.some((name) => sameRepoName(name, body.repo as string))) {
       return jsonError(403, "api key not authorized for repo", { repo: body.repo });
     }
     repo = body.repo;
@@ -135,6 +142,17 @@ export async function handleSessions(
       repo,
     });
   }
+
+  if (oidcIdentity) {
+    if (!registration.repository_id || !registration.owner_id) {
+      return jsonError(503, "repository identity registration unavailable", { repo: registration.repo });
+    }
+    if (registration.repository_id !== oidcIdentity.repositoryId || registration.owner_id !== oidcIdentity.ownerId) {
+      return jsonError(403, "oidc: repository identity mismatch");
+    }
+  }
+  // Keep existing mixed-case ledger keys intact; new registrations use lowercase.
+  repo = registration.repo;
 
   // A comment-mode repo reviews only on the magic-phrase comment. Refuse every
   // other Actions trigger before the quota claim, so a PR push spends no slot.

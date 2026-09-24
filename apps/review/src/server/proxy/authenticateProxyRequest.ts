@@ -1,3 +1,4 @@
+import { sameRepoName } from "../sameRepoName.ts";
 import type { D1Database } from "../d1.ts";
 import type { ReviewWorkerEnv } from "../env.ts";
 import { sha256Hex } from "../sha256Hex.ts";
@@ -62,7 +63,7 @@ export async function authenticateProxyRequest(
   if (session) {
     if (session.expires_at <= now) return null;
     const apiKey = session.api_key_hash ? await lookupApiKeyByHash(env.DB, session.api_key_hash) : null;
-    if (session.api_key_hash && (!apiKey || !apiKey.repos.includes(session.repo))) return null;
+    if (session.api_key_hash && (!apiKey || !apiKey.repos.some((repo) => sameRepoName(repo, session.repo)))) return null;
     return {
       kind: "session",
       hash: session.hash,

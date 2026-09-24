@@ -18,6 +18,8 @@ function baseClaims(repo: string, pr: number, exp: number) {
     exp,
     iat: Math.floor(Date.now() / 1000),
     repository: repo,
+    repository_id: repo.toLowerCase() === SECOND_REPO ? "2" : "1",
+    repository_owner_id: "7",
     repository_owner: repo.split("/")[0],
     ref: `refs/pull/${pr}/merge`,
   };
@@ -42,10 +44,11 @@ beforeEach(() => {
 
 async function registerRepo(env: ReviewWorkerEnv, repo: string, prsPerMonth = 3) {
   await env.DB.prepare(
-    "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, '1', '7')",
   )
     .bind(repo, "auto", prsPerMonth, 10, Date.now())
     .run();
+  if (repo === SECOND_REPO) await env.DB.prepare("UPDATE repos SET repository_id = '2' WHERE repo = ?").bind(repo).run();
 }
 
 function makeWorker(jwksUrl: string) {
@@ -59,11 +62,55 @@ function makeWorker(jwksUrl: string) {
 }
 
 describe("POST /api/sessions (OIDC)", () => {
+  test("refuses an unbound legacy registration before spending quota", async () => {
+    const env = await buildTestEnv();
+    await registerRepo(env, REPO);
+    await env.DB.prepare("UPDATE repos SET repository_id = NULL, owner_id = NULL").run();
+    const token = await signTestJwt(keypair, {
+      ...baseClaims(REPO, 42, Math.floor(Date.now() / 1000) + 600),
+      repository_id: "1", repository_owner_id: "7",
+    });
+    const response = await makeWorker(jwks.url).fetch(new Request("https://review.test/api/sessions", {
+      method: "POST", body: JSON.stringify({ oidcToken: token }),
+    }), env);
+    expect(response.status).toBe(503);
+    expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>()).toEqual({ c: 0 });
+    expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM reviewed_prs").first<{ c: number }>()).toEqual({ c: 0 });
+  });
+
+  test.each([{ repository_id: "99" }, { repository_owner_id: "99" }, { repository_id: undefined }])(
+    "refuses a different or missing immutable identity: %j", async (claims) => {
+      const env = await buildTestEnv();
+      await registerRepo(env, REPO);
+      const token = await signTestJwt(keypair, { ...baseClaims(REPO, 1, Math.floor(Date.now() / 1000) + 600), ...claims });
+      const response = await makeWorker(jwks.url).fetch(new Request("https://review.test/api/sessions", {
+        method: "POST", body: JSON.stringify({ oidcToken: token }),
+      }), env);
+      expect(response.status).toBe(claims.repository_id === undefined && "repository_id" in claims ? 401 : 403);
+      expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM sessions").first<{ c: number }>()).toEqual({ c: 0 });
+      expect(await env.DB.prepare("SELECT COUNT(*) AS c FROM reviewed_prs").first<{ c: number }>()).toEqual({ c: 0 });
+    },
+  );
+
+  test("case variants share the stored registration and its quota", async () => {
+    const env = await buildTestEnv();
+    await registerRepo(env, "Octo/Widgets", 1);
+    const worker = makeWorker(jwks.url);
+    for (const [repo, pr, status] of [[REPO, 1, 200], ["OCTO/WIDGETS", 2, 402]] as const) {
+      const token = await signTestJwt(keypair, baseClaims(repo, pr, Math.floor(Date.now() / 1000) + 600));
+      const response = await worker.fetch(new Request("https://review.test/api/sessions", {
+        method: "POST", body: JSON.stringify({ oidcToken: token }),
+      }), env);
+      expect(response.status).toBe(status);
+    }
+    expect((await env.DB.prepare("SELECT repo FROM reviewed_prs").all()).results).toEqual([{ repo: "Octo/Widgets" }]);
+  });
+
   test("verifies a valid token and mints a session", async () => {
     const env = await buildTestEnv();
     const worker = makeWorker(jwks.url);
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, '1', '7')",
     )
       .bind(REPO, "comment", 5, 25, Date.now())
       .run();
@@ -99,7 +146,7 @@ describe("POST /api/sessions (OIDC)", () => {
     const env = await buildTestEnv();
     const worker = makeWorker(jwks.url);
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, '1', '7')",
     )
       .bind(REPO, "comment", 1, 25, Date.now())
       .run();
@@ -185,7 +232,7 @@ describe("POST /api/sessions (OIDC)", () => {
     const env = await buildTestEnv();
     const worker = makeWorker(jwks.url);
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, quiz, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO repos (repo, mode, quiz, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, ?, '1', '7')",
     )
       .bind(REPO, "auto", "on", 5, 25, Date.now())
       .run();
@@ -606,7 +653,7 @@ describe("POST /api/sessions (OIDC)", () => {
     const worker = makeWorker(jwks.url);
     // Ceiling = prs_per_month * spend_cap_usd = 1 * 0.01 = 0.01.
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at, repository_id, owner_id) VALUES (?, ?, ?, ?, ?, '1', '7')",
     )
       .bind(REPO, "auto", 1, 0.01, Date.now())
       .run();

@@ -56,6 +56,7 @@ function sseUsageWithLargeBodyBeforeFinalUsage(): string {
 }
 
 async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) {
+  await env.DB.prepare("INSERT OR IGNORE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, 'auto', 100, 100, 0)").bind(repo).run();
   const token = "srs_testsessiontoken";
   const hash = await sha256Hex(token);
   await env.DB.prepare(
@@ -68,7 +69,7 @@ async function seedSession(env: ReviewWorkerEnv, repo: string, spendCapUsd = 1) 
 
 async function registerRepo(env: ReviewWorkerEnv, repo: string, prsPerMonth = 5, spendCapUsd = 1) {
   await env.DB.prepare(
-    "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
   )
     .bind(repo, "auto", prsPerMonth, spendCapUsd, Date.now())
     .run();
@@ -744,7 +745,7 @@ describe("anthropic proxy", () => {
     teardowns.push(() => fixture.stop());
     // Plan ceiling = prs_per_month * spend_cap_usd = 1 * 0.01 = 0.01.
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(REPO, "auto", 1, 0.01, Date.now())
       .run();
@@ -784,7 +785,7 @@ describe("anthropic proxy", () => {
     teardowns.push(() => fixture.stop());
     // Ceiling = 5 * 1 = 5; nothing spent yet.
     await env.DB.prepare(
-      "INSERT INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
+      "INSERT OR REPLACE INTO repos (repo, mode, prs_per_month, spend_cap_usd, created_at) VALUES (?, ?, ?, ?, ?)",
     )
       .bind(REPO, "auto", 5, 1, Date.now())
       .run();
@@ -1173,4 +1174,18 @@ test("stream deadline covers a stalled upstream fetch", async () => {
   );
   expect(response.status).toBe(502);
   expect(aborted).toBe(true);
+});
+
+
+test("a deleted registration refuses an existing OIDC session before forwarding", async () => {
+  const env = await buildTestEnv();
+  const token = await seedSession(env, REPO);
+  await env.DB.prepare("DELETE FROM repos WHERE repo = ?").bind(REPO).run();
+  let forwarded = false;
+  const worker = createReviewWorker({ fetchUpstream: (async () => { forwarded = true; return new Response(); }) as unknown as typeof fetch });
+  const response = await worker.fetch(new Request("https://review.test/anthropic/v1/messages", {
+    method: "POST", headers: { "x-api-key": token }, body: "{}",
+  }), env);
+  expect(response.status).toBe(403);
+  expect(forwarded).toBe(false);
 });

@@ -5,7 +5,7 @@ const AUDIENCE = "smithers-review";
 
 /**
  * GitHub Actions OIDC claims the worker reads. Other claims may appear in the
- * token but are ignored: identity comes from `repository`, the PR number (when
+ * token but are ignored: identity comes from immutable repository and owner IDs, the PR number (when
  * inferrable) from `event_name` + `ref`.
  */
 export interface OidcClaims {
@@ -17,6 +17,7 @@ export interface OidcClaims {
   repository: string;
   repository_owner?: string;
   repository_id?: string;
+  repository_owner_id?: string;
   ref?: string;
   ref_type?: string;
   event_name?: string;
