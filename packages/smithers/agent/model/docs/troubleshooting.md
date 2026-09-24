@@ -133,7 +133,8 @@ message is audit data; never execute it.
 **Cached input stops growing across a conversation.** Set
 `SMITHERS_WIRE_TRACE` to a file path and rerun. Each outgoing request
 appends one JSON line with the route, the `prompt_cache_key` body field, the
-`session-id` header, a short hash of the instructions, a hash and kind for
+`session-id` header, `affinity` (whether a remembered `x-codex-turn-state`
+rides along), a short hash of the instructions, a hash and kind for
 each input item, and `commonPrefixItems`: how many leading input items match
 the previous request on the same cache key. The line never contains the
 signed credential or item content. Compare it with the usage the stream
@@ -147,3 +148,7 @@ reports:
   the loss is on the provider side of the wire. Compare the stall point with
   the first item of a kind the provider treats differently, such as a
   replayed `reasoning` item.
+- A short probe cannot show growth. The cache is read in fixed blocks, and a
+  frame whose new stable items are smaller than one block plus the trailing
+  state section reads back the same count as the frame before. Make each
+  frame add a few thousand tokens before reading a flat count as a defect.

@@ -212,6 +212,24 @@ const compile = <Body, Frame, Event, State>(
     }
   })()
 
+/**
+ * The latest affinity token per conversation, process-wide so every model a
+ * seat builds for one run shares it. Bounded: the oldest conversation is
+ * forgotten first, and a forgotten one only costs its next request the
+ * routing hint.
+ */
+const affinity = new Map<string, string>()
+const affinityLimit = 1024
+
+const affinitySlot = (routeId: string, request: ModelRequest): string | undefined =>
+  request.cacheKey === undefined ? undefined : `${routeId}\u0000${request.cacheKey}`
+
+const rememberAffinity = (slot: string, value: string): void => {
+  affinity.delete(slot)
+  affinity.set(slot, value)
+  if (affinity.size > affinityLimit) affinity.delete(affinity.keys().next().value!)
+}
+
 const stream = <Body, Frame, Event, State>(
   route: Route<Body, Frame, Event, State>,
   executor: RequestExecutor.RequestExecutor,
@@ -221,9 +239,15 @@ const stream = <Body, Frame, Event, State>(
     Stream.unwrap(
       Effect.fn("flows/model/Route.stream")(function*() {
         const { prepared, request: snapshot } = yield* compile(route, request)
-        WireTrace.record(prepared)
+        const affinityHeader = route.protocol.affinityHeader
+        const slot = affinityHeader === undefined ? undefined : affinitySlot(route.id, snapshot)
+        WireTrace.record({ ...prepared, affinity: slot !== undefined && affinity.has(slot) })
         const attempt = Effect.gen(function*() {
-          const signedHeaders = yield* route.auth.sign({ ...prepared.publicHeaders })
+          const token = slot === undefined ? undefined : affinity.get(slot)
+          const signedHeaders = {
+            ...yield* route.auth.sign({ ...prepared.publicHeaders }),
+            ...(token === undefined ? {} : { [affinityHeader!]: token })
+          }
           const httpRequest = HttpClientRequest.post(prepared.url, { headers: signedHeaders }).pipe(
             HttpClientRequest.bodyUint8Array(prepared.body, "application/json")
           )
@@ -232,6 +256,8 @@ const stream = <Body, Frame, Event, State>(
             modelId: snapshot.modelId,
             classifyError: route.protocol.classifyError
           })
+          const returned = slot === undefined ? undefined : response.headers[affinityHeader!.toLowerCase()]
+          if (returned !== undefined && returned !== "") rememberAffinity(slot!, returned)
           return { response, sanitize }
         }).pipe(Auth.withRedaction(route.auth))
         // An `authentication` failure is terminal on both retry ladders — a bad

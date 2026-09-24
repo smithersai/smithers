@@ -3,11 +3,11 @@
  *
  * `SMITHERS_WIRE_TRACE=<file>` appends one JSON line per outgoing model
  * request: the route, the cache key and `session-id` header (both public,
- * never the signed credential), a short hash of the instructions, a hash and
- * kind for each input item, and how many leading input items match the
- * previous request on the same cache key. A prefix that stops growing while
- * the transcript grows is the signature of a request the provider cannot read
- * back from cache.
+ * never the signed credential), whether a remembered affinity token rides
+ * along, a short hash of the instructions, a hash and kind for each input
+ * item, and how many leading input items match the previous request on the
+ * same cache key. A prefix that stops growing while the transcript grows is
+ * the signature of a request the provider cannot read back from cache.
  *
  * @internal
  */
@@ -18,6 +18,8 @@ interface Traced {
   readonly protocolId: string
   readonly publicHeaders: Readonly<Record<string, string>>
   readonly bodyText: string
+  /** Whether the request leaves with a remembered affinity token. */
+  readonly affinity?: boolean | undefined
 }
 
 interface Body {
@@ -54,6 +56,7 @@ export const line = (
     protocolId: prepared.protocolId,
     cacheKey,
     sessionIdHeader: prepared.publicHeaders["session-id"] ?? null,
+    affinity: prepared.affinity ?? false,
     instructions: typeof body.instructions === "string" ? CanonicalJson.shortHash(body.instructions) : null,
     bytes: prepared.bodyText.length,
     items,

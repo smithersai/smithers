@@ -29,7 +29,8 @@ describe("WireTrace.line", () => {
       }, "k"),
       history
     )
-    expect(first).toMatchObject({ cacheKey: "k", sessionIdHeader: "k", commonPrefixItems: 0, previousItems: 0 })
+    expect(first).toMatchObject({ cacheKey: "k", sessionIdHeader: "k", affinity: false, commonPrefixItems: 0 })
+    expect(WireTrace.line({ ...prepared({}, "other"), affinity: true }, history)).toMatchObject({ affinity: true })
     expect(second).toMatchObject({ commonPrefixItems: 1, previousItems: 2, kinds: ["user", "reasoning", "user"] })
     expect(JSON.stringify(second)).not.toContain("secret-state")
   })

@@ -210,14 +210,20 @@ const assistantInput = (message: Extract<Message, { readonly role: "assistant" }
     result.push({ type: "item_reference", id })
     referenced.add(id)
   }
+  // Items replay in the order the model produced them, as the Responses
+  // reasoning guide asks: a reasoning item precedes the message it reasoned
+  // toward. The text parts still join into one message, placed where the
+  // first of them stood.
   const text = message.content.filter((part) => part.type === "text").map((part) => part.text).join("")
-  if (text !== "") {
-    result.push({
-      role: "assistant",
-      content: [{ type: "output_text", text }]
-    })
-  }
+  let textPlaced = text === ""
   for (const part of message.content) {
+    if (part.type === "text" && !textPlaced) {
+      result.push({
+        role: "assistant",
+        content: [{ type: "output_text", text }]
+      })
+      textPlaced = true
+    }
     if (part.type === "thinking" && part.signature !== undefined) {
       const parsed = decodeReasoningInput(part.signature)
       if (Option.isSome(parsed)) {
@@ -880,5 +886,10 @@ export const chatgptProtocol: Protocol.Protocol<
   // without it cached one frame in three, as codex-rs `responses_session_id`
   // warns. Codex sends its conversation id in both.
   headers: (request): Readonly<Record<string, string>> =>
-    request.cacheKey === undefined ? {} : { "session-id": request.cacheKey }
+    request.cacheKey === undefined ? {} : { "session-id": request.cacheKey },
+  // The backend answers the first request of a conversation with a routing
+  // token, and Codex echoes it on every later request of the turn. In a
+  // direct three-frame probe on gpt-6-sol (2026-09-24) frame 3 read 0 of
+  // 11,646 input tokens from cache without the echo (twice) and 9,088 with it.
+  affinityHeader: "x-codex-turn-state"
 })

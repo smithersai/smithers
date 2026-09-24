@@ -34,6 +34,15 @@ export interface Protocol<Body, Frame, Event, State> {
    * exactly like the body; a credential still belongs to `Auth`.
    */
   readonly headers?: ((request: ModelRequest) => Readonly<Record<string, string>>) | undefined
+  /**
+   * A response header that carries an opaque routing token the provider
+   * expects echoed on the next request of the same conversation (the
+   * request's `cacheKey`). The route remembers the latest value per
+   * conversation for the life of the process and sends it back under the
+   * same name. Like a credential it is applied as the request leaves, so it
+   * never enters the prepared request or the sealed-step key.
+   */
+  readonly affinityHeader?: string | undefined
 }
 
 /**

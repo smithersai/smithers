@@ -3805,6 +3805,29 @@ describe("CellTurn context ordering", () => {
     expect(JSON.stringify(wires[3]!.body.input)).toContain("opaque-2")
   })
 
+  it("replays each frame's ChatGPT reasoning item ahead of the message it produced", async () => {
+    // The model emits reasoning, then the message, and the Responses guide
+    // asks for output items back as returned. The text-first order this
+    // replaced sent the backend an item order the model never produced.
+    const { model } = await run({
+      script: [
+        reasoned(`console.log("alpha")`, 0),
+        reasoned(`console.log("beta")`, 1),
+        reasoned(`ctx.done("done")`, 2)
+      ]
+    })
+    const wires = await Promise.all(model.recorder.requests.map(chatgptWire))
+    const input = wires[2]!.body.input as ReadonlyArray<Record<string, unknown>>
+    const kinds = input.flatMap((item) =>
+      item.type === "reasoning"
+        ? [`reasoning:${String(item.encrypted_content)}`]
+        : item.role === "assistant"
+        ? ["assistant"]
+        : []
+    )
+    expect(kinds).toEqual(["reasoning:opaque-0", "assistant", "reasoning:opaque-1", "assistant"])
+  })
+
   /** One recorded request exactly as the Anthropic Messages route puts it on the wire. */
   const anthropicWire = async (request: ModelRequest.ModelRequest | undefined) => {
     const route = Result.getOrThrow(Route.anthropic({ apiKey: Redacted.make("key") }))

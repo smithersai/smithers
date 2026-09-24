@@ -6,7 +6,9 @@
  * `max_output_tokens`, request encrypted reasoning, replay it verbatim instead
  * of `item_reference` ids, and keep every credential out of the sealed view.
  */
-import { Effect, Redacted, Result, Schema } from "effect"
+import { Effect, Redacted, Result, Schema, Stream } from "effect"
+import type * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import { describe, expect, it } from "vitest"
 import * as Auth from "../src/Auth.ts"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
@@ -15,6 +17,7 @@ import * as ModelEvent from "../src/ModelEvent.ts"
 import * as ModelRequest from "../src/ModelRequest.ts"
 import * as OpenAIChatGPT from "../src/OpenAIChatGPT.ts"
 import * as OpenAIResponses from "../src/OpenAIResponses.ts"
+import * as RequestExecutor from "../src/RequestExecutor.ts"
 import * as Route from "../src/Route.ts"
 
 const request = (overrides: Partial<Parameters<typeof ModelRequest.ModelRequest.make>[0]> = {}) =>
@@ -171,6 +174,70 @@ describe("OpenAIChatGPT.make", () => {
       { type: "function_call", call_id: "call_1", name: "bash", arguments: "{}" },
       { type: "function_call_output", call_id: "call_1", output: "ok" }
     ])
+  })
+})
+
+describe("OpenAIChatGPT turn-state affinity", () => {
+  const completed = `data: ${JSON.stringify({ type: "response.completed", response: { id: "r", usage: {} } })}\n\n`
+
+  /** Streams each request through one model and records the headers it left with. */
+  const drive = async (requests: ReadonlyArray<ModelRequest.ModelRequest>, turnStates: ReadonlyArray<string | undefined>) => {
+    const sent: Array<Readonly<Record<string, string>>> = []
+    const executor = RequestExecutor.RequestExecutor.of({
+      execute: (httpRequest: HttpClientRequest.HttpClientRequest) => {
+        const state = turnStates[sent.length]
+        sent.push({ ...httpRequest.headers })
+        return Effect.succeed(HttpClientResponse.fromWeb(
+          httpRequest,
+          new Response(completed, {
+            status: 200,
+            headers: { "content-type": "text/event-stream", ...(state === undefined ? {} : { "x-codex-turn-state": state }) }
+          })
+        ))
+      }
+    })
+    for (const each of requests) {
+      await Effect.runPromise(Effect.scoped(
+        Route.toModel(route()).pipe(
+          Effect.flatMap((model) => model.stream(each).pipe(Stream.runDrain)),
+          Effect.provideService(RequestExecutor.RequestExecutor, executor)
+        )
+      ))
+    }
+    return sent
+  }
+
+  it("echoes the backend's x-codex-turn-state on every later request of the same conversation", async () => {
+    // The backend routes a conversation by this response header, which
+    // codex-rs echoes for a turn. In a direct probe on gpt-6-sol (2026-09-24)
+    // frame 3 read 0 of 11,646 input tokens from cache without the echo and
+    // 9,088 with it.
+    const key = `conversation-${Math.random()}`
+    const sent = await drive(
+      [request({ cacheKey: key }), request({ cacheKey: key }), request({ cacheKey: key })],
+      ["state-1", undefined, "state-3"]
+    )
+    expect(sent.map((headers) => headers["x-codex-turn-state"])).toEqual([undefined, "state-1", "state-1"])
+    const next = await drive([request({ cacheKey: key })], [])
+    expect(next[0]?.["x-codex-turn-state"]).toBe("state-3")
+  })
+
+  it("keeps a turn state to its conversation and out of the sealed request view", async () => {
+    const sent = await drive(
+      [request({ cacheKey: `a-${Math.random()}` }), request({ cacheKey: `b-${Math.random()}` }), request()],
+      ["state-a", "state-b", "state-none"]
+    )
+    expect(sent.map((headers) => headers["x-codex-turn-state"])).toEqual([undefined, undefined, undefined])
+    const view = await prepared(request({ cacheKey: "sealed" }))
+    expect(view.publicHeaders).not.toHaveProperty("x-codex-turn-state")
+  })
+
+  it("forgets the oldest conversation once it remembers more than 1,024", async () => {
+    const run = Math.random()
+    const keys = Array.from({ length: 1026 }, (_, index) => `many-${run}-${index}`)
+    await drive(keys.map((cacheKey) => request({ cacheKey })), keys.map((_, index) => `state-${index}`))
+    const again = await drive([request({ cacheKey: keys[0]! }), request({ cacheKey: keys[1025]! })], [])
+    expect(again.map((headers) => headers["x-codex-turn-state"])).toEqual([undefined, "state-1025"])
   })
 })
 
