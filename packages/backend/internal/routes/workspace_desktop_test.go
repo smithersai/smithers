@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/previewgateway"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
+	"github.com/smithersai/smithers/packages/backend/previewgateway"
 )
 
 type stubDesktopService struct {

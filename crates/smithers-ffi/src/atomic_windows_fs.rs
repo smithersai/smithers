@@ -450,7 +450,11 @@ pub(super) fn run(
             Ok(Value::Null)
         }
         "readDirectory" => {
-            let dir = directory(&root, &confined(&root, request, field(request, "path")?)?, false)?;
+            let dir = directory(
+                &root,
+                &confined(&root, request, field(request, "path")?)?,
+                false,
+            )?;
             let mut entries = Vec::new();
             listing(
                 &dir,
@@ -647,9 +651,15 @@ mod tests {
 
     #[test]
     fn drive_rooted_exclusions_do_not_become_workspace_basenames() {
-        assert_eq!(glob_pattern(r"\a-b.txt", r"C:\workspace", true), "C:/a-b.txt");
+        assert_eq!(
+            glob_pattern(r"\a-b.txt", r"C:\workspace", true),
+            "C:/a-b.txt"
+        );
         assert_eq!(glob_pattern(r"\a-b.txt", r"C:\", true), "a-b.txt");
-        assert_eq!(glob_pattern(r"\workspace\a-b.txt", r"C:\workspace", true), "a-b.txt");
+        assert_eq!(
+            glob_pattern(r"\workspace\a-b.txt", r"C:\workspace", true),
+            "a-b.txt"
+        );
         assert_eq!(glob_pattern(r"\*.txt", r"C:\workspace", false), "\0");
     }
 

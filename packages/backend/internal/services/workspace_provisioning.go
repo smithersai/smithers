@@ -25,8 +25,8 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
-	"github.com/smithersai/smithers/packages/backend/sandbox"
 	"github.com/smithersai/smithers/packages/backend/internal/services/workspace_scripts"
+	"github.com/smithersai/smithers/packages/backend/sandbox"
 )
 
 // bootstrapVars holds the dynamic values injected into the bootstrap shell template.

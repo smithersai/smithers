@@ -66,4 +66,6 @@ func RevokeWorkflowRunCredentials(ctx context.Context, queries any, runID, repos
 }
 func NotifyWorkflowRunEvent(ctx context.Context, notifier interface {
 	NotifyWorkflowRunEvent(context.Context, db.NotifyWorkflowRunEventParams) error
-}, runID int64, source string) { services.NotifyWorkflowRunEvent(ctx, notifier, runID, source) }
+}, runID int64, source string) {
+	services.NotifyWorkflowRunEvent(ctx, notifier, runID, source)
+}
