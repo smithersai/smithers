@@ -1,3 +1,4 @@
+import { timeLabel } from "../Timestamps"
 import { flowAction } from "../flows/FlowAction"
 import { flowArgs } from "../flows/FlowArgs"
 import { refusalFromStored } from "@smthrs/rpc/Refusal"
@@ -14,6 +15,8 @@ import type { CardProjectionAuthority, RunCommand } from "./CardFamily"
 import { Button } from "@smthrs/ui"
 import type { Card } from "../state/AppState"
 import type { CardFamily } from "./CardFamily"
+
+const dollars = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" })
 
 const quantity = (value: number) => value === -1 ? "Unlimited" : String(value)
 const idle = (seconds: number) => seconds === 0 ? "Never sleeps" : seconds < 3600 ? `${seconds / 60} min` : `${seconds / 3600} h`
@@ -36,7 +39,7 @@ export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = 
       <thead><tr><th scope="col">Plan</th>{columns.map(plan => <th scope="col" key={plan.key}
         aria-current={plan.key === planKey ? "true" : undefined}
         style={plan.key === planKey ? { background: "var(--surface)", outline: "2px solid currentColor", outlineOffset: "-2px" } : undefined}>
-        {plan.display_name} ${plan.price_cents / 100}{plan.price_cents === 0 ? "" : " per month"}
+        {plan.display_name} {dollars.format(plan.price_cents / 100)}{plan.price_cents === 0 ? "" : " per month"}
         {plan.key === planKey ? " · Current plan" : ""}
         {plan.key === planKey && creditBalanceCents !== null ? <> · <span data-testid="billing-credit">{creditDollars(creditBalanceCents)}</span></> : null}
       </th>)}</tr></thead>
@@ -53,7 +56,7 @@ export const BillingPlansCardBody = ({ card, onRunCommand, creditBalanceCents = 
       </tbody>
     </table></div>}
     {sandbox === null ? null : <p>
-      In use: {sandbox.concurrentInUse} / {quantity(sandbox.concurrentSandboxes)} · Hours today: {Number((sandbox.secondsUsedToday / 3600).toFixed(2))} / {quantity(sandbox.hoursPerDay)} · Resets at {sandbox.dayResetsAt}
+      In use: {sandbox.concurrentInUse} / {quantity(sandbox.concurrentSandboxes)} · Hours today: {Number((sandbox.secondsUsedToday / 3600).toFixed(2))} / {quantity(sandbox.hoursPerDay)} · Resets at <time dateTime={sandbox.dayResetsAt}>{timeLabel(Date.parse(sandbox.dayResetsAt))}</time>
     </p>}
   </div>
 }

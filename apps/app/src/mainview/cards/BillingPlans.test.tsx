@@ -15,7 +15,7 @@ afterAll(async () => {
 })
 const plans = [
   { key: "free", display_name: "Free", price_cents: 0, concurrent: 1, idle: 1800, hours: 4 },
-  { key: "pro", display_name: "Pro", price_cents: 5000, concurrent: 3, idle: 14400, hours: -1 },
+  { key: "pro", display_name: "Pro", price_cents: 1950, concurrent: 3, idle: 14400, hours: -1 },
   { key: "max", display_name: "Max", price_cents: 50000, concurrent: 20, idle: 0, hours: -1 }
 ].map(p => ({ ...p, interval: "monthly", checkout_available: p.key !== "free", limits: {
   concurrent_sandboxes: p.concurrent, idle_timeout_secs: p.idle, hours_per_day: p.hours,
@@ -38,12 +38,15 @@ const render = (card = fixture(), creditBalanceCents: number | null = null) => {
 test("fixture renders plan columns, current plan, usage, and typed paid-plan buttons", () => {
   const { host, calls, close } = render()
   expect(host.textContent).toContain("Free $0")
-  expect(host.textContent).toContain("Pro $50 per month")
-  expect(host.textContent).toContain("Max $500 per month")
+  expect(host.textContent).toContain("Pro $19.50 per month")
+  expect(host.textContent).toContain("Max $500.00 per month")
   expect(host.querySelector('[aria-current="true"]')?.textContent).toContain("Free")
   expect(host.textContent).toContain("Never sleeps")
   expect(host.textContent).toContain("Hours today: 1.5 / 4")
-  expect(host.textContent).toContain("2026-09-16T00:00:00Z")
+  const reset = host.querySelector("time")
+  expect(reset?.dateTime).toBe("2026-09-16T00:00:00Z")
+  expect(reset?.textContent).not.toContain("2026-09-16T00:00:00Z")
+  expect(reset?.textContent).toMatch(/\d{1,2}:\d{2}/)
   const buttons = host.querySelectorAll<HTMLButtonElement>('button[data-flow="billing.upgrade"]')
   buttons[0]!.click(); buttons[1]!.click()
   expect(calls).toEqual([["billing.upgrade", "pro"], ["billing.upgrade", "max"]])
