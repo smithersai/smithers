@@ -1,3 +1,4 @@
+import { markCause } from "./RefusalLog"
 import { Effect } from "effect"
 import { REPOSITORY_SETUP_API, RepositoryJobSchema, SetupHostInputSchema, SetupOperationSchema } from "@smthrs/rpc/RepositorySetup"
 import { ExecutionContext } from "./Environment"
@@ -42,13 +43,13 @@ export const handleRepositorySetup = (request: Request): Effect.Effect<Response,
     if (part === "observe") {
       if (!record.result) yield* observeRepositorySetup(session.login, requestId)
       record = (yield* requests.read(session.login, requestId))!
-      return record.observationError ? answer(503, { message: record.observationError }) : answer(record.result ? 200 : 202, publicSetupResult(record))
+      return record.observationError ? markCause(answer(503, { message: record.observationError }), "repository setup", record.observationError) : answer(record.result ? 200 : 202, publicSetupResult(record))
     }
   } else return answer(405, { message: "Method not allowed" })
   if (!record.result) {
     const context = yield* Effect.context<Services>()
     yield* (yield* ExecutionContext).waitUntil(advanceRepositorySetup(session.login, record.input.requestId).pipe(Effect.provide(context)))
   }
-  return record.observationError ? answer(503, { message: record.observationError }) : answer(record.result ? 200 : 202, publicSetupResult(record))
-}).pipe(Effect.catch(error => Effect.succeed(answer(error instanceof SetupStoreError ? error.status ?? 503 : 503,
-  { ...(error instanceof SetupStoreError && error.code ? { status: "error", code: error.code } : {}), message: error.message }))))
+  return record.observationError ? markCause(answer(503, { message: record.observationError }), "repository setup", record.observationError) : answer(record.result ? 200 : 202, publicSetupResult(record))
+}).pipe(Effect.catch(error => Effect.succeed(markCause(answer(error instanceof SetupStoreError ? error.status ?? 503 : 503,
+  { ...(error instanceof SetupStoreError && error.code ? { status: "error", code: error.code } : {}), message: error.message }), "repository setup", error))))

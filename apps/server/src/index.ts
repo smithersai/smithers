@@ -34,7 +34,7 @@ import { probeCloudSession } from "./cloudSession"
 import { handleAdmin } from "./admin"
 import { catalogDocumentPath, comingSoonDocumentPath, DEFAULT_APP_DOCUMENT_PATH, isFramePath, isRepositoryPath } from "./appDocument"
 import { proxyToBilling } from "./billing"
-import { runRequest } from "./Boundary"
+import { serveRequest } from "./Boundary"
 import { ClientErrorLog } from "./clientErrorLog"
 import { ServerConfig } from "./Config"
 import { Assets, BrowserEgress, DeploymentBindings, ExecutionContext, executionContextFrom, runtimeFor } from "./Environment"
@@ -515,9 +515,9 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
  */
 export default {
   fetch: (request: Request, env: WorkerEnv, ctx?: NativeExecutionContext): Promise<Response> =>
-    runRequest(
+    serveRequest(
+      request,
       handleRequest(request).pipe(Effect.provideService(ExecutionContext, executionContextFrom(ctx))),
-      request.signal,
       runtimeFor(env)
     )
 }

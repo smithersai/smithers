@@ -1,3 +1,4 @@
+import { logRequestRefusal } from "./RefusalLog"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -90,3 +91,9 @@ export const fiberPromise = <A, E>(fiber: Fiber.Fiber<A, E>): Promise<Exit.Exit<
 
 /** Run an Effect with no failure channel to a Promise, for a Durable Object's own `fetch`. */
 export const runDurable = <A>(effect: Effect.Effect<A, never>): Promise<A> => Effect.runPromise(effect)
+
+/** The deployed request boundary adds correlation without inspecting response bodies. */
+export const serveRequest = <R = never>(request: Request, effect: Effect.Effect<Response, never, R>, runtime?: ManagedRuntime.ManagedRuntime<R, never>): Promise<Response> => {
+  const started = performance.now()
+  return runRequest(effect, request.signal, runtime).then(response => logRequestRefusal(request, response, started))
+}

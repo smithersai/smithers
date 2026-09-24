@@ -1,3 +1,4 @@
+import { copyRefusalMark, markRefusal } from "./RefusalLog"
 import * as Effect from "effect/Effect"
 import { upstreamProse } from "@smthrs/rpc/UpstreamProse"
 import { workerRefusalEnvelope } from "@smthrs/rpc/Refusal"
@@ -22,11 +23,11 @@ export const ISOLATION_HEADERS = {
 export const withIsolationHeaders = (response: Response): Response => {
   const headers = new Headers(response.headers)
   for (const [name, value] of Object.entries(ISOLATION_HEADERS)) headers.set(name, value)
-  return new Response(response.body, {
+  return copyRefusalMark(response, new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers
-  })
+  }))
 }
 
 export const json = (status: number, body: unknown): Response =>
@@ -81,7 +82,7 @@ export const refuseWithStatus = (
 const coded = (envelope: WorkerRefusalEnvelope): Response => {
   const response = json(envelope.status, envelope.body)
   for (const [name, value] of Object.entries(envelope.headers)) response.headers.set(name, value)
-  return response
+  return markRefusal(response, envelope.body.code)
 }
 
 /*

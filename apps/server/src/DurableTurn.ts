@@ -1,3 +1,4 @@
+import { markCause } from "./RefusalLog"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Stream from "effect/Stream"
@@ -38,7 +39,7 @@ const publicRefusal = (status: number, body: Extract<AgentTurnJournalReply, { st
     case "limit": return refuseWithStatus(409, "request_invalid", OUTPUT_LIMIT)
     case "terminal": return refuseWithStatus(409, "request_invalid", "That recorded turn has already ended.")
     case "request_invalid": return refuse("request_invalid", "The turn journal request is invalid.")
-    default: return refuseWithStatus(status >= 500 ? status : 503, "storage_failed", "The recorded turn could not be verified. Its saved output was preserved.")
+    default: return markCause(refuseWithStatus(status >= 500 ? status : 503, "storage_failed", "The recorded turn could not be verified. Its saved output was preserved."), "turn journal", body.code)
   }
 }
 
@@ -51,7 +52,7 @@ export const eraseDurableTurn = (request: Request, client: TurnJournalClient): E
   const { runId, legId, retirementProof } = parsed.data
   const result = yield* client.request(runId, legId, { operation: "erase", runId, legId, accessHash: retirementProof })
   return result.body.status === "error" ? publicRefusal(result.status, result.body) : json(200, result.body)
-}).pipe(Effect.catch(() => Effect.succeed(refuseWithStatus(503, "storage_failed", "The recorded turn could not be erased yet."))))
+}).pipe(Effect.catch(failure => Effect.succeed(markCause(refuseWithStatus(503, "storage_failed", "The recorded turn could not be erased yet."), "turn journal", failure))))
 
 /** Each bounded read revalidates the public caller; it never starts inference. */
 export const accessDurableTurn = (request: Request, owner: string | undefined, client: TurnJournalClient, retire: boolean): Effect.Effect<Response> =>
@@ -66,7 +67,7 @@ export const accessDurableTurn = (request: Request, owner: string | undefined, c
       ? { operation: "retire", ...auth }
       : { operation: "read", ...auth, after: body.after ?? null, limit: 8 })
     return result.body.status === "error" ? publicRefusal(result.status, result.body) : json(200, result.body)
-  }).pipe(Effect.catch(() => Effect.succeed(refuseWithStatus(503, "storage_failed", "The recorded turn is temporarily unavailable."))))
+  }).pipe(Effect.catch(failure => Effect.succeed(markCause(refuseWithStatus(503, "storage_failed", "The recorded turn is temporarily unavailable."), "turn journal", failure))))
 
 class OutputFailure extends Error {
   readonly _tag = "OutputFailure"
@@ -108,7 +109,7 @@ export const withDurableAgentTurn = <R, A>(
     response.headers.set(JOURNAL_HEADER, "1")
     return response
   }
-  if (registration.body.status !== "accepted") return refuseWithStatus(503, "storage_failed", "The turn acceptance could not be verified.")
+  if (registration.body.status !== "accepted") return markCause(refuseWithStatus(503, "storage_failed", "The turn acceptance could not be verified."), "turn journal", "invalid acceptance")
   let cursor: AgentTurnCursor = registration.body.cursor
   let terminal = false
   let appendCalls = 0
@@ -198,4 +199,4 @@ export const withDurableAgentTurn = <R, A>(
       headers: { "content-type": "application/x-ndjson", "cache-control": "no-store", [JOURNAL_HEADER]: "1" }
     }))
   }).pipe(Effect.onInterrupt(() => recordInterruption))
-}).pipe(Effect.catch(() => Effect.succeed(refuseWithStatus(503, "storage_failed", "The turn could not be recorded. Its saved state was preserved."))))
+}).pipe(Effect.catch(failure => Effect.succeed(markCause(refuseWithStatus(503, "storage_failed", "The turn could not be recorded. Its saved state was preserved."), "turn journal", failure))))

@@ -1,3 +1,4 @@
+import { WORKER_FAILURES, type WorkerFailureCode } from "@smthrs/rpc/WorkerFailureCodes"
 import * as Cause from "effect/Cause"
 
 /*
@@ -42,4 +43,42 @@ export interface SeamFailureLine {
 export const logSeamFailure = (seam: string, cause: unknown): void => {
   const line: SeamFailureLine = { event: "worker_seam_failure", seam, cause: describeCause(cause) }
   console.error(JSON.stringify(line))
+}
+
+interface RefusalMark {
+  readonly code: WorkerFailureCode
+  readonly seam?: string
+  readonly cause?: string
+}
+const marks = new WeakMap<Response, RefusalMark>()
+
+export const markRefusal = (response: Response, code: WorkerFailureCode): Response => {
+  marks.set(response, { code })
+  return response
+}
+
+export const markCause = (response: Response, seam: string, cause: unknown): Response => {
+  const mark = marks.get(response) ?? { code: "storage_failed" as const }
+  marks.set(response, { ...mark, seam, cause: describeCause(cause) })
+  return response
+}
+
+export const copyRefusalMark = (source: Response, target: Response): Response => {
+  const mark = marks.get(source)
+  if (mark) marks.set(target, mark)
+  return target
+}
+
+/** Metadata stays off the wire; logging never reads a body or query string. */
+export const logRequestRefusal = (request: Request, response: Response, started: number): Response => {
+  const mark = marks.get(response)
+  if (mark) {
+    try {
+      console.error(JSON.stringify({ event: "worker_refusal", code: mark.code, fault: WORKER_FAILURES[mark.code].fault,
+        seam: mark.seam ?? new URL(request.url).pathname, cause: mark.cause ?? null,
+        route: new URL(request.url).pathname, method: request.method, status: response.status,
+        cfRay: request.headers.get("cf-ray"), durationMs: Math.max(0, performance.now() - started) }))
+    } catch { /* Logging cannot replace a response. */ }
+  }
+  return response
 }
