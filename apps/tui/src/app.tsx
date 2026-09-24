@@ -1483,17 +1483,20 @@ export function App(props: AppProps) {
     setStatus(`Restored ${queued.length} queued message${queued.length === 1 ? "" : "s"} to editor`)
   }, [setText, setStatus])
 
-  const externalEditor = useCallback(() => {
+  const externalEditor = useCallback(async () => {
     const editor = process.env.VISUAL ?? process.env.EDITOR ?? "nano"
     renderer.suspend()
     let edited: string | undefined
     try {
-      edited = External.edit(composer.current?.plainText ?? "", editor)
+      edited = await External.edit(composer.current?.plainText ?? "", editor)
+    } catch (error) {
+      Log.write("editor", error)
+      setStatus("Editor unavailable", "warning")
     } finally {
       renderer.resume()
     }
     if (edited !== undefined) setText(edited)
-  }, [renderer, setText])
+  }, [renderer, setText, setStatus])
 
   const cycleModel = useCallback((step: number) => {
     if (props.models.length < 2) {
@@ -1946,7 +1949,7 @@ export function App(props: AppProps) {
     if (key.ctrl && key.name === "l") return setPicker({ kind: "model", query: "", selected: 0 })
     if (key.ctrl && key.name === "p") return cycleModel(key.shift ? -1 : 1)
     if (key.ctrl && key.name === "o") return setExpanded((value) => !value)
-    if (key.ctrl && key.name === "g") return externalEditor()
+    if (key.ctrl && key.name === "g") return void externalEditor()
     if (key.shift && (key.name === "up" || key.name === "down")) {
       key.preventDefault()
       return scroll.current?.scrollBy(key.name === "up" ? -1 : 1)
