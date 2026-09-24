@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -97,6 +98,18 @@ func (c *LinearClient) ExchangeCode(ctx context.Context, code string) (services.
 	}, nil
 }
 
+// ErrLinearRefreshTokenInvalid reports that Linear rejected the stored refresh
+// token (OAuth invalid_grant), whatever the HTTP status. Retrying cannot
+// succeed; the user must reconnect.
+var ErrLinearRefreshTokenInvalid = errors.New("linear refresh token is invalid")
+
+func linearOAuthErrorText(code, desc string) string {
+	if desc != "" {
+		return desc
+	}
+	return code
+}
+
 func (c *LinearClient) RefreshToken(ctx context.Context, refreshToken string) (services.LinearTokenResult, error) {
 	form := url.Values{}
 	form.Set("client_id", c.clientID)
@@ -127,6 +140,12 @@ func (c *LinearClient) RefreshToken(ctx context.Context, refreshToken string) (s
 		return services.LinearTokenResult{}, fmt.Errorf("decode linear token refresh response: %w", err)
 	}
 
+	if payload.Error == "invalid_grant" {
+		return services.LinearTokenResult{}, fmt.Errorf("%w: %s", ErrLinearRefreshTokenInvalid, linearOAuthErrorText(payload.Error, payload.ErrorDesc))
+	}
+	if payload.Error != "" {
+		return services.LinearTokenResult{}, fmt.Errorf("linear token refresh failed: %s", linearOAuthErrorText(payload.Error, payload.ErrorDesc))
+	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		if payload.ErrorDesc != "" {
 			return services.LinearTokenResult{}, fmt.Errorf("linear token refresh failed: %s", payload.ErrorDesc)

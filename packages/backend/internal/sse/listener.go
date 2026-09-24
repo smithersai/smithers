@@ -198,6 +198,28 @@ func (p *pgxMultiNotifier) release() {
 	p.conn.Release()
 }
 
+// discard takes the connection out of the pool and closes its socket. Unlike
+// release it is safe while another goroutine is still blocked on the conn:
+// closing the net.Conn fails that call instead of sharing the conn.
+func (p *pgxMultiNotifier) discard() {
+	raw := p.conn.Hijack()
+	_ = raw.PgConn().Conn().Close()
+}
+
+// discarder is implemented by notifiers that can drop their physical
+// connection without returning it to the pool.
+type discarder interface {
+	discard()
+}
+
+// discardNotifier drops n's connection. A notifier that cannot discard is
+// leaked rather than released, because release could share a conn still in use.
+func discardNotifier(n multiNotifier) {
+	if d, ok := n.(discarder); ok {
+		d.discard()
+	}
+}
+
 func (p *pgxMultiNotifier) listen(ctx context.Context, channel string) error {
 	// #nosec G202 — callers validate channel before invoking listen.
 	_, err := p.conn.Exec(ctx, "LISTEN "+channel)
@@ -315,15 +337,38 @@ func (l *MultiListener) listen() {
 //
 // If ID is empty, the "id:" line is omitted.
 // If Type is empty, the "event:" line is omitted.
+//
+// SSE treats CR, LF, and CRLF as line terminators. Data is split on each of
+// them into one "data:" line per payload line, which the client rejoins with
+// "\n". ID and Type are single-line fields, so their line breaks are
+// stripped. No payload can inject a field or end the event early.
 func FormatEvent(e Event) string {
 	var b strings.Builder
-	if e.ID != "" {
-		fmt.Fprintf(&b, "id: %s\n", e.ID)
+	if id := sseSingleLine(e.ID); id != "" {
+		fmt.Fprintf(&b, "id: %s\n", id)
 	}
-	if e.Type != "" {
-		fmt.Fprintf(&b, "event: %s\n", e.Type)
+	if typ := sseSingleLine(e.Type); typ != "" {
+		fmt.Fprintf(&b, "event: %s\n", typ)
 	}
-	fmt.Fprintf(&b, "data: %s\n", e.Data)
+	for _, line := range strings.Split(sseNormalizeNewlines(e.Data), "\n") {
+		fmt.Fprintf(&b, "data: %s\n", line)
+	}
 	b.WriteString("\n")
 	return b.String()
+}
+
+// sseNormalizeNewlines rewrites CRLF and bare CR as LF.
+func sseNormalizeNewlines(s string) string {
+	if !strings.ContainsRune(s, '\r') {
+		return s
+	}
+	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
+}
+
+// sseSingleLine removes every line terminator from a single-line SSE field.
+func sseSingleLine(s string) string {
+	if !strings.ContainsAny(s, "\r\n") {
+		return s
+	}
+	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
 }

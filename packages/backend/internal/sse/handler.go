@@ -10,9 +10,23 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 )
+
+// defaultKeepAlive is the keep-alive interval used when a config leaves
+// KeepAlive unset or non-positive.
+const defaultKeepAlive = 15 * time.Second
+
+// keepAliveInterval returns d, or defaultKeepAlive when d is not positive.
+// time.NewTicker panics on a non-positive duration after the stream is
+// already committed, so every non-positive value takes the default.
+func keepAliveInterval(d time.Duration) time.Duration {
+	if d <= 0 {
+		return defaultKeepAlive
+	}
+	return d
+}
 
 // StreamConfig configures a single SSE stream served by ServeSSE.
 type StreamConfig struct {
@@ -25,7 +39,7 @@ type StreamConfig struct {
 	Channels []string
 
 	// KeepAlive is the interval between keep-alive comments sent to the client.
-	// If zero, defaults to 15 seconds.
+	// If zero or negative, defaults to 15 seconds.
 	KeepAlive time.Duration
 
 	// EventType is the SSE event type written in each event's "event:" field.
@@ -71,10 +85,7 @@ func ServeSSE(w http.ResponseWriter, r *http.Request, cfg StreamConfig) {
 		defer cfg.ActiveConnections.Dec()
 	}
 
-	keepAlive := cfg.KeepAlive
-	if keepAlive == 0 {
-		keepAlive = 15 * time.Second
-	}
+	keepAlive := keepAliveInterval(cfg.KeepAlive)
 
 	// Subscribe to the PostgreSQL NOTIFY channel(s).
 	var listener *Listener
@@ -171,7 +182,8 @@ type BrokerStreamConfig struct {
 	// UserID is the authenticated user's ID, used to enforce per-user stream caps.
 	UserID int64
 
-	// KeepAlive is the interval between keep-alive comments. Defaults to 15s.
+	// KeepAlive is the interval between keep-alive comments. Non-positive
+	// values default to 15s.
 	KeepAlive time.Duration
 
 	// EventType overrides the SSE event type written in "event:" fields.
@@ -290,10 +302,7 @@ func ServeBrokerSSE(w http.ResponseWriter, r *http.Request, cfg BrokerStreamConf
 		defer cfg.ActiveConnections.Dec()
 	}
 
-	keepAlive := cfg.KeepAlive
-	if keepAlive == 0 {
-		keepAlive = 15 * time.Second
-	}
+	keepAlive := keepAliveInterval(cfg.KeepAlive)
 
 	// Establish the live-only baseline before advertising readiness. Otherwise
 	// a client could append after receiving : connected and have that row

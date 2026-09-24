@@ -14,7 +14,7 @@ import (
 
 // brokerStopTimeout bounds how long Stop waits for the dispatch goroutine to
 // release its hold on the shared connection before releasing it anyway.
-const brokerStopTimeout = 5 * time.Second
+var brokerStopTimeout = 5 * time.Second
 
 const brokerUnlistenTimeout = 3 * time.Second
 
@@ -198,11 +198,13 @@ func (b *Broker) Stop() {
 		// Only wait when Start actually launched dispatch. A broker whose conn was
 		// installed without Start (tests inject a fake notifier) has no goroutine
 		// to wait for, and connLost would never close.
+		straggler := false
 		if b.dispatching.Load() {
 			select {
 			case <-b.connLost:
 			case <-time.After(brokerStopTimeout):
-				slog.Warn("sse broker: dispatch goroutine did not exit before timeout; releasing connection anyway")
+				straggler = true
+				slog.Warn("sse broker: dispatch goroutine did not exit before timeout; discarding connection")
 			}
 		}
 		// Close all outstanding subscriber channels so range loops terminate.
@@ -213,7 +215,14 @@ func (b *Broker) Stop() {
 		b.mu.Lock()
 		defer b.mu.Unlock()
 		if b.conn != nil {
-			b.conn.release()
+			if straggler {
+				// dispatch may still be inside a call on this conn. Returning it
+				// to the pool would hand it to a concurrent caller, so close the
+				// physical connection instead; that also unblocks dispatch.
+				discardNotifier(b.conn)
+			} else {
+				b.conn.release()
+			}
 			b.conn = nil
 		}
 		for _, subs := range b.subscribers {

@@ -95,9 +95,13 @@ func NewGCPJSONHandler(w io.Writer, level slog.Leveler) slog.Handler {
 // gcpReplaceAttr replaces slog's default attributes with GCP-compatible ones.
 func gcpReplaceAttr(groups []string, a slog.Attr) slog.Attr {
 	// Rename "level" to "severity" for GCP compatibility
-	if a.Key == slog.LevelKey {
-		level := a.Value.Any().(slog.Level)
-		return slog.String("severity", MapSeverity(level))
+	// Only the record's own top-level slog.Level attr maps to severity; a
+	// caller attribute that happens to be named "level" is kept as-is.
+	if a.Key == slog.LevelKey && len(groups) == 0 {
+		if level, ok := a.Value.Any().(slog.Level); ok {
+			return slog.String("severity", MapSeverity(level))
+		}
+		return a
 	}
 
 	// Rename "msg" to "message" for GCP compatibility

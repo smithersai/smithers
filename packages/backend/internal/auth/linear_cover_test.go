@@ -531,3 +531,18 @@ func TestLinear_Cover_linearGraphQL(t *testing.T) {
 		assert.Contains(t, err.Error(), `decode linear graphql "viewer"`)
 	})
 }
+
+// Linear can report an OAuth error inside a 2xx body; the refresh must surface
+// it as a terminal invalid-grant failure, not a generic empty-token error.
+func TestLinear_RefreshToken_ErrorIn2xxBody(t *testing.T) {
+	t.Parallel()
+
+	c := linearCoverClient(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant", "error_description": "refresh token revoked"})
+	})
+	_, err := c.RefreshToken(context.Background(), "rt_dead")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrLinearRefreshTokenInvalid)
+	assert.Contains(t, err.Error(), "refresh token revoked")
+}

@@ -3,11 +3,17 @@ package revocation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 )
+
+// ErrPublisherNotConfigured reports a DBPublisher with no store. It fails
+// closed so a miswired service never reports a revocation that was not
+// recorded; NopPublisher is the explicit no-op.
+var ErrPublisherNotConfigured = errors.New("revocation: publisher has no store")
 
 // Publisher records a revocation durably and fans it out.
 type Publisher interface {
@@ -38,7 +44,7 @@ func NewDBPublisher(store Store, local *Bus) *DBPublisher {
 // insert fails; a NOTIFY failure is logged because the catch-up poll covers it.
 func (p *DBPublisher) Publish(ctx context.Context, event Event) error {
 	if p == nil || p.store == nil {
-		return nil
+		return ErrPublisherNotConfigured
 	}
 	if event.Kind == "" {
 		return fmt.Errorf("revocation: event kind is required")
