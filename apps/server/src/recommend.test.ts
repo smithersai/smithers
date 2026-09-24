@@ -151,8 +151,10 @@ const network = (jev?: (request: Request) => Promise<Response>) => {
     calls,
     layer: transportLayer(async (input, init) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      // A login's Cloud token: its Jev call is metered through the Cloud model proxy (modelPayer.ts).
+      if (request.url === "https://identity.test/api/identity/cloud-token") return Response.json({ found: true, token: "cloud-token-login" })
       calls.push(request)
-      if (new URL(request.url).hostname !== "ai-gateway.vercel.sh") {
+      if (new URL(request.url).hostname !== "ai-gateway.vercel.sh" && request.url !== METERED_JEV_URL) {
         throw new Error(`the recommender must never fetch ${request.url}`)
       }
       if (jev === undefined) throw new Error("Jev must not be asked")
@@ -169,7 +171,13 @@ interface Deps {
   readonly login?: string
 }
 
-const JEV_KEY = { aiGatewayApiKey: Redacted.make("vck-test") }
+const METERED_JEV_URL = "https://cloud.test/api/model/vercel/v4/ai/evaluation-model"
+const JEV_KEY = {
+  aiGatewayApiKey: Redacted.make("vck-test"),
+  identityUpstreamUrl: "https://identity.test",
+  identityServiceToken: Redacted.make("service-token"),
+  cloudApiBaseUrl: "https://cloud.test"
+}
 const JEV_MODEL = "typesafe-ai/jev"
 
 /** The route with its dependencies injected: the gateway key is set unless `config` says otherwise. */
@@ -579,10 +587,28 @@ describe("the recommendation ceilings", () => {
 
   test("a signed-in caller is keyed by login, apart from every turn bucket", async () => {
     const limits = memoryLimits()
-    const { response } = await recommend(post("/api/recommend", goodBody), { jev, limits, login: "will" })
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), { jev, limits, login: "will" })
     expect(response.status).toBe(200)
     expect(limits.keys()).toContain("recommend:login:will")
     expect(limits.keys()).not.toContain("will")
+    // The login's Jev call is metered through the Cloud model proxy on its own token, never the platform key.
+    expect(calls.map((call) => call.url)).toEqual([METERED_JEV_URL])
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer cloud-token-login")
+    expect(calls[0]!.headers.get("ai-model-id")).toBe(JEV_MODEL)
+  })
+
+  test("a signed-in caller out of credit is the out_of_credit refusal", async () => {
+    const spent = async () => Response.json({ code: "out_of_credit", message: "out of credit", details: { balance_cents: 0, required_cents: 1, upgrade: "/billing" } }, { status: 402 })
+    const { response } = await recommend(post("/api/recommend", goodBody), { jev: spent, limits: memoryLimits(), login: "will" })
+    expect(response.status).toBe(402)
+    expect(((await response.json()) as { code: string }).code).toBe("out_of_credit")
+  })
+
+  test("a visitor keeps the platform key and never reaches the metered proxy", async () => {
+    const { response, calls } = await recommend(post("/api/recommend", goodBody), { jev, limits: memoryLimits() })
+    expect(response.status).toBe(200)
+    expect(calls.map((call) => call.url)).toEqual(["https://ai-gateway.vercel.sh/v4/ai/evaluation-model"])
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer vck-test")
   })
 
   test("a turn limiter that cannot answer is a 503 and Jev is never asked", async () => {

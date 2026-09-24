@@ -27,7 +27,6 @@ import { turnLimitsLayer } from "./turnLimit"
 import type { TurnLimits } from "./turnLimit"
 import { turnCancelsLayer } from "./turns"
 import type { TurnCancels } from "./turns"
-import { ModelVault, modelVaultLayer } from "./modelVault"
 
 /*
  * The deployment as the Worker's Effects see it. workerd hands the native
@@ -231,7 +230,6 @@ export const executionContextFrom = (ctx: NativeExecutionContext | undefined): E
  * `RequestServices`.
  */
 export type AllServices =
-  | ModelVault
   | ServerConfig
   | Transport
   | TerminalSockets
@@ -269,7 +267,6 @@ export const layersFromEnv = (env: WorkerEnv): Layer.Layer<AllServices> => {
     turnLimitsLayer(env.TURN_LIMITS),
     clientErrorsLayer(env.CLIENT_ERRORS),
     recommendLogLayer(env.RECOMMEND_LOG),
-    modelVaultLayer(env.MODEL_VAULTS),
     Layer.provide(githubAppAuthLayer, base)
   )
 }

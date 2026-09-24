@@ -49,6 +49,7 @@ export const WORKER_FAILURE_CODES = [
   "method_not_allowed",
   "model_no_answer",
   "model_rate_limited",
+  "out_of_credit",
   "procedure_not_relayed",
   "request_body_not_json",
   "request_body_too_large",
@@ -138,6 +139,8 @@ export const WORKER_FAILURES = {
   "model_no_answer": { fault: "dependency", status: 502, retryAfter: 0 },
   /** The model service is rate-limiting THIS DEPLOYMENT — not the account, which has its own ceiling under `turn_rate_limited`. */
   "model_rate_limited": { fault: "dependency", status: 429, retryAfter: 60 },
+  /** Smithers Cloud refused a metered model call: the account's model credit is spent. Plue answers 402 `out_of_credit`. */
+  "out_of_credit": { fault: "user", status: 402, retryAfter: 0 },
   /** The workflow relay does not carry the named procedure. */
   "procedure_not_relayed": { fault: "user", status: 400, retryAfter: 0 },
   /** A body read whole that is not JSON. */

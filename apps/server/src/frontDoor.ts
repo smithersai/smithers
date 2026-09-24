@@ -456,6 +456,8 @@ export const frontDoorRefusal = (
       return refusal("upstream_timeout", `Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`, headers)
     case "unreachable":
       return refusal("upstream_unreachable", `Jev is unreachable: ${failure.message}`, headers)
+    case "out_of_credit":
+      return refusal("out_of_credit", "Out of credit.", headers)
   }
 }
 

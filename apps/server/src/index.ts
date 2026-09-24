@@ -13,8 +13,6 @@ import {
   IDENTITY_ROUTE_PREFIX,
   JEV_PATH,
   MODEL_CATALOG_PATH,
-  MODEL_CREDENTIAL_PATH,
-  MODEL_CREDENTIAL_RECEIPT_PATH,
   MODEL_STREAM_PATH,
   MODEL_TEST_PATH,
   RECOMMEND_OUTCOME_PATH,
@@ -43,7 +41,7 @@ import { Assets, BrowserEgress, DeploymentBindings, ExecutionContext, executionC
 import type { NativeExecutionContext, RequestServices, WorkerEnv } from "./Environment"
 import { discardBody, readJsonOrUndefined } from "./Http"
 import { GatewaySessionRegistry } from "./gateway"
-import { AccountModelVault, accountModelCredentials, handleModelCredential } from "./modelVault"
+import { AccountModelVault } from "./modelVault"
 import { handleAuthNavigation, isVisitorRefusal, probeAuthSession, proxyToIdentity, requireTurnSession, validateSession } from "./identity"
 import {
   CLIENT_ERRORS_PATH,
@@ -411,23 +409,12 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       return yield* handleModelStream(request, gate)
     }
     // The Models surface (src/modelProbe.ts). Naming what this deployment
-    // holds spends nothing, so the catalog is public; a valid session adds only
-    // that account's names and pins. Account data and every mutation require
-    // identity; a Test or an Ask spends a key, so it sits behind the session and
-    // spends one turn of the login's budget first.
-    if (url.pathname === MODEL_CREDENTIAL_PATH || url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH) {
-      if (request.method !== (url.pathname === MODEL_CREDENTIAL_PATH ? "POST" : "GET")) return methodNotAllowed()
-      const gate = yield* requireTurnSession(request)
-      if (gate instanceof Response) return gate
-      return yield* handleModelCredential(request, gate.login, url.pathname === MODEL_CREDENTIAL_RECEIPT_PATH ? url.searchParams.get("id") ?? "" : undefined)
-    }
+    // holds spends nothing, so the catalog is public. A Test spends model
+    // credit, so it sits behind the session and spends one turn of the
+    // login's budget first. There is no account credential enrollment.
     if (url.pathname === MODEL_CATALOG_PATH) {
       if (request.method !== "GET") return methodNotAllowed()
-      const validation = yield* validateSession(request)
-      const login = validation.status === "valid" && (validation.identity.allowlisted || validation.identity.admitted) ? validation.identity.login : undefined
-      const account = login === undefined ? undefined : yield* accountModelCredentials(request, login)
-      if (account && (yield* account.current)) return yield* handleModelCatalog(undefined, false)
-      return yield* handleModelCatalog(account, login !== undefined)
+      return yield* handleModelCatalog()
     }
     if (url.pathname === MODEL_TEST_PATH) {
       if (request.method !== "POST") return methodNotAllowed()
@@ -435,7 +422,7 @@ export const handleRequest = (request: Request): Effect.Effect<Response, never, 
       if (gate instanceof Response) return gate
       const refused = yield* loginBudget(gate.login)
       if (refused !== undefined) return refused
-      return yield* handleModelTest(request, yield* accountModelCredentials(request, gate.login))
+      return yield* handleModelTest(request, gate.login)
     }
     if (url.pathname.startsWith("/api/repository-setup/")) return yield* handleRepositorySetup(request)
     if (url.pathname === WORKFLOW_PROVISION_PATH) {

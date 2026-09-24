@@ -35,9 +35,8 @@ import { discardBody, fetchWithDeadline, readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, JEV_EVALUATE_URL, jevEvaluate } from "./jev"
 import { bodyRefusal, json, refuse } from "./Responses"
-import { accountModelCall } from "./accountModelCall"
-import { deploymentModelSecret, isDeploymentCredential as isWorkerModelCredential, workerModelCredentials } from "./modelVault"
-import type { AccountCredentials } from "./modelVault"
+import { isOutOfCredit, modelRoute, paidBy } from "./modelPayer"
+import { deploymentModelSecret, workerModelCredentials } from "./modelVault"
 export { workerModelCredentials } from "./modelVault"
 
 /*
@@ -108,22 +107,21 @@ export const workerBuiltinModels = (config: ServerConfigShape): ReadonlyArray<Co
   return servableModels([...listed.values()], workerModelCredentials(config))
 }
 
-/** Public deployment metadata plus the optional validated account listing. Never a value. */
-export const handleModelCatalog = (account?: AccountCredentials, signedIn = true): Effect.Effect<Response, never, ServerConfig> =>
+/** Public deployment metadata. Never a value. Smithers picks the models: there is no account credential enrollment. */
+export const handleModelCatalog = (): Effect.Effect<Response, never, ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
     const catalog: ModelCatalog = {
       models: [...workerBuiltinModels(config)],
-      credentials: [...workerModelCredentials(config), ...(account?.listings ?? [])],
-      seats: [...modelSeatsOf("cloud")],
-      enrollment: !signedIn ? { available: false, reason: "sign_in_required" } : account?.available ? { available: true } : { available: false, reason: "vault_unavailable" }
+      credentials: [...workerModelCredentials(config)],
+      seats: [...modelSeatsOf("cloud")]
     }
     const response = json(200, catalog)
     response.headers.set("cache-control", "no-store")
     return response
   })
 
-type Outcome = { readonly output: ModelCallOutput } | { readonly failure: ModelTestFailure }
+type Outcome = { readonly output: ModelCallOutput } | { readonly failure: ModelTestFailure } | Response
 
 const failed = (failure: ModelTestFailure): Outcome => ({ failure })
 
@@ -140,12 +138,15 @@ const chatProbe = (
   plan: ModelPlan,
   secret: Redacted.Redacted<string>,
   input: Extract<ModelCallInput, { kind: "generation" }>
-): Effect.Effect<Outcome, never, Transport> =>
+): Effect.Effect<Outcome, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
-    const response = yield* fetchWithDeadline(MODEL_TEST_SEAM, plan.url, {
+    // A login's Test is metered against its own credit (modelPayer.ts).
+    const route = yield* modelRoute(plan.url, secret)
+    if (!route.ok) return UNREACHABLE
+    const response = yield* fetchWithDeadline(MODEL_TEST_SEAM, route.url, {
       method: "POST",
       redirect: "manual",
-      headers: { authorization: `Bearer ${Redacted.value(secret)}`, "content-type": "application/json" },
+      headers: { authorization: route.authorization, "content-type": "application/json" },
       body: JSON.stringify({
         model: plan.modelId,
         stream: false,
@@ -158,6 +159,7 @@ const chatProbe = (
         ]
       })
     }, MODEL_TEST_DEADLINE_MS)
+    if (route.metered && response.status === 402 && (yield* isOutOfCredit(response))) return refuse("out_of_credit", "Out of credit.")
     if (!response.ok) {
       yield* discardBody(response)
       return refused(response.status)
@@ -199,6 +201,8 @@ const decisionProbe = (
               return UNREACHABLE
             case "empty":
               return UNDECODABLE
+            case "out_of_credit":
+              return refuse("out_of_credit", "Out of credit.")
           }
         }
         // Decoded against the questions asked, as the classifier decodes on the local host: an answer that fits no question is the protocol's failure.
@@ -235,7 +239,7 @@ const probe = (model: ConfiguredModel, input: ModelCallInput | undefined): Effec
  * the login's budget. A Test that ran answers 200 whatever it found; only a
  * body this route will not run is a refusal.
  */
-export const handleModelTest = (request: Request, account?: AccountCredentials): Effect.Effect<Response, never, Transport | ServerConfig> =>
+export const handleModelTest = (request: Request, login: string | undefined): Effect.Effect<Response, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const body = yield* readBoundedJson(request, MODEL_TEST_BODY_MAX_BYTES).pipe(
       Effect.catch((failure) => Effect.succeed(bodyRefusal(failure)))
@@ -245,9 +249,7 @@ export const handleModelTest = (request: Request, account?: AccountCredentials):
     if (!parsed.success) return refuse("request_invalid", "Body must be { model }.")
     const started = yield* Clock.currentTimeMillis
     const config = yield* ServerConfig
-    const outcome = yield* (!isWorkerModelCredential(parsed.data.model.credential) && account
-      ? accountModelCall(bindingOf(parsed.data.model), parsed.data.input, account)
-      : probe(parsed.data.model, parsed.data.input))
+    const outcome = yield* probe(parsed.data.model, parsed.data.input).pipe(paidBy(login))
     if (outcome instanceof Response) return outcome
     const latencyMs = Math.max(0, Math.round((yield* Clock.currentTimeMillis) - started))
     // The sample is cut with this deployment's key for the record's name; the words were already cut when read.

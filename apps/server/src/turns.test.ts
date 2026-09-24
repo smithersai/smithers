@@ -1,4 +1,3 @@
-import { modelVaultLayer } from "./modelVault"
 import { describe, expect, test } from "bun:test"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
@@ -114,7 +113,6 @@ const layersFor = (
   ctx?: NativeExecutionContext
 ) =>
   Layer.mergeAll(
-    modelVaultLayer(undefined),
     transportLayer(async (input, init) => upstream(new Request(input, init))),
     testConfigLayer({ chatUrl: "https://upstream.test/chat", upstreamTimeoutMs: 5_000 }),
     turnCancelsLayer(cancels),

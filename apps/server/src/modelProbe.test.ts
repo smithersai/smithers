@@ -4,7 +4,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
-import { MODEL_CATALOG_PATH, MODEL_TEST_PATH, MODEL_CREDENTIAL_PATH, MODEL_CREDENTIAL_RECEIPT_PATH } from "@smthrs/rpc/AgentApiRoutes"
+import { MODEL_CATALOG_PATH, MODEL_TEST_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import {
   MODEL_CALL_MAX_TOKENS_MAX,
   MODEL_CALL_TEXT_MAX,
@@ -96,7 +96,7 @@ interface Deps {
 const run = async (body: unknown, deps: Deps = {}) => {
   const net = recording(deps.answer)
   const response = await Effect.runPromise(
-    handleModelTest(post(body)).pipe(Effect.provide(Layer.mergeAll(net.layer, testConfigLayer({ ...KEYS, ...deps.config }))))
+    handleModelTest(post(body), undefined).pipe(Effect.provide(Layer.mergeAll(net.layer, testConfigLayer({ ...KEYS, ...deps.config }))))
   )
   const text = await response.text()
   return { response, text, calls: net.calls }
@@ -305,7 +305,7 @@ describe("POST /api/model/test, a generation model", () => {
     )
     const response = await Effect.runPromise(
       Effect.gen(function*() {
-        const fiber = yield* Effect.forkChild(handleModelTest(post({ model: chat })))
+        const fiber = yield* Effect.forkChild(handleModelTest(post({ model: chat }), undefined))
         while (net.calls.length === 0) yield* Effect.promise(() => new Promise((resolve) => setTimeout(resolve, 0)))
         yield* TestClock.adjust(MODEL_TEST_DEADLINE_MS)
         return yield* Fiber.join(fiber)
@@ -503,6 +503,7 @@ describe("the model routes, the public catalog and the gated Test", () => {
     const provider: Array<Request> = []
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = new Request(input as Request | string, init)
+      if (request.url === "https://identity.test/api/identity/cloud-token") return Response.json({ found: true, token: "cloud-token-will" })
       if (new URL(request.url).hostname === "identity.test") return identity()
       provider.push(request)
       return completion("ok")
@@ -533,6 +534,8 @@ describe("the model routes, the public catalog and the gated Test", () => {
     ASSETS: { fetch: async () => new Response("not-found", { status: 404 }) },
     IDENTITY_UPSTREAM_URL: "https://identity.test",
     CEREBRAS_API_KEY: CEREBRAS_SECRET,
+    IDENTITY_SERVICE_TOKEN: "service-token",
+    SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test",
     ...(limits === undefined ? {} : { TURN_LIMITS: limits })
   })
 
@@ -547,18 +550,19 @@ describe("the model routes, the public catalog and the gated Test", () => {
   const SIGNED_IN = { cookie: "smithers_session=abc" }
   const codeOf = async (response: Response): Promise<string> => ((await response.json()) as { code: string }).code
 
-  test("enrollment without the optional key is unavailable, session gated, and never forwarded", async () => {
+  test("there is no account credential enrollment: the credential routes are gone and nothing is forwarded", async () => {
     const { provider } = seams(session("alice", true))
     const env = gatedEnv()
-    const response = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, {
-      method: "POST", headers: SIGNED_IN, body: JSON.stringify({ value: "private-provider-fixture" })
-    }), env)
-    expect(await response.json()).toEqual({ ok: false, failure: { code: "vault_unavailable" }, fault: "infra" })
-    const receipt = await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_RECEIPT_PATH}?id=some-request`, { headers: SIGNED_IN }), env)
-    expect(await receipt.json()).toEqual({ state: "unknown" })
+    for (const path of ["/api/model/credential", "/api/model/credential/receipt?id=some-request"]) {
+      const response = await worker.fetch(new Request(`https://mvp.test${path}`, {
+        method: path.includes("receipt") ? "GET" : "POST", headers: SIGNED_IN,
+        ...(path.includes("receipt") ? {} : { body: JSON.stringify({ value: "private-provider-fixture" }) })
+      }), env)
+      expect(response.status).toBe(404)
+    }
+    const catalog = ModelCatalogSchema.parse(await (await worker.fetch(catalogRequest(SIGNED_IN), env)).json())
+    expect(catalog.enrollment).toBeUndefined()
     expect(provider).toHaveLength(0)
-    seams(() => new Response("{}", { status: 401 }))
-    expect((await worker.fetch(new Request(`https://mvp.test${MODEL_CREDENTIAL_PATH}`, { method: "POST" }), env)).status).toBe(401)
   })
 
   /*
@@ -633,6 +637,9 @@ describe("the model routes, the public catalog and the gated Test", () => {
     expect(resultOf(await tested.text())).toMatchObject({ ok: true, sample: "ok" })
     expect(limits.spent).toEqual(["will"])
     expect(provider.length).toBe(1)
+    // The login's Test is metered through the Cloud model proxy on its own token, never the platform key.
+    expect(provider[0]!.url).toBe("https://cloud.test/api/model/cerebras/v1/chat/completions")
+    expect(provider[0]!.headers.get("authorization")).toBe("Bearer cloud-token-will")
   })
 
   test("a spent budget refuses the Test with 429 before the key is spent", async () => {

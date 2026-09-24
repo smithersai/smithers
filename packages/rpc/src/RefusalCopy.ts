@@ -567,6 +567,11 @@ export const WORKER_REFUSAL_COPY = {
       "fault=dependency: the model provider is rate-limiting THIS DEPLOYMENT, not the user's account and not their request. Nothing was charged. Say it is worth trying again shortly, and never suggest they change what they asked for.",
     doors: ["retry"]
   },
+  out_of_credit: {
+    lead: "Out of credit.",
+    agent: "fault=user: the account's model credit is spent. Offer billing.plans so the human can add credit. Do not retry.",
+    doors: ["upgrade"]
+  },
   procedure_not_relayed: { lead: "Smithers doesn't relay that call.", doors: [] },
   request_body_not_json: { lead: "Smithers couldn't read that request as JSON.", doors: ["retry"] },
   request_body_too_large: { lead: "That's more than this part of Smithers takes in one request.", doors: ["retry"] },

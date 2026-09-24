@@ -1,8 +1,8 @@
 import * as Effect from "effect/Effect"
-import * as Redacted from "effect/Redacted"
 import { ServerConfig } from "./Config"
 import { discardBody, fetchWithDeadline, readJsonOrUndefined } from "./Http"
 import type { Transport } from "./Http"
+import { isOutOfCredit, modelRoute } from "./modelPayer"
 
 /*
  * Jev, TypeSafe AI's decision model, reached through the Vercel AI Gateway:
@@ -80,6 +80,8 @@ export type JevAnswer =
   | { readonly ok: false; readonly reason: "empty" }
   | { readonly ok: false; readonly reason: "timeout" }
   | { readonly ok: false; readonly reason: "unreachable"; readonly message: string }
+  /** Smithers Cloud refused the signed-in account's metered call: its model credit is spent. */
+  | { readonly ok: false; readonly reason: "out_of_credit" }
 
 const JEV_SEAM = "jev"
 
@@ -90,13 +92,15 @@ export const jevEvaluate = (
 ): Effect.Effect<JevAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
-    if (config.aiGatewayApiKey === undefined) {
-      return { ok: false, reason: "unreachable", message: "AI_GATEWAY_API_KEY is unset." } as const
+    // A login's call goes through Smithers Cloud's metered proxy on its own token (modelPayer.ts).
+    const route = yield* modelRoute(JEV_EVALUATE_URL, config.aiGatewayApiKey)
+    if (!route.ok) {
+      return { ok: false, reason: "unreachable", message: config.aiGatewayApiKey === undefined ? "AI_GATEWAY_API_KEY is unset." : route.message } as const
     }
-    const response = yield* fetchWithDeadline(JEV_SEAM, JEV_EVALUATE_URL, {
+    const response = yield* fetchWithDeadline(JEV_SEAM, route.url, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${Redacted.value(config.aiGatewayApiKey)}`,
+        authorization: route.authorization,
         "ai-gateway-protocol-version": JEV_PROTOCOL_VERSION,
         "ai-gateway-auth-method": "api-key",
         "ai-evaluation-model-specification-version": JEV_SPECIFICATION_VERSION,
@@ -113,6 +117,7 @@ export const jevEvaluate = (
         providerOptions: { gateway: { zeroDataRetention: true } }
       })
     }, timeoutMs)
+    if (route.metered && response.status === 402 && (yield* isOutOfCredit(response))) return { ok: false, reason: "out_of_credit" } as const
     if (!response.ok) {
       yield* discardBody(response)
       return { ok: false, reason: "http", status: response.status } as const

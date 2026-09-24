@@ -17,7 +17,6 @@ import { AgentTurnJournalRequestSchema } from "@smthrs/rpc/AgentTurnJournal"
 import { runDurable } from "./Boundary"
 import { handleCloudRoleTurn, isCloudRoleTurn, turnHints } from "./cloudRoleTurn"
 import { handleConfiguredModelTurn } from "./configuredModel"
-import type { ModelVault } from "./modelVault"
 import { handleFrontDoor } from "./frontDoor"
 import type { RecommendLogStore } from "./recommend"
 import type { TurnRequest } from "./cloudRoleTurn"
@@ -36,6 +35,7 @@ import { accessDurableTurn, eraseDurableTurn, withDurableAgentTurn } from "./Dur
 import type { BodyUnreadable } from "./Failures"
 import { fetchWithDeadline, readJsonOrUndefined, readRefusalDetail, readText, Transport } from "./Http"
 import type { ValidatedIdentity } from "./identity"
+import { paidBy } from "./modelPayer"
 import {
   causeMessage,
   ISOLATION_HEADERS,
@@ -698,7 +698,7 @@ export const readStartTurn = (request: Request): Effect.Effect<TurnRequest | Res
     } as const
   })
 
-export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext | RecommendLogStore | ModelVault
+export type TurnServices = Transport | ServerConfig | TurnCancels | ExecutionContext | RecommendLogStore
 
 /**
  * One turn: registered under its runId, forwarded to the chat upstream with a
@@ -721,7 +721,7 @@ const handleTransientTurn = (
     // deployment key, so a signed-out caller is refused.
     if (body.model !== undefined) {
       if (session === undefined) return refuse("sign_in_required", "Sign in to use a configured model.")
-      return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS, session ? { request, login: session.login } : undefined)
+      return yield* handleConfiguredModelTurn({ ...body, model: body.model }, ISOLATION_HEADERS)
     }
     // A cloud role (librarian, flows) is answered here on Cerebras, never upstream.
     if (isCloudRoleTurn(body)) return yield* handleCloudRoleTurn(body, ISOLATION_HEADERS)
@@ -831,7 +831,10 @@ const handleTransientTurn = (
       // the runId hostage.
       Effect.onInterrupt(() => settle)
     )
-  })
+  }).pipe(
+    // A signed-in turn's own model calls (front door, cloud roles, the explainer) are metered against its credit (modelPayer.ts).
+    paidBy(session?.login)
+  )
 
 /** The active turn route selects replayable delivery when the client supplies its durable leg identity. */
 export const handleTurn = <R = never>(

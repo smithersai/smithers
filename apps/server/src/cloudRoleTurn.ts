@@ -209,6 +209,8 @@ export const handleCloudRoleTurn = (
             `The ${role.label}'s model service is unreachable: ${answer.message}`,
             headers
           )
+        case "out_of_credit":
+          return refusal("out_of_credit", "Out of credit.", headers)
       }
     }
     const runId = body.runId

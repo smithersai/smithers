@@ -24,6 +24,7 @@ import { ModelBindingSchema } from "@smthrs/rpc/ConfiguredModel"
 import type { ModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import { modelRefusal, planDecisionModel } from "./configuredModel"
 import { jevEvaluate } from "./jev"
+import { isOutOfCredit, modelRoute, paidBy } from "./modelPayer"
 import type { JevAnswer, JevAnswerValue, JevQuestion } from "./jev"
 /**
  * The command recommender: which `/command` should this user run next?
@@ -680,6 +681,7 @@ export type CerebrasChatAnswer =
   | { readonly ok: false; readonly reason: "empty" }
   | { readonly ok: false; readonly reason: "timeout" }
   | { readonly ok: false; readonly reason: "unreachable"; readonly message: string }
+  | { readonly ok: false; readonly reason: "out_of_credit" }
 
 const CEREBRAS_SEAM = "cerebras"
 
@@ -702,12 +704,14 @@ export const cerebrasChat = (
 ): Effect.Effect<CerebrasChatAnswer, never, Transport | ServerConfig> =>
   Effect.gen(function*() {
     const config = yield* ServerConfig
-    if (config.cerebrasApiKey === undefined) {
-      return { ok: false, reason: "unreachable", message: "CEREBRAS_API_KEY is unset." } as const
+    // A login's call goes through Smithers Cloud's metered proxy on its own token (modelPayer.ts).
+    const route = yield* modelRoute(CEREBRAS_CHAT_COMPLETIONS_URL, config.cerebrasApiKey)
+    if (!route.ok) {
+      return { ok: false, reason: "unreachable", message: config.cerebrasApiKey === undefined ? "CEREBRAS_API_KEY is unset." : route.message } as const
     }
-    const response = yield* fetchWithDeadline(CEREBRAS_SEAM, CEREBRAS_CHAT_COMPLETIONS_URL, {
+    const response = yield* fetchWithDeadline(CEREBRAS_SEAM, route.url, {
       method: "POST",
-      headers: { authorization: `Bearer ${Redacted.value(config.cerebrasApiKey)}`, "content-type": "application/json" },
+      headers: { authorization: route.authorization, "content-type": "application/json" },
       body: JSON.stringify({
         model: request.model,
         temperature: request.temperature,
@@ -717,6 +721,7 @@ export const cerebrasChat = (
         ...(request.responseFormat === undefined ? {} : { response_format: request.responseFormat })
       })
     }, timeoutMs)
+    if (route.metered && response.status === 402 && (yield* isOutOfCredit(response))) return { ok: false, reason: "out_of_credit" } as const
     if (!response.ok) {
       yield* discardBody(response)
       return { ok: false, reason: "http", status: response.status } as const
@@ -736,7 +741,7 @@ export const cerebrasChat = (
 
 type ModelAnswer =
   | { readonly ok: true; readonly commands: ReadonlyArray<string>; readonly model: string }
-  | { readonly ok: false; readonly message: string }
+  | { readonly ok: false; readonly message: string; readonly outOfCredit?: true }
 
 /** Why Jev did not decide, in words a 503 body can carry. */
 export const jevFailureMessage = (answer: Exclude<JevAnswer, { readonly ok: true }>): string => {
@@ -749,6 +754,8 @@ export const jevFailureMessage = (answer: Exclude<JevAnswer, { readonly ok: true
       return `Jev did not answer within ${RECOMMEND_JEV_TIMEOUT_MS}ms.`
     case "unreachable":
       return `Jev is unreachable: ${answer.message}`
+    case "out_of_credit":
+      return "Out of credit."
   }
 }
 
@@ -770,7 +777,7 @@ const askJev = (body: RecommendRequest, model: string): Effect.Effect<ModelAnswe
       },
       questions
     }, RECOMMEND_JEV_TIMEOUT_MS)
-    if (!answer.ok) return { ok: false, message: jevFailureMessage(answer) } as const
+    if (!answer.ok) return { ok: false, message: jevFailureMessage(answer), ...(answer.reason === "out_of_credit" ? { outOfCredit: true } : {}) } as const
     const ranked = rankJevAnswers(answer.answers, Object.keys(questions))
     if (ranked === undefined) return { ok: false, message: jevFailureMessage({ ok: false, reason: "empty" }) } as const
     return { ok: true, commands: filterAnswer(ranked, body.commands), model: answer.model } as const
@@ -831,8 +838,9 @@ export const handleRecommend = (
     if (!own.allowed) return turnLimitResponse(own, headers, RECOMMEND_CEILING)
     const shared = yield* limits.spend(RECOMMEND_ALL_KEY, RECOMMEND_ALL_CEILING)
     if (!shared.allowed) return turnLimitResponse(shared, headers, RECOMMEND_ALL_CEILING)
-    const answer = yield* askJev(parsed.body, armed.modelId)
-    if (!answer.ok) return refusal("service_temporarily_unavailable", answer.message, headers)
+    // A login's Jev call is metered against its own credit (modelPayer.ts).
+    const answer = yield* askJev(parsed.body, armed.modelId).pipe(paidBy(login))
+    if (!answer.ok) return refusal(answer.outOfCredit ? "out_of_credit" : "service_temporarily_unavailable", answer.message, headers)
     const digest = yield* sha256Hex(tailText(parsed.body.tail))
     const store = yield* RecommendLogStore
     const id = yield* store.append({

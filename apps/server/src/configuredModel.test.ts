@@ -1,4 +1,3 @@
-import { modelVaultLayer } from "./modelVault"
 import { describe, expect, test } from "bun:test"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -14,7 +13,7 @@ import type { NativeNamespace } from "./DurableStorage"
 import { ExecutionContext, executionContextFrom } from "./Environment"
 import { transportLayer } from "./Http"
 import type { ValidatedIdentity } from "./identity"
-import { CEREBRAS_CHAT_COMPLETIONS_URL, recommendLogLayer } from "./recommend"
+import { recommendLogLayer } from "./recommend"
 import { handleTurn, TurnCancelRegistry, turnCancelsLayer } from "./turns"
 
 /*
@@ -71,10 +70,13 @@ const memoryCancels = (): NativeNamespace => {
   }
 }
 
+const METERED_CEREBRAS_URL = "https://cloud.test/api/model/cerebras/v1/chat/completions"
 const SESSION: ValidatedIdentity = { login: "alice", allowlisted: true, admin: false, scopes: [] }
 /** A deployment with sign-in, the Cerebras key and the gateway key. */
 const SIGNED_IN_DEPLOYMENT: Partial<ServerConfigShape> = {
   identityUpstreamUrl: "https://identity.test",
+  identityServiceToken: Redacted.make("service-token"),
+  cloudApiBaseUrl: "https://cloud.test",
   cerebrasApiKey: Redacted.make(SECRET),
   aiGatewayApiKey: Redacted.make("vck-test-value")
 }
@@ -91,11 +93,13 @@ const layers = (
   config: Partial<ServerConfigShape>
 ) =>
   Layer.mergeAll(
-    modelVaultLayer(undefined),
     transportLayer(async (input, init) => {
       const request = new Request(input as string, init)
+      // The signed-in login's Cloud token: its model calls are metered through the Cloud proxy (modelPayer.ts).
+      if (request.url === "https://identity.test/api/identity/cloud-token") return Response.json({ found: true, token: "cloud-token-alice" })
       calls.push(request)
-      if (request.url !== CEREBRAS_CHAT_COMPLETIONS_URL) throw new Error(`a bound turn must never fetch ${request.url}`)
+      if (request.url !== METERED_CEREBRAS_URL) throw new Error(`a bound turn must never fetch ${request.url}`)
+      if (request.headers.get("authorization") !== "Bearer cloud-token-alice") throw new Error("a signed-in turn must pay with the login's Cloud token")
       if (provider === undefined) throw new Error("the provider must not be asked")
       return provider(request)
     }),
@@ -190,8 +194,8 @@ describe("a sealed turn that binds a model", () => {
       { runId: "explain-1", type: "delta", kind: "text", text: "The lockfile drifted." },
       { runId: "explain-1", type: "done", reason: "stop" }
     ])
-    expect(served.calls.map((request) => request.url)).toEqual([CEREBRAS_CHAT_COMPLETIONS_URL])
-    expect(served.calls[0]!.headers.get("authorization")).toBe(`Bearer ${SECRET}`)
+    expect(served.calls.map((request) => request.url)).toEqual([METERED_CEREBRAS_URL])
+    expect(served.calls[0]!.headers.get("authorization")).toBe("Bearer cloud-token-alice")
     expect(sent.model).toBe("qwen-3-coder-480b")
     expect(sent.max_tokens).toBe(CLOUD_ROLE_MAX_TOKENS)
     // Never the provider's own default, which on Cerebras is `high`.
@@ -208,7 +212,6 @@ describe("a sealed turn that binds a model", () => {
     const response = await Effect.runPromise(
       handleTurn(post(body), SESSION).pipe(
         Effect.provide(Layer.mergeAll(
-    modelVaultLayer(undefined),
           transportLayer(async (input, init) => {
             calls.push(new Request(input as string, init))
             return new Response(`${JSON.stringify({ type: "done", reason: "stop" })}\n`, {
@@ -291,13 +294,15 @@ describe("a sealed turn that binds a model", () => {
     const cases: ReadonlyArray<readonly [Response, number, string]> = [
       [new Response("slow down", { status: 429 }), 429, "model_rate_limited"],
       [new Response(`no such model ${SECRET}`, { status: 404 }), 502, "upstream_refused"],
-      [Response.json({ choices: [] }), 502, "model_no_answer"]
+      [Response.json({ choices: [] }), 502, "model_no_answer"],
+      // Smithers Cloud refused the login's metered call: its credit is spent.
+      [Response.json({ code: "out_of_credit", message: "out of credit", details: { balance_cents: 0, required_cents: 1, upgrade: "/billing" } }, { status: 402 }), 402, "out_of_credit"]
     ]
     for (const [answer, status, code] of cases) {
       const served = await serve(explainBody(), { provider: () => answer })
       const refused = await refusalOf(served)
       expect([refused.status, refused.code]).toEqual([status, code])
-      expect(served.calls.map((request) => request.url)).toEqual([CEREBRAS_CHAT_COMPLETIONS_URL])
+      expect(served.calls.map((request) => request.url)).toEqual([METERED_CEREBRAS_URL])
     }
   })
 

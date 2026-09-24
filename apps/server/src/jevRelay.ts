@@ -8,6 +8,7 @@ import { readBoundedJson } from "./Http"
 import type { Transport } from "./Http"
 import { JEV_DEFAULT_MODEL, jevEvaluate } from "./jev"
 import type { JevQuestion } from "./jev"
+import { paidBy } from "./modelPayer"
 import {
   jevFailureMessage,
   RECOMMEND_ALL_CEILING,
@@ -214,10 +215,13 @@ export const handleJev = (
     if (!own.allowed) return turnLimitResponse(own, headers, RECOMMEND_CEILING)
     const shared = yield* limits.spend(RECOMMEND_ALL_KEY, RECOMMEND_ALL_CEILING)
     if (!shared.allowed) return turnLimitResponse(shared, headers, RECOMMEND_ALL_CEILING)
+    // A login's evaluation is metered against its own credit (modelPayer.ts).
     const answer = yield* jevEvaluate(
       { model: JEV_DEFAULT_MODEL, state: parsed.body.state, questions: parsed.body.questions },
       JEV_TIMEOUT_MS
-    )
-    if (!answer.ok) return refusal("service_temporarily_unavailable", jevFailureMessage(answer), headers)
+    ).pipe(paidBy(login))
+    if (!answer.ok) {
+      return refusal(answer.reason === "out_of_credit" ? "out_of_credit" : "service_temporarily_unavailable", jevFailureMessage(answer), headers)
+    }
     return jsonWith(200, { answers: answer.answers, model: answer.model }, headers)
   })

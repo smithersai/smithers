@@ -1328,7 +1328,6 @@ describe("turn seam session gate", () => {
       post("/api/agent/turn/retire", { runId: "run-ungated" }),
       post("/api/model/stream", { messages: [{ role: "user", content: "hi" }] }),
       post("/api/model/test", {}),
-      post("/api/model/credential", {}, SESSION),
       post("/api/tools/browser-fetch", { url: "https://example.com" })
     ]
     const fetched: Array<string> = []
@@ -3646,20 +3645,29 @@ describe("cloud roles on Cerebras", () => {
     }
   }
 
+  const METERED = "https://cloud.test/api/model/cerebras/v1/chat/completions"
   const network = (
     cerebras: (request: Request) => Response,
     upstream: (request: Request) => Response = () => ndjsonUpstream([{ type: "done" }])
   ) => {
-    const calls = { cerebras: [] as Array<Request>, upstream: [] as Array<Request>, identity: 0 }
+    const calls = { cerebras: [] as Array<Request>, metered: [] as Array<Request>, upstream: [] as Array<Request>, identity: 0 }
     const handler = (request: Request): Response | undefined => {
       const host = new URL(request.url).hostname
       if (request.url === CEREBRAS) {
         calls.cerebras.push(request)
         return cerebras(request)
       }
+      if (request.url === METERED) {
+        calls.metered.push(request)
+        return cerebras(request)
+      }
       if (host === "upstream.test") {
         calls.upstream.push(request)
         return upstream(request)
+      }
+      // The admitted login's Cloud token door: the metered proxy is paid with this token.
+      if (request.url === "https://identity.admitted.test/api/identity/cloud-token") {
+        return Response.json({ found: true, token: "cloud-token-admitted" })
       }
       if (host === "identity.test") {
         calls.identity += 1
@@ -3670,10 +3678,16 @@ describe("cloud roles on Cerebras", () => {
     return { calls, handler }
   }
 
-  const env: WorkerEnv = { ...assetsEnv(), SMITHERS_CHAT_URL: "https://upstream.test/chat", CEREBRAS_API_KEY: "csk-test" }
+  const env: WorkerEnv = {
+    ...assetsEnv(),
+    SMITHERS_CHAT_URL: "https://upstream.test/chat",
+    CEREBRAS_API_KEY: "csk-test",
+    SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test",
+    IDENTITY_SERVICE_TOKEN: "service-token"
+  }
   const librarian = { ...turnBody, runId: "run-librarian", role: "librarian", purpose: "librarian" }
 
-  test("a librarian turn reaches Cerebras on the librarian model and never the chat upstream", async () => {
+  test("a signed-in librarian turn is metered through the Cloud model proxy on the login's token, never the platform key", async () => {
     const wire = network(() => completion("Triggers live in flows/triggers.ts."))
     await withMockedFetch(wire.handler, async () => {
       const response = await admitted(post("/api/agent/turn", librarian), env)
@@ -3686,14 +3700,38 @@ describe("cloud roles on Cerebras", () => {
       ])
     })
     expect(wire.calls.upstream.length).toBe(0)
-    expect(wire.calls.cerebras.length).toBe(1)
-    expect(wire.calls.cerebras[0]!.headers.get("authorization")).toBe("Bearer csk-test")
-    const sent = (await wire.calls.cerebras[0]!.json()) as { model: string; messages: Array<{ role: string; content: string }> }
+    expect(wire.calls.cerebras.length).toBe(0)
+    expect(wire.calls.metered.length).toBe(1)
+    expect(wire.calls.metered[0]!.headers.get("authorization")).toBe("Bearer cloud-token-admitted")
+    const sent = (await wire.calls.metered[0]!.json()) as { model: string; messages: Array<{ role: string; content: string }> }
     expect(sent.model).toBe("qwen-3.8-27b")
     expect(sent.messages).toEqual([
       { role: "system", content: "Be brief." },
       { role: "user", content: "Hello who are you" }
     ])
+  })
+
+  test("a signed-in turn out of credit is the out_of_credit refusal", async () => {
+    const wire = network(() =>
+      Response.json(
+        { code: "out_of_credit", message: "out of credit", details: { balance_cents: 0, required_cents: 3, upgrade: "/billing" } },
+        { status: 402 }
+      ))
+    await withMockedFetch(wire.handler, async () => {
+      const response = await admitted(post("/api/agent/turn", librarian), env)
+      expect(response.status).toBe(402)
+      expect(((await response.json()) as { code: string }).code).toBe("out_of_credit")
+    })
+    expect(wire.calls.metered.length).toBe(1)
+    expect(wire.calls.cerebras.length).toBe(0)
+  })
+
+  test("a provider 402 that is not Plue's out_of_credit stays a provider refusal", async () => {
+    const wire = network(() => Response.json({ error: { message: "payment required" } }, { status: 402 }))
+    await withMockedFetch(wire.handler, async () => {
+      const response = await admitted(post("/api/agent/turn", librarian), env)
+      expect(((await response.json()) as { code: string }).code).toBe("upstream_refused")
+    })
   })
 
   test("the deployment's CEREBRAS_MODEL_LIBRARIAN and CEREBRAS_MODEL_FLOWS override the served models", async () => {
@@ -3703,7 +3741,7 @@ describe("cloud roles on Cerebras", () => {
       await (await admitted(post("/api/agent/turn", librarian), models)).text()
       await (await admitted(post("/api/agent/turn", { ...librarian, runId: "run-flows", role: "flows", purpose: "flows" }), models)).text()
     })
-    const sent = await Promise.all(wire.calls.cerebras.map(async (request) => ((await request.json()) as { model: string }).model))
+    const sent = await Promise.all(wire.calls.metered.map(async (request) => ((await request.json()) as { model: string }).model))
     expect(sent).toEqual(["gpt-oss-120b", "qwen-3-coder-480b"])
     expect(wire.calls.upstream.length).toBe(0)
   })
@@ -3785,6 +3823,9 @@ describe("cloud roles on Cerebras", () => {
     // A signed-out visitor sends no cookie, so identity is never asked.
     expect(wire.calls.identity).toBe(0)
     expect(wire.calls.cerebras.length).toBe(1)
+    // A visitor has no credit to charge: its turn keeps the deployment key and never the metered proxy.
+    expect(wire.calls.cerebras[0]!.headers.get("authorization")).toBe("Bearer csk-test")
+    expect(wire.calls.metered.length).toBe(0)
     expect(wire.calls.upstream.length).toBe(0)
     const spends = limits.spends()
     expect(spends.length).toBe(2)

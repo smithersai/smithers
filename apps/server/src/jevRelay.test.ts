@@ -57,8 +57,10 @@ const network = (jev?: (request: Request) => Promise<Response>) => {
     calls,
     layer: transportLayer(async (input, init) => {
       const request = input instanceof Request ? new Request(input, init) : new Request(input, init)
+      // A login's Cloud token: its Jev call is metered through the Cloud model proxy (modelPayer.ts).
+      if (request.url === "https://identity.test/api/identity/cloud-token") return Response.json({ found: true, token: "cloud-token-login" })
       calls.push(request)
-      if (new URL(request.url).hostname !== "ai-gateway.vercel.sh") {
+      if (new URL(request.url).hostname !== "ai-gateway.vercel.sh" && request.url !== METERED_JEV_URL) {
         throw new Error(`the relay must never fetch ${request.url}`)
       }
       if (jev === undefined) throw new Error("Jev must not be asked")
@@ -68,7 +70,13 @@ const network = (jev?: (request: Request) => Promise<Response>) => {
 }
 
 const HEADERS = { "x-isolation": "1" }
-const JEV_KEY = { aiGatewayApiKey: Redacted.make("vck-test") }
+const METERED_JEV_URL = "https://cloud.test/api/model/vercel/v4/ai/evaluation-model"
+const JEV_KEY = {
+  aiGatewayApiKey: Redacted.make("vck-test"),
+  identityUpstreamUrl: "https://identity.test",
+  identityServiceToken: Redacted.make("service-token"),
+  cloudApiBaseUrl: "https://cloud.test"
+}
 const JEV_MODEL = "typesafe-ai/jev"
 
 const post = (body: unknown, headers: Record<string, string> = {}): Request =>
@@ -305,7 +313,18 @@ describe("the relay spends the recommender's ceilings", () => {
 
   test("a login spends its own bucket, the same one the recommender spends", async () => {
     const limits = memoryLimits()
-    expect((await relay(post(goodBody), { jev, limits, login: "octocat" })).response.status).toBe(200)
+    const { response, calls } = await relay(post(goodBody), { jev, limits, login: "octocat" })
+    expect(response.status).toBe(200)
     expect(limits.keys()).toContain("recommend:login:octocat")
+    // The login's evaluation is metered through the Cloud model proxy on its own token, never the platform key.
+    expect(calls.map((call) => call.url)).toEqual([METERED_JEV_URL])
+    expect(calls[0]!.headers.get("authorization")).toBe("Bearer cloud-token-login")
+  })
+
+  test("a login out of credit is the out_of_credit refusal", async () => {
+    const spent = async () => Response.json({ code: "out_of_credit", message: "out of credit", details: { balance_cents: 0, required_cents: 1, upgrade: "/billing" } }, { status: 402 })
+    const { response } = await relay(post(goodBody), { jev: spent, limits: memoryLimits(), login: "octocat" })
+    expect(response.status).toBe(402)
+    expect(((await response.json()) as { code: string }).code).toBe("out_of_credit")
   })
 })
