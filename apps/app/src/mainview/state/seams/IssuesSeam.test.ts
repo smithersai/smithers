@@ -268,7 +268,7 @@ describe("issues seam — the list", () => {
     expect(card.payload.repo).toBe("will/flows")
     expect(card.payload.filter).toBe("open")
     // The two real rows survive; garbage entries drop; missing fields go null/zero.
-    expect(card.payload.issues).toEqual([
+    expect(card.payload.issues).toMatchObject([
       {
         number: 7,
         title: "Fix the flake 7",
@@ -378,7 +378,7 @@ describe("issues seam — the detail", () => {
     }
     await settled()
     const card = cardOfKind(store, "issue-will/flows-7", "issue")
-    expect(card.payload).toEqual({
+    expect(card.payload).toMatchObject({
       repo: "will/flows",
       number: 7,
       title: "Fix the flake 7",
@@ -629,7 +629,7 @@ describe("issues seam — source-only fallback (repo not imported)", () => {
     expect(card.payload.repo).toBe("will/flows")
     expect(card.payload.filter).toBe("open")
     // GitHub spellings land in the same rows: user.login → author, comments → comments.
-    expect(card.payload.issues).toEqual([
+    expect(card.payload.issues).toMatchObject([
       {
         number: 12,
         source: "github",
@@ -947,4 +947,28 @@ describe("source-qualified issue identity", () => {
       expect(notice.readVersion === notice.version).toBe(notice.source === "github" && notice.number === 1)
     }
   })
+})
+
+test.each(["smithers-cloud", "github"] as const)("%s issue reads retain forge assignees through persisted card schemas", async source => {
+  const wire = wireIssue(1, { assignees: [{ id: 7, login: "ada", avatar_url: "https://avatars.githubusercontent.com/u/7" }],
+    author: { login: "ana", avatar_url: "https://avatars.githubusercontent.com/u/3" },
+    user: { login: "ana", avatar_url: "https://avatars.githubusercontent.com/u/3" }, comments: 0 })
+  const { store, controller } = await issuesController(backend({
+    "GET /api/repos/will/flows/issues": source === "github" ? json(404, REPOSITORY_NOT_FOUND) : json(200, [wire]),
+    "GET /api/repos/will/flows/issues/1": json(200, wire),
+    "GET /api/repos/will/flows/issues/1/comments": json(200, []),
+    "GET /api/user/github-repos/will/flows/issues": json(200, [wire]),
+    "GET /api/user/github-repos/will/flows/issues/1/comments": json(200, [])
+  }))
+  try {
+    expect((await controller.commands.run("issues.list")).status).toBe("executed")
+    const row = cardOfKind(store, "issues-will/flows", "issue-list").payload.issues[0]!
+    expect(row.assignees).toEqual([{ login: "ada", avatar: "https://avatars.githubusercontent.com/u/7" }])
+    expect(row.labelColors).toEqual({ bug: "d73a4a" })
+    expect((await controller.commands.run("issues.view", `1 will/flows --source ${source}`)).status).toBe("executed")
+    const detail = cardOfKind(store, "issues-will/flows", "issue").payload
+    expect(detail.assignees).toEqual(row.assignees)
+    expect(detail.createdAt).toBe(wire.created_at)
+    expect(detail.authorAvatar).toBe("https://avatars.githubusercontent.com/u/3")
+  } finally { await controller.dispose(); await store.dispose?.() }
 })

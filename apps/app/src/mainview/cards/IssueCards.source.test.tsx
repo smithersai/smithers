@@ -77,3 +77,14 @@ test("saved Activity rows recover GitHub identity from older notification receip
   for (const button of host.querySelectorAll<HTMLButtonElement>('[data-flow="issues.view"]')) button.click()
   expect(commands).toEqual([["issues.view", "1 will/flows --source smithers-cloud"], ["issues.view", "1 will/flows --source github"]])
 })
+
+test("the assignee section distinguishes an unknown read from known unassigned", () => {
+  const card: Extract<Card, { kind: "issue" }> = { ...base, kind: "issue", payload: {
+    repo: "will/flows", number: 1, title: "Issue", state: "open", author: null, issueBody: "", labels: [], comments: []
+  } }
+  const unknown = render(<IssueCardBody card={card} onRunCommand={() => {}} />)
+  expect(unknown.textContent).not.toContain("Assignees")
+  const known = render(<IssueCardBody card={{ ...card, payload: { ...card.payload, assignees: [] } }} onRunCommand={() => {}} />)
+  expect(known.textContent).toContain("Assignees")
+  expect(known.textContent).toContain("No one assigned")
+})

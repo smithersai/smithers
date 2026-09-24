@@ -38,6 +38,18 @@ const asIssueState = (value: unknown): "open" | "closed" => value === "closed" ?
 const authorLogin = (value: unknown): string | null =>
   isRecord(value) && typeof value.login === "string" && value.login !== "" ? value.login : null
 
+/** Optional forge facts stay absent when the read did not supply them. */
+const forgeFacts = (value: Record<string, unknown>, author: unknown): Pick<IssuePayload, "createdAt" | "assignees" | "labelColors" | "authorAvatar"> => ({
+  ...(typeof value.created_at === "string" ? { createdAt: value.created_at } : {}),
+  ...(Array.isArray(value.assignees) ? { assignees: value.assignees.flatMap(person =>
+    isRecord(person) && typeof person.login === "string" && person.login !== ""
+      ? [{ login: person.login, ...(typeof person.avatar_url === "string" ? { avatar: person.avatar_url } : {}) }] : []) } : {}),
+  ...(Array.isArray(value.labels) ? { labelColors: Object.fromEntries(value.labels.flatMap(label =>
+    isRecord(label) && typeof label.name === "string" && typeof label.color === "string"
+      ? [[label.name, label.color]] : [])) } : {}),
+  ...(isRecord(author) && typeof author.avatar_url === "string" ? { authorAvatar: author.avatar_url } : {})
+})
+
 /** One list row; null when the entry carries no usable issue number. */
 const parseListRow = (value: unknown): IssueListRow | null => {
   if (!isRecord(value)) return null
@@ -49,6 +61,8 @@ const parseListRow = (value: unknown): IssueListRow | null => {
     title: typeof value.title === "string" ? value.title : "",
     state: asIssueState(value.state),
     author: authorLogin(value.author),
+    ...forgeFacts(value, value.author),
+    labels: parseLabels(value.labels),
     comments: comments !== null && comments >= 0 ? comments : 0,
     updatedAt: typeof value.updated_at === "string" ? value.updated_at : null
   }
@@ -74,12 +88,14 @@ const parseGithubListRow = (value: unknown): IssueListRow | null => {
     title: typeof value.title === "string" ? value.title : "",
     state: asIssueState(value.state),
     author: authorLogin(value.user),
+    ...forgeFacts(value, value.user),
+    labels: parseLabels(value.labels),
     comments: comments !== null && comments >= 0 ? comments : 0,
     updatedAt: typeof value.updated_at === "string" ? value.updated_at : null
   }
 }
 
-/** Label NAMES only — the card states labels as words, not colors. */
+/** Label names are the stable keys; forgeFacts supplies their optional colors. */
 const parseLabels = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.flatMap((label) => isRecord(label) && typeof label.name === "string" ? [label.name] : [])
@@ -109,10 +125,10 @@ const parseDetail = (
     title: typeof value.title === "string" ? value.title : "",
     state: asIssueState(value.state),
     author: authorLogin(value.author),
+    ...forgeFacts(value, value.author),
     issueBody: typeof value.body === "string" ? value.body : "",
     labels: parseLabels(value.labels),
     comments: [...comments],
-
   }
 }
 
@@ -290,6 +306,7 @@ export const createIssuesSeam = (ctx: SeamContext, renderRepositoryForm?: Reposi
       if (!Array.isArray(rows)) return `GitHub answered comments for #${number} with an unreadable payload`
       comments.push(...rows.flatMap(row => isRecord(row) ? [{
         author: authorLogin(row.user),
+        ...(isRecord(row.user) && typeof row.user.avatar_url === "string" ? { authorAvatar: row.user.avatar_url } : {}),
         commentBody: typeof row.body === "string" ? row.body : "",
         createdAt: typeof row.created_at === "string" ? row.created_at : null
       }] : []))

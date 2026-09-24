@@ -37,24 +37,8 @@ export interface IssueCardActions {
 }
 
 
-type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number] & IssueExtras
-type IssuePayload = Extract<Card, { kind: "issue" }>["payload"] & IssueExtras
-
-/** Avatar-bearing people as a read may carry them ({ login, avatar }). */
-type PersonRow = { readonly login: string; readonly avatar?: string | undefined }
-
-/**
- * GitHub facts the cards render when a read carries them. They are not in the
- * rpc card schema today (a zod parse strips them), so live cards fall back to
- * what the schema has; any read can supply them.
- */
-interface IssueExtras {
-  readonly createdAt?: string | null
-  readonly assignees?: ReadonlyArray<PersonRow>
-  /** Label name to hex color, with or without the #. */
-  readonly labelColors?: Readonly<Record<string, string>>
-  readonly authorAvatar?: string
-}
+type IssueRow = Extract<Card, { kind: "issue-list" }>["payload"]["issues"][number]
+type IssuePayload = Extract<Card, { kind: "issue" }>["payload"]
 
 const IssueListRow = ({ repo, issue, onRunCommand }: { readonly repo: string; readonly issue: IssueRow } & IssueCardActions) => {
   const extra = issue
@@ -248,9 +232,9 @@ export const IssueCardBody = ({
           </div> : null}
         </div>
         <aside className="ghc-side" aria-label={`Issue #${number} details`}>
-          <SideSection title="Assignees" empty="No one assigned">
+          {extra.assignees !== undefined ? <SideSection title="Assignees" empty="No one assigned">
             {assignees.length > 0 ? <AvatarStack people={assignees} /> : null}
-          </SideSection>
+          </SideSection> : null}
           <SideSection title="Labels">
             {labels.length > 0 ? labels.map((label) => <LabelPill key={label} name={label} color={extra.labelColors?.[label]} />) : null}
           </SideSection>
