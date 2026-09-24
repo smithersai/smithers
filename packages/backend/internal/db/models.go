@@ -1915,6 +1915,7 @@ type RevocationEvent struct {
 	Reason         string      `json:"reason"`
 	ActorID        pgtype.Int8 `json:"actor_id"`
 	CreatedAt      time.Time   `json:"created_at"`
+	KeyFingerprint string      `json:"key_fingerprint"`
 }
 
 type SandboxUsageInterval struct {

@@ -52,6 +52,7 @@ var migrationRegistry = []migrationSpec{
 	{16, "migrations/0016_repo_push_events.sql"},
 	{17, "migrations/0017_secret_caps.sql"},
 	{18, "migrations/0018_email_addresses_activated_unique.sql"},
+	{19, "migrations/0019_revocation_events_ssh_key_revoked.sql"},
 }
 
 type migration struct {

@@ -57,6 +57,11 @@ const (
 	// KindGatewayRevoked: the repository gateway GatewayID was torn down, so
 	// every relay authorized with its operator token must end.
 	KindGatewayRevoked Kind = "gateway_revoked"
+	// KindSSHKeyRevoked: an SSH public-key credential (user key or deploy key)
+	// was deleted, so every SSH session it authenticated must end.
+	// KeyFingerprint identifies it (SHA256:<base64>); UserID is its owner for
+	// user keys, RepositoryID its repository for deploy keys.
+	KindSSHKeyRevoked Kind = "ssh_key_revoked"
 )
 
 // Event is one revocation. Zero fields mean "not applicable"; a consumer
@@ -72,6 +77,7 @@ type Event struct {
 	WorkspaceID    string    `json:"workspace_id,omitempty"`
 	SessionID      string    `json:"session_id,omitempty"`
 	GatewayID      string    `json:"gateway_id,omitempty"`
+	KeyFingerprint string    `json:"key_fingerprint,omitempty"`
 	SandboxIDs     []string  `json:"sandbox_ids,omitempty"`
 	Reason         string    `json:"reason,omitempty"`
 	ActorID        int64     `json:"actor_id,omitempty"`
@@ -89,6 +95,9 @@ type Principal struct {
 	SandboxID      string
 	SessionID      string
 	GatewayID      string
+	// KeyFingerprint is the SHA256:<base64> fingerprint of the SSH public key
+	// that authenticated the session.
+	KeyFingerprint string
 }
 
 // Affects reports whether the event revokes the principal's authorization.
@@ -120,6 +129,8 @@ func (e Event) Affects(p Principal) bool {
 		return e.namesSandbox(p.SandboxID)
 	case KindGatewayRevoked:
 		return e.GatewayID != "" && p.GatewayID == e.GatewayID
+	case KindSSHKeyRevoked:
+		return e.KeyFingerprint != "" && p.KeyFingerprint == e.KeyFingerprint
 	}
 	return false
 }
@@ -149,6 +160,7 @@ func FromRow(row db.RevocationEvent) Event {
 		WorkspaceID:    row.WorkspaceID,
 		SessionID:      row.SessionID,
 		GatewayID:      row.GatewayID,
+		KeyFingerprint: row.KeyFingerprint,
 		SandboxIDs:     append([]string(nil), row.SandboxIds...),
 		Reason:         row.Reason,
 		ActorID:        int8Value(row.ActorID),
@@ -172,6 +184,7 @@ func (e Event) ToParams() db.InsertRevocationEventParams {
 		WorkspaceID:    e.WorkspaceID,
 		SessionID:      e.SessionID,
 		GatewayID:      e.GatewayID,
+		KeyFingerprint: e.KeyFingerprint,
 		SandboxIds:     sandboxIDs,
 		Reason:         e.Reason,
 		ActorID:        int8Param(e.ActorID),

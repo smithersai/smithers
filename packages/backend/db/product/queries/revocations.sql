@@ -4,9 +4,10 @@
 WITH event_lock AS MATERIALIZED (SELECT pg_advisory_xact_lock(1548769901))
 INSERT INTO revocation_events (
     kind, user_id, token_id, token_hash, repository_id, organization_id,
-    workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id
+    workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id,
+    key_fingerprint
 )
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM event_lock
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 FROM event_lock
 RETURNING *;
 
 -- name: ListRevocationEventsAfter :many

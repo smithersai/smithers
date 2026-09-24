@@ -34,6 +34,12 @@ func (s *OrgService) SetRevocationPublisher(p revocation.Publisher) { s.revocati
 // SetRevocationPublisher announces OAuth2 access-token revocations.
 func (s *OAuth2Service) SetRevocationPublisher(p revocation.Publisher) { s.revocations = p }
 
+// SetRevocationPublisher announces deleted SSH user keys.
+func (s *SSHKeyService) SetRevocationPublisher(p revocation.Publisher) { s.revocations = p }
+
+// SetRevocationPublisher announces deleted deploy keys.
+func (s *DeployKeyService) SetRevocationPublisher(p revocation.Publisher) { s.revocations = p }
+
 // SetRevocationPublisher announces workspace share removals.
 func (s *PairSessionService) SetRevocationPublisher(p revocation.Publisher) { s.revocations = p }
 

@@ -18,6 +18,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 )
 
 type SSHKeyQuerier interface {
@@ -29,7 +30,8 @@ type SSHKeyQuerier interface {
 }
 
 type SSHKeyService struct {
-	queries SSHKeyQuerier
+	queries     SSHKeyQuerier
+	revocations revocation.Publisher
 }
 
 type CreateSSHKeyRequest struct {
@@ -170,6 +172,14 @@ func (s *SSHKeyService) DeleteKey(ctx context.Context, userID int64, keyID int64
 		return pkgerrors.Internal("failed to delete ssh key")
 	}
 
+	// End every live SSH session this key authenticated.
+	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+		Kind:           revocation.KindSSHKeyRevoked,
+		UserID:         userID,
+		KeyFingerprint: key.Fingerprint,
+		Reason:         "ssh key deleted",
+		ActorID:        userID,
+	})
 	return nil
 }
 

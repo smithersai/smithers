@@ -281,6 +281,9 @@ func TestEvent_Affects(t *testing.T) {
 		{"session by sandbox", Event{Kind: KindAgentSessionCancelled, SessionID: "s", SandboxIDs: []string{"vm"}}, Principal{SandboxID: "vm"}, true},
 		{"org member", Event{Kind: KindOrgMemberRemoved, UserID: 3, OrganizationID: 5}, Principal{UserID: 3, OrganizationID: 5}, true},
 		{"gateway", Event{Kind: KindGatewayRevoked, GatewayID: "g"}, Principal{GatewayID: "g"}, true},
+		{"ssh key fingerprint match", Event{Kind: KindSSHKeyRevoked, UserID: 3, KeyFingerprint: "SHA256:f"}, Principal{UserID: 3, KeyFingerprint: "SHA256:f"}, true},
+		{"ssh key same user other key keeps access", Event{Kind: KindSSHKeyRevoked, UserID: 3, KeyFingerprint: "SHA256:f"}, Principal{UserID: 3, KeyFingerprint: "SHA256:g"}, false},
+		{"ssh key empty never matches", Event{Kind: KindSSHKeyRevoked, UserID: 3}, Principal{UserID: 3}, false},
 		{"unknown kind", Event{Kind: "nope", UserID: 3}, Principal{UserID: 3}, false},
 	}
 	for _, tc := range cases {
@@ -291,11 +294,11 @@ func TestEvent_Affects(t *testing.T) {
 }
 
 func TestEvent_RowRoundTrip(t *testing.T) {
-	in := Event{Kind: KindWorkspaceShareRemoved, UserID: 1, RepositoryID: 2, WorkspaceID: "w", SandboxIDs: []string{"a", "b"}, Reason: "r", ActorID: 9}
+	in := Event{Kind: KindWorkspaceShareRemoved, UserID: 1, RepositoryID: 2, WorkspaceID: "w", KeyFingerprint: "SHA256:k", SandboxIDs: []string{"a", "b"}, Reason: "r", ActorID: 9}
 	params := in.ToParams()
-	row := db.RevocationEvent{ID: 5, Kind: params.Kind, UserID: params.UserID, RepositoryID: params.RepositoryID, WorkspaceID: params.WorkspaceID, SandboxIds: params.SandboxIds, Reason: params.Reason, ActorID: params.ActorID}
+	row := db.RevocationEvent{ID: 5, Kind: params.Kind, UserID: params.UserID, RepositoryID: params.RepositoryID, WorkspaceID: params.WorkspaceID, KeyFingerprint: params.KeyFingerprint, SandboxIds: params.SandboxIds, Reason: params.Reason, ActorID: params.ActorID}
 	out := FromRow(row)
-	if out.ID != 5 || out.Kind != in.Kind || out.UserID != 1 || out.RepositoryID != 2 || out.WorkspaceID != "w" || len(out.SandboxIDs) != 2 || out.Reason != "r" || out.ActorID != 9 || out.TokenID != 0 {
+	if out.ID != 5 || out.Kind != in.Kind || out.UserID != 1 || out.RepositoryID != 2 || out.WorkspaceID != "w" || out.KeyFingerprint != "SHA256:k" || len(out.SandboxIDs) != 2 || out.Reason != "r" || out.ActorID != 9 || out.TokenID != 0 {
 		t.Fatalf("round trip lost data: %+v", out)
 	}
 	if (Event{}).ToParams().SandboxIds == nil {

@@ -33,10 +33,11 @@ const insertRevocationEvent = `-- name: InsertRevocationEvent :one
 WITH event_lock AS MATERIALIZED (SELECT pg_advisory_xact_lock(1548769901))
 INSERT INTO revocation_events (
     kind, user_id, token_id, token_hash, repository_id, organization_id,
-    workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id
+    workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id,
+    key_fingerprint
 )
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12 FROM event_lock
-RETURNING id, kind, user_id, token_id, token_hash, repository_id, organization_id, workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id, created_at
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13 FROM event_lock
+RETURNING id, kind, user_id, token_id, token_hash, repository_id, organization_id, workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id, created_at, key_fingerprint
 `
 
 type InsertRevocationEventParams struct {
@@ -52,6 +53,7 @@ type InsertRevocationEventParams struct {
 	SandboxIds     []string    `json:"sandbox_ids"`
 	Reason         string      `json:"reason"`
 	ActorID        pgtype.Int8 `json:"actor_id"`
+	KeyFingerprint string      `json:"key_fingerprint"`
 }
 
 // Serialize allocation and commit of event IDs so a scan cannot skip a lower
@@ -70,6 +72,7 @@ func (q *Queries) InsertRevocationEvent(ctx context.Context, arg InsertRevocatio
 		arg.SandboxIds,
 		arg.Reason,
 		arg.ActorID,
+		arg.KeyFingerprint,
 	)
 	var i RevocationEvent
 	err := row.Scan(
@@ -87,6 +90,7 @@ func (q *Queries) InsertRevocationEvent(ctx context.Context, arg InsertRevocatio
 		&i.Reason,
 		&i.ActorID,
 		&i.CreatedAt,
+		&i.KeyFingerprint,
 	)
 	return i, err
 }
@@ -103,7 +107,7 @@ func (q *Queries) LatestRevocationEventID(ctx context.Context) (int64, error) {
 }
 
 const listRevocationEventsAfter = `-- name: ListRevocationEventsAfter :many
-SELECT id, kind, user_id, token_id, token_hash, repository_id, organization_id, workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id, created_at
+SELECT id, kind, user_id, token_id, token_hash, repository_id, organization_id, workspace_id, session_id, gateway_id, sandbox_ids, reason, actor_id, created_at, key_fingerprint
 FROM revocation_events
 WHERE id > $1::bigint
 ORDER BY id ASC
@@ -139,6 +143,7 @@ func (q *Queries) ListRevocationEventsAfter(ctx context.Context, arg ListRevocat
 			&i.Reason,
 			&i.ActorID,
 			&i.CreatedAt,
+			&i.KeyFingerprint,
 		); err != nil {
 			return nil, err
 		}

@@ -11,6 +11,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
+	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 )
 
 type DeployKeyQuerier interface {
@@ -23,7 +24,8 @@ type DeployKeyQuerier interface {
 }
 
 type DeployKeyService struct {
-	queries DeployKeyQuerier
+	queries     DeployKeyQuerier
+	revocations revocation.Publisher
 }
 
 type CreateDeployKeyRequest struct {
@@ -143,6 +145,14 @@ func (s *DeployKeyService) DeleteDeployKey(ctx context.Context, owner, repo stri
 	if err := s.queries.DeleteDeployKey(ctx, keyID); err != nil {
 		return pkgerrors.Internal("failed to delete deploy key")
 	}
+
+	// End every live SSH git session this deploy key authenticated.
+	revocation.PublishBestEffort(ctx, s.revocations, revocation.Event{
+		Kind:           revocation.KindSSHKeyRevoked,
+		RepositoryID:   repository.ID,
+		KeyFingerprint: key.KeyFingerprint,
+		Reason:         "deploy key deleted",
+	})
 	return nil
 }
 

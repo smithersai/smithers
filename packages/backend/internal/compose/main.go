@@ -1385,6 +1385,8 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	repoGatewayService.SetRevocationPublisher(revocationPublisher)
 	agentService.SetRevocationPublisher(revocationPublisher)
 	repoService.SetRevocationPublisher(revocationPublisher)
+	sshKeyService.SetRevocationPublisher(revocationPublisher)
+	deployKeyService.SetRevocationPublisher(revocationPublisher)
 	if !options.topology.hosted() {
 		// These HTTP surfaces operate on fleet placement, runner, or canary
 		// state excluded from the single-owner product schema.
