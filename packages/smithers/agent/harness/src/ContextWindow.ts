@@ -307,7 +307,28 @@ const jsonValue = (value: unknown): unknown => {
   return value
 }
 
-const segmentText = (content: Content): string => CanonicalJson.stringify(jsonValue(content))
+/**
+ * What a segment is estimated from: its content, less every thinking part's
+ * `signature`. A signature is opaque replay state, not context the provider
+ * bills: on the ChatGPT route it is the whole encrypted reasoning item, often
+ * larger than the turn's visible text, and counting it compacted a 400k-window
+ * run at 31k to 41k billed input tokens (Terminal-Bench 4.0,
+ * mp-checkpoint-consolidation, 2026-09-24). The digest still covers it.
+ */
+const withoutSignatures = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutSignatures)
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>
+    return Object.fromEntries(
+      Object.entries(record)
+        .filter(([key]) => !(record.type === "thinking" && key === "signature"))
+        .map(([key, member]) => [key, withoutSignatures(member)])
+    )
+  }
+  return value
+}
+
+const segmentText = (content: Content): string => CanonicalJson.stringify(withoutSignatures(jsonValue(content)))
 
 const digest = (value: unknown): string => Digest.digest(CanonicalJson.stringify(value))
 

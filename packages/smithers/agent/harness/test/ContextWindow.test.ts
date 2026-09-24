@@ -81,6 +81,29 @@ const texts = (request: Request.ModelRequest) =>
   request.messages.map((message) => message.content.find((part) => "text" in part)?.text)
 
 describe("ContextWindow", () => {
+  it("does not count a reasoning signature the provider does not bill", () => {
+    // Terminal-Bench 4.0 mp-checkpoint-consolidation (2026-09-24): on the
+    // ChatGPT route every turn's encrypted reasoning rides in a thinking
+    // part's signature and is replayed verbatim. Counting those bytes put the
+    // estimate past the compaction threshold while the provider billed 31k to
+    // 41k input tokens, so the run compacted three times at a tenth of its
+    // window and re-read what compaction dropped.
+    const window = ContextWindow.make({
+      modelId: "gpt-6-sol",
+      segments: [{
+        kind: "transcript",
+        zone: "tail",
+        content: [
+          Request.Message.assistant([
+            Request.ThinkingPart.make({ text: "checked the layout", signature: "x".repeat(400_000) }),
+            Request.TextPart.make({ text: "a".repeat(1_000) })
+          ])
+        ]
+      }]
+    })
+    expect(window.tokens.total.value).toBeLessThan(2_000)
+  })
+
   it("has a deterministic digest and never mutates its input", () => {
     const first = base()
     const second = base()
