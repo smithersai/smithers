@@ -311,8 +311,12 @@ const lowerInput = (
   return input
 }
 
-const buildBody = (request: ModelRequest, options: { readonly native: boolean }): Body => {
-  const native = options.native && DeferredTools.supportsDeferred("openai-responses", request.modelId)
+const buildBody = (
+  request: ModelRequest,
+  options: { readonly native: boolean },
+  protocolId: DeferredTools.ProtocolId = "openai-responses"
+): Body => {
+  const native = options.native && DeferredTools.supportsDeferred(protocolId, request.modelId)
   // `toolChoice: "none"` forbids tool use, and the Responses API expresses that
   // by omitting `tools` rather than by a wire field, so the request is lowered
   // as if it declared none: no tool declarations and no deferred-tool search
@@ -342,7 +346,7 @@ const fromRequest = Effect.fn("OpenAIResponses.fromRequest")((
 const chatgptBody = (request: ModelRequest, options: { readonly native: boolean }): ChatGPTBody => {
   // `chatgptFromRequest` has already refused a request carrying `maxTokens`,
   // so the lowered body carries no `max_output_tokens` to strip here.
-  const base = buildBody(request, options)
+  const base = buildBody(request, options, "openai-responses-chatgpt")
   return {
     ...base,
     // `item_reference` names a stored response, and this backend stores none:
@@ -825,8 +829,8 @@ export const protocol: Protocol.Protocol<
  * SSE event stream and usage counters, with the request narrowed to the
  * subscription surface ({@link ChatGPTBody}) and reasoning continuation
  * carried in `encrypted_content` instead of stored item references. Deferred
- * tools are disabled: the extension is unconfirmed on this backend, and every
- * tool sent immediately is the portable contract.
+ * tools are native only for the ids probed live on this backend (the GPT-6
+ * family, 2026-09-24); every other model receives the portable lowering.
  *
  * @category models
  * @since 0.1.0
@@ -839,7 +843,7 @@ export const chatgptProtocol: Protocol.Protocol<
   State
 > = Protocol.make({
   id: "openai-responses-chatgpt",
-  supportsDeferred: () => false,
+  supportsDeferred: (modelId) => DeferredTools.supportsDeferred("openai-responses-chatgpt", modelId),
   body: {
     schema: ChatGPTBody,
     from: chatgptFromRequest

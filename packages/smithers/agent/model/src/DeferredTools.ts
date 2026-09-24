@@ -12,7 +12,7 @@ import type { ModelRequest, ToolDefinition } from "./ModelRequest.ts"
  * @since 0.1.0
  * @slop
  */
-export type ProtocolId = "anthropic-messages" | "openai-responses"
+export type ProtocolId = "anthropic-messages" | "openai-responses" | "openai-responses-chatgpt"
 
 /**
  * The immediate and lazy tool definitions derived from a sealed request.
@@ -63,6 +63,17 @@ const isAnthropicDeferredModel = (modelId: string): boolean => ANTHROPIC_DEFERRE
 
 // Seeded from pi's generated model compatibility metadata. New families remain
 // opt-in until their wire support is verified against the live backend.
+//
+// GPT-6: OpenAI's tool search guide says "only `gpt-5.4` and later models
+// support `tool_search`" and uses gpt-6-astra in its client-executed examples
+// (https://developers.openai.com/api/docs/guides/tools-tool-search, fetched
+// 2026-09-24). The same day a live probe sent this module's exact native body
+// (a `defer_loading` function carried only by a client `tool_search_output`)
+// to each GPT-6 id on the ChatGPT-subscription backend: every model answered
+// HTTP 200 and called the deferred tool, and with the search items removed the
+// model called the loader again instead. The api.openai.com probe could not
+// run (the key had no credits), so the API-key entries rest on the guide. The
+// recorded responses live in test/fixtures/gpt6-deferred-probe.json.
 const OPENAI_DEFERRED_MODELS = new Set([
   "gpt-5.4",
   "gpt-5.4-mini",
@@ -70,10 +81,24 @@ const OPENAI_DEFERRED_MODELS = new Set([
   "gpt-5.5",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
-  "gpt-5.6-luna"
+  "gpt-5.6-luna",
+  "gpt-6-sol",
+  "gpt-6-astra",
+  "gpt-6-luna"
 ])
 
 const isOpenAiDeferredModel = (modelId: string): boolean => OPENAI_DEFERRED_MODELS.has(modelId.toLowerCase())
+
+// The ChatGPT-subscription backend has its own list: only ids probed live on
+// that backend belong here (see the GPT-6 note above). GPT-5.x was never
+// probed there, so it keeps the portable lowering on this route.
+const CHATGPT_DEFERRED_MODELS = new Set([
+  "gpt-6-sol",
+  "gpt-6-astra",
+  "gpt-6-luna"
+])
+
+const isChatGptDeferredModel = (modelId: string): boolean => CHATGPT_DEFERRED_MODELS.has(modelId.toLowerCase())
 
 const uniqueTools = (tools: ReadonlyArray<ToolDefinition>): ReadonlyArray<ToolDefinition> => {
   const seen = new Set<string>()
@@ -101,7 +126,7 @@ const lazyTool = (tool: ToolDefinition): ToolDefinition => ({
  * Reports whether a protocol and model pair supports pi's native deferred
  * tool-loading wire representation.
  *
- * Both providers answer from an explicit allowlist, matched case-insensitively.
+ * Each protocol answers from an explicit allowlist, matched case-insensitively.
  * An id absent from its provider's list answers false, including a family or
  * version released after this code, because native deferral changes the wire
  * body and an unverified body must not be enabled without a release. Such a
@@ -114,6 +139,8 @@ const lazyTool = (tool: ToolDefinition): ToolDefinition => ({
 export const supportsDeferred = (protocolId: ProtocolId, modelId: string): boolean =>
   protocolId === "anthropic-messages"
     ? isAnthropicDeferredModel(modelId)
+    : protocolId === "openai-responses-chatgpt"
+    ? isChatGptDeferredModel(modelId)
     : isOpenAiDeferredModel(modelId)
 
 /**

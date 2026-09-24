@@ -1,0 +1,251 @@
+{
+  "date": "2026-09-24",
+  "method": "OpenAIResponses.chatgptProtocol body for one user turn, one load_tools call, and its result activating get_weather (deferred). native = the lowered native body; control = the portable body with get_weather sent immediately; ablate = the native body with tool_search_call/tool_search_output removed. reasoning effort low. Each record is one request; outcome lists non-reasoning output items.",
+  "endpoint": "https://chatgpt.com/backend-api/codex/responses (ChatGPT subscription via ~/.codex/auth.json)",
+  "documentation": {
+    "url": "https://developers.openai.com/api/docs/guides/tools-tool-search",
+    "quote": "In the Responses API, only `gpt-5.4` and later models support `tool_search`."
+  },
+  "records": [
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-sol",
+      "mode": "native",
+      "sent": {
+        "tools": [
+          "load_tools"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output",
+          "tool_search_call",
+          "tool_search_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-sol",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-sol",
+      "mode": "control",
+      "sent": {
+        "tools": [
+          "load_tools",
+          "get_weather"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-sol",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-astra",
+      "mode": "native",
+      "sent": {
+        "tools": [
+          "load_tools"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output",
+          "tool_search_call",
+          "tool_search_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-astra",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-astra",
+      "mode": "control",
+      "sent": {
+        "tools": [
+          "load_tools",
+          "get_weather"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-astra",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-luna",
+      "mode": "native",
+      "sent": {
+        "tools": [
+          "load_tools"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output",
+          "tool_search_call",
+          "tool_search_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-luna",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-luna",
+      "mode": "control",
+      "sent": {
+        "tools": [
+          "load_tools",
+          "get_weather"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-luna",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "get_weather",
+            "arguments": "{\"city\":\"Paris\"}"
+          }
+        ]
+      }
+    },
+    {
+      "route": "chatgpt",
+      "model": "gpt-6-luna",
+      "mode": "ablate",
+      "sent": {
+        "tools": [
+          "load_tools"
+        ],
+        "input_types": [
+          "user",
+          "function_call",
+          "function_call_output"
+        ]
+      },
+      "http": 200,
+      "outcome": {
+        "event": "response.completed",
+        "model": "gpt-6-luna",
+        "status": "completed",
+        "error": null,
+        "output": [
+          {
+            "type": "function_call",
+            "name": "load_tools",
+            "arguments": "{\"query\":\"get_weather tool parameter schema\"}"
+          }
+        ]
+      }
+    }
+  ],
+  "apiKeyRoute": {
+    "route": "api",
+    "model": "gpt-5.6-sol",
+    "mode": "native",
+    "sent": {
+      "tools": [
+        "load_tools"
+      ],
+      "input_types": [
+        "user",
+        "function_call",
+        "function_call_output",
+        "tool_search_call",
+        "tool_search_output"
+      ]
+    },
+    "http": 200,
+    "outcome": {
+      "type": "error",
+      "error": {
+        "type": "insufficient_quota",
+        "code": "credit_balance_exhausted",
+        "message": "You have no credits remaining. Add credits to continue using the API at https://platform.openai.com/settings/organization/billing/.",
+        "param": null
+      },
+      "sequence_number": 2
+    }
+  }
+}

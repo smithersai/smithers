@@ -57,6 +57,7 @@ describe("OpenAIChatGPT.make", () => {
     expect(config.id).toBe("openai-chatgpt")
     expect(config.protocol.id).toBe("openai-responses-chatgpt")
     expect(config.protocol.supportsDeferred("gpt-5.6-sol")).toBe(false)
+    expect(config.protocol.supportsDeferred("gpt-6-sol")).toBe(true)
     expect(config.framing.id).toBe("sse")
     // No `/v1` prefix: the subscription backend serves `/codex/responses`.
     expect(config.endpoint.url).toBe("https://chatgpt.com/backend-api/codex/responses")
