@@ -31,6 +31,7 @@ import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
 import { Context, Effect, FileSystem, Layer, Option, Path } from "effect"
 import type * as Crypto from "effect/Crypto"
+import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -41,6 +42,14 @@ import * as StandardFlows from "../src/StandardFlows.ts"
 const pathServices: Context.Context<Path.Path> = Effect.runSync(
   Effect.provide(Effect.context<Path.Path>(), NodePath.layer)
 )
+
+const nativeHelperAvailable = [
+  process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY,
+  join(import.meta.dirname, "../../../../target/release/smithers-jj-export"),
+  join(import.meta.dirname, "../../../../target/debug/smithers-jj-export"),
+  "/usr/local/bin/smithers-jj-export"
+].some((path) => path !== undefined && existsSync(path))
+const guardedDisk = process.env.CI || nativeHelperAvailable ? it : it.skip
 
 /**
  * The host slices each helper takes. A catalog is the binding list a source
@@ -120,59 +129,66 @@ const callOf = (flowName: string, input: unknown): Cell.Call =>
   }) as unknown as Cell.Call
 
 describe("the standard capability catalog", () => {
-  it.each([
-    {
-      flow: "glob",
-      input: { pattern: "**/add.mjs", limit: 10 },
-      value: { paths: ["add.mjs", "nested/add.mjs"], total: 2, truncated: false }
-    },
-    {
-      flow: "grep",
-      input: { pattern: "a + b", fixedStrings: true, limit: 10 },
-      value: {
-        matches: [
-          expect.objectContaining({ file: "add.mjs", line: 1 }),
-          expect.objectContaining({ file: "nested/add.mjs", line: 1 })
-        ],
-        filesSearched: 2,
-        truncated: false
+  for (
+    const fixture of [
+      {
+        flow: "glob",
+        input: { pattern: "**/add.mjs", limit: 10 },
+        value: { paths: ["add.mjs", "nested/add.mjs"], total: 2, truncated: false }
+      },
+      {
+        flow: "grep",
+        input: { pattern: "a + b", fixedStrings: true, limit: 10 },
+        value: {
+          matches: [
+            expect.objectContaining({ file: "add.mjs", line: 1 }),
+            expect.objectContaining({ file: "nested/add.mjs", line: 1 })
+          ],
+          filesSearched: 2,
+          truncated: false
+        }
+      },
+      {
+        flow: "ls",
+        input: { path: "." },
+        value: {
+          entries: [{ name: "nested/", kind: "directory" }, { name: "add.mjs", kind: "file" }],
+          total: 2,
+          truncated: false
+        }
       }
-    },
-    {
-      flow: "ls",
-      input: { path: "." },
-      value: {
-        entries: [{ name: "nested/", kind: "directory" }, { name: "add.mjs", kind: "file" }],
-        total: 2,
-        truncated: false
-      }
-    }
-  ])("searches the guarded disk workspace through $flow without an absolute root", async (fixture) => {
-    const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-standard-search-")))
-    try {
-      await mkdir(join(root, "nested"))
-      await writeFile(join(root, "add.mjs"), "export const add = (a, b) => a + b\n")
-      await writeFile(join(root, "nested/add.mjs"), "export const sum = (a, b) => a + b\n")
-      const guarded = KernelFileSystem.layer.pipe(
-        Layer.provide(AtomicFileSystem.layer),
-        Layer.provideMerge(NodePath.layer),
-        Layer.provide(Workspace.layer(root)),
-        Layer.provide(GrantStore.layerNoop)
-      )
-      const result = await Effect.runPromise(
-        Effect.gen(function*() {
-          const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
-          const bindings = yield* StandardFlows.filesystem(services).bindings()
-          return yield* bindings.find((binding) => binding.descriptor.name === fixture.flow)!
-            .run(callOf(fixture.flow, fixture.input))
-        }).pipe(Effect.provide(guarded), Effect.scoped)
-      )
+    ]
+  ) {
+    guardedDisk(
+      `searches the guarded disk workspace through ${fixture.flow} without an absolute root (requires native smithers-jj-export)`,
+      async () => {
+        const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-standard-search-")))
+        try {
+          await mkdir(join(root, "nested"))
+          await writeFile(join(root, "add.mjs"), "export const add = (a, b) => a + b\n")
+          await writeFile(join(root, "nested/add.mjs"), "export const sum = (a, b) => a + b\n")
+          const guarded = KernelFileSystem.layer.pipe(
+            Layer.provide(AtomicFileSystem.layer),
+            Layer.provideMerge(NodePath.layer),
+            Layer.provide(Workspace.layer(root)),
+            Layer.provide(GrantStore.layerNoop)
+          )
+          const result = await Effect.runPromise(
+            Effect.gen(function*() {
+              const services = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+              const bindings = yield* StandardFlows.filesystem(services).bindings()
+              return yield* bindings.find((binding) => binding.descriptor.name === fixture.flow)!
+                .run(callOf(fixture.flow, fixture.input))
+            }).pipe(Effect.provide(guarded), Effect.scoped)
+          )
 
-      expect(result, JSON.stringify(result)).toMatchObject({ outcome: "success", value: fixture.value })
-    } finally {
-      await rm(root, { recursive: true, force: true })
-    }
-  })
+          expect(result, JSON.stringify(result)).toMatchObject({ outcome: "success", value: fixture.value })
+        } finally {
+          await rm(root, { recursive: true, force: true })
+        }
+      }
+    )
+  }
 
   for (const entry of promised) {
     it(`binds exactly the flows ${entry.source.name} promises`, async () => {
