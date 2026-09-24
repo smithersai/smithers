@@ -1304,6 +1304,21 @@ export const run = (
           })
         )
       }
+      if (confinement !== undefined && confinement.network === "none" && resolved.secrets.length > 0) {
+        return Effect.fail(
+          execError({
+            argv: resolved.argv,
+            cwd: resolved.cwd,
+            exitCode: -1,
+            code: "sandbox_unenforceable",
+            stdout: "",
+            stderr: tail(
+              "sandbox: a closed network cannot reach the loopback secret proxy, so a target that declares " +
+                "secrets needs sandbox: { network: \"loopback\" } on macOS or sandbox: { network: true } on Linux"
+            )
+          })
+        )
+      }
       return withSecretEnvironment(resolved.secrets, diagnostic, (secretEnv) =>
         Effect.flatMap(
           confined(confinement, cwd, resolved, sensitiveEnv, secretEnv, options),
@@ -1426,7 +1441,16 @@ const confined = (
           undefined,
           options.environment
         ).pipe(
-          Effect.ignore
+          Effect.matchEffect({
+            onFailure: (error) =>
+              Effect.logWarning(`sandbox: could not remove docker container ${containerName}: ${error.code}`),
+            onSuccess: (output) =>
+              output.exitCode === 0
+                ? Effect.void
+                : Effect.logWarning(
+                  `sandbox: could not remove docker container ${containerName}: exit ${output.exitCode}`
+                )
+          })
         )
       )
     }

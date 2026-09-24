@@ -34,7 +34,7 @@ Declaration-time rejections happen while `PACKAGE.ts` loads:
 
 Execution failures belong to the emitted targets. The [`@smthrs/targets` error table](../smithers/build/targets/docs/reference/targets.md#errors) documents each one:
 
-- Review targets fail with `smithers-build/ClaudeCliMissing` when the engine CLI, `codex` by default, is not on the host. The tag is historical and covers every engine.
+- Review targets fail with `smithers-build/ModelCliMissing` when the engine CLI, `codex` by default, is not on the host. It names the `engine` and the `executable`.
 - Review targets fail with `smithers-build/LlmReviewError` when a round fails in the `diff`, `read`, `review`, or `parse` phase.
 - Review targets fail with `smithers-build/FindingsError` when a finding meets the threshold: `error` for `ReviewTagsMigrationsAndKeys`, `warning` for `ReviewDocsAgainstCode` and `ReviewJsdocAgainstCode`. The error carries every finding.
 - `BuildAndCheckTypeScriptPackage` targets fail with `smithers-build/ExecError` when a tool such as `tsc`, Vitest, ESLint, dprint, or the circular script fails, and its `docs` target fails with `smithers-build/DocsParityError`.

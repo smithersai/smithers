@@ -25,7 +25,6 @@ describe("BiomeCheck paths", () => {
       config,
       lint,
       format,
-      unsafe: false,
       cwd: "packages/foo"
     })
     const calls = plannedCalls(target)
@@ -57,7 +56,6 @@ describe("BiomeCheck paths", () => {
       config: Input.file("biome.json"),
       lint: true,
       format: false,
-      unsafe: false,
       cwd
     })
     expect(plannedArgv(target)).toEqual([

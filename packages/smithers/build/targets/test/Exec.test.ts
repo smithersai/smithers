@@ -14,6 +14,7 @@ import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Layer from "effect/Layer"
+import * as Logger from "effect/Logger"
 import * as PlatformError from "effect/PlatformError"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
@@ -225,18 +226,32 @@ describe("Docker cleanup", () => {
         workspaceRoot: root,
         sandbox: { policy: {}, reads: [], writes: [], mechanism: { _tag: "SandboxDocker", image: "fixture" } }
       }, { ...payload(["true"]), timeoutMs: mode === "timeout" ? 10 : "unbounded" })
-      const exit = await Effect.runPromise(Effect.gen(function*() {
-        const fiber = yield* effect.pipe(Effect.forkChild)
-        yield* Effect.promise(() => started)
-        if (mode === "interruption" || mode === "startup interruption") yield* Fiber.interrupt(fiber)
-        return yield* Fiber.await(fiber)
-      }))
+      const warnings: Array<string> = []
+      const capture = Logger.layer([
+        Logger.make(({ logLevel, message }) => {
+          if (logLevel === "Warn") warnings.push(String(Array.isArray(message) ? message.join(" ") : message))
+        })
+      ])
+      const exit = await Effect.runPromise(
+        Effect.gen(function*() {
+          const fiber = yield* effect.pipe(Effect.forkChild)
+          yield* Effect.promise(() => started)
+          if (mode === "interruption" || mode === "startup interruption") yield* Fiber.interrupt(fiber)
+          return yield* Fiber.await(fiber)
+        }).pipe(Effect.provide(capture))
+      )
       expect(Exit.isSuccess(exit)).toBe(mode === "success" || mode === "removal hangs" || mode === "removal fails")
       expect(events).toEqual(["run", "client closed", "remove", "remove closed"])
       const args = calls[0]!.args!
       expect(args).toContain("--name")
       expect(calls[1]!.command).toBe(calls[0]!.command)
-      expect(calls[1]!.args).toEqual(["rm", "--force", args[args.indexOf("--name") + 1]])
+      const containerName = args[args.indexOf("--name") + 1]
+      expect(calls[1]!.args).toEqual(["rm", "--force", containerName])
+      if (mode === "removal fails" || mode === "removal hangs") {
+        expect(warnings).toEqual([expect.stringContaining(`could not remove docker container ${containerName}`)])
+      } else {
+        expect(warnings).toEqual([])
+      }
       expect(calls[1]!.env).toEqual(calls[0]!.env)
       expect(NodeFs.existsSync(scratch)).toBe(false)
     }
@@ -273,6 +288,32 @@ describe("run", () => {
     expect(scratch).toBeDefined()
     expect(NodeFs.existsSync(scratch!)).toBe(false)
     expect(await Fs.readFile(NodePath.join(root, "blocked"), "utf8")).toBe("occupied")
+  })
+
+  it.each(
+    [
+      ["linux", "sandbox: { network: true } on Linux"],
+      ["darwin", "sandbox: { network: \"loopback\" } on macOS"]
+    ] as const
+  )("refuses declared secrets under a closed network on %s before spawning", async (platform, remedy) => {
+    const host = ExecSandbox.host()
+    vi.spyOn(ExecSandbox, "host").mockReturnValue({
+      ...host,
+      platform,
+      executable: (name) => `/usr/bin/${name}`
+    })
+    const marker = NodePath.join(root, "spawned")
+    const error = await failed({
+      ...payload([process.execPath, "-e", `require('node:fs').writeFileSync(${JSON.stringify(marker)}, '')`]),
+      secrets: [Secret.HttpSecret(Secret.Secret("EXEC_TEST_TOKEN"), ["https://example.test"])]
+    }, {
+      workspaceRoot: root,
+      sandbox: { policy: {}, reads: [], writes: [] }
+    })
+    expect(error.code).toBe("sandbox_unenforceable")
+    expect(error.stderr).toContain("cannot reach the loopback secret proxy")
+    expect(error.stderr).toContain(remedy)
+    expect(NodeFs.existsSync(marker)).toBe(false)
   })
 
   it("retains the bounded stderr tail and explanation when a tool times out", async () => {

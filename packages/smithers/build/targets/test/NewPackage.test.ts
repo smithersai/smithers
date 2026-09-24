@@ -115,6 +115,21 @@ describe("scaffold", () => {
     expect(tsconfig.extends).toBe("../../tsconfig.json")
   })
 
+  it.each([
+    [".", "widget/tsconfig.json", "../tsconfig.base.json"],
+    ["packages", "packages/widget/tsconfig.json", "../../tsconfig.base.json"],
+    ["packages/smithers", "packages/smithers/widget/tsconfig.json", "../../../tsconfig.base.json"]
+  ])("extends the workspace-root tsconfig.base.json from %s by default", async (directory, file, expected) => {
+    const { tsconfigExtends: _declared, ...undeclared } = payload
+    await Effect.runPromise(
+      scaffold({ workspaceRoot: root, packageName: "@smthrs/widget" }, { ...undeclared, directory })
+    )
+    const tsconfig = JSON.parse(await Fs.readFile(NodePath.join(root, file), "utf8")) as { extends: string }
+    expect(tsconfig.extends).toBe(expected)
+    expect(NodePath.resolve(NodePath.dirname(NodePath.join(root, file)), tsconfig.extends))
+      .toBe(NodePath.join(root, "tsconfig.base.json"))
+  })
+
   it("exports its initial public module without exposing future helper files", async () => {
     await run("@smthrs/widget")
     const directory = NodePath.join(root, "packages/widget")

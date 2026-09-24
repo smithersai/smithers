@@ -234,7 +234,7 @@ export { TypedocDocs } from "./TypedocDocumentation.ts"
 /** @category targets @since 0.1.0 */
 export { LlmLint } from "./LlmLint.ts"
 /** @category actions @since 0.1.0 */
-export { ClaudeCliMissing, FindingsError, LlmReview, LlmReviewError } from "./LlmLint.ts"
+export { FindingsError, LlmReview, LlmReviewError, ModelCliMissing } from "./LlmLint.ts"
 /** @category targets @since 0.1.0 */
 export { Clean } from "./Compose.ts"
 /** @category targets @since 0.1.0 */

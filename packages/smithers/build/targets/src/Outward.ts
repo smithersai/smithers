@@ -1,9 +1,9 @@
 /**
  * The shared refusal gate every outward-effect rule runs before it acts.
  *
- * `S.Npm.Publish`, `S.Github.Release`, `S.Github.Pages`, `S.Git.Pr`, and
- * `S.Changesets.Publish` all push bytes to somebody else's machine. They
- * share one contract, so they share one gate rather than five copies of it:
+ * `S.Npm.Publish`, `S.Github.Pr`, `S.Github.Release`, `S.Github.Pages`,
+ * `S.Git.Pr`, and `S.Changesets.Publish` all push bytes to somebody else's
+ * machine. They share one contract, so they share one gate:
  *
  * - **Never cached.** An outward effect has no result to replay: the second
  *   invocation is a second publish. The rules opt out of the cache in the
@@ -20,10 +20,6 @@
  * No rule has an outward transport yet. The package planner refuses each
  * one as not implemented, before this gate or any rule gate runs, so a
  * plannable outward target never spends a gate run on a certain failure.
- *
- * This generalises the `Github.Pr` gate that shipped first; that rule keeps
- * its own named error for compatibility and this module is what every rule
- * added afterwards uses.
  *
  * @since 0.1.0
  */

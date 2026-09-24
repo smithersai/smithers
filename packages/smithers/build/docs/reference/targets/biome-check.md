@@ -16,7 +16,6 @@ const lint = Smithers.BiomeCheck({
   config: Smithers.file("biome.json"),
   lint: true,
   format: true,
-  unsafe: false,
   cwd: "packages/greeter"
 })
 
@@ -35,7 +34,6 @@ export const Package = Smithers.Package({
 | `config`         | `Input.File`                    | required | The Biome configuration, passed as `--config-path`.                                        |
 | `lint`           | `boolean`                       | required | Run `biome check`.                                                                         |
 | `format`         | `boolean`                       | required | Run `biome format` in its default check mode.                                              |
-| `unsafe`         | `boolean`                       | required | Forward `--unsafe` to the check run.                                                       |
 | `cwd`            | `string`                        | `"."`    | Workspace-relative directory the tool runs in.                                             |
 
 ## Commands
@@ -44,7 +42,7 @@ Up to two runs, both from `cwd`. The argvs are `PackageManager.exec` of the
 declared package manager. With the pnpm declaration:
 
 ```text
-pnpm exec biome check [--unsafe] --config-path=<config.path> <paths...>
+pnpm exec biome check --config-path=<config.path> <paths...>
 pnpm exec biome format --config-path=<config.path> <paths...>
 ```
 

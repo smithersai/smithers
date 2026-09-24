@@ -2291,10 +2291,6 @@ const visit = async (
       case "Github.Workflow":
         selection = { family: "value", rule, lane: { kind: "github-decl" } }
         break
-      case "Github.Pr":
-        selection = { family: "outward", rule, lane: { kind: "github-pr" } }
-        noteRefusal(notImplementedOutward(rule))
-        break
       case "Npm.Pack": {
         if (context.managerBinary === undefined) {
           noteRefusal(
@@ -2479,6 +2475,7 @@ const visit = async (
         selection = { family: "outward", rule, lane: { kind: "outward", required: ["NPM_TOKEN"] } }
         noteRefusal(notImplementedOutward(rule))
         break
+      case "Github.Pr":
       case "Github.Release":
       case "Github.Pages":
       case "Git.Pr":

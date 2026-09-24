@@ -281,11 +281,11 @@ describe("success shapes a rule maps out of its runs", () => {
     const argvOf = (value: unknown) =>
       value === null ? null : (value as { readonly payload: Record<string, unknown> }).payload["argv"]
 
-    const neither = plannedValue(BiomeCheck.BiomeCheck({ ...base, lint: false, format: false, unsafe: false }))
+    const neither = plannedValue(BiomeCheck.BiomeCheck({ ...base, lint: false, format: false }))
     expect(neither).toEqual({ check: null, format: null })
 
     const formatOnly = plannedValue(
-      BiomeCheck.BiomeCheck({ ...base, lint: false, format: true, unsafe: false })
+      BiomeCheck.BiomeCheck({ ...base, lint: false, format: true })
     ) as Record<string, unknown>
     expect(formatOnly["check"]).toBeNull()
     expect(argvOf(formatOnly["format"])).toEqual([
@@ -298,21 +298,20 @@ describe("success shapes a rule maps out of its runs", () => {
     ])
 
     const lintOnly = plannedValue(
-      BiomeCheck.BiomeCheck({ ...base, lint: true, format: false, unsafe: true })
+      BiomeCheck.BiomeCheck({ ...base, lint: true, format: false })
     ) as Record<string, unknown>
     expect(argvOf(lintOnly["check"])).toEqual([
       "pnpm",
       "exec",
       "biome",
       "check",
-      "--unsafe",
       "--config-path=biome.json",
       "src"
     ])
     expect(lintOnly["format"]).toBeNull()
 
     const both = plannedValue(
-      BiomeCheck.BiomeCheck({ ...base, lint: true, format: true, unsafe: false })
+      BiomeCheck.BiomeCheck({ ...base, lint: true, format: true })
     ) as Record<string, unknown>
     expect(argvOf(both["check"])).toContain("check")
     expect(argvOf(both["format"])).toContain("format")

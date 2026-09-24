@@ -93,7 +93,6 @@ export type LaneData =
   | { readonly kind: "git-commit" }
   | { readonly kind: "ci-gen" }
   | { readonly kind: "github-decl" }
-  | { readonly kind: "github-pr" }
   | { readonly kind: "npm-pack"; readonly manifestPath: string }
   | {
     readonly kind: "native-file"
@@ -327,7 +326,6 @@ export type Selection =
   | Variant<"outward", "Git.Commit", Lane<"git-commit">>
   | Variant<"generated", "Github.CiGen", Lane<"ci-gen">>
   | Variant<"value", "Github.Setup" | "Github.Workflow", Lane<"github-decl">>
-  | Variant<"outward", "Github.Pr", Lane<"github-pr">>
   | Variant<"files", "Npm.Pack", Lane<"npm-pack">>
   | Variant<"files", "Copy", Lane<"native-file"> & { readonly flavor: "copy" }>
   | Variant<"files", "Literal", Lane<"native-file"> & { readonly flavor: "literal"; readonly text: string }>
@@ -339,7 +337,7 @@ export type Selection =
   | Variant<"files", "Overlay", Lane<"overlay">>
   | Variant<
     "outward",
-    "Npm.Publish" | "Changesets.Publish" | "Github.Release" | "Github.Pages" | "Git.Pr",
+    "Npm.Publish" | "Changesets.Publish" | "Github.Pr" | "Github.Release" | "Github.Pages" | "Git.Pr",
     Lane<"outward">
   >
   | Variant<"value", "Changesets.Version" | "Size.Budgets" | "Cron", Lane<"inert">>

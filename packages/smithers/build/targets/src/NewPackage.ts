@@ -44,8 +44,11 @@ export const ScaffoldPayload = Schema.Struct({
   license: License,
   /** Shared manifest fields, normally a `PackageJsonTemplate` template's. */
   fields: Schema.Record(Schema.String, Schema.Unknown),
-  /** The tsconfig the generated package extends, relative to the new package. */
-  tsconfigExtends: Schema.NonEmptyString
+  /**
+   * The tsconfig the generated package extends, relative to the new package.
+   * Absent, it is the workspace-root `tsconfig.base.json`.
+   */
+  tsconfigExtends: Schema.optional(Schema.NonEmptyString)
 })
 
 /**
@@ -153,6 +156,13 @@ const sourceIdentifier = (name: string): string => {
 }
 
 /**
+ * The workspace-root `tsconfig.base.json`, relative to a package created
+ * under the resolved workspace-relative `directory`.
+ */
+const workspaceBaseTsconfig = (directory: string): string =>
+  `${"../".repeat(directory === "." ? 1 : directory.split("/").length + 1)}tsconfig.base.json`
+
+/**
  * The static boilerplate a scaffolded package starts from.
  *
  * A model could write a better README and a better first test, and the
@@ -183,7 +193,10 @@ export const boilerplate = (
       "tsconfig.json",
       `${
         JSON.stringify(
-          { extends: payload.tsconfigExtends, include: ["src/**/*", "test/**/*"] },
+          {
+            extends: payload.tsconfigExtends ?? workspaceBaseTsconfig(Input.resolvePath("", payload.directory)),
+            include: ["src/**/*", "test/**/*"]
+          },
           undefined,
           2
         )
@@ -419,10 +432,8 @@ export const Attrs = Schema.Struct({
   fields: Schema.Record(Schema.String, Schema.Unknown).pipe(
     Schema.withConstructorDefault(Effect.succeed<Record<string, unknown>>({}))
   ),
-  /** @default "../../tsconfig.base.json" */
-  tsconfigExtends: Schema.NonEmptyString.pipe(
-    Schema.withConstructorDefault(Effect.succeed("../../tsconfig.base.json"))
-  )
+  /** Relative to the new package. Absent, the workspace-root `tsconfig.base.json`. */
+  tsconfigExtends: Schema.optional(Schema.NonEmptyString)
 })
 
 /**
@@ -466,6 +477,6 @@ export const NewPackage = Target.make("NewPackage", {
       version: attrs.version,
       license: attrs.license,
       fields: attrs.fields,
-      tsconfigExtends: attrs.tsconfigExtends
+      ...(attrs.tsconfigExtends === undefined ? {} : { tsconfigExtends: attrs.tsconfigExtends })
     })
 })

@@ -28,7 +28,6 @@ export const Attrs = Schema.Struct({
   config: Input.File,
   lint: Schema.Boolean,
   format: Schema.Boolean,
-  unsafe: Schema.Boolean,
   cwd: Schema.NonEmptyString.pipe(Schema.withConstructorDefault(Effect.succeed(".")))
 })
 
@@ -94,13 +93,10 @@ const biomePaths = (cwd: string, sources: ReadonlyArray<Input.Declared>): Readon
  * The body records one `biome check` run when `lint` is enabled and one
  * `biome format` run in its default check mode when `format` is enabled,
  * both from `cwd` through the shared {@link Exec.Exec} action with the
- * declared configuration passed as `--config-path`. When `unsafe` is true
- * the check run forwards `--unsafe`. Tools resolve through `pnpm exec`,
- * matching the pnpm workspace install target. Key material contains source
- * and configuration digests, dependency keys, enabled check families, and
- * unsafe-target policy. This combines tevm's `lint:check` and `format:check`
- * targets using Biome prior art. Executing the plan requires
- * {@link Exec.ExecLive}.
+ * declared configuration passed as `--config-path`. Tools resolve through
+ * `pnpm exec`, matching the pnpm workspace install target. Key material
+ * contains source and configuration digests, dependency keys, and the enabled
+ * check families. Executing the plan requires {@link Exec.ExecLive}.
  *
  * @category targets
  * @since 0.1.0
@@ -129,7 +125,6 @@ export const BiomeCheck = Target.make("BiomeCheck", {
       argv: PackageManager.exec(attrs.packageManager, [
         "biome",
         "check",
-        ...(attrs.unsafe ? ["--unsafe"] : []),
         ...shared
       ])
     })

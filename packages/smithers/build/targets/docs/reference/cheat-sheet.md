@@ -462,8 +462,7 @@ const biome = S.BiomeCheck({
   deps: [],
   config: S.file("biome.json"),
   lint: true,
-  format: true,
-  unsafe: false
+  format: true
 })
 const dprint = S.Dprint({
   sources: [sources],

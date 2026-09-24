@@ -798,7 +798,7 @@ export const executeEffect = (
      */
     const engineCliMissing = (value: unknown): value is { readonly executable: string } =>
       typeof value === "object" && value !== null && "_tag" in value &&
-      (value as { readonly _tag?: unknown })._tag === "smithers-build/ClaudeCliMissing"
+      (value as { readonly _tag?: unknown })._tag === "smithers-build/ModelCliMissing"
 
     /**
      * The outcome of a failed target body: a skip when the failure is a missing
@@ -2229,10 +2229,10 @@ export const executeEffect = (
             }
             case "Npm.Publish":
             case "Changesets.Publish":
+            case "Github.Pr":
             case "Github.Release":
             case "Github.Pages":
             case "Git.Pr":
-            case "Github.Pr":
               // The planner refuses these before any gate runs; reaching here
               // means a plan skipped that refusal, so fail rather than act.
               return fail(`${node.rule}: not implemented by this executor`)

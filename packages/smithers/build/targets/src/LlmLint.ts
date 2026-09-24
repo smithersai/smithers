@@ -188,15 +188,16 @@ export type Report = typeof Report.Type
 /**
  * The engine CLI executable was not found on the host.
  *
- * The tag is historical: it is raised for whichever engine executable the
- * review selected, not only for `claude`.
+ * `engine` names the engine the review selected and `executable` the binary
+ * that was not found.
  *
  * @category errors
  * @since 0.1.0
  */
-export class ClaudeCliMissing extends Schema.TaggedError<ClaudeCliMissing>()(
-  "smithers-build/ClaudeCliMissing",
+export class ModelCliMissing extends Schema.TaggedError<ModelCliMissing>()(
+  "smithers-build/ModelCliMissing",
   {
+    engine: Engine,
     executable: Schema.NonEmptyString,
     message: Schema.NonEmptyString
   }
@@ -239,7 +240,7 @@ export class FindingsError extends Schema.TaggedError<FindingsError>()(
  * @category schemas
  * @since 0.1.0
  */
-export const ReviewError = Schema.Union([ClaudeCliMissing, LlmReviewError, FindingsError])
+export const ReviewError = Schema.Union([ModelCliMissing, LlmReviewError, FindingsError])
 
 /**
  * Every failure an llm-review call can produce.
@@ -543,25 +544,56 @@ const changedPathRecords = (output: string): ReadonlyArray<string> => {
   return paths
 }
 
-/** Lists changed paths against the base revision, filtered by include globs. */
+/** Runs one NUL-framed git listing under the hardened git environment. */
+const gitPaths = (
+  workspaceRoot: string,
+  args: ReadonlyArray<string>,
+  timeoutMs: number,
+  sensitiveEnv: ReadonlyArray<string>
+): Effect.Effect<ReadonlyArray<string>, LlmReviewError> =>
+  spawnText(workspaceRoot, "git", ["-c", "core.fsmonitor=false", ...args], {
+    stdoutBytes: maximumGitOutputBytes,
+    timeoutMs: Math.min(timeoutMs, 30_000),
+    sensitiveEnv,
+    git: true
+  }).pipe(
+    Effect.mapError((error) => new LlmReviewError({ phase: "diff", message: failureMessage(error) })),
+    Effect.flatMap((output) =>
+      output.exitCode === 0
+        ? Effect.try({
+          try: () => changedPathRecords(output.stdout),
+          catch: (cause) => new LlmReviewError({ phase: "diff", message: failureMessage(cause) })
+        })
+        : Effect.fail(
+          new LlmReviewError({
+            phase: "diff",
+            message: `git ${args[0]} exited ${output.exitCode}: ${stderrTail(output.stderr)}`
+          })
+        )
+    )
+  )
+
+/**
+ * Lists changed paths against the base revision, filtered by include globs.
+ *
+ * A path counts as changed when `git diff` reports it against the base or it
+ * is new and untracked but not ignored, so a file added in a jj-colocated
+ * checkout is reviewed before git knows about it.
+ */
 const changedFiles = (
   workspaceRoot: string,
   payload: Payload,
   timeoutMs: number,
   sensitiveEnv: ReadonlyArray<string>
 ): Effect.Effect<ReadonlyArray<string>, LlmReviewError> =>
-  Effect.flatMap(
-    Effect.try({
-      try: () => Input.validateGitBase(payload.base),
-      catch: (cause) => new LlmReviewError({ phase: "diff", message: failureMessage(cause) })
-    }),
-    (base) =>
-      spawnText(
+  Effect.try({
+    try: () => Input.validateGitBase(payload.base),
+    catch: (cause) => new LlmReviewError({ phase: "diff", message: failureMessage(cause) })
+  }).pipe(
+    Effect.flatMap((base) =>
+      gitPaths(
         workspaceRoot,
-        "git",
         [
-          "-c",
-          "core.fsmonitor=false",
           "diff",
           "--no-ext-diff",
           "--no-textconv",
@@ -572,30 +604,27 @@ const changedFiles = (
           base,
           "--"
         ],
-        {
-          stdoutBytes: maximumGitOutputBytes,
-          timeoutMs: Math.min(timeoutMs, 30_000),
-          sensitiveEnv,
-          git: true
-        }
+        timeoutMs,
+        sensitiveEnv
       )
-  ).pipe(
-    Effect.mapError((error) => new LlmReviewError({ phase: "diff", message: failureMessage(error) })),
-    Effect.flatMap((output) =>
-      output.exitCode === 0
-        ? Effect.try({
-          try: () =>
-            changedPathRecords(output.stdout)
-              .filter((path) => payload.include.some((declaration) => matchesGlob(path, declaration)))
-              .sort(),
-          catch: (cause) => new LlmReviewError({ phase: "diff", message: failureMessage(cause) })
-        })
-        : Effect.fail(
-          new LlmReviewError({
-            phase: "diff",
-            message: `git diff exited ${output.exitCode}: ${stderrTail(output.stderr)}`
-          })
-        )
+    ),
+    Effect.flatMap((tracked) =>
+      gitPaths(
+        workspaceRoot,
+        ["ls-files", "--others", "--exclude-standard", "--full-name", "-z", "--"],
+        timeoutMs,
+        sensitiveEnv
+      )
+        .pipe(Effect.map((untracked) => [...tracked, ...untracked]))
+    ),
+    Effect.flatMap((paths) =>
+      Effect.try({
+        try: () =>
+          [...new Set(paths)]
+            .filter((path) => payload.include.some((declaration) => matchesGlob(path, declaration)))
+            .sort(),
+        catch: (cause) => new LlmReviewError({ phase: "diff", message: failureMessage(cause) })
+      })
     )
   )
 
@@ -808,7 +837,7 @@ const adapters: Record<Engine, EngineAdapter> = {
       "read-only",
       "--ephemeral",
       "--ignore-user-config",
-      "--ignore-targets",
+      "--ignore-rules",
       "--strict-config",
       "--model",
       model,
@@ -921,7 +950,7 @@ export const promptEngine = (
     readonly model: string
     readonly prompt: string
   }
-): Effect.Effect<string, ClaudeCliMissing | LlmReviewError> => {
+): Effect.Effect<string, ModelCliMissing | LlmReviewError> => {
   return Effect.flatMap(
     Effect.try({
       try: () => ({
@@ -954,7 +983,7 @@ const invokeEngine = (
   engine: Engine,
   model: string,
   prompt: string
-): Effect.Effect<string, ClaudeCliMissing | LlmReviewError> =>
+): Effect.Effect<string, ModelCliMissing | LlmReviewError> =>
   spawnText(runtime.workspaceRoot, runtime.executable, adapters[engine].args(model), {
     stdin: prompt,
     stdoutBytes: maximumModelOutputBytes,
@@ -964,7 +993,7 @@ const invokeEngine = (
   }).pipe(
     Effect.mapError((error) =>
       SafeFs.errorCode(error) === "ENOENT"
-        ? new ClaudeCliMissing({ executable: runtime.executable, message: failureMessage(error) })
+        ? new ModelCliMissing({ engine, executable: runtime.executable, message: failureMessage(error) })
         : new LlmReviewError({ phase: "review", message: failureMessage(error) })
     ),
     Effect.flatMap((output) =>
@@ -1005,7 +1034,7 @@ const reviewBatch = (
   payload: Payload,
   batch: ReadonlyArray<BatchFile>,
   context: ReadonlyArray<BatchFile>
-): Effect.Effect<ReadonlyArray<Finding>, ClaudeCliMissing | LlmReviewError> =>
+): Effect.Effect<ReadonlyArray<Finding>, ModelCliMissing | LlmReviewError> =>
   Effect.flatMap(
     Effect.try({
       try: () => renderPrompt(payload, batch, context),
@@ -1059,7 +1088,7 @@ export const review = (
     readonly sensitiveEnv?: ReadonlyArray<string> | undefined
   },
   untrustedPayload: Payload
-): Effect.Effect<Report, ClaudeCliMissing | LlmReviewError | FindingsError> =>
+): Effect.Effect<Report, ModelCliMissing | LlmReviewError | FindingsError> =>
   Effect.gen(function*() {
     const payload = yield* Effect.try({
       try: () => {
@@ -1155,7 +1184,7 @@ export const review = (
  * appended to every batch prompt whether or not it changed. Reads are bounded,
  * descriptor-stable, valid UTF-8, and confined to real workspace files. Paths
  * deleted since the base revision are skipped. A missing executable fails with
- * {@link ClaudeCliMissing}; findings whose severity meets `failOn` fail with
+ * {@link ModelCliMissing}; findings whose severity meets `failOn` fail with
  * {@link FindingsError}. Each subprocess has a deadline and bounded output;
  * interruption kills its process group. `executable` overrides the engine's
  * binary name.
@@ -1250,7 +1279,7 @@ export type Attrs = typeof Attrs.Type
  * (`smithers-build target //pkg:review`) still runs it.
  *
  * A missing engine binary is a SKIP rather than a failure. The build CLI
- * reports {@link ClaudeCliMissing} as a skipped target with a notice naming
+ * reports {@link ModelCliMissing} as a skipped target with a notice naming
  * the executable, so a runner with no model CLI leaves the review job green
  * and says why, instead of going red for a host fact no commit introduced.
  *

@@ -339,8 +339,9 @@ const isWorkspaceStatePath = (cacheDirectory: string, path: string): boolean =>
 /**
  * Resolves a declared input path or pattern against its package directory.
  *
- * Values starting with `//` resolve from the workspace root. Everything else
- * resolves from `packageDir`, the workspace-relative package path. The result
+ * Values starting with `//` resolve from the workspace root. A value starting
+ * with a single `/` is refused rather than read as package-relative. Everything
+ * else resolves from `packageDir`, the workspace-relative package path. The result
  * is a normalized workspace-relative posix path. Paths that escape the
  * workspace are refused.
  *
@@ -352,6 +353,12 @@ export const resolvePath = (packageDir: string, value: string): string => {
     throw new Error(`declared input is not a portable workspace path: ${JSON.stringify(value)}`)
   }
   const rooted = value.startsWith("//")
+  if (!rooted && value.startsWith("/")) {
+    throw new Error(
+      `declared input starts with a single "/": ${JSON.stringify(value)}; ` +
+        `spell a workspace-root path with a leading "//"`
+    )
+  }
   const relative = rooted ? value.slice(2) : posix(NodePath.join(packageDir, value))
   const normalized = posix(NodePath.normalize(relative))
   if (normalized === ".." || normalized.startsWith("../") || NodePath.isAbsolute(normalized)) {

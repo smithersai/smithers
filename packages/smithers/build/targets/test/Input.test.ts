@@ -67,6 +67,17 @@ describe("Input nested ignore precedence", () => {
   )
 })
 
+describe("Input.resolvePath", () => {
+  it.each(["/src/**", "/"])("refuses the single-slash absolute path %j and names //", (value) => {
+    expect(() => Input.resolvePath("pkg", value)).toThrow(/single "\/".*"\/\/"/)
+  })
+
+  it("resolves // from the workspace root and a bare path from the package", () => {
+    expect(Input.resolvePath("pkg", "//src/**")).toBe("src/**")
+    expect(Input.resolvePath("pkg", "src/**")).toBe("pkg/src/**")
+  })
+})
+
 describe("Input.expandGlob", () => {
   it.each(["C:/outside/*.ts", "src\\*.ts", "src/\uD800.ts", "src/\0.ts"])(
     "refuses the non-portable pattern %j",

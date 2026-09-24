@@ -96,7 +96,7 @@ Beyond the usual fields, this target contributes:
 | Channel | Type                                                                                 |
 | ------- | ------------------------------------------------------------------------------------ |
 | Success | `Report`: `{files: Array<string>, findings: Array<Finding>}`                        |
-| Error   | `ReviewError`: a union of `ClaudeCliMissing`, `LlmReviewError`, and `FindingsError` |
+| Error   | `ReviewError`: a union of `ModelCliMissing`, `LlmReviewError`, and `FindingsError` |
 
 ```ts
 Finding = { file: string, line: number, severity: Severity, message: string }
@@ -106,7 +106,7 @@ Finding = { file: string, line: number, severity: Severity, message: string }
 
 | Error              | Raised when                                                                                                              |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| `ClaudeCliMissing` | The engine executable was not found on the host. The tag is historical: it covers `codex` too.                           |
+| `ModelCliMissing` | The engine executable was not found on the host. Carries `engine` and `executable`. |
 | `LlmReviewError`   | A round failed at `diff`, `read`, `review`, or `parse`                                                                   |
 | `FindingsError`    | The review completed and at least one finding met `failOn`. Carries the complete finding set, not only the failing ones. |
 
@@ -136,7 +136,7 @@ smithers-build //packages/core:reviewChangedFiles   # the bare-label form
 An exact label under another verb is the ordinary `UnsupportedVerbError`.
 
 A host with no engine binary SKIPS rather than fails: the executor reports
-`ClaudeCliMissing` as a skipped target carrying a notice that names the
+`ModelCliMissing` as a skipped target carrying a notice that names the
 executable, and a skipped target leaves the run green. A machine without the
 model CLI cannot say whether the diff is clean, and reporting "unclean" for
 that is a red gate no commit can turn green.

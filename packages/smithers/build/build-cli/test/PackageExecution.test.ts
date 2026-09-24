@@ -1347,7 +1347,9 @@ describe("secrets", () => {
       `import { Smithers as S } from "@smthrs/targets"
 const push = S.Shell.Run({
   shell: "true",
-  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_ABSENT_SECRET"), ["https://example.test"])]
+  secrets: [S.HttpSecret(S.Secret("SMTHRS_TEST_ABSENT_SECRET"), ["https://example.test"])],
+  // A closed network cannot reach the secret proxy, so Exec refuses it.
+  sandbox: { network: true }
 })
 export const Package = S.Package({ targets: { push } })
 `

@@ -442,6 +442,18 @@ describe("LlmLint.review changed-file filtering", () => {
     expect(report.files).toEqual(["src/a.ts"])
   })
 
+  it("reviews a new untracked file and skips an ignored one", async () => {
+    await write("src/new.ts", "export const fresh = 1\n")
+    await write("src/ignored.ts", "export const ignored = 1\n")
+    await write(".gitignore", "src/ignored.ts\n")
+    const cli = await fakeCli("claude", claudeEnvelope("[]"))
+    const report = await Effect.runPromise(
+      LlmLint.review({ workspaceRoot: root, executable: cli.executable }, payload())
+    )
+    expect(report.files).toEqual(["src/new.ts"])
+    expect((await cli.calls())[0]?.stdin).toContain("--- CHANGED FILE: \"src/new.ts\" ---")
+  })
+
   it("never calls the engine when nothing changed", async () => {
     const cli = await fakeCli("claude", claudeEnvelope("[]"))
     const report = await Effect.runPromise(
@@ -623,7 +635,7 @@ describe("LlmLint.review engines", () => {
       "read-only",
       "--ephemeral",
       "--ignore-user-config",
-      "--ignore-targets",
+      "--ignore-rules",
       "--strict-config",
       "--model",
       "gpt-5.6-luna",
@@ -754,7 +766,51 @@ describe("LlmLint.review engines", () => {
         )
       )
     )
-    expect(failure._tag).toBe("smithers-build/ClaudeCliMissing")
+    expect(failure._tag).toBe("smithers-build/ModelCliMissing")
+    expect(failure).toMatchObject({ engine: "claude", executable: NodePath.join(root, "absent-cli") })
+  })
+
+  it("names the codex engine when the codex executable is missing", async () => {
+    await write("src/a.ts", "export const a = 3\n")
+    const failure = await Effect.runPromise(
+      Effect.flip(
+        LlmLint.review(
+          { workspaceRoot: root, executable: NodePath.join(root, "absent-codex") },
+          payload({ engine: "codex", model: "gpt-6-sol" })
+        )
+      )
+    )
+    expect(failure._tag).toBe("smithers-build/ModelCliMissing")
+    expect(failure).toMatchObject({ engine: "codex" })
+  })
+})
+
+/** The `--flag` spellings a real CLI's help text documents. */
+const documentedFlags = (executable: string, args: ReadonlyArray<string>): ReadonlySet<string> => {
+  const help = spawnSync(executable, [...args, "--help"], { encoding: "utf8", timeout: 30_000 })
+  return new Set(`${help.stdout ?? ""}${help.stderr ?? ""}`.match(/--[a-z][a-z0-9-]*/g) ?? [])
+}
+
+const installed = (executable: string): boolean =>
+  spawnSync(executable, ["--version"], { encoding: "utf8", timeout: 30_000 }).status === 0
+
+describe("LlmLint engine argv conformance with the installed CLIs", () => {
+  it.each(
+    [
+      ["codex", ["exec"]],
+      ["claude", []]
+    ] as const
+  )("passes only flags the installed %s CLI documents", async (engine, subcommand) => {
+    if (!installed(engine)) return
+    const cli = await fakeCli(`conformance-${engine}`, engine === "codex" ? codexEnvelope("ok") : claudeEnvelope("ok"))
+    await Effect.runPromise(LlmLint.promptEngine(
+      { workspaceRoot: root, executable: cli.executable },
+      { engine, model: "model", prompt: "prompt" }
+    ))
+    const flags = (await cli.calls())[0]?.args.filter((arg) => /^--[a-z]/.test(arg)) ?? []
+    expect(flags.length).toBeGreaterThan(0)
+    const documented = documentedFlags(engine, subcommand)
+    expect(flags.filter((flag) => !documented.has(flag))).toEqual([])
   })
 })
 
