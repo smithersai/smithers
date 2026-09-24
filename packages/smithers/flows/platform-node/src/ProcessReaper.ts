@@ -443,7 +443,7 @@ const refusePosixTarget = (record: ProcessLedger.ProcessRecord): Refusal | undef
  */
 const refuseWindowsTarget = (record: ProcessLedger.ProcessRecord): Refusal | undefined => {
   if (record.pgid !== null) return "invalid-record"
-  return Number.isSafeInteger(record.pid) && record.pid > 1 ? undefined : "invalid-record"
+  return Number.isSafeInteger(record.pid) && record.pid > 1 && record.pid <= 0xffff_ffff ? undefined : "invalid-record"
 }
 
 /**
@@ -592,7 +592,7 @@ export const windowsSystemWith = (options?: SystemOptions): System => {
     startedAtMs,
     ownGroup: () => null,
     bootedAtMs,
-    refuseTarget: refuseWindowsTarget,
+    refuseTarget: (record) => record.pid === ownerPid ? "own-group" : refuseWindowsTarget(record),
     killTree: (record) => {
       if (refuseWindowsTarget(record) !== undefined) return "failed"
       // `taskkill /T` walks the tree DOWN from the pid it is given, so a record

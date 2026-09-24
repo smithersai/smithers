@@ -12,14 +12,14 @@ import { describe, expect, it } from "@effect/vitest"
 import { Journal, JournalError } from "@smthrs/journal/Journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { ProcessLedger } from "@smthrs/kernel"
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import type * as Scope from "effect/Scope"
 import NativeMutable, { spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { syncBuiltinESMExports } from "node:module"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { vi } from "vitest"
+import { afterAll, vi } from "vitest"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
 
@@ -44,27 +44,71 @@ const readPid = async (path: string): Promise<number> => {
   throw new Error(`child never wrote ${path}`)
 }
 
-/** A detached shell that leads its own group and has a background child. */
-const startOrphanGroup = async (name: string): Promise<{ leader: number; follower: number }> => {
+const nativeSystem = ProcessReaper.systemFor(process.platform)
+const spawnedTrees: Array<ReturnType<typeof spawn>> = []
+const treeGroup = (pid: number): number | null => process.platform === "win32" ? null : pid
+
+/** A real leader and child, with an IPC readiness barrier before the pid file. */
+const startOrphanGroup = async (name: string): Promise<{ leader: number; follower: number; pgid: number | null }> => {
   const pidFile = join(directory, `${name}.pid`)
-  const child = spawn("sh", ["-c", `sleep 30 & echo $! > ${pidFile}; sleep 30`], {
-    detached: true,
-    stdio: "ignore"
-  })
+  const followerProgram = "process.send('ready');setInterval(()=>{},1000)"
+  const program = `const child=require('node:child_process').spawn(process.execPath,['-e',${
+    JSON.stringify(followerProgram)
+  }],{stdio:['ignore','ignore','ignore','ipc']});
+    child.once('message',()=>require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid)));
+    setInterval(()=>{},1000);`
+  const child = spawn(process.execPath, ["-e", program], { detached: true, windowsHide: true, stdio: "ignore" })
+  spawnedTrees.push(child)
   child.unref()
   const follower = await readPid(pidFile)
-  return { leader: child.pid as number, follower }
+  return { leader: child.pid!, follower, pgid: treeGroup(child.pid!) }
 }
 
-/** A pid that is certainly not a running process any more. */
+/** Replay the old owner's record at the creation time the OS actually observed. */
+const recordTree = (ledger: ProcessLedger.Service, group: { leader: number; pgid: number | null }) => {
+  const observed = nativeSystem.startedAtMs(group.leader)
+  expect(observed._tag).toBe("started")
+  if (observed._tag !== "started") throw new Error("fixture process identity was not observed")
+  const clock = Clock.Clock.defaultValue()
+  return ledger.record({ pid: group.leader, pgid: group.pgid, commandDigest: "node process tree" }).pipe(
+    Effect.provideService(Clock.Clock, {
+      currentTimeMillisUnsafe: () => observed.startedAtMs,
+      currentTimeMillis: Effect.succeed(observed.startedAtMs),
+      currentTimeNanosUnsafe: () => clock.currentTimeNanosUnsafe(),
+      currentTimeNanos: clock.currentTimeNanos,
+      monotonicTimeNanosUnsafe: () => clock.monotonicTimeNanosUnsafe(),
+      monotonicTimeNanos: clock.monotonicTimeNanos,
+      sleep: (duration) => clock.sleep(duration)
+    })
+  )
+}
+
+/** A pid that exited before it is returned to the ledger test. */
 const exitedPid = async (): Promise<number> => {
-  const child = spawn("sh", ["-c", "exit 0"], { stdio: "ignore" })
-  const pid = child.pid as number
-  await new Promise<void>((resolve) => child.on("close", () => resolve()))
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore", windowsHide: true })
+  const pid = child.pid!
+  await new Promise<void>((resolve, reject) => {
+    child.on("error", reject)
+    child.on("close", () => resolve())
+  })
   return pid
 }
 
-const cleanup = () => rmSync(directory, { recursive: true, force: true })
+const stopTree = (pid: number) =>
+  nativeSystem.killTree({
+    pid,
+    pgid: treeGroup(pid),
+    hostId: "fixture-cleanup",
+    ownerPid: process.pid,
+    startedAtMs: 0,
+    commandDigest: "fixture"
+  })
+const cleanup = () => {
+  for (const child of spawnedTrees) {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) stopTree(child.pid)
+  }
+  rmSync(directory, { recursive: true, force: true })
+}
 
 /** The record the Windows cases signal, which never names a real process. */
 const windowsRecord = {
@@ -182,7 +226,7 @@ describe("ProcessReaper", () => {
         Effect.gen(function*() {
           // The incarnation that started the process, and then died.
           const previous = yield* ProcessLedger.make({ hostId: "reaped-host", ownerPid: deadOwner })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
 
           // This incarnation inherits the record through the journal alone.
           const current = yield* ProcessLedger.make({ hostId: "reaped-host", ownerPid: process.pid })
@@ -201,7 +245,7 @@ describe("ProcessReaper", () => {
 
       expect(outcome.reaped).toEqual([
         {
-          record: expect.objectContaining({ pid: group.leader, pgid: group.leader, ownerPid: deadOwner }),
+          record: expect.objectContaining({ pid: group.leader, pgid: group.pgid, ownerPid: deadOwner }),
           killed: true
         }
       ])
@@ -221,7 +265,7 @@ describe("ProcessReaper", () => {
         Effect.gen(function*() {
           // `ownerPid` is this very process, which is alive by construction.
           const previous = yield* ProcessLedger.make({ hostId: "live-host", ownerPid: process.pid })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
           const current = yield* ProcessLedger.make({ hostId: "live-host", ownerPid: 1 })
           return yield* ProcessReaper.reap({ ownerPid: 1 }).pipe(
             Effect.provideService(ProcessLedger.ProcessLedger, current)
@@ -233,7 +277,7 @@ describe("ProcessReaper", () => {
       expect(reaped.map((entry) => entry.refusal)).toEqual(["owner-alive"])
       // Still running: the reaper refused to touch a live owner's child.
       expect(yield* Effect.promise(() => waitForExit(group.leader, 0))).toBe(false)
-      process.kill(-group.leader, "SIGKILL")
+      stopTree(group.leader)
       expect(yield* Effect.promise(() => waitForExit(group.leader, 2_000))).toBe(true)
     }))
 
@@ -488,20 +532,21 @@ describe("ProcessReaper", () => {
     // pid 1 is `launchd`/`init`, owned by root. Unless this suite runs as
     // root the answer is EPERM, which means the process is THERE. Reading
     // that as "dead" is what would let a reaper kill another user's children.
-    expect(ProcessReaper.posixSystem.isAlive(1)).not.toBe("dead")
+    expect(nativeSystem.isAlive(process.platform === "win32" ? 4 : 1)).not.toBe("dead")
   })
 
   it("reads a process start time and this process's own group from the system", () => {
-    const started = ProcessReaper.posixSystem.startedAtMs(process.pid)
+    const started = nativeSystem.startedAtMs(process.pid)
     expect(started._tag).toBe("started")
     const startedAtMs = (started as { readonly startedAtMs: number }).startedAtMs
     // This process started before now and after this machine booted.
     expect(startedAtMs).toBeLessThanOrEqual(Date.now() + 1000)
-    expect(startedAtMs).toBeGreaterThanOrEqual(ProcessReaper.posixSystem.bootedAtMs() - 60_000)
+    expect(startedAtMs).toBeGreaterThanOrEqual(nativeSystem.bootedAtMs() - 60_000)
     // A pid nothing owns is EVIDENCE the record describes nothing, which is a
     // different answer from a probe that could not be run at all.
-    expect(ProcessReaper.posixSystem.startedAtMs(2_147_483_646)).toEqual({ _tag: "gone" })
-    expect(ProcessReaper.posixSystem.ownGroup()).toBeTypeOf("number")
+    expect(nativeSystem.startedAtMs(2_147_483_646)).toEqual({ _tag: "gone" })
+    if (process.platform === "win32") expect(nativeSystem.ownGroup()).toBeNull()
+    else expect(nativeSystem.ownGroup()).toBeTypeOf("number")
     // The probe is an absolute path, so it is `/bin/ps` and never a `PATH` hit.
     expect(ProcessReaper.defaultPsExecutable).toBe("/bin/ps")
 
@@ -581,6 +626,7 @@ describe("ProcessReaper", () => {
     // Windows records the absence of a group, so there the numbers invert.
     expect(ProcessReaper.windowsSystem.refuseTarget(row(4321, 4321))).toBe("invalid-record")
     expect(ProcessReaper.windowsSystem.refuseTarget(row(0, null))).toBe("invalid-record")
+    expect(ProcessReaper.windowsSystem.refuseTarget(row(0x1_0000_0000, null))).toBe("invalid-record")
     expect(ProcessReaper.windowsSystem.refuseTarget(row(4321, null))).toBeUndefined()
 
     // The guard is repeated inside the kill itself, because both systems are
@@ -636,6 +682,7 @@ describe("ProcessReaper", () => {
     // `taskkill /T` walks the tree DOWNWARD from the pid it is handed, so a
     // record naming this host takes the host and everything it started.
     const windows = ProcessReaper.windowsSystemWith({ ownerPid: host })
+    expect(windows.refuseTarget(row(host, null))).toBe("own-group")
     expect(withTaskkill(0, () => windows.killTree(row(host, null)))).toBe("failed")
     expect(withTaskkill(0, () => windows.killTree(row(4321, null)))).toBe("signalled")
   })
@@ -643,9 +690,9 @@ describe("ProcessReaper", () => {
   it("tells a group that settled apart from a signal that never left the process", () => {
     // ESRCH: nothing is there any more, which is the end state a kill wanted.
     expect(
-      ProcessReaper.posixSystem.killTree({
+      nativeSystem.killTree({
         pid: 2_147_483_646,
-        pgid: 2_147_483_646,
+        pgid: treeGroup(2_147_483_646),
         hostId: "gone",
         ownerPid: 2_147_483_645,
         startedAtMs: 0,
@@ -656,9 +703,9 @@ describe("ProcessReaper", () => {
     // range the kernel accepts is the cheapest way to produce one: it passes
     // every record check and is still a number `process.kill` refuses.
     expect(
-      ProcessReaper.posixSystem.killTree({
+      nativeSystem.killTree({
         pid: 4_294_967_296,
-        pgid: 4_294_967_296,
+        pgid: treeGroup(4_294_967_296),
         hostId: "unsignalable",
         ownerPid: 2,
         startedAtMs: 0,
@@ -694,11 +741,7 @@ describe("ProcessReaper", () => {
       const reaped = yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "unrecorded-host", ownerPid: deadOwner })
-          const record = yield* previous.record({
-            pid: group.leader,
-            pgid: group.leader,
-            commandDigest: "sh -c sleep"
-          })
+          const record = yield* recordTree(previous, group)
           const refused = new JournalError({ code: "journal_closed", message: "journal is gone" })
           const broken: ProcessLedger.Service = {
             record: () => Effect.fail(refused),
@@ -724,21 +767,26 @@ describe("ProcessReaper", () => {
       // The number a record carries is not checked against the shell that
       // started this host anywhere else: `ownerPid` arithmetic alone would let
       // a stale record kill the group this test process is running in.
-      const ours = ProcessReaper.posixSystem.ownGroup()
-      expect(ours).toBeTypeOf("number")
+      const ours = nativeSystem.ownGroup()
+      if (process.platform === "win32") expect(ours).toBeNull()
+      else expect(ours).toBeTypeOf("number")
       const deadOwner = yield* Effect.promise(exitedPid)
       const killed: Array<number> = []
 
       const reaped = yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "own-group", ownerPid: deadOwner })
-          yield* previous.record({ pid: 987_654, pgid: ours, commandDigest: "claims our group" })
+          yield* previous.record({
+            pid: process.platform === "win32" ? process.pid : 987_654,
+            pgid: ours,
+            commandDigest: "claims our group"
+          })
           const current = yield* ProcessLedger.make({ hostId: "own-group", ownerPid: process.pid })
           return yield* ProcessReaper.reap({
             // A pid this host does NOT have, so only the group check can save it.
             ownerPid: 987_653,
             system: {
-              ...ProcessReaper.posixSystem,
+              ...nativeSystem,
               killTree: (record) => {
                 killed.push(record.pgid as number)
                 return "signalled"
@@ -762,11 +810,11 @@ describe("ProcessReaper", () => {
       const outcome = yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "pre-boot-host", ownerPid: deadOwner })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
           const current = yield* ProcessLedger.make({ hostId: "pre-boot-host", ownerPid: process.pid })
           const reaped = yield* ProcessReaper.reap({
             system: {
-              ...ProcessReaper.posixSystem,
+              ...nativeSystem,
               // A machine that booted AFTER the record was written: the pid
               // space the record names does not exist any more.
               bootedAtMs: () => Date.now() + 60_000
@@ -787,8 +835,8 @@ describe("ProcessReaper", () => {
       ])
       expect(outcome.remaining).toEqual([])
       // The group was never signalled, so it is still there for this cleanup.
-      expect(ProcessReaper.posixSystem.isAlive(group.leader)).toBe("alive")
-      process.kill(-group.leader, "SIGKILL")
+      expect(nativeSystem.isAlive(group.leader)).toBe("alive")
+      stopTree(group.leader)
       expect(yield* Effect.promise(() => waitForExit(group.leader, 2_000))).toBe(true)
     }))
 
@@ -801,11 +849,11 @@ describe("ProcessReaper", () => {
       const reaped = yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "reused-host", ownerPid: deadOwner })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
           const current = yield* ProcessLedger.make({ hostId: "reused-host", ownerPid: process.pid })
           return yield* ProcessReaper.reap({
             system: {
-              ...ProcessReaper.posixSystem,
+              ...nativeSystem,
               // The operating system says this pid has been running for an
               // hour, so it is not the process the record describes.
               startedAtMs: () => ({ _tag: "started", startedAtMs: Date.now() - 3_600_000 }),
@@ -820,7 +868,7 @@ describe("ProcessReaper", () => {
 
       expect(reaped.map((entry) => entry.refusal)).toEqual(["identity-mismatch"])
       expect(killed).toEqual([])
-      process.kill(-group.leader, "SIGKILL")
+      stopTree(group.leader)
       expect(yield* Effect.promise(() => waitForExit(group.leader, 2_000))).toBe(true)
     }))
 
@@ -832,14 +880,14 @@ describe("ProcessReaper", () => {
       const outcome = yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "stubborn-host", ownerPid: deadOwner })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
           const current = yield* ProcessLedger.make({ hostId: "stubborn-host", ownerPid: process.pid })
           const reaped = yield* ProcessReaper.reap({
             // A platform with no start-time column at all has only the boot
             // check, which this record passes, so the kill is attempted and
             // its refusal is the whole subject of this case.
             system: {
-              ...ProcessReaper.posixSystem,
+              ...nativeSystem,
               startedAtMs: () => ({ _tag: "unsupported" }),
               killTree: () => "failed"
             }
@@ -856,7 +904,7 @@ describe("ProcessReaper", () => {
       // Nothing claims the orphan was reaped, so it is still inherited.
       expect(outcome.types).toEqual(["flows.host.process-spawned.v1"])
       expect(outcome.remaining.map((row) => row.pid)).toEqual([group.leader])
-      process.kill(-group.leader, "SIGKILL")
+      stopTree(group.leader)
       expect(yield* Effect.promise(() => waitForExit(group.leader, 2_000))).toBe(true)
     }))
 
@@ -868,7 +916,7 @@ describe("ProcessReaper", () => {
       yield* run(
         Effect.gen(function*() {
           const previous = yield* ProcessLedger.make({ hostId: "layered-host", ownerPid: deadOwner })
-          yield* previous.record({ pid: group.leader, pgid: group.leader, commandDigest: "sh -c sleep" })
+          yield* recordTree(previous, group)
           const current = yield* ProcessLedger.make({ hostId: "layered-host", ownerPid: process.pid })
           yield* Effect.void.pipe(
             Effect.provide(ProcessReaper.layer()),
@@ -882,4 +930,5 @@ describe("ProcessReaper", () => {
     }))
 })
 
+afterAll(cleanup)
 process.on("exit", cleanup)
