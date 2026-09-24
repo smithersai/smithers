@@ -45,6 +45,8 @@ export interface Recorder {
   /** Every checkpoint the run asked this host to pin, with the tree it held. */
   readonly captures: Array<{ readonly id: string; readonly tree: string | undefined }>
   readonly suspend: Array<EngineLike.SuspendReason>
+  /** Every actual request to walk the workspace. */
+  readonly walks: Array<string | undefined>
 }
 
 /**
@@ -98,7 +100,8 @@ export const make = (
     calls: [],
     records: [],
     captures: [],
-    suspend: []
+    suspend: [],
+    walks: []
   }
   let callIndex = 0
   const engine = EngineLike.make({
@@ -147,15 +150,16 @@ export const make = (
       recorder.records.push(boundary)
       return boundary.execute
     },
-    observe: Effect.suspend(() =>
-      Effect.succeed(
+    observe: Effect.suspend(() => {
+      recorder.walks.push(workspace.value)
+      return Effect.succeed(
         workspace.value === undefined
           ? Option.none()
           : Option.some(
             new EngineLike.Observation({ digest: workspace.value, paths: 1, complete: workspace.complete })
           )
       )
-    ),
+    }),
     suspend: (reason) => {
       recorder.suspend.push(reason)
       return Effect.fail(

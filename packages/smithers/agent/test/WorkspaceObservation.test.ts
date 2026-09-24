@@ -36,6 +36,31 @@ const measured = (
   )
 
 describe("WorkspaceObservation", () => {
+  it("prunes a 60k-file artifact tree before visiting its entries", async () => {
+    const visits: Array<string> = []
+    const host: WorkspaceObservation.Host = {
+      entries: (directory, keep) =>
+        Effect.sync(() => {
+          visits.push(directory)
+          if (directory === "/workspace") {
+            return [
+              { name: ".artifacts", measured: { _tag: "Directory" as const } },
+              { name: "src", measured: { _tag: "Directory" as const } }
+            ].filter((entry) => keep(entry.name))
+          }
+          if (directory === "/workspace/src") {
+            return [{ name: "main.ts", measured: { _tag: "File" as const, size: 1, modified: 0 } }]
+          }
+          return Array.from({ length: 60_000 }, (_, index) => ({
+            name: `artifact-${index}`,
+            measured: { _tag: "File" as const, size: 1, modified: 0 }
+          }))
+        })
+    }
+    const observation = await Effect.runPromise(WorkspaceObservation.observeHost(host, "/workspace"))
+    expect(visits).toEqual(["/workspace", "/workspace/src"])
+    expect(observation).toMatchObject({ paths: 1, complete: true })
+  })
   it("moves when a tracked file is rewritten by anything at all", async () => {
     const root = workspace()
     write(root, "src/python.py", "the fix")

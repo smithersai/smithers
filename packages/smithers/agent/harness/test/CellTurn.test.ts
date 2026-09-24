@@ -1648,6 +1648,7 @@ describe("CellTurn observed mutation", () => {
     expect(of(events, "mutation-observed").every((event) => event.basis === "partial")).toBe(true)
     expect(of(events, "mutation-observed").map((event) => event.mutated)).toEqual([true, true, true, true, true])
     expect(engine.recorder.records.filter((record) => record.name.startsWith("workspace-"))).toHaveLength(1)
+    expect(engine.recorder.walks).toEqual(["prefix-of-the-tree"])
     expect(failure).toBeUndefined()
   })
 
