@@ -560,6 +560,20 @@ it("opens the host once in the background and exposes opening until ready", asyn
   await runs.dispose()
 })
 
+
+it("settles a stopped authorization as cancelled without a failure message", async () => {
+  const f = fake()
+  const runs = new FlowRuns({ port: { ...f.port, start: (_card, _source, signal) => new Promise((_resolve, reject) => {
+    signal!.addEventListener("abort", () => reject(new FlowError("refused", "Stopped")), { once: true })
+  }) }, persist: () => {} })
+  runs.request({ id: "r", flow: "review", input: {}, by: "user" })
+  await tick()
+  runs.cancel("r")
+  await tick()
+  expect(runs.get("r")).toMatchObject({ status: "cancelled", message: undefined })
+  await runs.dispose()
+})
+
 it("reads restored events only when hydrated and retains a retryable failure", async () => {
   const f = fake()
   let broken = true

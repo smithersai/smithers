@@ -282,6 +282,10 @@ export class FlowRuns {
     return next
   }
   private fail(id: string, attempt: number, error: unknown) {
+    if (this.runs.get(id)?.stopRequested && error instanceof FlowError && error.code === "refused" && error.message === "Stopped") {
+      this.update(id, attempt, { status: "cancelled", endedAt: Date.now(), message: undefined })
+      return
+    }
     Log.write("flow.run", error)
     this.update(id, attempt, {
       status: "failed",

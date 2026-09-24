@@ -140,7 +140,7 @@ it("stops a project flow waiting for authorization without launching it", async 
     await Bun.sleep(20)
     expect(await host.approvals!.pending()).toHaveLength(0)
     expect(runs.get(receipt.id)?.runId).toBeUndefined()
-    expect(["cancelled", "failed"]).toContain(runs.get(receipt.id)!.status)
+    expect(runs.get(receipt.id)!.status).toBe("cancelled")
   } finally {
     for (const request of await host.approvals!.pending()) await host.approvals!.reply(request, "deny")
     runs.dispose()
