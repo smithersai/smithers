@@ -127,24 +127,23 @@ const cellFor = (task: string, note: string): string => {
   if (task === "record") {
     return [
       ...facts.map((fact) =>
-        // The bank is empty on purpose: the policy fills it in. A caller that
-        // names its own keeps it.
-        `await ctx.call("remember", { bank: "", key: ${JSON.stringify(fact.key)}, text: ${JSON.stringify(fact.text)} })`
+        // Writes name a valid bank before the policy-scoped handler runs.
+        `await ctx.call("remember", { bank: ${JSON.stringify(bank)}, key: ${JSON.stringify(fact.key)}, text: ${JSON.stringify(fact.text)} })`
       ),
-      `ctx.done({ keys: ${JSON.stringify(facts.map((fact) => fact.key))} })`
+      `ctx.done(JSON.stringify({ keys: ${JSON.stringify(facts.map((fact) => fact.key))} }))`
     ].join("\n")
   }
   if (task === "forget") {
     return [
-      `const dropped = await ctx.call("remember", { bank: "", key: "never-stored", text: ${JSON.stringify(note)} })`,
-      "ctx.done({ keys: [dropped.key] })"
+      `const dropped = await ctx.call("remember", { bank: ${JSON.stringify(bank)}, key: "never-stored", text: ${JSON.stringify(note)} })`,
+      "ctx.done(JSON.stringify({ keys: [dropped.key] }))"
     ].join("\n")
   }
   const banks = task === "foreign" ? ["flow-other-project"] : []
   return [
     // No banks and no budget for the scoped read: both come from the policy.
     `const rows = await ctx.call("recall", { banks: ${JSON.stringify(banks)}, query: ${JSON.stringify(note)} })`,
-    "ctx.done({ keys: rows.map((row) => row.key) })"
+    "ctx.done(JSON.stringify({ keys: rows.map((row) => row.key) }))"
   ].join("\n")
 }
 
@@ -259,8 +258,7 @@ export const main = (filename: string): Effect.Effect<Summary> =>
                       flows: [memorySource(services, policy)],
                       limits: { calls: 8 },
                       capabilityEnvelope: [],
-                      maxFrames: 2,
-                      claimCap: 0
+                      maxFrames: 2
                     }),
                     seats,
                     Agent.layer
