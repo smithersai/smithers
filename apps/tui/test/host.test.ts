@@ -122,7 +122,7 @@ describe("Host.run Smithers plugin", () => {
 test("Host.run lets agent.wait settle after the ordinary flow call ceiling", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-wait-"))
   roots.push(cwd)
-  const host = Host.make({ cwd, environment: {}, callMs: 20 })
+  const host = Host.make({ cwd, environment: {}, callMs: 20, totalMs: 30 })
   let contacted = 0
   try {
     const result = await host.run({
@@ -137,6 +137,45 @@ test("Host.run lets agent.wait settle after the ordinary flow call ceiling", asy
     }).done
     expect(contacted).toBeGreaterThan(0)
     expect(result).toEqual({ _tag: "done", answer: "late answer" })
+  } finally { await host.dispose() }
+})
+
+test("Host.run bounds a worker frame waiting on a non-flow promise", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-stall-"))
+  roots.push(cwd)
+  const host = Host.make({ cwd, environment: {}, totalMs: 30 })
+  try {
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await host.run({ prompt: "stall", role: "worker", seat: `replay:${doneReplay(cwd,
+      "await new Promise(() => {}); ctx.done('never')")}`,
+      history: [], onEvent: (event) => events.push(event) }).done
+    expect(events.find((event) => event._tag === "discipline-armed")).toMatchObject({ totalMs: 30 })
+    expect(events.find((event) => event._tag === "cell-settled" && event.outcome._tag === "rejected"))
+      .toMatchObject({ outcome: { code: "stalled" } })
+    expect(outcome._tag === "done" ? outcome.answer : "").not.toContain("never")
+  } finally { await host.dispose() }
+})
+
+test("Host.run clears the streamed reply when the model retries", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-retry-"))
+  roots.push(cwd)
+  const file = join(cwd, "retry.jsonl")
+  const delta = (value: object) => JSON.stringify({ at: 0, event: { _tag: "model-delta", delta: value } })
+  writeFileSync(file, [
+    JSON.stringify({ at: 0, event: { _tag: "model-requested" } }),
+    delta({ type: "text-delta", id: "first", text: "seat one partial" }),
+    delta({ type: "retry", attempt: 1, code: "rate_limited", delayMillis: 0 }),
+    delta({ type: "text-delta", id: "second", text: "fallback\n```cell\nctx.done('ok')\n```" }),
+    JSON.stringify({ at: 0, event: { _tag: "model-settled", message: { stopReason: "stop" } } })
+  ].join("\n"))
+  const host = Host.make({ cwd, environment: {} })
+  const captions: Array<string> = []
+  try {
+    const outcome = await host.run({ prompt: "reply", role: "coordinator", seat: `replay:${file}`,
+      history: [], onEvent: () => {}, onCaption: (caption) => captions.push(caption) }).done
+    expect(outcome).toEqual({ _tag: "done", answer: "ok" })
+    expect(captions).toContain("fallback")
+    expect(captions.join(" ")).not.toContain("seat one")
   } finally { await host.dispose() }
 })
 

@@ -159,6 +159,8 @@ export const make = (options: {
   readonly approvals?: Approvals.Mode
   /** Test seam for the ordinary flow-call ceiling. */
   readonly callMs?: number
+  /** Test seam for the frame backstop. */
+  readonly totalMs?: number
 }): Host => {
   const approvalMode = options.approvals ?? "ask"
   const env = options.environment
@@ -305,7 +307,8 @@ export const make = (options: {
         // The same explicit cell budget `smithers run` uses; never unlimited.
         limits: { memoryBytes: 256 * 1024 * 1024, steps: 50_000_000,
           callMs: input.role === "worker" ? 2_147_000_000 : callMs,
-          ...(input.role === "worker" ? { totalMs: 2_147_000_000 } : {}) },
+          totalMs: options.totalMs ?? Sandbox.defaultLimits.totalMs,
+          ...(input.role === "worker" ? { pauseTotalMsFor: ["agent.wait"] } : {}) },
         // A person reads every answer here, so without a gateway key the one
         // brake that needs Jev is disarmed instead of failing every turn.
         ...(input.role === "coordinator"
@@ -320,7 +323,7 @@ export const make = (options: {
           Effect.gen(function*() {
             const event = receipts(journaled)
             if (event._tag === "resolved") answer = text(event.message.content)
-            if (event._tag === "model-requested") reply = ""
+            if (event._tag === "model-requested" || event._tag === "model-retried") reply = ""
             if (event._tag === "model-delta" && event.delta.type === "text-delta") reply += event.delta.text
             yield* Effect.promise(() => Promise.resolve(input.onEvent(event)))
             if (event._tag === "cell-produced") input.onCaption?.(Transcript.split(reply).prose)
