@@ -1,6 +1,6 @@
 import { access, chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, join, sep } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
 import {
   outsideWorkspace,
@@ -10,6 +10,7 @@ import {
 } from "../src/internal/AtomicFileSystemExecutable.ts"
 
 const roots: Array<string> = []
+const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
 const fixture = async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "atomic-executable-")))
   roots.push(root)
@@ -60,7 +61,7 @@ describe("default atomic helper resolution", () => {
     await mkdir(confined)
     await helper(source)
     const selected = outsideWorkspace(source, root, [confined, outside])
-    expect(selected.startsWith(`${outside}/`)).toBe(true)
+    expect(selected.startsWith(`${outside}${sep}`)).toBe(true)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
     expect(outsideWorkspace(source, root, [confined])).toBe(selected)
   })
@@ -77,7 +78,7 @@ describe("default atomic helper resolution", () => {
 
   it("uses the helper shipped in the installed platform package", async () => {
     const { packageRoot, root } = await fixture()
-    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, helperName)
     await mkdir(dirname(binary), { recursive: true })
     await writeFile(binary, "#!/bin/sh\nexit 0\n", { mode: 0o644 })
     const selected = resolveDefaultExecutable(packageRoot, join(root, "workspace"), join(root, "absent"))
@@ -87,7 +88,7 @@ describe("default atomic helper resolution", () => {
 
   it("executes the helper staged at layer build, not bytes written after it", async () => {
     const { packageRoot, root } = await fixture()
-    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, helperName)
     await helper(binary)
     stagePackaged(packageRoot)
     await writeFile(binary, "#!/bin/sh\necho planted\n")
@@ -102,7 +103,7 @@ describe("default atomic helper resolution", () => {
 
   it("rejects a packaged helper that is a directory", async () => {
     const { packageRoot, root } = await fixture()
-    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, helperName)
     await mkdir(binary, { recursive: true })
     expect(() => resolveDefaultExecutable(packageRoot, root, join(root, "absent")))
       .toThrow(/not a regular file/)
@@ -110,17 +111,17 @@ describe("default atomic helper resolution", () => {
 
   it("pins an installed helper outside a confined project", async () => {
     const { packageRoot, root } = await fixture()
-    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+    const binary = join(packageRoot, "bin", `${process.platform}-${process.arch}`, helperName)
     await helper(binary)
     const selected = resolveDefaultExecutable(packageRoot, root, join(root, "absent"))
-    expect(selected.startsWith(`${root}/`)).toBe(false)
+    expect(selected.startsWith(`${root}${sep}`)).toBe(false)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
   })
 
   it("uses a release build from a source checkout", async () => {
     const { packageRoot, root } = await fixture()
     await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n")
-    const binary = join(root, "target/release/smithers-jj-export")
+    const binary = join(root, "target/release", helperName)
     await helper(binary)
     expect(resolveDefaultExecutable(packageRoot, join(root, "flows"), join(root, "absent"))).toBe(binary)
   })
@@ -128,10 +129,10 @@ describe("default atomic helper resolution", () => {
   it("pins a checkout helper outside a confined project", async () => {
     const { packageRoot, root } = await fixture()
     await writeFile(join(root, "pnpm-workspace.yaml"), "packages: []\n")
-    const binary = join(root, "target/release/smithers-jj-export")
+    const binary = join(root, "target/release", helperName)
     await helper(binary)
     const selected = resolveDefaultExecutable(packageRoot, root, join(root, "absent"))
-    expect(selected.startsWith(`${root}/`)).toBe(false)
+    expect(selected.startsWith(`${root}${sep}`)).toBe(false)
     expect(await readFile(selected, "utf8")).toBe("#!/bin/sh\nexit 0\n")
   })
 

@@ -9,7 +9,7 @@ import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, type PlatformError } from "effect"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync } from "node:fs"
-import { basename, dirname, isAbsolute, join, relative } from "node:path"
+import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:path"
 import type { Limits } from "../AtomicFileSystem.ts"
 import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.ts"
 
@@ -23,23 +23,24 @@ let startedHelpers = 0
 export const started = (): number => startedHelpers
 
 /** An inert working directory: nothing the helper could import lives there. */
-const inertDirectory = "/"
+const inertDirectory = parse(process.execPath).root
 
 /**
  * True when `target` is at or below `root`. Both are absolute and already
- * canonical, and this module is POSIX-only, so `path.relative` answers with a
- * leading `..` for everything outside and never with an absolute path.
+ * canonical. A different Windows drive produces an absolute relative result.
  */
 const inside = (root: string, target: string): boolean => {
   const path = relative(root, target)
-  return path === "" || (path !== ".." && !path.startsWith("../") && !isAbsolute(path))
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path))
 }
 
 /** Resolve symlinks without replacing a hard-linked executable's entry name. */
 const executablePath = (configured: string): string => {
   let current = configured
   for (let links = 0; links < 40; links++) {
-    if (current.endsWith("/")) throw new Error("atomic helper executable cannot end with a directory separator")
+    if (current.endsWith("/") || current.endsWith(sep)) {
+      throw new Error("atomic helper executable cannot end with a directory separator")
+    }
     // Bun's macOS realpath can return another hard link to the final inode:
     // A hard-linked executable can change its entry name during guarded reads.
     // Directories cannot have those file aliases. Resolve the parent, preserve

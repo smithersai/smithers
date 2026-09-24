@@ -32,6 +32,7 @@ export const resolvePackageRoot = (directory: string): string => {
 export const packageRoot = resolvePackageRoot(moduleDirectory)
 
 const staged = new Map<string, string>()
+const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"
 
 /**
  * Pin an install inside the workspace before any flow can modify its bytes.
@@ -47,7 +48,7 @@ export const outsideWorkspace = (
   if (cached !== undefined) return usableExecutable(cached, boundaryRoot)
   for (const [index, base] of bases.entries()) {
     const directory = mkdtempSync(join(base, ".smthrs-atomic-helper-"))
-    const destination = join(directory, "smithers-jj-export")
+    const destination = join(directory, helperName)
     try {
       chmodSync(directory, 0o700)
       copyFileSync(source, destination, constants.COPYFILE_EXCL)
@@ -66,7 +67,7 @@ export const outsideWorkspace = (
 
 /** The helper an installed package ships for this platform. */
 const packagedHelper = (root: string): string =>
-  join(root, "bin", `${process.platform}-${process.arch}`, "smithers-jj-export")
+  join(root, "bin", `${process.platform}-${process.arch}`, helperName)
 
 /**
  * Stages the packaged helper now, when the host layer is built, so the bytes
@@ -99,8 +100,8 @@ export const resolveDefaultExecutable = (
   const candidates = [packagedHelper(root)]
   const checkout = resolve(root, "../../../..")
   if (existsSync(join(checkout, "pnpm-workspace.yaml"))) {
-    candidates.push(join(checkout, "target/release/smithers-jj-export"))
-    candidates.push(join(checkout, "target/debug/smithers-jj-export"))
+    candidates.push(join(checkout, "target/release", helperName))
+    candidates.push(join(checkout, "target/debug", helperName))
   }
   candidates.push(fallback)
   for (const [index, candidate] of candidates.entries()) {

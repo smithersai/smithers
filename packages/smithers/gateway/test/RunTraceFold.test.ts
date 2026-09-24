@@ -143,7 +143,9 @@ const recordArbitrary = FastCheck.record({
   repeat: FastCheck.boolean()
 })
 
-const journalOf = (specs: ReadonlyArray<FastCheck.RecordValue<typeof recordArbitrary>>): Array<JournalRecord> => {
+type RecordSpec = typeof recordArbitrary extends FastCheck.Arbitrary<infer Value> ? Value : never
+
+const journalOf = (specs: ReadonlyArray<RecordSpec>): Array<JournalRecord> => {
   const journal: Array<JournalRecord> = []
   let sequence = 0
   for (const spec of specs) {
