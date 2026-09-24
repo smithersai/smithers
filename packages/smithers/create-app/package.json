@@ -43,6 +43,7 @@
     "./package": "./src/package.ts",
     "./ui": "./src/ui.ts",
     "./runtime": "./src/runtime.ts",
+    "./worker": "./src/worker.ts",
     "./router": "./src/router.ts",
     "./vite": "./src/vite.ts",
     "./testing": {
@@ -121,6 +122,16 @@
         "require": {
           "types": "./dist/cjs/runtime.d.ts",
           "default": "./dist/cjs/runtime.js"
+        }
+      },
+      "./worker": {
+        "import": {
+          "types": "./dist/esm/worker.d.ts",
+          "default": "./dist/esm/worker.js"
+        },
+        "require": {
+          "types": "./dist/cjs/worker.d.ts",
+          "default": "./dist/cjs/worker.js"
         }
       },
       "./router": {

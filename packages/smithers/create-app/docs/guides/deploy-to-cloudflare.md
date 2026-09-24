@@ -85,9 +85,14 @@ seat's provider and reads that provider's key, so an `anthropic:` seat needs
 wrangler secret put OPENAI_API_KEY --config worker/wrangler.jsonc
 ```
 
-An app whose Worker never calls a model needs none. The `default` template is
-in that position: its turn endpoint is a stub, so nothing on its Worker path
-reaches a provider until you build the host.
+Every turn also runs the completion judge, which needs `AI_GATEWAY_API_KEY`:
+
+```bash
+wrangler secret put AI_GATEWAY_API_KEY --config worker/wrangler.jsonc
+```
+
+Until both are set, the `default` template's `POST /api/turn` answers HTTP 503
+`host_unconfigured` and names the missing binding.
 
 The `aomi` template also requires `APP_API_TOKEN` as a Worker secret before the
 first public deploy. Without a nonempty token, every `/api/*` route except

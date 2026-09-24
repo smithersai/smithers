@@ -6,6 +6,15 @@
   // The agent path imports `@smthrs/*` packages that reach for Node builtins
   // through their platform shims.
   "compatibility_flags": ["nodejs_compat"],
+  // The QuickJS WebAssembly export has no .wasm suffix. Match it explicitly so
+  // it is bundled as a compiled module, the only kind workerd instantiates.
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": ["**/*.wasm", "@jitl/quickjs-wasmfile-release-sync/wasm"],
+      "fallthrough": true
+    }
+  ],
   // The custom domain declared in PACKAGE.ts. Wrangler creates the DNS record
   // and the certificate on first deploy; removing this entry detaches the
   // domain from this Worker.
@@ -24,8 +33,10 @@
     "APP_NAME": "__APP_NAME__"
   },
   // Secrets, set with `wrangler secret put --config worker/wrangler.jsonc`.
-  // Only the provider named by the seat in AGENT.ts has to be set:
-  //   ANTHROPIC_API_KEY — credential for an `anthropic:<model>` seat
-  //   OPENAI_API_KEY    — credential for an `openai:<model>` seat
+  // Only the provider named by the seat in AGENT.ts has to be set, plus the
+  // judge key every turn needs; `/api/turn` answers 503 until they are:
+  //   ANTHROPIC_API_KEY  — credential for an `anthropic:<model>` seat
+  //   OPENAI_API_KEY     — credential for an `openai:<model>` seat
+  //   AI_GATEWAY_API_KEY — Vercel AI Gateway key for the completion judge
   "observability": { "enabled": true }
 }

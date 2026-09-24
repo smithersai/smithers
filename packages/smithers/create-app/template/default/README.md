@@ -23,7 +23,8 @@ pnpm dev        # vite, with workerd in the loop
 | `app/panes/<name>.tsx`    | One pane the agent renders by name                                 |
 | `app/layout.tsx`          | The shell layout, optional                                         |
 | `tools/*.ts`              | Flow bindings the agent calls as `ctx.call("<source>/<flow>")`     |
-| `worker/index.ts`         | The Worker: the API and the assets bucket. `/api/turn` is a stub   |
+| `worker/index.ts`         | The Worker entry: loads the QuickJS module and serves `handle.ts`  |
+| `worker/handle.ts`        | `/api/routes`, `/api/turn` (the chat turn as NDJSON), and assets   |
 | `flows/<id>/flow.e2e.ts`  | One flow replayed against a recorded model, so `pnpm test` needs no key |
 
 `routes.gen.ts` and `routes.ui.gen.ts` are generated. Run `pnpm routes` after
@@ -49,13 +50,18 @@ Install bubblewrap on Linux. macOS uses its built-in seatbelt confinement.
 The template pins the synchronized Smithers RC packages. `pnpm install`
 resolves them from the registry without overrides, local links, or vendoring.
 
-## What is not wired
+## Secrets
 
-`/api/turn` answers HTTP 501 on every request. This template ships the router,
-the flow, the pane, the tool, the test, and the deploy target, and leaves the
-agent host to you: build it with `layerFor` from `@smthrs/create-app/runtime`,
-materialize the routed flow with `materializeFlow`, and stream `TurnFrame`
-NDJSON back. The `aomi` template's `worker/` directory is the worked example.
+`/api/turn` runs the chat flow on the seat in `AGENT.ts` and answers HTTP 503
+`host_unconfigured` until the Worker has what the turn needs:
+
+| Secret               | When                                          |
+| -------------------- | --------------------------------------------- |
+| `ANTHROPIC_API_KEY`  | The seat is `anthropic:<model>`               |
+| `OPENAI_API_KEY`     | The seat is `openai:<model>`                  |
+| `AI_GATEWAY_API_KEY` | Always: the completion judge runs on it       |
+
+Set them with `wrangler secret put <NAME>`, or in `.dev.vars` for `pnpm dev`.
 
 ## Adding things
 
@@ -82,9 +88,7 @@ pnpm build
 pnpm deploy
 ```
 
-No provider credential is needed yet: nothing in this template calls a model
-from the Worker. Set one with `wrangler secret put` once you have wired
-`/api/turn` to a real host, and set the one the seat in `AGENT.ts` names.
+Set the secrets above before the first turn.
 
 `domain` in `PACKAGE.ts` and the `routes` entry in `worker/wrangler.jsonc` name
 the same hostname. Point both at a zone your Cloudflare account owns before the

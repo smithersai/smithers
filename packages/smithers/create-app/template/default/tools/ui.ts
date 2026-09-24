@@ -7,12 +7,13 @@
  * browser on the turn stream rather than through the cell's return value.
  *
  * Neither binding renders anything. They hand the card to the {@link CardSink}
- * the host provides for the turn. The source `TOOLS.ts` composes uses
- * {@link makeCollecting} over a module-level array, which is a working mock: a
- * real host builds its own with `uiSource` so cards reach the session.
+ * the host provides for the turn. The source `TOOLS.ts` composes collects into
+ * a module-level array for tests; `worker/index.ts` swaps it per turn for
+ * {@link turnSource}, whose cards travel back on the turn stream.
  */
 import * as Flow from "@smthrs/core/Flow"
 import type { AppCard } from "@smthrs/create-app/ui"
+import type { TurnCards } from "@smthrs/create-app/worker"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
@@ -205,3 +206,22 @@ export const ui: FlowBinding.Source = uiSource(
     makePanes([{ name: "message", fullscreen: false }])
   )
 )
+
+/**
+ * The source a turn binds: every card goes to that turn's stream, and the
+ * pane registry is the routed pane list.
+ */
+export const turnSource = (cards: TurnCards, paneNames: ReadonlyArray<string>): FlowBinding.Source =>
+  uiSource(
+    Context.add(
+      Context.make(
+        CardSink,
+        CardSink.of({
+          emit: (card) => Effect.sync(() => cards.emit(card)),
+          update: (card) => Effect.sync(() => cards.update(card))
+        })
+      ),
+      PaneNames,
+      makePanes(paneNames.map((name) => ({ name, fullscreen: false })))
+    )
+  )

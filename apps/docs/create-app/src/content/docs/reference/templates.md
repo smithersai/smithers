@@ -16,12 +16,12 @@ pnpm exec smithers-build create-app ledger                 # default
 
 |                          | `default`   | `aomi`                        |
 | ------------------------ | ----------- | ----------------------------- |
-| Files copied             | 30          | 113                           |
+| Files copied             | 33          | 113                           |
 | Pages                    | 1           | 12                            |
 | Panes                    | 1           | 6                             |
 | Flows                    | 1           | 2                             |
 | Tool sources             | 1           | 3                             |
-| Agent host in the Worker | not shipped | shipped, mock turn by default |
+| Agent host in the Worker | shipped     | shipped, mock turn by default |
 | Fixture recording        | not shipped | `pnpm test:record`            |
 | Private dependencies     | none        | `@smthrs/ui`                  |
 
@@ -79,8 +79,8 @@ The smallest app that routes, runs, tests, and deploys.
 - **Tools.** One source, `ui`, holding `ui/pane` and `ui/html`.
 - **Flow.** `chat`, a chat flow whose output is an answer plus the ids of the
   cards it emitted.
-- **Page.** `/`, a composer that posts to `/api/turn` and prints the response
-  body.
+- **Page.** `/`, a composer that posts to `/api/turn` and renders the turn
+  stream: text, pane cards, and one error line.
 - **Pane.** `message`, a heading, a body, and an optional tone.
 - **Test.** `flows/chat/flow.e2e.ts`, replaying
   `flows/chat/fixtures/answer.json`. It asserts against the cards the `ui`
@@ -88,10 +88,11 @@ The smallest app that routes, runs, tests, and deploys.
   because a model that answered in prose can still name a card in its output.
 
 The Worker serves `GET /api/routes`, which reports what the router found, and
-answers `POST /api/turn` with HTTP 501. That is deliberate: the template ships
-the router, the flow, the pane, the tool, the test, and the deploy target, and
-leaves the agent host to you. The page says so above the composer rather than
-only in the response. Building it is
+runs `POST /api/turn` through `turnResponse` from `@smthrs/create-app/worker`:
+the chat flow on the seat in `AGENT.ts`, in a QuickJS sandbox built from the
+WebAssembly module `worker/index.ts` imports, streamed back as `TurnFrame`
+NDJSON. It needs the seat's provider key and `AI_GATEWAY_API_KEY`, and answers
+HTTP 503 `host_unconfigured` until both are set. See
 [Run a routed flow from your own host](/guides/host-a-turn/).
 
 The template ships no live model, so it has no `test:record` script. Add a

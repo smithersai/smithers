@@ -3,7 +3,8 @@
  *
  * A scaffolded app splits this package across three hosts. `routes.ui.gen.ts`
  * pulls `./app` and `./ui` into the browser bundle; the aomi template's
- * Cloudflare Worker imports `./runtime` at value level; `./router`, `./vite`,
+ * Cloudflare Worker imports `./runtime` at value level and the default
+ * template's imports `./worker`; `./router`, `./vite`,
  * `./package`, and `./testing` are Node-only build and test tooling. Nothing
  * held that split: `scripts/browser-check.mjs` enumerates the repository's
  * frozen browser contract and this package is in neither its BROWSER_SAFE nor
@@ -58,7 +59,7 @@ const unresolvedBuiltins = async (entry: string): Promise<ReadonlyArray<string>>
 }
 
 describe("browser and workerd entry points", () => {
-  it.each(["app", "ui", "runtime"])("bundles @smthrs/create-app/%s with no node builtin", async (entry) => {
+  it.each(["app", "ui", "runtime", "worker"])("bundles @smthrs/create-app/%s with no node builtin", async (entry) => {
     expect(await unresolvedBuiltins(entry)).toEqual([])
   })
 })

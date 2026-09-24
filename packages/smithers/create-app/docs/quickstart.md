@@ -10,7 +10,7 @@ tables generated, its flow test passing with no network and no API key, and a
 pane of your own rendered from a file you added. It takes about five minutes.
 
 The app is the `default` template: one page, one pane, one flow, one tool, and
-a Cloudflare Worker whose agent endpoint is deliberately a stub.
+a Cloudflare Worker that runs the chat flow at `POST /api/turn`.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ and the agent's teaching. The command reports what it copied:
   "directory": "/work/ledger",
   "name": "ledger",
   "template": "default",
-  "files": 30
+  "files": 33
 }
 ```
 
@@ -181,11 +181,11 @@ same process. Three things are worth trying:
 - Adding or deleting a routed file regenerates both tables while the server
   runs, so the dev server never serves a stale table.
 
-`POST /api/turn` answers HTTP 501. The `default` template ships the router, the
-flow, the pane, the tool, the test, and the deploy target, and leaves the agent
-host to you. Building it is
-[Run a routed flow from your own host](./guides/host-a-turn.md), and the `aomi`
-repository reference is the worked example.
+`POST /api/turn` runs the `chat` flow and streams `TurnFrame` NDJSON back to
+the page. It answers HTTP 503 `host_unconfigured` until `.dev.vars` holds the
+seat's provider key and `AI_GATEWAY_API_KEY`; the template README lists them.
+[Run a routed flow from your own host](./guides/host-a-turn.md) explains the
+host underneath.
 
 ## What just happened
 

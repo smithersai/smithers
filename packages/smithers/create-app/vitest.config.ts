@@ -7,7 +7,10 @@ export default defineConfig({
   resolve: {
     // The colocated template has its own package.json, so its self-imports
     // need this package's source entry when exercised by the unit suite.
-    alias: { "@smthrs/create-app/app": fileURLToPath(new URL("./src/app.ts", import.meta.url)) }
+    alias: {
+      "@smthrs/create-app/app": fileURLToPath(new URL("./src/app.ts", import.meta.url)),
+      "@smthrs/create-app/worker": fileURLToPath(new URL("./src/worker.ts", import.meta.url))
+    }
   },
   test: {
     // Only this package's own suites. `template/` holds whole apps, tests

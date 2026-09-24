@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `@smthrs/create-app/worker`: `turnResponse` runs a routed chat flow for
+  one `POST /api/turn` under workerd and streams `TurnFrame` NDJSON back.
+
+### Fixed
+
+- The `default` template's `/api/turn` runs the chat flow instead of answering
+  HTTP 501. It answers 503 `host_unconfigured` until the seat's provider key
+  and `AI_GATEWAY_API_KEY` are set.
+
 ## [1.0.0-rc.1] - 2026-09-22
 
 ### Changed

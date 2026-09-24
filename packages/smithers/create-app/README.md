@@ -154,7 +154,8 @@ the live model the option `live` builds, and rewrites the fixture.
 ## Templates
 
 The public package ships the `default` template: the smallest app that routes,
-runs, tests, and deploys while leaving the agent host to you. The repository's
+runs, tests, and deploys, with a Worker that runs its chat flow at
+`POST /api/turn`. The repository's
 UI-only Aomi reference stays outside the package until the UI is released.
 
 ## Documentation

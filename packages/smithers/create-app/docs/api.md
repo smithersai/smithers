@@ -25,15 +25,16 @@ runtime class. Import the one whose class matches the file doing the importing.
 | `@smthrs/create-app/app`       | browser, workerd, Node |
 | `@smthrs/create-app/ui`        | browser, workerd, Node |
 | `@smthrs/create-app/runtime`   | browser, workerd, Node |
+| `@smthrs/create-app/worker`    | workerd, Node          |
 | `@smthrs/create-app/package`   | Node                   |
 | `@smthrs/create-app/router`    | Node                   |
 | `@smthrs/create-app/vite`      | Node                   |
 | `@smthrs/create-app/testing`   | Node                   |
 | `@smthrs/create-app/routesBin` | Node                   |
 
-`routes.gen.ts` pulls `./app` and `./runtime` into the Worker bundle and
-`routes.ui.gen.ts` pulls `./ui` into the browser bundle, so those three carry
-no `node:` import. The rest are build and test tooling and reach the
+`routes.gen.ts` pulls `./app` and `./runtime` into the Worker bundle,
+`worker/handle.ts` pulls `./worker` in beside them, and `routes.ui.gen.ts`
+pulls `./ui` into the browser bundle, so those four carry no `node:` import. The rest are build and test tooling and reach the
 filesystem.
 
 The root entry point re-exports `./app` and `./package` flat, rather than as
@@ -292,6 +293,47 @@ Thrown rather than returned, because every caller wants the host build to stop.
 `invalid_grant` is a `TOOLS.ts` grant whose action is not one the kernel knows,
 or whose resource is longer than 4096 characters. The message names the grant's
 index and the field.
+
+## @smthrs/create-app/worker
+
+The turn host a Worker serves `POST /api/turn` with. It composes
+`materializeFlow` and `layerFor` for one request and streams the run back.
+
+### turnResponse
+
+```ts
+const turnResponse: (request: Request, host: TurnHost) => Promise<Response>
+```
+
+Decodes a `{ flow, payload }` body and answers `200 application/x-ndjson`: one
+`TurnFrame` per line, ending in exactly one `done` or `error` frame. A turn
+that cannot start is refused before any stream opens, as JSON with `error` and
+`message`: `400 invalid_request`, `400 flow_not_routed` (with `known`),
+`400 flow_not_chat`, or `503 host_unconfigured` when the seat has no key or
+the judge has no `AI_GATEWAY_API_KEY`. The request's signal cancels the run.
+
+| `TurnHost` field | Type                                                       |
+| ---------------- | ---------------------------------------------------------- |
+| `flows`          | `ReadonlyArray<TurnRoute>`, the `flows` of `routes.gen.ts` |
+| `env`            | provider keys and `AI_GATEWAY_API_KEY`                     |
+| `sandboxVariant` | `Layer.Layer<QuickJSSandbox.Variant>`                      |
+| `tools`          | `(route, cards: TurnCards) => ToolsSpec`, optional         |
+| `seats`          | `SeatProvider`, optional                                   |
+| `evaluator`      | `Layer.Layer<Evaluator.Evaluator>`, optional               |
+| `crypto`         | `Layer.Layer<Crypto.Crypto>`, optional                     |
+
+`tools` rebinds a route's sources per turn, so a `ui` source can write each
+card to `TurnCards` and it streams as a `card` frame. The optional layers
+default to `seatsFromEnv(env)`, the gateway judge read from `env`, and
+`layerCryptoWeb`.
+
+### The rest
+
+`runTurn` is `turnResponse` without the HTTP: it returns the stream or the
+refusal. `resolveChatFlow` is the routing check alone. `seatsFromEnv` resolves
+`anthropic:<model>` and `openai:<model>` seats over `fetch` from
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY`. `layerCryptoWeb` is `effect/Crypto`
+over WebCrypto.
 
 ## @smthrs/create-app/router
 

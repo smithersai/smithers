@@ -71,17 +71,6 @@ code {
   color: var(--house-foreground-muted);
 }
 
-/* The stub notice above the composer. Bordered rather than only muted, so it
-   reads as a state of the app and not as more lede. */
-.page-note {
-  margin-top: 1.5rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--house-border);
-  border-radius: var(--house-radius-lg);
-  background: var(--house-surface);
-  color: var(--house-foreground-muted);
-}
-
 .composer {
   display: flex;
   gap: 0.5rem;
@@ -122,6 +111,15 @@ code {
   border-radius: var(--house-radius-lg);
   background: var(--house-surface);
   white-space: pre-wrap;
+}
+
+.answer-text {
+  margin: 0;
+}
+
+.answer-error {
+  margin: 0;
+  color: var(--house-danger);
 }
 
 .pane {

@@ -251,15 +251,22 @@ whether it is callable. Add the name to the list the `ui` source was built
 with, or build that source from `paneNames` in `routes.gen.ts`. See
 [Add a pane](/guides/add-a-pane/).
 
-### /api/turn answers 501
+### /api/turn answers 503 host_unconfigured
 
-**What happened.** This is the `default` template's stub, not a failure. The
-template ships the router, the flow, the pane, the tool, the test, and the
-deploy target, and leaves the agent host to you.
+**What happened.** The Worker has no key for the seat in `AGENT.ts`, or no
+`AI_GATEWAY_API_KEY` for the completion judge. The body's `message` names the
+missing binding. No stream opened and no model ran.
 
-**What to change.** Build the host, which is
-[Run a routed flow from your own host](/guides/host-a-turn/). The `aomi`
-template's Worker is the worked example.
+**What to change.** Set the named secret with `wrangler secret put`, or in
+`.dev.vars` for `pnpm dev`. See
+[Deploy to Cloudflare](/guides/deploy-to-cloudflare/).
+
+### /api/turn answers 400 flow_not_chat or flow_not_routed
+
+**What happened.** The request named a flow the router did not find, or one
+without `chat: true`. `flow_not_routed` lists the ids it did find.
+
+**What to change.** Post `{ flow, payload }` with a routed chat flow's id.
 
 ### wrangler deploy fails on virtual:smthrs-app/manifest
 

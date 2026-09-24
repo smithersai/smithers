@@ -9,7 +9,8 @@
     "resolveJsonModule": true,
     "paths": {
       "@smthrs/create-app/app": ["./src/app.ts"],
-      "@smthrs/create-app/ui": ["./src/ui.ts"]
+      "@smthrs/create-app/ui": ["./src/ui.ts"],
+      "@smthrs/create-app/worker": ["./src/worker.ts"]
     }
   },
   "include": ["src/**/*", "test/**/*"]

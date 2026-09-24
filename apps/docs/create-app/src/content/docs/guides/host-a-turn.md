@@ -11,9 +11,10 @@ Routing an app produces declarations. Running one is two calls:
 `layerFor` composes every service that flow needs. This is the path the test
 harness takes, and the path a Worker takes per turn.
 
-The `default` template leaves this step to you: its `POST /api/turn` answers
-HTTP 501 and says so. The `aomi` template's `worker/` directory is the worked
-example.
+A Worker does not have to write these steps itself: `turnResponse` from
+`@smthrs/create-app/worker` runs all of them for one `POST /api/turn`, and the
+`default` template's `worker/handle.ts` calls it. The sections below are what
+it does, for a host that needs to do it differently.
 
 ## Read the routed flows
 
@@ -133,6 +134,47 @@ Cards are the other half of that stream. The `ui` binding a host composes into
 `TOOLS.ts` needs a card sink, and a real host binds one per turn so `ui/pane`
 writes into the response rather than into a module-level array. See
 [Add a pane](/guides/add-a-pane/).
+
+## Serve it from a Worker
+
+```ts
+import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
+import wasmModule from "@jitl/quickjs-wasmfile-release-sync/wasm"
+import { turnResponse, type TurnRoute } from "@smthrs/create-app/worker"
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
+import { newVariant, type QuickJSSyncVariant } from "quickjs-emscripten-core"
+import { flows } from "./routes.gen.ts"
+
+const sandboxVariant = QuickJSSandbox.layerVariant(
+  newVariant(wasmfile as unknown as QuickJSSyncVariant, { wasmModule })
+)
+
+export default {
+  fetch: (request: Request, env: Record<string, string | undefined>) =>
+    turnResponse(request, { flows: flows as unknown as ReadonlyArray<TurnRoute>, env, sandboxVariant })
+}
+```
+
+workerd compiles only WebAssembly its toolchain bundled, so the QuickJS module
+is imported as a module and `wrangler.jsonc` carries a `CompiledWasm` rule for
+it. `env` supplies the seat's provider key (`ANTHROPIC_API_KEY` or
+`OPENAI_API_KEY`) and `AI_GATEWAY_API_KEY` for the completion judge.
+
+The response is `200 application/x-ndjson`: one `TurnFrame` per line, ending in
+exactly one `done` or `error` frame. A turn that cannot start is refused before
+any stream opens:
+
+| Status | `error`             | When                                           |
+| ------ | ------------------- | ---------------------------------------------- |
+| 400    | `invalid_request`   | The body is not `{ flow, payload }` JSON       |
+| 400    | `flow_not_routed`   | No routed flow has that id; `known` lists them |
+| 400    | `flow_not_chat`     | The flow is not declared `chat: true`          |
+| 503    | `host_unconfigured` | A seat key or `AI_GATEWAY_API_KEY` is missing  |
+
+Pass `tools` to rebind a route's `ui` source to the turn's `TurnCards`, so each
+card a tool paints becomes a `card` frame. `seats`, `evaluator`, and `crypto`
+default to `seatsFromEnv(env)`, the gateway judge, and `layerCryptoWeb`; tests
+replace them.
 
 ## Refusals to expect
 
