@@ -82,6 +82,7 @@ The `CHECKLIST_*` credentials are auth material; never commit them.
 | `CHECKLIST_ZERO_BALANCE_BEARER` | D-4 | Cookie header for an account at zero balance |
 | `CHECKLIST_BILLING_UPSTREAM_URL` | §E | Billing upstream origin |
 | `CHECKLIST_BILLING_ADMIN_TOKEN` | E-2, E-3 | Billing upstream admin token |
+| `CHECKLIST_BILLING_PRODUCT_SERVICE_TOKEN` | E-3 | Product Worker billing service token |
 
 Set cookie headers as `name=value; name2=value2`. Missing required variables
 skip that row's prerequisites; the run continues and writes a report. A-1

@@ -70,6 +70,7 @@ Auth material (never committed; all optional, missing ones report not-testable-y
   CHECKLIST_ZERO_BALANCE_BEARER     Cookie header for a session already parked at $0 balance (D-4).
   CHECKLIST_BILLING_UPSTREAM_URL    Billing upstream origin for the §E admin-surface rows.
   CHECKLIST_BILLING_ADMIN_TOKEN     Billing upstream admin token (§E rows E-2, E-3).
+  CHECKLIST_BILLING_PRODUCT_SERVICE_TOKEN  Product Worker billing service token (E-3).
 `
 
 export const NO_TARGET_ERROR =
