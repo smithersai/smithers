@@ -198,5 +198,7 @@ docs/reviews/
 apps/app/scripts/tmp-*
 zz-*-repro.*
 
-# Agent lane exit markers (check/lint/test status files), never source.
-.enrollment-*.exit
+# Run scratch: captured shell exit codes and enrollment-sweep traces.
+# scripts/repo-contract/scratch-artifacts.test.mjs fails if one is tracked.
+.enrollment-*
+*.exit

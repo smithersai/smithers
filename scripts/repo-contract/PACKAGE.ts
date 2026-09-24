@@ -161,6 +161,19 @@ const machinePaths = Smithers.NodeTest({
 })
 
 /**
+ * No app tracks a run's scratch output: captured exit codes or enrollment
+ * traces.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const scratchArtifacts = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//scripts/repo-contract/scratch-artifacts.test.mjs")]),
+  srcs: [sources],
+  deps: []
+})
+
+/**
  * Every smithers.sh URL shipped by a package reaches the built documentation,
  * directly or through one production redirect whose destination is real.
  *
@@ -233,5 +246,5 @@ const ciInventory = Smithers.NodeTest({
 })
 
 export const Package = Smithers.Package({
-  targets: { barrels, cliVerbs, egressHttpClient, faultSkips, machinePaths, packageContract, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps }
+  targets: { barrels, cliVerbs, egressHttpClient, faultSkips, machinePaths, packageContract, scratchArtifacts, smithersLinks, testScriptWiring, uiCiTier, reliabilityWorkflow, ciInventory, publicExportMaps }
 })

@@ -30213,6 +30213,32 @@
     }
   },
   {
+    "label": "//scripts/repo-contract:scratchArtifacts",
+    "package": "scripts/repo-contract",
+    "name": "scratchArtifacts",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "scripts/repo-contract/scratch-artifacts.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": "scripts/repo-contract/**/*.mjs",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "scripts/repo-contract/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//scripts/repo-contract:smithersLinks",
     "package": "scripts/repo-contract",
     "name": "smithersLinks",
