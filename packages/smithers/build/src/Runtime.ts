@@ -289,6 +289,30 @@ const compare = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): num
 }
 
 /**
+ * Orders two prerelease suffixes by semver precedence: no suffix sorts above
+ * any suffix, and dot-separated fields compare numerically when both are
+ * numeric, numeric below alphanumeric, and lexically otherwise.
+ */
+const comparePrerelease = (left: string, right: string): number => {
+  if (left === right) return 0
+  if (left === "") return 1
+  if (right === "") return -1
+  const a = left.split(".")
+  const b = right.split(".")
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    const x = a[index]!
+    const y = b[index]!
+    if (x === y) continue
+    const xNumeric = /^\d+$/.test(x)
+    const yNumeric = /^\d+$/.test(y)
+    if (xNumeric && yNumeric) return Number(x) < Number(y) ? -1 : 1
+    if (xNumeric !== yNumeric) return xNumeric ? -1 : 1
+    return x < y ? -1 : 1
+  }
+  return a.length === b.length ? 0 : a.length < b.length ? -1 : 1
+}
+
+/**
  * Reports whether a measured version satisfies a declared requirement.
  *
  * The supported forms are an exact version and one comparator: `24.9.0`,
@@ -303,11 +327,12 @@ const compare = (left: ReadonlyArray<number>, right: ReadonlyArray<number>): num
  * an author pinning the release asked for, and it is exactly the build an
  * author pinning the canary asked for.
  *
- * A comparator form compares the release version and ignores the suffix, so
- * `>=1.3.0` accepts `1.3.0-canary.2`. Ordering a prerelease against its own
- * release is the semver problem this seam does not solve, and refusing every
- * prerelease under every comparator would fail a workspace that deliberately
- * runs one.
+ * A comparator whose bound is a release compares the release version and
+ * ignores the measured suffix, so `>=1.3.0` accepts `1.3.0-canary.2`: refusing
+ * every prerelease under every comparator would fail a workspace that
+ * deliberately runs one. A comparator whose bound names a prerelease asked for
+ * prerelease ordering, so semver precedence breaks a tie on the release
+ * version: `>=1.0.0-rc.2` refuses `1.0.0-rc.1` and accepts `1.0.0`.
  *
  * @category validation
  * @since 0.1.0
@@ -321,9 +346,14 @@ export const satisfies = (
   if (measured === undefined) return "unsupported_requirement"
   const trimmed = requirement.trim()
   const comparator = comparators.find((candidate) => trimmed.startsWith(candidate))
-  const bound = numericParts(comparator === undefined ? trimmed : trimmed.slice(comparator.length))
+  const boundText = comparator === undefined ? trimmed : trimmed.slice(comparator.length)
+  const bound = numericParts(boundText)
   if (bound === undefined) return "unsupported_requirement"
-  const ordering = compare(measured, bound)
+  const boundPrerelease = prereleaseOf(boundText)
+  const core = compare(measured, bound)
+  const ordering = core !== 0 || boundPrerelease === ""
+    ? core
+    : comparePrerelease(prereleaseOf(version), boundPrerelease)
   switch (comparator) {
     case ">=":
       return ordering >= 0
@@ -334,9 +364,7 @@ export const satisfies = (
     case "<":
       return ordering < 0
     default:
-      return ordering === 0 &&
-        prereleaseOf(comparator === undefined ? trimmed : trimmed.slice(comparator.length)) ===
-          prereleaseOf(version)
+      return core === 0 && boundPrerelease === prereleaseOf(version)
   }
 }
 

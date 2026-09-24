@@ -642,6 +642,11 @@ The `Git.Commit` implementation. From `@smthrs/build-cli/GitCommit`.
 `--sweep` sets `sweepWorkingTree`. Without it, a commit with no declared path
 scope refuses with `unrelated_changes` and names the paths it does not own.
 
+Every refusal after staging (a red gate, an empty or unavailable message, a
+failed `git commit`) restores the index the invocation found. The commit honors
+the repository's `commit.gpgsign` policy; a signing failure refuses with
+`git_failed`.
+
 ## GitHooks
 
 The `git-hooks` implementation. From `@smthrs/build-cli/GitHooks`.
@@ -649,7 +654,11 @@ The `git-hooks` implementation. From `@smthrs/build-cli/GitHooks`.
 `check` and `install` resolve the hooks directory with `git rev-parse --git-path hooks`,
 including linked worktrees and `core.hooksPath`. They fall back to `.git/hooks`
 only when Git is unavailable and the root has a `.git` directory. A Git failure
-raises `not_a_git_repository` without falling back.
+raises `not_a_git_repository` without falling back. A hooks directory outside
+both the workspace root and the git common directory, such as a user-level
+`core.hooksPath`, raises `hooks_path_outside_repository`. Each script runs
+`smthrs '<label>'`, the bare-label form, so the label's flavor-implied verb runs.
+`install` copies an existing hook it did not generate to `<hook>.bak` first.
 
 | Export              | Signature                                                                             | What it is                                                                        |
 | ------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |

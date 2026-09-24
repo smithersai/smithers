@@ -169,21 +169,6 @@ export interface RemoteCacheAccess extends ResolvedRemoteCache {
 }
 
 /**
- * Resolves the optional remote cache for a workspace.
- *
- * `SMITHERS_CACHE_URL`, captured by the CLI before declaration evaluation, takes
- * precedence over the workspace declaration. The declaration still selects
- * the bearer-token environment variables: one for both directions, or a read
- * name and a write name, defaulting to `SMITHERS_CACHE_TOKEN`. Token values
- * are never returned by this discovery function and never enter declaration or
- * target key material.
- *
- * @category discovery
- * @since 0.1.0
- * @slop
- */
-
-/**
  * The hosts whose remotes identify a Smithers Cloud repository. `SMITHERS_CLOUD_HOSTS`
  * (comma separated) adds a self-hosted deployment's hosts.
  *

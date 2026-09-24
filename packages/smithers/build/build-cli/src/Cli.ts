@@ -264,28 +264,18 @@ const present = <A>(
 }
 
 /**
- * Settles the cache directory one command runs under. Executing commands apply
- * the declared gitignore policy before writing state; query, graph, and plan
- * commands pass `writeState = false` and remain observational.
+ * Binds a resolved remote cache to the readers that fetch its credentials.
  *
  * The declared token is not read here. The cache transport receives a reader
- * and invokes it only while constructing an outbound request.
- * Removing the name from `process.env` here would mutate state the caller
- * owns: `makeCli` is a library entry point, and two concurrent commands with
- * different declared token names would delete each other's credentials. The
+ * and invokes it only while constructing an outbound request. Removing the
+ * name from `process.env` here would mutate state the caller owns: `makeCli`
+ * is a library entry point, and two concurrent commands with different
+ * declared token names would delete each other's credentials. The
  * child-process boundary is where the credential is withheld, and `ExecLive`
  * already strips both `SMITHERS_CACHE_URL` and every name in `sensitiveEnv`
  * from a spawned tool's environment. The process entry point in `main.ts`
  * captures and clears the default names for its own short-lived process,
  * which is a choice only a process owner may make.
- */
-/**
- * Binds a resolved remote cache to the readers that fetch its credentials.
- *
- * Shared remote-cache credential resolution.
- * {@link prepare}; WORKSPACE.ts builds the same access directly, which used
- * to be schema-validated and then dropped, so a workspace declaring a remote
- * cache ran local-only with no warning and no line in the plan.
  */
 const remoteCacheAccess = (
   remoteCache: ResolvedRemoteCache | undefined,
@@ -1082,7 +1072,11 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       options: workspaceOption,
       async run(context) {
         try {
-          const result = await packageQuery(await openPackageIndex(context.options, config), context.args.pattern, environmentOf(config))
+          const result = await packageQuery(
+            await openPackageIndex(context.options, config),
+            context.args.pattern,
+            environmentOf(config)
+          )
           return present(context, config, result, (style) => Query.text(result, style))
         } catch (cause) {
           return context.error({ code: "targets_failed", message: Diagnostic.describe(cause) })
@@ -1527,7 +1521,12 @@ export const makeCli = (config: RuntimeConfig = {}) =>
       async run(context) {
         try {
           const index = await openPackageIndex(context.options, config)
-          const { data, edges, rows } = await packageGraph(index, context.args.pattern, context.options.mermaid, environmentOf(config))
+          const { data, edges, rows } = await packageGraph(
+            index,
+            context.args.pattern,
+            context.options.mermaid,
+            environmentOf(config)
+          )
           // Mermaid is meant for a file or a renderer, never a terminal.
           if (context.options.mermaid) return data
           return present(context, config, data, (style) => GraphOutput.packageText(rows, edges, style))

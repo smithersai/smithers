@@ -32,12 +32,12 @@ body select exactly one fetch action statically.
 
 ### Actions
 
-| Export      | Action id                           | What it does                                                                    |
-| ----------- | ----------------------------------- | ------------------------------------------------------------------------------- |
-| `Measure`   | `smithers-build/install/measure`    | Records the lockfile digest and the credential-free `.npmrc` digest.            |
-| `FetchPnpm` | `smithers-build/install/fetch/pnpm` | Populates `.flows/store/pnpm` from `pnpm-lock.yaml`, writing no `node_modules`. |
-| `FetchBun`  | `smithers-build/install/fetch/bun`  | The same declaration for `bun.lock`. Its layer refuses every operation.         |
-| `Link`      | `smithers-build/install/link`       | Reconciles `node_modules` from the populated store.                             |
+| Export      | Action id                           | What it does                                                                                                                                                        |
+| ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Measure`   | `smithers-build/install/measure`    | Records the lockfile digest and the credential-free `.npmrc` digest.                                                                                                |
+| `FetchPnpm` | `smithers-build/install/fetch/pnpm` | Populates `.flows/store/pnpm` from `pnpm-lock.yaml`. Also writes pnpm's virtual store, `node_modules/.pnpm/**` and `node_modules/.modules.yaml`, and declares both. |
+| `FetchBun`  | `smithers-build/install/fetch/bun`  | The same declaration for `bun.lock`. Its layer refuses every operation.                                                                                             |
+| `Link`      | `smithers-build/install/link`       | Reconciles `node_modules` from the populated store.                                                                                                                 |
 
 Every action uses an `expected` filesystem boundary, and none is admitted to a
 cross-run engine cache. A package-manager child process cannot freeze its
@@ -144,8 +144,10 @@ A deadline failure reports `code: "probe_failed"` and `did not finish within`.
 malformed suffixes as `unsupported_requirement`.
 An exact stable pin rejects prereleases. An exact prerelease pin accepts only
 the same numeric version and prerelease identity; build metadata is ignored.
-For ordering comparators, valid prerelease and build suffixes are ignored:
-`>=1.3.0` accepts `1.3.0-canary.2`.
+For ordering comparators against a release bound, the measured prerelease and
+build suffixes are ignored: `>=1.3.0` accepts `1.3.0-canary.2`. When the bound
+names a prerelease, semver precedence breaks a tie on the release version:
+`>=1.0.0-rc.2` rejects `1.0.0-rc.1` and accepts `1.0.0`.
 
 ## Related packages
 

@@ -190,7 +190,10 @@ export const Measure = Action.make("smithers-build/install/measure", {
   })
 
 /**
- * Populates the package-manager store, and writes no `node_modules`.
+ * Populates the package-manager store. For pnpm it also writes the virtual
+ * store (`node_modules/.pnpm/**` and `node_modules/.modules.yaml`), which
+ * `pnpm fetch` lays down beside the content-addressed store; the declared
+ * write set names both, so conflict ordering sees the overlap with Link.
  *
  * Its key material is the measured lockfile and configuration digests,
  * reaching the key as a settled upstream
@@ -231,7 +234,14 @@ const makeFetch = <Tag extends string>(
       reads: manager === "pnpm"
         ? [lockfile, ".npmrc", ".pnpmfile.cjs", "pnpm-workspace.yaml"]
         : [lockfile, ".npmrc"],
-      writes: [{ _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` }],
+      writes: [
+        { _tag: "TreeArtifact", path: `${PackageManager.storeRoot}/${manager}` },
+        // `pnpm fetch` also writes the virtual store (`node_modules/.pnpm`) and its
+        // `.modules.yaml` state file beside it.
+        ...(manager === "pnpm"
+          ? [{ _tag: "Glob" as const, include: ["**/node_modules/.pnpm/**", "**/node_modules/.modules.yaml"] as const }]
+          : [])
+      ],
       boundaryMode: "expected"
     })
 

@@ -3,6 +3,7 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as NodePath from "node:path"
 import { afterAll, describe, expect, it, vi } from "vitest"
+import { normalizeArgv } from "../src/Cli.ts"
 import * as GitHooks from "../src/GitHooks.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
@@ -136,7 +137,7 @@ describe("script behavior", () => {
     expect(result.stderr).toContain("fail-open")
   })
 
-  it("prefers the public run command and propagates its failure", async () => {
+  it("prefers the public bare-label command and propagates its failure", async () => {
     const root = await temporaryRoot()
     const [hook] = GitHooks.render({ prePush: "//:prePush" })
     const script = NodePath.join(root, hook!.file)
@@ -156,7 +157,10 @@ describe("script behavior", () => {
     )
     const result = await runScript(script, bin)
     expect(result.exitCode).toBe(7)
-    expect(await Fs.readFile(log, "utf8")).toBe("run\n//:prePush\n")
+    const argv = (await Fs.readFile(log, "utf8")).split("\n").filter((line) => line !== "")
+    expect(argv).toEqual(["//:prePush"])
+    // The bare-label form runs the label's flavor-implied verb; `run` would refuse a lint or test target.
+    expect(normalizeArgv(argv)).toEqual(["target", "//:prePush"])
   })
 
   it("falls back to the legacy CLI when the public CLI is absent", async () => {
@@ -256,6 +260,40 @@ describe("check and install", () => {
     await Fs.appendFile(NodePath.join(hooksDirectory, "pre-commit"), "# drift\n")
     expect((await GitHooks.check(root, rendered)).entries)
       .toEqual([{ file: "pre-commit", status: "stale" }])
+  })
+
+  it("refuses a core.hooksPath outside the repository and leaves it untouched", async () => {
+    const root = await temporaryRoot()
+    const repository = NodePath.join(root, "repository")
+    const shared = NodePath.join(root, "global-hooks")
+    NodeChildProcess.execFileSync("git", ["init", "-q", repository])
+    NodeChildProcess.execFileSync("git", ["-C", repository, "config", "core.hooksPath", shared])
+    await Fs.mkdir(shared)
+    await Fs.writeFile(NodePath.join(shared, "pre-commit"), "#!/bin/sh\ngit secrets --scan\n", { mode: 0o755 })
+    const rendered = GitHooks.render({ preCommit: "//:preCommit" })
+    await expect(GitHooks.install(repository, rendered)).rejects.toMatchObject({
+      name: "GitHooksError",
+      code: "hooks_path_outside_repository"
+    })
+    await expect(GitHooks.check(repository, rendered)).rejects.toMatchObject({
+      code: "hooks_path_outside_repository"
+    })
+    expect(await Fs.readFile(NodePath.join(shared, "pre-commit"), "utf8")).toBe("#!/bin/sh\ngit secrets --scan\n")
+  })
+
+  it("keeps a hand-written hook as a .bak before replacing it", async () => {
+    const root = await temporaryRoot()
+    NodeChildProcess.execFileSync("git", ["init", "-q", root])
+    const hook = NodePath.join(root, ".git", "hooks", "pre-commit")
+    await Fs.mkdir(NodePath.dirname(hook), { recursive: true })
+    await Fs.writeFile(hook, "#!/bin/sh\necho mine\n", { mode: 0o755 })
+    const rendered = GitHooks.render({ preCommit: "//:preCommit" })
+    await GitHooks.install(root, rendered)
+    expect(await Fs.readFile(`${hook}.bak`, "utf8")).toBe("#!/bin/sh\necho mine\n")
+    expect(await Fs.readFile(hook, "utf8")).toBe(rendered[0]!.content)
+    await Fs.rm(`${hook}.bak`)
+    await GitHooks.install(root, rendered)
+    await expect(Fs.stat(`${hook}.bak`)).rejects.toMatchObject({ code: "ENOENT" })
   })
 
   it("falls back to .git/hooks only when git is unavailable", async () => {

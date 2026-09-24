@@ -482,11 +482,6 @@ const localPath = (cacheRoot: string, key: string): string => {
 }
 
 /**
- * Returns an open(2) flag the platform may not provide. Windows builds of
- * libuv define neither `O_NOFOLLOW` nor `O_NONBLOCK`; a missing flag
- * contributes nothing rather than crashing the open.
- */
-/**
  * Reads one entry file as JSON, or null when it is absent, not a plain file,
  * too large, or not JSON.
  *
@@ -1217,13 +1212,48 @@ class RemoteStore {
     return this.publishNamespace === undefined ? key : `${this.publishNamespace}/${key}`
   }
 
-  private degrade(operation: "GET" | "PUT", status?: number | undefined): void {
+  /**
+   * Disables the remote for the rest of the process, naming why.
+   *
+   * The reason is the HTTP status, or a bounded description of the thrown
+   * failure (a timeout, `ENOTFOUND host`, an invalid token) with every
+   * credential value redacted, so an operator can tell a misconfigured token
+   * from a network outage.
+   */
+  private degrade(operation: "GET" | "PUT", failure?: { readonly status: number } | { readonly cause: unknown }): void {
     if (this.degraded) return
     this.degraded = true
     this.warn(
       `smthrs: remote cache disabled after a failure: ${operation}` +
-        (status === undefined ? " request failed" : ` returned HTTP ${status}`)
+        (failure === undefined
+          ? " request failed"
+          : "status" in failure
+          ? ` returned HTTP ${failure.status}`
+          : ` request failed: ${this.describe(failure.cause)}`)
     )
+  }
+
+  /** A bounded, credential-free description of one thrown remote failure. */
+  private describe(cause: unknown): string {
+    const text = (value: unknown): string | undefined => typeof value === "string" && value !== "" ? value : undefined
+    let message = cause instanceof Error ? cause.message : String(cause)
+    const inner = cause instanceof Error ? cause.cause : undefined
+    if (typeof inner === "object" && inner !== null) {
+      const code = text((inner as { code?: unknown }).code)
+      const host = text((inner as { hostname?: unknown }).hostname)
+      if (code !== undefined) message += ` (${code}${host === undefined ? "" : ` ${host}`})`
+    }
+    for (const read of [this.readToken, this.writeToken]) {
+      let token: string | undefined
+      try {
+        token = read()
+      } catch {
+        token = undefined
+      }
+      if (typeof token === "string" && token.length >= 4) message = message.split(token).join("[redacted]")
+    }
+    message = message.replace(/[\u0000-\u001f\u007f]+/g, " ")
+    return message.length > 300 ? `${message.slice(0, 300)}...` : message
   }
 
   /**
@@ -1321,13 +1351,15 @@ class RemoteStore {
           return decoded === null ? { _tag: "degrade" } : { _tag: "entry", result: decoded }
         }
       )
-    } catch {
-      this.degrade("GET")
+    } catch (cause) {
+      this.degrade("GET", { cause })
       return null
     }
     if (fetched._tag === "entry") return fetched.result
     if (fetched._tag === "busy") this.skipBusy()
-    if (fetched._tag === "degrade") this.degrade("GET", fetched.status)
+    if (fetched._tag === "degrade") {
+      this.degrade("GET", fetched.status === undefined ? undefined : { status: fetched.status })
+    }
     return null
   }
 
@@ -1370,9 +1402,9 @@ class RemoteStore {
         }
         return
       }
-      this.degrade("PUT", status)
-    } catch {
-      this.degrade("PUT")
+      this.degrade("PUT", { status })
+    } catch (cause) {
+      this.degrade("PUT", { cause })
     }
   }
 

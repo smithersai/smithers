@@ -314,8 +314,9 @@ export interface Service {
    */
   readonly verify: Effect.Effect<string, PackageManagerError>
   /**
-   * Populates the content-addressed store from the lockfile alone, without
-   * writing `node_modules`.
+   * Populates the content-addressed store from the lockfile alone. pnpm also
+   * writes its virtual store (`node_modules/.pnpm`) and `.modules.yaml`, but
+   * links no package into the project's `node_modules`.
    */
   readonly fetch: Effect.Effect<void, PackageManagerError>
   /**

@@ -114,6 +114,42 @@ describe("commit with fake gates", () => {
     expect(error.code).toBe("gates_failed")
     expect(error.failures).toEqual([{ target: "Memory.Retain", message: "lint failed" }])
     expect(await head(root)).toBe(before)
+    // The refused invocation restores the index it staged, so the next scoped commit is not poisoned.
+    expect(await git(root, ["status", "--porcelain"])).toBe("?? feature.txt\n")
+  })
+
+  it("restores a pre-existing staged path after a refused commit", async () => {
+    const root = await scopedRepo()
+    await Fs.writeFile(NodePath.join(root, "scope/owned.txt"), "staged by operator\n", "utf8")
+    await git(root, ["add", "scope/owned.txt"])
+    await Fs.writeFile(NodePath.join(root, "scope/owned.txt"), "then edited\n", "utf8")
+    const error = await failure(GitCommit.commit({
+      root,
+      target: fixedCommit([gateTarget()]),
+      paths: ["scope"],
+      gateRunner: { run: async () => [{ target: "gate", message: "red" }] }
+    }))
+    expect(error.code).toBe("gates_failed")
+    expect(await git(root, ["show", ":scope/owned.txt"])).toBe("staged by operator\n")
+    expect(await git(root, ["status", "--porcelain"])).toBe("MM scope/owned.txt\n")
+  })
+
+  it("honors the repository's commit.gpgsign policy", async () => {
+    const root = await temporaryRepo()
+    const before = await head(root)
+    // A signing program that always fails stands in for a mandatory signing policy.
+    await git(root, ["config", "commit.gpgsign", "true"])
+    await git(root, ["config", "gpg.program", "false"])
+    await Fs.writeFile(NodePath.join(root, "feature.txt"), "new\n", "utf8")
+    const error = await failure(GitCommit.commit({
+      root,
+      target: fixedCommit(),
+      sweepWorkingTree: true,
+      gateRunner: greenGates
+    }))
+    expect(error.code).toBe("git_failed")
+    expect(await head(root)).toBe(before)
+    expect(await git(root, ["status", "--porcelain"])).toBe("?? feature.txt\n")
   })
 
   it("lets the -m override win over the declared message", async () => {

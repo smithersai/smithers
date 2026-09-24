@@ -361,50 +361,65 @@ export const commit = async (options: CommitOptions): Promise<CommitResult> => {
     throw new GitCommitError("not_a_git_repository", `${options.root} is not inside a git work tree`)
   }
   await refuseUnrelated(options, paths, options.sweepWorkingTree === true)
-  // `-A` includes deletions owned by the scope; `--` protects a pathspec that starts with a dash.
-  await gitOk(options, paths === undefined ? ["add", "-A"] : ["add", "-A", "--", ...paths])
-  const candidate = await git(options, ["diff", "--cached", "--quiet"])
-  if (candidate.exitCode === 0) {
-    throw new GitCommitError("nothing_to_commit", "the staged tree is identical to HEAD")
-  }
-  const failures = await options.gateRunner.run(attrs.gates)
-  if (failures.length > 0) {
-    throw new GitCommitError(
-      "gates_failed",
-      failures.map((failure) => `${failure.target}: ${failure.message}`).join("; "),
-      failures
-    )
-  }
-  let message: string
-  if (options.messageOverride !== undefined) {
-    message = options.messageOverride
-  } else if (typeof attrs.message === "string") {
-    message = attrs.message
-  } else {
-    const agentName = attrs.message._tag === "AgentRef"
-      ? attrs.message.name
-      : attrs.message._tag === "AgentPool"
-      ? attrs.message.agents.join(",")
-      : `inline:${attrs.message.model}`
-    if (options.agentMessage === undefined) {
+  // Every refusal after staging restores the index this invocation found, so a
+  // failed attempt never leaves its own staging behind to poison the next one.
+  const saved = await git(options, ["write-tree"])
+  const stage = async (): Promise<{ readonly message: string; readonly staged: ReadonlyArray<string> }> => {
+    // `-A` includes deletions owned by the scope; `--` protects a pathspec that starts with a dash.
+    await gitOk(options, paths === undefined ? ["add", "-A"] : ["add", "-A", "--", ...paths])
+    const candidate = await git(options, ["diff", "--cached", "--quiet"])
+    if (candidate.exitCode === 0) {
+      throw new GitCommitError("nothing_to_commit", "the staged tree is identical to HEAD")
+    }
+    const failures = await options.gateRunner.run(attrs.gates)
+    if (failures.length > 0) {
       throw new GitCommitError(
-        "agent_message_unavailable",
-        `the declared message agent ${agentName} has no bound AgentMessage implementation`
+        "gates_failed",
+        failures.map((failure) => `${failure.target}: ${failure.message}`).join("; "),
+        failures
       )
     }
-    const diff = await gitOk(options, ["diff", "--cached"])
-    message = await options.agentMessage.compose({
-      root: options.root,
-      agent: agentName,
-      stagedDiff: diff.stdout.slice(0, stagedDiffLimit)
-    })
+    let message: string
+    if (options.messageOverride !== undefined) {
+      message = options.messageOverride
+    } else if (typeof attrs.message === "string") {
+      message = attrs.message
+    } else {
+      const agentName = attrs.message._tag === "AgentRef"
+        ? attrs.message.name
+        : attrs.message._tag === "AgentPool"
+        ? attrs.message.agents.join(",")
+        : `inline:${attrs.message.model}`
+      if (options.agentMessage === undefined) {
+        throw new GitCommitError(
+          "agent_message_unavailable",
+          `the declared message agent ${agentName} has no bound AgentMessage implementation`
+        )
+      }
+      const diff = await gitOk(options, ["diff", "--cached"])
+      message = await options.agentMessage.compose({
+        root: options.root,
+        agent: agentName,
+        stagedDiff: diff.stdout.slice(0, stagedDiffLimit)
+      })
+    }
+    if (message.trim() === "") {
+      throw new GitCommitError("empty_message", "the commit message is empty")
+    }
+    const staged = (await gitOk(options, ["diff", "--cached", "--name-only", "-z"]))
+      .stdout.split("\0").slice(0, -1)
+    // The repository's signing policy applies; a signing failure is a typed git_failed refusal.
+    await gitOk(options, ["commit", "-m", message])
+    return { message, staged }
   }
-  if (message.trim() === "") {
-    throw new GitCommitError("empty_message", "the commit message is empty")
+  let settled: { readonly message: string; readonly staged: ReadonlyArray<string> }
+  try {
+    settled = await stage()
+  } catch (cause) {
+    if (saved.exitCode === 0) await git(options, ["read-tree", saved.stdout.trim()]).catch(() => undefined)
+    throw cause
   }
-  const staged = (await gitOk(options, ["diff", "--cached", "--name-only", "-z"]))
-    .stdout.split("\0").slice(0, -1)
-  await gitOk(options, ["-c", "commit.gpgsign=false", "commit", "-m", message])
+  const { message, staged } = settled
   const sha = await gitOk(options, ["rev-parse", "HEAD"])
   return { sha: sha.stdout.trim(), message, staged }
 }

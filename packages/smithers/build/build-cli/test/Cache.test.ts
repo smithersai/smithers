@@ -300,7 +300,50 @@ describe("openCache", () => {
       cache.put(result.key, { ...result, output: "x".repeat(remoteEntryLimit) })
     ).resolves.toBeUndefined()
     expect(fetch).not.toHaveBeenCalled()
-    expect(warnings).toEqual(["smthrs: remote cache disabled after a failure: PUT request failed"])
+    expect(warnings).toEqual([
+      `smthrs: remote cache disabled after a failure: PUT request failed: remote cache request exceeds its ${remoteEntryLimit}-byte limit`
+    ])
+    await cache.close()
+  })
+
+  it("names the network cause when a remote request fails, without the token", async () => {
+    const warnings: string[] = []
+    const cache = await openCache({
+      workspaceRoot: root,
+      endpoint,
+      readToken: () => "top-secret-token",
+      fetch: () =>
+        Promise.reject(
+          new TypeError("fetch failed for Bearer top-secret-token", {
+            cause: Object.assign(new Error("getaddrinfo ENOTFOUND cache.example"), {
+              code: "ENOTFOUND",
+              hostname: "cache.example"
+            })
+          })
+        ),
+      warn: (line) => warnings.push(line)
+    })
+    expect(await cache.get("alpha")).toBeNull()
+    expect(warnings).toEqual([
+      "smthrs: remote cache disabled after a failure: GET request failed: " +
+      "fetch failed for Bearer [redacted] (ENOTFOUND cache.example)"
+    ])
+    await cache.close()
+  })
+
+  it("names an invalid token as the cause instead of a generic failure", async () => {
+    const warnings: string[] = []
+    const cache = await openCache({
+      workspaceRoot: root,
+      endpoint,
+      readToken: () => "bad\ntoken",
+      fetch: () => Promise.resolve(new Response(null, { status: 404 })),
+      warn: (line) => warnings.push(line)
+    })
+    expect(await cache.get("alpha")).toBeNull()
+    expect(warnings).toEqual([
+      "smthrs: remote cache disabled after a failure: GET request failed: remote cache token must be bounded control-free text"
+    ])
     await cache.close()
   })
 
@@ -742,7 +785,9 @@ describe("openCache", () => {
       })
 
       await expect(cache.put(result.key, result)).resolves.toBeUndefined()
-      expect(warnings).toEqual(["smthrs: remote cache disabled after a failure: PUT request failed"])
+      expect(warnings).toEqual([
+        "smthrs: remote cache disabled after a failure: PUT request failed: remote cache put timed out after 25ms"
+      ])
       await cache.close()
     })
 

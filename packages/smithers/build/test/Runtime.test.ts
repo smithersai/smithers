@@ -64,6 +64,19 @@ describe("Runtime.satisfies", () => {
     expect(Runtime.satisfies("=1.3.0-canary.2", "1.3.0-canary.2+build.7")).toBe(true)
   })
 
+  it("orders prereleases by semver precedence when the bound names one", () => {
+    expect(Runtime.satisfies(">=1.0.0-rc.2", "1.0.0-rc.1")).toBe(false)
+    expect(Runtime.satisfies(">=1.0.0-rc.2", "1.0.0-rc.2")).toBe(true)
+    expect(Runtime.satisfies(">=1.0.0-rc.2", "1.0.0-rc.10")).toBe(true)
+    expect(Runtime.satisfies(">=1.0.0-rc.2", "1.0.0")).toBe(true)
+    expect(Runtime.satisfies(">1.0.0-rc.2", "1.0.0-rc.2")).toBe(false)
+    expect(Runtime.satisfies("<1.0.0-rc.2", "1.0.0-rc.1")).toBe(true)
+    expect(Runtime.satisfies("<1.0.0-rc.2", "1.0.0")).toBe(false)
+    expect(Runtime.satisfies("<=1.0.0-beta", "1.0.0-alpha.9")).toBe(true)
+    expect(Runtime.satisfies("<=1.0.0-beta", "1.0.0-beta.1")).toBe(false)
+    expect(Runtime.satisfies(">=1.0.0-rc.2", "0.9.0")).toBe(false)
+  })
+
   it("compares a prerelease as its release version under a comparator", () => {
     expect(Runtime.satisfies(">=1.4.0", "1.4.0-canary.2")).toBe(true)
     expect(Runtime.satisfies("<1.5.0", "1.4.0-canary.2")).toBe(true)
