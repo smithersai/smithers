@@ -397,7 +397,7 @@ describe("runAction (subprocess)", () => {
       "--paginate",
       endpoint,
       "--jq",
-      '.[] | select(.body | startswith("<!-- smithers-review-status -->")) | .id',
+      '.[] | select(.user.login == "github-actions[bot]" and .user.type == "Bot") | select(.body | startswith("<!-- smithers-review-status -->")) | .id',
     ]);
     const lines = calls[1]!.trim().split("\n");
     expect(lines.slice(0, 6)).toEqual(["api", "--method", "POST", endpoint, "--input", "-"]);
@@ -408,3 +408,51 @@ describe("runAction (subprocess)", () => {
     // runners.
   }, 20_000);
 });
+
+// Session rejection never launches a review.
+{
+const app = fileURLToPath(new URL("../../", import.meta.url));
+const action = join(app, "action/src/runAction.ts");
+const gh = fileURLToPath(new URL("./fixtures/fake-gh", import.meta.url));
+
+test.each([
+  [402, "repo monthly spend cap exhausted", "repository inference budget exhausted", 1],
+  [402, "api key spend cap exhausted", "API key inference budget exhausted", 1],
+  [503, "jwks-unavailable", "review service unavailable; retry later", 3],
+] as const)("session HTTP %i %s skips neutrally", async (status, error, expected, attempts) => {
+  const dir = await mkdtemp(join(tmpdir(), "review-session-status-"));
+  let calls = 0;
+  const service = Bun.serve({ port: 0, fetch(request) {
+    if (new URL(request.url).pathname === "/oidc") return Response.json({ value: "fixture-token" });
+    calls++;
+    return Response.json({ error }, { status });
+  } });
+  try {
+    const event = join(dir, "event.json");
+    const log = join(dir, "gh.log");
+    await writeFile(event, JSON.stringify({ action: "opened", pull_request: {
+      number: 42, head: { repo: { full_name: "octo/widgets" } }, base: { repo: { full_name: "octo/widgets" } },
+    } }));
+    const child = Bun.spawn(["bun", action], { cwd: app, env: {
+      ...process.env,
+      GITHUB_EVENT_NAME: "pull_request", GITHUB_EVENT_PATH: event,
+      GITHUB_REPOSITORY: "octo/widgets", GITHUB_WORKSPACE: app,
+      ACTIONS_ID_TOKEN_REQUEST_URL: `http://127.0.0.1:${service.port}/oidc`,
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "fixture-runner",
+      SMITHERS_REVIEW_SERVICE_URL: `http://127.0.0.1:${service.port}`,
+      SMITHERS_GH_BIN: gh, SMITHERS_FAKE_GH_LOG: log,
+      SMITHERS_FAKE_GH_STDOUT: "", SMITHERS_FAKE_GH_EXIT: "0",
+    }, stdout: "pipe", stderr: "pipe" });
+    const [code, stdout, stderr] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]);
+    expect({ code, stderr }).toEqual({ code: 0, stderr: "" });
+    expect(stdout).toContain(expected);
+    expect(stdout).not.toContain("monthly PR quota is spent");
+    expect(await readFile(log, "utf8")).toContain(expected);
+    expect(calls).toBe(attempts);
+  } finally {
+    service.stop(true);
+    await rm(dir, { recursive: true, force: true });
+  }
+}, 20_000);
+
+}
