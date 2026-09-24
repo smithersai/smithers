@@ -22,11 +22,11 @@
 
 import { readFileSync } from "node:fs";
 
-const USAGE = `Usage: node scripts/seed-allowlist.mjs (--logins a,b,c | --file path) [--action add|remove] [--dry-run] [--requester login]
+const USAGE = `Usage: node scripts/seed-allowlist.mjs (--logins a,b,c | --file path) [--action add|remove] [--dry-run] [--requester login] [--timeout-ms 15000]
 
 Batch-adds (or removes) GitHub logins on the closed-alpha allowlist, one identity-worker
 admin call per login. Credentials come from IDENTITY_UPSTREAM_URL / IDENTITY_ADMIN_TOKEN
-(the same names wrangler.jsonc and src/index.ts use) or --upstream/--token; --dry-run
+(the same names wrangler.jsonc and src/index.ts use); --upstream overrides only the URL. --dry-run
 needs neither and never makes a network call.`;
 
 const parseArgs = (argv) => {
@@ -41,7 +41,7 @@ const parseArgs = (argv) => {
 		else if (arg === "--action") args.action = argv[(i += 1)];
 		else if (arg === "--requester") args.requester = argv[(i += 1)];
 		else if (arg === "--upstream") args.upstream = argv[(i += 1)];
-		else if (arg === "--token") args.token = argv[(i += 1)];
+		else if (arg === "--timeout-ms") args.timeoutMs = Number(argv[(i += 1)]);
 		else if (arg === "--help" || arg === "-h") args.help = true;
 		else throw new Error(`Unknown argument: ${arg}\n\n${USAGE}`);
 	}
@@ -57,18 +57,19 @@ const readLogins = (args) => {
 		.filter((entry) => entry.length > 0 && !entry.startsWith("#"));
 };
 
-const seedOne = async (upstream, token, requester, action, login) => {
+const seedOne = async (upstream, token, requester, action, login, timeoutMs) => {
 	const timestamp = new Date().toISOString();
 	try {
 		const response = await fetch(new URL("/api/identity/admin/allowlist", upstream).toString(), {
 			method: "POST",
+			signal: AbortSignal.timeout(timeoutMs),
 			headers: { "content-type": "application/json", "x-smithers-admin-token": token },
 			body: JSON.stringify({ login, action, requester, timestamp }),
 		});
 		const body = await response.text();
 		return { login, ok: response.ok, detail: `${response.status} ${body}` };
 	} catch (error) {
-		return { login, ok: false, detail: error instanceof Error ? error.message : String(error) };
+		return { login, ok: false, detail: error instanceof Error && error.name === "TimeoutError" ? `no response within ${timeoutMs} ms` : error instanceof Error ? error.message : String(error) };
 	}
 };
 
@@ -81,6 +82,8 @@ const main = async () => {
 	if (args.action !== "add" && args.action !== "remove") {
 		throw new Error(`--action must be "add" or "remove", got ${JSON.stringify(args.action)}`);
 	}
+	const timeoutMs = args.timeoutMs ?? 15000;
+	if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2147483647) throw new Error("--timeout-ms must be a positive integer no greater than 2147483647");
 	const logins = readLogins(args);
 	if (logins.length === 0) throw new Error("No logins to seed.");
 
@@ -91,20 +94,20 @@ const main = async () => {
 	}
 
 	const upstream = args.upstream ?? process.env.IDENTITY_UPSTREAM_URL;
-	const token = args.token ?? process.env.IDENTITY_ADMIN_TOKEN;
+	const token = process.env.IDENTITY_ADMIN_TOKEN;
 	if (upstream === undefined || upstream === "") {
 		throw new Error(
 			"IDENTITY_UPSTREAM_URL is unset (env var or --upstream). Use --dry-run to preview without credentials.",
 		);
 	}
 	if (token === undefined || token === "") {
-		throw new Error("IDENTITY_ADMIN_TOKEN is unset (env var or --token). Use --dry-run to preview without credentials.");
+		throw new Error("IDENTITY_ADMIN_TOKEN is unset (environment variable). Use --dry-run to preview without credentials.");
 	}
 	const requester = args.requester ?? process.env.SEED_REQUESTER ?? "seed-allowlist-script";
 
 	const results = [];
 	for (const login of logins) {
-		results.push(await seedOne(upstream, token, requester, args.action, login));
+		results.push(await seedOne(upstream, token, requester, args.action, login, timeoutMs));
 	}
 
 	for (const result of results) {

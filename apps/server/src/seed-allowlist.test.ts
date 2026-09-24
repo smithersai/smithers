@@ -114,3 +114,33 @@ describe("seed-allowlist.mjs", () => {
     expect(result.stderr).toContain("1/2 failed")
   })
 })
+
+test("refuses a command-line token without echoing its value", async () => {
+  const result = await runScript(["--logins", "alice", "--token", "never-log-this", "--dry-run"])
+  expect(result.exitCode).toBe(1)
+  expect(result.stderr).toContain("Unknown argument: --token")
+  expect(result.stdout + result.stderr).not.toContain("never-log-this")
+})
+
+test("bounds each identity fetch and continues after a timeout", async () => {
+  const received: string[] = []
+  server = Bun.serve({ port: 0, fetch: async (request) => {
+    const { login } = await request.json() as { login: string }
+    received.push(login)
+    if (login === "slow") return new Promise<Response>(() => {})
+    return Response.json({ applied: true }, { status: 201 })
+  } })
+  const result = await runScript(["--logins", "slow,fast", "--timeout-ms", "1000"], {
+    IDENTITY_UPSTREAM_URL: `http://localhost:${server.port}`, IDENTITY_ADMIN_TOKEN: "identity-admin-123"
+  })
+  expect(received).toEqual(["slow", "fast"])
+  expect(result.exitCode).toBe(1)
+  expect(result.stdout).toContain("no response within 1000 ms")
+  expect(result.stdout).toContain("ok   add fast")
+})
+
+test.each(["0", "-1", "NaN", "1.5"])("rejects invalid timeout %s", async (timeout) => {
+  const result = await runScript(["--logins", "alice", "--timeout-ms", timeout, "--dry-run"])
+  expect(result.exitCode).toBe(1)
+  expect(result.stderr).toContain("--timeout-ms must be a positive integer")
+})
