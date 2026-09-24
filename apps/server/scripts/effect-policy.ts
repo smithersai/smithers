@@ -48,11 +48,38 @@ export interface Violation {
   readonly text: string
 }
 
-/** Strip `//` and `/* *\/` comments so prose cannot trip a rule; string contents stay (a rule in a string is still worth a look). */
+/**
+ * Strip `//` and `/* *\/` comments so prose cannot trip a rule; string contents stay (a rule in a string is
+ * still worth a look). Comment markers inside '…', "…" and `…` literals are string text, and a template's
+ * `${…}` is code again, so a URL literal cannot hide the rest of its line.
+ */
 export const stripComments = (source: string): string => {
   let out = ""
   let i = 0
+  // Open brace depth inside each enclosing template `${` hole; the innermost is last.
+  const holes: number[] = []
+  // Copy string text from i up to and including the closing quote, or up to a template's `${`.
+  const copyStringBody = (quote: string): void => {
+    while (i < source.length) {
+      const char = source[i]
+      if (char === "\\") {
+        out += source.slice(i, i + 2)
+        i += 2
+      } else if (quote === "`" && source.startsWith("${", i)) {
+        out += "${"
+        i += 2
+        holes.push(0)
+        return
+      } else {
+        out += char
+        i += 1
+        // A quote string cannot span lines, so an unmatched quote costs one line at most.
+        if (char === quote || (char === "\n" && quote !== "`")) return
+      }
+    }
+  }
   while (i < source.length) {
+    const char = source[i] ?? ""
     const two = source.slice(i, i + 2)
     if (two === "/*") {
       const end = source.indexOf("*/", i + 2)
@@ -63,8 +90,19 @@ export const stripComments = (source: string): string => {
     } else if (two === "//") {
       const end = source.indexOf("\n", i)
       i = end === -1 ? source.length : end
+    } else if (char === '"' || char === "'" || char === "`") {
+      out += char
+      i += 1
+      copyStringBody(char)
+    } else if (char === "}" && holes.at(-1) === 0) {
+      // this brace closes a `${` hole, so the enclosing template resumes
+      holes.pop()
+      out += char
+      i += 1
+      copyStringBody("`")
     } else {
-      out += source[i]
+      if (holes.length > 0 && (char === "{" || char === "}")) holes[holes.length - 1] += char === "{" ? 1 : -1
+      out += char
       i += 1
     }
   }

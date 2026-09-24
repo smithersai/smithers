@@ -55,6 +55,30 @@ describe("effect-policy scanSource", () => {
     expect(scanSource("src/thing.test.ts", "await x\n")).toEqual([])
   })
 
+  test("a comment marker inside a string literal does not hide a violation later on the line", () => {
+    const source = [
+      'const r = fetch("https://x.test").then((a) => a)',
+      "const s = fetch('http://x.test').then((a) => a)",
+      "const t = fetch(`https://${host}/v1`).then((a) => a)",
+      'const u = "a/*b"; await u',
+      'const v = "say \\"//\\" twice"; await v',
+      "const w = `${`//`}`; await w"
+    ].join("\n")
+    expect(scanSource("src/thing.ts", source).map((v) => [v.line, v.rule])).toEqual([
+      [1, ".then("],
+      [2, ".then("],
+      [3, ".then("],
+      [4, "await"],
+      [5, "await"],
+      [6, "await"]
+    ])
+  })
+
+  test("a comment after a string is still stripped", () => {
+    expect(scanSource("src/thing.ts", 'const url = "https://x.test" // then await it later\n')).toEqual([])
+    expect(scanSource("src/thing.ts", "const t = `a ${b /* await */} c`\n")).toEqual([])
+  })
+
   test("stripComments keeps line numbers across block comments", () => {
     const stripped = stripComments("a\n/* one\ntwo */\nawait b\n")
     expect(stripped.split("\n").length).toBe(5)
