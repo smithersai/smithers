@@ -24,13 +24,16 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx, os.Args[1:]); err != nil && !errors.Is(err, context.Canceled) {
+	if err := run(ctx, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
 
+// run returns nil for a clean signal stop and reports every cleanup failure.
 func run(ctx context.Context, args []string) (runErr error) {
+	var cleanupErr error
+	defer func() { runErr = stopResult(ctx, runErr, cleanupErr) }()
 	// Schema maintenance is server-free. The native path migrates its owned
 	// PostgreSQL after the supervisor reports readiness.
 	if len(args) > 0 && args[0] == "migrate" {
@@ -68,7 +71,7 @@ func run(ctx context.Context, args []string) (runErr error) {
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		runErr = errors.Join(runErr, local.Shutdown(shutdownCtx))
+		cleanupErr = errors.Join(cleanupErr, local.Shutdown(shutdownCtx))
 	}()
 
 	dataRoot := os.Getenv("SMITHERS_DATA_ROOT")
@@ -78,7 +81,7 @@ func run(ctx context.Context, args []string) (runErr error) {
 	}
 	// app.Run normally owns this close. Retain a final close for migration or
 	// startup failures before app.Run gets control of the adapter.
-	defer func() { runErr = errors.Join(runErr, workspaceRuntime.Close()) }()
+	defer func() { cleanupErr = errors.Join(cleanupErr, workspaceRuntime.Close()) }()
 	launcher, err := modelhost.NewLocalLauncher(modelhost.LocalConfig{
 		Runtime:    workspaceRuntime,
 		NodeBinary: strings.TrimSpace(os.Getenv("SMITHERS_NODE_BINARY")),
@@ -132,6 +135,15 @@ func run(ctx context.Context, args []string) (runErr error) {
 		return fmt.Errorf("migrate product database: %w", err)
 	}
 	return app.Run(ctx, appConfig)
+}
+
+// stopResult keeps cleanup failures apart from the serve error so the
+// cancellation a stop signal causes never hides a failed shutdown.
+func stopResult(ctx context.Context, runErr, cleanupErr error) error {
+	if ctx.Err() != nil && errors.Is(runErr, context.Canceled) {
+		runErr = nil
+	}
+	return errors.Join(runErr, cleanupErr)
 }
 
 func externalDatabaseURL() (string, error) {
