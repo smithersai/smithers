@@ -521,9 +521,12 @@ def trajectory(events: list[dict[str, Any]], *, agent_name: str, agent_version: 
 
 def harness_revision(root: Path) -> str | None:
     """The commit the checkout under `root` is at, from jj where it is a jj
-    workspace and from git otherwise."""
+    workspace and from git otherwise. jj reads the repository without
+    snapshotting: a stale or orphaned working copy (another workspace's
+    `jj op abandon`) refuses every snapshotting command, and a trial must not
+    record a null revision for it."""
     for command in (
-        ["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"],
+        ["jj", "--ignore-working-copy", "log", "-r", "@-", "--no-graph", "-T", "commit_id"],
         ["git", "rev-parse", "HEAD"],
     ):
         try:

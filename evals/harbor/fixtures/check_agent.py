@@ -536,6 +536,39 @@ def check_plue_env() -> None:
     assert plue_env.is_capacity_error(plue_env.PlueError("no healthy Microsandbox worker has sufficient capacity", "WORKSPACE_NO_CAPACITY"))
 
 
+def check_harness_revision() -> str:
+    """A jj workspace whose working-copy operation another workspace's
+    `jj op abandon` orphaned still reports its revision. Every jj command that
+    snapshots refuses such a workspace, which is how the TB4 arm-A runs of
+    2026-09-23 recorded `harnessRevision: null`."""
+    import shutil
+    import subprocess
+
+    if shutil.which("jj") is None:
+        return "skipped (no jj)"
+
+    def jj(cwd: Path, *args: str) -> str:
+        return subprocess.run(["jj", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+
+    with tempfile.TemporaryDirectory() as directory:
+        main, bench = Path(directory) / "main", Path(directory) / "bench"
+        jj(Path(directory), "git", "init", "main")
+        (main / "f").write_text("a\n")
+        jj(main, "commit", "-m", "one")
+        jj(main, "workspace", "add", str(bench))
+        (bench / "g").write_text("b\n")
+        jj(bench, "status")
+        (main / "h").write_text("c\n")
+        jj(main, "status")
+        oldest_kept = jj(main, "op", "log", "--no-graph", "-T", 'id.short() ++ "\\n"').split()[2]
+        jj(main, "op", "abandon", f"..{oldest_kept}")
+        refused = subprocess.run(["jj", "log", "-r", "@-", "--no-graph", "-T", "commit_id"], cwd=bench, capture_output=True, text=True)
+        assert refused.returncode != 0, "the fixture reproduces an orphaned working-copy operation"
+        parent = jj(main, "log", "-r", "bench@-", "--no-graph", "-T", "commit_id").strip()
+        assert agent.harness_revision(bench) == parent, "the revision is read without snapshotting the working copy"
+    return "held"
+
+
 def check_names() -> None:
     assert agent.compose_project_name("wal-recovery-ordering__gRvUHdP") == "wal-recovery-ordering__grvuhdp"
     assert agent.compose_project_name("_x.y") == "0_x-y"
@@ -560,5 +593,6 @@ if __name__ == "__main__":
     check_plue_env()
     check_container_gate()
     check_accounts()
+    revision = check_harness_revision()
     print(f"check_agent.py: prompt, environment, journal fold, helper lookup, names, plue shim, plue environment and account pool hold; "
-          f"trajectory {validation}.")
+          f"harness revision {revision}; trajectory {validation}.")
