@@ -55,6 +55,8 @@ jobs:
             platform: darwin-x64
           - runner: ubuntu-24.04-arm
             platform: linux-arm64
+          - runner: windows-latest
+            platform: win32-x64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -65,12 +67,14 @@ jobs:
           rustup toolchain install '1.98.0' --profile minimal
           cargo +1.98.0 build --locked --release -p smithers-ffi --bin smithers-jj-export
           mkdir -p "$RUNNER_TEMP/native-helper"
-          install -m 0755 target/release/smithers-jj-export "$RUNNER_TEMP/native-helper/smithers-jj-export"
+          binary=smithers-jj-export
+          if [ "$RUNNER_OS" = Windows ]; then binary="$binary.exe"; fi
+          install -m 0755 "target/release/$binary" "$RUNNER_TEMP/native-helper/$binary"
         shell: bash
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: native-helper-${{ matrix.platform }}
-          path: ${{ runner.temp }}/native-helper/smithers-jj-export
+          path: ${{ runner.temp }}/native-helper/*
   native-mode-matrix:
     name: packaged native topology and persistence
     runs-on: macos-latest
@@ -225,7 +229,7 @@ jobs:
       - name: Validate GitHub Actions workflows
         uses: docker://rhysd/actionlint@sha256:6f03470d0152251d7f07f7c4dc019dbe7024c72cd952f839544c7798843efa8f
         with:
-          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/distribution.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/mirror-sync.yml"
+          args: ".github/workflows/ci.yml .github/workflows/release.yml .github/workflows/release-auth.yml .github/workflows/apps-deploy.yml .github/workflows/distribution.yml .github/workflows/canary.yml .github/workflows/pr-review.yml .github/workflows/reliability.yml .github/workflows/native-windows.yml .github/workflows/mirror-sync.yml"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install
       - name: Install Go
@@ -268,12 +272,16 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
       - name: Install native smithers-jj-export
         run: |
-          case "$(uname -s)" in Linux|Darwin)
+          case "$(uname -s)" in Linux|Darwin|MINGW*|MSYS*)
+            native_suffix=''
+            case "$(uname -s)" in MINGW*|MSYS*) native_suffix='.exe';; esac
             rustup toolchain install '1.98.0' --profile minimal
             cargo +1.98.0 build --locked -p 'smithers-ffi' --bin 'smithers-jj-export'
             mkdir -p "$RUNNER_TEMP/smithers-native"
-            install -m 755 'target/debug/smithers-jj-export' "$RUNNER_TEMP/smithers-native/smithers-jj-export"
-            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$RUNNER_TEMP/smithers-native/smithers-jj-export" >> "$GITHUB_ENV"
+            native_path="$RUNNER_TEMP/smithers-native/smithers-jj-export$native_suffix"
+            install -m 755 "target/debug/smithers-jj-export$native_suffix" "$native_path"
+            if [ "$native_suffix" = '.exe' ]; then native_path="$(cygpath -w "$native_path")"; fi
+            printf '%s=%s\n' 'SMITHERS_WORKSPACE_JJ_EXPORT_BINARY' "$native_path" >> "$GITHUB_ENV"
           esac
         shell: bash
       - name: Validate archived candidate selection
@@ -658,10 +666,12 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/smithers-native/linux-x64"
           install -m 0755 "$RUNNER_TEMP/smithers-native/smithers-jj-export" "$RUNNER_TEMP/smithers-native/linux-x64/smithers-jj-export"
-          for platform in darwin-arm64 darwin-x64 linux-arm64; do
+          for platform in darwin-arm64 darwin-x64 linux-arm64 win32-x64; do
             mkdir -p "$RUNNER_TEMP/smithers-native/$platform"
             gh run download "$GITHUB_RUN_ID" --name "native-helper-$platform" --dir "$RUNNER_TEMP/smithers-native/$platform"
-            chmod 0755 "$RUNNER_TEMP/smithers-native/$platform/smithers-jj-export"
+            binary=smithers-jj-export
+            case "$platform" in win32-*) binary="$binary.exe";; esac
+            chmod 0755 "$RUNNER_TEMP/smithers-native/$platform/$binary"
           done
         shell: bash
       # Pack from staging manifests whose exports point at built artifacts.

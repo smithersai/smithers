@@ -170,7 +170,7 @@ test("importing the release scripts reads no workspace tree", async () => {
   const fixture = await mkdtemp(join(tmpdir(), "smithers-pack-release-import-"))
   try {
     await mkdir(join(fixture, "scripts"), { recursive: true })
-    for (const file of ["workspace-packages.mjs", "pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs"]) {
+    for (const file of ["workspace-packages.mjs", "pack-release.mjs", "publish-release.mjs", "packed-export-targets.mjs", "build-release.mjs", "release-native-helpers.mjs"]) {
       await cp(join(repoRoot, "scripts", file), join(fixture, "scripts", file))
     }
     // A workspace whose only member is a valid engine package: a roster the
@@ -740,7 +740,7 @@ test("the real staging and tarball retain authored template config and exclude r
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test("the platform package tarball carries all four native helpers", async () => {
+test("the platform package tarball carries all five native helpers including the Windows executable", async () => {
   const publishedManifest = JSON.parse(readFileSync(join(repoRoot, "packages/smithers/flows/platform-node/package.json"), "utf8"))
   assert.ok(publishedManifest.files.includes("bin/**"))
   const directory = await mkdtemp(join(tmpdir(), "smithers-pack-native-"))
@@ -754,11 +754,12 @@ test("the platform package tarball carries all four native helpers", async () =>
       publishConfig: { exports: { "./package.json": "./package.json" } }
     }
     await writeFile(join(source, "package.json"), JSON.stringify(manifest))
-    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
+    const platforms = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-x64"]
+    for (const platform of platforms) {
       const parent = join(helpers, platform)
       await mkdir(parent, { recursive: true })
-      const binary = join(parent, "smithers-jj-export")
-      await writeFile(binary, `#!/bin/sh\necho ${platform}\n`)
+      const binary = join(parent, platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export")
+      await writeFile(binary, platform === "win32-x64" ? "MZwindows-fixture" : `#!/bin/sh\necho ${platform}\n`)
       await chmod(binary, 0o755)
     }
     await stagePackage(source, staged, manifest, helpers)
@@ -766,11 +767,16 @@ test("the platform package tarball carries all four native helpers", async () =>
     const file = resolve(directory, packed[0]?.filename ?? packed.filename)
     const entries = execFileSync("tar", ["-tzf", file], { encoding: "utf8" }).split("\n")
     execFileSync("tar", ["-xzf", file, "-C", directory])
-    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
-      assert.ok(entries.includes(`package/bin/${platform}/smithers-jj-export`))
-      assert.ok(statSync(join(directory, "package/bin", platform, "smithers-jj-export")).isFile())
+    for (const platform of platforms) {
+      const filename = platform === "win32-x64" ? "smithers-jj-export.exe" : "smithers-jj-export"
+      assert.ok(entries.includes(`package/bin/${platform}/${filename}`))
+      assert.ok(statSync(join(directory, "package/bin", platform, filename)).isFile())
     }
     assert.equal(await verifyPackagedNativeHelpers(join(directory, "package"), true), true)
+    const windows = join(directory, "package/bin/win32-x64/smithers-jj-export.exe")
+    assert.equal(readFileSync(windows, "utf8"), "MZwindows-fixture")
+    await rm(windows)
+    await assert.rejects(verifyPackagedNativeHelpers(join(directory, "package"), true), { code: "ENOENT" })
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

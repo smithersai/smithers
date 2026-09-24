@@ -18,6 +18,7 @@ import { basename, join, relative, resolve, sep } from "node:path"
 import { libraryPackages, packageKey, isMain, repoRoot } from "./workspace-packages.mjs"
 import { assertPackedExportTargets } from "./packed-export-targets.mjs"
 import { buildRelease } from "./build-release.mjs"
+import { nativeHelperFiles } from "./release-native-helpers.mjs"
 
 /**
  * Every group a workspace manifest may declare, and the groups the 1.0 release
@@ -481,12 +482,12 @@ export const copyFilter = (packageRoot, manifest) => (source) => {
 export const stagePackage = async (packageRoot, stagedPackage, manifest, nativeHelpersRoot = process.env.SMITHERS_NATIVE_HELPERS_DIR) => {
   await cp(packageRoot, stagedPackage, { recursive: true, filter: copyFilter(packageRoot, manifest) })
   if (manifest.name === "@smthrs/platform-node" && nativeHelpersRoot) {
-    for (const platform of ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"]) {
-      const source = join(nativeHelpersRoot, platform, "smithers-jj-export")
+    for (const [platform, filename] of nativeHelperFiles) {
+      const source = join(nativeHelpersRoot, platform, filename)
       await access(source)
       const destination = join(stagedPackage, "bin", platform)
       await mkdir(destination, { recursive: true })
-      await cp(source, join(destination, "smithers-jj-export"))
+      await cp(source, join(destination, filename))
     }
   }
   await writeFile(join(stagedPackage, "package.json"), `${JSON.stringify(publicationManifest(manifest), null, 2)}\n`)
