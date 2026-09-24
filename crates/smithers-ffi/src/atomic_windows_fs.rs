@@ -323,15 +323,16 @@ pub(super) fn run(
             if operation == "exists" {
                 return Ok(json!(true));
             }
-            let stat = metadata.stat_json()?;
             if operation == "stat" {
-                return Ok(stat);
+                return metadata.stat_json();
             }
-            let mut path = PathBuf::from(boundary);
-            for part in parts {
-                path.push(part);
-            }
-            Ok(json!(path.to_string_lossy()))
+            let canonical = if parts.is_empty() {
+                root.canonical_path(None)?
+            } else {
+                let (directory, name) = parent(&root, request, path, false)?;
+                directory.canonical_path(Some(name))?
+            };
+            Ok(json!(canonical))
         }
         "readFile" | "readFileString" => {
             let path = field(request, "path")?;
@@ -420,7 +421,12 @@ pub(super) fn run(
             let (dir, name) = parent(&root, request, path, recursive)?;
             match dir.create_private_directory(name) {
                 Ok(_) => {}
-                Err(failure) if recursive && code(&failure) == "EEXIST" => {
+                Err(failure) if matches!(code(&failure), "EEXIST" | "ENOTDIR") => {
+                    let existing = dir.metadata(name)?;
+                    reject_link(&existing)?;
+                    if existing.basic.FileAttributes & FILE_ATTRIBUTE_DIRECTORY == 0 || !recursive {
+                        return Err(error("EEXIST", "entry already exists"));
+                    }
                     dir.child(name)?;
                 }
                 Err(failure) => return Err(failure),
@@ -677,9 +683,18 @@ mod tests {
             fixture.execute(fixture.request("stat", "nested/deeper/note.txt"))["size"],
             "6"
         );
+        let native = std::process::Command::new("node")
+            .args([
+                "-e",
+                "console.log(JSON.stringify(require('node:fs').realpathSync(process.argv[1])))",
+            ])
+            .arg(fixture.root.join("nested/deeper/note.txt"))
+            .output()
+            .unwrap();
+        assert!(native.status.success());
         assert_eq!(
             fixture.execute(fixture.request("realPath", "nested/deeper/note.txt")),
-            json!(fixture.root.join("nested").join("deeper").join("note.txt"))
+            serde_json::from_slice::<Value>(&native.stdout).unwrap()
         );
         let mut bytes = fixture.request("writeFile", "bytes");
         bytes["data"] = json!("AQID");
@@ -739,6 +754,18 @@ mod tests {
         remove["options"] = json!({"recursive":true});
         fixture.execute(remove);
         assert!(!fixture.root.join("nested").exists());
+    }
+
+    #[test]
+    fn recursive_directory_creation_reports_an_existing_regular_file() {
+        let fixture = Fixture::new();
+        fs::write(fixture.root.join("file"), b"retained").unwrap();
+        for recursive in [false, true] {
+            let mut request = fixture.request("makeDirectory", "file");
+            request["options"] = json!({"recursive":recursive});
+            assert_eq!(fixture.refusal(request)["code"], "EEXIST");
+        }
+        assert_eq!(fs::read(fixture.root.join("file")).unwrap(), b"retained");
     }
 
     #[test]

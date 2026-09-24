@@ -28,11 +28,11 @@ use windows_sys::Win32::Security::Authorization::{
 use windows_sys::Win32::Security::{GetTokenInformation, TokenUser, PSID, TOKEN_QUERY, TOKEN_USER};
 use windows_sys::Win32::Storage::FileSystem::{
     FileBasicInfo, FileStandardInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
-    GetFileType, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_BASIC_INFO, FILE_GENERIC_READ,
-    FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_TRAVERSE,
-    FILE_TYPE_DISK, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE,
+    GetFileType, GetFinalPathNameByHandleW, BY_HANDLE_FILE_INFORMATION, DELETE,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_READONLY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_BASIC_INFO, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_LIST_DIRECTORY,
+    FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_STANDARD_INFO, FILE_TRAVERSE, FILE_TYPE_DISK, FILE_WRITE_ATTRIBUTES, SYNCHRONIZE,
 };
 use windows_sys::Win32::System::Ioctl::FSCTL_GET_REPARSE_POINT;
 use windows_sys::Win32::System::SystemServices::{
@@ -296,6 +296,12 @@ pub(super) struct Info {
 }
 
 impl Info {
+    pub(super) fn identity(&self) -> String {
+        let inode =
+            (u64::from(self.file.nFileIndexHigh) << 32) | u64::from(self.file.nFileIndexLow);
+        format!("{}:{inode}", self.file.dwVolumeSerialNumber)
+    }
+
     pub(super) fn fingerprint(&self) -> [i128; 9] {
         [
             self.file.dwVolumeSerialNumber as i128,
@@ -330,13 +336,17 @@ impl Info {
         // FILETIME is a count of 100 ns intervals since 1601-01-01. Subtract
         // the epoch before converting to floating point to retain precision.
         let millis = |ticks: i64| (ticks as i128 - 116_444_736_000_000_000i128) as f64 / 10_000.0;
+        let inode =
+            (u64::from(self.file.nFileIndexHigh) << 32) | u64::from(self.file.nFileIndexLow);
         Ok(serde_json::json!({
             "type": if directory { "Directory" } else { "File" },
             "mtime": millis(self.basic.LastWriteTime),
             "atime": millis(self.basic.LastAccessTime),
             "birthtime": millis(self.basic.CreationTime),
             "dev": self.file.dwVolumeSerialNumber,
-            "ino": (u64::from(self.file.nFileIndexHigh) << 32) | u64::from(self.file.nFileIndexLow),
+            // Effect's optional numeric inode cannot represent every NTFS ID.
+            // Root identity remains an exact decimal string via identity().
+            "ino": (inode <= 9_007_199_254_740_991).then_some(inode),
             "mode": mode,
             "nlink": self.standard.NumberOfLinks,
             "uid": 0, "gid": 0, "rdev": 0,
@@ -545,9 +555,51 @@ impl Directory {
     }
 
     pub(super) fn identity(&self) -> io::Result<String> {
-        let info = info(&self.0)?.file;
-        let index = (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow);
-        Ok(format!("{}:{index}", info.dwVolumeSerialNumber))
+        Ok(info(&self.0)?.identity())
+    }
+
+    /// Canonical names come from the pinned handle, including long-name
+    /// expansion of DOS 8.3 aliases. No absolute path is reopened.
+    pub(super) fn canonical_path(&self, name: Option<&OsStr>) -> io::Result<String> {
+        let file = match name {
+            Some(name) => open(Some(&self.0), name_units(name)?, 0, false, false)?,
+            None => self.0.try_clone()?,
+        };
+        info(&file)?.stat_json()?;
+        // SAFETY: a zero-length buffer queries the required UTF-16 capacity.
+        let size =
+            unsafe { GetFinalPathNameByHandleW(file.as_raw_handle(), ptr::null_mut(), 0, 0) };
+        if size == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if size > 32_768 {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        let mut buffer = vec![0u16; size as usize + 1];
+        // SAFETY: buffer has the advertised capacity and the file stays open.
+        let length = unsafe {
+            GetFinalPathNameByHandleW(
+                file.as_raw_handle(),
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                0,
+            )
+        };
+        if length == 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if length as usize >= buffer.len() {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        let path = String::from_utf16(&buffer[..length as usize])
+            .map_err(|_| io::ErrorKind::InvalidData)?;
+        if let Some(unc) = path.strip_prefix("\\\\?\\UNC\\") {
+            return Ok(format!("\\\\{unc}"));
+        }
+        let path = path
+            .strip_prefix("\\\\?\\")
+            .ok_or(io::ErrorKind::InvalidData)?;
+        Ok(path.to_owned())
     }
 
     pub(super) fn metadata(&self, name: &OsStr) -> io::Result<Info> {
@@ -1195,6 +1247,53 @@ mod tests {
     }
 
     #[test]
+    fn canonical_names_come_from_handles_instead_of_the_callers_spelling() {
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = temporary.path().join("CanonicalDirectory");
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("Mémoire.txt"), b"canonical").unwrap();
+        let root = Directory::root(&temporary.path().join("canonicaldirectory")).unwrap();
+        for (name, expected) in [
+            (None, directory.clone()),
+            (
+                Some(OsStr::new("mémoire.txt")),
+                directory.join("Mémoire.txt"),
+            ),
+        ] {
+            let native = std::process::Command::new("node")
+                .args([
+                    "-e",
+                    "console.log(JSON.stringify(require('node:fs').realpathSync(process.argv[1])))",
+                ])
+                .arg(expected)
+                .output()
+                .unwrap();
+            assert!(native.status.success());
+            let expected: String = serde_json::from_slice(&native.stdout).unwrap();
+            assert_eq!(root.canonical_path(name).unwrap(), expected);
+        }
+        fs::hard_link(directory.join("Mémoire.txt"), directory.join("hard")).unwrap();
+        assert!(root.canonical_path(Some(OsStr::new("hard"))).is_err());
+    }
+
+    #[test]
+    fn optional_numeric_inodes_never_round_an_exact_root_identity() {
+        let temporary = tempfile::tempfile().unwrap();
+        let mut metadata = info(&temporary).unwrap();
+        metadata.file.dwVolumeSerialNumber = 7;
+        metadata.file.nFileIndexHigh = 0x20_0000;
+        metadata.file.nFileIndexLow = 1;
+        assert_eq!(metadata.identity(), "7:9007199254740993");
+        assert!(metadata.stat_json().unwrap()["ino"].is_null());
+        metadata.file.nFileIndexHigh = 0x1f_ffff;
+        metadata.file.nFileIndexLow = u32::MAX;
+        assert_eq!(
+            metadata.stat_json().unwrap()["ino"].as_u64(),
+            Some(9_007_199_254_740_991)
+        );
+    }
+
+    #[test]
     fn stat_fields_match_node_and_fingerprints_detect_content_changes() {
         let temp = tempfile::tempdir().unwrap();
         fs::write(temp.path().join("empty"), b"").unwrap();
@@ -1214,7 +1313,7 @@ mod tests {
                 .stat_json()
                 .unwrap();
             let output = std::process::Command::new("node").arg("-e").arg(
-                "const s=require('node:fs').lstatSync(process.argv[1]);console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:s.mtimeMs,atime:s.atimeMs,birthtime:s.birthtimeMs,dev:s.dev,ino:s.ino,mode:s.mode,nlink:s.nlink,uid:s.uid,gid:s.gid,rdev:s.rdev,size:String(s.size),blksize:String(s.blksize),blocks:s.blocks}))"
+                "const s=require('node:fs').lstatSync(process.argv[1]);console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:s.mtimeMs,atime:s.atimeMs,birthtime:s.birthtimeMs,dev:s.dev,ino:Number.isSafeInteger(s.ino)?s.ino:null,mode:s.mode,nlink:s.nlink,uid:s.uid,gid:s.gid,rdev:s.rdev,size:String(s.size),blksize:String(s.blksize),blocks:s.blocks}))"
             ).arg(temp.path().join(name)).output().unwrap();
             assert!(
                 output.status.success(),
