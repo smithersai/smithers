@@ -95,11 +95,13 @@ describe("agent step checkpoints on the real SQLite engine", () => {
       yield* Twice.execute({ input: "identical" }, { executionId: "twice" }).pipe(Effect.provide(wiring))
       const repeated = yield* facts("twice")
       expect(new Set(repeated.map((row) => row.payload.step.stepId)).size).toBe(2)
-      expect(calls).toBe(1)
+      // This agent action has no hard file boundary, so distinct invocations
+      // cannot reuse a shared result merely because their payloads match.
+      expect(calls).toBe(2)
       yield* Parallel.execute({}, { executionId: "parallel" }).pipe(Effect.provide(wiring))
       const concurrent = yield* facts("parallel")
       expect(new Set(concurrent.map((row) => row.payload.step.stepId)).size).toBe(2)
-      expect(calls).toBe(3)
+      expect(calls).toBe(4)
       for (const rows of [repeated, concurrent]) {
         for (const stepId of new Set(rows.map((row) => row.payload.step.stepId))) {
           const owned = rows.filter((row) => row.payload.step.stepId === stepId)
