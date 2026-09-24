@@ -190,7 +190,9 @@ const compile = <Body, Frame, Event, State>(
         )
       )
     )
-    const headers = yield* Effect.fromResult(publicHeaders(route.headers))
+    const headers = yield* Effect.fromResult(
+      publicHeaders({ ...route.headers, ...route.protocol.headers?.(validatedRequest) })
+    )
     const bytes = yield* Effect.try({
       try: () => CanonicalJson.bytes(body),
       catch: preparationError

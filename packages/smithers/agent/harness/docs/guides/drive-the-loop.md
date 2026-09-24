@@ -79,7 +79,9 @@ rebuilds from it.
 
 `CellTurn.teach(contextWindow, flows)` prepends the cell contract and the
 callable-flow catalog to the window as prefix segments, so the teaching is
-stable for the run and a provider's prefix cache covers it:
+stable for the run and a provider's prefix cache covers it. Every frame
+request also carries one `cacheKey` for the run, which a provider that routes
+its cache by conversation (the ChatGPT route) needs to find that prefix at all:
 
 ```ts
 const taught = CellTurn.teach(window, flows)

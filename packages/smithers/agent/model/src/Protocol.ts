@@ -28,6 +28,12 @@ export interface Protocol<Body, Frame, Event, State> {
   readonly body: ProtocolBody<Body>
   readonly stream: ProtocolStream<Frame, Event, State>
   readonly classifyError: (status: number, body: string) => ModelError
+  /**
+   * Public headers derived from one request, merged over the route's static
+   * headers. They enter the prepared request, and so the sealed-step key,
+   * exactly like the body; a credential still belongs to `Auth`.
+   */
+  readonly headers?: ((request: ModelRequest) => Readonly<Record<string, string>>) | undefined
 }
 
 /**

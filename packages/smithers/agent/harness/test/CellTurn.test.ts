@@ -7,9 +7,13 @@
  */
 import { Capability, Permission } from "@smthrs/kernel"
 import { ModelEvent, ModelRequest } from "@smthrs/model"
+import * as Auth from "@smthrs/model/Auth"
+import * as CanonicalJson from "@smthrs/model/CanonicalJson"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
+import * as Route from "@smthrs/model/Route"
 import { Descriptor } from "@smthrs/registry"
-import { Clock, Effect, Option, Result, Schema, Stream } from "effect"
+import { Clock, Effect, Option, Redacted, Result, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AgentEvent from "../src/AgentEvent.ts"
 import type * as Cell from "../src/Cell.ts"
@@ -3745,6 +3749,89 @@ describe("CellTurn context ordering", () => {
     // Everything the earlier frame showed except its own frame block is what
     // the later frame opens with, byte for byte.
     expect(wire(second).startsWith(wire(first).slice(0, wire(first).lastIndexOf("\n\n")))).toBe(true)
+  })
+
+  /** A cell reply that also carries an encrypted reasoning item, as gpt-6 on the ChatGPT route returns one. */
+  const reasoned = (cell: string, ordinal: number): ScriptedModel.Step => {
+    const signature = CanonicalJson.stringify({
+      type: "reasoning",
+      id: `rs_${ordinal}`,
+      summary: [],
+      encrypted_content: `opaque-${ordinal}`
+    })
+    const [...rest] = emits(cell).events
+    return {
+      events: [
+        ModelEvent.ModelEvent.ThinkingStart({ type: "thinking-start", id: `rs_${ordinal}:encrypted`, signature }),
+        ModelEvent.ModelEvent.ThinkingEnd({ type: "thinking-end", id: `rs_${ordinal}:encrypted` }),
+        ...rest
+      ]
+    }
+  }
+
+  /** One recorded request exactly as the ChatGPT-plan route puts it on the wire. */
+  const chatgptWire = async (request: ModelRequest.ModelRequest | undefined) => {
+    const route = Result.getOrThrow(OpenAIChatGPT.make({ auth: Auth.bearer(Redacted.make("access")) }))
+    const prepared = await Effect.runPromise(Route.prepare(route, request!))
+    return { body: JSON.parse(prepared.bodyText) as Record<string, unknown>, headers: prepared.publicHeaders }
+  }
+
+  it("serializes frame N's ChatGPT request as a strict prefix of frame N+1's, less the trailing state section", async () => {
+    // What the provider caches is the serialized body, not the ModelRequest:
+    // instructions, then input items in order, reasoning replayed byte for
+    // byte. Frame N's only volatile item is its trailing state section, so
+    // everything before it must open frame N+1 unchanged.
+    const { model } = await run({
+      script: [
+        reasoned(`console.log("alpha")`, 0),
+        reasoned(`console.log("beta")`, 1),
+        reasoned(`console.log("gamma")`, 2),
+        reasoned(`ctx.done("done")`, 3)
+      ]
+    })
+    const wires = await Promise.all(model.recorder.requests.map(chatgptWire))
+    expect(wires.length).toBe(4)
+    for (let frame = 0; frame + 1 < wires.length; frame++) {
+      const current = wires[frame]!.body
+      const next = wires[frame + 1]!.body
+      expect(next.instructions).toBe(current.instructions)
+      const input = current.input as ReadonlyArray<unknown>
+      const nextInput = next.input as ReadonlyArray<unknown>
+      const stable = input.slice(0, -1)
+      expect(nextInput.length).toBeGreaterThan(input.length)
+      expect(JSON.stringify(nextInput.slice(0, stable.length))).toBe(JSON.stringify(stable))
+    }
+    // The encrypted reasoning rides along, so the prefix above covers it.
+    expect(JSON.stringify(wires[3]!.body.input)).toContain("opaque-2")
+  })
+
+  it("keys every request of a run to one prompt cache, and a different run to another", async () => {
+    const script = [emits(`console.log("alpha")`), emits(`console.log("beta")`), emits(`ctx.done("done")`)]
+    const { model } = await run({ script })
+    const keys = model.recorder.requests.map((request) => request.cacheKey)
+    expect(keys.length).toBe(3)
+    expect(keys[0]).toMatch(/\S/)
+    expect(new Set(keys).size).toBe(1)
+    const wires = await Promise.all(model.recorder.requests.map(chatgptWire))
+    expect(new Set(wires.map((wire) => wire.body.prompt_cache_key))).toEqual(new Set([keys[0]]))
+    expect(new Set(wires.map((wire) => wire.headers["session-id"]))).toEqual(new Set([keys[0]]))
+
+    const other = await runCellTurn({
+      script,
+      state: CellTurn.make({
+        session: "session-2",
+        seat: "anthropic:test-model",
+        modelParams: ModelRequest.GenerationParams.make(),
+        layers: ["layer-a"],
+        capabilityEnvelope: [pattern("fs:read:**")],
+        placement: Option.none(),
+        contextWindow: window,
+        maxFrames: 4,
+        readOnlyCap: 0,
+        approvalChannel: false
+      })
+    })
+    expect(other.model.recorder.requests[0]?.cacheKey).not.toBe(keys[0])
   })
 
   it("serializes the stable span byte-identically across every frame of a run", async () => {

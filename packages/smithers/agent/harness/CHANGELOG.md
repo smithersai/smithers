@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Every frame request of a run carries one `cacheKey`, hashed from the
+  session and the system prefix, so a provider that routes its prompt cache by
+  conversation finds the run's cached prefix. On the ChatGPT route the run
+  read 7% of its input from cache without it.
+
 ### Changed
 
 - A settled call whose result carries the reserved `mutated: true` key (the

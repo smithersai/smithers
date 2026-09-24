@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- The ChatGPT-subscription route sends a request's new `cacheKey` as
+  `prompt_cache_key` and as the `session-id` header, as the Codex CLI does
+  with its conversation id. Without them the backend spread a run's frames
+  across machines: two Terminal-Bench trials on gpt-6-sol read 7% and 8% of
+  their input from cache against the Codex CLI's 96% and 97% on the same
+  tasks. Live on 2026-09-24, the body field alone still missed one frame in
+  three; both together cached every frame after the first. The API-key
+  Responses route sends `prompt_cache_key` too. `Protocol.headers` is the new
+  hook a protocol derives per-request public headers through.
+
 - `Evaluator.layerVercelGateway` asks again after a 429 or 503, up to
   `attempts` requests (`Evaluator.defaultAttempts`, 3) with a pause of
   `Evaluator.retryBackoffMs` (100 ms) that doubles each time. `typesafe-ai/jev`

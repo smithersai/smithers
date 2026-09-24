@@ -92,7 +92,8 @@ export const Body = Schema.Struct({
   max_output_tokens: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   top_p: Schema.optional(Schema.Finite),
-  stream: Schema.Literal(true)
+  stream: Schema.Literal(true),
+  prompt_cache_key: Schema.optional(Schema.String)
 })
 
 /**
@@ -337,7 +338,8 @@ const buildBody = (
     ...(request.params.maxTokens === undefined ? {} : { max_output_tokens: request.params.maxTokens }),
     ...(request.params.temperature === undefined ? {} : { temperature: request.params.temperature }),
     ...(request.params.topP === undefined ? {} : { top_p: request.params.topP }),
-    stream: true
+    stream: true,
+    ...(request.cacheKey === undefined ? {} : { prompt_cache_key: request.cacheKey })
   }
 }
 
@@ -872,5 +874,10 @@ export const chatgptProtocol: Protocol.Protocol<
     onHalt: finalize,
     terminal: terminalEvent
   },
-  classifyError
+  classifyError,
+  // The backend derives prompt-cache affinity from this header, not from
+  // `prompt_cache_key` alone: live on gpt-6-sol (2026-09-24) the body field
+  // without it cached one frame in three, as codex-rs `responses_session_id`
+  // warns. Codex sends its conversation id in both.
+  headers: (request) => request.cacheKey === undefined ? {} : { "session-id": request.cacheKey }
 })

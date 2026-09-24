@@ -119,6 +119,12 @@ describe("OpenAIResponses", () => {
       ]).resetAtEpochMillis
     ).toBeUndefined()
   })
+  it("sends a request's cache key as prompt_cache_key and omits the field without one", () => {
+    const keyed = Request.ModelRequest.make({ ...request(), cacheKey: "run-7" })
+    expect(body(keyed)).toMatchObject({ prompt_cache_key: "run-7" })
+    expect(body(request())).not.toHaveProperty("prompt_cache_key")
+  })
+
   it("replays text and settles exactly once", () => {
     expect(replay("text.sse")).toEqual([
       { type: "text-start", id: "msg_1" },

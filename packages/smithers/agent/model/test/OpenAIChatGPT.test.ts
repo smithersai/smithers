@@ -89,6 +89,26 @@ describe("OpenAIChatGPT.make", () => {
     expect(body).not.toHaveProperty("max_output_tokens")
   })
 
+  it("routes a conversation to one prompt cache: prompt_cache_key in the body and session-id on the wire", async () => {
+    // Live on gpt-6-sol (2026-09-24), a 6k-token prefix replayed across four
+    // frames cached 0% with no key, 95% with both, and missed again on frame 2
+    // with the body field alone: the backend derives cache affinity from the
+    // `session-id` header, as codex-rs `responses_session_id` says.
+    const first = await prepared(request({ cacheKey: "run-7" }))
+    const second = await prepared(request({ cacheKey: "run-7", messages: [ModelRequest.Message.user("next")] }))
+
+    expect(JSON.parse(first.bodyText).prompt_cache_key).toBe("run-7")
+    expect(first.publicHeaders["session-id"]).toBe("run-7")
+    expect(JSON.parse(second.bodyText).prompt_cache_key).toBe("run-7")
+    expect(second.publicHeaders["session-id"]).toBe("run-7")
+  })
+
+  it("sends no cache identity for a request that names none", async () => {
+    const view = await prepared(request())
+    expect(JSON.parse(view.bodyText)).not.toHaveProperty("prompt_cache_key")
+    expect(view.publicHeaders).not.toHaveProperty("session-id")
+  })
+
   it("asks for no reasoning at all when the request names no effort", async () => {
     const body = JSON.parse((await prepared(request())).bodyText)
     expect(body).not.toHaveProperty("reasoning")

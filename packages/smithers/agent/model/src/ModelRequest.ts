@@ -476,7 +476,19 @@ export class ModelRequest extends Schema.Class<ModelRequest>("flows/model/ModelR
   messages: Schema.Array(Message),
   tools: Schema.Array(ToolDefinition),
   params: GenerationParams,
-  toolChoice: Schema.optional(ToolChoice)
+  toolChoice: Schema.optional(ToolChoice),
+  /**
+   * The conversation this request continues, for providers that route by it.
+   *
+   * A prefix cache is per machine, so a provider that spreads one
+   * conversation's requests across machines re-reads the whole prefix at full
+   * price on most of them. OpenAI Responses sends this as `prompt_cache_key`,
+   * and the ChatGPT-plan backend also as the `session-id` header its cache
+   * affinity is derived from. It must be stable for every request that
+   * shares a prefix, and it never reaches the model. Protocols without such a
+   * field ignore it.
+   */
+  cacheKey: Schema.optional(Schema.String)
 }) {
   /** @category constructors @since 0.1.0 */
   static override make(input: ModelRequest | ConstructorParameters<typeof ModelRequest>[0]): ModelRequest {

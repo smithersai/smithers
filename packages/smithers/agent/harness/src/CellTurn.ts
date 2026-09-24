@@ -1164,10 +1164,26 @@ const requestFrom = (
       // and `ctx.call` is the only invocation path.
       tools: [],
       toolChoice: "none",
-      params: state.modelParams
+      params: state.modelParams,
+      cacheKey: cacheKey(state, rendered.system)
     })
   )
 }
+
+/**
+ * The prompt-cache identity every frame of one run shares.
+ *
+ * A provider that spreads a conversation across machines only finds its
+ * cached prefix on the machine that saw it last, and the ChatGPT-plan route
+ * routes by this key: without it two Terminal-Bench trials on gpt-6-sol read
+ * 7% and 8% of their input from cache where the Codex CLI, sending its
+ * conversation id, read 96% and 97% of the same tasks. The session alone is
+ * `run-1` in every fresh store, so the system prefix (teaching and task) is
+ * hashed in to keep unrelated runs apart; a frame whose system changed has
+ * no cached prefix to find anyway.
+ */
+const cacheKey = (state: State, system: ReadonlyArray<ModelRequest.SystemPart>): string =>
+  `smithers-${CanonicalJson.shortHash(`${state.session}\n${system.map((part) => part.text).join("\n")}`)}`
 
 const assistantText = (message: ModelRequest.AssistantMessage): string =>
   message.content
