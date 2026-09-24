@@ -728,7 +728,7 @@ mod tests {
             let result = fixture.execute(request);
             match operation {
                 "realPath" => assert_eq!(result, canonical),
-                "readFileString" => assert_eq!(result, "Hello!"),
+                "readFileString" => assert_eq!(result["base64"], "SGVsbG8h"),
                 _ => assert_eq!(result["size"], "6"),
             }
         }
