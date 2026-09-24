@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url"
 import { PackagedFixtureRun } from "./FixtureRun"
 import { findMountedProductionAppExecutable, findProductionAppExecutable } from "./PackagedApp"
 
-const UI_DIRECTORY = fileURLToPath(new URL("../../", import.meta.url))
-const ROOT_DIRECTORY = resolve(UI_DIRECTORY, "../..")
+const APP_DIRECTORY = fileURLToPath(new URL("../../", import.meta.url))
+const ROOT_DIRECTORY = resolve(APP_DIRECTORY, "../..")
 const timestamp = new Date().toISOString().replaceAll(/[:.]/g, "-")
 let activeChild: ReturnType<typeof Bun.spawn> | undefined
 let interrupted: NodeJS.Signals | undefined
@@ -28,7 +28,7 @@ const run = async (
 ): Promise<void> => {
   console.log(`[packaged-e2e] ${label}: ${argv.join(" ")}`)
   const child = Bun.spawn([...argv], {
-    cwd: options.cwd ?? UI_DIRECTORY,
+    cwd: options.cwd ?? APP_DIRECTORY,
     env: { ...process.env, ...options.env },
     stdout: "inherit",
     stderr: "inherit"
@@ -48,41 +48,42 @@ const copyOnWriteDirectory = async (source: string, destination: string): Promis
   })
 }
 
-export const stagePackageProject = async (): Promise<{
+export const stagePackageProject = async (repositoryRoot = ROOT_DIRECTORY): Promise<{
   readonly root: string
-  readonly ui: string
+  readonly app: string
   readonly hutchHome: string
 }> => {
+  const sourceApp = join(repositoryRoot, "apps", "app")
   const root = await mkdtemp(join(tmpdir(), `smithers-electrobun-package-${process.pid}-`))
   try {
     const workspace = join(root, "workspace")
-    const ui = join(workspace, "apps", "ui")
+    const app = join(workspace, "apps", "app")
     await mkdir(join(workspace, "apps"), { recursive: true })
     const excluded = new Set([".hutch", "artifacts", "build", "node_modules", "test-results"])
-    await cp(UI_DIRECTORY, ui, {
+    await cp(sourceApp, app, {
       recursive: true,
       mode: constants.COPYFILE_FICLONE,
       filter: (source) => {
-        const path = relative(UI_DIRECTORY, source)
+        const path = relative(sourceApp, source)
         const top = path.split(sep)[0]
         return path === "" || top === undefined || !excluded.has(top)
       }
     })
-    await symlink(join(UI_DIRECTORY, "node_modules"), join(ui, "node_modules"), "dir")
+    await symlink(join(sourceApp, "node_modules"), join(app, "node_modules"), "dir")
 
     // Preserve pnpm's real workspace view without copying or mutating sibling
     // packages. In particular, verifyDepsBeforeRun=false prevents Hutch's
     // package hook from trying to install a standalone app with workspace: deps.
     for (const file of ["package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "bun.lock"]) {
-      await cp(join(ROOT_DIRECTORY, file), join(workspace, file))
+      await cp(join(repositoryRoot, file), join(workspace, file))
     }
-    await symlink(join(ROOT_DIRECTORY, "node_modules"), join(workspace, "node_modules"), "dir")
+    await symlink(join(repositoryRoot, "node_modules"), join(workspace, "node_modules"), "dir")
     for (const directory of ["packages", "flows", "e2e", "examples", "patches"]) {
-      await symlink(join(ROOT_DIRECTORY, directory), join(workspace, directory), "dir")
+      await symlink(join(repositoryRoot, directory), join(workspace, directory), "dir")
     }
-    for (const entry of await readdir(join(ROOT_DIRECTORY, "apps"), { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name === "ui") continue
-      await symlink(join(ROOT_DIRECTORY, "apps", entry.name), join(workspace, "apps", entry.name), "dir")
+    for (const entry of await readdir(join(repositoryRoot, "apps"), { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === "app") continue
+      await symlink(join(repositoryRoot, "apps", entry.name), join(workspace, "apps", entry.name), "dir")
     }
 
     // Hutch serializes access to its global release graph. Copy-on-write clones
@@ -94,7 +95,7 @@ export const stagePackageProject = async (): Promise<{
     for (const directory of ["releases", "toolchains", "npm"]) {
       await copyOnWriteDirectory(join(sharedHutchHome, directory), join(hutchHome, directory))
     }
-    return { root, ui, hutchHome }
+    return { root, app, hutchHome }
   } catch (error) {
     try {
       await cleanupStage(root)
@@ -136,7 +137,7 @@ const main = async (): Promise<void> => {
   }
 
   const artifacts = resolve(
-    process.env.SMITHERS_E2E_ARTIFACTS ?? join(UI_DIRECTORY, "test-results", "electrobun-packaged", timestamp)
+    process.env.SMITHERS_E2E_ARTIFACTS ?? join(APP_DIRECTORY, "test-results", "electrobun-packaged", timestamp)
   )
   await mkdir(artifacts, { recursive: true })
   console.log(`[packaged-e2e] artifacts: ${artifacts}`)
@@ -154,12 +155,12 @@ const main = async (): Promise<void> => {
   let installedExecutable: string | undefined
   let operationError: unknown
   try {
-    let packageDirectory = UI_DIRECTORY
+    let packageDirectory = APP_DIRECTORY
     if (suppliedExecutable === undefined && process.env.SMITHERS_E2E_SKIP_BUILD !== "1") {
       await run("project devkit", [process.execPath, "scripts/ensure-devkit.mjs"])
       await run("production web bundle", ["pnpm", "exec", "vite", "build", "--configLoader", "runner"])
       stage = await stagePackageProject()
-      packageDirectory = stage.ui
+      packageDirectory = stage.app
       console.log(`[packaged-e2e] isolated package project: ${packageDirectory}`)
       await run(
         "stable Electrobun package",
