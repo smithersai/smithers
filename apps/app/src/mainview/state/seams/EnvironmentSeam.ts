@@ -1,3 +1,4 @@
+import { actorSharedState } from "../ActorBindings"
 import { preparedView, type ViewAction } from "../PreparedView"
 /*
  * The agent-environment seam: GET/PUT /api/repos/{owner}/{repo}/
@@ -148,7 +149,7 @@ const mergeVariable = (
   [...env.filter((variable) => variable.name !== name), { name, value }].sort((a, b) => a.name.localeCompare(b.name))
 
 export const createEnvironmentSeam = (ctx: SeamContext): EnvironmentSeam => {
-  const writes = new Map<string, Promise<void>>()
+  const writes = actorSharedState(ctx, "environment-writes", () => new Map<string, Promise<void>>())
   const serialize = async <A>(repo: string, work: () => Promise<A>): Promise<A> => {
     const previous = writes.get(repo) ?? Promise.resolve()
     let release!: () => void

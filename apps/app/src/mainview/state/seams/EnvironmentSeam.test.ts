@@ -6,7 +6,8 @@ import { createAppController } from "../AppController"
 import type { AppServices } from "../AppController"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
-import { parseEnvironment } from "./EnvironmentSeam"
+import { createActorBindings } from "../ActorBindings"
+import { createEnvironmentSeam, parseEnvironment } from "./EnvironmentSeam"
 
 /*
  * The agent-environment seam (EnvironmentSeam.ts) through the real command
@@ -363,4 +364,30 @@ describe("parseEnvironment: secret metadata", () => {
     expect(parseEnvironment({ ...document, secrets: [{ hosts: [] }] })).toBeNull()
     expect(parseEnvironment({ setup_script: "", env: [] })).toBeNull()
   })
+})
+
+
+test("user and agent environment writes share the repository queue", async () => {
+  const backend = envBackend()
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  await ready(store)
+  const actors = createActorBindings(() => {})
+  let ordinal = 0
+  const seam = actors.pair({
+    store, baseUrl: "", actor: () => "user" as const,
+    dispatch: store.dispatch,
+    nextOrdinal: () => ++ordinal,
+    http: (input: string, init?: RequestInit) => backend.services.fetchImpl!(input, init)
+  }, createEnvironmentSeam)
+  try {
+    await Promise.all([
+      seam.setEnvironmentVar("USER=1", "will/flows"),
+      actors.select(seam.setEnvironmentVar)("AGENT=2", "will/flows")
+    ])
+    const writes = backend.requests.filter(request => request.method === "PUT")
+    expect(writes).toHaveLength(2)
+    expect(writes[1]?.body).toMatchObject({ env: [
+      { name: "AGENT", value: "2" }, { name: "CI", value: "1" }, { name: "USER", value: "1" }
+    ] })
+  } finally { await store.dispose?.() }
 })
