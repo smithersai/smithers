@@ -3629,6 +3629,9 @@ importers:
       alchemy:
         specifier: 2.0.0-beta.76
         version: 2.0.0-beta.76(patch_hash=c73634eec1d8299d1185ea387474db9bf2822150b3589dd26e01002e50df6293)(@effect/platform-bun@4.0.0-rc.115(effect@4.0.0-rc.115))(@effect/platform-node@4.0.0-rc.115(effect@4.0.0-rc.115)(redis@6.2.1(@opentelemetry/api@1.9.1)))(@types/node@26.4.1)(@types/react@19.2.18)(effect@4.0.0-rc.115)(react-devtools-core@7.0.1)(typescript@5.9.3)(vite@8.2.2(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))(vitest@5.0.0)(ws@8.21.3)
+      aws4fetch:
+        specifier: 1.0.20
+        version: 1.0.20
       dprint:
         specifier: 0.55.2
         version: 0.55.2

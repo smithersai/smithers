@@ -5,13 +5,25 @@ import { tmpdir } from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest"
-import { deploy, resolveDeployOptions } from "./deploy.ts"
+import { stateSyncVariable } from "../deployment.ts"
+import { deploy as deployWrapper, type DeployOptions, resolveDeployOptions } from "./deploy.ts"
 import { defaultStateDirectory, redactAlchemyState } from "./redact-state.ts"
+import { memoryStateBucket, type StateBucket } from "./remote-state.ts"
 import { acquireStateOwnership } from "./state-ownership.ts"
 
 const infraRoot = NodePath.resolve(fileURLToPath(new URL("..", import.meta.url).href))
 
 let directory: string
+
+/**
+ * The wrapper under test, against an in-memory state bucket unless a test
+ * names its own, so no test reaches the production R2 bucket.
+ */
+const deploy = (args: ReadonlyArray<string>, options: DeployOptions): Promise<number> =>
+  deployWrapper(args, {
+    remoteState: async () => ({ bucket: memoryStateBucket(), key: "alchemy/Test.json" }),
+    ...options
+  })
 
 const script = (name: string): string => NodePath.join(directory, `${name}.mjs`)
 
@@ -43,6 +55,23 @@ beforeAll(async () => {
   // temporary directory is one, so the fixture is its resolved path.
   directory = await realpath(await mkdtemp(NodePath.join(tmpdir(), "smithers-deploy-")))
   await write("exit-zero", "process.exit(0)\n")
+  // Records what Alchemy would see, then writes the state a deployment leaves.
+  // argv[4] is the state directory, argv[5] the exit code.
+  await write(
+    "writes-state",
+    `import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
+const state = process.argv[4]
+const pulled = join(state, "prod", "CacheWorker.json")
+writeFileSync(join(state, "..", "seen.json"), JSON.stringify({
+  synced: process.env[${JSON.stringify(stateSyncVariable)}],
+  pulled: existsSync(pulled) ? readFileSync(pulled, "utf8") : null
+}))
+mkdirSync(join(state, "prod"), { recursive: true })
+writeFileSync(pulled, JSON.stringify({ deployed: true }))
+process.exit(Number(process.argv[5] ?? "0"))
+`
+  )
   await write("exit-seven", "process.exit(7)\n")
   // Records the argv the wrapper hands Alchemy, after the script path.
   await write(
@@ -198,23 +227,32 @@ describe("deploy wrapper", () => {
 
   it("loads the stack and stops at its own configuration on a dry run", () => {
     const { cli, cwd } = resolveDeployOptions({})
-    const env: NodeJS.ProcessEnv = { ...process.env, CI: "1", NO_TRACK: "1" }
+    const env: NodeJS.ProcessEnv = { ...process.env, CI: "1", NO_TRACK: "1", [stateSyncVariable]: "1" }
     // Without the cache credentials the stack refuses before any provider call.
     delete env.SMITHERS_CACHE_READ_TOKEN
     delete env.SMITHERS_CACHE_WRITE_TOKEN
-    const dryRun = spawnSync(process.execPath, [cli, "deploy", "alchemy.run.ts", "--dry-run", "--stage", "test"], {
-      cwd,
-      encoding: "utf8",
-      timeout: 60_000,
-      env
-    })
-    const output = `${dryRun.stdout}${dryRun.stderr}`
+    const dryRun = (runEnv: NodeJS.ProcessEnv): string => {
+      const run = spawnSync(process.execPath, [cli, "deploy", "alchemy.run.ts", "--dry-run", "--stage", "test"], {
+        cwd,
+        encoding: "utf8",
+        timeout: 60_000,
+        env: runEnv
+      })
+      return `${run.stdout}${run.stderr}`
+    }
+    const output = dryRun(env)
 
     expect(output).not.toMatch(/is not a function|Cannot find module|ERR_MODULE_NOT_FOUND|SyntaxError/)
     expect(output).toContain("SMITHERS_CACHE_READ_TOKEN")
-  }, 70_000)
 
-  it("drives the pinned Alchemy CLI from this directory and redacts real state by default", () => {
+    // Run directly rather than through the wrapper, the stack refuses before
+    // it reads local state that was never synced with R2.
+    const direct = { ...env }
+    delete direct[stateSyncVariable]
+    expect(dryRun(direct)).toContain(`${stateSyncVariable} is not set`)
+  }, 120_000)
+
+  it("drives the pinned Alchemy CLI from this directory and redacts real state by default", async () => {
     const resolved = resolveDeployOptions({})
 
     expect(resolved.cli).toBe(NodePath.join(infraRoot, "node_modules", "alchemy", "bin", "cli.js"))
@@ -222,6 +260,14 @@ describe("deploy wrapper", () => {
     expect(resolved.cwd).toBe(infraRoot)
     expect(resolved.stateDirectory).toBe(defaultStateDirectory)
     expect(resolved.redact).toBe(redactAlchemyState)
+    // By default the durable state is the production R2 bucket, reached with
+    // the deploying shell's Cloudflare credentials.
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "")
+    try {
+      await expect(resolved.remoteState()).rejects.toThrow("CLOUDFLARE_API_TOKEN is required")
+    } finally {
+      vi.unstubAllEnvs()
+    }
     expect(resolveDeployOptions({ stateDirectory: "state" }).stateDirectory).toBe("state")
     expect(resolved.escalationDelayMs).toBe(10_000)
     expect(resolveDeployOptions({ cli: "cli", cwd: "cwd", escalationDelayMs: 1 }).escalationDelayMs).toBe(1)
@@ -676,4 +722,137 @@ describe("deploy wrapper", () => {
       stdout.mockRestore()
     }
   }, 30_000)
+})
+
+describe("deploy wrapper remote state", () => {
+  const snapshotOf = (files: Record<string, string>): string =>
+    JSON.stringify({ format: "smithers-alchemy-state/1", files }, null, 2)
+
+  const run = async (
+    bucket: StateBucket,
+    exitCode: string,
+    extra: DeployOptions = {}
+  ): Promise<{ code: number; seen: { synced?: string; pulled: string | null } | undefined; stderr: string }> => {
+    const root = await realpath(await mkdtemp(NodePath.join(directory, "remote-")))
+    const state = NodePath.join(root, "state")
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+    const errors: Array<string> = []
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      errors.push(String(chunk))
+      return true
+    })
+    try {
+      const code = await deployWrapper([state, exitCode], {
+        cli: script("writes-state"),
+        cwd: directory,
+        stateDirectory: state,
+        redact: async () => 0,
+        remoteState: async () => ({ bucket, key: "alchemy/Test.json" }),
+        ...extra
+      })
+      const seenFile = NodePath.join(root, "seen.json")
+      return {
+        code,
+        seen: existsSync(seenFile) ? JSON.parse(readFileSync(seenFile, "utf8")) : undefined,
+        stderr: errors.join("")
+      }
+    } finally {
+      stdout.mockRestore()
+      stderr.mockRestore()
+    }
+  }
+
+  it("pulls production state before Alchemy runs and publishes what it wrote", async () => {
+    const bucket = memoryStateBucket()
+    await bucket.put("alchemy/Test.json", snapshotOf({ "prod/CacheWorker.json": `{"live":true}` }), { ifAbsent: true })
+
+    const { code, seen } = await run(bucket, "0")
+
+    expect(code).toBe(0)
+    expect(seen).toEqual({ synced: "1", pulled: `{"live":true}` })
+    expect(JSON.parse(bucket.objects.get("alchemy/Test.json")!.body).files).toEqual({
+      "prod/CacheWorker.json": `{"deployed":true}`
+    })
+    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+  })
+
+  it("publishes the state a failed run left, because only it records what was created", async () => {
+    const bucket = memoryStateBucket()
+
+    const { code } = await run(bucket, "7")
+
+    expect(code).toBe(7)
+    expect(bucket.objects.has("alchemy/Test.json")).toBe(true)
+    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+  })
+
+  it("refuses to start Alchemy while another deployment holds the remote lock", async () => {
+    const bucket = memoryStateBucket()
+    await bucket.put("alchemy/Test.json.lock", JSON.stringify({ host: "ci", pid: 9, startedAt: "then" }), {
+      ifAbsent: true
+    })
+
+    const { code, seen, stderr } = await run(bucket, "0")
+
+    expect(code).toBe(1)
+    expect(seen).toBeUndefined()
+    expect(stderr).toContain("locked by ci pid 9")
+    expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
+  })
+
+  it("refuses to start Alchemy when R2 cannot be reached, and frees local ownership", async () => {
+    const bucket = memoryStateBucket()
+    const { code, seen, stderr } = await run(bucket, "0", {
+      remoteState: async () => {
+        throw new Error("CLOUDFLARE_API_TOKEN is required to reach the R2 state bucket")
+      }
+    })
+
+    expect(code).toBe(1)
+    expect(seen).toBeUndefined()
+    expect(stderr).toContain("CLOUDFLARE_API_TOKEN is required")
+  })
+
+  it("never publishes state that failed redaction", async () => {
+    const bucket = memoryStateBucket()
+
+    const { code } = await run(bucket, "0", {
+      redact: async () => {
+        throw new Error("redaction refused")
+      }
+    })
+
+    expect(code).toBe(1)
+    expect(bucket.objects.has("alchemy/Test.json")).toBe(false)
+    expect(bucket.objects.has("alchemy/Test.json.lock")).toBe(false)
+  })
+
+  it("fails the run when remote state changed underneath it", async () => {
+    const bucket = memoryStateBucket()
+    const racing: StateBucket = {
+      ...bucket,
+      put: async (key, body, condition) => key.endsWith(".lock") ? bucket.put(key, body, condition) : false
+    }
+
+    const { code, stderr } = await run(racing, "0")
+
+    expect(code).toBe(1)
+    expect(stderr).toContain("Remote Alchemy state was not published")
+    expect(stderr).toContain("changed during this deployment")
+  })
+
+  it("fails the run when the remote lock cannot be released", async () => {
+    const bucket = memoryStateBucket()
+    const stuck: StateBucket = {
+      ...bucket,
+      delete: async () => {
+        throw new Error("R2 state DELETE answered 500")
+      }
+    }
+
+    const { code, stderr } = await run(stuck, "0")
+
+    expect(code).toBe(1)
+    expect(stderr).toContain("R2 state DELETE answered 500")
+  })
 })

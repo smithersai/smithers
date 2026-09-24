@@ -26,6 +26,7 @@ import {
   minCacheTokenBytes,
   retentionCron,
   stackName,
+  stateSyncVariable,
   workerCompatibilityDate,
   workerEntry,
   workerObservability,
@@ -47,10 +48,22 @@ const configured = (value: string): Promise<string> =>
     )
   )
 
-/** Runs `effect` against a deploying shell that exported the two credentials. */
-const deployed = <A, E>(effect: Effect.Effect<A, E>, read: string, write: string): Promise<A> =>
+/**
+ * Runs `effect` against a deploying shell that exported the two credentials,
+ * under the deploy wrapper unless `synced` is false.
+ */
+const deployed = <A, E>(effect: Effect.Effect<A, E>, read: string, write: string, synced = true): Promise<A> =>
   Effect.runPromise(
-    Effect.provide(effect, ConfigProvider.layer(ConfigProvider.fromUnknown({ [readToken]: read, [writeToken]: write })))
+    Effect.provide(
+      effect,
+      ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          [readToken]: read,
+          [writeToken]: write,
+          ...(synced ? { [stateSyncVariable]: "1" } : {})
+        })
+      )
+    )
   )
 
 const distinct = {
@@ -345,6 +358,13 @@ describe("cache credential verification", () => {
     const equal = "one-credential-wearing-two-names"
 
     await expect(deployed(program, equal, equal)).rejects.toThrow("must differ")
+    expect(touched).toEqual([])
+
+    // Alchemy run directly, without the wrapper's R2 state sync, would plan
+    // against whatever local state this machine has and fork production.
+    await expect(deployed(program, distinct.read, distinct.write, false)).rejects.toThrow(
+      `${stateSyncVariable} is not set`
+    )
     expect(touched).toEqual([])
 
     await expect(deployed(program, distinct.read, distinct.write)).resolves.toEqual({

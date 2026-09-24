@@ -40,9 +40,9 @@ Provide these credentials in the deploying shell:
   value shorter than 32 or longer than 4096 printable ASCII bytes, one with a
   space, or one drawn from a single character class (only digits, only
   lowercase, only uppercase, or only punctuation). The Worker receives only
-  their SHA-256 digests, which are unsalted and live in `.alchemy/` state and
-  in the Worker's secret binding, so a guessable value is recoverable offline
-  from either copy; do not put a bearer value in an `.env` file or source
+  their SHA-256 digests, which are unsalted and live in Alchemy state (the
+  local `.alchemy/` copy and its R2 snapshot) and in the Worker's secret
+  binding, so a guessable value is recoverable offline from any copy; do not put a bearer value in an `.env` file or source
   control. Both are required and they must differ. The deployment reads the pair before it
   applies any resource and fails when either is missing or the two are equal,
   because one value under two names lets every reader publish. To roll the
@@ -64,23 +64,57 @@ export SMITHERS_CACHE_READ_TOKEN="$(openssl rand -hex 32)"
 export SMITHERS_CACHE_WRITE_TOKEN="$(openssl rand -hex 32)"
 ```
 
+Production already runs with one pair. The GitHub repository secrets
+`SMITHERS_CACHE_READ_TOKEN` and `SMITHERS_CACHE_WRITE_TOKEN` hold it, and
+GitHub never returns their values, so keep the pair in your own secret store.
+A redeploy either exports that same pair or rotates both: mint a new pair,
+deploy, then `gh secret set` both repository secrets. A deploy with a new pair
+and no secret update leaves CI with credentials the Worker refuses.
+
 The Cloudflare account must already contain the `smithers.sh` zone. The API
 token or OAuth grant needs permission to manage Workers, D1, R2, and the
 Worker custom domain in that zone.
 
-The stack uses Alchemy's local state backend under `.alchemy/`. Keep that
-ignored directory available to the deployment operator so later plans can
-compare against the resources already deployed. This avoids requiring the
-account-wide Cloudflare Secrets Store permissions needed by
-`Cloudflare.state()`. The repository's deploy scripts also run
-`scripts/redact-state.ts`, including after a failed Alchemy command. Redaction
-fails closed: a credential binding may hold the redaction sentinel or a
-verifier derived from a currently configured bearer, every other value is
+### Where the state lives
+
+Alchemy knows which physical Worker, D1 database, and R2 bucket belong to this
+stack only through its state. Lose the state and the next deploy creates a
+second production beside the first. The durable copy of the state is therefore
+one object in R2, `smithers-build-infra-state/alchemy/SmithersBuildRemoteCache.json`,
+and the ignored `.alchemy/` directory is a working copy of it.
+
+`scripts/deploy.ts` owns the round trip. Before Alchemy starts it takes a lock
+object (the state key with `.lock` appended) with a conditional write, and
+pulls the snapshot over the local state directory. After Alchemy exits it
+redacts, then publishes the snapshot back with a compare-and-swap on the
+version it pulled, whether or not Alchemy succeeded, because a failed run can
+still have created resources that only its state records. It then deletes the
+lock. A held lock, an unreachable bucket, or a snapshot that changed during the
+run fails the command and names the cause. A lock left by a killed deployment
+names its host and process id; delete that object only once that process is
+gone.
+
+The wrapper reaches R2 through its S3 API with credentials derived from
+`CLOUDFLARE_API_TOKEN` (the token id and the SHA-256 of its value), so it needs
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` and no second secret.
+Cloudflare's REST object API ignores conditional headers, so it cannot hold the
+lock. The shared `alchemy-state-store` Worker is not used because reading its
+bearer needs Cloudflare Secrets Store access.
+
+The stack program refuses to run unless the wrapper started it
+(`SMITHERS_BUILD_INFRA_STATE_SYNCED`), so `alchemy deploy` or `alchemy plan`
+run directly fail before they read unsynced local state. The state bucket is
+created once by hand, outside the stack, because the stack's state cannot
+record the bucket that holds it.
+
+The wrapper also runs `scripts/redact-state.ts` after every Alchemy command,
+including a failed one, and publishes nothing that failed redaction.
+Redaction fails closed: a credential binding may hold the redaction sentinel or
+a verifier derived from a currently configured bearer, every other value is
 replaced whatever its type, and a credential binding in a shape the script
 cannot read is refused rather than reported clean. A rotated-away credential
 therefore cannot survive a run that claims success. Current state contains
-only the one-way verifier. Use the scripts instead of calling `alchemy deploy`
-directly.
+only the one-way verifier.
 
 Redaction inspects every `CacheWorker.json*` file under the stack state
 directory, including Alchemy temporary siblings left by an interrupted write.
@@ -91,10 +125,11 @@ when needed, and oversized replacements are refused before publication.
 
 ## Deploy production
 
-Run both commands from `packages/smithers/build/infra`. Preview the production plan:
+Run both commands from `packages/smithers/build/infra`. Preview the production
+plan against the state pulled from R2:
 
 ```sh
-CI=1 pnpm exec alchemy plan alchemy.run.ts --stage prod
+CI=1 pnpm run plan
 ```
 
 Apply it:
@@ -338,6 +373,10 @@ good commit through the wrapper:
 2. From `packages/smithers/build/infra`, run `CI=1 pnpm run deploy --yes`.
 3. Confirm the rollback with the checks in [Verify the service](#verify-the-service).
 
+Never deploy a commit older than the one that added `scripts/remote-state.ts`.
+Its wrapper does not pull state from R2, so it plans against an empty local
+directory and creates a second production.
+
 Do not roll back with `wrangler rollback` or the Cloudflare dashboard. Either
 restores the older script while Alchemy state still describes the newer one,
 so the next plan compares against a script that is no longer live.
@@ -353,9 +392,10 @@ SIGKILL to surviving members after a bounded grace period. After interruption,
 it waits until the group is observed gone before redaction and return, even if
 the leader exits first. Windows waits for the directly signalled child.
 Ordinary command completion does not wait out the grace period. The wrapper
-runs state redaction after success, failure, or signal. Redaction uses bounded
-descriptor-stable reads and atomic durable publication; use the wrapper instead
-of invoking Alchemy deploy directly.
+runs state redaction after success, failure, or signal, then publishes the
+redacted state to R2 (see [Where the state lives](#where-the-state-lives)).
+Redaction uses bounded descriptor-stable reads and atomic durable publication;
+the stack refuses to run unless the wrapper started it.
 
 The wrapper owns the state directory for the whole run, from before Alchemy
 starts until redaction has published its last file, through a lock file

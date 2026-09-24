@@ -5,10 +5,18 @@
  */
 import { type ChildProcess, spawn } from "node:child_process"
 import * as Fs from "node:fs/promises"
+import * as NodeOs from "node:os"
 import * as NodePath from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { stateSyncVariable } from "../deployment.ts"
 import { failureMessage } from "./failure-message.ts"
 import { defaultStateDirectory, redactAlchemyState, type RedactAlchemyStateOptions } from "./redact-state.ts"
+import {
+  openRemoteState,
+  type RemoteState,
+  remoteStateFromEnvironment,
+  type RemoteStateSession
+} from "./remote-state.ts"
 import { acquireStateOwnership, type StateOwnership } from "./state-ownership.ts"
 
 const infraDirectory = NodePath.dirname(NodePath.dirname(fileURLToPath(import.meta.url)))
@@ -75,6 +83,8 @@ export interface DeployOptions {
   readonly stateDirectory?: string | undefined
   readonly redact?: ((options: RedactAlchemyStateOptions) => Promise<number>) | undefined
   readonly escalationDelayMs?: number | undefined
+  /** Where the durable copy of the state lives; defaults to the production R2 bucket. */
+  readonly remoteState?: (() => Promise<RemoteState>) | undefined
 }
 
 /**
@@ -89,11 +99,13 @@ export interface ResolvedDeployOptions {
   readonly stateDirectory: string
   readonly redact: (options: RedactAlchemyStateOptions) => Promise<number>
   readonly escalationDelayMs: number
+  readonly remoteState: () => Promise<RemoteState>
 }
 
 /**
  * Fills every omitted substitution from the production deployment: the pinned
- * Alchemy CLI, this directory, its state directory, and real state redaction.
+ * Alchemy CLI, this directory, its state directory, real state redaction, and
+ * the R2 bucket that holds the durable state.
  *
  * @category constructors
  * @since 0.1.0
@@ -103,7 +115,8 @@ export const resolveDeployOptions = (options: DeployOptions): ResolvedDeployOpti
   cwd: options.cwd ?? infraDirectory,
   stateDirectory: options.stateDirectory ?? defaultStateDirectory,
   redact: options.redact ?? redactAlchemyState,
-  escalationDelayMs: options.escalationDelayMs ?? escalationDelayMs
+  escalationDelayMs: options.escalationDelayMs ?? escalationDelayMs,
+  remoteState: options.remoteState ?? (() => remoteStateFromEnvironment())
 })
 
 const runAlchemy = (
@@ -120,7 +133,7 @@ const runAlchemy = (
       child = spawn(process.execPath, [command.cli, "deploy", "alchemy.run.ts", ...alchemyArgs], {
         cwd: command.cwd,
         detached: process.platform !== "win32",
-        env: process.env,
+        env: { ...process.env, [stateSyncVariable]: "1" },
         stdio: "inherit"
       })
     } catch (error) {
@@ -145,7 +158,16 @@ const runAlchemy = (
   })
 
 /**
- * Runs Alchemy and always scrubs legacy local state before returning.
+ * Runs Alchemy against state synced with R2, and always scrubs local state
+ * before returning.
+ *
+ * The local state directory is a working copy. Before Alchemy starts, the
+ * wrapper takes the remote lock and pulls the R2 snapshot over it; after
+ * redaction it publishes the snapshot back, conditioned on the version it
+ * pulled, whether or not Alchemy succeeded, because a failed run can still
+ * have created resources that only its state records. A held remote lock, or
+ * any failure to reach R2, refuses the run before Alchemy starts. State that
+ * failed redaction is never published.
  *
  * The wrapper owns the state directory from before Alchemy starts until
  * redaction has published its last file, so no other deployment or standalone
@@ -164,7 +186,9 @@ export const deploy = async (
   args: ReadonlyArray<string> = process.argv.slice(2),
   options: DeployOptions = {}
 ): Promise<number> => {
-  const { cli, cwd, escalationDelayMs: escalationDelay, redact, stateDirectory } = resolveDeployOptions(options)
+  const { cli, cwd, escalationDelayMs: escalationDelay, redact, remoteState, stateDirectory } = resolveDeployOptions(
+    options
+  )
   const target = { cli, cwd }
   let ownership: StateOwnership
   try {
@@ -173,6 +197,18 @@ export const deploy = async (
     await Fs.mkdir(stateDirectory, { recursive: true })
     ownership = await acquireStateOwnership(stateDirectory)
   } catch (error) {
+    process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
+    return 1
+  }
+  let remote: RemoteStateSession
+  try {
+    remote = await openRemoteState(await remoteState(), stateDirectory, {
+      host: NodeOs.hostname(),
+      pid: process.pid,
+      startedAt: new Date().toISOString()
+    })
+  } catch (error) {
+    await ownership.release()
     process.stderr.write(`Alchemy deployment refused: ${failureMessage(error)}\n`)
     return 1
   }
@@ -217,6 +253,7 @@ export const deploy = async (
   let command: CommandResult | undefined
   let commandFailure: unknown
   let redactionFailure: unknown
+  let publicationFailure: unknown
   try {
     try {
       // The handlers above are installed and the child is spawned in the
@@ -245,9 +282,23 @@ export const deploy = async (
     } catch (error) {
       redactionFailure = error
     }
+
+    if (redactionFailure === undefined) {
+      try {
+        const published = await remote.push()
+        process.stdout.write(`Remote Alchemy state ${published}.\n`)
+      } catch (error) {
+        publicationFailure = error
+      }
+    }
   } finally {
     clearEscalation()
     for (const [signal, handler] of handlers) process.off(signal, handler)
+    try {
+      await remote.release()
+    } catch (error) {
+      publicationFailure ??= error
+    }
     await ownership.release()
   }
 
@@ -257,7 +308,10 @@ export const deploy = async (
   if (redactionFailure !== undefined) {
     process.stderr.write(`Alchemy state redaction failed: ${failureMessage(redactionFailure)}\n`)
   }
-  if (command === undefined || redactionFailure !== undefined) return 1
+  if (publicationFailure !== undefined) {
+    process.stderr.write(`Remote Alchemy state was not published: ${failureMessage(publicationFailure)}\n`)
+  }
+  if (command === undefined || redactionFailure !== undefined || publicationFailure !== undefined) return 1
   if (requestedSignal !== undefined) return signalExitCode(requestedSignal)
   return command.exitCode
 }

@@ -120,10 +120,19 @@ pnpm exec smithers-build build '//:ci'
 pnpm exec smithers-build lint '//:ci'
 ```
 
-This repository change does not deploy the Worker or provision GitHub secrets.
-Their live classification is unverified here; complete steps 1 and 2 below to
-restore authenticated cache use, then rotate the old write credential. Do not
-copy the old shared credential into `SMITHERS_CACHE_READ_TOKEN`.
+Production runs the split. On 2026-09-24 the Worker was deployed to
+`https://build.smithers.sh` with a freshly minted read and write pair, and the
+repository secrets `SMITHERS_CACHE_URL`, `SMITHERS_CACHE_READ_TOKEN`, and
+`SMITHERS_CACHE_WRITE_TOKEN` were set to match. No shared credential was
+carried over: the only deployment that held one, the legacy
+`tsflows.smithers.sh` Worker, served no build (its store held two deploy
+verification rows and none was ever read back) and was deleted with its D1
+database and R2 bucket, so step 4 below has nothing left to rotate.
+
+The target cache publishes only results a confined run produced. This
+repository's `.smithers/WORKSPACE.ts` declares `S.Sandbox.None()` as the
+default sandbox, so its CI jobs, `cache-publish` included, read from the remote
+and publish nothing until target confinement is enabled there.
 
 As an interim guard, `GithubCiGen` emits this environment entry on target steps
 in non-publishing jobs when the workflow enables PRs and declares cache access:
@@ -143,9 +152,9 @@ overrides the endpoint without changing the declared credential names.
 
 ## Operational step, and deployment ordering
 
-Provision the split credentials in this order. The repository declaration is
-already adopted; until provisioning finishes, builds may lose remote cache
-reuse and publication but must not receive the old shared credential:
+Provision the split credentials in this order for any deployment that still
+serves a shared credential. Until provisioning finishes, builds may lose remote
+cache reuse and publication but must not receive the old shared credential:
 
 1. **Configure the Worker with both secrets.** Set
    `SMITHERS_CACHE_READ_TOKEN` and `SMITHERS_CACHE_WRITE_TOKEN` in the

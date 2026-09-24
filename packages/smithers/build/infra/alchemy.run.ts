@@ -52,6 +52,9 @@ export default Alchemy.Stack(
   stackName,
   {
     providers: Cloudflare.providers(),
+    // A working copy only: `scripts/deploy.ts` pulls the durable snapshot from
+    // the R2 state bucket into it before Alchemy runs and publishes it back
+    // afterwards, and the stack program refuses to run without that wrapper.
     state: Alchemy.localState()
   },
   cacheStackOutputs({ stack: Alchemy.Stack, database: cacheDatabase, bucket: cacheBucket, worker: cacheWorker })

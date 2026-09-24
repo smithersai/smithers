@@ -16,6 +16,7 @@
     "check": "tsc -b tsconfig.json --force",
     "deploy": "node scripts/deploy.ts --stage prod",
     "deploy:dev": "node scripts/deploy.ts",
+    "plan": "node scripts/deploy.ts --stage prod --dry-run",
     "test": "vitest run",
     "lint": "eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check"
   },
@@ -29,7 +30,8 @@
     "vitest": "5.0.0",
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
-    "dprint": "0.55.2"
+    "dprint": "0.55.2",
+    "aws4fetch": "1.0.20"
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.1",

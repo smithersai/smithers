@@ -19,6 +19,43 @@ import { createHash } from "node:crypto"
  */
 export const stackName = "SmithersBuildRemoteCache"
 
+const configError = (message: string): Config.ConfigError =>
+  new Config.ConfigError(new Schema.SchemaError(new SchemaIssue.InvalidValue({ message })))
+
+/**
+ * The variable the deploy wrapper sets for the Alchemy process it drives.
+ *
+ * The wrapper pulls the stack's state from R2 before Alchemy runs and
+ * publishes it back afterwards. The stack program refuses to run without this
+ * variable, so a direct `alchemy deploy` or `alchemy plan` cannot act on a
+ * local state directory that was never synced and create a second production.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const stateSyncVariable = "SMITHERS_BUILD_INFRA_STATE_SYNCED"
+
+/**
+ * Refuses a stack run the deploy wrapper did not start.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const stateSyncGuard: Config.Config<void> = Config.String(stateSyncVariable).pipe(
+  Config.withDefault(""),
+  Config.mapEffect((value) =>
+    value === "1"
+      ? Effect.void
+      : Effect.fail(
+        configError(
+          `${stateSyncVariable} is not set: run this stack through scripts/deploy.ts (pnpm run deploy or ` +
+            `pnpm run plan), which syncs its state with R2. Alchemy alone plans against local state and can ` +
+            `create a second production`
+        )
+      )
+  )
+)
+
 /**
  * The shortest cache credential a deployment accepts.
  *
@@ -172,9 +209,6 @@ export const cacheTokenDigest = (name: CacheTokenName, value: string): string =>
   if (fault !== null) throw new TypeError(fault)
   return sha256Hex(value)
 }
-
-const configError = (message: string): Config.ConfigError =>
-  new Config.ConfigError(new Schema.SchemaError(new SchemaIssue.InvalidValue({ message })))
 
 /**
  * Reads one cache credential and hands the Worker its digest.
@@ -489,9 +523,10 @@ export interface CacheStackOutputs<Stage, DatabaseName, BucketName, Url> {
 }
 
 /**
- * The stack program: reads the credential pair, then reports the resources.
+ * The stack program: checks that the deploy wrapper synced state, reads the
+ * credential pair, then reports the resources.
  *
- * The pair is read before any resource is touched, so an equal pair fails the
+ * Both checks run before any resource is touched, so an equal pair fails the
  * deployment with nothing created or replaced, and a plan that reaches the
  * resources has already proven its credentials.
  *
@@ -502,6 +537,7 @@ export const cacheStackOutputs = <Stage, DatabaseName, BucketName, Url, E, R>(
   resources: CacheStackResources<Stage, DatabaseName, BucketName, Url, E, R>
 ): Effect.Effect<CacheStackOutputs<Stage, DatabaseName, BucketName, Url>, E | Config.ConfigError, R> =>
   Effect.gen(function*() {
+    yield* stateSyncGuard
     yield* cacheCredentialVerifiers
     const { stage } = yield* resources.stack
     const database = yield* resources.database
