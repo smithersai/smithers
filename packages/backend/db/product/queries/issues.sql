@@ -152,6 +152,56 @@ WITH repository_lock AS MATERIALIZED (
 DELETE FROM issue_labels USING repository_lock
 WHERE issue_id = $1;
 
+-- name: ReplaceIssueAssignees :exec
+-- Replaces the issue's assignee set in one statement. Set-diff, not
+-- delete-all + re-add, so unchanged rows fire no issue_state_facts or
+-- repository_job_events. Tombstones (user_id NULL from ON DELETE SET NULL) are
+-- always removed. COALESCE: pgx encodes a nil slice as NULL, and
+-- `<> ALL(NULL)` is NULL. ON CONFLICT DO NOTHING absorbs a concurrent
+-- AddIssueAssignee for the same user (partial index
+-- uq_issue_assignees_issue_user).
+WITH repository_lock AS MATERIALIZED (
+    SELECT r.id FROM repositories r JOIN issues i ON i.repository_id = r.id
+    WHERE i.id = sqlc.arg(issue_id) FOR UPDATE OF r
+), wanted AS (
+    SELECT DISTINCT u AS user_id
+    FROM UNNEST(COALESCE(sqlc.arg(user_ids)::bigint[], '{}'::bigint[])) AS u
+), removed AS (
+    DELETE FROM issue_assignees USING repository_lock
+    WHERE issue_assignees.issue_id = sqlc.arg(issue_id)
+      AND (issue_assignees.user_id IS NULL
+           OR issue_assignees.user_id <> ALL(COALESCE(sqlc.arg(user_ids)::bigint[], '{}'::bigint[])))
+)
+INSERT INTO issue_assignees (issue_id, user_id)
+SELECT sqlc.arg(issue_id), w.user_id FROM wanted w, repository_lock
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_assignees ia
+    WHERE ia.issue_id = sqlc.arg(issue_id) AND ia.user_id = w.user_id
+)
+ON CONFLICT DO NOTHING;
+
+-- name: ReplaceIssueLabels :exec
+-- Replaces the issue's label set in one statement. Set-diff, so unchanged
+-- labels fire no unlabeled/labeled journal facts or job events.
+WITH repository_lock AS MATERIALIZED (
+    SELECT r.id FROM repositories r JOIN issues i ON i.repository_id = r.id
+    WHERE i.id = sqlc.arg(issue_id) FOR UPDATE OF r
+), wanted AS (
+    SELECT DISTINCT l AS label_id
+    FROM UNNEST(COALESCE(sqlc.arg(label_ids)::bigint[], '{}'::bigint[])) AS l
+), removed AS (
+    DELETE FROM issue_labels USING repository_lock
+    WHERE issue_labels.issue_id = sqlc.arg(issue_id)
+      AND issue_labels.label_id <> ALL(COALESCE(sqlc.arg(label_ids)::bigint[], '{}'::bigint[]))
+)
+INSERT INTO issue_labels (issue_id, label_id)
+SELECT sqlc.arg(issue_id), w.label_id FROM wanted w, repository_lock
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_labels il
+    WHERE il.issue_id = sqlc.arg(issue_id) AND il.label_id = w.label_id
+)
+ON CONFLICT DO NOTHING;
+
 -- name: ListIssueAssignees :many
 -- Excludes tombstone rows (user_id IS NULL from ON DELETE SET NULL) since
 -- the user record is gone and there is nothing to display.

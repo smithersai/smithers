@@ -808,6 +808,78 @@ func (q *Queries) ListLinkedChangesForIssue(ctx context.Context, issueID int64) 
 	return items, nil
 }
 
+const replaceIssueAssignees = `-- name: ReplaceIssueAssignees :exec
+WITH repository_lock AS MATERIALIZED (
+    SELECT r.id FROM repositories r JOIN issues i ON i.repository_id = r.id
+    WHERE i.id = $1 FOR UPDATE OF r
+), wanted AS (
+    SELECT DISTINCT u AS user_id
+    FROM UNNEST(COALESCE($2::bigint[], '{}'::bigint[])) AS u
+), removed AS (
+    DELETE FROM issue_assignees USING repository_lock
+    WHERE issue_assignees.issue_id = $1
+      AND (issue_assignees.user_id IS NULL
+           OR issue_assignees.user_id <> ALL(COALESCE($2::bigint[], '{}'::bigint[])))
+)
+INSERT INTO issue_assignees (issue_id, user_id)
+SELECT $1, w.user_id FROM wanted w, repository_lock
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_assignees ia
+    WHERE ia.issue_id = $1 AND ia.user_id = w.user_id
+)
+ON CONFLICT DO NOTHING
+`
+
+type ReplaceIssueAssigneesParams struct {
+	IssueID int64   `json:"issue_id"`
+	UserIds []int64 `json:"user_ids"`
+}
+
+// Replaces the issue's assignee set in one statement. Set-diff, not
+// delete-all + re-add, so unchanged rows fire no issue_state_facts or
+// repository_job_events. Tombstones (user_id NULL from ON DELETE SET NULL) are
+// always removed. COALESCE: pgx encodes a nil slice as NULL, and
+// `<> ALL(NULL)` is NULL. ON CONFLICT DO NOTHING absorbs a concurrent
+// AddIssueAssignee for the same user (partial index
+// uq_issue_assignees_issue_user).
+func (q *Queries) ReplaceIssueAssignees(ctx context.Context, arg ReplaceIssueAssigneesParams) error {
+	_, err := q.db.Exec(ctx, replaceIssueAssignees, arg.IssueID, arg.UserIds)
+	return err
+}
+
+const replaceIssueLabels = `-- name: ReplaceIssueLabels :exec
+WITH repository_lock AS MATERIALIZED (
+    SELECT r.id FROM repositories r JOIN issues i ON i.repository_id = r.id
+    WHERE i.id = $1 FOR UPDATE OF r
+), wanted AS (
+    SELECT DISTINCT l AS label_id
+    FROM UNNEST(COALESCE($2::bigint[], '{}'::bigint[])) AS l
+), removed AS (
+    DELETE FROM issue_labels USING repository_lock
+    WHERE issue_labels.issue_id = $1
+      AND issue_labels.label_id <> ALL(COALESCE($2::bigint[], '{}'::bigint[]))
+)
+INSERT INTO issue_labels (issue_id, label_id)
+SELECT $1, w.label_id FROM wanted w, repository_lock
+WHERE NOT EXISTS (
+    SELECT 1 FROM issue_labels il
+    WHERE il.issue_id = $1 AND il.label_id = w.label_id
+)
+ON CONFLICT DO NOTHING
+`
+
+type ReplaceIssueLabelsParams struct {
+	IssueID  int64   `json:"issue_id"`
+	LabelIds []int64 `json:"label_ids"`
+}
+
+// Replaces the issue's label set in one statement. Set-diff, so unchanged
+// labels fire no unlabeled/labeled journal facts or job events.
+func (q *Queries) ReplaceIssueLabels(ctx context.Context, arg ReplaceIssueLabelsParams) error {
+	_, err := q.db.Exec(ctx, replaceIssueLabels, arg.IssueID, arg.LabelIds)
+	return err
+}
+
 const updateIssue = `-- name: UpdateIssue :one
 WITH repository_lock AS MATERIALIZED (
     SELECT r.id FROM repositories r JOIN issues i ON i.repository_id = r.id

@@ -88,11 +88,9 @@ type mockIssueQuerier struct {
 	countIssuesByRepoFilteredFn      func(ctx context.Context, arg db.CountIssuesByRepoFilteredParams) (int64, error)
 	updateIssueFn                    func(ctx context.Context, arg db.UpdateIssueParams) (db.Issue, error)
 	listIssueAssigneesFn             func(ctx context.Context, issueID int64) ([]db.ListIssueAssigneesRow, error)
-	addIssueAssigneeFn               func(ctx context.Context, arg db.AddIssueAssigneeParams) (db.IssueAssignee, error)
-	deleteIssueAssigneesFn           func(ctx context.Context, issueID int64) error
+	replaceIssueAssigneesFn          func(ctx context.Context, arg db.ReplaceIssueAssigneesParams) error
 	listLabelsByNamesFn              func(ctx context.Context, arg db.ListLabelsByNamesParams) ([]db.Label, error)
-	addIssueLabelsFn                 func(ctx context.Context, arg db.AddIssueLabelsParams) error
-	deleteIssueLabelsFn              func(ctx context.Context, issueID int64) error
+	replaceIssueLabelsFn             func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error
 	countLabelsForIssueFn            func(ctx context.Context, issueID int64) (int64, error)
 	listLabelsForIssueFn             func(ctx context.Context, arg db.ListLabelsForIssueParams) ([]db.Label, error)
 
@@ -114,7 +112,8 @@ type mockIssueQuerier struct {
 	lastCountIssuesArg      db.CountIssuesByRepoFilteredParams
 	lastUpdateIssueArg      db.UpdateIssueParams
 	lastCreateIssueArg      db.CreateIssueParams
-	lastAddLabelsArg        db.AddIssueLabelsParams
+	lastReplaceLabelsArg    *db.ReplaceIssueLabelsParams
+	lastReplaceAssigneesArg *db.ReplaceIssueAssigneesParams
 
 	createdIssueEvents []db.CreateIssueEventParams
 }
@@ -260,16 +259,10 @@ func (m *mockIssueQuerier) ListIssueAssignees(ctx context.Context, issueID int64
 	return []db.ListIssueAssigneesRow{}, nil
 }
 
-func (m *mockIssueQuerier) AddIssueAssignee(ctx context.Context, arg db.AddIssueAssigneeParams) (db.IssueAssignee, error) {
-	if m.addIssueAssigneeFn != nil {
-		return m.addIssueAssigneeFn(ctx, arg)
-	}
-	return db.IssueAssignee{IssueID: arg.IssueID, UserID: arg.UserID, CreatedAt: time.Now().UTC()}, nil
-}
-
-func (m *mockIssueQuerier) DeleteIssueAssignees(ctx context.Context, issueID int64) error {
-	if m.deleteIssueAssigneesFn != nil {
-		return m.deleteIssueAssigneesFn(ctx, issueID)
+func (m *mockIssueQuerier) ReplaceIssueAssignees(ctx context.Context, arg db.ReplaceIssueAssigneesParams) error {
+	m.lastReplaceAssigneesArg = &arg
+	if m.replaceIssueAssigneesFn != nil {
+		return m.replaceIssueAssigneesFn(ctx, arg)
 	}
 	return nil
 }
@@ -281,17 +274,10 @@ func (m *mockIssueQuerier) ListLabelsByNames(ctx context.Context, arg db.ListLab
 	return nil, nil
 }
 
-func (m *mockIssueQuerier) AddIssueLabels(ctx context.Context, arg db.AddIssueLabelsParams) error {
-	m.lastAddLabelsArg = arg
-	if m.addIssueLabelsFn != nil {
-		return m.addIssueLabelsFn(ctx, arg)
-	}
-	return nil
-}
-
-func (m *mockIssueQuerier) DeleteIssueLabels(ctx context.Context, issueID int64) error {
-	if m.deleteIssueLabelsFn != nil {
-		return m.deleteIssueLabelsFn(ctx, issueID)
+func (m *mockIssueQuerier) ReplaceIssueLabels(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
+	m.lastReplaceLabelsArg = &arg
+	if m.replaceIssueLabelsFn != nil {
+		return m.replaceIssueLabelsFn(ctx, arg)
 	}
 	return nil
 }
@@ -993,7 +979,7 @@ func TestIssueService_CreateIssue_LabelsAndMilestone(t *testing.T) {
 					{ID: 12, RepositoryID: repo.ID, Name: "docs", Color: "#0e8a16", Description: "docs"},
 				}, nil
 			},
-			addIssueLabelsFn: func(ctx context.Context, arg db.AddIssueLabelsParams) error {
+			replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
 				assert.Equal(t, createdIssueID, arg.IssueID)
 				assert.Equal(t, []int64{11, 12}, arg.LabelIds)
 				return nil
@@ -1083,8 +1069,7 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 	setMilestoneID := int64(55)
 
 	t.Run("set milestone and replace labels", func(t *testing.T) {
-		deleted := false
-		added := false
+		replaced := false
 		q := &mockIssueQuerier{
 			getRepoByOwnerAndLowerNameFn: func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 				return repo, nil
@@ -1103,18 +1088,15 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 					i.MilestoneID = arg.MilestoneID
 				}), nil
 			},
-			deleteIssueLabelsFn: func(ctx context.Context, issueID int64) error {
-				deleted = true
-				return nil
-			},
 			listLabelsByNamesFn: func(ctx context.Context, arg db.ListLabelsByNamesParams) ([]db.Label, error) {
 				return []db.Label{
 					{ID: 11, RepositoryID: repo.ID, Name: "bug"},
 					{ID: 12, RepositoryID: repo.ID, Name: "docs"},
 				}, nil
 			},
-			addIssueLabelsFn: func(ctx context.Context, arg db.AddIssueLabelsParams) error {
-				added = true
+			replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
+				replaced = true
+				assert.Equal(t, int64(7), arg.IssueID)
 				assert.Equal(t, []int64{11, 12}, arg.LabelIds)
 				return nil
 			},
@@ -1138,15 +1120,14 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 			Milestone: milestonePatchSet(setMilestoneID),
 		})
 		require.NoError(t, err)
-		assert.True(t, deleted)
-		assert.True(t, added)
+		assert.True(t, replaced)
 		assert.Equal(t, setMilestoneID, resp.MilestoneID)
 		require.Len(t, resp.Labels, 2)
 	})
 
 	t.Run("empty labels clears", func(t *testing.T) {
-		deleted := false
-		added := false
+		var replacedWith []int64
+		replaced := false
 		q := &mockIssueQuerier{
 			getRepoByOwnerAndLowerNameFn: func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
 				return repo, nil
@@ -1157,12 +1138,9 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 			updateIssueFn: func(ctx context.Context, arg db.UpdateIssueParams) (db.Issue, error) {
 				return issueWithMilestone, nil
 			},
-			deleteIssueLabelsFn: func(ctx context.Context, issueID int64) error {
-				deleted = true
-				return nil
-			},
-			addIssueLabelsFn: func(ctx context.Context, arg db.AddIssueLabelsParams) error {
-				added = true
+			replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
+				replaced = true
+				replacedWith = arg.LabelIds
 				return nil
 			},
 			countLabelsForIssueFn: func(ctx context.Context, issueID int64) (int64, error) {
@@ -1181,8 +1159,8 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 			Labels: &[]string{},
 		})
 		require.NoError(t, err)
-		assert.True(t, deleted)
-		assert.False(t, added)
+		assert.True(t, replaced, "an empty label list must replace the set with nothing")
+		assert.Empty(t, replacedWith)
 	})
 
 	t.Run("nil labels unchanged", func(t *testing.T) {
@@ -1197,7 +1175,7 @@ func TestIssueService_UpdateIssue_LabelsAndMilestoneSemantics(t *testing.T) {
 			updateIssueFn: func(ctx context.Context, arg db.UpdateIssueParams) (db.Issue, error) {
 				return issueWithMilestone, nil
 			},
-			deleteIssueLabelsFn: func(ctx context.Context, issueID int64) error {
+			replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
 				deleted = true
 				return nil
 			},
@@ -1339,11 +1317,8 @@ func TestIssueService_ResolveLabelIDs_ValidatesWithoutTouchingExistingLabels(t *
 					}
 					return tc.listNames(t, arg), nil
 				},
-				deleteIssueLabelsFn: func(ctx context.Context, issueID int64) error {
+				replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
 					deleted = true
-					return nil
-				},
-				addIssueLabelsFn: func(ctx context.Context, arg db.AddIssueLabelsParams) error {
 					added = true
 					return nil
 				},
@@ -1409,7 +1384,7 @@ func TestIssueService_UpdateIssue_InvalidLabelLeavesIssueUntouched(t *testing.T)
 			updated = true
 			return issueDBRecord(3, repo.ID, 3, actor.ID, nil), nil
 		},
-		deleteIssueLabelsFn: func(ctx context.Context, issueID int64) error {
+		replaceIssueLabelsFn: func(ctx context.Context, arg db.ReplaceIssueLabelsParams) error {
 			deletedLabels = true
 			return nil
 		},

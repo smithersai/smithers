@@ -100,21 +100,17 @@ func (m *benchIssueQuerier) ListIssueAssignees(_ context.Context, _ int64) ([]db
 	}, nil
 }
 
-func (m *benchIssueQuerier) AddIssueAssignee(_ context.Context, _ db.AddIssueAssigneeParams) (db.IssueAssignee, error) {
-	return db.IssueAssignee{}, nil
+func (m *benchIssueQuerier) ReplaceIssueAssignees(_ context.Context, _ db.ReplaceIssueAssigneesParams) error {
+	return nil
 }
-
-func (m *benchIssueQuerier) DeleteIssueAssignees(_ context.Context, _ int64) error { return nil }
 
 func (m *benchIssueQuerier) ListLabelsByNames(_ context.Context, _ db.ListLabelsByNamesParams) ([]db.Label, error) {
 	return nil, nil
 }
 
-func (m *benchIssueQuerier) AddIssueLabels(_ context.Context, _ db.AddIssueLabelsParams) error {
+func (m *benchIssueQuerier) ReplaceIssueLabels(_ context.Context, _ db.ReplaceIssueLabelsParams) error {
 	return nil
 }
-
-func (m *benchIssueQuerier) DeleteIssueLabels(_ context.Context, _ int64) error { return nil }
 
 func (m *benchIssueQuerier) CountLabelsForIssue(_ context.Context, _ int64) (int64, error) {
 	return 0, nil

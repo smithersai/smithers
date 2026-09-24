@@ -132,11 +132,9 @@ type IssueQuerier interface {
 	UpdateIssue(ctx context.Context, arg db.UpdateIssueParams) (db.Issue, error)
 
 	ListIssueAssignees(ctx context.Context, issueID int64) ([]db.ListIssueAssigneesRow, error)
-	AddIssueAssignee(ctx context.Context, arg db.AddIssueAssigneeParams) (db.IssueAssignee, error)
-	DeleteIssueAssignees(ctx context.Context, issueID int64) error
+	ReplaceIssueAssignees(ctx context.Context, arg db.ReplaceIssueAssigneesParams) error
 	ListLabelsByNames(ctx context.Context, arg db.ListLabelsByNamesParams) ([]db.Label, error)
-	AddIssueLabels(ctx context.Context, arg db.AddIssueLabelsParams) error
-	DeleteIssueLabels(ctx context.Context, issueID int64) error
+	ReplaceIssueLabels(ctx context.Context, arg db.ReplaceIssueLabelsParams) error
 	CountLabelsForIssue(ctx context.Context, issueID int64) (int64, error)
 	ListLabelsForIssue(ctx context.Context, arg db.ListLabelsForIssueParams) ([]db.Label, error)
 
@@ -169,6 +167,7 @@ type IssueService struct {
 	notifSvc       *NotificationService
 	workflowRunSvc WorkflowRunService
 	ownershipGuard RepoOwnershipGuard
+	txManager      issueWriteTxManager
 }
 
 // WithIssueOwnershipGuard fences issue creation against concurrent repository
@@ -211,7 +210,7 @@ func WithIssueWorkflowRunService(workflowRunSvc WorkflowRunService) IssueService
 }
 
 func NewIssueService(q IssueQuerier, opts ...IssueServiceOption) *IssueService {
-	s := &IssueService{queries: q}
+	s := &IssueService{queries: q, txManager: newIssueWriteTxManager(q)}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(s)
@@ -362,33 +361,34 @@ func (s *IssueService) CreateIssue(ctx context.Context, actor *db.User, owner, r
 		return IssueResponse{}, err
 	}
 
-	var created db.Issue
-	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
-		var werr error
-		created, werr = s.queries.CreateIssue(ctx, db.CreateIssueParams{
-			RepositoryID: repository.ID,
-			Title:        title,
-			Body:         req.Body,
-			AuthorID:     actor.ID,
-			MilestoneID:  milestoneID,
-		})
-		if werr != nil {
-			return pkgerrors.Internal("failed to create issue")
-		}
-		return nil
-	}); err != nil {
-		return IssueResponse{}, err
-	}
-
+	// The issue row and its associations commit in one transaction inside the
+	// ownership fence: an association failure rolls the row (and its issue
+	// number) back, so a client retry cannot create a duplicate issue.
+	var assigneeSet, labelSet *[]int64
 	if len(assigneeIDs) > 0 {
-		if err := s.applyAssignees(ctx, created.ID, assigneeIDs); err != nil {
-			return IssueResponse{}, err
-		}
+		assigneeSet = &assigneeIDs
 	}
 	if len(labelIDs) > 0 {
-		if err := s.applyLabels(ctx, created.ID, labelIDs); err != nil {
-			return IssueResponse{}, err
-		}
+		labelSet = &labelIDs
+	}
+	var created db.Issue
+	if err := guardedRepoWrite(ctx, s.ownershipGuard, repository, func() error {
+		return s.withIssueWriteTx(ctx, func(tx issueWriteTx) error {
+			var werr error
+			created, werr = tx.CreateIssue(ctx, db.CreateIssueParams{
+				RepositoryID: repository.ID,
+				Title:        title,
+				Body:         req.Body,
+				AuthorID:     actor.ID,
+				MilestoneID:  milestoneID,
+			})
+			if werr != nil {
+				return pkgerrors.Internal("failed to create issue")
+			}
+			return replaceIssueAssociations(ctx, tx, created.ID, assigneeSet, labelSet)
+		})
+	}); err != nil {
+		return IssueResponse{}, err
 	}
 
 	mapped, err := s.mapIssue(ctx, created)
@@ -568,37 +568,42 @@ func (s *IssueService) UpdateIssue(ctx context.Context, actor *db.User, owner, r
 		}
 	}
 
-	updated, err := s.queries.UpdateIssue(ctx, db.UpdateIssueParams{
-		ID:                       current.ID,
-		Title:                    title,
-		Body:                     body,
-		State:                    state,
-		MilestoneID:              milestoneID,
-		ClosedAt:                 closedAt,
-		FixedByID:                fixedByID,
-		FixedByAgentSessionID:    fixedByAgentSessionID,
-		FixedAt:                  fixedAt,
-		VerifiedByID:             verifiedByID,
-		VerifiedByAgentSessionID: verifiedByAgentSessionID,
-		VerifiedAt:               verifiedAt,
-	})
-	if err != nil {
-		return IssueResponse{}, pkgerrors.Internal("failed to update issue")
-	}
-
 	// repositories.num_closed_issues is maintained by trg_issues_repo_counts_upd,
 	// which fires only when the row's state actually transitions — two racing
 	// closes of the same issue count once, not twice.
-
+	//
+	// The row write and the association replacement commit together, so a
+	// failed association write cannot leave a half-applied update behind a 500.
+	var assigneeSet, labelSet *[]int64
 	if req.Assignees != nil {
-		if err := s.applyAssignees(ctx, updated.ID, assigneeIDs); err != nil {
-			return IssueResponse{}, err
-		}
+		assigneeSet = &assigneeIDs
 	}
 	if req.Labels != nil {
-		if err := s.applyLabels(ctx, updated.ID, labelIDs); err != nil {
-			return IssueResponse{}, err
+		labelSet = &labelIDs
+	}
+	var updated db.Issue
+	if err := s.withIssueWriteTx(ctx, func(tx issueWriteTx) error {
+		var werr error
+		updated, werr = tx.UpdateIssue(ctx, db.UpdateIssueParams{
+			ID:                       current.ID,
+			Title:                    title,
+			Body:                     body,
+			State:                    state,
+			MilestoneID:              milestoneID,
+			ClosedAt:                 closedAt,
+			FixedByID:                fixedByID,
+			FixedByAgentSessionID:    fixedByAgentSessionID,
+			FixedAt:                  fixedAt,
+			VerifiedByID:             verifiedByID,
+			VerifiedByAgentSessionID: verifiedByAgentSessionID,
+			VerifiedAt:               verifiedAt,
+		})
+		if werr != nil {
+			return pkgerrors.Internal("failed to update issue")
 		}
+		return replaceIssueAssociations(ctx, tx, updated.ID, assigneeSet, labelSet)
+	}); err != nil {
+		return IssueResponse{}, err
 	}
 
 	mapped, err := s.mapIssue(ctx, updated)
@@ -1364,26 +1369,6 @@ func (s *IssueService) resolveAssigneeUserIDs(ctx context.Context, usernames []s
 	return userIDs, nil
 }
 
-// applyAssignees replaces the issue's assignee set with the pre-validated user IDs.
-func (s *IssueService) applyAssignees(ctx context.Context, issueID int64, userIDs []int64) error {
-	if err := s.queries.DeleteIssueAssignees(ctx, issueID); err != nil {
-		return pkgerrors.Internal("failed to update issue assignees")
-	}
-
-	for _, userID := range userIDs {
-		if _, err := s.queries.AddIssueAssignee(ctx, db.AddIssueAssigneeParams{IssueID: issueID, UserID: pgtype.Int8{Int64: userID, Valid: true}}); err != nil {
-			// ON CONFLICT DO NOTHING yields pgx.ErrNoRows (not a unique violation)
-			// when the assignee already exists (e.g. a concurrent add) — that is a
-			// benign no-op, not a 500.
-			if isUniqueViolation(err) || stdErrors.Is(err, pgx.ErrNoRows) {
-				continue
-			}
-			return pkgerrors.Internal("failed to update issue assignees")
-		}
-	}
-	return nil
-}
-
 // resolveLabelIDs validates label names against the repository and resolves them
 // to label IDs WITHOUT mutating anything. An empty/nil names slice resolves to
 // nil (meaning "clear all labels" when applied).
@@ -1413,23 +1398,6 @@ func (s *IssueService) resolveLabelIDs(ctx context.Context, repositoryID int64, 
 		labelIDs = append(labelIDs, label.ID)
 	}
 	return labelIDs, nil
-}
-
-// applyLabels replaces the issue's label set with the pre-validated label IDs.
-func (s *IssueService) applyLabels(ctx context.Context, issueID int64, labelIDs []int64) error {
-	if err := s.queries.DeleteIssueLabels(ctx, issueID); err != nil {
-		return pkgerrors.Internal("failed to update issue labels")
-	}
-	if len(labelIDs) == 0 {
-		return nil
-	}
-	if err := s.queries.AddIssueLabels(ctx, db.AddIssueLabelsParams{
-		IssueID:  issueID,
-		LabelIds: labelIDs,
-	}); err != nil {
-		return pkgerrors.Internal("failed to update issue labels")
-	}
-	return nil
 }
 
 // recordIssueEvent persists a timeline row (read back via GET /issues/{n}/events)

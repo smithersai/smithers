@@ -517,11 +517,12 @@ func TestIssue_Z_HelperBranches(t *testing.T) {
 
 	_, err = svc.resolveAssigneeUserIDs(context.Background(), []string{" "})
 	require.Equal(t, 422, issueAPIStatus(t, err))
-	err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
-		q.deleteIssueAssigneesFn = func(context.Context, int64) error {
+	assignees := []int64{99}
+	err = replaceIssueAssociations(context.Background(), nonTxIssueWriteTx{q: zIssueBaseQuerier(func(q *mockIssueQuerier) {
+		q.replaceIssueAssigneesFn = func(context.Context, db.ReplaceIssueAssigneesParams) error {
 			return boom
 		}
-	})).applyAssignees(context.Background(), 1, []int64{99})
+	})}, 1, &assignees, nil)
 	require.Equal(t, 500, issueAPIStatus(t, err))
 	_, err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
 		q.getUserByLowerUsernameFn = func(context.Context, string) (db.User, error) {
@@ -529,26 +530,17 @@ func TestIssue_Z_HelperBranches(t *testing.T) {
 		}
 	})).resolveAssigneeUserIDs(context.Background(), []string{"bob"})
 	require.Equal(t, 500, issueAPIStatus(t, err))
-	err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
-		q.addIssueAssigneeFn = func(context.Context, db.AddIssueAssigneeParams) (db.IssueAssignee, error) {
-			return db.IssueAssignee{}, pgx.ErrNoRows
-		}
-	})).applyAssignees(context.Background(), 1, []int64{99})
-	require.NoError(t, err)
-	err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
-		q.addIssueAssigneeFn = func(context.Context, db.AddIssueAssigneeParams) (db.IssueAssignee, error) {
-			return db.IssueAssignee{}, boom
-		}
-	})).applyAssignees(context.Background(), 1, []int64{99})
-	require.Equal(t, 500, issueAPIStatus(t, err))
-
-	err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
-		q.deleteIssueLabelsFn = func(context.Context, int64) error {
+	labelSet := []int64{1}
+	err = replaceIssueAssociations(context.Background(), nonTxIssueWriteTx{q: zIssueBaseQuerier(func(q *mockIssueQuerier) {
+		q.replaceIssueLabelsFn = func(context.Context, db.ReplaceIssueLabelsParams) error {
 			return boom
 		}
-	})).applyLabels(context.Background(), 1, []int64{1})
+	})}, 1, nil, &labelSet)
 	require.Equal(t, 500, issueAPIStatus(t, err))
-	require.NoError(t, svc.applyLabels(context.Background(), 1, nil))
+	untouched := zIssueBaseQuerier()
+	require.NoError(t, replaceIssueAssociations(context.Background(), nonTxIssueWriteTx{q: untouched}, 1, nil, nil))
+	require.Nil(t, untouched.lastReplaceAssigneesArg)
+	require.Nil(t, untouched.lastReplaceLabelsArg)
 	_, err = NewIssueService(zIssueBaseQuerier()).resolveLabelIDs(context.Background(), 77, []string{" "})
 	require.Equal(t, 422, issueAPIStatus(t, err))
 	_, err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
@@ -556,12 +548,6 @@ func TestIssue_Z_HelperBranches(t *testing.T) {
 			return nil, boom
 		}
 	})).resolveLabelIDs(context.Background(), 77, []string{"bug"})
-	require.Equal(t, 500, issueAPIStatus(t, err))
-	err = NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
-		q.addIssueLabelsFn = func(context.Context, db.AddIssueLabelsParams) error {
-			return boom
-		}
-	})).applyLabels(context.Background(), 1, []int64{1})
 	require.Equal(t, 500, issueAPIStatus(t, err))
 
 	labels, err := NewIssueService(zIssueBaseQuerier(func(q *mockIssueQuerier) {
