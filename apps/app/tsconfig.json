@@ -29,7 +29,7 @@
     "vite.config.ts",
     "electrobun.config.ts",
     "hutch.config.ts",
-    "playwright.config.ts"
+    "playwright*.config.ts"
   ],
   "exclude": [
     "node_modules",
