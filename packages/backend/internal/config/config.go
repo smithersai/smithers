@@ -32,6 +32,22 @@ type Config struct {
 	Email               EmailConfig               `mapstructure:"email"`
 	FeatureFlags        FeatureFlagsConfig        `mapstructure:"feature_flags"`
 	RateLimit           RateLimitConfig           `mapstructure:"rate_limit"`
+	Chat                ChatConfig                `mapstructure:"chat"`
+}
+
+// ChatConfig sizes the chat turn dispatcher. Zero keeps the default for the
+// deployment role: hosted API replicas run more turns than a single owner.
+type ChatConfig struct {
+	// Concurrency is the number of model turns one process produces at once.
+	// Env: SMITHERS_CHAT_CONCURRENCY.
+	Concurrency int `mapstructure:"concurrency"`
+	// QueueSize bounds admitted turns waiting in memory. PostgreSQL recovery
+	// delivers any turn the queue refuses. Env: SMITHERS_CHAT_QUEUE_SIZE.
+	QueueSize int `mapstructure:"queue_size"`
+	// LeaseSeconds is the producer lease. The dispatcher renews it while a
+	// turn runs, so it bounds recovery after a crash, not turn length.
+	// Env: SMITHERS_CHAT_LEASE_SECONDS.
+	LeaseSeconds int `mapstructure:"lease_seconds"`
 }
 
 // AgentsConfig controls agent session provisioning health.
@@ -675,6 +691,9 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("rate_limit.share_listing_event_per_min", 30)
 	v.SetDefault("rate_limit.anon_sandbox_create_per_hour", 5)
 	v.SetDefault("rate_limit.build_cache_per_min", 1200)
+	v.SetDefault("chat.concurrency", 0)
+	v.SetDefault("chat.queue_size", 0)
+	v.SetDefault("chat.lease_seconds", 0)
 
 	// iOS + remote-sandbox rollout flags (ticket 0112) — all default false.
 	v.SetDefault("feature_flags.remote_sandbox_enabled", false)
@@ -872,6 +891,9 @@ func Load(configFile string) (*Config, error) {
 		{"rate_limit.share_listing_event_per_min", "SMITHERS_RATE_LIMIT_SHARE_LISTING_EVENT_PER_MIN"},
 		{"rate_limit.build_cache_per_min", "SMITHERS_RATE_LIMIT_BUILD_CACHE_PER_MIN"},
 		{"rate_limit.anon_sandbox_create_per_hour", "SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR"},
+		{"chat.concurrency", "SMITHERS_CHAT_CONCURRENCY"},
+		{"chat.queue_size", "SMITHERS_CHAT_QUEUE_SIZE"},
+		{"chat.lease_seconds", "SMITHERS_CHAT_LEASE_SECONDS"},
 	} {
 		_ = v.BindEnv(b[0], b[1])
 	}

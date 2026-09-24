@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -24,9 +25,28 @@ const (
 	journalHeader       = "x-smithers-turn-journal"
 )
 
+// streamPoll is the fallback wake for a turn stream. Commits wake streams
+// directly; the poll covers a missed cross-replica notification.
+const streamPoll = time.Second
+
 type Handler struct {
 	Store      *Store
 	Dispatcher *Dispatcher
+	logger     *slog.Logger
+	metrics    *metrics
+}
+
+// streamAborted records why a renderer stream stopped before its turn ended.
+func (h *Handler) streamAborted(turnID string, err error) {
+	code := errorCode(err)
+	if h.metrics != nil {
+		h.metrics.streamAborts.WithLabelValues(code).Inc()
+	}
+	logger := h.logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	logger.Error("chat turn stream aborted", "turn_id", turnID, "code", code, "error", err)
 }
 
 type replayRequest struct {
@@ -162,7 +182,7 @@ func producerError(w http.ResponseWriter, err error) {
 		writeProblem(w, http.StatusBadRequest, "frame_invalid")
 	case errors.Is(err, ErrLimit):
 		writeProblem(w, http.StatusConflict, "limit")
-	case errors.Is(err, ErrConflict), errors.Is(err, ErrCursorConflict), errors.Is(err, ErrTerminal), errors.Is(err, ErrCancellationRequested):
+	case errors.Is(err, ErrConflict), errors.Is(err, ErrCursorConflict), errors.Is(err, ErrTerminal):
 		writeProblem(w, http.StatusConflict, "producer_conflict")
 	default:
 		writeProblem(w, http.StatusServiceUnavailable, "storage_failed")
@@ -232,11 +252,16 @@ func (h *Handler) Turn(w http.ResponseWriter, r *http.Request) {
 	flusher.Flush()
 	// Admission is visible to the renderer before any model host can start.
 	// A full in-memory queue is harmless: PostgreSQL recovery owns delivery.
+	changed, stopWatching := h.Store.watch(accepted.TurnID)
+	defer stopWatching()
 	h.Dispatcher.Enqueue(Candidate{Scope: scope, TurnID: accepted.TurnID})
 	after := accepted.Cursor
 	for {
 		page, replayErr := h.Store.Replay(r.Context(), ReplayInput{Scope: scope, RunID: runID, Journal: journal, After: &after, Limit: 8})
 		if replayErr != nil {
+			if r.Context().Err() == nil {
+				h.streamAborted(accepted.TurnID, replayErr)
+			}
 			return
 		}
 		for index := range page.Batches {
@@ -259,11 +284,13 @@ func (h *Handler) Turn(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 			return
 		}
-		timer := time.NewTimer(50 * time.Millisecond)
+		timer := time.NewTimer(streamPoll)
 		select {
 		case <-r.Context().Done():
 			timer.Stop()
 			return
+		case <-changed:
+			timer.Stop()
 		case <-timer.C:
 		}
 	}

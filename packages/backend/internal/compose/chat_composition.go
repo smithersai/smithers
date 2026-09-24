@@ -3,13 +3,41 @@ package compose
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/smithersai/smithers/packages/backend/internal/chat"
+	"github.com/smithersai/smithers/packages/backend/internal/config"
 )
+
+// Hosted replicas wait on remote model hosts, so a turn costs little local
+// CPU. The launcher, not this process, bounds how many can run.
+const (
+	hostedChatConcurrency = 32
+	hostedChatQueueSize   = 1024
+)
+
+// chatRuntimeOptions sizes the dispatcher from configuration, falling back to
+// the default for the deployment role.
+func chatRuntimeOptions(cfg config.ChatConfig, hosted bool, logger *slog.Logger) (chat.RuntimeOptions, error) {
+	if cfg.Concurrency < 0 || cfg.QueueSize < 0 || cfg.LeaseSeconds < 0 {
+		return chat.RuntimeOptions{}, errors.New("chat concurrency, queue size and lease must not be negative")
+	}
+	options := chat.RuntimeOptions{Concurrency: cfg.Concurrency, QueueSize: cfg.QueueSize, Lease: time.Duration(cfg.LeaseSeconds) * time.Second, Logger: logger}
+	if hosted {
+		if options.Concurrency == 0 {
+			options.Concurrency = hostedChatConcurrency
+		}
+		if options.QueueSize == 0 {
+			options.QueueSize = hostedChatQueueSize
+		}
+	}
+	return options, nil
+}
 
 type chatComposition struct {
 	runtime  *chat.Runtime
@@ -17,7 +45,7 @@ type chatComposition struct {
 	server   *http.Server
 }
 
-func newChatComposition(options runOptions, pool *pgxpool.Pool) (*chatComposition, error) {
+func newChatComposition(options runOptions, pool *pgxpool.Pool, sizing chat.RuntimeOptions) (*chatComposition, error) {
 	if options.ChatHost == nil {
 		if options.ChatCallbackListener != nil || strings.TrimSpace(options.ChatProducerBaseURL) != "" {
 			if options.ChatCallbackListener != nil {
@@ -62,7 +90,7 @@ func newChatComposition(options runOptions, pool *pgxpool.Pool) (*chatCompositio
 	// Hosted workers dispatch into the shared journal through the hosted API's
 	// callback URL. Only API replicas need to serve those capability-authenticated
 	// routes, so workers require no listener of their own.
-	runtime, err := chat.NewRuntime(pool, options.ChatHost, callbackURL, chat.RuntimeOptions{})
+	runtime, err := chat.NewRuntime(pool, options.ChatHost, callbackURL, sizing)
 	if err != nil {
 		if listener != nil {
 			_ = listener.Close()

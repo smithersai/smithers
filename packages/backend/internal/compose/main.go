@@ -1216,11 +1216,16 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 			flowWorker = newCriticalWorker()
 		}
 	}
-	chatService, err := newChatComposition(options, pool)
+	chatSizing, err := chatRuntimeOptions(cfg.Chat, options.Role.hosted(), slog.Default())
+	if err != nil {
+		return fmt.Errorf("initialize chat runtime: %w", err)
+	}
+	chatService, err := newChatComposition(options, pool, chatSizing)
 	if err != nil {
 		return fmt.Errorf("initialize chat runtime: %w", err)
 	}
 	if chatService != nil {
+		smithersMetrics.MustRegister(chatService.runtime.Collectors()...)
 		defer chatService.close()
 		if closer, ok := options.ChatHost.(interface{ Close(context.Context) error }); ok {
 			defer func() {

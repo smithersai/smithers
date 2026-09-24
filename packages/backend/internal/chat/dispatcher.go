@@ -3,10 +3,15 @@ package chat
 import (
 	"context"
 	"errors"
-	"github.com/smithersai/smithers/packages/backend/ports"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/smithersai/smithers/packages/backend/ports"
 )
+
+// releaseTimeout bounds the lease hand-back a shutting down process makes.
+const releaseTimeout = 5 * time.Second
 
 type Host interface {
 	RunTurn(context.Context, ProducerGrant) error
@@ -22,6 +27,8 @@ type Dispatcher struct {
 	host    Host
 	lease   time.Duration
 	queue   chan Candidate
+	logger  *slog.Logger
+	metrics *metrics
 	mu      sync.Mutex
 	running map[string]runningTurn
 }
@@ -30,7 +37,9 @@ func NewDispatcher(store *Store, host Host, queueSize int, lease time.Duration) 
 	if store == nil || host == nil || queueSize <= 0 || lease <= 0 {
 		return nil, errors.New("invalid chat dispatcher configuration")
 	}
-	return &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), running: map[string]runningTurn{}}, nil
+	d := &Dispatcher{store: store, host: host, lease: lease, queue: make(chan Candidate, queueSize), logger: slog.Default(), running: map[string]runningTurn{}}
+	d.metrics = newMetrics(func() float64 { return float64(len(d.queue)) })
+	return d, nil
 }
 
 // Enqueue never waits for host launch. PostgreSQL recovery picks up a full queue.
@@ -52,40 +61,108 @@ func (d *Dispatcher) CancelRunning(turnID string) {
 	}
 }
 
+func (d *Dispatcher) claim(ctx context.Context, candidate Candidate) (ProducerGrant, bool) {
+	grant, err := d.store.Claim(ctx, candidate.Scope, candidate.TurnID, d.lease)
+	switch {
+	case err == nil:
+		d.metrics.claims.Inc()
+		return grant, true
+	case ctx.Err() != nil, errors.Is(err, ErrProducerBusy), errors.Is(err, ErrTerminal), errors.Is(err, ErrRetired), errors.Is(err, ErrNotFound):
+		// Another producer owns the turn, or it has already ended.
+	case errors.Is(err, ErrUncertain):
+		d.metrics.failures.WithLabelValues("uncertain").Inc()
+		d.logger.Warn("chat turn sealed uncertain after its producer stopped", "turn_id", candidate.TurnID)
+	default:
+		d.metrics.failures.WithLabelValues("claim_" + errorCode(err)).Inc()
+		d.logger.Error("chat turn claim failed", "turn_id", candidate.TurnID, "code", errorCode(err), "error", err)
+	}
+	return ProducerGrant{}, false
+}
+
+// renew keeps the lease ahead of a healthy host. It cancels the turn when the
+// lease is fenced, because another producer may now own it.
+func (d *Dispatcher) renew(ctx context.Context, grant ProducerGrant, lost context.CancelFunc) {
+	ticker := time.NewTicker(max(d.lease/4, time.Millisecond))
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if _, err := d.store.RenewProducer(ctx, grant, d.lease); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			d.logger.Warn("chat producer lease renewal failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(err), "error", err)
+			if errors.Is(err, ErrProducerFenced) {
+				lost()
+				return
+			}
+		}
+	}
+}
+
+func (d *Dispatcher) fail(ctx context.Context, grant ProducerGrant, code string, cause error) {
+	d.metrics.failures.WithLabelValues(code).Inc()
+	d.logger.Error("chat turn failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", code, "error", cause)
+	if err := d.store.FailProducer(ctx, grant, code); err != nil && !errors.Is(err, ErrProducerFenced) {
+		d.logger.Error("chat turn failure was not recorded", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(err), "error", err)
+	}
+}
+
 func (d *Dispatcher) runOne(parent context.Context, candidate Candidate) {
-	grant, err := d.store.Claim(parent, candidate.Scope, candidate.TurnID, d.lease)
-	if err != nil {
+	grant, ok := d.claim(parent, candidate)
+	if !ok {
 		return
 	}
+	d.metrics.running.Inc()
+	defer d.metrics.running.Dec()
 	ctx, cancel := context.WithCancel(parent)
 	d.mu.Lock()
 	d.running[candidate.TurnID] = runningTurn{generation: grant.Generation, cancel: cancel}
 	d.mu.Unlock()
+	var renewals sync.WaitGroup
 	defer func() {
 		cancel()
+		renewals.Wait()
 		d.mu.Lock()
 		if current, ok := d.running[candidate.TurnID]; ok && current.generation == grant.Generation {
 			delete(d.running, candidate.TurnID)
 		}
 		d.mu.Unlock()
 	}()
-	err = d.host.RunTurn(ctx, grant)
-	if err != nil {
+	renewals.Go(func() { d.renew(ctx, grant, cancel) })
+	err := d.host.RunTurn(ctx, grant)
+	detached := context.WithoutCancel(parent)
+	if parent.Err() != nil {
 		// Lifecycle shutdown is not a user cancellation or a terminal provider
-		// fact. Leave the lease for restart recovery. An explicit user cancel
-		// has already committed its terminal batch before interrupting this host.
-		if parent.Err() == nil {
-			code := "host_failed"
-			if errors.Is(err, ports.ErrModelCredentialMissing) {
-				code = "credential_missing"
-			}
-			_ = d.store.FailProducer(context.WithoutCancel(parent), grant, code)
+		// fact. The host died with this process, so hand the lease back and let
+		// recovery decide at once whether the turn reruns or ends uncertain.
+		release, stop := context.WithTimeout(detached, releaseTimeout)
+		defer stop()
+		if releaseErr := d.store.ReleaseProducer(release, grant); releaseErr != nil && !errors.Is(releaseErr, ErrProducerFenced) {
+			d.logger.Error("chat producer lease was not released at shutdown", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(releaseErr), "error", releaseErr)
 		}
 		return
 	}
-	_, terminal, getErr := d.store.GetState(context.WithoutCancel(parent), candidate.Scope, candidate.TurnID)
-	if getErr == nil && !terminal {
-		_ = d.store.FailProducer(context.WithoutCancel(parent), grant, "host_returned_without_receipt")
+	if err != nil {
+		// An explicit user cancel has already committed its terminal batch
+		// before interrupting this host, so FailProducer leaves it unchanged.
+		code := "host_failed"
+		if errors.Is(err, ports.ErrModelCredentialMissing) {
+			code = "credential_missing"
+		}
+		d.fail(detached, grant, code, err)
+		return
+	}
+	_, terminal, getErr := d.store.GetState(detached, candidate.Scope, candidate.TurnID)
+	if getErr != nil {
+		d.logger.Error("chat turn state read failed", "turn_id", grant.TurnID, "generation", grant.Generation, "code", errorCode(getErr), "error", getErr)
+		return
+	}
+	if !terminal {
+		d.fail(detached, grant, "host_returned_without_receipt", errors.New("model host returned without a terminal batch"))
 	}
 }
 
@@ -123,6 +200,10 @@ func (d *Dispatcher) Run(ctx context.Context, concurrency int) error {
 		case <-ticker.C:
 			candidates, err := d.store.RecoveryCandidates(ctx, 100)
 			if err != nil {
+				if ctx.Err() == nil {
+					d.metrics.recoveryErrors.Inc()
+					d.logger.Error("chat recovery scan failed", "code", errorCode(err), "error", err)
+				}
 				continue
 			}
 			for _, candidate := range candidates {

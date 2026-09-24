@@ -80,6 +80,9 @@ func TestMain(m *testing.M) {
 func needStore(t *testing.T) *Store {
 	t.Helper()
 	if testStore == nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("chat PostgreSQL tests are required: set SMITHERS_CHAT_TEST_DATABASE_URL")
+		}
 		t.Skip("set SMITHERS_CHAT_TEST_DATABASE_URL for PostgreSQL protocol tests")
 	}
 	return testStore
@@ -222,29 +225,9 @@ func TestLineSeparatorFrameRoundTripsThroughPostgreSQL(t *testing.T) {
 	}
 }
 
-func waitForBlockedQuery(t *testing.T, store *Store, marker string) {
-	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		var waiting bool
-		err := store.pool.QueryRow(context.Background(), `SELECT EXISTS (
-			SELECT 1 FROM pg_stat_activity
-			WHERE datname=current_database() AND pid<>pg_backend_pid()
-			  AND wait_event_type='Lock' AND query LIKE '%' || $1 || '%'
-		)`, marker).Scan(&waiting)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if waiting {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("query %q did not reach its lock boundary", marker)
-}
-
 func TestReplayHeadDoesNotRaceAConcurrentAppend(t *testing.T) {
-	store := needStore(t)
+	shared := needStore(t)
+	store := &Store{pool: shared.pool, now: time.Now}
 	scope, runID, journal := testScope(), "interleave-"+uuid.NewString(), testJournal()
 	accepted := admit(t, store, scope, runID, journal)
 	grant, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute)
@@ -259,15 +242,11 @@ func TestReplayHeadDoesNotRaceAConcurrentAppend(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	blocker, err := store.pool.Begin(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	headRead, appended := make(chan struct{}), make(chan struct{})
+	store.afterReplayHead = func() {
+		close(headRead)
+		<-appended
 	}
-	defer func() { _ = blocker.Rollback(context.Background()) }()
-	if _, err = blocker.Exec(context.Background(), `SELECT id FROM chat_turns WHERE id=$1 FOR UPDATE`, accepted.TurnID); err != nil {
-		t.Fatal(err)
-	}
-
 	type replayAnswer struct {
 		page ReplayResult
 		err  error
@@ -279,40 +258,24 @@ func TestReplayHeadDoesNotRaceAConcurrentAppend(t *testing.T) {
 		})
 		replayed <- replayAnswer{page: page, err: replayErr}
 	}()
-	waitForBlockedQuery(t, store, "smithers-chat-replay-head")
-
-	type commitAnswer struct {
-		result CommitResult
-		err    error
+	<-headRead
+	// The replay holds no row lock, so the producer appends and seals the turn
+	// while the replay sits between its head read and its batch reads.
+	result, err := store.Commit(context.Background(), CommitInput{
+		TurnID: accepted.TurnID, Generation: grant.Generation, Token: grant.Token,
+		Expected: first.Cursor, Frames: []json.RawMessage{done(runID, "stop")},
+	})
+	close(appended)
+	if err != nil || result.Cursor.Batch != 2 {
+		t.Fatalf("concurrent append: %#v err=%v", result, err)
 	}
-	committed := make(chan commitAnswer, 1)
-	go func() {
-		result, commitErr := store.Commit(context.Background(), CommitInput{
-			TurnID: accepted.TurnID, Generation: grant.Generation, Token: grant.Token,
-			Expected: first.Cursor, Frames: []json.RawMessage{done(runID, "stop")},
-		})
-		committed <- commitAnswer{result: result, err: commitErr}
-	}()
-	waitForBlockedQuery(t, store, "smithers-chat-commit-head")
-	if err = blocker.Commit(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-
 	select {
 	case answer := <-replayed:
 		if answer.err != nil || answer.page.Head.Batch != 1 || answer.page.Next.Batch != 1 || answer.page.Terminal || answer.page.More || len(answer.page.Batches) != 1 {
 			t.Fatalf("replay crossed its captured head: %#v err=%v", answer.page, answer.err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("replay did not leave the interleaving lock")
-	}
-	select {
-	case answer := <-committed:
-		if answer.err != nil || answer.result.Cursor.Batch != 2 {
-			t.Fatalf("concurrent append: %#v err=%v", answer.result, answer.err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("append did not leave the interleaving lock")
+		t.Fatal("replay did not finish")
 	}
 }
 
@@ -333,7 +296,7 @@ func TestCancelAndExpiredProviderAreDurableTerminalBatches(t *testing.T) {
 	if err != nil || !page.Terminal || len(page.Batches) != 1 || !frameHasStringField(page.Batches[0].Frames[0], "reason", "cancelled") {
 		t.Fatalf("cancel replay: %#v err=%v", page, err)
 	}
-	if err = store.FailProducer(context.Background(), grant, "cancelled"); err != nil {
+	if err = store.FailProducer(context.Background(), grant, "host_failed"); err != nil {
 		t.Fatalf("cancel race should be idempotent: %v", err)
 	}
 
@@ -376,7 +339,9 @@ func TestDispatcherShutdownLeavesUnstartedTurnRecoverable(t *testing.T) {
 	scope, runID, journal := testScope(), "shutdown-"+uuid.NewString(), testJournal()
 	accepted := admit(t, store, scope, runID, journal)
 	host := shutdownHost{entered: make(chan struct{})}
-	dispatcher, err := NewDispatcher(store, host, 1, 20*time.Millisecond)
+	// The production lease: shutdown must hand the turn back at once rather
+	// than strand it until the lease runs out.
+	dispatcher, err := NewDispatcher(store, host, 1, DefaultLease)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -404,7 +369,17 @@ func TestDispatcherShutdownLeavesUnstartedTurnRecoverable(t *testing.T) {
 	if err != nil || state != StateRunning || terminal {
 		t.Fatalf("shutdown invented a terminal fact: state=%s terminal=%v err=%v", state, terminal, err)
 	}
-	time.Sleep(30 * time.Millisecond)
+	candidates, err := store.RecoveryCandidates(context.Background(), 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, candidate := range candidates {
+		found = found || candidate.TurnID == accepted.TurnID
+	}
+	if !found {
+		t.Fatal("shutdown left the lease held, so recovery cannot see the turn")
+	}
 	recovered, err := store.Claim(context.Background(), scope, accepted.TurnID, time.Minute)
 	if err != nil || recovered.Generation != 2 {
 		t.Fatalf("unstarted turn was not recoverable: %#v err=%v", recovered, err)

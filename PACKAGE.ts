@@ -271,7 +271,9 @@ const backendGo = Smithers.Shell.Test({
     // jobs in a fresh database created through this admin connection.
     SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
     SMITHERS_FLOWHOST_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
-    SMITHERS_JOBS_TEST_DATABASE_URL: backendDatabaseURL("postgres")
+    SMITHERS_JOBS_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
+    // The chat suite creates and drops its own database through this admin connection.
+    SMITHERS_CHAT_TEST_DATABASE_URL: backendDatabaseURL("postgres")
   },
   data: [
     backendGoModules,

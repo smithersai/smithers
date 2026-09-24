@@ -222,6 +222,9 @@ var allEnvKeys = []string{
 	"SMITHERS_RATE_LIMIT_APPROVAL_DECIDE_PER_MIN",
 	"SMITHERS_RATE_LIMIT_APP_TIMELINE_WRITE_PER_MIN",
 	"SMITHERS_RATE_LIMIT_BUILD_CACHE_PER_MIN",
+	"SMITHERS_CHAT_CONCURRENCY",
+	"SMITHERS_CHAT_QUEUE_SIZE",
+	"SMITHERS_CHAT_LEASE_SECONDS",
 	"SMITHERS_RATE_LIMIT_ANON_SANDBOX_CREATE_PER_HOUR",
 	"SMITHERS_RATE_LIMIT_SHARE_LISTING_EVENT_PER_MIN",
 }
@@ -1688,7 +1691,7 @@ server:
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 191,
+	assert.Len(t, allEnvKeys, 194,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1797,7 +1800,7 @@ func TestLoad_EnvOverrideMidFlight(t *testing.T) {
 // config struct without updating this test, ensuring test coverage keeps pace.
 func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 	expectedFieldCounts := map[string]int{
-		"Config":              16, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit
+		"Config":              17, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit, Chat
 		"ServerConfig":        8,  // Addr, PublicURL, ReadTimeoutSecs, WriteTimeoutSecs, ShutdownTimeout, SSHHost, AllowedOrigins, TrustedProxyHops
 		"DatabaseConfig":      5,  // URL, MaxConns, MinConns, MaxConnLifetime, MaxConnIdleTime
 		"RepoHostConfig":      3,  // URL, AuthToken, PushHookCallbackToken
@@ -1813,6 +1816,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"EmailConfig":         11, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, RateLimitPerSecond, RateLimitPerRecipientPerHr
 		"FeatureFlagsConfig":  37, // 11 base + 4 remote-client rollout + 21 ticket-12 MVP flags + Changesets (orgs is not a flag)
 		"RateLimitConfig":     7,  // TerminalOpenPerMin, TerminalActiveMax, ApprovalDecidePerMin, AppTimelineWritePerMin, ShareListingEventPerMin, AnonSandboxCreatePerHour, BuildCachePerMinute
+		"ChatConfig":          3,  // Concurrency, QueueSize, LeaseSeconds
 	}
 
 	types := []reflect.Type{
@@ -1832,6 +1836,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		reflect.TypeOf(EmailConfig{}),
 		reflect.TypeOf(FeatureFlagsConfig{}),
 		reflect.TypeOf(RateLimitConfig{}),
+		reflect.TypeOf(ChatConfig{}),
 	}
 
 	for _, typ := range types {
@@ -1848,7 +1853,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 187, totalSubFields,
+	assert.Equal(t, 190, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 
@@ -1873,6 +1878,7 @@ func TestLoad_AllFieldsHaveMapstructureTags(t *testing.T) {
 		reflect.TypeOf(EmailConfig{}),
 		reflect.TypeOf(FeatureFlagsConfig{}),
 		reflect.TypeOf(RateLimitConfig{}),
+		reflect.TypeOf(ChatConfig{}),
 	}
 
 	for _, typ := range types {
@@ -1908,6 +1914,7 @@ func TestLoad_MapstructureTagsMatchViperKeys(t *testing.T) {
 		"Email":               "email",
 		"FeatureFlags":        "feature_flags",
 		"RateLimit":           "rate_limit",
+		"Chat":                "chat",
 	}
 
 	cfgType := reflect.TypeOf(Config{})

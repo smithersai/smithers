@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/stretchr/testify/require"
@@ -23,10 +24,14 @@ func (launcher testLauncher) LaunchChatHost(_ context.Context, _ ports.ChatTurnG
 
 type testLease struct {
 	origin string
+	client *http.Client
 	closed bool
 }
 
 func (lease *testLease) Endpoint() (string, *http.Client, string) {
+	if lease.client != nil {
+		return lease.origin, lease.client, "private-token"
+	}
 	return lease.origin, http.DefaultClient, "private-token"
 }
 
@@ -58,6 +63,21 @@ func TestHostScopesResolutionAndCleansFailedTurn(t *testing.T) {
 	require.ErrorContains(t, err, "status 503")
 	require.True(t, resolved)
 	require.True(t, lease.closed)
+}
+
+func TestChatTurnOutlivesTheLeaseClientTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	lease := &testLease{origin: server.URL, client: &http.Client{Timeout: 50 * time.Millisecond}}
+	host, err := New(ResolverFunc(func(context.Context, int64, int64, json.RawMessage) (Binding, error) {
+		return Binding{}, nil
+	}), testLauncher{lease: lease})
+	require.NoError(t, err)
+	require.NoError(t, host.RunChatTurn(context.Background(), ports.ChatTurnGrant{OwnerID: 7, Request: json.RawMessage(`{}`)}))
+	require.Equal(t, 50*time.Millisecond, lease.client.Timeout)
 }
 
 func TestModelStreamUsesOwnerResolverAndPrivateHost(t *testing.T) {

@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"github.com/smithersai/smithers/packages/backend/ports"
 )
 
 const ModelHostTurnPath = "/v1/chat/turn"
+
+// maxRefusalDetailBytes bounds the host's error body carried into logs.
+const maxRefusalDetailBytes = 512
 
 // HTTPChatHost is the deployment neutral adapter to the packaged TypeScript
 // model host. The grant contains an opaque callback capability, never a
@@ -35,7 +37,8 @@ func NewHTTPChatHost(baseURL string, client *http.Client, authorization string) 
 	endpoint.Path = ModelHostTurnPath
 	endpoint.RawPath = ""
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Minute}
+		// A turn has no fixed length. The dispatcher context ends it.
+		client = &http.Client{}
 	}
 	authorization = strings.TrimSpace(authorization)
 	if authorization == "" {
@@ -54,17 +57,16 @@ func (h *HTTPChatHost) RunChatTurn(ctx context.Context, grant ports.ChatTurnGran
 		return fmt.Errorf("create chat model request: %w", err)
 	}
 	request.Header.Set("content-type", "application/json")
-	if h.authorization != "" {
-		request.Header.Set("authorization", "Bearer "+h.authorization)
-	}
+	request.Header.Set("authorization", "Bearer "+h.authorization)
 	response, err := h.client.Do(request)
 	if err != nil {
 		return fmt.Errorf("run chat model host: %w", err)
 	}
 	defer response.Body.Close()
+	detail, _ := io.ReadAll(io.LimitReader(response.Body, maxRefusalDetailBytes))
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("chat model host refused grant with status %d", response.StatusCode)
+		return fmt.Errorf("chat model host refused grant with status %d: %s", response.StatusCode, strings.ToValidUTF8(strings.TrimSpace(string(detail)), "?"))
 	}
 	return nil
 }

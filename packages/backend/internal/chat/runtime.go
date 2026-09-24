@@ -3,24 +3,40 @@ package chat
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/smithersai/smithers/packages/backend/ports"
+)
+
+// Defaults for a process that serves one owner. Hosted composition passes its
+// own sizes from configuration.
+const (
+	DefaultQueueSize   = 256
+	DefaultConcurrency = 4
+	// DefaultLease is short because the dispatcher renews it every quarter
+	// lease while the host runs. It bounds how long a crashed process holds a
+	// turn before recovery reclaims it.
+	DefaultLease = 2 * time.Minute
 )
 
 type RuntimeOptions struct {
 	QueueSize   int
 	Concurrency int
 	Lease       time.Duration
+	Logger      *slog.Logger
 }
 
 type Runtime struct {
 	Handler     *Handler
 	dispatcher  *Dispatcher
+	store       *Store
 	concurrency int
 }
 
@@ -36,16 +52,19 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 		return nil, errors.New("chat producer callback URL is invalid")
 	}
 	if options.QueueSize == 0 {
-		options.QueueSize = 256
+		options.QueueSize = DefaultQueueSize
 	}
 	if options.Concurrency == 0 {
-		options.Concurrency = 4
+		options.Concurrency = DefaultConcurrency
 	}
 	if options.Lease == 0 {
-		options.Lease = 15 * time.Minute
+		options.Lease = DefaultLease
 	}
 	if options.QueueSize < 1 || options.Concurrency < 1 || options.Lease <= 0 {
 		return nil, errors.New("chat runtime options are invalid")
+	}
+	if options.Logger == nil {
+		options.Logger = slog.Default()
 	}
 	store, err := NewStore(pool)
 	if err != nil {
@@ -55,15 +74,31 @@ func NewRuntime(pool *pgxpool.Pool, host ports.ChatHost, producerBaseURL string,
 	if err != nil {
 		return nil, err
 	}
-	return &Runtime{Handler: &Handler{Store: store, Dispatcher: dispatcher}, dispatcher: dispatcher, concurrency: options.Concurrency}, nil
+	dispatcher.logger = options.Logger
+	handler := &Handler{Store: store, Dispatcher: dispatcher, logger: options.Logger, metrics: dispatcher.metrics}
+	return &Runtime{Handler: handler, dispatcher: dispatcher, store: store, concurrency: options.Concurrency}, nil
 }
 
+// Run dispatches turns and relays other replicas' commits to local streams
+// until ctx ends.
 func (r *Runtime) Run(ctx context.Context) error {
 	if r == nil || r.dispatcher == nil {
 		return errors.New("chat runtime is not configured")
 	}
+	var listener sync.WaitGroup
+	defer listener.Wait()
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	listener.Go(func() {
+		_ = r.store.Listen(ctx, func(err error) {
+			r.dispatcher.logger.Warn("chat commit listener disconnected", "error", err)
+		})
+	})
 	return r.dispatcher.Run(ctx, r.concurrency)
 }
+
+// Collectors returns the runtime's Prometheus metrics for the process registry.
+func (r *Runtime) Collectors() []prometheus.Collector { return r.dispatcher.metrics.collectors() }
 
 func (r *Runtime) MountPublic(router chi.Router)        { r.Handler.MountPublic(router) }
 func (r *Runtime) MountAuthenticated(router chi.Router) { r.Handler.MountAuthenticated(router) }

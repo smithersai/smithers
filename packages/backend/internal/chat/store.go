@@ -24,11 +24,13 @@ import (
 )
 
 const (
-	maxPayloadBytes      = 2 << 20
-	maxBatchFrames       = 256
-	maxBatchBytes        = 96 << 10
-	maxOutputBytes       = 8 << 20
-	maxBatches           = 8192
+	maxPayloadBytes = 2 << 20
+	maxBatchFrames  = 256
+	maxBatchBytes   = 96 << 10
+	maxOutputBytes  = 8 << 20
+	// The producer commits one frame per batch, so a batch count cap must not
+	// bind before the byte budget. No valid batch encodes below 192 bytes.
+	maxBatches           = maxOutputBytes / 192
 	maxReplayBatches     = 16
 	terminalReserveBytes = 2048
 	maxIdentityBytes     = 160
@@ -46,8 +48,12 @@ var schemaFS embed.FS
 func Schema() ([]byte, error) { return schemaFS.ReadFile("schema.sql") }
 
 type Store struct {
-	pool *pgxpool.Pool
-	now  func() time.Time
+	pool    *pgxpool.Pool
+	now     func() time.Time
+	signals turnSignals
+	// afterReplayHead is a test seam that runs between the head read and the
+	// batch reads of Replay.
+	afterReplayHead func()
 }
 
 func NewStore(pool *pgxpool.Pool) (*Store, error) {
@@ -479,15 +485,6 @@ func (s *Store) Claim(ctx context.Context, scope Scope, turnID string, lease tim
 		return ProducerGrant{}, err
 	}
 	now := s.now().UTC()
-	if turn.CancelRequestedAt != nil {
-		if err = s.appendTerminalTx(ctx, tx, &turn, cancelledFrame(turn.RunID), StateCancelled, now); err != nil {
-			return ProducerGrant{}, err
-		}
-		if err = tx.Commit(ctx); err != nil {
-			return ProducerGrant{}, err
-		}
-		return ProducerGrant{}, ErrCancellationRequested
-	}
 	if turn.ProducerLeaseExpiresAt != nil && turn.ProducerLeaseExpiresAt.After(now) {
 		return ProducerGrant{}, ErrProducerBusy
 	}
@@ -499,6 +496,7 @@ func (s *Store) Claim(ctx context.Context, scope Scope, turnID string, lease tim
 		if err = tx.Commit(ctx); err != nil {
 			return ProducerGrant{}, err
 		}
+		s.signals.notify(turn.ID)
 		return ProducerGrant{}, ErrUncertain
 	}
 	token, tokenHash, err := tokenPair()
@@ -522,6 +520,42 @@ func (s *Store) MarkProviderStarted(ctx context.Context, grant ProducerGrant) er
 	result, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_started_at=COALESCE(producer_started_at,$4),updated_at=$4
 		WHERE id=$1 AND producer_generation=$2 AND producer_token_hash=$3 AND state='running' AND producer_lease_expires_at>$4`,
 		grant.TurnID, grant.Generation, hashToken(grant.Token), now)
+	if err != nil {
+		return err
+	}
+	if result.RowsAffected() != 1 {
+		return ErrProducerFenced
+	}
+	return nil
+}
+
+// RenewProducer extends a live producer's lease. It is fenced by generation
+// and token, so a producer that lost its claim cannot take the turn back.
+func (s *Store) RenewProducer(ctx context.Context, grant ProducerGrant, lease time.Duration) (time.Time, error) {
+	if lease <= 0 {
+		return time.Time{}, ErrInvalidRequest
+	}
+	expiresAt := s.now().UTC().Add(lease)
+	result, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=$4
+		WHERE id=$1 AND producer_generation=$2 AND producer_token_hash=$3 AND state='running' AND NOT terminal`,
+		grant.TurnID, grant.Generation, hashToken(grant.Token), expiresAt)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if result.RowsAffected() != 1 {
+		return time.Time{}, ErrProducerFenced
+	}
+	return expiresAt, nil
+}
+
+// ReleaseProducer ends the lease of a producer that stopped without a terminal
+// fact, such as a process shutdown. Recovery can then reclaim the turn at once;
+// Claim decides from producer_started_at whether to rerun it or seal it
+// uncertain.
+func (s *Store) ReleaseProducer(ctx context.Context, grant ProducerGrant) error {
+	result, err := s.pool.Exec(ctx, `UPDATE chat_turns SET producer_lease_expires_at=LEAST(now(),$4::timestamptz)
+		WHERE id=$1 AND producer_generation=$2 AND producer_token_hash=$3 AND state='running' AND NOT terminal`,
+		grant.TurnID, grant.Generation, hashToken(grant.Token), s.now().UTC())
 	if err != nil {
 		return err
 	}
@@ -809,9 +843,6 @@ func (s *Store) Commit(ctx context.Context, input CommitInput) (CommitResult, er
 		return CommitResult{}, ErrProducerFenced
 	}
 	terminal := meta.Type == "done"
-	if turn.CancelRequestedAt != nil && (!terminal || meta.Reason != "cancelled") {
-		return CommitResult{}, ErrCancellationRequested
-	}
 	terminalReserve := terminal && len(input.Frames) == 1 && batchBytes <= terminalReserveBytes
 	if batchBytes > maxBatchBytes || ((!terminalReserve && (turn.OutputBytes+int64(batchBytes) > maxOutputBytes || batch.Batch > maxBatches)) || batch.Batch > maxBatches+1) {
 		return CommitResult{}, ErrLimit
@@ -827,9 +858,6 @@ func (s *Store) Commit(ctx context.Context, input CommitInput) (CommitResult, er
 	next := cursorAfter(batch)
 	nextBytes := turn.OutputBytes + int64(batchBytes)
 	nextState := terminalState(meta)
-	if nextState == StateRunning {
-		nextState = StateRunning
-	}
 	acceptance, err := acceptanceOf(turn)
 	if err != nil {
 		return CommitResult{}, err
@@ -843,9 +871,13 @@ func (s *Store) Commit(ctx context.Context, input CommitInput) (CommitResult, er
 		turn.ID, next.Batch, next.Position, next.Hash, nextHeadHash, nextBytes, terminal, nextState, now); err != nil {
 		return CommitResult{}, err
 	}
+	if err = notifyTx(ctx, tx, turn.ID); err != nil {
+		return CommitResult{}, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return CommitResult{}, err
 	}
+	s.signals.notify(turn.ID)
 	return CommitResult{Status: "committed", Batch: batch, Cursor: next}, nil
 }
 
@@ -931,12 +963,14 @@ func (s *Store) Replay(ctx context.Context, input ReplayInput) (ReplayResult, er
 	if err != nil {
 		return ReplayResult{}, err
 	}
-	tx, err := s.pool.Begin(ctx)
+	// One read-only snapshot keeps the head and its batches consistent without
+	// taking a row lock that would contend with the producer's commits.
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return ReplayResult{}, err
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	turn, err := scanTurn(tx.QueryRow(ctx, `SELECT /* smithers-chat-replay-head */ `+turnColumns+` FROM chat_turns WHERE user_id=$1 AND run_id=$2 AND leg_id=$3 FOR SHARE`, input.Scope.UserID, input.RunID, input.Journal.LegID))
+	turn, err := scanTurn(tx.QueryRow(ctx, `SELECT /* smithers-chat-replay-head */ `+turnColumns+` FROM chat_turns WHERE user_id=$1 AND run_id=$2 AND leg_id=$3`, input.Scope.UserID, input.RunID, input.Journal.LegID))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ReplayResult{}, ErrNotFound
 	}
@@ -953,6 +987,9 @@ func (s *Store) Replay(ctx context.Context, input ReplayInput) (ReplayResult, er
 	after := initialCursor(acceptance)
 	if input.After != nil {
 		after = *input.After
+	}
+	if s.afterReplayHead != nil {
+		s.afterReplayHead()
 	}
 	result, err := s.replayVerified(ctx, tx, turn, after, input.Limit)
 	if err != nil {
@@ -1006,7 +1043,7 @@ func (s *Store) appendTerminalTx(ctx context.Context, tx pgx.Tx, turn *turnRecor
 	}
 	turn.HeadBatch, turn.HeadPosition, turn.CursorHash, turn.HeadHash = next.Batch, next.Position, &next.Hash, &hash
 	turn.OutputBytes, turn.Terminal, turn.State = nextBytes, true, state
-	return nil
+	return notifyTx(ctx, tx, turn.ID)
 }
 
 func (s *Store) Cancel(ctx context.Context, scope Scope, runID string) (CancelResult, error) {
@@ -1042,6 +1079,8 @@ func (s *Store) Cancel(ctx context.Context, scope Scope, runID string) (CancelRe
 		if turn.Terminal {
 			continue
 		}
+		// cancel_requested_at is an audit timestamp. The same transaction seals
+		// the turn, so no producer path ever sees it on a live turn.
 		if _, err = tx.Exec(ctx, `UPDATE chat_turns SET cancel_requested_at=COALESCE(cancel_requested_at,$2),updated_at=$2 WHERE id=$1`, turn.ID, now); err != nil {
 			return CancelResult{}, err
 		}
@@ -1054,6 +1093,9 @@ func (s *Store) Cancel(ctx context.Context, scope Scope, runID string) (CancelRe
 	result.Count = len(result.TurnIDs)
 	if err = tx.Commit(ctx); err != nil {
 		return CancelResult{}, err
+	}
+	for _, turnID := range result.TurnIDs {
+		s.signals.notify(turnID)
 	}
 	return result, nil
 }
@@ -1219,16 +1261,17 @@ func (s *Store) FailProducer(ctx context.Context, grant ProducerGrant, code stri
 	if code == "credential_missing" {
 		frame, _ = json.Marshal(map[string]any{"runId": turn.RunID, "type": "done", "code": "credential_missing", "error": "Model credential missing."})
 	}
-	if turn.CancelRequestedAt != nil || code == "cancelled" {
-		state = StateCancelled
-		frame = cancelledFrame(turn.RunID)
-	} else if turn.ProducerStartedAt != nil {
+	if turn.ProducerStartedAt != nil {
 		state = StateUncertain
 	}
 	if err = s.appendTerminalTx(ctx, tx, &turn, frame, state, now); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.signals.notify(turn.ID)
+	return nil
 }
 
 func (s *Store) GetState(ctx context.Context, scope Scope, turnID string) (State, bool, error) {
@@ -1239,69 +1282,6 @@ func (s *Store) GetState(ctx context.Context, scope Scope, turnID string) (State
 		return "", false, ErrNotFound
 	}
 	return state, terminal, err
-}
-
-// Verify rebuilds the complete journal projection, including its recorded byte
-// total, from the immutable batches. Normal reads verify the requested boundary,
-// every returned edge, and the sealed head.
-func (s *Store) Verify(ctx context.Context, scope Scope, runID string, journal JournalRequest) error {
-	if !validIdentity(runID) || !validJournal(journal) {
-		return ErrInvalidRequest
-	}
-	ownerHash, accessHash, err := authHashes(scope, journal.Token)
-	if err != nil {
-		return err
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	turn, err := scanTurn(tx.QueryRow(ctx, `SELECT `+turnColumns+` FROM chat_turns WHERE user_id=$1 AND run_id=$2 AND leg_id=$3 FOR SHARE`, scope.UserID, runID, journal.LegID))
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrNotFound
-	}
-	if err != nil {
-		return err
-	}
-	if err = authorize(turn, ownerHash, accessHash); err != nil {
-		return err
-	}
-	acceptance, head, err := checkHead(turn)
-	if err != nil {
-		return err
-	}
-	rows, err := tx.Query(ctx, `SELECT batch_number,from_position,previous_hash,frames,hash,canonical_bytes FROM chat_turn_batches WHERE turn_id=$1 ORDER BY batch_number`, turn.ID)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	next := initialCursor(acceptance)
-	var outputBytes int64
-	terminal := false
-	for rows.Next() {
-		if terminal {
-			return ErrCorrupt
-		}
-		batch, storedBytes, scanErr := loadBatch(rows)
-		if scanErr != nil {
-			return scanErr
-		}
-		batch, meta, verifyErr := verifyStoredBatch(turn, next.Batch+1, batch, storedBytes)
-		if verifyErr != nil || batch.From != next.Position+1 || !equalSecret(batch.PreviousHash, next.Hash) {
-			return ErrCorrupt
-		}
-		next = cursorAfter(batch)
-		outputBytes += int64(storedBytes)
-		terminal = meta.Type == "done"
-	}
-	if err = rows.Err(); err != nil {
-		return err
-	}
-	if !sameCursor(next, head) || outputBytes != turn.OutputBytes || terminal != turn.Terminal {
-		return ErrCorrupt
-	}
-	return tx.Commit(ctx)
 }
 
 func (s *Store) String() string { return fmt.Sprintf("chat.Store(%p)", s.pool) }

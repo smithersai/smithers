@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,11 +22,11 @@ type unusedChatHost struct{}
 func (unusedChatHost) RunChatTurn(context.Context, ports.ChatTurnGrant) error { return nil }
 
 func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
-	_, err := newChatComposition(runOptions{Options: Options{ChatProducerBaseURL: "http://127.0.0.1:1000"}}, nil)
+	_, err := newChatComposition(runOptions{Options: Options{ChatProducerBaseURL: "http://127.0.0.1:1000"}}, nil, chat.RuntimeOptions{})
 	require.ErrorContains(t, err, "requires a chat host")
 	worker, err := newChatComposition(runOptions{Options: Options{
 		Role: RoleHostedWorker, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
-	}}, &pgxpool.Pool{})
+	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
 	require.NoError(t, err)
 	require.Nil(t, worker.listener)
 
@@ -33,14 +34,14 @@ func TestChatCompositionRequiresPrivateCallbackBoundary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = newChatComposition(runOptions{Options: Options{
 		Role: RoleLocal, ChatHost: unusedChatHost{}, ChatCallbackListener: publicListener,
-	}}, nil)
+	}}, nil, chat.RuntimeOptions{})
 	require.ErrorContains(t, err, "must bind loopback")
 }
 
 func TestHostedAPICallbackUsesSharedListenerWhenPrivateListenerIsAbsent(t *testing.T) {
 	runtime, err := newChatComposition(runOptions{Options: Options{
 		Role: RoleHostedAPI, ChatHost: unusedChatHost{}, ChatProducerBaseURL: "https://api.example.test",
-	}}, &pgxpool.Pool{})
+	}}, &pgxpool.Pool{}, chat.RuntimeOptions{})
 	require.NoError(t, err)
 	require.NotNil(t, runtime)
 	require.Nil(t, runtime.listener)
@@ -86,4 +87,30 @@ func TestChatErasureRouteSurvivesSignoutAndRejectsForeignOrigin(t *testing.T) {
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, foreign)
 	require.Equal(t, http.StatusForbidden, response.Code)
+}
+
+func TestChatSizingDefaultsByRoleAndHonorsConfiguration(t *testing.T) {
+	hosted, err := chatRuntimeOptions(config.ChatConfig{}, true, nil)
+	require.NoError(t, err)
+	require.Equal(t, hostedChatConcurrency, hosted.Concurrency)
+	require.Equal(t, hostedChatQueueSize, hosted.QueueSize)
+	local, err := chatRuntimeOptions(config.ChatConfig{}, false, nil)
+	require.NoError(t, err)
+	require.Zero(t, local.Concurrency, "single owner keeps the chat runtime default")
+	configured, err := chatRuntimeOptions(config.ChatConfig{Concurrency: 64, QueueSize: 16, LeaseSeconds: 90}, true, nil)
+	require.NoError(t, err)
+	require.Equal(t, 64, configured.Concurrency)
+	require.Equal(t, 16, configured.QueueSize)
+	require.Equal(t, 90*time.Second, configured.Lease)
+	_, err = chatRuntimeOptions(config.ChatConfig{Concurrency: -1}, true, nil)
+	require.Error(t, err)
+}
+
+func TestChatSizingLoadsFromEnvironment(t *testing.T) {
+	t.Setenv("SMITHERS_CHAT_CONCURRENCY", "48")
+	t.Setenv("SMITHERS_CHAT_QUEUE_SIZE", "512")
+	t.Setenv("SMITHERS_CHAT_LEASE_SECONDS", "60")
+	cfg, err := config.Load("")
+	require.NoError(t, err)
+	require.Equal(t, config.ChatConfig{Concurrency: 48, QueueSize: 512, LeaseSeconds: 60}, cfg.Chat)
 }

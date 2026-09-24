@@ -110,7 +110,7 @@ func TestLocalChatComposedModelTurn(t *testing.T) {
 	require.ErrorIs(t, err, ports.ErrModelCredentialMissing)
 	host, err := modelhost.New(resolver, launcher)
 	require.NoError(t, err)
-	composition, err := newChatComposition(runOptions{Options: Options{Role: RoleLocal, ChatHost: host}}, pool)
+	composition, err := newChatComposition(runOptions{Options: Options{Role: RoleLocal, ChatHost: host}}, pool, chat.RuntimeOptions{})
 	require.NoError(t, err)
 	defer composition.close()
 	serveDone := make(chan error, 1)

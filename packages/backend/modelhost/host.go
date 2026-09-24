@@ -85,7 +85,15 @@ func (host *Host) RunChatTurn(ctx context.Context, grant ports.ChatTurnGrant) (r
 		runErr = errors.Join(runErr, lease.Close(cleanupCtx))
 	}()
 	baseURL, client, token := lease.Endpoint()
-	transport, err := chat.NewHTTPChatHost(baseURL, client, token)
+	// The lease client's timeout bounds probes and streams. A chat turn has
+	// no fixed length; the dispatcher context and producer lease end it.
+	var turnClient *http.Client
+	if client != nil {
+		copied := *client
+		copied.Timeout = 0
+		turnClient = &copied
+	}
+	transport, err := chat.NewHTTPChatHost(baseURL, turnClient, token)
 	if err != nil {
 		return err
 	}
