@@ -252,7 +252,8 @@ const runCase = (executor: CaseExecutorService, suiteCase: Case): Effect.Effect<
       Cause.hasInterrupts(cause)
         ? Effect.interrupt
         : Effect.succeed<CaseResult>({ case: suiteCase.name, error: caseError(suiteCase, cause), observations: [] })
-    )
+    ),
+    Effect.withSpan("Eval.case", { attributes: { case: suiteCase.name } })
   )
 
 // A declared case value is ground truth even when it is `null`, `false`, `0`
@@ -685,7 +686,7 @@ export const run = (
       cases: scored,
       observations: scored.flatMap((caseResult) => caseResult.observations)
     }
-  })
+  }).pipe(Effect.withSpan("Eval.run", { attributes: { suite: suite.name, runId: options.runId } }))
 
 /**
  * Provides a batch runner that is never available.

@@ -8,6 +8,7 @@ import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
+import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
 import * as CaseExecutor from "../src/CaseExecutor.ts"
 import { EvalError } from "../src/EvalError.ts"
@@ -48,6 +49,30 @@ const failureOf = (effect: Effect.Effect<unknown, EvalError, never>): Promise<Ev
   Effect.runPromise(Effect.flip(effect))
 
 describe("Runner", () => {
+  it("runs a suite under an Eval.run span and each case under an Eval.case span", async () => {
+    const spans: Array<Tracer.NativeSpan> = []
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options)
+        spans.push(span)
+        return span
+      }
+    })
+    const suite = await suiteOf("traced", [binding], [{ name: "one", input: 1 }, { name: "two", input: 2 }])
+    await Effect.runPromise(
+      Runner.run(suite, runOptions).pipe(Effect.provide(succeeding), Effect.withTracer(tracer))
+    )
+    const named = (name: string) => spans.filter((span) => span.name === name)
+    expect(named("Eval.run").map((span) => Object.fromEntries(span.attributes))).toEqual([
+      { suite: "traced", runId: "run" }
+    ])
+    expect(named("Eval.case").map((span) => span.attributes.get("case"))).toEqual(["one", "two"])
+    expect(
+      named("Eval.case").every((span) => span.parent?._tag === "Some" && span.parent.value === named("Eval.run")[0])
+    )
+      .toBe(true)
+  })
+
   it("flattens control characters in a returned step key and a wrapped target failure", async () => {
     const suite = await suiteOf("s", [], [{ name: "one", input: 1 }, { name: "two", input: 2 }])
     const executor = executorFor((suiteCase) =>

@@ -4,6 +4,9 @@
 
 ### Added
 
+- `Runner.run` executes under the `Eval.run` span and each case under
+  `Eval.case`.
+
 - Added `Report.Data`, `Report.data`, and `Report.version`: the serialized
   report shape, the projection that builds it, and the format version stamped
   on it as `reportVersion`. It versions the wire independently of the nested
