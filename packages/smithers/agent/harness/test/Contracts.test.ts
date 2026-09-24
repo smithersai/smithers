@@ -257,6 +257,25 @@ describe("AgentEvent", () => {
           params: ModelRequest.GenerationParams.make({ maxTokens: 1024 })
         })
       }),
+      new AgentEvent.SeatFailedOver({
+        eventType: AgentEvent.eventType.seatFailedOver,
+        from: "first",
+        to: "second",
+        code: "rate_limited",
+        resetAtEpochMillis: 1000
+      }),
+      new AgentEvent.ModelParked({
+        eventType: AgentEvent.eventType.modelParked,
+        seat: "second",
+        wakeAt: 1000,
+        source: "reset",
+        code: "rate_limited"
+      }),
+      new AgentEvent.ModelUnparked({
+        eventType: AgentEvent.eventType.modelUnparked,
+        seat: "second",
+        at: 1000
+      }),
       new AgentEvent.DecisionSettled({
         eventType: "flows.harness.decision-settled.v1",
         scope: "session-1",

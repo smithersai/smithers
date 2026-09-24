@@ -123,10 +123,11 @@ file counts as routed when it is a `page.tsx`, a `layout.tsx`, a file directly
 under a `panes/` directory, a `flow.ts` or `flow.mdx`, or one of the three
 layer files.
 
-Each table is written to a neighbouring `.tmp` file and renamed into place, so
-a write the filesystem refuses or an interrupted process leaves the previous
-table whole. A truncated table would be imported by both the Worker bundle and
-Vite, and a failure between the two tables would leave one new and one stale.
+Both tables are replaced together or not at all. The Worker bundle imports one
+and Vite the other, so a pair from two different trees is a broken app. Every
+table is first written to a neighbouring `.tmp` file; only when both writes
+succeed are they renamed into place. A rename that fails after the first table
+was replaced restores it, and the staging files are removed.
 
 A tree the router refuses while the server is running is reported on stderr
 rather than thrown. The watcher listener runs inside chokidar's emit, where a

@@ -40,8 +40,8 @@
  */
 import * as Capability from "@smthrs/capability/Capability"
 import * as Digest from "@smthrs/core/Digest"
-import type { FlowRuntime } from "@smthrs/flow"
-import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import { DurableClock, FlowRuntime } from "@smthrs/flow"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as CellCalls from "@smthrs/harness/CellCalls"
 import * as CellTurn from "@smthrs/harness/CellTurn"
@@ -60,6 +60,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import type * as MemorySource from "@smthrs/memory/Source"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
+import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import type { FlowsHooks, PluginInput } from "@smthrs/plugin"
@@ -70,9 +71,12 @@ import type * as Descriptor from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
+import type * as Crypto from "effect/Crypto"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import type * as Exit from "effect/Exit"
+import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
@@ -82,7 +86,7 @@ import type * as Budget from "./Budget.ts"
 import * as CellPlugin from "./CellPlugin.ts"
 import * as Checkpointed from "./Checkpointed.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
-import type * as QuotaPolicy from "./QuotaPolicy.ts"
+import * as QuotaPolicy from "./QuotaPolicy.ts"
 import type * as Seat from "./Seat.ts"
 
 /**
@@ -109,6 +113,10 @@ export interface Options {
    * holds a credential of its own.
    */
   readonly seat: Seat.Seat
+  /** Resolved seats attempted in order after `seat` on a capacity refusal. */
+  readonly fallbackSeats?: ReadonlyArray<Seat.Seat>
+  /** Capacity policy for this run; parking is enabled by default. */
+  readonly capacity?: { readonly park: boolean; readonly maxParkMillis?: number }
   /** Resolves context budgets after a steer, using the host seat vocabulary. */
   readonly contextWindowTokensFor?: CellTurn.Input["contextWindowTokensFor"]
   /** The task the run was admitted with. */
@@ -455,6 +463,30 @@ const withRequestPlugins = (
           )
         )
       ),
+    ...(engine.sealStepWithEvents === undefined ? {} : {
+      sealStepWithEvents: (
+        step: EngineLike.SealedModelStep,
+        emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+      ) =>
+        Stream.unwrap(
+          rewrite(step.request).pipe(
+            Effect.mapError((cause) =>
+              new HarnessError({
+                code: "engine_failed",
+                message: "A cell model-request plugin failed",
+                cause
+              })
+            ),
+            Effect.map((request) =>
+              engine.sealStepWithEvents!({
+                request,
+                keyMaterial: { ...step.keyMaterial, body: { _tag: "ModelCall", request } },
+                modelCallMs: step.modelCallMs
+              }, emit)
+            )
+          )
+        )
+    }),
     splice: engine.splice,
     call: engine.call,
     ...(engine.admit === undefined ? {} : { admit: engine.admit }),
@@ -472,6 +504,132 @@ const withRequestPlugins = (
         Effect.orElseSucceed(() => Option.none<EngineLike.Resolved>())
       ),
     suspend: engine.suspend
+  })
+}
+
+/** Keeps one frame on available seats, parking only when every route is cooling. */
+const withCapacity = (
+  seats: ReadonlyArray<{ readonly seat: Seat.Seat; readonly engine: EngineLike.EngineLike }>,
+  capacity: Options["capacity"],
+  services: Context.Context<FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto>
+): EngineLike.EngineLike => {
+  const primary = seats[0]!.engine
+  const cooling = new Map<string, QuotaPolicy.Park>()
+  const policy = QuotaPolicy.makeDefault({ defaultWaitMillis: 15 * 60_000, maxWaitMillis: Infinity })
+  const sealStepWithEvents = (
+    step: EngineLike.SealedModelStep,
+    emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> =>
+    Stream.unwrap(
+      Effect.gen(function*() {
+        let lastError: Model.ModelFailure | HarnessError | undefined
+        let previous = -1
+        let cycle = 0
+        const tried = new Set<number>()
+        for (;;) {
+          const now = yield* Clock.currentTimeMillis
+          const entries = yield* Effect.forEach(seats, ({ seat, engine }) => {
+            const request = ModelRequest.ModelRequest.make({ ...step.request, modelId: seat.modelId })
+            return EngineLike.resolve(engine, request).pipe(Effect.map((resolved) => ({
+              seat,
+              engine,
+              request,
+              key: Option.isSome(resolved) && Option.isSome(resolved.value.binding)
+                ? resolved.value.binding.value.routeId
+                : seat.id
+            })))
+          })
+          const selected = entries.findIndex((entry, index) =>
+            !tried.has(index) && (cooling.get(entry.key)?.wakeAt ?? 0) <= now
+          )
+          if (selected < 0) {
+            const earliest = entries.map((entry) => ({ entry, park: cooling.get(entry.key)! }))
+              .sort((a, b) => a.park.wakeAt - b.park.wakeAt)[0]!
+            if (
+              capacity?.park === false ||
+              (capacity?.maxParkMillis !== undefined && earliest.park.wakeAt - now > capacity.maxParkMillis)
+            ) {
+              return Stream.fail(
+                lastError ?? new HarnessError({ code: "model_failed", message: "All model seats are cooling" })
+              )
+            }
+            const source = earliest.park.source === "text" ? "default" : earliest.park.source
+            const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))?.code ?? "rate_limited"
+            if (earliest.park.wakeAt > now) {
+              yield* emit(
+                new AgentEvent.ModelParked({
+                  eventType: AgentEvent.eventType.modelParked,
+                  seat: earliest.entry.seat.id,
+                  wakeAt: earliest.park.wakeAt,
+                  source,
+                  code
+                })
+              )
+              yield* FlowRuntime.annotateWaiting({ reason: "quota", wakeAt: earliest.park.wakeAt })
+            }
+            yield* DurableClock.sleep({
+              name: `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}`,
+              duration: Duration.millis(Math.max(0, earliest.park.wakeAt - now)),
+              inMemoryThreshold: 1
+            })
+            yield* emit(
+              new AgentEvent.ModelUnparked({
+                eventType: AgentEvent.eventType.modelUnparked,
+                seat: earliest.entry.seat.id,
+                at: yield* Clock.currentTimeMillis
+              })
+            )
+            cycle++
+            tried.clear()
+            cooling.clear()
+            lastError = undefined
+            previous = -1
+            continue
+          }
+          const entry = entries[selected]!
+          if (previous >= 0 && previous !== selected && lastError !== undefined) {
+            const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!
+            yield* emit(
+              new AgentEvent.SeatFailedOver({
+                eventType: AgentEvent.eventType.seatFailedOver,
+                from: entries[previous]!.seat.id,
+                to: entry.seat.id,
+                code: model.code,
+                resetAtEpochMillis: model.resetAtEpochMillis
+              })
+            )
+          }
+          const changed = {
+            ...step,
+            request: entry.request,
+            keyMaterial: {
+              ...step.keyMaterial,
+              body: { _tag: "ModelCall", request: entry.request },
+              layers: cycle === 0 ? step.keyMaterial.layers : [
+                ...step.keyMaterial.layers,
+                `capacity-cycle:${cycle}`
+              ]
+            }
+          }
+          const exit = yield* Effect.exit(Stream.runCollect(entry.engine.sealStep(changed)))
+          if (Exit.isSuccess(exit)) return Stream.fromIterable(exit.value)
+          const error = Cause.squash(exit.cause)
+          const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(error))
+          const park = model === undefined ? Option.none<QuotaPolicy.Park>() : policy.classify(model, now)
+          if (Option.isNone(park)) return Stream.failCause(exit.cause)
+          lastError = error as Model.ModelFailure | HarnessError
+          cooling.set(entry.key, {
+            ...park.value,
+            wakeAt: cycle > 0 && park.value.wakeAt <= now ? now + 15 * 60_000 : park.value.wakeAt
+          })
+          tried.add(selected)
+          previous = selected
+        }
+      }).pipe(Effect.provideContext(services))
+    )
+  return EngineLike.make({
+    ...primary,
+    sealStepWithEvents
   })
 }
 
@@ -563,14 +721,26 @@ const runProductionUnmeasured: Service["run"] = (options) =>
             ...(options.authorize === undefined ? {} : { authorize: options.authorize }),
             run: resolver.run
           })
-          const port = yield* FlowEngineLike.make({
-            model: options.seat.model,
-            route: options.seat.route,
-            calls,
-            layers,
-            capabilities: { envelope },
-            modelRetryPolicy: options.modelRetryPolicy
-          })
+          const makePort = (seat: Seat.Seat) =>
+            FlowEngineLike.make({
+              model: seat.model,
+              route: seat.route,
+              calls,
+              layers,
+              capabilities: { envelope },
+              modelRetryPolicy: options.modelRetryPolicy
+            })
+          const seats = [options.seat, ...(options.fallbackSeats ?? [])]
+          const ports = yield* Effect.forEach(
+            seats,
+            (seat) => Effect.map(makePort(seat), (engine) => ({ seat, engine }))
+          )
+          const capacityServices = yield* Effect.context<
+            FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto
+          >()
+          const port = options.capacity?.park === false && ports.length === 1
+            ? ports[0]!.engine
+            : withCapacity(ports, options.capacity, capacityServices)
           const state = CellTurn.make({
             session: options.session,
             seat: options.seat.id,

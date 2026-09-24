@@ -513,6 +513,10 @@ export interface EngineLike {
   readonly sealStep: (
     step: SealedModelStep
   ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
+  readonly sealStepWithEvents?: (
+    step: SealedModelStep,
+    emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+  ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
   readonly splice: (batch: Plan.Batch) => Stream.Stream<Plan.SpliceEvent, HarnessError>
   readonly call: (call: Cell.Call) => Effect.Effect<Cell.CallResult, HarnessError>
   readonly admit?: (call: Cell.Call) => Effect.Effect<Cell.CallResult | undefined, HarnessError>
@@ -533,6 +537,8 @@ export interface EngineLike {
   and never enter it. `modelCallMs` travels on the step and is never key
   material, so the number the controller journals as armed is the number the
   engine enforces.
+- `sealStepWithEvents`, when supplied, seals through the same boundary and
+  receives the controller's event emitter for failover and park transitions.
 - `call` runs one flow call as a keyed, journaled activity at the tier the
   flow declares, keyed by `call.identity`. A flow failure settles as a
   `failure` `Cell.CallResult`; a permission requirement, an abort, or an
@@ -760,7 +766,7 @@ serves a fixed list; `makeNoop` records nothing; `layer`, `layerCells`, and
 `import * as AgentEvent from "@smthrs/harness/AgentEvent"`
 
 The serializable events a harness adapter emits, one schema class per event
-and `AgentEvent.AgentEvent` as the tagged union of all 36. The controller
+and `AgentEvent.AgentEvent` as the tagged union of all 39. The controller
 journals them in order: `DisciplineArmed` once at the start, the frame cycle
 (`TurnOpened`, `ModelRequested`, `ModelDelta`, `ModelRetried`, `ModelSettled`,
 `CellProduced`, `CellRejectedInFrame`, `CellCallStarted`, `CellCallSettled`,
@@ -772,6 +778,10 @@ observations (`ReadOnlyDemandIssued`, `ReadOnlyDemanded`, `RepeatDemanded`,
 `MutationObserved`, `CheckpointMinted`, `CompactionSettled`,
 `SteeringDrained`), and the terminal set (`Suspended`, `PermissionRequired`,
 `TurnClosed`, `Resolved`, `Aborted`).
+
+Capacity transitions are `SeatFailedOver` (`from`, `to`, `code`, optional
+`resetAtEpochMillis`), `ModelParked` (`seat`, `wakeAt`, `source`, `code`), and
+`ModelUnparked` (`seat`, `at`).
 
 Two of them record what a step was asked, so a reader can open one step and
 ask it again:
@@ -825,6 +835,9 @@ writes and `Transcript` reads:
 | `discipline-armed`              | `disciplineArmed`             | `flows.harness.discipline-armed.v1`              |
 | `model-delta`                   | `modelDelta`                  | `flows.harness.model-delta.v1`                   |
 | `model-requested`               | `modelRequested`              | `flows.harness.model-requested.v1`               |
+| `seat-failed-over`              | `seatFailedOver`              | `flows.harness.seat-failed-over.v1`              |
+| `model-parked`                  | `modelParked`                 | `flows.harness.model-parked.v1`                  |
+| `model-unparked`                | `modelUnparked`               | `flows.harness.model-unparked.v1`                |
 | `model-retried`                 | `modelRetried`                | `flows.harness.model-retried.v1`                 |
 | `model-settled`                 | `modelSettled`                | `flows.harness.model-settled.v1`                 |
 | `mutation-observed`             | `mutationObserved`            | `flows.harness.mutation-observed.v1`             |

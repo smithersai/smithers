@@ -1991,11 +1991,15 @@ const compacted = (
     })
     yield* requested(state, engine, request, "compaction", 1, emit)
     const events = yield* Stream.runCollect(
-      engine.sealStep({
+      (engine.sealStepWithEvents?.({
         request,
         keyMaterial: keyMaterialFrom(state, state.contextWindow, request),
         modelCallMs: state.modelCallMs
-      }).pipe(
+      }, emit) ?? engine.sealStep({
+        request,
+        keyMaterial: keyMaterialFrom(state, state.contextWindow, request),
+        modelCallMs: state.modelCallMs
+      })).pipe(
         Stream.tap((event) => emitModelProgress(event, emit))
       )
     ).pipe(Effect.map((collected) => Array.from(collected)))
@@ -2113,11 +2117,15 @@ const seal = (
       // supplies a clock sees the duration it declared.
       const startedAt = yield* Clock.currentTimeMillis
       const events = yield* Stream.runCollect(
-        engine.sealStep({
+        (engine.sealStepWithEvents?.({
           request,
           keyMaterial: keyMaterialFrom(state, contextWindow, request),
           modelCallMs: state.modelCallMs
-        }).pipe(
+        }, emit) ?? engine.sealStep({
+          request,
+          keyMaterial: keyMaterialFrom(state, contextWindow, request),
+          modelCallMs: state.modelCallMs
+        })).pipe(
           Stream.tap((event) => emitModelProgress(event, emit))
         )
       ).pipe(Effect.map((collected) => Array.from(collected)))

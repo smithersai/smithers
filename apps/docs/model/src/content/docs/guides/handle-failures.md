@@ -64,6 +64,9 @@ The twelve codes and their retryability are tabulated in the
 
 - `rate_limited`: transient. The executor already waited; a durable caller
   can park on `error.resetAtEpochMillis` instead of burning attempts.
+  ChatGPT `usage_limit_reached` responses and streamed failures use this code.
+  `resets_in_seconds` and `resets_at` become an absolute reset instant; a
+  subscription reset beyond the transport retry window is returned immediately.
 - `quota_exceeded`: never retryable, because waiting does not add credit.
   Park until the account is funded; `retryAfterMillis`,
   `resetAtEpochMillis`, and `resetSource` carry the wake instant when the

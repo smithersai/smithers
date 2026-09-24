@@ -94,6 +94,31 @@ const request = (modelId = "gpt-5.4"): Request.ModelRequest =>
   })
 
 describe("OpenAIResponses", () => {
+  it("classifies a streamed ChatGPT usage limit with its reset", () => {
+    const error = replayDataError([
+      "{\"type\":\"response.failed\",\"response\":{\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"The usage limit has been reached\",\"resets_at\":1790300000}}}"
+    ])
+    expect(error).toMatchObject({
+      code: "rate_limited",
+      resetAtEpochMillis: 1_790_300_000_000,
+      resetSource: "stream.error.resets_at"
+    })
+    expect(replayDataError([
+      "{\"type\":\"error\",\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"usage limit\",\"resets_at\":1790300000000}}"
+    ])).toMatchObject({ code: "rate_limited", resetAtEpochMillis: 1_790_300_000_000 })
+    const before = Date.now()
+    const relative = replayDataError([
+      "{\"type\":\"error\",\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"usage limit\",\"resets_in_seconds\":12}}"
+    ])
+    expect(relative.resetAtEpochMillis).toBeGreaterThanOrEqual(before + 12_000)
+    expect(relative.resetAtEpochMillis).toBeLessThanOrEqual(Date.now() + 12_000)
+    expect(relative).toMatchObject({ resetSource: "stream.error.resets_in_seconds", retryAfterMillis: 12_000 })
+    expect(
+      replayDataError([
+        "{\"type\":\"error\",\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"usage limit\",\"resets_in_seconds\":-1}}"
+      ]).resetAtEpochMillis
+    ).toBeUndefined()
+  })
   it("replays text and settles exactly once", () => {
     expect(replay("text.sse")).toEqual([
       { type: "text-start", id: "msg_1" },

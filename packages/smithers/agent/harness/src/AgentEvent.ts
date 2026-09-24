@@ -6,6 +6,7 @@
 import * as Permission from "@smthrs/capability/Permission"
 import type * as Classifier from "@smthrs/model/Classifier"
 import * as Evaluator from "@smthrs/model/Evaluator"
+import * as ModelError from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Schema } from "effect"
@@ -215,6 +216,49 @@ export class ModelRequested extends Schema.TaggedClass<ModelRequested>(
   binding: Schema.optional(EngineLike.Binding),
   /** The request the provider is sent, whole: after any rewrite the host applies. */
   request: ModelRequest.ModelRequest
+}) {}
+
+/**
+ * A capacity refusal moved the current frame to another seat.
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class SeatFailedOver extends Schema.TaggedClass<SeatFailedOver>(
+  "flows/harness/AgentEvent/SeatFailedOver"
+)("seat-failed-over", {
+  eventType: Schema.Literal("flows.harness.seat-failed-over.v1"),
+  from: Schema.String,
+  to: Schema.String,
+  code: ModelError.ModelErrorCode,
+  resetAtEpochMillis: Schema.optional(Schema.Number)
+}) {}
+
+/**
+ * All configured model seats are cooling until this instant.
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class ModelParked extends Schema.TaggedClass<ModelParked>(
+  "flows/harness/AgentEvent/ModelParked"
+)("model-parked", {
+  eventType: Schema.Literal("flows.harness.model-parked.v1"),
+  seat: Schema.String,
+  wakeAt: Schema.Number,
+  source: Schema.Literals(["reset", "retry-after", "default"]),
+  code: ModelError.ModelErrorCode
+}) {}
+
+/**
+ * A parked model frame may issue a new request.
+ * @category events
+ * @since 1.0.0-rc.1
+ */
+export class ModelUnparked extends Schema.TaggedClass<ModelUnparked>(
+  "flows/harness/AgentEvent/ModelUnparked"
+)("model-unparked", {
+  eventType: Schema.Literal("flows.harness.model-unparked.v1"),
+  seat: Schema.String,
+  at: Schema.Number
 }) {}
 
 /**
@@ -1254,6 +1298,9 @@ export const AgentEvent = Schema.Union([
   TurnOpened,
   ModelDelta,
   ModelRequested,
+  SeatFailedOver,
+  ModelParked,
+  ModelUnparked,
   ModelRetried,
   ModelSettled,
   CellProduced,
@@ -1327,6 +1374,9 @@ export const eventType = {
   disciplineArmed: "flows.harness.discipline-armed.v1",
   modelDelta: "flows.harness.model-delta.v1",
   modelRequested: "flows.harness.model-requested.v1",
+  seatFailedOver: "flows.harness.seat-failed-over.v1",
+  modelParked: "flows.harness.model-parked.v1",
+  modelUnparked: "flows.harness.model-unparked.v1",
   modelRetried: "flows.harness.model-retried.v1",
   modelSettled: "flows.harness.model-settled.v1",
   mutationObserved: "flows.harness.mutation-observed.v1",

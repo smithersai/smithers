@@ -3,7 +3,7 @@
  *
  * @since 0.1.0
  */
-import { Effect, Option, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import * as CanonicalJson from "./CanonicalJson.ts"
 import * as DeferredTools from "./DeferredTools.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
@@ -382,12 +382,33 @@ const record = (value: unknown): Readonly<Record<string, unknown>> | undefined =
     : undefined
 
 const providerError = (
-  value: OpenAIEvent
-): { readonly code: string | undefined; readonly message: string } => {
+  value: OpenAIEvent,
+  now: number
+): {
+  readonly code: string | undefined
+  readonly message: string
+  readonly resetAtEpochMillis?: number
+  readonly resetSource?: string
+  readonly retryAfterMillis?: number
+} => {
   const error = record(value.error) ?? record(record(value.response)?.error)
+  const resetAt = error?.resets_at
+  const resetIn = error?.resets_in_seconds
+  const absolute = typeof resetAt === "number" && Number.isFinite(resetAt)
+    ? resetAt < 1_000_000_000_000 ? resetAt * 1_000 : resetAt
+    : undefined
+  const relative = typeof resetIn === "number" && Number.isFinite(resetIn) && resetIn >= 0
+    ? now + resetIn * 1_000
+    : undefined
+  const resetAtEpochMillis = absolute ?? relative
   return {
     code: value.code ?? string(error?.code) ?? string(error?.type),
-    message: value.message ?? string(error?.message) ?? "OpenAI Responses stream failed"
+    message: value.message ?? string(error?.message) ?? "OpenAI Responses stream failed",
+    ...(resetAtEpochMillis === undefined ? {} : {
+      resetAtEpochMillis,
+      resetSource: absolute === undefined ? "stream.error.resets_in_seconds" : "stream.error.resets_at",
+      retryAfterMillis: Math.max(0, resetAtEpochMillis - now)
+    })
   }
 }
 
@@ -535,7 +556,8 @@ const closeOpenCalls = (
 const stepEvent = (
   state: State,
   value: OpenAIEvent,
-  continuation: Continuation
+  continuation: Continuation,
+  now: number
 ): { readonly state: State; readonly events: ReadonlyArray<ModelEvent.ModelEvent> } | ModelError => {
   if (state.settled) return { state, events: [] }
   const type = eventType(value)
@@ -700,11 +722,14 @@ const stepEvent = (
     return { state: terminal.state, events: [...events, ...closed.events, ...terminal.events] }
   }
   if (type === "response.failed" || type === "error") {
-    const error = providerError(value)
+    const error = providerError(value, now)
     return new ModelError({
       code: classifyHttpStatus(undefined, error.code, error.message),
       message: error.message,
-      providerCode: error.code
+      providerCode: error.code,
+      resetAtEpochMillis: error.resetAtEpochMillis,
+      resetSource: error.resetSource,
+      retryAfterMillis: error.retryAfterMillis
     })
   }
   return { state: current, events: [] }
@@ -720,11 +745,11 @@ const stepWith = (continuation: Continuation) =>
     state: State,
     event: OpenAIEvent
   ): Effect.Effect<readonly [State, ReadonlyArray<ModelEvent.ModelEvent>], ModelError> =>
-    Effect.suspend(() => {
-      const result = stepEvent(state, event, continuation)
-      return result instanceof ModelError
-        ? Effect.fail(result)
-        : Effect.succeed([result.state, result.events] as const)
+    Effect.gen(function*() {
+      const now = yield* Clock.currentTimeMillis
+      const result = stepEvent(state, event, continuation, now)
+      if (result instanceof ModelError) return yield* Effect.fail(result)
+      return [result.state, result.events] as const
     })
   )
 

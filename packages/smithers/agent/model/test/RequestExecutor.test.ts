@@ -322,6 +322,31 @@ describe("RequestExecutor", () => {
     }
   })
 
+  it("does not spend transport retries on a distant ChatGPT usage reset", async () => {
+    const requests: Array<HttpClientRequest.HttpClientRequest> = []
+    const layer = executorLayer([{
+      status: 429,
+      body:
+        "{\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"The usage limit has been reached\",\"resets_in_seconds\":1234}}"
+    }, { status: 200, body: "unexpected" }], requests)
+    const error = await Effect.runPromise(Effect.scoped(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(NOW)
+        const executor = yield* RequestExecutor.RequestExecutor
+        return yield* execute(executor, request()).pipe(Effect.flip)
+      }).pipe(
+        Effect.provide(layer),
+        Effect.provide(TestClock.layer()),
+        Effect.provideService(HttpClient.TracerDisabledWhen, () => true)
+      )
+    ))
+    expect(requests).toHaveLength(1)
+    expect(expectModelError(error)).toMatchObject({
+      code: "rate_limited",
+      resetAtEpochMillis: NOW + 1_234_000
+    })
+  })
+
   it("honors an in-budget Retry-After exactly before retrying", async () => {
     const requests: Array<HttpClientRequest.HttpClientRequest> = []
     const layer = executorLayer([
@@ -1601,6 +1626,17 @@ describe("RequestExecutor", () => {
   })
 
   it("normalizes every reset instant a provider body can express", async () => {
+    expect(
+      await errorFor({
+        status: 429,
+        body:
+          "{\"error\":{\"type\":\"usage_limit_reached\",\"message\":\"The usage limit has been reached\",\"resets_in_seconds\":1234}}"
+      })
+    ).toMatchObject({
+      code: "rate_limited",
+      resetAtEpochMillis: NOW + 1_234_000,
+      resetSource: "body.error.resets_in_seconds"
+    })
     expect(await errorFor({ status: 400, body: "{\"rate_limit\":{\"remaining\":0,\"reset\":30}}" })).toMatchObject({
       resetAtEpochMillis: NOW + 30_000,
       resetSource: "body.rate_limit.reset"

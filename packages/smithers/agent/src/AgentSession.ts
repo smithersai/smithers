@@ -1178,6 +1178,28 @@ export const trace = (
       return { eventType: "control.agent.aborted", payload: { reason: event.reason } }
     case "resolved":
       return { eventType: "control.agent.resolved", payload: { text: tracedField(assistantText(event.message)) } }
+    case "seat-failed-over":
+      return {
+        eventType: "control.agent.seat-failed-over",
+        payload: {
+          from: event.from,
+          to: event.to,
+          code: event.code,
+          resetAtEpochMillis: event.resetAtEpochMillis
+        }
+      }
+    case "model-parked":
+      return {
+        eventType: "control.agent.model-parked",
+        payload: {
+          seat: event.seat,
+          wakeAt: event.wakeAt,
+          source: event.source,
+          code: event.code
+        }
+      }
+    case "model-unparked":
+      return { eventType: "control.agent.model-unparked", payload: { seat: event.seat, at: event.at } }
     // Unreachable, and pinned that way. Every declared `AgentEvent` now has an
     // arm above, and the `never` assignment is what a newly declared tag fails
     // on: the arm it would otherwise fall into projects the event countable

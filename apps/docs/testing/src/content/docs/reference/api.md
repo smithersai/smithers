@@ -13,13 +13,15 @@ import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
 
-Three modules are reachable only by subpath. `TestHost` is the deterministic
+Four modules are reachable only by subpath. `TestHost` is the deterministic
 host bundle and stays explicit at `@smthrs/testing/TestHost`. `Vitest` is ESM only, because
 `vitest` refuses to load through `require()` and a barrel that carried it would
 break `require("@smthrs/testing")` for every CommonJS consumer of the assertion
 helpers. `Faults` is a set of real, machine-global process primitives rather
 than a double, and keeping it off the barrel keeps that visible at the import
 site.
+`ProcessTable` spawns `ps` through `node:child_process`, which browser test
+hosts cannot load, so it lives at `@smthrs/testing/ProcessTable`.
 
 `@smthrs/testing/internal/*` and `@smthrs/testing/*/index` are not public.
 `@smthrs/testing/package.json` is exported.
@@ -1701,6 +1703,38 @@ Each skew is relative to the real clock, and the latest installation controls
 the global clock. Restoring any live handle reinstalls the Date constructor and
 `Date.now` captured at module load, even when handles are restored out of order.
 `restore` is idempotent; it does not reinstate an earlier skew.
+
+## ProcessTable
+
+Bounded, explicit-column POSIX process probes for real-process tests, imported
+by subpath:
+
+```ts
+import * as ProcessTable from "@smthrs/testing/ProcessTable"
+```
+
+### ProcessTable.query
+
+```ts
+type Column = "pid" | "ppid" | "pgid" | "stat" | "comm" | "args" | "rss" | "lstart"
+
+interface Query {
+  readonly columns: readonly [Column, ...Array<Column>]
+  readonly pid?: number
+  readonly timeoutMs?: number
+}
+
+const query: (query: Query, spawn?: Spawn) => string
+```
+
+Runs `ps -ww -o <columns>` for the whole table, or for `pid` when given, with a
+64 MiB output buffer, `LC_ALL=C`, and `PATH=/usr/bin:/bin`. Returns the raw
+header-less text. Use `comm` for executable names and `args` when a script
+marker must be distinguished from its interpreter. A selected `pid` that does
+not exist returns empty text. Every other failure throws: a spawn error, a
+timeout, a buffer overflow, or a non-zero exit, so a failed probe cannot pass
+for a clean process table. `Spawn` has the signature of `spawnSync` and is the
+injection point for tests of the probe itself.
 
 ## Documented limits
 

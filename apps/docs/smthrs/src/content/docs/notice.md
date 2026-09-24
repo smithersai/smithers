@@ -59,7 +59,7 @@ nobody sees.
 | No `bin`                          | The `smthrs` and `smithers` executables come from `@smthrs/cli`. A binary here would shadow them on every machine that installs both.                        |
 | No dependencies                   | Installing the notice installs nothing else.                                                                                                                 |
 | Both entry points throw           | `dist/esm/index.js` throws on `import`, and `dist/cjs/index.js` throws on `require`.                                                                         |
-| `engines.node` is `>=26.4.0`     | Matches the [Node version Smithers 1.0 requires](https://smithers.sh/docs/migration/compatibility/). Lowering it would let the notice install where the packages it names cannot run. |
+| `engines.node` is `>=26.4.0`      | Matches the [Node version Smithers 1.0 requires](https://smithers.sh/docs/migration/compatibility/). Lowering it would let the notice install where the packages it names cannot run. |
 
 A dynamic `import()` rejects with the error rather than throwing at the call
 site, because the throw happens while the module evaluates. A `require` of the

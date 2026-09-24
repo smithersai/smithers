@@ -12,6 +12,7 @@ import type * as Model from "@smthrs/model/Model"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect"
+import type * as AgentEvent from "./AgentEvent.ts"
 import type * as Cell from "./Cell.ts"
 import { HarnessError } from "./HarnessError.ts"
 import type * as Plan from "./Plan.ts"
@@ -281,6 +282,11 @@ export interface EngineLike {
    */
   readonly sealStep: (
     step: SealedModelStep
+  ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
+  /** Optionally emits capacity transitions while sealing the same frame. */
+  readonly sealStepWithEvents?: (
+    step: SealedModelStep,
+    emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
   ) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError>
   readonly splice: (
     batch: Plan.Batch

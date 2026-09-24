@@ -25,7 +25,7 @@ export const classifyHttpStatus = (
   ) {
     return "authentication"
   }
-  if (status === 429 || /rate[-_\s]?limit|too many requests/.test(normalized)) return "rate_limited"
+  if (status === 429 || /rate[-_\s]?limit|usage[-_\s]?limit|too many requests/.test(normalized)) return "rate_limited"
   if (/content[-_\s]?policy|content[-_\s]?filter|safety/.test(normalized)) return "content_policy"
   // Quota and overflow must precede their generic invalid-request envelopes.
   if (isContextOverflow(code, message)) return "context_overflow"

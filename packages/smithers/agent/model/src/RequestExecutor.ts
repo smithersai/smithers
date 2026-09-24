@@ -297,7 +297,7 @@ const bodyResetCandidates = (
           relevance: hasRemaining ? "exhausted" : "unqualified"
         })
       }
-    } else if (/^(?:reset|retry)[-_]?after(?:[-_]?ms)?$/i.test(key)) {
+    } else if (/^(?:reset|retry)[-_]?after(?:[-_]?ms)?$|^resets?[-_]?in[-_]?seconds$/i.test(key)) {
       const millis = typeof item === "number" ? item : Number(item)
       if (Number.isFinite(millis)) {
         const multiplier = /ms$/i.test(key) ? 1 : 1_000
@@ -640,13 +640,15 @@ const statusError = (
     const classifiedMessage = classified === undefined
       ? undefined
       : responseBody(classified.message, request, redactedNames).body
+    const code = classified !== undefined && classified.code !== "unknown"
+      ? classified.code
+      : reasonForStatus(response.status, body, parsed)
 
     const error = new ModelError({
-      code: classified !== undefined && classified.code !== "unknown"
-        ? classified.code
-        : reasonForStatus(response.status, body, parsed),
+      code,
       message: classifiedMessage ?? providerMessage(response.status, details),
-      retryAfterMillis: classified?.retryAfterMillis ?? retry.retryAfterMillis,
+      retryAfterMillis: classified?.retryAfterMillis ?? retry.retryAfterMillis ??
+        (code === "rate_limited" && reset !== undefined ? Math.max(0, reset.at - now) : undefined),
       resetAtEpochMillis: classified?.resetAtEpochMillis ?? reset?.at,
       resetSource: sanitizedField(classified?.resetSource ?? reset?.source, request, redactedNames),
       providerCode: sanitizedField(classified?.providerCode ?? fields.code, request, redactedNames),

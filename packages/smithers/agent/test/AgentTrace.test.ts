@@ -29,6 +29,42 @@ const identity = new Cell.CallIdentity({
   layers: ["layer-a"]
 })
 
+describe("capacity event trace", () => {
+  it("projects failover, park, and wake fields for the control journal", () => {
+    expect(AgentSession.trace(
+      new AgentEvent.SeatFailedOver({
+        eventType: AgentEvent.eventType.seatFailedOver,
+        from: "first",
+        to: "second",
+        code: "rate_limited",
+        resetAtEpochMillis: 5000
+      })
+    )).toEqual({
+      eventType: "control.agent.seat-failed-over",
+      payload: { from: "first", to: "second", code: "rate_limited", resetAtEpochMillis: 5000 }
+    })
+    expect(AgentSession.trace(
+      new AgentEvent.ModelParked({
+        eventType: AgentEvent.eventType.modelParked,
+        seat: "second",
+        wakeAt: 5000,
+        source: "reset",
+        code: "rate_limited"
+      })
+    )).toEqual({
+      eventType: "control.agent.model-parked",
+      payload: { seat: "second", wakeAt: 5000, source: "reset", code: "rate_limited" }
+    })
+    expect(AgentSession.trace(
+      new AgentEvent.ModelUnparked({
+        eventType: AgentEvent.eventType.modelUnparked,
+        seat: "second",
+        at: 5000
+      })
+    )).toEqual({ eventType: "control.agent.model-unparked", payload: { seat: "second", at: 5000 } })
+  })
+})
+
 describe("durable call identity", () => {
   it("joins starts and both settlement outcomes by dispatch coordinates, independent of emission order", () => {
     const first = new Cell.Call({ ...call, identity })

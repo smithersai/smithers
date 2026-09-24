@@ -691,6 +691,8 @@ export const make = <
               contextWindowTokensFor: contextWindowResolver(seats),
               session,
               seat: resolved,
+              // This adapter owns its recorded quota park and replay decision.
+              capacity: { park: false },
               prompt,
               system: teaching,
               registry: host.registry,

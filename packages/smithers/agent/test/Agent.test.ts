@@ -23,6 +23,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import * as MemorySource from "@smthrs/memory/Source"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
+import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
@@ -37,6 +38,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import { Cause, Deferred, Effect, Exit, Layer, Logger, Metric, Option, References, Schema, Scope, Stream } from "effect"
 import type * as Crypto from "effect/Crypto"
+import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as Budget from "../src/Budget.ts"
@@ -270,6 +272,8 @@ const flows = [descriptor("fs/list", { tier: "sealed" }), descriptor("fs/write",
 const collect = (options: {
   readonly maxFrames?: number | undefined
   readonly seat?: Seat.Seat | undefined
+  readonly fallbackSeats?: ReadonlyArray<Seat.Seat> | undefined
+  readonly capacity?: Agent.Options["capacity"]
   readonly registry: Registry.Registry
   readonly model: Model.Model
   readonly implementations?: ReadonlyMap<string, CellCalls.Implementation> | undefined
@@ -298,6 +302,8 @@ const collect = (options: {
         route,
         contextWindowTokens: 0
       }),
+      ...(options.fallbackSeats === undefined ? {} : { fallbackSeats: options.fallbackSeats }),
+      ...(options.capacity === undefined ? {} : { capacity: options.capacity }),
       prompt: "write the first file",
       system: ["You are running inside a smoke test."],
       registry: options.registry,
@@ -327,6 +333,169 @@ const collect = (options: {
     }
     return events
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
+
+describe("capacity seat chain", () => {
+  it("cools every seat bound to the refused route", async () => {
+    const contacted: Array<string> = []
+    const refused = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          contacted.push("first")
+          return Stream.fail(
+            new ModelError({
+              code: "rate_limited",
+              message: "account limit",
+              resetAtEpochMillis: Date.now() + 3_600_000,
+              httpStatus: 429
+            })
+          )
+        })
+    })
+    const second = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push("second")
+          return recordedCells([], ["ctx.done('wrong account')"]).stream(request)
+        })
+    })
+    const outcome = await drive(collect({
+      model: refused,
+      registry: registryOf([]),
+      seat: Seat.make({ id: "first", modelId: "first", model: refused, route, contextWindowTokens: 0 }),
+      fallbackSeats: [Seat.make({ id: "second", modelId: "second", model: second, route, contextWindowTokens: 0 })],
+      capacity: { park: false }
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(contacted).toEqual(["first"])
+  })
+
+  it("contacts the next seat and completes the same frame with its REPL state", async () => {
+    const contacted: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    const firstAnswer = recordedCells([], ["globalThis.kept = 41; console.log('ready')"])
+    let firstCalls = 0
+    const first = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push("first")
+          return firstCalls++ === 0
+            ? firstAnswer.stream(request)
+            : Stream.fail(
+              new ModelError({
+                code: "rate_limited",
+                message: "usage limit",
+                resetAtEpochMillis: Date.now() + 3_600_000,
+                httpStatus: 429
+              })
+            )
+        })
+    })
+    const secondAnswer = recordedCells([], ["ctx.done(globalThis.kept + 1)"])
+    const second = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push("second")
+          return secondAnswer.stream(request)
+        })
+    })
+    const outcome = await drive(collect({
+      model: first,
+      registry: registryOf([]),
+      sink: events,
+      seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
+      fallbackSeats: [Seat.make({
+        id: "second",
+        modelId: "second",
+        model: second,
+        route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
+        contextWindowTokens: 0
+      })]
+    }))
+    expect(outcome._tag).toBe("completed")
+    expect(contacted).toEqual(["first", "first", "second"])
+    expect(events.find((event) => event._tag === "seat-failed-over")).toMatchObject({ from: "first", to: "second" })
+    expect(events.some((event) => event._tag === "resolved")).toBe(true)
+  })
+
+  it("parks when both seats refuse, then un-parks on the test clock and completes", async () => {
+    const contacted: Array<string> = []
+    const events: Array<AgentEvent.AgentEvent> = []
+    let firstCalls = 0
+    const completed = recordedCells([], ["ctx.done('done')"])
+    const refusal = () =>
+      new ModelError({
+        code: "rate_limited",
+        message: "usage limit",
+        resetAtEpochMillis: 6_000,
+        httpStatus: 429
+      })
+    const first = Model.make({
+      stream: (request) =>
+        Stream.suspend(() => {
+          contacted.push("first")
+          return firstCalls++ === 0 ? Stream.fail(refusal()) : completed.stream(request)
+        })
+    })
+    const second = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          contacted.push("second")
+          return Stream.fail(refusal())
+        })
+    })
+    const outcome = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* TestClock.setTime(1_000)
+      let settled = Deferred.makeUnsafe<Outcome>()
+      yield* engine.register(driveFlow, () =>
+        Effect.onExit(
+          collect({
+            model: first,
+            registry: registryOf([]),
+            sink: events,
+            seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
+            fallbackSeats: [Seat.make({
+              id: "second",
+              modelId: "second",
+              model: second,
+              route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
+              contextWindowTokens: 0
+            })]
+          }),
+          (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+        )).pipe(Scope.provide(scope))
+      yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
+      const firstExit = yield* Deferred.await(settled)
+      expect(firstExit._tag).toBe("suspended")
+      expect(events.some((event) => event._tag === "model-parked")).toBe(true)
+      yield* awaitParked(engine, driveFlow)
+      settled = Deferred.makeUnsafe<Outcome>()
+      yield* TestClock.adjust("5 seconds")
+      return yield* Deferred.await(settled)
+    }).pipe(
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+      Effect.provide(TestClock.layer()),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect({
+      outcome: outcome._tag,
+      contacted,
+      transitions: events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked")
+    }).toEqual({
+      outcome: "completed",
+      contacted: ["first", "second", "first"],
+      transitions: [
+        "model-parked",
+        "model-unparked"
+      ]
+    })
+    expect(events.find((event) => event._tag === "model-parked")).toMatchObject({ wakeAt: 6_000, source: "reset" })
+    expect(events.find((event) => event._tag === "model-unparked")).toMatchObject({ at: 6_000 })
+  })
+})
 
 describe("supervisor memory through Agent.run", () => {
   it.each(
