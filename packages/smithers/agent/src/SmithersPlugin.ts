@@ -23,7 +23,6 @@ import type { FlowsHooks, FlowsPlugin } from "@smthrs/plugin"
 import { make as makePlugin } from "@smthrs/plugin"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import type * as CellPlugin from "./CellPlugin.ts"
 
 /**
  * The plugin's name in the kernel and in the composition identity.

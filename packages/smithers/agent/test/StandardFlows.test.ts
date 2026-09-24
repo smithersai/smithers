@@ -168,7 +168,7 @@ describe("the standard capability catalog", () => {
         }).pipe(Effect.provide(guarded), Effect.scoped)
       )
 
-      expect(result).toMatchObject({ outcome: "success", value: fixture.value })
+      expect(result, JSON.stringify(result)).toMatchObject({ outcome: "success", value: fixture.value })
     } finally {
       await rm(root, { recursive: true, force: true })
     }

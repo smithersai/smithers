@@ -557,6 +557,8 @@ export interface EngineLike {
 - `observe` measures the workspace as it stands, as an `Observation` (`{
   digest, paths, complete }`). `complete: false` means the measurement covered
   a bounded prefix, and a prefix cannot say the rest of the tree held still.
+  After a partial walk, measurement stops for the rest of that run; mutation
+  evidence falls back to flow declarations.
 - `capture` pins the workspace under the id in the `CaptureRequest` and
   returns a `Snapshot` (`{ id, ref }`), where `ref` is the host's own name for
   what it pinned.

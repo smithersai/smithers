@@ -76,7 +76,7 @@ describe("SeatResolver.contextWindowTokensFor", () => {
     ["publishers/anthropic/models/claude-opus-4-5@20251101", 200_000],
     ["us.anthropic.claude-opus-4-6-v1", 200_000],
     ["claude-opus-4-9", 200_000],
-    ["claude-opus-5-1", 200_000],
+    ["claude-opus-5-1", 1_000_000],
     ["claude-fable-50", 200_000]
   ])("budgets %s at %i tokens", (id, tokens) => {
     expect(SeatResolver.contextWindowTokensFor(id)).toBe(tokens)
