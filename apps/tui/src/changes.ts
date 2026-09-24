@@ -2,11 +2,13 @@
 import type * as Cell from "@smthrs/harness/Cell"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import * as ApplyPatch from "@smthrs/std/ApplyPatch"
+import * as Bash from "@smthrs/std/Bash"
 import { createTwoFilesPatch } from "diff"
-import { Effect } from "effect"
-import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { Effect, Schema } from "effect"
+import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
+import { readFile, stat } from "node:fs/promises"
+import { resolve } from "node:path"
 import * as Subprocess from "./subprocess.ts"
 
 export interface Patch {
@@ -38,6 +40,36 @@ export const mode = async (path: string): Promise<number | undefined> => {
     return (await stat(path)).mode & 0o777
   } catch {
     return undefined
+  }
+}
+interface FileState {
+  readonly digest: string | null | undefined
+  readonly text: string | null | undefined
+  readonly mode: number | undefined
+}
+/** Read a candidate before or after the call; a digest covers binary and large files too. */
+const fileState = async (path: string): Promise<FileState> => {
+  try {
+    const info = await stat(path)
+    const hash = createHash("sha256")
+    let text: string | null | undefined
+    if (info.size <= maxBytes) {
+      const bytes = await readFile(path)
+      hash.update(bytes)
+      try {
+        text = bytes.includes(0) ? undefined : new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+      } catch {
+        text = undefined
+      }
+    } else {
+      for await (const chunk of createReadStream(path)) hash.update(chunk)
+    }
+    return { digest: hash.digest("hex"), text, mode: info.mode & 0o777 }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code
+    return code === "ENOENT" || code === "ENOTDIR"
+      ? { digest: null, text: null, mode: undefined }
+      : { digest: undefined, text: undefined, mode: undefined }
   }
 }
 /**
@@ -123,29 +155,33 @@ export const splitPatch = (diff: string): Patch[] =>
   })
 const unavailable: Patch = { path: "Changes", patch: "Diff unavailable or too large." }
 
-/**
- * The working tree under `cwd` as a git tree, staged into a private copy of
- * the repository's index: git's stat cache rereads only files that changed,
- * and the real index and HEAD are untouched. `undefined` outside a repository.
- */
-const gitSnapshot = async (cwd: string, index: string): Promise<string | undefined> => {
-  const env = { GIT_INDEX_FILE: index }
-  if ((await git(cwd, ["add", "-A", "--", "."], env)) === undefined) return undefined
-  const tree = (await git(cwd, ["write-tree"], env))?.trim()
-  return tree === "" ? undefined : tree
-}
-const gitIndex = async (cwd: string): Promise<{ readonly index: string; readonly dispose: () => Promise<void> } | undefined> => {
-  const real = (await git(cwd, ["rev-parse", "--git-path", "index"]))?.trim()
-  if (real === undefined || real === "") return undefined
-  const folder = await mkdtemp(join(tmpdir(), "smithers-capture-"))
-  const index = join(folder, "index")
-  try {
-    await copyFile(resolve(cwd, real), index)
-  } catch { /* A repository with nothing staged yet has no index. */ }
-  return { index, dispose: () => rm(folder, { recursive: true, force: true }) }
+const changedPatch = (path: string, old: FileState, next: FileState): Patch | undefined => {
+  if (old.digest === undefined || next.digest === undefined ||
+      (old.digest === next.digest && old.mode === next.mode)) return undefined
+  if (old.text === undefined || next.text === undefined) return { path, patch: `Binary or large file: ${path}` }
+  const diff = patch(path, old.text, next.text, next.text !== null ? undefined : old.mode)
+  if (diff !== undefined) return diff
+  return { path, patch: `diff --git a/${path} b/${path}\nold mode ${(0o100000 | (old.mode ?? 0)).toString(8)}\nnew mode ${(0o100000 | (next.mode ?? 0)).toString(8)}\n` }
 }
 
-/** A bash call's changes: the VCS's own before/after diff, relative to `cwd`; no receipt outside a repository. */
+/**
+ * Candidate files in the working tree, including untracked paths, without
+ * staging or consulting HEAD. Ignored files are not candidates for receipts.
+ */
+const gitPaths = async (cwd: string): Promise<string[] | undefined> => {
+  const output = await git(cwd, ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "."])
+  return output === undefined ? undefined : [...new Set(output.split("\0").filter(Boolean))]
+}
+const states = async (cwd: string, paths: ReadonlyArray<string>): Promise<Map<string, FileState>> => {
+  const found = new Map<string, FileState>()
+  for (let at = 0; at < paths.length; at += 64) {
+    const batch = await Promise.all(paths.slice(at, at + 64).map(async (path) => [path, await fileState(resolve(cwd, path))] as const))
+    for (const [path, state] of batch) found.set(path, state)
+  }
+  return found
+}
+
+/** A bash call's changes against pre-call files, relative to `cwd`; no receipt outside a repository. */
 const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
   Effect.gen(function*() {
     const jj = Subprocess.which("jj") !== null
@@ -154,63 +190,53 @@ const shell = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPat
     if (jj) {
       const result = yield* binding.run(call)
       const diff = yield* Effect.promise(() => command("jj", cwd, ["diff", "--from", jj, "--git", "--color=never"]))
-      yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches: diff === undefined ? [unavailable] : splitPatch(diff) }))
+      const patches = diff === undefined ? [unavailable] : splitPatch(diff)
+      if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
       return result
     }
-    const scratch = yield* Effect.promise(() => gitIndex(cwd))
-    const before = scratch === undefined ? undefined : yield* Effect.promise(() => gitSnapshot(cwd, scratch.index))
-    if (scratch === undefined || before === undefined) {
-      if (scratch !== undefined) yield* Effect.promise(scratch.dispose)
-      return yield* binding.run(call)
-    }
-    return yield* binding.run(call).pipe(
-      Effect.tap(() =>
-        Effect.promise(async () => {
-          const after = await gitSnapshot(cwd, scratch.index)
-          const diff = after === undefined
-            ? undefined
-            : await git(cwd, ["diff", "--no-color", "--no-ext-diff", "--no-renames", "--relative", before, after])
-          onPatch({ call: identity(call.identity), patches: diff === undefined ? [unavailable] : splitPatch(diff) })
-        })
-      ),
-      Effect.ensuring(Effect.promise(scratch.dispose))
-    )
+    const candidates = yield* Effect.promise(() => gitPaths(cwd))
+    if (candidates === undefined) return yield* binding.run(call)
+    const before = yield* Effect.promise(() => states(cwd, candidates))
+    const result = yield* binding.run(call)
+    const afterPaths = yield* Effect.promise(() => gitPaths(cwd))
+    if (afterPaths === undefined) return result
+    const after = yield* Effect.promise(() => states(cwd, [...new Set([...candidates, ...afterPaths])]))
+    const patches = [...after].flatMap(([path, next]) => {
+      const old = before.get(path) ?? { digest: null, text: null, mode: undefined }
+      const diff = changedPatch(path, old, next)
+      return diff === undefined ? [] : [diff]
+    })
+    if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+    return result
   })
 
 /** A write flow's changes: the files its input names, read before and after. */
 const named = (binding: FlowBinding.Binding, call: Cell.Call, cwd: string, onPatch: (receipt: Receipt) => void) =>
   Effect.gen(function*() {
     const files = paths(call.flowName, call.input)
-    const before = new Map(
-      yield* Effect.promise(() =>
-        Promise.all(files.slice(0, 200).map(async (path) => [path, await read(resolve(cwd, path))] as const))
-      )
-    )
-    const modes = new Map(
-      yield* Effect.promise(() =>
-        Promise.all(files.slice(0, 200).map(async (path) => [path, await mode(resolve(cwd, path))] as const))
-      )
-    )
+    const before = yield* Effect.promise(() => states(cwd, files))
     const result = yield* binding.run(call)
     const patches: Patch[] = []
-    for (const path of files.slice(0, 200)) {
+    let additional = 0
+    for (const path of files) {
       const old = before.get(path)
-      const next = yield* Effect.promise(() => read(resolve(cwd, path)))
-      if (old === undefined || next === undefined || (old !== null && old.length > maxBytes)) {
-        patches.push({ path, patch: `Binary or large file: ${path}` })
-      } else {
-        const diff = patch(path, old, next, next !== null ? undefined : modes.get(path))
-        if (diff !== undefined) patches.push(diff)
+      const next = yield* Effect.promise(() => fileState(resolve(cwd, path)))
+      const diff = changedPatch(path, old ?? { digest: null, text: null, mode: undefined }, next)
+      if (diff === undefined) continue
+      if (patches.length >= 200) {
+        additional++
+        continue
       }
+      patches.push(diff)
     }
-    if (files.length > 200) {
+    if (additional > 0) {
       patches.push({
         path: "More changes",
-        patch: `${files.length - 200} additional files; diff capture limited to 200 files.`
+        patch: `${additional} additional files; diff capture limited to 200 files.`
       })
     }
     // Empty is meaningful: a rejected/no-op write must not show a proposed edit as real.
-    if (files.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
+    if (patches.length > 0) yield* Effect.sync(() => onPatch({ call: identity(call.identity), patches }))
     return result
   })
 
@@ -226,7 +252,9 @@ export const capture = (
       bindings.map((binding) => ({
         ...binding,
         run: (call: Cell.Call) =>
-          call.flowName === "bash" ? shell(binding, call, cwd, onPatch) : named(binding, call, cwd, onPatch)
+          call.flowName === "bash" && Schema.decodeUnknownResult(Bash.Input)(call.input)._tag === "Success"
+            ? shell(binding, call, cwd, onPatch)
+            : named(binding, call, cwd, onPatch)
       }))
     ))
 })
