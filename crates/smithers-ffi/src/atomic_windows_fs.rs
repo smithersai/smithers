@@ -66,27 +66,34 @@ fn code(error: &io::Error) -> &'static str {
 fn field<'a>(value: &'a Value, key: &str) -> io::Result<&'a str> {
     value[key].as_str().ok_or_else(|| invalid(key))
 }
-fn confined<'a>(request: &'a Value, path: &'a str) -> io::Result<Vec<&'a OsStr>> {
+fn confined<'a>(root: &Directory, request: &Value, path: &'a str) -> io::Result<Vec<&'a OsStr>> {
     let path = Path::new(path);
     if !path.is_absolute() {
         return Err(invalid("path must be absolute"));
     }
-    for key in ["logicalRoot", "boundaryRoot"] {
-        if let Some(base) = request[key].as_str() {
-            if let Ok(relative) = path.strip_prefix(base) {
-                return relative
-                    .components()
-                    .filter_map(|part| match part {
-                        Component::Normal(name) => Some(Ok(name)),
-                        Component::CurDir => None,
-                        _ => Some(Err(error("EPERM", "parent traversal denied"))),
-                    })
-                    .collect();
-            }
+    // Native realPath expands DOS short names even when the host's public
+    // adapter preserves them. Accept the spelling observed from this pinned
+    // handle as well as the two request roots; never reopen a caller alias.
+    let canonical = root.canonical_path(None)?;
+    for base in ["logicalRoot", "boundaryRoot"]
+        .into_iter()
+        .filter_map(|key| request[key].as_str())
+        .chain(std::iter::once(canonical.as_str()))
+    {
+        if let Ok(relative) = path.strip_prefix(base) {
+            return relative
+                .components()
+                .filter_map(|part| match part {
+                    Component::Normal(name) => Some(Ok(name)),
+                    Component::CurDir => None,
+                    _ => Some(Err(error("EPERM", "parent traversal denied"))),
+                })
+                .collect();
         }
     }
     Err(error("EPERM", "path outside pinned root"))
 }
+
 fn directory(root: &Directory, parts: &[&OsStr], create: bool) -> io::Result<Directory> {
     let mut current = root.try_clone()?;
     for name in parts {
@@ -112,7 +119,7 @@ fn parent<'a>(
     path: &'a str,
     create: bool,
 ) -> io::Result<(Directory, &'a OsStr)> {
-    let parts = confined(request, path)?;
+    let parts = confined(root, request, path)?;
     let (name, parents) = parts
         .split_last()
         .ok_or_else(|| error("EPERM", "refusing root mutation"))?;
@@ -307,7 +314,7 @@ pub(super) fn run(
     match operation {
         "exists" | "stat" | "realPath" => {
             let path = field(request, "path")?;
-            let parts = confined(request, path)?;
+            let parts = confined(&root, request, path)?;
             let metadata = if parts.is_empty() {
                 root.self_info()
             } else {
@@ -336,7 +343,7 @@ pub(super) fn run(
         }
         "readFile" | "readFileString" => {
             let path = field(request, "path")?;
-            if confined(request, path)?.is_empty() {
+            if confined(&root, request, path)?.is_empty() {
                 return Err(error("EISDIR", "root is a directory"));
             }
             let (dir, name) = parent(&root, request, path, false)?;
@@ -351,7 +358,7 @@ pub(super) fn run(
         }
         "writeFile" | "writeFileString" => {
             let path = field(request, "path")?;
-            if confined(request, path)?.is_empty() {
+            if confined(&root, request, path)?.is_empty() {
                 return Err(error("EISDIR", "root is a directory"));
             }
             let flag = options["flag"].as_str().unwrap_or("w");
@@ -411,7 +418,7 @@ pub(super) fn run(
         "makeDirectory" => {
             let path = field(request, "path")?;
             let recursive = options["recursive"].as_bool().unwrap_or(false);
-            if confined(request, path)?.is_empty() {
+            if confined(&root, request, path)?.is_empty() {
                 return if recursive {
                     Ok(Value::Null)
                 } else {
@@ -434,7 +441,7 @@ pub(super) fn run(
             Ok(Value::Null)
         }
         "readDirectory" => {
-            let dir = directory(&root, &confined(request, field(request, "path")?)?, false)?;
+            let dir = directory(&root, &confined(&root, request, field(request, "path")?)?, false)?;
             let mut entries = Vec::new();
             listing(
                 &dir,
@@ -496,7 +503,7 @@ pub(super) fn run(
         }
         "readLink" => {
             let path = field(request, "path")?;
-            if confined(request, path)?.is_empty() {
+            if confined(&root, request, path)?.is_empty() {
                 return Err(invalid("root is not a link"));
             }
             let (dir, name) = parent(&root, request, path, false)?;
@@ -505,7 +512,7 @@ pub(super) fn run(
         "digest" => digest_with_hook(&root, request, content_limit, || {}),
         "glob" => {
             let base = field(request, "root")?;
-            let dir = directory(&root, &confined(request, base)?, false)?;
+            let dir = directory(&root, &confined(&root, request, base)?, false)?;
             let selected =
                 GlobRule::new(&glob_pattern(field(request, "pattern")?, base, false), true)?;
             let excluded = options["exclude"]
@@ -696,6 +703,18 @@ mod tests {
             fixture.execute(fixture.request("realPath", "nested/deeper/note.txt")),
             serde_json::from_slice::<Value>(&native.stdout).unwrap()
         );
+        let canonical: Value = serde_json::from_slice(&native.stdout).unwrap();
+        for operation in ["realPath", "readFileString", "stat"] {
+            let mut request = fixture.request(operation, "nested/deeper/note.txt");
+            request["path"] = canonical.clone();
+            request["logicalRoot"] = json!(fixture.root.parent().unwrap().join("workspace-alias"));
+            let result = fixture.execute(request);
+            match operation {
+                "realPath" => assert_eq!(result, canonical),
+                "readFileString" => assert_eq!(result, "Hello!"),
+                _ => assert_eq!(result["size"], "6"),
+            }
+        }
         let mut bytes = fixture.request("writeFile", "bytes");
         bytes["data"] = json!("AQID");
         fixture.execute(bytes);
