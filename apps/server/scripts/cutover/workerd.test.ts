@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { wrapperFor } from "./deployment"
+import { uploadModuleType, wrapperFor } from "./deployment"
 
 test("actual workerd retains original DO storage and serves only sealed authorized exports", async () => {
   const build = async (entry: string) => {
@@ -11,7 +11,7 @@ test("actual workerd retains original DO storage and serves only sealed authoriz
   const helper = await build(new URL("../../src/MaintenanceExport.ts", import.meta.url).pathname)
   const seedLegacy = await Bun.file(new URL("./legacy-state-fixture.mjs", import.meta.url)).text()
   const child = Bun.spawn(["node", new URL("./export-workerd.mjs", import.meta.url).pathname], {
-    stdin: new Blob([JSON.stringify({ legacy, seedLegacy, helper, wrapper: wrapperFor("index.js") })]), stdout: "pipe", stderr: "pipe"
+    stdin: new Blob([JSON.stringify({ legacy, seedLegacy, helper, wrapper: wrapperFor("index.js"), legacyMime: uploadModuleType("index.js", "text/javascript;charset=utf-8", "index.js") })]), stdout: "pipe", stderr: "pipe"
   })
   const [code, out, error] = await Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()])
   expect(error).toBe("")

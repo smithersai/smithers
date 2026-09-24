@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { accountURL, api, scriptPath, validateBindings, type Settings } from "./cloudflare"
-import { maintenanceNames, metadataFor, stable, uploadedVersion, wrapperFor } from "./deployment"
+import { maintenanceNames, metadataFor, stable, uploadModuleType, uploadedVersion, wrapperFor } from "./deployment"
 
 interface Deployment { id: string; annotations?: Record<string, string>; versions: Array<{ version_id: string; percentage: number }> }
 interface Module { name: string; file: string; type: string; sha256: string }
@@ -42,7 +42,7 @@ if (mode === "prepare") {
     const content = new Uint8Array(await file.arrayBuffer())
     const local = `original-${modules.length}.bin`
     save(local, content)
-    modules.push({ name, file: local, type: file.type, sha256: hash(content) })
+    modules.push({ name, file: local, type: uploadModuleType(name, file.type, entry), sha256: hash(content) })
   }
   if (!modules.some(module => module.name === entry)) throw new Error("Original entry module is missing")
   if ((await current()).id !== deployment.id) throw new Error("Live deployment changed during prepare")

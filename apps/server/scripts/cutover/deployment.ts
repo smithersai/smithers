@@ -7,6 +7,14 @@ export const requireExportVersion = (deployment: { versions: Array<{ version_id:
     throw new Error("Live maintenance version changed; partial sealed files retained, automatic restore forbidden")
   }
 }
+// content/v2 serves an ES entry as text/javascript, which the upload API treats
+// as classic JavaScript. CF-Entrypoint is the authoritative ES module identity.
+export const uploadModuleType = (name: string, type: string, entry: string): string => {
+  const mime = type.split(";")[0]!.trim().toLowerCase()
+  if (name !== entry) return mime
+  if (!["text/javascript", "application/javascript", "text/javascript+module", "application/javascript+module"].includes(mime)) throw new Error("Original entrypoint is not a JavaScript module")
+  return "application/javascript+module"
+}
 export const uploadedVersion = (result: { deployment_id?: string }): string => {
   const raw = result.deployment_id?.replaceAll("-", "")
   if (!raw || !/^[a-f0-9]{32}$/i.test(raw)) throw new Error("Upload did not identify its exact version")

@@ -1,12 +1,19 @@
 import { expect, test } from "bun:test"
 import { WORKER_IDENTITY } from "../../src/workerIdentity"
-import { metadataFor, requireExportVersion, stable, uploadedVersion, wrapperFor } from "./deployment"
+import { metadataFor, requireExportVersion, stable, uploadModuleType, uploadedVersion, wrapperFor } from "./deployment"
 import type { Settings } from "./cloudflare"
 
 const settings = (): Settings => ({ compatibility_date: "2026-08-01", compatibility_flags: ["nodejs_compat"], observability: { enabled: true },
   annotations: { "workers/message": `${"a".repeat(40)} original source`, "workers/tag": "original-tag", "workers/triggered_by": "version_upload" },
   bindings: [...WORKER_IDENTITY.durableObjects.map(item => ({ name: item.binding, type: "durable_object_namespace", class_name: item.className, namespace_id: "a".repeat(32) })),
     { name: "MODEL_VAULT_KEY", type: "secret_text" }, { name: "ASSETS", type: "assets" }, { name: "ORIGINAL", type: "plain_text", text: "unchanged" }] })
+
+test("downloaded ES entry retains module semantics when uploaded and restored", () => {
+  expect(uploadModuleType("index.js", "text/javascript;charset=utf-8", "index.js")).toBe("application/javascript+module")
+  expect(uploadModuleType("common.js", "application/javascript", "index.js")).toBe("application/javascript")
+  expect(uploadModuleType("other.wasm", "application/wasm", "index.js")).toBe("application/wasm")
+  expect(() => uploadModuleType("index.js", "text/plain", "index.js")).toThrow()
+})
 
 test("temporary upload preserves existing bindings/assets/settings and declares no migration", () => {
   const metadata = metadataFor(settings(), "sealed-export-entry.js", { SMITHERS_EXPORT_TOKEN: "test-only" })
