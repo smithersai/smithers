@@ -63,16 +63,18 @@ describe("TryCatchFinally", () => {
     )
     const catches = Graph.nodes(graph).filter((node) => node.kind === "Catch")
 
-    // Three boundaries: the unhandled-failure arm, the filtered recovery arm,
-    // and the arm that absorbs a finalizer failure on the unhandled path.
+    // Four boundaries: the unhandled-failure arm, the filtered recovery arm,
+    // the arm that absorbs a finalizer failure on the unhandled path, and the
+    // arm that maps a success-path finalizer failure to `finalizer_failed`.
     expect(calledFlows(graph)).toEqual(["try", "catch", "finally", "finally"])
-    expect(catches).toHaveLength(3)
+    expect(catches).toHaveLength(4)
     // `@smthrs/flow` names the schema that selects handled failures `filter`
     // where core named it `error`, and the graph lists the arms innermost
     // first, so the filtered one is the recovery arm at index 0.
     expect((catches[0]?.draft.material.body as { readonly filter?: unknown }).filter).toBeDefined()
     expect((catches[1]?.draft.material.body as { readonly filter?: unknown }).filter).toBeUndefined()
     expect((catches[2]?.draft.material.body as { readonly filter?: unknown }).filter).toBeUndefined()
+    expect((catches[3]?.draft.material.body as { readonly filter?: unknown }).filter).toBeUndefined()
   })
 
   // The outer boundary exists to catch what the BODY raised. The success-arm
@@ -107,10 +109,12 @@ describe("TryCatchFinally", () => {
     expect(boundary).toEqual([
       "root.flow.andThen",
       "root.flow.andThen.failure.andThen",
-      "root.flow.andThen.protected"
+      "root.flow.andThen.protected",
+      "root.flow.then.andThen"
     ])
-    // The success-arm finalizer is the body's continuation, outside the catch.
-    expect(flowId(graph, "finally")).toContain("root.flow.then.andThen")
+    // The success-arm finalizer is the body's continuation, outside the catch,
+    // under its own catch that maps a finalizer failure to `finalizer_failed`.
+    expect(flowId(graph, "finally")).toContain("root.flow.then.andThen.protected")
     // The unhandled arm still calls the finalizer and re-raises. Its finalizer
     // call sits under a catch that recovers, so a cleanup failure cannot take
     // the place of the body failure the arm re-raises.
@@ -138,8 +142,10 @@ describe("TryCatchFinally", () => {
       request
     )
 
+    // One `Fail` re-raises the body failure; the other is the success arm's
+    // `finalizer_failed`.
     expect(calledFlows(graph)).toEqual(["try", "finally", "finally"])
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Fail")).toHaveLength(1)
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Fail")).toHaveLength(2)
   })
 
   // The declared plan and `run` must agree on which failure wins when both the
@@ -203,9 +209,9 @@ describe("TryCatchFinally", () => {
     // pinned that digest's algorithm. `@smthrs/flow` expands each arm into its
     // own graph nodes instead, so there is no handler digest to pin; the
     // property the pin protected, that the same declaration keys the same way
-    // on every build, is the equality above, and the three arms are the three
+    // on every build, is the equality above, and the four arms are the four
     // `Catch` nodes below.
-    expect(Graph.nodes(Graph.build(boundary, request)).filter((node) => node.kind === "Catch")).toHaveLength(3)
+    expect(Graph.nodes(Graph.build(boundary, request)).filter((node) => node.kind === "Catch")).toHaveLength(4)
   })
 
   it.effect("runs the finalizer once after a successful body", () =>

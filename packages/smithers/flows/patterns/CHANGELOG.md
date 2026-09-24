@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- An executed declaration now settles to what `run` returns on the same
+  members. `DriftDetector.make` branches on the comparison and alerts only on
+  drift; `Escalation.make` decides an undecided rung with `defaultEscalate`;
+  `TryCatchFinally.make` fails `finalizer_failed` when the finalizer fails
+  after success; `MapReduce.make` fails `exhausted`, not `incomplete_graph`,
+  on no shards; `Sidecar.make` skips the scorer for a quarantined shadow;
+  `MergeQueue.make`, `Runbook.make`, and `Kanban.make` settle to `run`'s
+  result record, and `Kanban.make` drops a rejected card from later columns;
+  `Supervisor.make` records worker failures as outcomes, re-delegates only
+  retriable tasks, and returns `Completed` or `Exhausted`.
+  `test/Parity.test.ts` runs both forms of every dual-form pattern and fails a
+  pattern with no parity row; `Trellis`, `DelegationChain`, and the Sidecar
+  quarantine shape are pinned there as known divergences.
 - `PatternError` gains the code `invalid_input` for data a pattern read while
   running: a `Supervisor` or `MapReduce` flow input, the plan a `Supervisor`
   boss returned, a non-finite `Optimizer` or `Sidecar` score, and a malformed

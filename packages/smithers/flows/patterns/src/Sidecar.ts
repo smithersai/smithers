@@ -201,10 +201,11 @@ export const delta = (primary: number, shadow: number): Delta => {
  * run. A settled shadow is `{ quarantined: false, value }`, the shape
  * {@link run} reports.
  *
- * The score arm is declared unconditionally, because a plan has no branch to
- * hang the "only when the shadow produced a value" condition on. `run` has the
- * value in hand and skips the scorer for a quarantined shadow. The declared
- * result is `{ primary, shadow, delta }`, which is {@link Result}.
+ * The score call is the settled arm of a `Node.branch` on the real shadow, so a
+ * quarantined shadow is never scored, as in {@link run}. The declared result
+ * is `{ primary, shadow, delta? }`, which is {@link Result}, except that a
+ * quarantined shadow carries its typed `error` where `run` carries the whole
+ * `Cause`: a cause does not cross the declared wire.
  *
  * @category constructors
  * @since 0.1.0
@@ -231,12 +232,12 @@ export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
     // The delta is computed on the REAL scores, and the pair beside it is
     // carried as planned references: a mapper that closed over the pair would
     // hand back the placeholder instead of the values the run produced.
-    const scored = (both: unknown): Node.Node<unknown, unknown, R> =>
-      score === undefined ? Node.succeed(both) : Node.bindPlanned(
+    const measured = (scorer: Member<R>, both: unknown): Node.Node<unknown, unknown, R> =>
+      Node.bindPlanned(
         Node.map(
           // The scorer sees the same pair `run` hands it: the primary's value
           // and the shadow's, not the shadow's quarantine wrapper.
-          callMember(score, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
+          callMember(scorer, { primary: field(both, "primary"), shadow: field(field(both, "shadow"), "value") }),
           Node.capture(
             { scores: true },
             (scores: unknown) => measuredDelta(field(scores, "primary") as number, field(scores, "shadow") as number)
@@ -249,6 +250,17 @@ export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
             delta
           }))
       )
+    // A quarantined shadow has no value to score, so the score call is the
+    // settled arm of a branch on the real shadow, as `run` skips it.
+    const scored = (both: unknown): Node.Node<unknown, unknown, R> =>
+      score === undefined ? Node.succeed(both) : Node.branch(Node.succeed(both), {
+        if: Node.capture(
+          { scores: true },
+          (settled: unknown) => field(field(settled, "shadow"), "quarantined") === true
+        ),
+        then: (settled) => Node.succeed(settled),
+        else: (settled) => measured(score, settled)
+      })
     return Node.bindPlanned(
       Node.all({ primary: callMember(declared.primary, input), shadow }),
       Node.capture({ scores: score !== undefined }, scored)

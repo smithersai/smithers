@@ -34,6 +34,8 @@ One consequence follows from core's node vocabulary, and it is deliberate:
   `make` declares the last iteration's continuation as `onMaxReached` says:
   the exhausted value under `"return-last"`, and a `PatternError` `exhausted`
   failure under `"fail"`. What a declaration does carry is both continuations:
+  the exhausted value under `"return-last"`, and a `PatternError` `exhausted`
+  failure under `"fail"`. What a declaration does carry is both continuations:
   `Node.branch` states the exit condition and the two arms before anything
   runs, and the predicate is evaluated at run time on the value the body really
   produced, which is how `Loop` stops. Recovery is the same idea for failure:
@@ -155,14 +157,16 @@ the earliest of equal scores wherever the tie falls. `converged` is true when
 `onMaxReached: "fail"` requires a `targetScore`: without one there is nothing
 for the search to fall short of, so `make` throws and `run` fails
 `invalid_decorator` before generating anything. With a target, exhausting the
-bound below it fails `exhausted`.
-
-`Optimizer.make` declares each iteration as a `generate` call followed by an
-`evaluate` call, and declares the next `generate` call as reading the previous
 attempt. Dependency analysis therefore sees `evaluate` feeding the generation
 that follows it, which is the edge the search actually depends on. After each
 evaluation a `Node.map` folds the real score into the standing best and a
+that follows it, which is the edge the search actually depends on. After each
+evaluation a `Node.map` folds the real score into the standing best and a
 `Node.branch` settles the search when the attempt reaches `targetScore` or
+scores a non-finite number, so an executed declaration stops, reports `best`,
+and fails exactly where `run` does. The target score also enters declaration
+identity, so two searches that differ only in their target do not share a step
+key.
 scores a non-finite number, so an executed declaration stops, reports `best`,
 and fails exactly where `run` does. The target score also enters declaration
 identity, so two searches that differ only in their target do not share a step
@@ -208,8 +212,12 @@ which is the signal an operator acts on. `verifications` holds one entry per
 round that had something to fix, in order, and `ScanFixVerify.resolved` reads
 each one.
 
-`make` needs one bound `run` does not: `maxIssues`. A plan cannot know how many
-issues a scan will find, so the declaration carries the largest fan-out the
+An executed declaration makes the decisions `run` makes: each scan is a
+`Node.branch` that settles `resolved: true` when it comes back empty, each fix
+slot runs only when the scan returned an issue at its index, and `verify` is
+handed the fixes of the issues that exist. Keep `maxIssues` at or above what
+the scanner can produce: issues past it wait for the next round's rescan, and
+the declaration understates the work a run performs.
 author will admit, batched at `concurrency`. The declared topology is therefore
 `maxRetries` scans, `maxRetries * maxIssues` fixes, and `maxRetries` verifies.
 An executed declaration makes the decisions `run` makes: each scan is a
@@ -270,11 +278,12 @@ for a detector that only reports.
 `run` returns `{ snapshot, comparison, drifted, alert? }`. `alert` is present
 only when the action ran, so its presence is the proof.
 
-`make` declares the alert call whenever an alert flow is supplied, because a
-declaration cannot branch on a comparison it does not have. Capability analysis
-therefore sees the paging authority a run may use, which is the answer a
-reviewer wants. The baseline rides declaration identity, so two detectors
-watching the same target against different baselines do not share a step key.
+`make` declares the alert call as the drifted arm of a `Node.branch` on the
+comparison, read with `DriftDetector.drifted` at run time, and settles to the
+same `{ snapshot, comparison, drifted, alert? }` record as `run`. Capability
+analysis still sees the paging authority a run may use. `alertIf` is run-only.
+The baseline rides declaration identity, so two detectors watching the same
+target against different baselines do not share a step key.
 
 ### Polling
 
@@ -349,9 +358,11 @@ shadow concurrent rather than an extra sequential step, with the shadow
 behind a `Node.catch` whose arm settles `{ quarantined: true, error }`.
 Capability and cost analysis still count the shadow as work that happens;
 what the arm adds is that the plan shows a failed shadow does not fail the
-run. The declared result is `{ primary, shadow, delta }`, and the scorer is
-declared unconditionally because a plan has no branch for "only when the
-shadow produced a value": `run` performs that skip.
+run. The scorer is the settled arm of a `Node.branch` on the real shadow, so
+a quarantined shadow is never scored, as in `run`. The declared result is
+`{ primary, shadow, delta? }`; a quarantined shadow carries its typed `error`
+where `run` carries the whole `cause`, because a cause does not cross the
+declared wire.
 
 ## Inline callbacks and inference
 

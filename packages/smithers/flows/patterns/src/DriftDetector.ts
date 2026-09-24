@@ -33,8 +33,8 @@ import { OpaqueInput } from "./internal/Payload.ts"
  * different baselines do not share a step key.
  *
  * Omit `alert` for a detector that only reports. Supplying one declares the
- * alert call unconditionally: whether a run takes it depends on the
- * comparison, which no plan can know.
+ * alert arm of a branch on the comparison: a run takes it only when
+ * {@link drifted} reads drift from the real comparison.
  *
  * @category models
  * @since 0.1.0
@@ -131,9 +131,10 @@ export type DriftDetectorFlow<R = never> = Flow.Flow<
 /**
  * Declares the detection topology: capture, compare, and the alert arm.
  *
- * The alert call is declared whenever an alert flow is supplied. Whether a run
- * takes it is the comparison's answer, so the declaration carries the paging
- * authority a run may use and {@link run} performs the real skip.
+ * The comparison is a `Node.branch`: {@link drifted} reads it at run time, and
+ * only a drifted comparison takes the alert arm. The declaration settles to
+ * the same {@link Result} {@link run} returns. `alertIf` is run-only, so a
+ * declared detector reads drift with {@link drifted}.
  *
  * @category constructors
  * @since 0.1.0
@@ -152,23 +153,27 @@ export const make = <R = never>(options: MakeOptions<R>): DriftDetectorFlow<R> =
     Node.bindPlanned(
       callMember(capture, { input, baseline }),
       Node.capture({ baseline }, (snapshot: Planned.Planned<unknown>) =>
-        Node.bindPlanned(
-          callMember(compare, { snapshot, baseline }),
-          Node.capture({ baseline }, (comparison: Planned.Planned<unknown>) =>
+        // The verdict is read at run time from the real comparison, so the
+        // alert arm is taken only when it reports drift, as in `run`.
+        Node.branch(callMember(compare, { snapshot, baseline }), {
+          if: Node.capture({ baseline, alerts: alert !== undefined }, (comparison: unknown) => drifted(comparison)),
+          then: (comparison: Planned.Planned<unknown>) =>
             alert === undefined
-              ? Node.succeed({ snapshot, comparison })
-              // The raised alert joins the snapshot and the comparison inside a
-              // `Node.succeed`, which resolves all three planned references.
+              ? Node.succeed({ snapshot, comparison, drifted: true })
+              // The raised alert joins the snapshot and the comparison inside
+              // a `Node.succeed`, which resolves all three planned references.
               // Computing the record in a `Node.map` would compute on two
               // planned values a mapper may only pass on.
               : Node.bindPlanned(
                 callMember(alert, { comparison, snapshot, baseline }),
                 Node.capture(
                   { baseline },
-                  (raised: Planned.Planned<unknown>) => Node.succeed({ snapshot, comparison, alert: raised })
+                  (raised: Planned.Planned<unknown>) =>
+                    Node.succeed({ snapshot, comparison, drifted: true, alert: raised })
                 )
-              ))
-        ))
+              ),
+          else: (comparison: Planned.Planned<unknown>) => Node.succeed({ snapshot, comparison, drifted: false })
+        }))
     )
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),

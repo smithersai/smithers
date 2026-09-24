@@ -129,8 +129,10 @@ export const make = <R = never>(options: MakeOptions<R>): MapReduceFlow<R> => {
     }
     const shards = input.shards as ReadonlyArray<unknown>
     if (shards.length === 0) {
+      // A declared failure, not a throw: a body that throws is reported as an
+      // incomplete graph, while `run` fails `exhausted`.
       if (onEmpty === "fail") {
-        throw new PatternError({ code: "exhausted", message: "MapReduce received no shards" })
+        return Node.fail(new PatternError({ code: "exhausted", message: "MapReduce received no shards" }))
       }
       return onEmpty === "succeed"
         ? Node.succeed([])

@@ -129,15 +129,14 @@ describe("Supervisor", () => {
 
     expect(Flow.isFlow(supervisor)).toBe(true)
     const graph = Graph.build(supervisor, goal)
-    // Core picked one continuation while the graph was built, so it declared a
-    // single finalize. The review decision is now a `Node.branch`, so the plan
-    // carries BOTH arms: every round declares the finalize its accepted arm
-    // would call, and the last round declares it on the exhausted arm too.
-    expect(calls(graph)).toHaveLength(17)
+    // The review decision is a `Node.branch`: every round declares the
+    // finalize its accepted arm would call. An exhausted supervision does not
+    // finalize, as in `run`, so the last round's other arm declares none.
+    expect(calls(graph)).toHaveLength(16)
     expect(inPhase(graph, "plan")).toHaveLength(1)
     expect(inPhase(graph, "work")).toHaveLength(9)
     expect(inPhase(graph, "review")).toHaveLength(3)
-    expect(inPhase(graph, "finalize")).toHaveLength(4)
+    expect(inPhase(graph, "finalize")).toHaveLength(3)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
@@ -189,9 +188,9 @@ describe("Supervisor", () => {
     )
 
     expect(inPhase(graph, "work").map((node) => payloadOf(node).task)).toEqual(tasks)
-    // One plan call, one review call, and the two finalize arms of the single
-    // round's decision.
-    expect(calls(graph)).toHaveLength(tasks.length + 4)
+    // One plan call, one review call, and the finalize the single round's
+    // accepted arm makes.
+    expect(calls(graph)).toHaveLength(tasks.length + 3)
     expect(Graph.diagnostics(graph)).toEqual([])
   })
 
@@ -204,18 +203,30 @@ describe("Supervisor", () => {
     const coder = member("coder", () => Node.succeed("coded"))
     const tester = member("tester", () => Node.succeed("tested"))
     const finalize = member("finalize", (payload) => Node.succeed(payload.results))
+    const accept = member("accept", () => Node.succeed(true))
     const supervisor = Supervisor.make({
       plan: step,
       workers: { coder, tester },
-      review: step,
+      review: accept,
       finalize,
       maxRounds: 1,
       concurrency
     })
     const result = await execute(supervisor, { input: { tasks } }, `supervisor-routing-${concurrency}`)
 
-    expect(Object.keys(result as object)).toEqual(tasks.map((task) => task.id))
-    expect(result).toEqual({ ["__proto__"]: "tested", constructor: "coded", toString: "tested" })
+    // The results the finalize call receives are `run`'s: one `Done` outcome
+    // per task, in plan order.
+    expect(result).toEqual({
+      exhausted: false,
+      rounds: 1,
+      final: tasks.map((task) => ({
+        _tag: "Done",
+        id: task.id,
+        workerType: task.workerType,
+        round: 1,
+        output: task.workerType === "coder" ? "coded" : "tested"
+      }))
+    })
   })
 
   it("threads the previous round's review into the next round's worker calls", () => {
@@ -289,7 +300,7 @@ describe("Supervisor", () => {
     )
 
     expect(recorded).toEqual(["work:1:a", "review:1", "finalize:1"])
-    expect(result).toBe("final")
+    expect(result).toEqual({ exhausted: false, rounds: 1, final: "final" })
   })
 
   it("takes the unfinished arm: a review that is not done delegates another round", async () => {
@@ -312,7 +323,7 @@ describe("Supervisor", () => {
     )
 
     expect(recorded).toEqual(["work:1:a", "review:1", "work:2:a", "review:2", "finalize:2"])
-    expect(result).toBe("final")
+    expect(result).toEqual({ exhausted: false, rounds: 2, final: "final" })
   })
 
   it("refuses to declare a plan it cannot route", () => {

@@ -430,11 +430,11 @@ result comes back as `{ level, result, accepted: false, exhausted: true }`.
 `exhausted` is present on both arms, so a caller reads it without a property
 check.
 
-`defaultEscalate` is the predicate used by `Escalation.run` when a rung has
-neither an `escalateIf` nor a shared `accept`. `Escalation.make` instead
-reserves every such rung because a declaration cannot branch on a value it
-does not have. The runtime predicate escalates on a missing result and on the
-conventional failure markers: a set `error`, `failed: true`, or `ok: false`.
+`defaultEscalate` decides a rung that has neither an `escalateIf` nor a shared
+`accept`: `Escalation.run` applies it to the result, and `Escalation.make`
+declares it as a `Node.branch` on the same result. It escalates on a missing
+result and on the conventional failure markers: a set `error`, `failed: true`,
+or `ok: false`.
 
 Rungs are alternative strategies, not model-seat fallback. Provider and seat
 fallback belong to model routing, before a flow is selected.

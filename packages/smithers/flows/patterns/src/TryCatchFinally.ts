@@ -112,10 +112,30 @@ export const make = <R = never>(options: MakeOptions<R>): TryCatchFinallyFlow<R>
     // The body's value is a planned reference until the run produces it, so
     // the finalizer is SEQUENCED ahead of a node that hands that reference
     // back. A mapper closing over the reference would return the placeholder.
+    // A finalizer that fails after the body settled fails `finalizer_failed`
+    // with its error as the cause, as `run` does. The error is a planned
+    // reference while the graph builds, so the record is made at run time.
     const settle = (value: unknown): Node.Node<unknown, unknown, R> =>
       finalize === undefined
         ? Node.succeed(value)
-        : Node.andThen(callMember(finalize, { input }), Node.succeed(value))
+        : Node.andThen(
+          Node.catch(callMember(finalize, { input }), {
+            onFailure: Node.capture({ finalizerFailed: true }, (error: unknown) =>
+              Node.bindPlanned(
+                Node.map(
+                  Node.succeed(error),
+                  Node.capture({ finalizerFailed: true }, (cause: unknown) =>
+                    new PatternError({
+                      code: "finalizer_failed",
+                      message: "The TryCatchFinally finalizer failed after the protected body succeeded",
+                      cause
+                    }))
+                ),
+                Node.capture({ finalizerFailed: true }, (failure) => Node.fail(failure))
+              ))
+          }),
+          Node.succeed(value)
+        )
     const attempt = callMember(arms.try, input)
     const handler = arms.catch
     const recover = (handled: Member<R>) => {

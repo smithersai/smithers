@@ -194,8 +194,9 @@ const completionBoard = (
  * Each call receives `{ column, item, previous }`. `previous` refers to the
  * same item's result in the preceding column, so a built graph shows the
  * per-item chain across columns rather than a column-wide barrier of values.
- * `onComplete` receives `{ items, board }`, where `board` is a {@link Board}
- * containing every column result and `iterations: 1` for the declared pass.
+ * The flow settles to the {@link Board} of its one pass, the record {@link run}
+ * returns with `iterations: 1`. `onComplete` receives `{ items, board }` and
+ * its own answer is discarded, as in `run`.
  * The columns themselves are sequenced: a column's first call depends on the
  * whole preceding column.
  *
@@ -212,15 +213,11 @@ const completionBoard = (
  * beside it, which is the same call {@link run} makes. A rejected card
  * settles as a {@link Quarantine.Quarantined} marker naming the item.
  *
- * The declaration does not drop a quarantined card from the later columns: a
- * plan has no branch, so the card travels on with its marker as `previous` and
- * the column flow decides what a quarantined predecessor means. `run` has the
- * value in hand and does drop it. The two paths therefore differ in WHICH
- * calls happen and not only in how many: an executed declaration calls the
- * later columns for a quarantined card where a `run` pass makes no call at
- * all, so a board's declared call count is an upper bound on a pass, and a
- * column flow reached through the declaration must read its `previous` for a
- * {@link Quarantine.Quarantined} marker.
+ * A later column's call for a card is the live arm of a `Node.branch` on the
+ * real set of rejected cards, so a card an earlier column rejected makes no
+ * further call, exactly as in `run`. The declared call count is therefore an
+ * upper bound on a pass, and the calls an executed declaration makes are the
+ * calls `run` makes.
  *
  * @category constructors
  * @since 0.1.0
@@ -257,30 +254,49 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
     throw new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" })
   }
   const captures = { columns: names, items: ids, concurrency }
-  // Each batch gates the next, and the outcomes a batch produced are carried
-  // on as planned field references: a batch's result does not exist while the
-  // graph builds, so the column assembles the record rather than merging two
-  // symbols.
-  const column = (index: number, previous: unknown): Node.Node<unknown, unknown, R> => {
+  // What one column hands the next: each live card's latest output, and every
+  // card a column has rejected so far.
+  const advance = (values: unknown, rejected: ReadonlyArray<string>): Carried => {
+    const outcomes = values as Readonly<Record<string, Quarantine.Settled<unknown, unknown>>>
+    // Entries, not assignment: an item id such as `__proto__` is an own key.
+    const previous: Array<readonly [string, unknown]> = []
+    const still: Array<string> = [...rejected]
+    for (const id of ids) {
+      if (rejected.includes(id)) continue
+      const outcome = outcomes[id]!
+      if (outcome._tag === "Succeeded") previous.push([id, outcome.value])
+      else still.push(id)
+    }
+    return { previous: Object.fromEntries(previous), rejected: still }
+  }
+  const column = (index: number, carried: Planned.Planned<Carried> | undefined): Node.Node<unknown, unknown, R> => {
     const declared = columns[index]!
+    const call = (item: Item, previous: unknown): Node.Node<unknown, unknown, R> =>
+      callMember(declared.flow, { column: declared.name, item, previous })
+    // A card an earlier column rejected makes no call here, as in `run`: the
+    // call is the live arm of a branch on the real rejected set. The skipped
+    // arm's value is never read, because the board fold drops a rejected card
+    // from every later column.
+    const card = (item: Item): Node.Node<unknown, unknown, R> =>
+      carried === undefined ? call(item, undefined) : Node.branch(Node.succeed(carried.rejected), {
+        if: Node.capture(
+          { column: declared.name, item: item.id },
+          (rejected: ReadonlyArray<string>) => !rejected.includes(item.id)
+        ),
+        then: () => call(item, (carried.previous as Readonly<Record<string, unknown>>)[item.id]),
+        else: () => Node.succeed(null)
+      })
     const batchAt = (offset: number): Node.Node<unknown, unknown, R> => {
       const members = Object.fromEntries(
-        items.slice(offset, offset + concurrency).map((item) => [
-          item.id,
-          callMember(declared.flow, {
-            column: declared.name,
-            item,
-            previous: previous === undefined ? undefined : (previous as Record<string, unknown>)[item.id]
-          })
-        ])
+        items.slice(offset, offset + concurrency).map((item) => [item.id, card(item)])
       ) as Record<string, Node.Any>
       return Quarantine.all(members, { policy: "quarantine" })
     }
     const visit = (
       offset: number,
-      carried: Readonly<Record<string, Planned.Planned<unknown>>>
+      gathered: Readonly<Record<string, Planned.Planned<unknown>>>
     ): Node.Node<unknown, unknown, R> => {
-      if (offset >= items.length) return Node.succeed(carried)
+      if (offset >= items.length) return Node.succeed(gathered)
       const batched = ids.slice(offset, offset + concurrency)
       return Node.bindPlanned(
         batchAt(offset),
@@ -288,7 +304,7 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
           Node.andThen(
             Node.succeed(reference),
             visit(offset + concurrency, {
-              ...carried,
+              ...gathered,
               ...Object.fromEntries(
                 batched.map((id) => [id, (reference as Readonly<Record<string, Planned.Planned<unknown>>>)[id]!])
               )
@@ -302,53 +318,43 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
   const body = (): Node.Node<unknown, unknown, R> => {
     const walk = (
       index: number,
-      previous: unknown,
+      carried: Planned.Planned<Carried> | undefined,
       history: ReadonlyArray<unknown>
-    ): Node.Node<unknown, unknown, R> => {
-      const current = column(index, previous)
-      if (index + 1 < columns.length) {
-        // Unwrap inside a map, where outcomes are real values. A builder
-        // continuation sees symbolic references while the graph is planned.
-        const settled = Node.map(
-          current,
-          Node.capture(captures, (values) => ({
-            outcomes: values,
-            previous: Object.fromEntries(
-              Object.entries(values as Record<string, Quarantine.Settled<unknown, unknown>>).map(([id, outcome]) => [
-                id,
-                outcome._tag === "Succeeded" ? outcome.value : outcome
-              ])
+    ): Node.Node<unknown, unknown, R> =>
+      Node.bindPlanned(
+        column(index, carried),
+        Node.capture({ ...captures, column: names[index] }, (values) => {
+          const outcomes = [...history, values]
+          if (index + 1 < columns.length) {
+            const next = Node.map(
+              Node.succeed({ values, rejected: carried === undefined ? [] : carried.rejected }),
+              Node.capture(captures, (state: { readonly values: unknown; readonly rejected: ReadonlyArray<string> }) =>
+                advance(state.values, state.rejected))
             )
-          }))
-        )
-        return Node.bindPlanned(
-          settled,
-          Node.capture(
-            { ...captures, column: names[index + 1] },
-            (state) => walk(index + 1, state.previous, [...history, state.outcomes])
+            return Node.bindPlanned(
+              next,
+              Node.capture(
+                { ...captures, column: names[index + 1] },
+                (state: Planned.Planned<Carried>) =>
+                  walk(index + 1, state, outcomes)
+              )
+            )
+          }
+          // The board is the same {@link Board} `run` returns for one pass.
+          // `onComplete` sees it and its own answer is discarded, as in `run`.
+          const board = Node.map(
+            Node.succeed(outcomes),
+            Node.capture(captures, (settled) =>
+              completionBoard(settled as ReadonlyArray<unknown>, ids, names))
           )
-        )
-      }
-      if (onComplete === undefined) return current
-      // Every earlier column's outcomes is a planned reference, so the board is
-      // assembled from a node that carries them all and hydrates them, not from
-      // a mapper closing over symbols it would compute on.
-      const board = Node.bindPlanned(
-        current,
-        Node.capture(captures, (values) =>
-          Node.map(
-            Node.succeed([...history, values]),
-            Node.capture(
-              captures,
-              (columnsSoFar) => completionBoard(columnsSoFar as ReadonlyArray<unknown>, ids, names)
-            )
-          ))
+          if (onComplete === undefined) return board
+          return Node.bindPlanned(
+            board,
+            Node.capture(captures, (settled) =>
+              Node.andThen(callMember(onComplete, { items, board: settled }), Node.succeed(settled)))
+          )
+        })
       )
-      return Node.bindPlanned(
-        board,
-        Node.capture(captures, (settled) => callMember(onComplete, { items, board: settled }))
-      )
-    }
     return walk(0, undefined, [])
   }
   return Flow.make(name, {
@@ -363,6 +369,11 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
 // A card pairs the id `run` read at the call with the caller's own item
 // record, so the board is keyed by a name that cannot move under it while the
 // column still receives the object the caller handed over.
+interface Carried {
+  readonly previous: Readonly<Record<string, unknown>>
+  readonly rejected: ReadonlyArray<string>
+}
+
 interface Card<It> {
   readonly id: string
   readonly item: It

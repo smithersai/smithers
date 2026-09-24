@@ -206,12 +206,25 @@ const planned = (input: unknown): ReadonlyArray<Task> => {
 // Only a round after the first reads this, and what it reads is the planned
 // reference to the preceding review, so the read always lands on a reference
 // and records the path `retriable`.
+/** One round's settled state: the latest outcome per task, and the review's view of it. */
+interface Round {
+  readonly latest: Readonly<Record<string, Outcome<unknown>>>
+  readonly results: ReadonlyArray<Outcome<unknown>>
+}
+
+/** What one round folds: its batches, the outcomes before it, and who was pending. */
+interface Folding {
+  readonly batched: ReadonlyArray<Readonly<Record<string, unknown>>>
+  readonly latest: Readonly<Record<string, Outcome<unknown>>>
+  readonly pending: ReadonlyArray<string> | null
+}
+
 const retriableOf = (review: unknown): unknown => (review as { readonly retriable?: unknown }).retriable
 
 /**
- * Builds the conservative supervision topology: one plan call, then per round
- * one call per planned task bounded by `concurrency`, one review, and one
- * finalize call.
+ * Builds the supervision topology: one plan call, then per round one call per
+ * planned task bounded by `concurrency`, one review, and the finalize call the
+ * review's accepted arm makes.
  *
  * The task list comes from the flow input's `tasks`, so it is known while
  * planning, and each task is routed to the worker its `workerType` names. Every
@@ -220,8 +233,13 @@ const retriableOf = (review: unknown): unknown => (review as { readonly retriabl
  * depends on.
  *
  * Every call carries a `phase` so a built graph names what each node does.
- * The plan is a superset of any single execution: {@link run} stops at the
- * first accepted review and re-delegates only the retriable tasks.
+ * The plan is a superset of any single execution, and every run-time decision
+ * is a `Node.branch` on the real value, so an executed declaration makes the
+ * calls {@link run} makes and settles to the same result: a typed worker
+ * failure is a `Failed` outcome, only the tasks a review names retriable run
+ * again, and an accepted review finalizes to `{ exhausted: false, rounds,
+ * final }` while a spent bound or a review naming nothing retriable settles
+ * `{ exhausted: true, rounds, review }` without finalizing.
  *
  * Building the flow throws a `PatternError` with code `invalid_input` when
  * the input carries no `tasks` array, when it is empty, when a task is missing
@@ -284,31 +302,56 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
         for (let offset = 0; offset < tasks.length; offset += concurrency) {
           batches.push(tasks.slice(offset, offset + concurrency))
         }
-        // Each batch gates the next one, so the plan carries the width bound as
-        // dependency edges, and the batches are joined into one outcome record
-        // at RUN time. The join cannot happen while the graph builds: a task id
-        // is any string a plan names, including `toString`, and reading that
-        // field off a planned batch result is a computation a plan refuses.
-        const delegate = (round: number, review: unknown): Node.Node<unknown, unknown, R> => {
+        // One attempt settles to the same `Outcome` `run` records: a typed
+        // worker failure is a `Failed` outcome, not the supervision's failure.
+        // After round one, the call is the live arm of a branch on the real
+        // pending set, so only the tasks the review named retriable run again.
+        const attempt = (
+          task: Task,
+          round: number,
+          review: unknown,
+          pending: Planned.Planned<ReadonlyArray<string>> | undefined
+        ): Node.Node<unknown, unknown, R> => {
+          const tagged = { round, task: task.id }
+          const settled = Node.catch(
+            Node.map(
+              callMember(routes[task.workerType]!, work(task, round, review)),
+              Node.capture(tagged, (output: unknown): Outcome<unknown> => ({
+                _tag: "Done",
+                id: task.id,
+                workerType: task.workerType,
+                round,
+                output
+              }))
+            ),
+            {
+              onFailure: Node.capture(
+                tagged,
+                (error: unknown) =>
+                  Node.succeed({ _tag: "Failed", id: task.id, workerType: task.workerType, round, error })
+              )
+            }
+          )
+          if (pending === undefined) return settled
+          return Node.branch(Node.succeed(pending), {
+            if: Node.capture(tagged, (ids: ReadonlyArray<string>) => ids.includes(task.id)),
+            then: () => settled,
+            else: () => Node.succeed(null)
+          })
+        }
+        const delegate = (
+          round: number,
+          review: unknown,
+          pending: Planned.Planned<ReadonlyArray<string>> | undefined
+        ): Node.Node<unknown, unknown, R> => {
           const visitBatch = (
             index: number,
             carried: ReadonlyArray<Planned.Planned<Readonly<Record<string, unknown>>>>
           ): Node.Node<unknown, unknown, R> => {
             const batch = batches[index]
-            if (batch === undefined) {
-              return Node.map(
-                Node.succeed(carried),
-                Node.capture(
-                  { round, batches: batches.length },
-                  (values: ReadonlyArray<Readonly<Record<string, unknown>>>) =>
-                    // Spread, never `Object.assign`: a task named `__proto__`
-                    // must stay an own data property of the outcome record.
-                    values.reduce<Record<string, unknown>>((all, outcomes) => ({ ...all, ...outcomes }), {})
-                )
-              )
-            }
+            if (batch === undefined) return Node.succeed(carried)
             const members = Object.fromEntries(
-              batch.map((task) => [task.id, callMember(routes[task.workerType]!, work(task, round, review))])
+              batch.map((task) => [task.id, attempt(task, round, review, pending)])
             ) as Record<string, Node.Node<unknown, unknown, R>>
             return Node.bindPlanned(
               Node.all(members),
@@ -321,32 +364,92 @@ export const make = <R = never>(options: MakeOptions<R>): SupervisorFlow<R> => {
           }
           return visitBatch(0, [])
         }
-        const finalize = (
+        // Folds a round's batches over the latest outcome of every task: a
+        // task that did not run this round keeps its earlier outcome.
+        const fold = (
           round: number,
-          results: unknown,
-          review: unknown
-        ): Node.Node<unknown, unknown, R> =>
-          callMember(boss.finalize, { phase: "finalize", rounds: round, plan, results, review, input })
-        // The supervision's one run-time decision: whether the review the boss
-        // returned says the work is done. It reads the REAL review value, so it
-        // is a `Node.branch` rather than a continuation that picks a node while
-        // the graph builds. Both arms are declared topology. The round bound is
-        // a declared option, not a run value, so it stays at plan time inside
-        // the FALSE arm, which is where a run that is not done ends up.
-        const visit = (round: number, previous: unknown): Node.Node<unknown, unknown, R> =>
-          Node.bindPlanned(
-            delegate(round, previous),
-            Node.capture({ ...captures, round }, (results) =>
-              Node.branch(
-                callMember(boss.review, { phase: "review", round, plan, results, input }),
-                {
-                  if: Node.capture({ ...captures, round }, (review: unknown) => done(review)),
-                  then: (review) => finalize(round, results, review),
-                  else: (review) => round >= maxRounds ? finalize(round, results, review) : visit(round + 1, review)
+          batched: unknown,
+          latest: unknown,
+          pending: unknown
+        ): Node.Node<Round, unknown, R> =>
+          Node.map(
+            // Planned references resolve to the real values at run time.
+            Node.succeed({ batched, latest, pending } as Folding),
+            Node.capture({ ...captures, round, fold: true }, (state: Folding): Round => {
+              const merged = new Map(Object.entries(state.latest))
+              for (const outcomes of state.batched) {
+                for (const id of Object.keys(outcomes)) {
+                  if (state.pending === null || state.pending.includes(id)) {
+                    merged.set(id, outcomes[id] as Outcome<unknown>)
+                  }
                 }
+              }
+              return {
+                latest: Object.fromEntries(merged),
+                results: ids.map((id) => merged.get(id)!)
+              }
+            })
+          )
+        const visit = (
+          round: number,
+          previous: unknown,
+          pending: Planned.Planned<ReadonlyArray<string>> | undefined,
+          latest: unknown
+        ): Node.Node<unknown, unknown, R> =>
+          Node.bindPlanned(
+            delegate(round, previous, pending),
+            Node.capture({ ...captures, round }, (batched) =>
+              Node.bindPlanned(
+                fold(round, batched, latest, pending ?? null),
+                Node.capture({ ...captures, round }, (state: Planned.Planned<Round>) =>
+                  Node.branch(
+                    callMember(boss.review, { phase: "review", round, plan, results: state.results, input }),
+                    {
+                      if: Node.capture({ ...captures, round }, (review: unknown) => done(review)),
+                      then: (review) =>
+                        Node.bindPlanned(
+                          callMember(boss.finalize, {
+                            phase: "finalize",
+                            rounds: round,
+                            plan,
+                            results: state.results,
+                            review,
+                            input
+                          }),
+                          Node.capture(
+                            { ...captures, round },
+                            (final) => Node.succeed({ exhausted: false, rounds: round, final })
+                          )
+                        ),
+                      else: (review) => {
+                        const exhausted = (): Node.Node<unknown, unknown, R> =>
+                          Node.succeed({ exhausted: true, rounds: round, review })
+                        if (round >= maxRounds) return exhausted()
+                        const next = Node.map(
+                          Node.succeed(review),
+                          Node.capture(
+                            { ...captures, round, retriable: true },
+                            (value: unknown) => ids.filter((id) => retriable(value).includes(id))
+                          )
+                        )
+                        return Node.bindPlanned(
+                          next,
+                          Node.capture({ ...captures, round }, (named: Planned.Planned<ReadonlyArray<string>>) =>
+                            Node.branch(Node.succeed(named), {
+                              if: Node.capture(
+                                { ...captures, round, retriable: true },
+                                (value: ReadonlyArray<string>) => value.length === 0
+                              ),
+                              then: exhausted,
+                              else: () => visit(round + 1, review, named, state.latest)
+                            }))
+                        )
+                      }
+                    }
+                  ))
               ))
           )
-        return visit(1, undefined)
+        return visit(1, undefined, undefined, {})
       })
     )
   }

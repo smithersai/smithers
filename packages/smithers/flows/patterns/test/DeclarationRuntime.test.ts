@@ -164,7 +164,8 @@ describe("ported pattern declaration execution", () => {
       "kanban-board-keys"
     ) as Record<string, unknown>
 
-    expect(Object.keys(board)).toEqual(["a", "b", "c"])
+    expect(Object.keys(board.board as object)).toEqual(["a", "b", "c"])
+    expect(board.completed).toEqual(["a", "b", "c"])
   })
 
   it("hands a successful body back after the finalizer ran", async () => {
@@ -221,7 +222,11 @@ describe("ported pattern declaration execution", () => {
         { input: "main" },
         "mergequeue-batched"
       )
-    ).toEqual({ a: "a", b: "b", c: "c" })
+    ).toEqual({
+      landed: [{ id: "a", output: "a" }, { id: "b", output: "b" }, { id: "c", output: "c" }],
+      quarantined: [],
+      order: ["a", "b", "c"]
+    })
   })
 
   it("hands the reducer every mapped value in ordinal shard order", async () => {
@@ -311,7 +316,11 @@ describe("ported pattern declaration execution", () => {
         },
         "supervisor-outcomes"
       )
-    ).toEqual({ a: "a", b: "b", c: "c" })
+    ).toEqual({
+      exhausted: false,
+      rounds: 1,
+      final: ["a", "b", "c"].map((id) => ({ _tag: "Done", id, workerType: "coder", round: 1, output: id }))
+    })
   })
 
   it("takes the supervision's second round when the first review is not done", async () => {
@@ -333,7 +342,7 @@ describe("ported pattern declaration execution", () => {
     const reviewLayer = scriptedReview.toLayer(({ round }) =>
       Effect.sync(() => {
         rounds.push(round)
-        return round === 1 ? null : true
+        return round === 1 ? { retriable: ["a"] } : true
       })
     )
 
@@ -352,7 +361,11 @@ describe("ported pattern declaration execution", () => {
     )
 
     expect(rounds).toEqual([1, 2])
-    expect(settled).toEqual({ a: "a" })
+    expect(settled).toEqual({
+      exhausted: false,
+      rounds: 2,
+      final: [{ _tag: "Done", id: "a", workerType: "coder", round: 2, output: "a" }]
+    })
   })
 
   it("compiles a plan's parallel members in plan order and its sequence in sequence order", async () => {
@@ -398,6 +411,7 @@ describe("ported pattern declaration execution", () => {
     ).toEqual({
       snapshot: "snapshot",
       comparison: { drifted: true },
+      drifted: true,
       alert: "paged"
     })
   })

@@ -237,6 +237,14 @@ const validate = (
 }
 
 /**
+ * One landing as the declaration carries it: the member's output, or the
+ * quarantine marker its recovery arm settled.
+ */
+type Outcome =
+  | { readonly _tag: "Landed"; readonly output: unknown }
+  | { readonly _tag: "Quarantined"; readonly id: string; readonly error: unknown }
+
+/**
  * Builds the landing topology: the members in queue order, batched into
  * `Node.all` groups of `concurrency` members, with the batches sequenced.
  *
@@ -259,11 +267,9 @@ const validate = (
  * above concurrency 1, because a batch would start a member behind a failure
  * before the failure is known.
  *
- * The wire marker is `{ _tag: "Quarantined", id, error }`. The tag is the
- * declaration's alone: a plan carries a settled member beside arbitrary
- * successful values, so the marker has to say what it is. A runtime
- * {@link Quarantined} entry is `{ id, error }` and carries no tag, because
- * {@link run} returns landed and quarantined members in separate arrays.
+ * Every landing settles to a tagged outcome, and one final map folds them in
+ * queue order into the same {@link Result} {@link run} returns:
+ * `{ landed, quarantined, order }`.
  *
  * `make` throws a `PatternError` when there are no members, when two members
  * share an id, when `concurrency` is not a positive safe integer, when
@@ -304,21 +310,33 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
     { members: captures.members, concurrency, failurePolicy },
     options
   )
+  // Each landing settles to a tagged outcome, so the final fold can tell a
+  // landed member from a quarantined one whatever the member returned.
+  const settled = (values: unknown): Result<unknown, unknown> => {
+    const outcomes = values as Readonly<Record<string, Outcome>>
+    const landed: Array<Landed<unknown>> = []
+    const quarantined: Array<Quarantined<unknown>> = []
+    for (const entry of queue) {
+      const outcome = outcomes[entry.id]!
+      if (outcome._tag === "Landed") landed.push({ id: entry.id, output: outcome.output })
+      else quarantined.push({ id: entry.id, error: outcome.error })
+    }
+    return { landed, quarantined, order: captures.members }
+  }
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, any> => {
     const landing = (entry: Position<Member>): Node.Node<unknown, unknown, any> => {
-      const declared = Node.priority(
-        callMember(entry.member.flow, {
-          id: entry.id,
-          position: entry.position,
-          input
-        }),
-        entry.priority
+      const declared = Node.map(
+        Node.priority(
+          callMember(entry.member.flow, {
+            id: entry.id,
+            position: entry.position,
+            input
+          }),
+          entry.priority
+        ),
+        Node.capture({ id: entry.id }, (output: unknown): Outcome => ({ _tag: "Landed", output }))
       )
       if (failurePolicy === "halt") return declared
-      // The arm goes on the member rather than on the join because a serial
-      // queue has no join to put it on. Runtime results keep successful and
-      // quarantined members in separate arrays, so this marker never
-      // classifies an arbitrary successful value.
       return Node.catch(declared, {
         onFailure: Node.capture(
           { id: entry.id },
@@ -326,34 +344,33 @@ export const make = (options: MakeOptions): MergeQueueFlow => {
         )
       })
     }
+    const fold = (carried: Readonly<Record<string, Planned.Planned<unknown>>>): Node.Node<unknown, unknown, any> =>
+      Node.map(Node.succeed(carried), Node.capture(captures, settled))
     if (concurrency === 1) {
-      const walk = (index: number): Node.Node<unknown, unknown, any> => {
-        const current = landing(queue[index]!)
-        if (index + 1 >= queue.length) return current
-        // Nothing reads the landing's value, so the next member is sequenced
-        // with a node-taking `andThen` rather than a continuation.
-        return Node.andThen(current, walk(index + 1))
+      const walk = (
+        index: number,
+        carried: Readonly<Record<string, Planned.Planned<unknown>>>
+      ): Node.Node<unknown, unknown, any> => {
+        const entry = queue[index]
+        if (entry === undefined) return fold(carried)
+        return Node.bindPlanned(
+          landing(entry),
+          Node.capture({ ...captures, landed: entry.id }, (value) => walk(index + 1, { ...carried, [entry.id]: value }))
+        )
       }
-      return walk(0)
+      return walk(0, {})
     }
     const batchAt = (offset: number): Node.Node<unknown, unknown, any> => {
       const group = Object.fromEntries(
         queue.slice(offset, offset + concurrency).map((entry) => [entry.id, landing(entry)])
       ) as Record<string, Node.Any>
-      // A plain join: only a quarantining queue reaches a batch, and every
-      // member of one already carries its own recovery arm, so no member
-      // can fail this join on the batch's behalf.
       return Node.all(group)
     }
-    // Each batch gates the next, and the landings a batch produced are carried
-    // on as planned field references: a batch's result does not exist while
-    // the graph builds, so the queue assembles the record rather than merging
-    // two symbols.
     const visit = (
       offset: number,
       carried: Readonly<Record<string, Planned.Planned<unknown>>>
     ): Node.Node<unknown, unknown, any> => {
-      if (offset >= queue.length) return Node.succeed(carried)
+      if (offset >= queue.length) return fold(carried)
       const batched = queue.slice(offset, offset + concurrency).map((entry) => entry.id)
       return Node.bindPlanned(
         batchAt(offset),

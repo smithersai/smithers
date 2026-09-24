@@ -78,9 +78,10 @@ describe("MapReduce", () => {
     expect(callsTo(Graph.build(reduce, { shards: [] }), "reduce")).toHaveLength(1)
     expect(succeed.body(declaration([])).ast).toMatchObject({ _tag: "Succeed", value: [] })
     expect(callsTo(Graph.build(succeed, { shards: [] }), "reduce")).toHaveLength(0)
-    expect(() => fail.body(declaration([]))).toThrow(
-      expect.objectContaining({ code: "exhausted", message: "MapReduce received no shards" })
-    )
+    expect(fail.body(declaration([])).ast).toMatchObject({
+      _tag: "Fail",
+      error: { code: "exhausted", message: "MapReduce received no shards" }
+    })
   })
 
   it("refuses a declaration input without a shards array", () => {

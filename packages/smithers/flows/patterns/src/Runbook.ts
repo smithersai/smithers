@@ -176,7 +176,9 @@ export type RunbookFlow<R = never> = Flow.Flow<
  *
  * Each step is called with `{ step, risk, elevated, input, previous }`, and the
  * approval that gates a step sees that same envelope, so a built graph shows
- * which step an approval belongs to and whether it is elevated.
+ * which step an approval belongs to and whether it is elevated. The flow
+ * settles to the same {@link Result} {@link run} returns, with every step in
+ * `ran` and none in `skipped`.
  *
  * `onDeny: "skip"` is not declarable, and `make` refuses it rather than
  * accepting it and building a plan that halts. A skip is a decision about a
@@ -236,18 +238,34 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
       input,
       previous
     })
-    const walk = (index: number, previous: unknown): Node.Node<unknown, unknown, R> => {
-      const current = Decorate.call<R>(declared[index]!.flow, envelope(index, previous))
-      if (index + 1 >= declared.length) return current
+    // Every step's output is carried to one final map that settles the same
+    // `{ outputs, ran, skipped }` record `run` returns. A declared runbook
+    // refuses `onDeny: "skip"`, so every step it settles ran.
+    const walk = (
+      index: number,
+      previous: unknown,
+      outputs: Readonly<Record<string, Planned.Planned<unknown>>>
+    ): Node.Node<unknown, unknown, R> => {
+      const step = declared[index]
+      if (step === undefined) {
+        return Node.map(
+          Node.succeed(outputs),
+          Node.capture(captures, (values: unknown): Result<unknown> => ({
+            outputs: { ...(values as Record<string, unknown>) },
+            ran: ids,
+            skipped: []
+          }))
+        )
+      }
       return Node.bindPlanned(
-        current,
+        Decorate.call<R>(step.flow, envelope(index, previous)),
         Node.capture(
-          { ...captures, step: declared[index + 1]!.step.id },
-          (value: Planned.Planned<unknown>) => walk(index + 1, value)
+          { ...captures, step: step.step.id },
+          (value: Planned.Planned<unknown>) => walk(index + 1, value, { ...outputs, [step.step.id]: value })
         )
       )
     }
-    return walk(0, undefined)
+    return walk(0, undefined, {})
   }
   return Flow.make(name, {
     ...(description === undefined ? {} : { description }),

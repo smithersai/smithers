@@ -82,7 +82,10 @@ describe("Kanban", () => {
     })
 
     expect(await execute(declaration, sprint, "kanban-scalar-previous")).toEqual({
-      a: { _tag: "Succeeded", member: "a", value: 6 }
+      board: { a: { one: 5, two: 6 } },
+      completed: ["a"],
+      failed: [],
+      iterations: 1
     })
     expect(Graph.diagnostics(Graph.build(declaration, sprint))).toEqual([])
   })
@@ -114,7 +117,7 @@ describe("Kanban", () => {
       expect(declared).toEqual(executed)
     }))
 
-  it.effect("forwards quarantine markers while reporting the same failed board as run", () =>
+  it.effect("drops a rejected card from later columns and settles the same board as run", () =>
     Effect.gen(function*() {
       const previous: Array<unknown> = []
       const declaredColumns = [
@@ -158,7 +161,9 @@ describe("Kanban", () => {
         }],
         iterations: 1
       })
-      expect(evaluated).toEqual({ items, board: result })
+      // `onComplete` sees the board, and its own answer is discarded in both
+      // forms: the declaration settles to the board `run` returns.
+      expect(evaluated).toEqual(result)
     }))
 
   it("preserves marker-shaped successful values and prototype-shaped board keys", async () => {
@@ -173,13 +178,10 @@ describe("Kanban", () => {
     })
 
     expect(await execute(declaration, sprint, "kanban-marker-shaped")).toEqual({
-      items: [{ id: "__proto__" }],
-      board: {
-        board: { ["__proto__"]: { ["__proto__"]: value, constructor: value } },
-        completed: ["__proto__"],
-        failed: [],
-        iterations: 1
-      }
+      board: { ["__proto__"]: { ["__proto__"]: value, constructor: value } },
+      completed: ["__proto__"],
+      failed: [],
+      iterations: 1
     })
   })
 

@@ -45,9 +45,8 @@ export interface Rung<R = never> {
  *
  * `accept` decides every rung that declares no `escalateIf`. `fallback` is the
  * last rung: it runs only after every declared rung escalated.
- * With no `accept` and no `escalateIf` there is nothing to decide with, so
- * `make` declares the whole ladder as one chain; {@link defaultEscalate}
- * applies to {@link run} alone.
+ * A rung with no `escalateIf` and no `accept` is decided by
+ * {@link defaultEscalate}, in `make` and in {@link run} alike.
  *
  * @category models
  * @since 0.1.0
@@ -142,9 +141,9 @@ export type Settled<A, F = A> = Reached<A> | Reached<F> | Exhausted<A>
 export const accepted = Compose.accepted
 
 /**
- * Decides escalation in {@link run} for a rung that names no predicate and no
- * `accept` flow. Declarations reserve every such rung because they do not have
- * a result to inspect.
+ * Decides escalation for a rung that names no predicate and no `accept` flow,
+ * in {@link make} as a `Node.branch` on the rung's result and in {@link run}
+ * on the same result.
  *
  * A missing result escalates. So does a result that reports a failure the way
  * flows conventionally do: a set `error`, `failed: true`, or `ok: false`.
@@ -193,8 +192,9 @@ export type EscalationFlow<R = never> = Flow.Flow<
  *
  * A rung with a decider is a `Node.branch`: the plan carries both the settled
  * arm and the next rung before anything runs, and the decider's answer is read
- * at run time off the result the rung really produced. A ladder with no
- * decider at all has nothing to decide with, so it declares one chain.
+ * at run time off the result the rung really produced. A rung with neither
+ * its own decider nor a shared `accept` branches on {@link defaultEscalate},
+ * the rule {@link run} applies to the same result.
  *
  * @category constructors
  * @since 0.1.0
@@ -243,7 +243,12 @@ export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
               else: escalated
             })
           }
-          if (accept === undefined) return escalated()
+          if (accept === undefined) {
+            // No decider at all: the result itself decides, by the same
+            // {@link defaultEscalate} rule `run` applies.
+            const settles = Node.capture({ rung: index }, (value: unknown) => !defaultEscalate(value))
+            return Node.branch(Node.succeed(result), { if: settles, then: settle, else: escalated })
+          }
           const approved = Node.capture({ rung: index }, (decision: unknown) => accepted(decision))
           return Node.branch(callMember(accept, { result }), { if: approved, then: settle, else: escalated })
         })

@@ -13,7 +13,7 @@ Every module here follows the two-surface shape the package uses everywhere:
 | `make(options)`       | A `Flow` whose body is a conservative plan-time topology over `@smthrs/flow` `Flow` and `@smthrs/plan` `Node` | Planning, graph inspection, step keys, cost estimates |
 | `run(input, options)` | An `Effect` that performs the value-dependent branching                                                       | Execution                                             |
 
-`make` declares a superset of any single execution. Graph planning evaluates a `Node.bindPlanned` builder once against a symbolic value, so a loop or a short circuit that depends on a real result cannot narrow the plan. `run` performs that narrowing. The two surfaces agree on structure, not on how many calls a particular execution makes.
+`make` declares a superset of any single execution: graph planning evaluates a `Node.bindPlanned` builder once against a symbolic value, so the plan carries every arm a real result could take. A decision on a real result is a `Node.branch`, so an executed declaration takes the same arm `run` takes. `test/Parity.test.ts` runs both surfaces on the same scripted members for every pattern and requires the same outcome and the same calls; the few documented exceptions are pinned there as known divergences.
 
 Options that change behavior are declared through `Node.capture`, so two plans that differ only in a bound have different step identity.
 
@@ -46,7 +46,7 @@ The topology comes from the plan's task list, so the flow input carries it as `t
 Graph.build(supervisor, { goal: "ship the feature", tasks: [{ id: "api", workerType: "coder" }] })
 ```
 
-`make` builds one plan call, then `maxRounds` repetitions of "one call per task, then review", then one finalize call. Each task is routed to the worker its `workerType` names, and the member is named by the task id. Worker calls are batched into `Node.all` groups of `concurrency` members, and the batches are sequenced, so the declared plan never admits more parallel worker calls than the bound. Every call carries a `phase` field (`"plan"`, `"work"`, `"review"`, `"finalize"`) so a built graph names what each node does.
+`make` builds one plan call, then `maxRounds` repetitions of "one call per task, then review", with a finalize call on each review's accepted arm. Each decision is a `Node.branch` on the real value, so an executed declaration makes the calls `run` makes and settles to the same `Completed` or `Exhausted` result: a typed worker failure is a `Failed` outcome, a later round calls only the tasks the review named retriable, and an exhausted supervision does not finalize. Each task is routed to the worker its `workerType` names, and the member is named by the task id. Worker calls are batched into `Node.all` groups of `concurrency` members, and the batches are sequenced, so the declared plan never admits more parallel worker calls than the bound. Every call carries a `phase` field (`"plan"`, `"work"`, `"review"`, `"finalize"`) so a built graph names what each node does.
 
 Every round after the first passes the preceding review and its `retriable` ids to each worker call, so the graph shows which review a re-delegation depends on. A round-one worker call has no such reference.
 
@@ -188,7 +188,7 @@ Every call receives `{ column, item, previous }`. `previous` refers to the same 
 
 `make` throws a `PatternError` when there are no columns, no items, a duplicate item id, a duplicate column name, or a concurrency that is not a positive safe integer.
 
-A column joins its batch with `Quarantine.all` under the `quarantine` policy: every card settles as a `Succeeded` or `Quarantined` envelope, so one rejected card does not interrupt the cards beside it. The declaration does not drop a quarantined card from later columns because a plan has no runtime branch: the envelope travels on as `previous`. `run`, which has the value in hand, drops the failed card. A board's declared call count is an upper bound on the calls a pass makes.
+A column joins its batch with `Quarantine.all` under the `quarantine` policy: every card settles as a `Succeeded` or `Quarantined` envelope, so one rejected card does not interrupt the cards beside it. A later column's call for a card is the live arm of a `Node.branch` on the real set of rejected cards, so a rejected card makes no further call, as in `run`. A board's declared call count is an upper bound on the calls a pass makes. The declared flow settles to the same `{ board, completed, failed, iterations: 1 }` record one `run` pass returns; `onComplete` sees it and its own answer is discarded.
 
 ### Execution
 
@@ -237,7 +237,7 @@ const release = Runbook.make({
 
 ### Declaration
 
-`make` chains the steps in declaration order and wraps every non-safe step with `WithApproval.withApproval`. Each step is called with `{ step, risk, elevated, input, previous }`, and the approval that gates a step sees that same envelope, so a built graph names the step an approval belongs to and whether it is elevated. A safe step declares no approval call.
+`make` chains the steps in declaration order and wraps every non-safe step with `WithApproval.withApproval`. Each step is called with `{ step, risk, elevated, input, previous }`, and the approval that gates a step sees that same envelope, so a built graph names the step an approval belongs to and whether it is elevated. A safe step declares no approval call. The declared flow settles to the same `{ outputs, ran, skipped }` record `run` returns; every step it settles ran.
 
 `onDeny: "skip"` is not declarable, and `make` refuses it rather than building a plan that halts where you asked it to skip. The gated step is one flow whose failure channel carries the denial and the step's own failures together, and a plan has no branch to select between them, so the recovery arm that would skip a denial also declares that the runbook continues past a failed critical step. Declare the runbook with `onDeny: "fail"` and call `run` with `onDeny: "skip"`, which skips a denied step at run time.
 
@@ -281,7 +281,7 @@ A member without its own priority gets `MergeQueue.DefaultPriority`, which is `1
 
 `concurrency` defaults to 1: a merge queue serializes landings unless a caller widens it deliberately. At concurrency 1 the queue is a plain `Node.andThen` chain with no `Node.all` at all, so the declared plan admits exactly one landing at a time. Above 1, members are batched into `Node.all` groups of `concurrency` and the batches are sequenced. Only a `quarantine` queue may widen it: `halt` promises that no member behind a failure lands, and a batch starts its members before any of them has failed, so `make` and `run` refuse `halt` above concurrency 1 with a `PatternError`.
 
-Each call carries `{ id, position, input }`, so a built graph names each member's place in the queue. A member's effective priority reaches the plan as a `Node.priority` annotation, which is what lets the scheduler start the higher-priority ready landing first. Priority stays out of key material, so raising a member's number without changing the resulting order re-uses the same steps rather than re-landing the queue. Under the quarantine policy, a failed declaration settles to MergeQueue's structural wire marker `{ _tag: "Quarantined", id, error }`. The tag is the declaration's alone: a plan carries a settled member beside arbitrary successful values, so the marker has to say what it is. A runtime `Quarantined` entry is `{ id, error }` and carries no tag, because `run` returns landed and quarantined members in separate arrays.
+Each call carries `{ id, position, input }`, so a built graph names each member's place in the queue. A member's effective priority reaches the plan as a `Node.priority` annotation, which is what lets the scheduler start the higher-priority ready landing first. Priority stays out of key material, so raising a member's number without changing the resulting order re-uses the same steps rather than re-landing the queue. Every landing settles to a tagged outcome, and one final map folds them in queue order into the same `{ landed, quarantined, order }` record `run` returns.
 
 `failurePolicy` picks the topology and is captured as well. Under `quarantine` every landing carries a recovery arm settling it as MergeQueue's `Quarantined` result, so a failing member neither breaks the serial chain nor interrupts its batch: the queue `run` lands. Under `halt` the chain has no continuation past a failed member, and it is always the serial chain, because a halting queue is refused above concurrency 1.
 

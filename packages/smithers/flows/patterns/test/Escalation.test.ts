@@ -184,14 +184,15 @@ describe("Escalation", () => {
     expect(Escalation.make({ rungs: [cheap, strong], accept }).description).toBeUndefined()
   })
 
-  it("declares every rung and the exhausted terminal when no accept flow is available", () => {
+  it("decides every rung by defaultEscalate when no accept flow is available", () => {
     const graph = Graph.build(Escalation.make({ rungs: [cheap, strong] }), { input: "request" })
     const terminal = Graph.nodes(graph).filter((node) => node.kind === "Succeed").at(-1)
 
     expect(callsTo(graph, "escalation/cheap")).toHaveLength(1)
     expect(callsTo(graph, "escalation/strong")).toHaveLength(1)
     expect(callsTo(graph, "escalation/accept")).toHaveLength(0)
-    expect(Graph.nodes(graph).filter((node) => node.kind === "Branch")).toHaveLength(0)
+    // One branch per rung, deciding on the rung's own result as `run` does.
+    expect(Graph.nodes(graph).filter((node) => node.kind === "Branch")).toHaveLength(2)
     // The terminal is the exhausted arm, and the last rung's result reaches it
     // as a planned reference rather than a value. `@smthrs/flow` keeps a
     // `Succeed`'s value on the node's payload, where core kept it inside
