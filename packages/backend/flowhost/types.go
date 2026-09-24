@@ -153,6 +153,8 @@ type BindingLease interface {
 	Credential() string
 	PrepareStart(context.Context, bool) (Binding, error)
 	MarkRunning(context.Context) error
+	// MarkFailed records a failed start so the next start fences a new owner.
+	MarkFailed(ctx context.Context, code string) error
 	Close() error
 }
 

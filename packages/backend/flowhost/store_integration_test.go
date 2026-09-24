@@ -36,6 +36,9 @@ func hostTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	raw := os.Getenv("SMITHERS_FLOWHOST_TEST_DATABASE_URL")
 	if raw == "" {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("SMITHERS_FLOWHOST_TEST_DATABASE_URL is required")
+		}
 		t.Skip("set SMITHERS_FLOWHOST_TEST_DATABASE_URL for real PostgreSQL acceptance")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

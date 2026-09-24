@@ -330,7 +330,7 @@ func TestDurableProductJobsMigration0005(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.MarkWaiting(ctx, claim, json.RawMessage(`{"runId":"run-1","cursor":"4"}`)); err != nil {
+	if _, err := store.Checkpoint(ctx, claim, json.RawMessage(`{"runId":"run-1","cursor":"4"}`)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE product_job_dispatches
@@ -358,7 +358,9 @@ func TestDurableProductJobsMigration0005(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Events) < 7 || page.Events[0].Sequence != 1 || page.Events[len(page.Events)-1].State != jobs.StateCompleted {
+	// A reconcile re-claim is not journaled: the expired lease already
+	// recorded operation.reconciliation_required.
+	if len(page.Events) < 6 || page.Events[0].Sequence != 1 || page.Events[len(page.Events)-1].State != jobs.StateCompleted {
 		t.Fatalf("migrated store replay: %#v", page)
 	}
 	for index, event := range page.Events {

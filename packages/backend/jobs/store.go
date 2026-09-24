@@ -164,11 +164,6 @@ func (store *Store) AdmitInTx(ctx context.Context, tx pgx.Tx, input Admission) (
 }
 
 func payloadFingerprint(payload json.RawMessage) [32]byte {
-	return sha256Sum(payload)
-}
-
-// Kept separate so the operation identity code has one reviewable hash site.
-func sha256Sum(payload []byte) [32]byte {
 	return sha256.Sum256(payload)
 }
 

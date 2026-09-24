@@ -2,6 +2,7 @@ package flowhost
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -15,10 +16,11 @@ import (
 )
 
 type memoryBindingStore struct {
-	mu         sync.Mutex
-	binding    Binding
-	credential string
-	acquires   int
+	mu            sync.Mutex
+	binding       Binding
+	credential    string
+	acquires      int
+	lastErrorCode string
 }
 
 func (store *memoryBindingStore) Acquire(_ context.Context, authority Authority, catalog Catalog) (BindingLease, error) {
@@ -67,6 +69,14 @@ func (lease *memoryBindingLease) MarkRunning(context.Context) error {
 	lease.store.binding = lease.binding
 	return nil
 }
+func (lease *memoryBindingLease) MarkFailed(_ context.Context, code string) error {
+	lease.store.mu.Lock()
+	defer lease.store.mu.Unlock()
+	lease.binding.State = "failed"
+	lease.store.binding = lease.binding
+	lease.store.lastErrorCode = code
+	return nil
+}
 func (*memoryBindingLease) Close() error { return nil }
 
 type identityTransport struct {
@@ -103,6 +113,7 @@ func intString(value int64) string {
 
 type memoryLauncher struct {
 	mu        sync.Mutex
+	startErr  error
 	running   bool
 	binding   Binding
 	transport *identityTransport
@@ -129,9 +140,12 @@ func (launcher *memoryLauncher) InspectFlowHost(_ context.Context, _ HostLaunch)
 func (launcher *memoryLauncher) StartFlowHost(_ context.Context, request HostLaunch) (Connection, error) {
 	launcher.mu.Lock()
 	defer launcher.mu.Unlock()
+	launcher.starts = append(launcher.starts, request)
+	if launcher.startErr != nil {
+		return Connection{}, launcher.startErr
+	}
 	launcher.running = true
 	launcher.binding = request.Binding
-	launcher.starts = append(launcher.starts, request)
 	return launcher.connection(request.Binding, request.Credential), nil
 }
 
@@ -279,4 +293,24 @@ func TestResolverCapturesSourceOnlyForNewBindingAndReauthorizesEveryTarget(t *te
 	require.Error(t, err)
 	require.Equal(t, 3, requests)
 	require.Equal(t, 3, store.acquires) // first attempt asks for source; forbidden request never acquires.
+}
+
+func TestResolverRecordsFailedStartAndFencesTheNextOwner(t *testing.T) {
+	resolver, store, launcher, target := testResolver(t)
+	launcher.startErr = errors.New("exec: coding-host: permission denied")
+	_, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	var bridgeFailure flowruntime.Failure
+	require.ErrorAs(t, err, &bridgeFailure)
+	assert.Equal(t, "runtime_start_failed", bridgeFailure.FlowRuntimeCode())
+	assert.Equal(t, "failed", store.binding.State)
+	assert.Equal(t, "runtime_start_failed", store.lastErrorCode)
+	assert.Equal(t, int64(1), store.binding.OwnerGeneration)
+
+	launcher.startErr = nil
+	runtime, err := resolver.ResolveFlowRuntime(context.Background(), target)
+	require.NoError(t, err)
+	identity, err := runtime.Identity(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), identity.OwnerGeneration, "a start after a failure must fence a new owner")
+	assert.Equal(t, "running", store.binding.State)
 }

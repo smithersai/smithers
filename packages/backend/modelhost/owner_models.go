@@ -19,8 +19,8 @@ import (
 // OwnerModels is the Go host for the existing /api/model credential catalog.
 // It is mounted by the common backend assembly for local and hosted roles.
 type OwnerModels struct {
-	Pool  *pgxpool.Pool
-	Codec webhook.SecretCodec
+	Pool   *pgxpool.Pool
+	Codec  webhook.SecretCodec
 	Tester ModelTester
 }
 
@@ -213,12 +213,15 @@ func (s OwnerModels) Credential(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var priorOrigin string
-	err = tx.QueryRow(r.Context(), `SELECT origin FROM owner_model_credentials WHERE user_id=$1 AND name=$2 FOR UPDATE`, owner, input.Name).Scan(&priorOrigin)
+	var priorPresent bool
+	err = tx.QueryRow(r.Context(), `SELECT origin, value_encrypted IS NOT NULL FROM owner_model_credentials WHERE user_id=$1 AND name=$2 FOR UPDATE`, owner, input.Name).Scan(&priorOrigin, &priorPresent)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		modelJSON(w, http.StatusOK, credentialFailure("storage_unavailable"))
 		return
 	}
-	if input.Action == "enroll" && err == nil {
+	// A removed credential keeps its row with no value; enrolling it again is
+	// the recovery path the catalog offers.
+	if input.Action == "enroll" && err == nil && priorPresent {
 		modelJSON(w, http.StatusOK, credentialFailure("exists"))
 		return
 	}

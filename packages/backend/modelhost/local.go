@@ -26,6 +26,9 @@ import (
 
 const protocol = "smithers.chat-model-host/v1"
 
+// workspacePrefix marks the per-turn workspaces this launcher owns.
+const workspacePrefix = "chat-model-"
+
 var credentialNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*$`)
 
 type LocalConfig struct {
@@ -56,7 +59,36 @@ func NewLocalLauncher(config LocalConfig) (*LocalLauncher, error) {
 	if err := verifyBundle(config.BundlePath); err != nil {
 		return nil, fmt.Errorf("verify packaged model host: %w", err)
 	}
-	return &LocalLauncher{runtime: config.Runtime, node: config.NodeBinary, bundle: config.BundlePath, active: make(map[string]struct{})}, nil
+	launcher := &LocalLauncher{runtime: config.Runtime, node: config.NodeBinary, bundle: config.BundlePath, active: make(map[string]struct{})}
+	if err := launcher.removeOrphans(); err != nil {
+		return nil, fmt.Errorf("remove model host workspaces left by a previous process: %w", err)
+	}
+	return launcher, nil
+}
+
+// workspaceLister is implemented by runtimes that can enumerate the
+// workspaces they reloaded after a restart.
+type workspaceLister interface {
+	WorkspaceIDs() []string
+}
+
+// removeOrphans deletes per-turn workspaces that a crashed or killed process
+// never cleaned up. Only this launcher creates workspaces with its prefix, and
+// no turn is active before the launcher exists.
+func (launcher *LocalLauncher) removeOrphans() error {
+	lister, ok := launcher.runtime.(workspaceLister)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), cleanupTimeout)
+	defer cancel()
+	var result error
+	for _, id := range lister.WorkspaceIDs() {
+		if strings.HasPrefix(id, workspacePrefix) {
+			result = errors.Join(result, launcher.runtime.DeleteWorkspace(ctx, id))
+		}
+	}
+	return result
 }
 
 func verifyExecutable(path string) error {
@@ -173,7 +205,7 @@ func (launcher *LocalLauncher) LaunchChatHost(ctx context.Context, grant ports.C
 	if _, err := rand.Read(workspaceNonce); err != nil {
 		return nil, fmt.Errorf("create model workspace identity: %w", err)
 	}
-	workspaceID := "chat-model-" + hex.EncodeToString(workspaceNonce)
+	workspaceID := workspacePrefix + hex.EncodeToString(workspaceNonce)
 	if _, err := launcher.runtime.CreateWorkspace(ctx, workspace.WorkspaceSpec{ID: workspaceID}); err != nil {
 		return nil, err
 	}

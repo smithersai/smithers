@@ -19,7 +19,8 @@ func TestUncertainResolutionAndCancellationUseCompatibleLocks(t *testing.T) {
 	require.NoError(t, err)
 	claim, err := store.Claim(ctx, "worker", time.Minute)
 	require.NoError(t, err)
-	require.NoError(t, store.MarkExternalStarted(ctx, claim, json.RawMessage(`{}`)))
+	_, err = store.BeginExternal(ctx, claim, json.RawMessage(`{}`))
+	require.NoError(t, err)
 	require.NoError(t, store.Abandon(ctx, claim, errors.New("lost acknowledgment"), 0))
 
 	// Pause the real resolution after it locks the request, before it updates

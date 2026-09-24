@@ -20,11 +20,11 @@ import (
 	"github.com/smithersai/smithers/packages/backend/jobs"
 )
 
-const defaultFlowDispatchTestDatabaseURL = "postgres://smithers_test:smithers_architecture_test@127.0.0.1:32768/postgres?sslmode=disable"
-
 var (
 	flowDispatchTestPool *pgxpool.Pool
 	flowDispatchTestURL  string
+	// flowDispatchTestError records why the configured server was unusable.
+	flowDispatchTestError error
 )
 
 func TestMain(main *testing.M) {
@@ -33,9 +33,9 @@ func TestMain(main *testing.M) {
 		dsn = strings.TrimSpace(os.Getenv("SMITHERS_JOBS_TEST_DATABASE_URL"))
 	}
 	if dsn == "" {
-		dsn = defaultFlowDispatchTestDatabaseURL
+		dsn = strings.TrimSpace(os.Getenv("SMITHERS_TEST_DATABASE_URL"))
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	config, err := pgxpool.ParseConfig(dsn)
 	if err == nil {
 		flowDispatchTestURL = dsn
@@ -50,6 +50,7 @@ func TestMain(main *testing.M) {
 			flowDispatchTestPool.Close()
 		}
 		flowDispatchTestPool = nil
+		flowDispatchTestError = err
 	}
 	code := main.Run()
 	if flowDispatchTestPool != nil {
@@ -61,7 +62,10 @@ func TestMain(main *testing.M) {
 func newFlowDispatchStore(t *testing.T) (*jobs.Store, *pgxpool.Pool) {
 	t.Helper()
 	if flowDispatchTestPool == nil {
-		t.Skip("flowdispatch PostgreSQL test server is unavailable")
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("flowdispatch PostgreSQL test server is required (set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL): %v", flowDispatchTestError)
+		}
+		t.Skip("set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL for PostgreSQL integration tests")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -528,7 +532,10 @@ func TestParkedLaunchCancellationIsDeliveredToCanonicalRuntime(t *testing.T) {
 
 func TestDatabaseURLRemainsParseableForRealHostSuite(t *testing.T) {
 	if flowDispatchTestPool == nil {
-		t.Skip("flowdispatch PostgreSQL test server is unavailable")
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatalf("flowdispatch PostgreSQL test server is required (set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL): %v", flowDispatchTestError)
+		}
+		t.Skip("set SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL for PostgreSQL integration tests")
 	}
 	_, err := url.Parse(flowDispatchTestURL)
 	require.NoError(t, err)

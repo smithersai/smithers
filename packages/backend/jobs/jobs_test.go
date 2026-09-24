@@ -93,6 +93,9 @@ func TestMain(main *testing.M) {
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	if jobsTestDatabase == nil {
+		if os.Getenv("SMITHERS_REQUIRE_DATABASE_TESTS") == "1" {
+			t.Fatal("requires SMITHERS_JOBS_TEST_DATABASE_URL or SMITHERS_TEST_DATABASE_URL")
+		}
 		t.Skip("requires SMITHERS_JOBS_TEST_DATABASE_URL or SMITHERS_TEST_DATABASE_URL")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -529,7 +532,8 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	require.NoError(t, err)
 	unsafeClaim, err := store.Claim(context.Background(), "worker-a", 30*time.Second)
 	require.NoError(t, err)
-	require.NoError(t, store.MarkExternalStarted(context.Background(), unsafeClaim, json.RawMessage(`{"phase":"before-call"}`)))
+	_, err = store.BeginExternal(context.Background(), unsafeClaim, json.RawMessage(`{"phase":"before-call"}`))
+	require.NoError(t, err)
 	_, err = store.pool.Exec(context.Background(), `UPDATE product_job_dispatches
 		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, unsafeClaim.OperationID)
 	require.NoError(t, err)
@@ -557,7 +561,8 @@ func TestExternalEffectRecoveryRequiresSafePolicy(t *testing.T) {
 	stableAttempt, err := store.BeginExternal(context.Background(), reconcileClaim, json.RawMessage(`{"externalId":"maybe"}`))
 	require.NoError(t, err)
 	require.Equal(t, reconcileClaim.Attempt, stableAttempt)
-	require.NoError(t, store.MarkWaiting(context.Background(), reconcileClaim, json.RawMessage(`{"runtimeRunId":"run-1"}`)))
+	_, err = store.Checkpoint(context.Background(), reconcileClaim, json.RawMessage(`{"runtimeRunId":"run-1"}`))
+	require.NoError(t, err)
 	_, err = store.pool.Exec(context.Background(), `UPDATE product_job_dispatches
 		SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE operation_id=$1`, reconcileClaim.OperationID)
 	require.NoError(t, err)

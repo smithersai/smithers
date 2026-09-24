@@ -520,3 +520,29 @@ func TestDeleteWorkspaceRetainsFailedRemovalForRetry(t *testing.T) {
 	_, err = runtime.InspectWorkspace(context.Background(), ws.ID)
 	require.ErrorIs(t, err, workspaceapi.ErrWorkspaceNotFound)
 }
+
+func TestDefaultConfigRunsCommandsInDifferentWorkspacesConcurrently(t *testing.T) {
+	runtime, err := New(Config{Root: t.TempDir(), TerminationGrace: 100 * time.Millisecond})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Close()) })
+	start := func(id string) {
+		_, err := runtime.CreateWorkspace(context.Background(), workspaceapi.WorkspaceSpec{ID: id})
+		require.NoError(t, err)
+		_, err = runtime.StartWorkspace(context.Background(), id)
+		require.NoError(t, err)
+	}
+	start("slow")
+	start("fast")
+	slowDone := make(chan error, 1)
+	go func() {
+		_, err := runtime.ExecuteCommand(context.Background(), "slow", workspaceapi.Command{Args: []string{"/bin/sh", "-c", "sleep 3"}})
+		slowDone <- err
+	}()
+	require.Eventually(t, func() bool { return len(runtime.semaphore) == 1 }, time.Second, time.Millisecond)
+	began := time.Now()
+	result, err := runtime.ExecuteCommand(context.Background(), "fast", workspaceapi.Command{Args: []string{"/bin/sh", "-c", "true"}})
+	require.NoError(t, err)
+	assert.Equal(t, 0, result.ExitCode)
+	assert.Less(t, time.Since(began), time.Second, "a command in one workspace waited behind another workspace's command")
+	require.NoError(t, <-slowDone)
+}

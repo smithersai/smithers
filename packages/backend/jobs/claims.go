@@ -27,21 +27,6 @@ func (store *Store) Claim(ctx context.Context, workerID string, lease time.Durat
 	return store.ClaimForOperations(ctx, workerID, lease, nil)
 }
 
-// ClaimOperations is the operation-filtered public form used by typed product
-// workers. Nil matches all operations; a non-nil empty list matches none.
-func (store *Store) ClaimOperations(ctx context.Context, workerID string, lease time.Duration, operations []string) (Claim, error) {
-	if workerID == "" {
-		return Claim{}, errors.New("jobs: worker ID is required")
-	}
-	if lease <= 0 {
-		return Claim{}, errors.New("jobs: positive lease is required")
-	}
-	if operations != nil && len(operations) == 0 {
-		return Claim{}, ErrNoWork
-	}
-	return store.ClaimForOperations(ctx, workerID, lease, operations)
-}
-
 // ClaimForOperations limits a worker to exact product-operation names. An
 // empty list retains Claim's catch-all behavior. This lets one shared queue
 // host typed handlers without allowing a Flow worker to consume unrelated
@@ -121,12 +106,17 @@ func (store *Store) ClaimForOperations(ctx context.Context, workerID string, lea
 		WHERE id=$1 RETURNING state`, claim.OperationID).Scan(&claim.State); err != nil {
 		return Claim{}, err
 	}
-	data, _ := json.Marshal(map[string]any{
-		"attempt": claim.Attempt, "generation": claim.Generation,
-		"externalAttempt": claim.ExternalAttempt, "reconcile": claim.NeedsReconciliation,
-	})
-	if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.claimed", claim.State, data); err != nil {
-		return Claim{}, err
+	// A reconcile re-claim polls an operation that is already parked or
+	// running elsewhere. Journal only claims that start new work, so a long
+	// wait does not append one event per poll.
+	if !claim.NeedsReconciliation {
+		data, _ := json.Marshal(map[string]any{
+			"attempt": claim.Attempt, "generation": claim.Generation,
+			"externalAttempt": claim.ExternalAttempt,
+		})
+		if _, err := appendEvent(ctx, tx, claim.Scope, claim.OperationID, "operation.claimed", claim.State, data); err != nil {
+			return Claim{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Claim{}, err
@@ -201,11 +191,6 @@ func (store *Store) Heartbeat(ctx context.Context, claim Claim, lease time.Durat
 
 // MarkExternalStarted must be committed immediately before invoking the
 // provider. Recovery uses this marker to avoid repeating ambiguous effects.
-func (store *Store) MarkExternalStarted(ctx context.Context, claim Claim, observation json.RawMessage) error {
-	_, err := store.BeginExternal(ctx, claim, observation)
-	return err
-}
-
 // BeginExternal commits the pre-call marker and returns the stable delivery
 // attempt to send to the external authority. Recovery may replace the
 // PostgreSQL claim, but it must reuse this value for an ambiguous launch.
@@ -256,13 +241,6 @@ func (store *Store) BeginExternal(ctx context.Context, claim Claim, observation 
 		return 0, err
 	}
 	return externalAttempt, nil
-}
-
-// MarkWaiting persists the external system's acceptance receipt separately
-// from both the original request receipt and the eventual terminal receipt.
-func (store *Store) MarkWaiting(ctx context.Context, claim Claim, receipt json.RawMessage) error {
-	_, err := store.Checkpoint(ctx, claim, receipt)
-	return err
 }
 
 // Checkpoint atomically advances the external receipt and ordered product
@@ -361,9 +339,22 @@ func (store *Store) Park(ctx context.Context, claim Claim, receipt json.RawMessa
 	return tx.Commit(ctx)
 }
 
-// Defer is the Flow-dispatch spelling of Park.
-func (store *Store) Defer(ctx context.Context, claim Claim, receipt json.RawMessage, retryAfter time.Duration) error {
-	return store.Park(ctx, claim, receipt, retryAfter)
+// Wake makes a ready, parked operation claimable now. A decision that another
+// operation delivered (an approval, for example) uses it so the parked
+// operation does not wait out its backoff. A claimed or settled operation is
+// left alone.
+func (store *Store) Wake(ctx context.Context, scope Scope, operationID string) error {
+	if err := scope.validate(); err != nil {
+		return err
+	}
+	_, err := store.pool.Exec(ctx, `UPDATE product_job_dispatches dispatch
+		SET next_attempt_at=clock_timestamp(), updated_at=clock_timestamp()
+		FROM product_job_requests request
+		WHERE dispatch.operation_id=$3 AND request.id=dispatch.operation_id
+		  AND request.tenant_id=$1 AND request.principal_id=$2
+		  AND dispatch.status='ready' AND dispatch.next_attempt_at > clock_timestamp()`,
+		scope.TenantID, scope.PrincipalID, operationID)
+	return err
 }
 
 func (store *Store) Complete(ctx context.Context, claim Claim, receipt json.RawMessage) error {
@@ -382,12 +373,6 @@ func (store *Store) AcknowledgeCancellation(ctx context.Context, claim Claim, re
 // when the product caller did not initiate it.
 func (store *Store) RecordExternalCancellation(ctx context.Context, claim Claim, receipt json.RawMessage) error {
 	return store.settleClaim(ctx, claim, StateCancelled, "operation.cancelled", receipt, false)
-}
-
-// ExternalCancelled is the canonical-runtime spelling of
-// RecordExternalCancellation.
-func (store *Store) ExternalCancelled(ctx context.Context, claim Claim, receipt json.RawMessage) error {
-	return store.RecordExternalCancellation(ctx, claim, receipt)
 }
 
 func (store *Store) settleClaim(ctx context.Context, claim Claim, state State, eventType string, receipt json.RawMessage, requireCancellation bool) error {

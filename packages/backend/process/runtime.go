@@ -25,8 +25,17 @@ import (
 
 const metadataVersion = 1
 
+// DefaultMaxConcurrent is the command concurrency cap used when Config leaves
+// MaxConcurrent unset. One slow command in one workspace must not queue every
+// other workspace's commands behind it.
+func DefaultMaxConcurrent() int {
+	return max(8, goruntime.NumCPU()*4)
+}
+
 // Config selects the adapter-owned data root and process limits. Environment
 // is an explicit allowlist/value map; the adapter never copies os.Environ.
+// MaxConcurrent caps concurrent one-shot commands across every workspace; zero
+// selects DefaultMaxConcurrent.
 type Config struct {
 	Root             string
 	Environment      map[string]string
@@ -85,7 +94,7 @@ func New(config Config) (*Runtime, error) {
 		return nil, fmt.Errorf("resolve process workspace root: %w", err)
 	}
 	if config.MaxConcurrent <= 0 {
-		config.MaxConcurrent = 1
+		config.MaxConcurrent = DefaultMaxConcurrent()
 	}
 	if config.OutputLimit <= 0 {
 		config.OutputLimit = 4 << 20
@@ -353,6 +362,19 @@ func (r *Runtime) StopWorkspace(ctx context.Context, id string) error {
 	}
 	r.mu.Unlock()
 	return persistErr
+}
+
+// WorkspaceIDs lists every workspace this runtime owns, including stopped
+// workspaces reloaded from a previous process.
+func (r *Runtime) WorkspaceIDs() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ids := make([]string, 0, len(r.workspaces))
+	for id := range r.workspaces {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func (r *Runtime) DeleteWorkspace(ctx context.Context, id string) error {

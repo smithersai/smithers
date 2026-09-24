@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/smithersai/smithers/packages/backend/flowruntime"
 	"github.com/smithersai/smithers/packages/backend/jobs"
@@ -128,7 +130,10 @@ func (service *Service) handleLaunch(ctx context.Context, lease *jobs.Lease) err
 				return err
 			}
 		}
-		return lease.Defer(ctx, mustJSON(checkpoint), service.observationDelay)
+		// Launch is the only way to learn that a parked plan was approved, so
+		// the launch keeps polling with backoff. An admitted approval wakes it.
+		delay := service.nextObservation(&checkpoint, false)
+		return lease.Defer(ctx, mustJSON(checkpoint), delay)
 	case "Accepted", "AlreadyApplied":
 		if checkpoint.RunID == "" {
 			return service.fail(lease, "runtime_receipt_missing_run", checkpoint)
@@ -229,7 +234,16 @@ func (service *Service) handleApproval(ctx context.Context, lease *jobs.Lease) e
 	receipt := terminalReceipt{
 		Kind: "runtime-approval", Runtime: identity, Receipt: &result.Receipt, Projection: json.RawMessage(`{}`),
 	}
-	return lease.Complete(ctx, mustJSON(receipt))
+	if err := lease.Complete(ctx, mustJSON(receipt)); err != nil {
+		return err
+	}
+	// The parked launch learns about the decision on its next poll; make that
+	// poll happen now. A missed wake only delays it to its backoff.
+	if err := service.store.Wake(context.WithoutCancel(ctx), claim.Scope, payload.LaunchOperationID); err != nil {
+		slog.WarnContext(ctx, "flow dispatch could not wake the approved launch",
+			"operation_id", payload.LaunchOperationID, "error", err)
+	}
+	return nil
 }
 
 func (service *Service) handleSignal(ctx context.Context, lease *jobs.Lease) error {
@@ -343,6 +357,7 @@ func (service *Service) observe(
 	lease *jobs.Lease,
 	checkpoint RuntimeCheckpoint,
 ) error {
+	progressed := false
 	for page := 0; page < service.observationPages; page++ {
 		callContext, cancel := context.WithTimeout(ctx, service.runtimeCallTimeout)
 		observation, err := runtime.Observe(callContext, checkpoint.RunID, checkpoint.Cursor, service.observationLimit)
@@ -354,6 +369,9 @@ func (service *Service) observe(
 			observation.Terminal != terminalStatus(observation.Run.Status) ||
 			!validObservationPage(checkpoint.Cursor, observation) {
 			return service.fail(lease, "invalid_runtime_observation", checkpoint)
+		}
+		if observation.NextCursor != checkpoint.Cursor || checkpoint.Run == nil || checkpoint.Run.Status != observation.Run.Status {
+			progressed = true
 		}
 		checkpoint.Cursor = observation.NextCursor
 		checkpoint.Run = &observation.Run
@@ -367,7 +385,31 @@ func (service *Service) observe(
 			break
 		}
 	}
-	return lease.Defer(ctx, mustJSON(checkpoint), service.observationDelay)
+	delay := service.nextObservation(&checkpoint, progressed)
+	return lease.Defer(ctx, mustJSON(checkpoint), delay)
+}
+
+// nextObservation returns the wait before the next poll and records it in the
+// checkpoint. Progress resets the backoff; an idle poll doubles it until the
+// limit, after which the checkpoint stops changing.
+func (service *Service) nextObservation(checkpoint *RuntimeCheckpoint, progressed bool) time.Duration {
+	if progressed {
+		checkpoint.IdlePolls = 0
+	} else if service.observationBackoff(checkpoint.IdlePolls) < service.maxObservationDelay {
+		checkpoint.IdlePolls++
+	}
+	return service.observationBackoff(checkpoint.IdlePolls)
+}
+
+func (service *Service) observationBackoff(idlePolls int) time.Duration {
+	delay := service.observationDelay
+	for range idlePolls {
+		if delay >= service.maxObservationDelay {
+			break
+		}
+		delay *= 2
+	}
+	return min(delay, service.maxObservationDelay)
 }
 
 func (service *Service) cancelRun(

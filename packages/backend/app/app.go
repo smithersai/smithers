@@ -108,23 +108,7 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 	ready := make(chan http.Handler, 1)
 	stdout, stderr := writers(cfg)
 	go func() {
-		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
-			TraceExporter:         cfg.TraceExporter,
-			Blobs:                 cfg.Blobs,
-			AgentLogs:             cfg.AgentLogs,
-			MetricsDoer:           cfg.MetricsDoer,
-			Repository:            cfg.Repository,
-			RepositoryPlacement:   cfg.RepositoryPlacement,
-			Workspace:             cfg.Workspace,
-			FlowHostRegistry:      cfg.FlowHostRegistry,
-			FlowHostProductAPIURL: cfg.FlowHostProductAPIURL,
-			ChatHost:              cfg.ChatHost,
-			ChatCallbackListener:  cfg.ChatCallbackListener,
-			ChatProducerBaseURL:   cfg.ChatProducerBaseURL,
-			Recommender:           cfg.Recommender,
-			RecommendationLog:     cfg.RecommendationLog,
-			ModelStreamHost:       cfg.ModelStreamHost,
-		}, func(handler http.Handler) {
+		instance.err = closeWorkspace(cfg.Workspace, compose.StartWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, cfg.options(), func(handler http.Handler) {
 			ready <- handler
 		}))
 		close(instance.done)
@@ -151,7 +135,13 @@ func Start(ctx context.Context, cfg Config) (*Instance, error) {
 // when startup or a worker fails.
 func Run(ctx context.Context, cfg Config) error {
 	stdout, stderr := writers(cfg)
-	return closeWorkspace(cfg.Workspace, compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, compose.Options{
+	return closeWorkspace(cfg.Workspace, compose.RunWithOptions(ctx, append([]string(nil), cfg.Args...), stdout, stderr, cfg.options()))
+}
+
+// options maps Config to the composition options. Start and Run share it so
+// a new field cannot reach one entry point and miss the other.
+func (cfg Config) options() compose.Options {
+	return compose.Options{
 		TraceExporter:         cfg.TraceExporter,
 		Blobs:                 cfg.Blobs,
 		AgentLogs:             cfg.AgentLogs,
@@ -167,7 +157,7 @@ func Run(ctx context.Context, cfg Config) error {
 		Recommender:           cfg.Recommender,
 		RecommendationLog:     cfg.RecommendationLog,
 		ModelStreamHost:       cfg.ModelStreamHost,
-	}))
+	}
 }
 
 func closeWorkspace(runtime ports.WorkspaceRuntime, runErr error) error {

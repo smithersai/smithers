@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -142,7 +143,7 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 	}
 	authority, err := resolver.targets.ResolveFlowHostTarget(ctx, target)
 	if err != nil {
-		return nil, sanitizeFailure("runtime_binding_unavailable", err)
+		return nil, refuse(ctx, "runtime_binding_unavailable", err, Binding{WorkspaceID: target.WorkspaceID})
 	}
 	if err := validateAuthority(target, authority); err != nil {
 		return nil, err
@@ -159,7 +160,7 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 		}
 		authority.SourceRevision, err = source.ResolveFlowHostSource(ctx, authority)
 		if err != nil {
-			return nil, sanitizeFailure("runtime_source_revision_unavailable", err)
+			return nil, refuse(ctx, "runtime_source_revision_unavailable", err, Binding{WorkspaceID: authority.WorkspaceID, CatalogKey: authority.CatalogKey})
 		}
 		if !lowerHex(authority.SourceRevision, 40) {
 			return nil, failure{code: "runtime_source_revision_invalid"}
@@ -167,7 +168,7 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 		lease, err = resolver.store.Acquire(ctx, authority, catalog)
 	}
 	if err != nil {
-		return nil, sanitizeFailure("runtime_binding_unavailable", err)
+		return nil, refuse(ctx, "runtime_binding_unavailable", err, Binding{WorkspaceID: authority.WorkspaceID, CatalogKey: authority.CatalogKey})
 	}
 	defer lease.Close() // best effort: caller error takes precedence over unlock diagnostics.
 
@@ -186,23 +187,23 @@ func (resolver *Resolver) ResolveFlowRuntime(ctx context.Context, target flowrun
 		return client, nil
 	}
 	if !errors.Is(inspectErr, ErrHostNotRunning) {
-		return nil, sanitizeFailure("runtime_inspection_failed", inspectErr)
+		return nil, refuse(ctx, "runtime_inspection_failed", inspectErr, binding)
 	}
 
 	replaceOwner := binding.State == "running" || binding.State == "failed"
 	binding, err = lease.PrepareStart(ctx, replaceOwner)
 	if err != nil {
-		return nil, sanitizeFailure("runtime_owner_fence_failed", err)
+		return nil, refuse(ctx, "runtime_owner_fence_failed", err, binding)
 	}
 	connection, err = resolver.launcher.StartFlowHost(ctx, HostLaunch{
 		Binding: binding, Authority: authority, Catalog: catalog, Credential: lease.Credential(),
 	})
 	if err != nil {
-		return nil, sanitizeFailure("runtime_start_failed", err)
+		return nil, startFailed(ctx, lease, binding, refuse(ctx, "runtime_start_failed", err, binding))
 	}
 	client, err := resolver.verifiedClient(ctx, connection, lease.Credential(), binding)
 	if err != nil {
-		return nil, err
+		return nil, startFailed(ctx, lease, binding, err)
 	}
 	if err := lease.MarkRunning(ctx); err != nil {
 		return nil, failure{code: "runtime_binding_checkpoint_failed", retryable: true}
@@ -219,13 +220,46 @@ func (resolver *Resolver) verifiedClient(ctx context.Context, connection Connect
 	}
 	identity, err := client.Identity(ctx)
 	if err != nil {
-		return nil, sanitizeFailure("runtime_identity_unavailable", err)
+		return nil, refuse(ctx, "runtime_identity_unavailable", err, binding)
 	}
 	if identity.Protocol != flowruntime.Protocol || identity.RuntimeArtifactDigest != binding.RuntimeArtifactDigest ||
 		identity.SourceRevision != binding.SourceRevision || identity.OwnerGeneration != binding.OwnerGeneration {
+		slog.ErrorContext(ctx, "flow host identity conflict", "binding_id", binding.ID, "workspace_id", binding.WorkspaceID,
+			"want_generation", binding.OwnerGeneration, "got_generation", identity.OwnerGeneration,
+			"want_artifact", binding.RuntimeArtifactDigest, "got_artifact", identity.RuntimeArtifactDigest)
 		return nil, failure{code: "runtime_identity_conflict"}
 	}
 	return client, nil
+}
+
+// startFailed durably records a failed start so the next start bumps the
+// owner generation and fences any host that comes up late.
+func startFailed(ctx context.Context, lease BindingLease, binding Binding, result error) error {
+	code := "runtime_start_failed"
+	var known flowruntime.Failure
+	if errors.As(result, &known) {
+		code = known.FlowRuntimeCode()
+	}
+	if err := lease.MarkFailed(context.WithoutCancel(ctx), code); err != nil {
+		slog.ErrorContext(ctx, "flow host failure checkpoint failed", "binding_id", binding.ID,
+			"workspace_id", binding.WorkspaceID, "owner_generation", binding.OwnerGeneration, "error", err)
+	}
+	return result
+}
+
+// logFailure keeps the server-side cause that sanitizeFailure hides from
+// callers, with the binding that failed.
+func logFailure(ctx context.Context, result error, cause error, binding Binding) {
+	slog.ErrorContext(ctx, "flow host failed", "code", result.Error(), "binding_id", binding.ID,
+		"workspace_id", binding.WorkspaceID, "catalog", binding.CatalogKey,
+		"owner_generation", binding.OwnerGeneration, "error", cause)
+}
+
+// refuse sanitizes err for the caller and logs the cause server-side.
+func refuse(ctx context.Context, fallback string, err error, binding Binding) error {
+	result := sanitizeFailure(fallback, err)
+	logFailure(ctx, result, err, binding)
+	return result
 }
 
 type failure struct {

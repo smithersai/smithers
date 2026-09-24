@@ -42,10 +42,6 @@ type Runtime struct{ repository *repository.Local }
 func (r *Runtime) Client() *repository.Client         { return r.repository.Client() }
 func (r *Runtime) Shutdown(ctx context.Context) error { return r.repository.Shutdown(ctx) }
 
-// BootstrapToken is given only to the trusted native bridge or process
-// operator to claim the first owner. It must not be served over HTTP.
-func (r *Runtime) BootstrapToken() string { return os.Getenv("SMITHERS_AUTH_BOOTSTRAP_TOKEN") }
-
 // Prepare reopens durable secrets and storage under root, then starts the
 // in-process repository engine. Explicit environment values take precedence;
 // every missing secret is generated once and persisted with private mode.

@@ -248,7 +248,7 @@ const backendGoModules = Smithers.Go.ModDownload({
 const backendGo = Smithers.Shell.Test({
   // Services TestMain prepares the shared cluster fixture before clusterservices
   // attaches. Only Plue-owned Terraform/monitoring source tests live in infra.
-  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go vet ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go test -count=1 $shared ./apps/backend/... ./distribution/...",
+  shell: "export SMITHERS_FFI_LIBRARY_PATH=\"$PWD/.native-ffi/target/debug/libsmithers_ffi.so\"; export GOMODCACHE=\"$PWD/.backend-go-modcache\"; go build ./packages/backend/... ./apps/backend/... ./distribution/... || exit $?; go test -count=1 ./packages/backend/internal/services || exit $?; packages=$(go list ./packages/backend/...) || exit $?; shared=$(printf '%s\\n' \"$packages\" | grep -vE '/internal/infra(/alerts)?$|/internal/services$') || exit $?; test -n \"$shared\" || exit 1; go vet $shared ./apps/backend/... ./distribution/... || exit $?; go test -count=1 $shared ./apps/backend/... ./distribution/...",
   env: {
     GOFLAGS: "-p=1 -buildvcs=false -mod=readonly",
     GOMAXPROCS: "2",
@@ -266,7 +266,12 @@ const backendGo = Smithers.Shell.Test({
     SMITHERS_RUNNER_TEST_DATABASE_URL: backendDatabaseURL("backend_runner"),
     SMITHERS_SERVICES_TEST_DATABASE_URL: backendDatabaseURL("backend_services"),
     SMITHERS_TEST_ADMIN_CLI_DATABASE_URL: backendDatabaseURL("backend_services"),
-    SMITHERS_CLUSTER_TEST_DATABASE_URL: backendDatabaseURL("backend_services")
+    SMITHERS_CLUSTER_TEST_DATABASE_URL: backendDatabaseURL("backend_services"),
+    // Each suite isolates itself: flowdispatch in a fresh schema, flowhost and
+    // jobs in a fresh database created through this admin connection.
+    SMITHERS_FLOWDISPATCH_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
+    SMITHERS_FLOWHOST_TEST_DATABASE_URL: backendDatabaseURL("postgres"),
+    SMITHERS_JOBS_TEST_DATABASE_URL: backendDatabaseURL("postgres")
   },
   data: [
     backendGoModules,

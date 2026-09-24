@@ -78,6 +78,10 @@ type RuntimeCheckpoint struct {
 	Cursor              string                          `json:"cursor,omitempty"`
 	Run                 *flowruntime.FlowRuntimeRun     `json:"run,omitempty"`
 	FailureCode         string                          `json:"failureCode,omitempty"`
+	// IdlePolls counts consecutive polls without progress. It stops growing
+	// once the backoff reaches its limit, so idle polls stop changing the
+	// checkpoint.
+	IdlePolls int `json:"idlePolls,omitempty"`
 }
 
 // ProjectionUpdate is an idempotent projection callback. RuntimeCheckpoint is
@@ -100,13 +104,17 @@ func (project ProjectorFunc) ProjectFlowRuntime(ctx context.Context, update Proj
 }
 
 type Config struct {
-	Store              *jobs.Store
-	Resolver           flowruntime.FlowRuntimeResolver
-	Projector          Projector
-	ObservationDelay   time.Duration
-	ObservationLimit   int
-	ObservationPages   int
-	RuntimeCallTimeout time.Duration
+	Store     *jobs.Store
+	Resolver  flowruntime.FlowRuntimeResolver
+	Projector Projector
+	// ObservationDelay is the first wait before re-polling a parked or running
+	// launch. Each poll that finds no progress doubles it, up to
+	// MaxObservationDelay.
+	ObservationDelay    time.Duration
+	MaxObservationDelay time.Duration
+	ObservationLimit    int
+	ObservationPages    int
+	RuntimeCallTimeout  time.Duration
 }
 
 type launchPayload struct {

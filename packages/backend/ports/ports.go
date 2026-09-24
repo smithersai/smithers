@@ -107,21 +107,6 @@ var ErrObjectAlreadyExists = blob.ErrObjectAlreadyExists
 // deployment-owned storage boundary.
 type AgentLogStore = services.AgentLogStore
 
-// Workload identifies admitted work; the common worker owns durable receipts.
-type Workload struct {
-	ID          string
-	WorkspaceID string
-	Command     []string
-	Directory   string
-}
-
-type ExecutionResult struct{ ExitCode int }
-
-type Executor interface {
-	Isolation() IsolationLevel
-	Execute(context.Context, Workload) (ExecutionResult, error)
-}
-
 // MetricsDoer is a deployment-authenticated HTTP client for hosted metrics.
 // Local deployments leave it nil.
 type MetricsDoer interface {
@@ -203,12 +188,6 @@ const WorkspacePortPurposeFlowRuntime = workspace.PortPurposeFlowRuntime
 
 var WithWorkspaceOperation = workspace.WithOperation
 var WorkspaceOperationFromContext = workspace.OperationFromContext
-
-// WorkspaceAccess is the narrow legacy terminal facet used by callers that do
-// not need the full runtime contract.
-type WorkspaceAccess interface {
-	OpenTerminal(ctx context.Context, workspaceID string) (Terminal, error)
-}
 
 // ChatTurnGrant authorizes one trusted TypeScript host generation to produce
 // frames for one already-admitted turn. Token is an opaque short-lived

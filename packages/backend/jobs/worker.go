@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +18,10 @@ type WorkerConfig struct {
 	Capacity     int
 	Lease        time.Duration
 	PollInterval time.Duration
-	RetryDelay   time.Duration
+	// RetryDelay is the first retry delay after a handler returns without a
+	// terminal receipt. Each later attempt doubles it, up to MaxRetryDelay.
+	RetryDelay    time.Duration
+	MaxRetryDelay time.Duration
 	// SettlementTimeout bounds receipt writes and cleanup after handler cancellation.
 	SettlementTimeout time.Duration
 	// Operations is an exact allowlist. Empty means every product operation.
@@ -49,8 +53,11 @@ func (lease *Lease) StartExternal(ctx context.Context, observation json.RawMessa
 // DeliveryAttempt returns the stable external attempt after StartExternal.
 func (lease *Lease) DeliveryAttempt() int { return lease.claim.DeliveryAttempt() }
 
+// Waiting persists the external system's acceptance receipt separately from
+// both the original request receipt and the eventual terminal receipt.
 func (lease *Lease) Waiting(ctx context.Context, reason json.RawMessage) error {
-	return lease.store.MarkWaiting(ctx, lease.claim, reason)
+	_, err := lease.store.Checkpoint(ctx, lease.claim, reason)
+	return err
 }
 
 func (lease *Lease) Checkpoint(ctx context.Context, receipt json.RawMessage) (bool, error) {
@@ -94,16 +101,12 @@ func (lease *Lease) Cancelled(ctx context.Context, receipt json.RawMessage) erro
 	return lease.release(lease.store.AcknowledgeCancellation(ctx, lease.claim, receipt))
 }
 
-// CancelledObserved records cancellation reported by the external authority.
+// ExternalCancelled records cancellation reported by the external authority.
 // Unlike Cancelled, it does not require a preceding product cancel request.
-func (lease *Lease) CancelledObserved(ctx context.Context, receipt json.RawMessage) error {
-	return lease.release(lease.store.RecordExternalCancellation(ctx, lease.claim, receipt))
-}
-
 func (lease *Lease) ExternalCancelled(ctx context.Context, receipt json.RawMessage) error {
 	ctx, cancel := settlementContext(ctx, lease.settlementTimeout)
 	defer cancel()
-	return lease.release(lease.store.ExternalCancelled(ctx, lease.claim, receipt))
+	return lease.release(lease.store.RecordExternalCancellation(ctx, lease.claim, receipt))
 }
 
 func (lease *Lease) release(err error) error {
@@ -133,6 +136,12 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 	}
 	if config.PollInterval <= 0 {
 		config.PollInterval = 250 * time.Millisecond
+	}
+	if config.MaxRetryDelay <= 0 {
+		config.MaxRetryDelay = time.Minute
+	}
+	if config.MaxRetryDelay < config.RetryDelay {
+		config.MaxRetryDelay = config.RetryDelay
 	}
 	if config.Operations != nil && len(config.Operations) == 0 {
 		return errors.New("jobs: worker operations cannot be empty")
@@ -208,7 +217,10 @@ func (store *Store) RunWorker(ctx context.Context, config WorkerConfig, handler 
 		go func() {
 			defer workers.Done()
 			defer func() { <-capacity }()
-			report(store.runClaim(ctx, claim, config.Lease, heartbeatInterval, config.RetryDelay, config.SettlementTimeout, handler))
+			retryDelay := RetryBackoff(config.RetryDelay, config.MaxRetryDelay, claim.Attempt)
+			if err := store.runClaim(ctx, claim, config.Lease, heartbeatInterval, retryDelay, config.SettlementTimeout, handler); err != nil {
+				report(&ClaimError{OperationID: claim.OperationID, Operation: claim.Operation, Attempt: claim.Attempt, RetryDelay: retryDelay, Err: err})
+			}
 		}()
 	}
 	workers.Wait()
@@ -298,4 +310,35 @@ settled:
 		handlerErr = errors.New("job handler returned without a terminal receipt")
 	}
 	return store.Abandon(settlement, claim, handlerErr, retryDelay)
+}
+
+// ClaimError identifies the operation whose handler or settlement failed.
+type ClaimError struct {
+	OperationID string
+	Operation   string
+	Attempt     int
+	RetryDelay  time.Duration
+	Err         error
+}
+
+func (err *ClaimError) Error() string {
+	return fmt.Sprintf("jobs: operation %s (%s) attempt %d: %v", err.OperationID, err.Operation, err.Attempt, err.Err)
+}
+
+func (err *ClaimError) Unwrap() error { return err.Err }
+
+// RetryBackoff returns base doubled once per attempt after the first, capped
+// at limit, with up to 20% jitter removed so retries from one burst spread out.
+func RetryBackoff(base, limit time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
+	delay := base
+	for step := 1; step < attempt && delay < limit; step++ {
+		delay *= 2
+	}
+	if delay > limit {
+		delay = limit
+	}
+	return delay - time.Duration(rand.Int64N(int64(delay)/5+1))
 }

@@ -16,13 +16,14 @@ import (
 )
 
 type Service struct {
-	store              *jobs.Store
-	resolver           flowruntime.FlowRuntimeResolver
-	projector          Projector
-	observationDelay   time.Duration
-	observationLimit   int
-	observationPages   int
-	runtimeCallTimeout time.Duration
+	store               *jobs.Store
+	resolver            flowruntime.FlowRuntimeResolver
+	projector           Projector
+	observationDelay    time.Duration
+	maxObservationDelay time.Duration
+	observationLimit    int
+	observationPages    int
+	runtimeCallTimeout  time.Duration
 }
 
 func New(config Config) (*Service, error) {
@@ -35,6 +36,12 @@ func New(config Config) (*Service, error) {
 	if config.ObservationDelay <= 0 {
 		config.ObservationDelay = time.Second
 	}
+	if config.MaxObservationDelay <= 0 {
+		config.MaxObservationDelay = 30 * time.Second
+	}
+	if config.MaxObservationDelay < config.ObservationDelay {
+		config.MaxObservationDelay = config.ObservationDelay
+	}
 	if config.ObservationLimit <= 0 || config.ObservationLimit > 1000 {
 		config.ObservationLimit = 250
 	}
@@ -46,7 +53,8 @@ func New(config Config) (*Service, error) {
 	}
 	return &Service{
 		store: config.Store, resolver: config.Resolver, projector: config.Projector,
-		observationDelay: config.ObservationDelay, observationLimit: config.ObservationLimit,
+		observationDelay: config.ObservationDelay, maxObservationDelay: config.MaxObservationDelay,
+		observationLimit: config.ObservationLimit,
 		observationPages: config.ObservationPages, runtimeCallTimeout: config.RuntimeCallTimeout,
 	}, nil
 }

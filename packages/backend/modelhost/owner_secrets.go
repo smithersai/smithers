@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -16,10 +17,15 @@ import (
 
 // OwnerSecretResolver reads the same encrypted repository secrets written by
 // the product API. The database address becomes available after native-owned
-// PostgreSQL starts, so it is obtained at turn time.
+// PostgreSQL starts, so it is obtained at turn time. The first turn opens a
+// pool that later turns reuse; a changed address replaces it.
 type OwnerSecretResolver struct {
 	databaseURL func() string
 	secretKey   func() string
+
+	mu      sync.Mutex
+	pool    *pgxpool.Pool
+	poolURL string
 }
 
 func NewOwnerSecretResolver(databaseURL, secretKey func() string) (*OwnerSecretResolver, error) {
@@ -52,11 +58,10 @@ func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, owner
 	if err != nil {
 		return Binding{}, fmt.Errorf("open owner model secrets: %w", err)
 	}
-	pool, err := pgxpool.New(ctx, resolver.databaseURL())
+	pool, err := resolver.openPool(ctx, resolver.databaseURL())
 	if err != nil {
 		return Binding{}, fmt.Errorf("connect owner model secrets: %w", err)
 	}
-	defer pool.Close()
 	if len(input.Model) == 0 || string(input.Model) == "null" {
 		err = pool.QueryRow(ctx, `SELECT model FROM owner_model_defaults WHERE user_id=$1`, ownerID).Scan(&input.Model)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -117,6 +122,33 @@ func (resolver *OwnerSecretResolver) ResolveChatModel(ctx context.Context, owner
 		binding.CredentialOrigin = origin
 	}
 	return binding, nil
+}
+
+func (resolver *OwnerSecretResolver) openPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+	resolver.mu.Lock()
+	defer resolver.mu.Unlock()
+	if resolver.pool != nil && resolver.poolURL == databaseURL {
+		return resolver.pool, nil
+	}
+	pool, err := pgxpool.New(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if resolver.pool != nil {
+		resolver.pool.Close()
+	}
+	resolver.pool, resolver.poolURL = pool, databaseURL
+	return pool, nil
+}
+
+// Close releases the resolver's database pool.
+func (resolver *OwnerSecretResolver) Close() {
+	resolver.mu.Lock()
+	defer resolver.mu.Unlock()
+	if resolver.pool != nil {
+		resolver.pool.Close()
+		resolver.pool, resolver.poolURL = nil, ""
+	}
 }
 
 func builtinCredential(name string) bool {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/ports"
 	"github.com/smithersai/smithers/packages/backend/process"
+	"github.com/smithersai/smithers/packages/backend/workspace"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,4 +71,29 @@ func TestCredentialEnvironmentRejectsArbitraryEnvironment(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "secret", env["SMITHERS_MODEL_KEY_ENROLLED"])
 	require.Equal(t, "https://models.example", env["SMITHERS_MODEL_KEY_ENROLLED_ORIGIN"])
+}
+
+func TestLocalLauncherRemovesTurnWorkspacesLeftByACrash(t *testing.T) {
+	root := t.TempDir()
+	bundle := filepath.Join(root, "model-host.mjs")
+	source := []byte("// model host\n")
+	require.NoError(t, os.WriteFile(bundle, source, 0o755))
+	digest := sha256.Sum256(source)
+	require.NoError(t, os.WriteFile(bundle+".sha256", []byte(hex.EncodeToString(digest[:])+"  model-host.mjs\n"), 0o644))
+	runtimeRoot := filepath.Join(root, "runtime")
+	previous, err := process.New(process.Config{Root: runtimeRoot})
+	require.NoError(t, err)
+	for _, id := range []string{"chat-model-0123456789abcdef", "user-workspace"} {
+		_, err := previous.CreateWorkspace(context.Background(), workspace.WorkspaceSpec{ID: id})
+		require.NoError(t, err)
+	}
+	require.NoError(t, previous.Close())
+
+	runtime, err := process.New(process.Config{Root: runtimeRoot})
+	require.NoError(t, err)
+	defer runtime.Close()
+	require.Equal(t, []string{"chat-model-0123456789abcdef", "user-workspace"}, runtime.WorkspaceIDs())
+	_, err = NewLocalLauncher(LocalConfig{Runtime: runtime, NodeBinary: "/bin/sh", BundlePath: bundle})
+	require.NoError(t, err)
+	require.Equal(t, []string{"user-workspace"}, runtime.WorkspaceIDs())
 }
