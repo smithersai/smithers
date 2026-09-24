@@ -73,8 +73,16 @@ that declare that host. Run the aggregate gate without `--expected-host` to
 require evidence for every declared host. Both modes keep global action,
 critical-path, and door inventory gaps visible. Evidence for an unknown
 scenario or a host absent from its declaration is rejected.
-Quality-only mode still prints gaps without failing;
+Both modes fail a built-in action that has no scenario and no entry in
+`deferrals.ts`, the reviewed ledger of unscenarioed actions. The ledger rejects
+an entry for an action that has a scenario or left `FLOW_NAMES`, and any entry
+for a `RELEASE_CRITICAL_ACTIONS` action: only a real scenario accounts for
+those. Delete an entry in the change that adds its scenario.
+Quality-only mode prints the remaining gaps without failing on them;
 completeness mode fails any inventory, dimension, or executed-evidence gap.
+`run-real-e2e.ts` passes `--require-complete` on a bare host run, the only run
+that executes every scenario its host declares; a `--grep`, file, shard, or
+matrix-mode run gates its own selection.
 Global path and door totals are diagnostics; they do not claim every path
 applies to every action. Per-action applicability stays explicit in scenario
 tokens.

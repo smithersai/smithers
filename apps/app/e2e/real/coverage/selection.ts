@@ -32,3 +32,13 @@ export const extractRequestedGrep = (args: readonly string[]): { readonly args: 
   }
   return { args: remaining, ...(grep === undefined ? {} : { grep }) }
 }
+
+/**
+ * Only the bare host run executes every scenario its host declares, so only it
+ * owes complete execution coverage. Any Playwright argument can filter, shard,
+ * or repeat; a matrix mode selects its obligation catalog and gates it there.
+ */
+export const selectsEveryScenario = (
+  selection: { readonly args: readonly string[]; readonly grep?: string },
+  matrixMode: string | undefined
+): boolean => selection.grep === undefined && selection.args.length === 0 && matrixMode === undefined

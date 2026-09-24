@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { mkdirSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
+import { RELEASE_CRITICAL_ACTIONS, UNSCENARIOED_ACTIONS } from "../e2e/real/coverage/deferrals"
 import { checkRealE2E, formatGateReport } from "../e2e/real/coverage/gate"
 
 const appRoot = resolve(import.meta.dir, "..")
@@ -15,6 +16,8 @@ const report = checkRealE2E({
   flowNameFile: resolve(value("--flow-names") ?? joinDefault(appRoot, "src/mainview/flows/FlowName.ts")),
   resultsFile: value("--results") ? resolve(value("--results")!) : undefined,
   requireComplete: args.includes("--require-complete"),
+  deferred: UNSCENARIOED_ACTIONS,
+  releaseCritical: RELEASE_CRITICAL_ACTIONS,
   expectedRevision: value("--expected-revision"),
   expectedHost: value("--expected-host") as "local" | "production" | "native" | undefined
 })

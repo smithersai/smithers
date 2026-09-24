@@ -1,0 +1,58 @@
+/**
+ * The reviewed ledger of built-in actions that have no real scenario.
+ *
+ * The real E2E gate fails an action with neither a scenario nor an entry here,
+ * an entry whose action gained a scenario or left FLOW_NAMES, and an entry for
+ * a release-critical action. Delete an entry in the change that adds its
+ * scenario.
+ */
+
+/** Journeys the release depends on. Only a real scenario can account for them. */
+export const RELEASE_CRITICAL_ACTIONS: readonly string[] = [
+  "approval.approve", "approval.deny", "change.land", "secrets.connect", "secrets.connections",
+  "secrets.list", "secrets.revoke", "setup.configure", "setup.run", "signup.account", "signup.answer",
+  "signup.back", "signup.email", "signup.finish", "signup.google", "signup.next", "signup.repo", "signup.set",
+  "signup.verify"
+]
+
+export type Deferral = "browser" | "diagnostics" | "owed"
+
+export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>> = {
+  /** Acts only on this browser's UI or storage; no host contract to break. */
+  browser: [
+    "app.download.prompt", "app.experimental", "app.first-run.dismiss", "app.hint.dismiss", "change.pick",
+    "chat", "chat.dictate", "chat.filter", "chat.filter.grep", "chat.filter.reset", "chat.filter.toggle",
+    "chat.reload", "chat.surfaces", "cloud.prompt", "composer.add", "experimental.set", "flow.plan.select",
+    "flow.plan.tab", "flow.repo.choose", "input.mode", "palette.actions", "palette.recent",
+    "runs.coding.select", "runs.graph.follow", "runs.graph.select", "runs.graph.tab", "setup.view",
+    "smithers.who", "storage.recovery.export", "storage.recovery.reset", "sync.ops.show-more",
+    "tab.close.cancel", "tab.menu", "toast.dismiss", "wiki.select", "workspace.rename.edit"
+  ],
+  /** Developer tooling, not a user journey. */
+  diagnostics: [
+    "admin.reset", "debug.backend", "debug.chain", "debug.errors", "debug.events", "debug.net",
+    "debug.reset", "debug.seams", "debug.snapshot", "debug.verbose", "model.fixture"
+  ],
+  /** Host-backed; a real scenario is owed. */
+  owed: [
+    "admin.grant.confirm", "admin.queue.approve", "admin.requests", "agent.change", "agent.list",
+    "agent.session.list", "agent.session.new", "agent.session.say", "agent.session.stop",
+    "agent.session.view", "app.download", "approvals.open", "billing.plans", "billing.portal",
+    "billing.upgrade", "branches.list", "change.checks", "change.open", "change.pins", "change.resolve",
+    "change.revert", "change.split", "change.split-ready", "chores.setup", "ci.setup", "code.definition",
+    "code.diagnostics", "code.hover", "commits.list", "commits.read", "connect", "desktop", "egress.session",
+    "env.set", "env.view", "feature.prototype", "feature.setup", "files.list", "files.open-diff",
+    "files.read", "findings.not-useful", "findings.please-fix", "flow.plan", "flow.run.retry", "flows",
+    "github.app.choose", "github.app.open", "github.mirror-sync", "github.mirror.retry-ref",
+    "github.reconcile", "history.amend", "history.bootstrap", "history.fold", "history.show", "issues",
+    "issues.setup", "notifications.read-update", "notifications.tag", "plugins", "plugins.install",
+    "plugins.list", "plugins.remove", "prs", "repo.choose", "repo.overview", "repo.tree", "repo.update",
+    "repos.import.retry", "review.ack", "review.done", "review.reopen", "review.setup", "review.since-mine",
+    "review.unrequest", "runs.seat", "runs.signal", "search.boxes", "search.changes", "search.files",
+    "search.history", "search.issues", "search.open", "search.people", "search.runs", "search.secrets",
+    "search.targets", "search.wiki", "setup.ask", "setup.discard", "setup.discard.confirm", "setup.guide",
+    "setup.retry", "setup.work", "tab.close.confirm", "triggers.approve", "triggers.pause", "triggers.run",
+    "workspace.desktop", "workspace.desktop.open", "workspace.desktop.rotate", "workspace.desktop.stop",
+    "workspace.images", "workspace.list", "workspace.rename", "workspace.session.destroy"
+  ]
+}

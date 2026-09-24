@@ -3,6 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { checkRealE2E, declaredFlowNames, executableImportClosure, formatGateReport } from "./gate"
+import { RELEASE_CRITICAL_ACTIONS, UNSCENARIOED_ACTIONS } from "./deferrals"
 
 const roots: string[] = []
 const fixture = (): { root: string; real: string; flows: string } => {
@@ -16,6 +17,9 @@ const fixture = (): { root: string; real: string; flows: string } => {
 }
 
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }) })
+
+/** The fixture's reviewed deferral: chat.send has no scenario in most fixtures. */
+const deferred = { owed: ["chat.send"] } as const
 
 const valid = `
 import { test } from "./support"
@@ -45,9 +49,9 @@ export const searchFlows = (actions) => [
 `)
     expect(declaredFlowNames(flows)).toEqual(["chat.send", "repo.open", "search.files", "search.wiki"])
     writeFileSync(join(real, "search.spec.ts"), valid.replace("repo.open.success", "search.files.success").replace("action:repo.open", "action:search.files"))
-    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred: { owed: ["chat.send", "repo.open"], browser: ["search.wiki"] } })
     expect(report.ok).toBe(true)
-    expect(report.gaps).toContainEqual({ kind: "action", value: "search.wiki" })
+    expect(report.deferred).toContainEqual({ action: "search.wiki", reason: "browser" })
     expect(report.declaredActions).not.toContain("search.unregistered")
   })
 
@@ -75,9 +79,10 @@ export const searchFlows = (actions) => [
   test("accepts structured metadata but keeps unexecuted and uncovered cells visible", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "repo.spec.ts"), valid)
-    const report = checkRealE2E({ realDir: real, flowNameFile: flows, now: "2026-09-14T00:00:00.000Z" })
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows, deferred, now: "2026-09-14T00:00:00.000Z" })
     expect(report.ok).toBe(true)
-    expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+    expect(report.deferred).toEqual([{ action: "chat.send", reason: "owed" }])
+    expect(report.gaps.filter((gap) => gap.kind === "action")).toEqual([])
     expect(report.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
   })
 
@@ -85,7 +90,7 @@ export const searchFlows = (actions) => [
     const { real, flows } = fixture()
     const file = join(real, "browser.spec.ts")
     writeFileSync(file, valid.replace('capabilities: ["filesystem:read"]', 'capabilities: []'))
-    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred }).ok).toBe(true)
     writeFileSync(file, valid.replace('capabilities: ["filesystem:read"],', ''))
     expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("invalid-scenario")
   })
@@ -98,6 +103,7 @@ export const searchFlows = (actions) => [
     const report = checkRealE2E({ realDir: real, flowNameFile: flows, resultsFile: results })
     expect(report.gaps.some((gap) => gap.kind === "execution")).toBe(false)
     expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+    expect(report.ok).toBe(false)
   })
 
   test.each(["failed", "timedOut", "interrupted", "skipped"])("a passed retry cannot erase an earlier %s attempt", (status) => {
@@ -143,11 +149,11 @@ export const searchFlows = (actions) => [
     writeFileSync(join(real, "repo.spec.ts"), valid.replace('"host:local"', '"host:local", "host:production"'))
     const results = join(root, "results.json")
     writeFileSync(results, JSON.stringify({ suiteStatus: "passed", reporterErrors: [], runs: [{ scenarioId: "repo.open.success", host: "production", status: "passed", revision: "a".repeat(40), buildSha: "b".repeat(40), startedAt: "2026-09-14T00:00:00Z", finishedAt: "2026-09-14T00:00:01Z" }] }))
-    const options = { realDir: real, flowNameFile: flows, resultsFile: results, expectedRevision: "a".repeat(40) }
+    const options = { realDir: real, flowNameFile: flows, resultsFile: results, expectedRevision: "a".repeat(40), deferred }
     const hostReport = checkRealE2E({ ...options, expectedHost: "production" })
     expect(hostReport.ok).toBe(true)
     expect(hostReport.gaps.filter((gap) => gap.kind === "execution" || gap.kind === "host")).toEqual([])
-    expect(hostReport.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+    expect(hostReport.deferred).toEqual([{ action: "chat.send", reason: "owed" }])
     const aggregate = checkRealE2E(options)
     expect(aggregate.gaps).toContainEqual({ kind: "execution", value: "local", scenarioId: "repo.open.success" })
     expect(aggregate.gaps).toContainEqual({ kind: "host", value: "native" })
@@ -196,7 +202,7 @@ export const searchFlows = (actions) => [
     mkdirSync(join(real, "coverage"))
     writeFileSync(join(real, "repo.spec.ts"), valid.replace('import { test } from "./support"', 'import { test } from "./support"\nimport type { Fake } from "./coverage/type-only"'))
     writeFileSync(join(real, "coverage/type-only.ts"), `page.route("**/*", handler)\nexport type Fake = string\n`)
-    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred }).ok).toBe(true)
   })
 
   test("scans a subprocess entry even when its launcher does not import it", () => {
@@ -226,7 +232,7 @@ export const searchFlows = (actions) => [
     writeFileSync(host, `startLocalServer({ ...options, cloudMode: "hybrid" })`)
     expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((finding) => finding.code)).toContain("unverified-real-host")
     writeFileSync(host, `startLocalServer({ chatStub: false, cloudMode: "hybrid" })`)
-    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred }).ok).toBe(true)
   })
 
   test("rejects unknown actions, invalid dimensions, and success without completion evidence", () => {
@@ -240,7 +246,7 @@ export const searchFlows = (actions) => [
   test("allows only the explicit runtime repository-flow family marker", () => {
     const { real, flows } = fixture()
     writeFileSync(join(real, "dynamic.spec.ts"), valid.replace("action:repo.open", "action:repository-flow:*"))
-    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred: { owed: ["chat.send", "repo.open"] } }).ok).toBe(true)
   })
 
   test("supports suite defaults but rejects duplicate ids across per-test and default declarations", () => {
@@ -292,8 +298,43 @@ export const searchFlows = (actions) => [
     const source = valid.replace('import { test } from "./support"', 'import { authenticatedTest as signedIn } from "./profile"\nconst ordinary = signedIn.extend({})')
       .replace('test("opens"', 'ordinary("opens"')
     writeFileSync(file, source)
-    expect(checkRealE2E({ realDir: real, flowNameFile: flows }).ok).toBe(true)
+    expect(checkRealE2E({ realDir: real, flowNameFile: flows, deferred }).ok).toBe(true)
     writeFileSync(file, source.replace('scenario("repo.open.success",', 'wrap(scenario("repo.open.success",').replace('}), async', '})), async'))
     expect(checkRealE2E({ realDir: real, flowNameFile: flows }).findings.map((item) => item.code)).toContain("missing-per-test-scenario")
   })
+
+  test("fails a built-in action with neither a real scenario nor a reviewed deferral", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const report = checkRealE2E({ realDir: real, flowNameFile: flows })
+    expect(report.ok).toBe(false)
+    expect(report.findings).toContainEqual(expect.objectContaining({ code: "unscenarioed-action", severity: "error", message: expect.stringContaining("chat.send") }))
+    expect(report.gaps).toContainEqual({ kind: "action", value: "chat.send" })
+  })
+
+  test("rejects deferrals for covered, removed, duplicated, or release-critical actions", () => {
+    const { real, flows } = fixture()
+    writeFileSync(join(real, "repo.spec.ts"), valid)
+    const report = checkRealE2E({
+      realDir: real, flowNameFile: flows, releaseCritical: ["chat.send"],
+      deferred: { owed: ["chat.send", "repo.open", "retired.action"], browser: ["chat.send"] }
+    })
+    expect(report.ok).toBe(false)
+    const messages = (code: string) => report.findings.filter((finding) => finding.code === code).map((finding) => finding.message)
+    expect(messages("stale-deferral")).toEqual([expect.stringContaining("repo.open"), expect.stringContaining("retired.action")])
+    expect(messages("duplicate-deferral")).toEqual([expect.stringContaining("chat.send")])
+    expect(messages("critical-action-deferred")).toEqual([expect.stringContaining("chat.send")])
+  })
+
+  test("the repository's deferrals are current and leave only release-critical actions unscenarioed", () => {
+    const app = join(import.meta.dir, "../../..")
+    const report = checkRealE2E({
+      realDir: join(app, "e2e/real"), flowNameFile: join(app, "src/mainview/flows/FlowName.ts"),
+      deferred: UNSCENARIOED_ACTIONS, releaseCritical: RELEASE_CRITICAL_ACTIONS
+    })
+    const codes = new Set(report.findings.filter((finding) => finding.severity === "error").map((finding) => finding.code))
+    expect([...codes].filter((code) => code !== "unscenarioed-action")).toEqual([])
+    const unscenarioed = report.gaps.filter((gap) => gap.kind === "action").map((gap) => gap.value)
+    expect(unscenarioed.filter((action) => !RELEASE_CRITICAL_ACTIONS.includes(action))).toEqual([])
+  }, 60_000)
 })

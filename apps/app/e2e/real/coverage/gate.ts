@@ -3,6 +3,7 @@ import { dirname, extname, join, relative, resolve } from "node:path"
 import * as ts from "typescript"
 import { CRITICAL_PATHS, DOORS, REAL_HOSTS } from "./types"
 import type { CoverageGap, RealE2EEvidenceFile, RealHost, RealScenarioRunEvidence } from "./types"
+import type { Deferral } from "./deferrals"
 
 export interface GateFinding {
   readonly severity: "error" | "review"
@@ -33,6 +34,8 @@ export interface GateReport {
   readonly scenarios: readonly ScenarioDeclaration[]
   readonly runs: readonly RealScenarioRunEvidence[]
   readonly gaps: readonly CoverageGap[]
+  /** Unscenarioed actions the reviewed ledger accounts for; never counted as coverage. */
+  readonly deferred: readonly { readonly action: string; readonly reason: Deferral }[]
   readonly findings: readonly GateFinding[]
 }
 
@@ -411,9 +414,13 @@ export interface GateOptions {
   readonly requireComplete?: boolean
   readonly expectedRevision?: string
   readonly expectedHost?: RealHost
+  /** The reviewed ledger of actions with no real scenario (deferrals.ts). */
+  readonly deferred?: Readonly<Partial<Record<Deferral, readonly string[]>>>
+  /** Actions only a real scenario can account for. */
+  readonly releaseCritical?: readonly string[]
 }
 
-export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireComplete = false, expectedRevision, expectedHost }: GateOptions): GateReport => {
+export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireComplete = false, expectedRevision, expectedHost, deferred: ledger = {}, releaseCritical = [] }: GateOptions): GateReport => {
   const specs = walkSpecs(realDir).filter((file) => !file.includes(`${join("coverage", "fixtures")}`))
   const actions = declaredFlowNames(flowNameFile)
   const scenarios = scenarioDeclarations(specs)
@@ -472,7 +479,25 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
   }
   const gaps: CoverageGap[] = []
   const coveredActions = new Set(scenarios.flatMap((scenario) => scenario.actions))
-  for (const action of actions) if (!coveredActions.has(action)) gaps.push({ kind: "action", value: action })
+  const deferrals = new Map<string, Deferral>()
+  const ledgerFinding = (code: string, message: string): void => { findings.push({ severity: "error", code, file: flowNameFile, line: 1, message }) }
+  for (const [reason, entries] of Object.entries(ledger) as [Deferral, readonly string[]][]) for (const action of entries) {
+    if (deferrals.has(action)) ledgerFinding("duplicate-deferral", `${action} is deferred more than once`)
+    else deferrals.set(action, reason)
+  }
+  for (const action of deferrals.keys()) {
+    if (!actions.includes(action)) ledgerFinding("stale-deferral", `${action} is deferred but is not a built-in action`)
+    else if (coveredActions.has(action)) ledgerFinding("stale-deferral", `${action} has a real scenario; delete its deferral`)
+    if (releaseCritical.includes(action)) ledgerFinding("critical-action-deferred", `${action} is release-critical; only a real scenario can account for it`)
+  }
+  const deferred: GateReport["deferred"][number][] = []
+  for (const action of actions) {
+    if (coveredActions.has(action)) continue
+    const reason = deferrals.get(action)
+    if (reason !== undefined) { deferred.push({ action, reason }); continue }
+    gaps.push({ kind: "action", value: action })
+    findings.push({ severity: "error", code: "unscenarioed-action", file: realDir, line: 1, message: `${action} has no real scenario and no reviewed deferral` })
+  }
   for (const path of CRITICAL_PATHS) if (!scenarios.some((scenario) => scenario.paths.includes(path))) gaps.push({ kind: "critical-path", value: path })
   // A host-specific receipt proves only that host. Aggregate reports (no expectedHost)
   // must still account for every declared host and all three host dimensions.
@@ -485,7 +510,7 @@ export const checkRealE2E = ({ realDir, flowNameFile, resultsFile, now, requireC
     if (attempts.length === 0 || attempts.some((run) => run.status !== "passed")) gaps.push({ kind: "execution", value: host, scenarioId: scenario.id })
   }
   if (requireComplete && gaps.length) findings.push({ severity: "error", code: "incomplete-coverage", file: realDir, line: 1, message: `${gaps.length} declared/action/dimension/execution gaps remain` })
-  return { ok: !findings.some((finding) => finding.severity === "error"), generatedAt: now ?? new Date().toISOString(), declaredActions: actions, scenarios, runs, gaps, findings }
+  return { ok: !findings.some((finding) => finding.severity === "error"), generatedAt: now ?? new Date().toISOString(), declaredActions: actions, scenarios, runs, gaps, deferred, findings }
 }
 
 export const formatGateReport = (report: GateReport, root: string): string => {
@@ -493,7 +518,7 @@ export const formatGateReport = (report: GateReport, root: string): string => {
   const reviews = report.findings.filter((finding) => finding.severity === "review")
   const lines = [
     `real E2E quality gate: ${report.ok ? "PASS" : "FAIL"}`,
-    `${report.declaredActions.length} built-in actions; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} passed attempts; ${report.runs.filter((run) => run.status !== "passed").length} unsuccessful attempts; ${report.gaps.length} visible gaps`,
+    `${report.declaredActions.length} built-in actions; ${report.deferred.length} deferred; ${report.scenarios.length} scenarios; ${report.runs.filter((run) => run.status === "passed").length} passed attempts; ${report.runs.filter((run) => run.status !== "passed").length} unsuccessful attempts; ${report.gaps.length} visible gaps`,
     `${errors.length} errors; ${reviews.length} manual-review findings`
   ]
   for (const finding of report.findings) lines.push(`${finding.severity.toUpperCase()} ${finding.code} ${relative(root, finding.file)}:${finding.line} ${finding.message}`)

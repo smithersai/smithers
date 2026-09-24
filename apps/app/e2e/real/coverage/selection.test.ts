@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import { scenario } from "./types"
-import { extractRequestedGrep, hostGrep, scenarioGrep } from "./selection"
+import { extractRequestedGrep, hostGrep, scenarioGrep, selectsEveryScenario } from "./selection"
 
 test("portable scenarios carry every declared host tag", () => {
   const details = scenario("browser.reload", { capabilities: [], coverage: ["action:chat.reload", "host:local", "host:production", "path:persistence", "door:button"] })
@@ -49,4 +49,12 @@ test("invalid selectors fail before services start", () => {
   expect(() => extractRequestedGrep(["--grep="])).toThrow("requires")
   expect(() => extractRequestedGrep(["--grep", "["])).toThrow()
   expect(() => extractRequestedGrep(["--grep=a", "-g", "b"])).toThrow("only one")
+})
+
+test("only the bare host run executes every scenario, so only it owes complete coverage", () => {
+  expect(selectsEveryScenario(extractRequestedGrep([]), undefined)).toBe(true)
+  expect(selectsEveryScenario(extractRequestedGrep(["--grep", "models"]), undefined)).toBe(false)
+  expect(selectsEveryScenario(extractRequestedGrep(["models.spec.ts"]), undefined)).toBe(false)
+  expect(selectsEveryScenario(extractRequestedGrep(["--shard", "1/2"]), undefined)).toBe(false)
+  expect(selectsEveryScenario(extractRequestedGrep([]), "local-own")).toBe(false)
 })

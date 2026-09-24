@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { extractRequestedGrep } from "../e2e/real/coverage/selection"
+import { extractRequestedGrep, selectsEveryScenario } from "../e2e/real/coverage/selection"
 import { admitSourceRevision } from "../e2e/real/coverage/revision"
 import { MODEL_CREDENTIAL_ENV_PREFIX, MODEL_CREDENTIAL_ORIGIN_SUFFIX, MODEL_TEST_DEADLINE_MS } from "@smthrs/rpc/ConfiguredModel"
 import { sourceRevision } from "./mode-matrix/source-revision"
@@ -139,6 +139,9 @@ if (args[0] === "serve") {
     await stopModelProvider?.()
   }
   if (args.includes("--list")) process.exit(code)
-  const gate = await run(process.execPath, ["scripts/check-real-e2e.ts", "--results", evidence, "--expected-host", process.env.SMITHERS_REAL_E2E_HOST!, "--expected-revision", process.env.SMITHERS_REAL_E2E_REVISION!])
+  const gate = await run(process.execPath, [
+    "scripts/check-real-e2e.ts", "--results", evidence, "--expected-host", process.env.SMITHERS_REAL_E2E_HOST!, "--expected-revision", process.env.SMITHERS_REAL_E2E_REVISION!,
+    ...(selectsEveryScenario(selection, process.env.SMITHERS_REAL_E2E_MODE) ? ["--require-complete"] : [])
+  ])
   process.exit(code || gate)
 }
