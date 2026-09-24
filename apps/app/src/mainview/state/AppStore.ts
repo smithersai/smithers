@@ -543,9 +543,13 @@ export const resolvePersistence = async (host: BrowserPersistenceHost = {
    * An unstamped boot may still have data in OPFS: clearing site data removes
    * the stamp but not the database. A present database is owned data, so it
    * gets the full retry and a failed open never stamps localStorage over it.
+   * A probe that fails is no proof of absence, so it counts as present.
    */
   const opfsHoldsData = recorded === "opfs" ||
-    (recorded === null && await host.databaseExists?.().catch(() => false) === true)
+    (recorded === null && await host.databaseExists?.().catch((error: unknown) => {
+      console.warn("Smithers: could not check for an existing OPFS SQLite store; treating it as present.", error)
+      return true
+    }) === true)
   let database: SqliteRowDatabase
   try {
     database = fenceDatabase(await host.openDatabase(opfsHoldsData ? OPFS_OPEN_ATTEMPTS : 1), assertOwned)
