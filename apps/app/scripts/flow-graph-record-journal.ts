@@ -7,7 +7,7 @@
  * control plane answered with, and every `run-events` row one completed
  * `gateway/GraphFixture` run produced, verbatim.
  *
- * The composition is the one `scripts/flow-graph-e2e-gateway.ts` holds open
+ * The composition is the one `scripts/flow-graph-e2e-gateway.mts` holds open
  * for the browser — `packages/smithers/test/BridgedEngineRun.ts`: a real
  * control plane, a real engine over two SQLite files, and the
  * `EngineJournalSupervisor` bridge a deployed host wires. The relay in front

@@ -6,7 +6,7 @@
  * for flows it does not hold and read the refusal as an empty list.
  */
 
-/** The one workspace `scripts/flow-graph-e2e-gateway.ts` answers for. */
+/** The one workspace `scripts/flow-graph-e2e-gateway.mts` answers for. */
 export const GRAPH_REPO = "codeplanesmithers/smithers-demo"
 
 /** The one flow that workspace declares (`packages/smithers/test/BridgedEngineRun.ts`). */
