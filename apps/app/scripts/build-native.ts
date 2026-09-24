@@ -22,7 +22,6 @@ if (!revision || !/^[0-9a-f]{40,64}$/.test(revision)) throw new Error("Native bu
 const nativeDir = join(appDir, ".native")
 const jjRevision = "47589ada70c12b3e829b5c98ab32503abad49eac"
 const jjVersion = `jj 0.44.0-${jjRevision}`
-const gitVersion = "git version 2.50.1 (Apple Git-155)"
 const cefSetting = process.env.SMITHERS_NATIVE_E2E_CEF?.trim()
 if (cefSetting !== undefined && cefSetting !== "" && cefSetting !== "0" && cefSetting !== "1") {
   throw new Error("SMITHERS_NATIVE_E2E_CEF must be 0 or 1.")
@@ -95,18 +94,19 @@ const withoutGitOverrides = Object.fromEntries(
 const configuredGit = process.env.SMITHERS_GIT_BINARY?.trim()
 const discoveredGit = configuredGit
   ? isAbsolute(configuredGit) ? configuredGit : Bun.which(configuredGit)
-  : output(["/usr/bin/xcrun", "--find", "git"], withoutGitOverrides)
+  : process.platform === "darwin"
+  ? output(["/usr/bin/xcrun", "--find", "git"], withoutGitOverrides)
+  : Bun.which("git")
 if (discoveredGit === null || discoveredGit === undefined || discoveredGit === "") {
-  throw new Error("SMITHERS_GIT_BINARY must name the pinned Xcode Git executable.")
+  throw new Error("SMITHERS_GIT_BINARY must name an executable Git installation.")
 }
 const gitBinary = realpathSync(discoveredGit)
-if (output([gitBinary, "--version"], withoutGitOverrides) !== gitVersion) {
-  throw new Error(`Native releases require ${gitVersion}.`)
-}
+const gitVersion = output([gitBinary, "--version"], withoutGitOverrides)
+if (!/^git version \d+\.\d+/.test(gitVersion)) throw new Error("The selected Git installation returned an invalid version.")
 const gitExecSource = realpathSync(output([gitBinary, "--exec-path"], withoutGitOverrides))
 const gitPrefix = resolve(gitExecSource, "..", "..")
 const gitShareSource = join(gitPrefix, "share", "git-core")
-if (!existsSync(gitShareSource)) throw new Error(`Pinned Git resources are unavailable: ${gitShareSource}`)
+if (!existsSync(gitShareSource)) throw new Error(`Git resources are unavailable: ${gitShareSource}`)
 
 const checksumFile = (path: string): string => createHash("sha256").update(readFileSync(path)).digest("hex")
 const verifyChecksumSidecar = (path: string): void => {
@@ -268,6 +268,7 @@ cpSync(gitShareSource, join(nativeDir, "share", "git-core"), {
   recursive: true,
   verbatimSymlinks: true
 })
+writeFileSync(join(nativeDir, "share", "build-tools.json"), JSON.stringify({ revision, git: gitVersion, jj: jjVersion }, null, 2) + "\n")
 validateGitBundle(nativeDir, [
   join(nativeDir, "bin", "git"),
   join(nativeDir, "libexec", "git-core"),
