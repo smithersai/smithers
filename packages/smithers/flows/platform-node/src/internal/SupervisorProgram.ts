@@ -11,6 +11,22 @@ const net = require('node:net');
 const cp = require('node:child_process');
 const [socketPath, mode] = process.argv.slice(-2);
 const grouped = mode === 'group';
+const jobHelper = process.env.SMITHERS_PROCESS_JOB_HELPER;
+delete process.env.SMITHERS_PROCESS_JOB_HELPER;
+let created;
+if (jobHelper !== undefined) {
+  // The still-live owner observes itself. A later PID reuse cannot replace this
+  // identity with a different process before the guardian attaches its job.
+  const result = cp.spawnSync(jobHelper, ['--process-identity', String(process.pid)], {
+    encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL', maxBuffer: 4096, env: {}
+  });
+  if (result.error || result.signal !== null || result.status !== 0) throw new Error('Owner identity unavailable');
+  const identity = JSON.parse(result.stdout);
+  if (identity?.status !== 'started' || typeof identity.created !== 'string' || !/^[1-9][0-9]{0,19}$/.test(identity.created)) {
+    throw new Error('Owner creation identity unavailable');
+  }
+  created = identity.created;
+}
 const channel = process.env.SMITHERS_PROCESS_CHANNEL ? JSON.parse(process.env.SMITHERS_PROCESS_CHANNEL) : undefined;
 delete process.env.SMITHERS_PROCESS_CHANNEL;
 const connect = path => channel === undefined ? net.connect(path) : require('node:tls').connect({
@@ -211,5 +227,5 @@ requests.on('data', (data) => {
     } else throw new Error('Invalid control message');
   }
 });
-control.once('connect', () => send({ type: 'ready', version: 1, pid: process.pid }));
+control.once('connect', () => send({ type: 'ready', version: 1, pid: process.pid, created }));
 `

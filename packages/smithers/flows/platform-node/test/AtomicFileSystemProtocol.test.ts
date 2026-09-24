@@ -61,6 +61,14 @@ describe("atomic helper response validation", () => {
     expect(result).toMatchObject({ size: 3n, birthtime: Option.none(), blksize: Option.none(), blocks: Option.none() })
   })
 
+  it.each([null, undefined])(
+    "accepts an unavailable numeric inode (%s) without inventing a rounded identity",
+    async (ino) => {
+      const result = await Effect.runPromise(convert("stat", { ...info, ino }))
+      expect(result).toMatchObject({ ino: Option.none() })
+    }
+  )
+
   it.each(["a", "!!!!", "a==="])("rejects malformed base64 %s", (base64) => {
     expect(() => convert("readFile", { base64 })).toThrow("malformed base64")
   })

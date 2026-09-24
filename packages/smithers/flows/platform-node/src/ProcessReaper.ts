@@ -307,23 +307,24 @@ export type SpawnerOptions = Omit<ContainedSpawner.Options, "platform">
 /**
  * Provides a ledger-backed spawner with this platform's prepared cleanup.
  *
- * On POSIX, native pipe listeners live until their descriptors close, including
- * writes interrupted by owner loss. The kernel expands pipelines before this
- * private standard-command adapter is called. On Windows, the supplied runtime
- * spawner retains its existing process-tree termination behavior.
+ * Native pipe listeners live until their descriptors close, including writes
+ * interrupted by owner loss. The kernel expands pipelines before this private
+ * standard-command adapter is called. Windows owners join a native job before
+ * activation; POSIX owners enforce their process-group cleanup deadline.
  *
- * The caller supplies the durable or in-memory ledger and the underlying
- * runtime spawner. This layer records new owners; {@link layer} separately reaps
+ * The caller supplies the durable or in-memory ledger. This layer records new
+ * owners; {@link layer} separately reaps
  * records inherited from a previous host incarnation.
  * @category layers
  * @since 1.0.0
  */
 export const layerSpawner = (
   options?: SpawnerOptions
-): Layer.Layer<ChildProcessSpawner, never, ChildProcessSpawner | ProcessLedger.ProcessLedger> => {
+): Layer.Layer<ChildProcessSpawner, never, ProcessLedger.ProcessLedger> => {
   const contained = ContainedSpawner.layer({ graceMs: options?.graceMs, platform: process.platform }, processLifecycle)
-  if (process.platform === "win32") return contained
-  const standard = makeSpawner((command) => PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined))
+  const standard = makeSpawner((command) =>
+    PipedProcess.spawn(command as ChildProcess.StandardCommand, undefined, true)
+  )
   return Layer.provide(contained, Layer.succeed(ChildProcessSpawner)(standard))
 }
 

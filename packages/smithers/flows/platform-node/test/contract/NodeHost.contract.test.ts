@@ -51,7 +51,7 @@ const waitForEsrch = (pid: number) =>
     { times: 400, schedule: Schedule.spaced(5) }
   )
 
-describe.skipIf(process.platform === "win32")("NodeHost child-process lifecycle", () => {
+describe("NodeHost child-process lifecycle", () => {
   it.effect("reaps the child OS process when its owning fiber is interrupted", () =>
     Effect.gen(function*() {
       const pid = yield* (
@@ -61,7 +61,9 @@ describe.skipIf(process.platform === "win32")("NodeHost child-process lifecycle"
           const fiber = yield* Effect.forkChild(
             Effect.scoped(
               Effect.gen(function*() {
-                const handle = yield* spawner.spawn(ChildProcess.make("sleep", ["10"]))
+                const handle = yield* spawner.spawn(
+                  ChildProcess.make(process.execPath, ["-e", "setTimeout(()=>{},10000)"])
+                )
                 yield* Deferred.succeed(pidReady, Number(handle.pid))
                 yield* handle.exitCode
               })

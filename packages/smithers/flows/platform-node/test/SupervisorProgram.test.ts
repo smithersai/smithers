@@ -15,8 +15,11 @@ const program = (
   killSignal: string,
   escaped = true,
   platform = "linux",
-  standardFds?: ReadonlyArray<number | "ignore">
+  standardFds?: ReadonlyArray<number | "ignore">,
+  identityResult?: unknown
 ) => {
+  const statusFrames: Array<unknown> = []
+  const observations: Array<unknown> = []
   const released: Array<number> = []
   const replacements: Array<readonly [string, string]> = []
   const signals: Array<readonly [number, string]> = []
@@ -29,12 +32,16 @@ const program = (
       write: (_data: string, done: () => void) => done()
     })
   const status = socket()
+  status.write = (data: string, done: () => void) => {
+    statusFrames.push(JSON.parse(data))
+    done()
+  }
   const requests = socket()
   const target = Object.assign(new EventEmitter(), { pid: 4102 })
   const runtime = Object.assign(new EventEmitter(), {
     pid: 4101,
     platform,
-    env: {},
+    env: identityResult === undefined ? {} : { SMITHERS_PROCESS_JOB_HELPER: "/trusted/helper" },
     argv: ["/fixture/s", "group"],
     kill: (pid: number, signal: string) => signals.push([pid, signal])
   })
@@ -50,11 +57,14 @@ const program = (
     "node:net": { connect: (path: string) => path.endsWith("/s") ? status : requests },
     "node:child_process": {
       spawn: () => target,
-      spawnSync: () => ({
-        status: 0,
-        stdout: "4102 4101 4101 S Mon Sep 14 12:00:00 2026\n" +
-          (escaped ? "4103 4102 4103 S Mon Sep 14 12:00:00 2026\n" : "")
-      })
+      spawnSync: (...args: ReadonlyArray<unknown>) => {
+        observations.push(args)
+        return identityResult ?? ({
+          status: 0,
+          stdout: "4102 4101 4101 S Mon Sep 14 12:00:00 2026\n" +
+            (escaped ? "4103 4102 4103 S Mon Sep 14 12:00:00 2026\n" : "")
+        })
+      }
     }
   }
   runInNewContext(source, {
@@ -71,10 +81,53 @@ const program = (
   const send = (message: unknown) => requests.emit("data", JSON.stringify(message) + "\n")
   send({ type: "configure", command: "fixture", args: [], userFds: [], standardFds, killSignal, graceMs: 25 })
   send({ type: "start" })
-  return { signals, timers, status, requests, target, send, released, replacements }
+  return {
+    signals,
+    timers,
+    status,
+    requests,
+    target,
+    send,
+    released,
+    replacements,
+    statusFrames,
+    observations,
+    runtime
+  }
 }
 
 describe("supervisor stop policy", () => {
+  const observed = { status: 0, signal: null, stdout: "{\"status\":\"started\",\"created\":\"123456789012345678\"}" }
+  it("reports its own exact Windows identity and removes the private helper setting", () => {
+    const helper = program("SIGTERM", false, "win32", [3, 4, 5], observed)
+    helper.status.emit("connect")
+    expect(helper.statusFrames).toContainEqual({ type: "ready", version: 1, pid: 4101, created: "123456789012345678" })
+    expect(helper.observations).toEqual([["/trusted/helper", ["--process-identity", "4101"], {
+      encoding: "utf8",
+      timeout: 5000,
+      killSignal: "SIGKILL",
+      maxBuffer: 4096,
+      env: {}
+    }]])
+    expect(helper.runtime.env).toEqual({})
+  })
+  for (
+    const result of [
+      { ...observed, error: new Error("refused") },
+      { ...observed, signal: "SIGKILL" },
+      { ...observed, status: 1 },
+      { ...observed, stdout: "bad JSON" },
+      { ...observed, stdout: "null" },
+      { ...observed, stdout: "{\"status\":\"gone\"}" },
+      { ...observed, stdout: "{\"status\":\"started\",\"created\":1}" },
+      { ...observed, stdout: "{\"status\":\"started\",\"created\":\"0\"}" }
+    ]
+  ) {
+    it(`refuses to report an unverified Windows identity ${JSON.stringify(result)}`, () => {
+      expect(() => program("SIGTERM", false, "win32", [3, 4, 5], result)).toThrow()
+    })
+  }
+
   it("closes remapped Windows caller pipes without touching reserved CRT slots", () => {
     const helper = program("SIGTERM", false, "win32", [3, "ignore", 5])
     helper.target.emit("spawn")

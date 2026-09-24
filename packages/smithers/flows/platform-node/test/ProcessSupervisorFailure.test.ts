@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ContainedSpawner from "@smthrs/kernel/ContainedSpawner"
 import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
-import { Cause, Effect, Exit, Layer, Sink, Stream } from "effect"
+import { Cause, Effect, Exit, Fiber, Layer, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/unstable/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effect/unstable/process/ChildProcessSpawner"
 import { once } from "node:events"
@@ -12,6 +12,12 @@ import * as Tls from "node:tls"
 import { vi } from "vitest"
 import * as Cleanup from "../src/internal/ProcessCleanup.ts"
 import * as Supervisor from "../src/internal/ProcessSupervisor.ts"
+import { resolveJobExecutable, WindowsProcessJob } from "../src/internal/WindowsProcessJob.ts"
+
+vi.mock(
+  "../src/internal/WindowsProcessJob.ts",
+  () => ({ WindowsProcessJob: vi.fn(), resolveJobExecutable: vi.fn(() => "/trusted/job-helper") })
+)
 
 vi.mock("node:fs", async (original) => {
   const actual = await original<typeof import("node:fs")>()
@@ -51,6 +57,8 @@ const bounded = async <A>(value: Promise<A>): Promise<A> => {
 }
 
 interface Settings {
+  readonly platform?: "darwin" | "win32"
+  readonly job?: "held-ready" | "held-settlement" | "attach-failure" | "cleanup-failure"
   readonly readiness?: "valid" | "malformed" | "wrong" | "silent" | "absent"
   readonly stop?: "exit" | "ignore" | "open-channel" | "cleanup-error"
   readonly snapshot?: "empty" | "survivor" | "own-group" | "owner"
@@ -65,6 +73,12 @@ interface Settings {
  */
 const fixture = (settings: Settings = {}) => {
   const owner = promise<ExitCode>()
+  const jobAttached = promise<void>()
+  const jobReady = promise<void>()
+  const jobSettled = promise<void>()
+  let jobCreated = false
+  const jobReferences: Array<boolean> = []
+  let jobStops = 0
   const accepted = promise<void>()
   let peer: Net.Socket | undefined
   let requestPeer: Net.Socket | undefined
@@ -81,10 +95,36 @@ const fixture = (settings: Settings = {}) => {
     ownerDone = true
     ownerEndedAt = Date.now()
     owner.resolve(ExitCode(0))
+    if (jobCreated && settings.job !== "held-settlement") jobSettled.resolve()
+  }
+  if (settings.platform === "win32") {
+    vi.mocked(WindowsProcessJob).mockImplementation(function(pid, created, executable) {
+      expect(pid).toBe(900_001)
+      expect(created).toBe("123456789012345678")
+      expect(executable).toBe("/trusted/job-helper")
+      if (settings.job === "attach-failure") throw new Error("job attachment refused")
+      jobCreated = true
+      jobAttached.resolve()
+      if (settings.job !== "held-ready") jobReady.resolve()
+      return {
+        ready: jobReady,
+        settled: {
+          promise: jobSettled.promise.then(() => {
+            if (settings.job === "cleanup-failure") throw new Error("job settlement unavailable")
+          })
+        },
+        stop: () => {
+          jobStops++
+          endOwner()
+          peer?.end()
+        },
+        reference: (value: boolean) => jobReferences.push(value)
+      } as unknown as WindowsProcessJob
+    })
   }
   const send = (message: unknown) => peer?.write(JSON.stringify(message) + "\n")
   const system: Cleanup.System = {
-    platform: "darwin",
+    platform: settings.platform ?? "darwin",
     snapshot: () =>
       ownerDone && Date.now() - ownerEndedAt < (settings.snapshotUnavailableAfterExitMs ?? 0) ? undefined : ({
         ownGroup: settings.snapshot === "own-group" ? 900_001 : 900_002,
@@ -150,7 +190,12 @@ const fixture = (settings: Settings = {}) => {
             await bounded(Promise.all([once(peer, "connect"), once(requestPeer, "connect")]))
             if (settings.readiness === "malformed") peer.write("{invalid}\n")
             else if (settings.readiness !== "silent") {
-              send({ type: "ready", version: 1, pid: settings.readiness === "wrong" ? 900_005 : 900_001 })
+              send({
+                type: "ready",
+                version: 1,
+                pid: settings.readiness === "wrong" ? 900_005 : 900_001,
+                created: "123456789012345678"
+              })
             }
             accepted.resolve()
           },
@@ -182,6 +227,13 @@ const fixture = (settings: Settings = {}) => {
       })
     })
   return {
+    jobAttached: jobAttached.promise,
+    releaseJob: () => jobReady.resolve(),
+    releaseSettlement: () => jobSettled.resolve(),
+    jobReferences,
+    get jobStops() {
+      return jobStops
+    },
     system,
     spawn,
     paths,
@@ -229,7 +281,7 @@ const run = async (
       }))
       return yield* use(handle)
     }).pipe(
-      Effect.provide(ContainedSpawner.layer({}, Cleanup.lifecycle(host.system))),
+      Effect.provide(ContainedSpawner.layer({ platform: host.system.platform }, Cleanup.lifecycle(host.system))),
       Effect.provide(
         Layer.succeed(ChildProcessSpawner)(make((command) =>
           command._tag === "StandardCommand"
@@ -566,5 +618,97 @@ describe("failed process shutdown", () => {
     } finally {
       host.dispose()
     }
+  })
+})
+
+describe("Windows job ownership", () => {
+  it("completes native settlement after an explicit kill is interrupted", async () => {
+    const host = fixture({ platform: "win32", job: "held-settlement" })
+    let interruptFinished = false
+    const result = await run(host, (handle) =>
+      Effect.gen(function*() {
+        const killed = yield* handle.kill().pipe(Effect.forkChild({ startImmediately: true }))
+        while (!host.requests.some((message) => message.type === "stop")) yield* Effect.sleep(1)
+        const interrupted = yield* Fiber.interrupt(killed).pipe(
+          Effect.andThen(Effect.sync(() => {
+            interruptFinished = true
+          })),
+          Effect.forkChild({ startImmediately: true })
+        )
+        yield* Effect.sleep(10)
+        expect(interruptFinished).toBe(false)
+        host.releaseSettlement()
+        yield* Fiber.join(interrupted)
+      }))
+    expect(interruptFinished).toBe(true)
+    expect(Exit.isSuccess(result.outcome)).toBe(true)
+    expect(result.live).toEqual([])
+    expect(host.requests.filter((message) => message.type === "stop")).toHaveLength(1)
+  })
+
+  it("refuses an unavailable native helper before creating an owner", async () => {
+    vi.mocked(resolveJobExecutable).mockImplementationOnce(() => {
+      throw new Error("missing native helper")
+    })
+    const host = fixture({ platform: "win32" })
+    const result = await run(host)
+    expect(Exit.isFailure(result.outcome)).toBe(true)
+    expect(host.commands).toEqual([])
+    expect(result.live).toEqual([])
+  })
+  it("waits for native job assignment before configuring or activating the target", async () => {
+    const host = fixture({ platform: "win32", job: "held-ready" })
+    const running = run(host)
+    await host.jobAttached
+    expect(host.requests).toEqual([])
+    expect(host.commands[0]!.options.detached).toBe(false)
+    host.releaseJob()
+    const result = await running
+    expect(Exit.isSuccess(result.outcome)).toBe(true)
+    expect(host.requests.map((message) => message.type)).toEqual(["configure", "start", "stop"])
+    expect(result.live).toEqual([])
+    expect(host.rawKills).toBe(0)
+  })
+
+  it("refuses activation when the native job cannot attach", async () => {
+    const host = fixture({ platform: "win32", job: "attach-failure" })
+    const result = await run(host)
+    expect(Exit.isFailure(result.outcome)).toBe(true)
+    expect(host.requests.every((message) => message.type === "stop")).toBe(true)
+    expect(result.live).toEqual([])
+  })
+
+  it("retains the ledger record when native settlement fails", async () => {
+    const host = fixture({ platform: "win32", job: "cleanup-failure" })
+    const result = await run(host)
+    expect(Exit.isFailure(result.outcome)).toBe(true)
+    expect(result.live).toHaveLength(1)
+    expect(host.jobStops).toBe(1)
+    expect(host.jobReferences).toEqual([false])
+    expect(host.rawFinalizerReferenced).toBe(false)
+  })
+
+  it("forces the job when its Node owner does not answer a stop", async () => {
+    const host = fixture({ platform: "win32", stop: "ignore" })
+    const result = await run(host)
+    expect(Exit.isSuccess(result.outcome)).toBe(true)
+    expect(host.jobStops).toBe(1)
+    expect(host.rawKills).toBe(0)
+    expect(result.live).toEqual([])
+  })
+
+  it("tracks native job references through unref, reref, and explicit stop", async () => {
+    const host = fixture({ platform: "win32" })
+    const result = await run(host, (handle) =>
+      Effect.gen(function*() {
+        const reref = yield* handle.unref
+        yield* reref
+        yield* handle.unref
+        yield* handle.kill({ killSignal: "SIGINT", forceKillAfter: 0 })
+      }))
+    expect(Exit.isSuccess(result.outcome)).toBe(true)
+    expect(host.jobReferences).toEqual([false, true, false, true])
+    expect(host.requests.at(-1)).toMatchObject({ type: "stop", killSignal: "SIGINT", graceMs: 0 })
+    expect(result.live).toEqual([])
   })
 })

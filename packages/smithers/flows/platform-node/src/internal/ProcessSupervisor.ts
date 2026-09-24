@@ -21,6 +21,7 @@ import * as Tls from "node:tls"
 import { standardFdsOf } from "./PipedProcess.ts"
 import type { Policy, System } from "./ProcessCleanup.ts"
 import { source } from "./SupervisorProgram.ts"
+import { resolveJobExecutable, WindowsProcessJob } from "./WindowsProcessJob.ts"
 
 const startupMs = 5000
 const deliveryMs = 500
@@ -159,6 +160,7 @@ export class Control {
   socket: Socket | undefined
   requestSocket: Socket | undefined
   targetDone = false
+  ownerCreation: unknown
   targetPid: number | undefined
   ownerDone = false
   spawnFailed = false
@@ -354,6 +356,7 @@ export class Control {
           throw new Error("Invalid process readiness")
         }
         this.receivedReady = true
+        this.ownerCreation = message.created
         this.ready.resolve(Number(message.pid))
         return
       case "spawned":
@@ -434,7 +437,14 @@ export const prepare = (
       sea,
       main: (globalThis as { readonly Bun?: { readonly main?: string } }).Bun?.main ?? ""
     })
-    const grouped = command.options.detached ?? true
+    const windows = system.platform === "win32"
+    const grouped = !windows && (command.options.detached ?? true)
+    const jobExecutable = windows ?
+      yield* Effect.try({
+        try: resolveJobExecutable,
+        catch: (cause) => failure("spawn", command.command, cause)
+      }) :
+      undefined
     const control = yield* Effect.acquireRelease(
       Effect.try({ try: () => new Control(transport), catch: (cause) => failure("spawn", command.command, cause) }),
       (control) => Effect.sync(() => control.dispose())
@@ -454,7 +464,8 @@ export const prepare = (
         HOME: "/",
         XDG_CONFIG_HOME: "/",
         BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
-        ...control.environment()
+        ...control.environment(),
+        ...(jobExecutable === undefined ? {} : { SMITHERS_PROCESS_JOB_HELPER: jobExecutable })
       },
       extendEnv: false,
       shell: false,
@@ -463,6 +474,7 @@ export const prepare = (
       forceKillAfter: initial.graceMs
     }))
     yield* Effect.exit(raw.exitCode).pipe(Effect.andThen(Effect.sync(() => control.rawEnded())), Effect.forkScoped)
+    let job: WindowsProcessJob | undefined
     let settled = false
     let referenced = true
     let reref: Effect.Effect<void, PlatformError.PlatformError> = Effect.void
@@ -487,7 +499,20 @@ export const prepare = (
       void control.write({ type: "stop", killSignal: "SIGKILL", fast: true }).catch(() => control.disconnect())
     }
     const finish = yield* Effect.cached(Effect.gen(function*() {
-      yield* bounded(Effect.exit(raw.exitCode), selected.graceMs + exitAllowanceMs, "kill", command.command)
+      yield* bounded(Effect.exit(raw.exitCode), selected.graceMs + exitAllowanceMs, "kill", command.command).pipe(
+        Effect.catch((cause) =>
+          job === undefined ? Effect.fail(cause) : Effect.gen(function*() {
+            // The native guardian can terminate a stalled owner independently.
+            job!.stop()
+            yield* bounded(Effect.exit(raw.exitCode), exitAllowanceMs, "kill", command.command)
+          })
+        )
+      )
+      if (job !== undefined) {
+        yield* bounded(wait(job.settled.promise, "kill", command.command), 5500, "kill", command.command)
+        settled = true
+        return
+      }
       yield* bounded(wait(control.ended.promise, "kill", command.command), deliveryMs, "kill", command.command).pipe(
         Effect.ignore
       )
@@ -532,6 +557,7 @@ export const prepare = (
       Effect.gen(function*() {
         const requested = yield* policy(options, command.options)
         if (!referenced) {
+          job?.reference(true)
           control.socket?.ref()
           control.requestSocket?.ref()
           yield* reref
@@ -572,7 +598,14 @@ export const prepare = (
         // unconditional group-kill finalizer rather than signal a stale identity.
         Effect.ensuring(
           Effect.suspend(() =>
-            settled ? Effect.void : Effect.andThen(raw.unref, Effect.sync(() => control.disconnect()))
+            settled ? Effect.void : Effect.andThen(
+              raw.unref,
+              Effect.sync(() => {
+                job?.stop()
+                job?.reference(false)
+                control.disconnect()
+              })
+            )
           ).pipe(Effect.orDie)
         ),
         Effect.orDie
@@ -589,6 +622,13 @@ export const prepare = (
       try: () => control.withdraw(ready, raw.pid),
       catch: (cause) => failure("spawn", command.command, cause)
     })
+    if (windows) {
+      job = yield* Effect.try({
+        try: () => new WindowsProcessJob(raw.pid, control.ownerCreation, jobExecutable!),
+        catch: (cause) => failure("spawn", command.command, cause)
+      })
+      yield* bounded(wait(job.ready.promise, "spawn", command.command), startupMs, "spawn", command.command)
+    }
     const options = command.options
     // Match Effect/Node's undefined-vs-empty environment semantics in the host,
     // before replacing the helper's environment with its isolated bootstrap.
@@ -631,12 +671,14 @@ export const prepare = (
     const unref = Effect.gen(function*() {
       if (referenced) {
         reref = yield* raw.unref
+        job?.reference(false)
         control.socket?.unref()
         control.requestSocket?.unref()
         referenced = false
       }
       return Effect.gen(function*() {
         if (!referenced) {
+          job?.reference(true)
           control.socket?.ref()
           control.requestSocket?.ref()
           yield* reref

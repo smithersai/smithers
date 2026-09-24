@@ -8,9 +8,20 @@ import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { resolveJobExecutable } from "../src/internal/WindowsProcessJob.ts"
 import * as NodeHost from "../src/NodeHost.ts"
 
 const identity = (pid: number) => {
+  if (process.platform === "win32") {
+    const result = JSON.parse(execFileSync(resolveJobExecutable(), ["--process-identity", String(pid)], {
+      encoding: "utf8",
+      timeout: 2000,
+      env: {}
+    })) as { status: string }
+    if (result.status === "gone") return "gone"
+    if (result.status === "started") return "running"
+    throw new Error("Native process identity unavailable")
+  }
   try {
     return execFileSync("/bin/ps", ["-ww", "-o", "pid=,ppid=,pgid=,stat=,lstart=,command=", "-p", String(pid)], {
       encoding: "utf8",
@@ -29,7 +40,7 @@ const readBeat = (path: string): { token: string; pid: number; tick: number } | 
   }
 }
 
-describe.skipIf(process.platform === "win32")("leader exit containment", () => {
+describe("leader exit containment", () => {
   it.live("contains a child first spawned after the leader's initial snapshot when its leader exits naturally", () =>
     Effect.gen(function*() {
       const directory = mkdtempSync(join(tmpdir(), "flows-natural-leader-"))
@@ -82,7 +93,9 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
         ).toEqual({ closeSucceeded: true, heartbeatStopped: true, childGone: true, retainedRecords: 0 })
       } finally {
         const beat = readBeat(heartbeat)
-        if (beat !== undefined && identity(beat.pid).includes(token)) process.kill(beat.pid, "SIGKILL")
+        if (process.platform !== "win32" && beat !== undefined && identity(beat.pid).includes(token)) {
+          process.kill(beat.pid, "SIGKILL")
+        }
         rmSync(directory, { recursive: true, force: true })
       }
     }))
@@ -125,13 +138,15 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
         expect(yield* ledger.live).toEqual([])
       } finally {
         const beat = readBeat(heartbeat)
-        if (beat !== undefined && identity(beat.pid).includes(token)) process.kill(beat.pid, "SIGKILL")
+        if (process.platform !== "win32" && beat !== undefined && identity(beat.pid).includes(token)) {
+          process.kill(beat.pid, "SIGKILL")
+        }
         rmSync(directory, { recursive: true, force: true })
       }
     }))
 
   for (const legs of [1, 2]) {
-    it.live(`kills TERM-ignoring children after ${legs} pipeline leader(s) exit zero on TERM`, () =>
+    it.live(`cleans up children of ${legs} pipeline leader(s) during scope release`, () =>
       Effect.gen(function*() {
         const directory = mkdtempSync(join(tmpdir(), "flows-leader-exit-"))
         const fixtures = Array.from({ length: legs }, (_, index) => {
@@ -161,7 +176,7 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
               while (readBeat(fixture.path) === undefined && Date.now() < readyBy) yield* Effect.sleep(10)
               const beat = readBeat(fixture.path)
               expect(beat?.token).toBe(fixture.token)
-              expect(identity(beat!.pid)).toContain(fixture.token)
+              expect(identity(beat!.pid)).toContain(process.platform === "win32" ? "running" : fixture.token)
             }
             const live = yield* ledger.live
             expect(live).toHaveLength(legs)
@@ -183,7 +198,9 @@ describe.skipIf(process.platform === "win32")("leader exit containment", () => {
         } finally {
           for (const fixture of fixtures) {
             const beat = readBeat(fixture.path)
-            if (beat !== undefined && identity(beat.pid).includes(fixture.token)) process.kill(beat.pid, "SIGKILL")
+            if (
+              process.platform !== "win32" && beat !== undefined && identity(beat.pid).includes(fixture.token)
+            ) process.kill(beat.pid, "SIGKILL")
           }
           rmSync(directory, { recursive: true, force: true })
         }

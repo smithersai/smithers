@@ -268,7 +268,7 @@ const toInfo = (value: unknown): FileSystem.File.Info => {
     atime: Option.some(date(info.atime, "atime")),
     birthtime: optional(info.birthtime, (raw) => date(raw, "birthtime")),
     dev: integer(info.dev, "dev"),
-    ino: Option.some(integer(info.ino, "ino")),
+    ino: optional(info.ino, (raw) => integer(raw, "ino")),
     mode: integer(info.mode, "mode"),
     nlink: Option.some(integer(info.nlink, "nlink")),
     uid: Option.some(integer(info.uid, "uid")),

@@ -7,7 +7,6 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as PlatformError from "effect/PlatformError"
 import type * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { makeHandle } from "effect/unstable/process/ChildProcessSpawner"
 import { constants } from "node:os"
 import * as Supervisor from "./ProcessSupervisor.ts"
 
@@ -84,37 +83,9 @@ export const policy = (
   })
 
 /**
- * POSIX uses a live owner even for detached:false: direct-target signals then
- * preserve the group opt-out without upstream nonzero-exit group callbacks.
- * Windows keeps its existing native process handle and launch behavior.
+ * Prepare a live owner before target activation. Windows attaches that owner
+ * to a native job; POSIX uses its independently bounded process supervisor.
  * @private
  * @since 1.0.0
  */
-export const lifecycle = (system: System): Lifecycle => (command, spawn) => {
-  if (system.platform !== "win32") return Supervisor.prepare(system, policy)(command, spawn)
-  return Effect.gen(function*() {
-    const original = yield* spawn(command)
-    let settled = false
-    let selected: ChildProcess.KillOptions = command.options
-    let started = false
-    const finish = yield* Effect.cached(Effect.gen(function*() {
-      if (yield* original.isRunning) yield* original.kill(selected)
-      settled = true
-    }))
-    const kill = (options?: ChildProcess.KillOptions) =>
-      Effect.suspend(() => {
-        if (!started) {
-          started = true
-          selected = options ?? command.options
-        }
-        return finish
-      }).pipe(Effect.uninterruptible)
-    yield* Effect.addFinalizer(() =>
-      kill().pipe(
-        Effect.ensuring(Effect.suspend(() => settled ? Effect.void : Effect.asVoid(original.unref)).pipe(Effect.orDie)),
-        Effect.orDie
-      )
-    )
-    return { handle: makeHandle({ ...original, kill }), activate: Effect.void, settled: Effect.sync(() => settled) }
-  })
-}
+export const lifecycle = (system: System): Lifecycle => Supervisor.prepare(system, policy)

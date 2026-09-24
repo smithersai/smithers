@@ -397,7 +397,7 @@ describe("authenticated loopback process channels", () => {
       )(
         ChildProcess.make(process.execPath, [
           "-e",
-          "process.stdout.write(JSON.stringify([process.env.ONLY,process.env.SMITHERS_PROCESS_CHANNEL??null]))"
+          "process.stdout.write(JSON.stringify([process.env.ONLY,process.env.SMITHERS_PROCESS_CHANNEL??null,process.env.SMITHERS_PROCESS_JOB_HELPER??null]))"
         ], {
           detached: false,
           env: { ONLY: "target" },
@@ -411,7 +411,7 @@ describe("authenticated loopback process channels", () => {
         prepared.handle.exitCode
       ], { concurrency: "unbounded" })
     })))
-    expect(result).toEqual(["[\"target\",null]", 0])
+    expect(result).toEqual(["[\"target\",null,null]", 0])
   })
 
   it.each(["wrong-key", "wrong-identity"])("refuses %s before exposing protocol data", async (fault) => {
