@@ -17,7 +17,9 @@
  *   the workflow's run targets never executed; the `gitHooks` command
  *   checks and installs hook scripts.
  * - Git.Commit: gated commit with the declared, overridden, or agent-written
- *   message; a red gate refuses before anything is staged.
+ *   message; the gates judge a scratch copy holding the tree the commit
+ *   records, so an unstaged change outside the scope can neither pass nor fail
+ *   them; a red gate refuses and restores the index.
  * - Github.Pr: the refusal gate, and NotImplemented past it.
  * - Memory.Retain: the typed unavailable notices, and the real backend call.
  */
@@ -568,7 +570,7 @@ const blocked = S.Git.Commit({ gates: [redGate], message: "chore: never" })
 export const Package = S.Package({ targets: { gate, redGate, commit, agentCommit, blocked } })
 `
 
-  it("stages, gates, composes the message, and commits; a red gate refuses before staging", async () => {
+  it("stages, gates the candidate tree, composes the message, and commits; a red gate refuses", async () => {
     const root = await temporaryWorkspace()
     await write(root, "WORKSPACE.ts", workspaceModule())
     await write(root, "PACKAGE.ts", commitPackage)
@@ -581,7 +583,8 @@ export const Package = S.Package({ targets: { gate, redGate, commit, agentCommit
     // Without `--sweep` the rule refuses rather than absorbing a concurrent edit.
     const unswept = await serve(root, ["//:commit"])
     expect(unswept.exitCode).toBe(1)
-    expect(unswept.logs).toContain("//:gate  ran")
+    // The refusal lands before staging, so no gate judged anything.
+    expect(unswept.logs).not.toContain("//:gate ")
     expect(unswept.logs).toContain("unrelated_changes")
     expect(unswept.logs).toContain("one.txt")
     expect(git(root, "rev-parse", "HEAD").trim()).toBe(base)
@@ -616,10 +619,10 @@ export const Package = S.Package({ targets: { gate, redGate, commit, agentCommit
     const head = git(root, "rev-parse", "HEAD").trim()
     const blocked = await serve(root, ["//:blocked", "--sweep"])
     expect(blocked.exitCode).toBe(1)
-    expect(blocked.logs).toContain("//:redGate  failed")
-    expect(blocked.logs).toContain("refused: gate //:redGate is not green")
+    expect(blocked.logs).toMatch(/\/\/:blocked  gate \/\/:redGate red against tree [0-9a-f]{12}/)
+    expect(blocked.logs).toContain("gates_failed: //:redGate")
     expect(git(root, "rev-parse", "HEAD").trim()).toBe(head)
-    // Nothing was staged: the refusal happened before `git add -A`.
+    // The refused invocation restored the index it staged.
     expect(git(root, "status", "--porcelain").trim()).toBe("?? four.txt")
     expect(base).not.toBe(head)
   }, 120_000)
@@ -650,6 +653,44 @@ export const Package = S.Package({ targets: { scoped } })
     expect(scoped.logs).toMatch(/\/\/:scoped  committed [0-9a-f]{12}: chore: scoped; 1 file\(s\)/)
     expect(git(root, "show", "--name-only", "--pretty=format:", "HEAD")).toBe("owned.txt\n")
     expect(git(root, "status", "--porcelain")).toBe(" M other.txt\n?? untracked.txt\n")
+  }, 120_000)
+
+  it("judges the gates against the tree being committed, not the working tree", async () => {
+    const root = await temporaryWorkspace()
+    await write(root, "WORKSPACE.ts", workspaceModule())
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const needsReady = S.Shell.Test({ shell: "grep -q ready other.txt", data: [S.file("other.txt")] })
+const rejectsBroken = S.Shell.Test({ shell: "! grep -q broken other.txt", data: [S.file("other.txt")] })
+const passesOnlyUnstaged = S.Git.Commit({ gates: [needsReady], message: "chore: owned", changes: ["owned.txt"] })
+const failsOnlyUnstaged = S.Git.Commit({ gates: [rejectsBroken], message: "chore: owned", changes: ["owned.txt"] })
+export const Package = S.Package({ targets: { needsReady, rejectsBroken, passesOnlyUnstaged, failsOnlyUnstaged } })
+`
+    )
+    await write(root, ".gitignore", ".flows\nfake.json*\n")
+    await write(root, "owned.txt", "owned baseline\n")
+    await write(root, "other.txt", "baseline\n")
+    initRepo(root)
+    commitAll(root)
+    const base = git(root, "rev-parse", "HEAD").trim()
+
+    // The only file that satisfies the gate is an unstaged edit outside the scope.
+    await write(root, "owned.txt", "owned change\n")
+    await write(root, "other.txt", "ready\n")
+    const passesOnlyUnstaged = await serve(root, ["//:passesOnlyUnstaged"])
+    expect(passesOnlyUnstaged.exitCode).toBe(1)
+    expect(passesOnlyUnstaged.logs).toContain("gates_failed")
+    expect(git(root, "rev-parse", "HEAD").trim()).toBe(base)
+    expect(git(root, "status", "--porcelain")).toBe(" M other.txt\n M owned.txt\n")
+
+    // The only file that breaks the gate is an unstaged edit outside the scope.
+    await write(root, "other.txt", "broken\n")
+    const failsOnlyUnstaged = await serve(root, ["//:failsOnlyUnstaged"])
+    expect(failsOnlyUnstaged.exitCode).toBe(0)
+    expect(git(root, "show", "--name-only", "--pretty=format:", "HEAD")).toBe("owned.txt\n")
+    expect(git(root, "status", "--porcelain")).toBe(" M other.txt\n")
   }, 120_000)
 })
 

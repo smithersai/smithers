@@ -627,25 +627,42 @@ The `create-app` implementation. From `@smthrs/build-cli/CreateApp`.
 
 The `Git.Commit` implementation. From `@smthrs/build-cli/GitCommit`.
 
-| Export             | Signature                                                                                  | What it is                                                                                                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `commit`           | `(options: CommitOptions) => Promise<CommitResult>`                                        | Stage, gate, message, commit.                                                                                                                                                  |
-| `CommitOptions`    | `{ root; paths?; sweepWorkingTree?; target; gateRunner; agentMessage?; messageOverride? }` | One invocation's inputs.                                                                                                                                                       |
-| `CommitResult`     | `{ sha; message; staged }`                                                                 | The created commit.                                                                                                                                                            |
-| `GitCommitError`   | class carrying `code` and `failures`                                                       | One typed refusal.                                                                                                                                                             |
-| `isGitCommitError` | `(value: unknown) => value is GitCommitError`                                              | Guard.                                                                                                                                                                         |
-| `ErrorCode`        | union                                                                                      | `not_a_git_repository`, `invalid_paths`, `unrelated_changes`, `nothing_to_commit`, `gates_failed`, `agent_message_unavailable`, `empty_message`, `git_failed`, `spawn_failed`. |
-| `GateFailure`      | `{ target: string; message: string }`                                                      | One red gate.                                                                                                                                                                  |
-| `GateRunner`       | `{ run(gates: ReadonlyArray<Target.AnyTarget>): Promise<ReadonlyArray<GateFailure>> }`     | Runs gates against the staged tree.                                                                                                                                            |
-| `AgentMessage`     | `{ compose(context) => Promise<string> }`                                                  | Composes a message for an agent-written `message` declaration.                                                                                                                 |
+| Export             | Signature                                                                                                        | What it is                                                                                                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commit`           | `(options: CommitOptions) => Promise<CommitResult>`                                                              | Stage, gate, message, commit.                                                                                                                                                                       |
+| `CommitOptions`    | `{ root; paths?; sweepWorkingTree?; target; gateRunner; agentMessage?; messageOverride? }`                       | One invocation's inputs.                                                                                                                                                                            |
+| `CommitResult`     | `{ sha; message; staged }`                                                                                       | The created commit.                                                                                                                                                                                 |
+| `GitCommitError`   | class carrying `code` and `failures`                                                                             | One typed refusal.                                                                                                                                                                                  |
+| `isGitCommitError` | `(value: unknown) => value is GitCommitError`                                                                    | Guard.                                                                                                                                                                                              |
+| `ErrorCode`        | union                                                                                                            | `not_a_git_repository`, `invalid_paths`, `unrelated_changes`, `nothing_to_commit`, `gates_failed`, `candidate_changed`, `agent_message_unavailable`, `empty_message`, `git_failed`, `spawn_failed`. |
+| `GateFailure`      | `{ target: string; message: string }`                                                                            | One red gate.                                                                                                                                                                                       |
+| `GateRunner`       | `{ run(gates: ReadonlyArray<Target.AnyTarget>, candidate: CandidateTree): Promise<ReadonlyArray<GateFailure>> }` | Runs gates against the candidate tree.                                                                                                                                                              |
+| `CandidateTree`    | `{ tree: string; materialize(directory: string): Promise<ReadonlyArray<string>> }`                               | The git tree the commit will record; `materialize` makes a working-tree copy hold exactly that tree.                                                                                                |
+| `AgentMessage`     | `{ compose(context) => Promise<string> }`                                                                        | Composes a message for an agent-written `message` declaration.                                                                                                                                      |
 
 `--sweep` sets `sweepWorkingTree`. Without it, a commit with no declared path
 scope refuses with `unrelated_changes` and names the paths it does not own.
 
-Every refusal after staging (a red gate, an empty or unavailable message, a
-failed `git commit`) restores the index the invocation found. The commit honors
-the repository's `commit.gpgsign` policy; a signing failure refuses with
-`git_failed`.
+The gates judge the commit's own tree, not the working tree. After staging,
+`commit` writes the index as one git tree and hands it to the `GateRunner` as a
+`CandidateTree`. The executor's runner copies the working tree to a scratch
+directory, calls `materialize` to rewrite every path that differs from the
+candidate and remove every untracked, non-ignored path, and runs each gate
+there. Ignored files, such as `node_modules` and build outputs, stay as copied.
+An unstaged or untracked change outside the scope therefore cannot make a gate
+pass or fail. The scratch copy has no `.git`, so a gate that reads the index
+(for example `git diff --staged`) cannot run as a commit gate. Gates run as
+candidate gates do for `Agent.Diff`: `Shell.Test`, `Shell.Build`, the Cargo
+test and lint rules, `Suite`, `Alias`, and `Filegroup`; any other rule is red.
+
+The commit must record exactly the judged tree. If the index changed after the
+gates ran, or a `pre-commit` hook restaged a path, the invocation refuses with
+`candidate_changed` and HEAD stays where it was.
+
+Every refusal after staging (a red gate, a changed candidate, an empty or
+unavailable message, a failed `git commit`) restores the index the invocation
+found. The commit honors the repository's `commit.gpgsign` policy; a signing
+failure refuses with `git_failed`.
 
 ## GitHooks
 

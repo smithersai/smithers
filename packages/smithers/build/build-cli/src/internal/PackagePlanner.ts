@@ -2646,10 +2646,12 @@ const visit = async (
   // An Agent.Diff or Agent.Pr runs its gates inside the candidate/gate loop,
   // against each candidate, so they are not pre-act gates of the node: a gate
   // that is red on the pre-candidate tree (the test the fix must make pass)
-  // is exactly what the loop exists to turn green. Their own execution
-  // dependencies (the data a gate needs materialized) hoist onto the agent
-  // node so the loop finds them settled.
-  const loopGated = rule === "Agent.Diff" || rule === "Agent.Pr" || rule === "Docs.Page"
+  // is exactly what the loop exists to turn green. A Git.Commit judges its
+  // gates against the tree it is about to record, which is not the live tree
+  // when unstaged or untracked changes sit outside its scope. Their own
+  // execution dependencies (the data a gate needs materialized) hoist onto
+  // the consumer so the candidate run finds them settled.
+  const loopGated = rule === "Agent.Diff" || rule === "Agent.Pr" || rule === "Docs.Page" || rule === "Git.Commit"
   const gateDeps = loopGated ? [] : declaredGates
 
   // Execution edges: what must settle green before this node runs.

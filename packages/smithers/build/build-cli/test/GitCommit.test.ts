@@ -318,6 +318,100 @@ describe("commit scope", () => {
   })
 })
 
+/** Copies the working tree without `.git`, the way a scratch gate tree starts. */
+const workingCopy = async (root: string): Promise<string> => {
+  const copy = await tracked(Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-git-commit-scratch-")))
+  await Fs.cp(root, copy, { recursive: true, filter: (source) => NodePath.basename(source) !== ".git" })
+  return copy
+}
+
+const readOrAbsent = (path: string): Promise<string | undefined> =>
+  Fs.readFile(path, "utf8").then((text) => text, () => undefined)
+
+describe("gates judge the commit tree", () => {
+  it("materializes exactly the tree being committed, not the working tree", async () => {
+    const root = await scopedRepo()
+    await Fs.writeFile(NodePath.join(root, "scope/owned.txt"), "owned change\n", "utf8")
+    // Out-of-scope edits stay in the working tree and must be invisible to the gates.
+    await Fs.writeFile(NodePath.join(root, "outside-tracked.txt"), "concurrent change\n", "utf8")
+    await Fs.writeFile(NodePath.join(root, "outside-untracked.txt"), "concurrent addition\n", "utf8")
+    await Fs.rm(NodePath.join(root, "README.md"))
+    const seen: Array<Record<string, string | undefined>> = []
+    let candidateTree = ""
+    const result = await GitCommit.commit({
+      root,
+      target: fixedCommit([gateTarget()]),
+      paths: ["scope"],
+      gateRunner: {
+        run: async (_gates, candidate) => {
+          const scratch = await workingCopy(root)
+          await candidate.materialize(scratch)
+          candidateTree = candidate.tree
+          seen.push({
+            owned: await readOrAbsent(NodePath.join(scratch, "scope/owned.txt")),
+            outsideTracked: await readOrAbsent(NodePath.join(scratch, "outside-tracked.txt")),
+            outsideUntracked: await readOrAbsent(NodePath.join(scratch, "outside-untracked.txt")),
+            readme: await readOrAbsent(NodePath.join(scratch, "README.md"))
+          })
+          return []
+        }
+      }
+    })
+    expect(seen).toEqual([{
+      owned: "owned change\n",
+      outsideTracked: "outside baseline\n",
+      outsideUntracked: undefined,
+      readme: "seed\n"
+    }])
+    expect(candidateTree).toBe((await git(root, ["rev-parse", `${result.sha}^{tree}`])).trim())
+    // The working tree keeps the unrelated edits exactly as they were.
+    expect(await git(root, ["status", "--porcelain"])).toBe(
+      " D README.md\n M outside-tracked.txt\n?? outside-untracked.txt\n"
+    )
+  })
+
+  it("refuses when the index changes after the gates judged the candidate", async () => {
+    const root = await scopedRepo()
+    const before = await head(root)
+    await Fs.writeFile(NodePath.join(root, "scope/owned.txt"), "owned change\n", "utf8")
+    await Fs.writeFile(NodePath.join(root, "outside-tracked.txt"), "concurrent change\n", "utf8")
+    const error = await failure(GitCommit.commit({
+      root,
+      target: fixedCommit([gateTarget()]),
+      paths: ["scope"],
+      gateRunner: {
+        run: async () => {
+          // A concurrent writer stages an unjudged path while the gates run.
+          await git(root, ["add", "outside-tracked.txt"])
+          return []
+        }
+      }
+    }))
+    expect(error.code).toBe("candidate_changed")
+    expect(await head(root)).toBe(before)
+  })
+
+  it("rolls back a commit whose recorded tree is not the judged tree", async () => {
+    const root = await scopedRepo()
+    const before = await head(root)
+    await Fs.writeFile(NodePath.join(root, "scope/owned.txt"), "owned change\n", "utf8")
+    await Fs.writeFile(NodePath.join(root, "outside-tracked.txt"), "concurrent change\n", "utf8")
+    // A pre-commit hook that restages an unjudged path changes what `git commit` records.
+    const hook = NodePath.join(root, ".git/hooks/pre-commit")
+    await Fs.writeFile(hook, "#!/bin/sh\ngit add outside-tracked.txt\n", "utf8")
+    await Fs.chmod(hook, 0o755)
+    const error = await failure(GitCommit.commit({
+      root,
+      target: fixedCommit([gateTarget()]),
+      paths: ["scope"],
+      gateRunner: greenGates
+    }))
+    expect(error.code).toBe("candidate_changed")
+    expect(await head(root)).toBe(before)
+    expect(await git(root, ["diff", "--cached", "--name-only"])).toBe("")
+  })
+})
+
 describe("agent-written messages", () => {
   it("composes the message from the named agent and the staged diff", async () => {
     const root = await temporaryRepo()

@@ -234,7 +234,7 @@ An agent whose accepted candidate becomes a pull request. The attrs match `Agent
 - **Type:** the `GitTarget` module
 - **Since:** `0.1.0`
 
-The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC: the plan refuses it before any gate runs. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not.
+The git target flavors: `Git.Commit`, `Git.Pr`, `Git.Submodules`, and `Git.Submodule`. The package executor handles these declarations; `Git.Pr` is unsupported in this RC: the plan refuses it before any gate runs. `Git.Submodule` and `Git.Submodules` join the `build` verb and are cacheable; `Git.Commit` and `Git.Pr` join `run` and are not. `Git.Commit` gates run against a scratch copy holding the exact tree the commit records, not against the working tree.
 
 ### `Smithers.Github`
 

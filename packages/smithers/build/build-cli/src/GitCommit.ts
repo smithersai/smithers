@@ -2,17 +2,22 @@
  * Executes one `Git.Commit` target: stage, gate, message, commit.
  *
  * The sequence is fixed. A change the invocation does not own refuses it
- * before anything is staged; the owned paths are then staged so the gates
- * check the exact candidate that will be committed. The gates run through the
- * injected {@link GateRunner};
- * a red gate refuses the commit with a typed error and creates nothing. The
+ * before anything is staged; the owned paths are then staged and the staged
+ * index is written as one git tree, the candidate. The gates run through the
+ * injected {@link GateRunner} against that tree, materialized over a scratch
+ * copy, never against the live working tree: an unstaged or untracked file
+ * outside the scope is not in the commit, so it can neither pass nor fail a
+ * gate. A red gate refuses the commit with a typed error and creates nothing. The
  * message is the `-m` override when the invoker passed one, the declared fixed
  * text otherwise, or the injected {@link AgentMessage} composition when the
- * declaration names an agent. Only then is the commit created.
+ * declaration names an agent. Only then is the commit created, and it must
+ * record exactly the judged tree: an index that changed after the gates ran,
+ * or a hook that restaged a path, refuses with `candidate_changed` and leaves
+ * HEAD where it was.
  *
  * Both collaborators are interfaces because their real implementations are
  * integration concerns: the real GateRunner is the executor running gate
- * targets against the staged tree, and the real AgentMessage is the
+ * targets against a scratch copy holding the candidate tree, and the real AgentMessage is the
  * workspace agent stack. This module owns the ordering, the git plumbing,
  * and the typed refusals; tests drive it with fakes in a throwaway
  * repository.
@@ -23,6 +28,9 @@ import * as Exec from "@smthrs/targets/Exec"
 import * as GitTarget from "@smthrs/targets/GitTarget"
 import type * as Target from "@smthrs/targets/Target"
 import * as PlatformError from "effect/PlatformError"
+import * as Fs from "node:fs/promises"
+import * as Os from "node:os"
+import * as NodePath from "node:path"
 import * as Diagnostic from "./Diagnostic.ts"
 import * as ContainedProcess from "./internal/ContainedProcess.ts"
 
@@ -38,6 +46,7 @@ export type ErrorCode =
   | "unrelated_changes"
   | "nothing_to_commit"
   | "gates_failed"
+  | "candidate_changed"
   | "agent_message_unavailable"
   | "empty_message"
   | "git_failed"
@@ -82,17 +91,37 @@ export interface GateFailure {
 }
 
 /**
- * Runs the declared gate targets against the staged candidate tree.
+ * The tree a commit will record, handed to the gates that approve it.
  *
- * The integration binding is the executor: each gate executes (or cache-hits
- * green) against exactly the tree that was just staged. A fake satisfies the
- * interface in tests.
+ * @category models
+ * @since 0.1.0
+ */
+export interface CandidateTree {
+  /** The git tree object id the commit records. */
+  readonly tree: string
+  /**
+   * Makes `directory`, a copy of the working tree without `.git`, hold
+   * exactly the candidate's tracked content: every path whose working-tree
+   * content differs from the tree is rewritten from the tree or removed, and
+   * every untracked, non-ignored path is removed. Ignored files, such as
+   * installed dependencies and build outputs, stay as copied. Returns the
+   * repository-relative paths it rewrote or removed.
+   */
+  readonly materialize: (directory: string) => Promise<ReadonlyArray<string>>
+}
+
+/**
+ * Runs the declared gate targets against the candidate tree.
+ *
+ * The integration binding is the executor: it materializes the candidate
+ * over a scratch copy and judges each gate there, so a gate sees the commit's
+ * tree and nothing else. A fake satisfies the interface in tests.
  *
  * @category models
  * @since 0.1.0
  */
 export interface GateRunner {
-  run(gates: ReadonlyArray<Target.AnyTarget>): Promise<ReadonlyArray<GateFailure>>
+  run(gates: ReadonlyArray<Target.AnyTarget>, candidate: CandidateTree): Promise<ReadonlyArray<GateFailure>>
 }
 
 /**
@@ -150,7 +179,11 @@ interface GitOutput {
 }
 
 /** Runs git with bounded output and the shared process-tree owner. */
-const git = async (options: CommitOptions, args: ReadonlyArray<string>): Promise<GitOutput> => {
+const git = async (
+  options: CommitOptions,
+  args: ReadonlyArray<string>,
+  extraEnvironment: Readonly<Record<string, string>> = {}
+): Promise<GitOutput> => {
   let stdout = ""
   let stderr = ""
   try {
@@ -171,7 +204,8 @@ const git = async (options: CommitOptions, args: ReadonlyArray<string>): Promise
           options.sensitiveNames ?? []
         ),
         GIT_TERMINAL_PROMPT: "0",
-        GIT_EDITOR: "true"
+        GIT_EDITOR: "true",
+        ...extraEnvironment
       },
       stdout: (text) => {
         stdout += text
@@ -200,12 +234,83 @@ const git = async (options: CommitOptions, args: ReadonlyArray<string>): Promise
 }
 
 /** Runs one git command that must succeed. */
-const gitOk = async (options: CommitOptions, args: ReadonlyArray<string>): Promise<GitOutput> => {
-  const output = await git(options, args)
+const gitOk = async (
+  options: CommitOptions,
+  args: ReadonlyArray<string>,
+  extraEnvironment: Readonly<Record<string, string>> = {}
+): Promise<GitOutput> => {
+  const output = await git(options, args, extraEnvironment)
   if (output.exitCode !== 0) {
     throw new GitCommitError("git_failed", `git ${args.join(" ")} exited ${output.exitCode}: ${output.stderr.trim()}`)
   }
   return output
+}
+
+/** Splits NUL-terminated git output into its fields. */
+const nulFields = (text: string): ReadonlyArray<string> => text.split("\0").filter((field) => field !== "")
+
+/** Paths per `git checkout-index` invocation, well under any host's argv limit. */
+const checkoutBatch = 500
+
+/**
+ * Makes a working-tree copy hold exactly the tracked content of `tree`.
+ *
+ * `git diff --name-status <tree>` names every path whose working-tree content
+ * differs from the tree; `A` entries exist only in the working tree, the rest
+ * are written back from the tree through a private index so modes, symlinks
+ * and binary content survive. Untracked, non-ignored paths are not in the
+ * tree (the index was just written as it) and are removed.
+ */
+const materializeTree = async (
+  options: CommitOptions,
+  tree: string,
+  directory: string
+): Promise<ReadonlyArray<string>> => {
+  const fields = nulFields(
+    (await gitOk(options, ["diff", "--no-renames", "--no-ext-diff", "--name-status", "-z", tree, "--"])).stdout
+  )
+  const fromTree: Array<string> = []
+  const removed: Array<string> = []
+  for (let cursor = 0; cursor + 1 < fields.length; cursor += 2) {
+    const path = fields[cursor + 1]!
+    if (fields[cursor] === "A") removed.push(path)
+    else fromTree.push(path)
+  }
+  removed.push(...nulFields((await gitOk(options, ["ls-files", "--others", "--exclude-standard", "-z"])).stdout))
+  const resolved = NodePath.resolve(directory)
+  const inside = (path: string): string => {
+    const absolute = NodePath.resolve(resolved, ...path.split("/"))
+    if (!absolute.startsWith(resolved + NodePath.sep)) {
+      throw new GitCommitError("git_failed", `git named a path outside the tree: ${JSON.stringify(path)}`)
+    }
+    return absolute
+  }
+  for (const path of [...removed, ...fromTree]) {
+    await Fs.rm(inside(path), { recursive: true, force: true })
+  }
+  if (fromTree.length > 0) {
+    const scratchIndex = await Fs.mkdtemp(NodePath.join(Os.tmpdir(), "smthrs-commit-index-"))
+    try {
+      const environment = { GIT_INDEX_FILE: NodePath.join(scratchIndex, "index") }
+      await gitOk(options, ["read-tree", tree], environment)
+      for (let start = 0; start < fromTree.length; start += checkoutBatch) {
+        await gitOk(
+          options,
+          [
+            "checkout-index",
+            "-f",
+            `--prefix=${resolved}${NodePath.sep}`,
+            "--",
+            ...fromTree.slice(start, start + checkoutBatch)
+          ],
+          environment
+        )
+      }
+    } finally {
+      await Fs.rm(scratchIndex, { recursive: true, force: true })
+    }
+  }
+  return [...new Set([...removed, ...fromTree])].sort()
 }
 
 /**
@@ -326,7 +431,7 @@ export interface CommitOptions {
   readonly sweepWorkingTree?: boolean | undefined
   /** The `Git.Commit` target whose validated attrs drive the invocation. */
   readonly target: Target.AnyTarget
-  /** Runs the declared gates against the staged tree. */
+  /** Runs the declared gates against the candidate tree. */
   readonly gateRunner: GateRunner
   /** Composes an agent-written message; optional when the message is fixed text. */
   readonly agentMessage?: AgentMessage | undefined
@@ -364,6 +469,7 @@ export const commit = async (options: CommitOptions): Promise<CommitResult> => {
   // Every refusal after staging restores the index this invocation found, so a
   // failed attempt never leaves its own staging behind to poison the next one.
   const saved = await git(options, ["write-tree"])
+  const parent = await git(options, ["rev-parse", "--verify", "-q", "HEAD"])
   const stage = async (): Promise<{ readonly message: string; readonly staged: ReadonlyArray<string> }> => {
     // `-A` includes deletions owned by the scope; `--` protects a pathspec that starts with a dash.
     await gitOk(options, paths === undefined ? ["add", "-A"] : ["add", "-A", "--", ...paths])
@@ -371,7 +477,12 @@ export const commit = async (options: CommitOptions): Promise<CommitResult> => {
     if (candidate.exitCode === 0) {
       throw new GitCommitError("nothing_to_commit", "the staged tree is identical to HEAD")
     }
-    const failures = await options.gateRunner.run(attrs.gates)
+    // The gates judge this tree object, and the commit must record exactly it.
+    const tree = (await gitOk(options, ["write-tree"])).stdout.trim()
+    const failures = await options.gateRunner.run(attrs.gates, {
+      tree,
+      materialize: (directory) => materializeTree(options, tree, directory)
+    })
     if (failures.length > 0) {
       throw new GitCommitError(
         "gates_failed",
@@ -406,10 +517,28 @@ export const commit = async (options: CommitOptions): Promise<CommitResult> => {
     if (message.trim() === "") {
       throw new GitCommitError("empty_message", "the commit message is empty")
     }
+    if ((await gitOk(options, ["write-tree"])).stdout.trim() !== tree) {
+      throw new GitCommitError("candidate_changed", "the index changed after the gates judged the candidate tree")
+    }
     const staged = (await gitOk(options, ["diff", "--cached", "--name-only", "-z"]))
       .stdout.split("\0").slice(0, -1)
     // The repository's signing policy applies; a signing failure is a typed git_failed refusal.
     await gitOk(options, ["commit", "-m", message])
+    const recorded = (await gitOk(options, ["rev-parse", "HEAD^{tree}"])).stdout.trim()
+    if (recorded !== tree) {
+      // A hook restaged a path the gates never judged: undo the commit, keep HEAD where it was.
+      const created = (await gitOk(options, ["rev-parse", "HEAD"])).stdout.trim()
+      await gitOk(
+        options,
+        parent.exitCode === 0
+          ? ["update-ref", "HEAD", parent.stdout.trim(), created]
+          : ["update-ref", "-d", "HEAD", created]
+      )
+      throw new GitCommitError(
+        "candidate_changed",
+        `the commit recorded tree ${recorded}, not the judged tree ${tree}; a hook changed the index, so HEAD was reset`
+      )
+    }
     return { message, staged }
   }
   let settled: { readonly message: string; readonly staged: ReadonlyArray<string> }

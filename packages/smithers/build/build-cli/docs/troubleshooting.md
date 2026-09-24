@@ -213,6 +213,22 @@ message names them.
 Commit or stash the unrelated work, or pass `--sweep` to let the target commit
 the whole working tree deliberately.
 
+**`gates_failed`**
+
+A gate was red against the tree the commit would record. The gates run in a
+scratch copy that holds the staged tree, so an unstaged or untracked edit
+outside the scope is not what they see. If a gate passes locally and fails
+here, the fix it relies on is probably outside the `changes` scope: widen the
+scope or commit that file first. A gate rule that cannot run against a scratch
+tree reports that it cannot be executed against a candidate tree.
+
+**`candidate_changed`**
+
+The index changed after the gates judged the candidate, or a `pre-commit` hook
+restaged a path, so the commit would have recorded a tree nobody gated. HEAD
+is left where it was. Stop the concurrent writer or the restaging hook and run
+the target again.
+
 ## A review was skipped rather than run
 
 **`smthrs: skipped <label>: the <executable> CLI is not installed on this

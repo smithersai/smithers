@@ -1609,35 +1609,54 @@ export const executeEffect = (
     })
 
     /**
-     * The gate runner of a `Git.Commit`: the declared gates were scheduled as
-     * this node's execution edges and ran against the very tree `git add -A`
-     * just staged, so the fresh pre-act check is their settled status in this
-     * invocation. Outward/Run gates are refused (the plan already refuses the
-     * consumer; this is the second lock).
+     * The gate runner of a `Git.Commit`: materializes the candidate tree the
+     * commit will record over a scratch copy and judges every declared gate
+     * against exactly that copy, like the candidate/gate loop. The gates are
+     * not pre-act execution edges, because the live tree carries unstaged and
+     * untracked changes the commit does not. Outward/Run gates are refused
+     * (the plan already refuses the consumer; this is the second lock).
      */
-    const commitGateRunner: GitCommit.GateRunner = {
-      run: async (gates) => {
-        const failures: Array<GitCommit.GateFailure> = []
+    const commitGateRunner = (node: PackageNode, signal: AbortSignal | undefined): GitCommit.GateRunner => ({
+      run: async (gates, candidate) => {
+        if (gates.length === 0) return []
         const nodes = [...planned.nodes.values()]
-        for (const gate of gates) {
-          const gateNode = nodes.find((candidate) => candidate.declaration === gate)
-          const target = gateNode?.label ?? Target.metadata(gate).target
-          if (gateNode === undefined) {
-            failures.push({ target, message: "gate was not planned" })
-            continue
-          }
-          if ((RulePolicy.of(gateNode.rule).outward === true)) {
-            failures.push({ target, message: `${gateNode.rule} is an outward/Run target and cannot gate a commit` })
-            continue
-          }
-          const report = reports.get(gateNode.label)
-          if (report?.status !== "hit" && report?.status !== "ran") {
-            failures.push({ target, message: report?.error ?? `gate settled ${report?.status ?? "unscheduled"}` })
-          }
+        const program = inScratch([], (scratch) =>
+          Effect.gen(function*() {
+            const rewritten = yield* joined(() => candidate.materialize(scratch))
+            // What a gate may read of the candidate: the commit's scope and every
+            // path the materialization rewrote, on top of the gate's own inputs.
+            const candidateReads = new Set<string>(rewritten)
+            for (const pattern of node.writeSet) candidateReads.add(staticPrefixOf(pattern) || ".")
+            const failures: Array<GitCommit.GateFailure> = []
+            for (const gate of gates) {
+              const label = nodes.find((planned) => planned.declaration === gate)?.label
+              if (label === undefined) {
+                failures.push({ target: Target.metadata(gate).target, message: "gate was not planned" })
+                continue
+              }
+              const entry = yield* gateAgainstTree(label, scratch, [...candidateReads])
+              log(`${node.label}  gate ${label} ${entry.status} against tree ${candidate.tree.slice(0, 12)}`)
+              if (entry.status === "red") failures.push({ target: label, message: entry.detail ?? "red" })
+            }
+            return failures
+          }))
+        const exit = await Effect.runPromiseExit(program, { signal })
+        if (Exit.isFailure(exit)) {
+          throw new Error(`commit gates could not run: ${Diagnostic.describe(Cause.squash(exit.cause))}`)
         }
-        return failures
+        const { outcome, escaped } = exit.value
+        if (escaped.length > 0) {
+          return [
+            ...outcome,
+            {
+              target: node.label,
+              message: `a gate touched the real tree through a symlink (reverted): ${escaped.join(", ")}`
+            }
+          ]
+        }
+        return outcome
       }
-    }
+    })
 
     /**
      * Composes a `Git.Commit` message through the declared workspace agent:
@@ -2639,7 +2658,7 @@ export const executeEffect = (
                     environment,
                     sensitiveNames: credentialNames,
                     target: node.declaration,
-                    gateRunner: commitGateRunner,
+                    gateRunner: commitGateRunner(node, signal),
                     agentMessage: agentMessageComposer(signal),
                     // The write set is the declared `changes` attr resolved against the
                     // declaring package. A rule that declares none owns nothing, and an empty
