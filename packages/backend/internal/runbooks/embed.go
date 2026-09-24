@@ -1,7 +1,8 @@
 // Package runbooks embeds the alert auto-remediation registry so the Go API
-// can load it without any codegen while keeping docs/runbooks/registry.json
-// the single source of truth (also read directly by
-// .smithers/workflows/remediate-runner.ts).
+// can load it without codegen. The source of truth is Plue's
+// docs/runbooks/registry.json, next to the Terraform alert policies and the
+// runbooks it names; this file is a copy. registry_drift_test.go fails when
+// the copy and a local Plue checkout disagree.
 package runbooks
 
 import _ "embed"

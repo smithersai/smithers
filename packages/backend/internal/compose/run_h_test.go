@@ -388,10 +388,10 @@ func TestRun_DBConnectError(t *testing.T) {
 	assert.Contains(t, stderr.String(), "failed to connect to database")
 }
 
-func TestRun_OtelInitWarn(t *testing.T) {
+func TestRun_OtelInitFailureFailsStartup(t *testing.T) {
 	preserveSlog(t)
-	// Force a fast failure at the DB connect step so the test ends quickly,
-	// while still exercising the otel init-Warn branch first.
+	// An exporter that is configured but cannot be built is a misconfiguration:
+	// startup must fail instead of running silently without traces.
 	swapVar(t, &otelInit, func(context.Context, config.ObservabilityConfig) (*sdktrace.TracerProvider, error) {
 		return nil, errors.New("otel down")
 	})
@@ -400,8 +400,8 @@ func TestRun_OtelInitWarn(t *testing.T) {
 	applyEnv(t, env)
 	stderr := &syncBuffer{}
 	err := run(context.Background(), nil, io.Discard, stderr)
-	require.Error(t, err)
-	assert.Contains(t, stderr.String(), "failed to initialize OpenTelemetry")
+	require.ErrorContains(t, err, "otel down")
+	assert.NotContains(t, stderr.String(), "failed to connect to database")
 }
 
 func TestRun_SSEBrokerStartError(t *testing.T) {

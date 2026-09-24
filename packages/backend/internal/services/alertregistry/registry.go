@@ -1,7 +1,6 @@
 // Package alertregistry maps GCP Cloud Monitoring alert policies to runbooks
-// and auto-remediation workflows. The registry data lives in
-// docs/runbooks/registry.json (embedded via docs/runbooks) so it can also be
-// read directly by .smithers/workflows/remediate-runner.ts.
+// and auto-remediation workflows. The registry data is Plue's
+// docs/runbooks/registry.json, embedded through internal/runbooks.
 package alertregistry
 
 import (

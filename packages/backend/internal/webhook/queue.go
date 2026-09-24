@@ -3,7 +3,9 @@ package webhook
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -70,6 +72,7 @@ func PollQueue(ctx context.Context, store QueueStore, limit int32) ([]Task, erro
 
 // UpdateTaskStatus persists a webhook attempt result and applies retry/disable policy.
 func UpdateTaskStatus(ctx context.Context, store QueueStore, task Task, result DeliveryResult, now time.Time, observer MetricsObserver) error {
+	result.ResponseBody = storableResponseBody(result.ResponseBody)
 	responseStatus := toResponseStatus(result.StatusCode)
 	if result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
 		if err := store.UpdateWebhookDeliveryResult(ctx, db.UpdateWebhookDeliveryResultParams{
@@ -140,6 +143,24 @@ func UpdateTaskStatus(ctx context.Context, store QueueStore, task Task, result D
 	}
 
 	return nil
+}
+
+// maxStoredResponseBodyBytes caps the receiver response kept for display.
+const maxStoredResponseBodyBytes = 64 << 10
+
+// storableResponseBody makes a receiver response safe for a Postgres text
+// column. Postgres rejects NUL bytes and invalid UTF-8, and a rejected write
+// leaves the delivery claimed, so it would be redelivered forever.
+func storableResponseBody(body string) string {
+	body = strings.ToValidUTF8(strings.ReplaceAll(body, "\x00", ""), "\uFFFD")
+	if len(body) <= maxStoredResponseBodyBytes {
+		return body
+	}
+	cut := maxStoredResponseBodyBytes
+	for cut > 0 && !utf8.RuneStart(body[cut]) {
+		cut--
+	}
+	return body[:cut]
 }
 
 func toResponseStatus(statusCode int) pgtype.Int4 {

@@ -45,7 +45,7 @@ func TestParser_Cover_ConfigFileValidationErrors(t *testing.T) {
 		{
 			name:    "mirror destination invalid url",
 			yaml:    "repository:\n  mirror:\n    enabled: true\n    destination: \"not-a-valid-url\"\n",
-			wantErr: "repository.mirror.destination must be a valid URL",
+			wantErr: "repository.mirror.destination: Mirror destination must name owner/repository",
 		},
 		{
 			name:    "idle timeout not positive",

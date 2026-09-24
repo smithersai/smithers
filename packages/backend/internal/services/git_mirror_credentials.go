@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/githubrepo"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
@@ -116,20 +116,9 @@ func WithGitMirrorCredentials(q GitMirrorCredentialStore, github GitMirrorGitHub
 }
 
 func mirrorDestination(value string) (string, string, error) {
-	if strings.Contains(value, "://") {
-		parsed, err := url.Parse(value)
-		if err != nil || parsed.Scheme != "https" || parsed.Host != "github.com" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return "", "", pkgerrors.BadRequest("Mirror destination must name an HTTPS GitHub repository")
-		}
-		value = strings.TrimPrefix(parsed.Path, "/")
-	}
-	parts := strings.Split(strings.TrimSuffix(strings.TrimSuffix(value, "/"), ".git"), "/")
-	if len(parts) != 2 {
-		return "", "", pkgerrors.BadRequest("Mirror destination must name owner/repository")
-	}
-	owner, repo, err := normalizeRepoRef(parts[0], parts[1])
+	owner, repo, err := githubrepo.ParseMirrorDestination(value)
 	if err != nil {
-		return "", "", err
+		return "", "", pkgerrors.BadRequest(err.Error())
 	}
 	return owner, repo, nil
 }

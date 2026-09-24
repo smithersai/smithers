@@ -26,7 +26,6 @@ type Config struct {
 	// ProviderConnections names the Claude and Codex OAuth token endpoints
 	// the bring-your-own-subscription refresh loop calls (RFD-003).
 	ProviderConnections ProviderConnectionsConfig `mapstructure:"provider_connections"`
-	Runner              RunnerConfig              `mapstructure:"runner"`
 	Cleanup             CleanupConfig             `mapstructure:"cleanup"`
 	Blob                BlobConfig                `mapstructure:"blob"`
 	Observability       ObservabilityConfig       `mapstructure:"observability"`
@@ -214,17 +213,13 @@ type ObservabilityConfig struct {
 	CloudTraceProjectID string `mapstructure:"cloud_trace_project_id"`
 
 	// OTelExporter selects the trace exporter backend.
-	// Valid: "", "cloudtrace" (default), "otlp". Env: SMITHERS_OTEL_EXPORTER
+	// Valid: "none" (default), "otlp". A deployment exporter such as Cloud
+	// Trace is injected by the host, not selected here. Env: SMITHERS_OTEL_EXPORTER
 	OTelExporter string `mapstructure:"otel_exporter"`
 
 	// OTLPEndpoint is the OTLP/HTTP trace collector endpoint used when
 	// OTelExporter is "otlp". Env: SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT
 	OTLPEndpoint string `mapstructure:"otlp_endpoint"`
-
-	// MetricsExportTarget controls where metrics are exported.
-	// Valid: "prometheus" (default, exposes /metrics), "cloud_monitoring".
-	// Env: SMITHERS_METRICS_EXPORT_TARGET
-	MetricsExportTarget string `mapstructure:"metrics_export_target"`
 
 	// MetricsProjectID is the GCP project whose Google Managed Prometheus
 	// store backs GET /api/admin/system/metrics/query. If empty, the admin
@@ -461,15 +456,6 @@ type BillingConfig struct {
 	EnterpriseAnnualPriceID  string `mapstructure:"enterprise_annual_price_id"`
 }
 
-type RunnerConfig struct {
-	// Warm pool orchestration is a follow-up scope (RUNNER-003+). These
-	// values are still config-backed now so the API shape stays stable.
-	PoolSize                int    `mapstructure:"pool_size"`
-	WarmTimeout             string `mapstructure:"warm_timeout"`
-	TaskTimeout             string `mapstructure:"task_timeout"`
-	MaxAgentSessionDuration string `mapstructure:"max_agent_session_duration"`
-}
-
 type CleanupConfig struct {
 	AuthInterval                    string `mapstructure:"auth_interval"`
 	WorkflowCacheInterval           string `mapstructure:"workflow_cache_interval"`
@@ -490,11 +476,7 @@ type BlobConfig struct {
 	ReserveBytes int64 `mapstructure:"reserve_bytes"`
 	// TransferBaseURL is assigned by shared composition from the trusted public
 	// API origin; it is not a second externally configurable origin.
-	TransferBaseURL string `mapstructure:"-"`
-	// AgentLogsGCSBucket is the dedicated retention-limited bucket for archived
-	// agent session transcripts. When empty, agent logs fall back to GCSBucket
-	// (the versioned long-retention blobs bucket).
-	AgentLogsGCSBucket           string `mapstructure:"agent_logs_gcs_bucket"`
+	TransferBaseURL              string `mapstructure:"-"`
 	GCSProject                   string `mapstructure:"gcs_project"`
 	SignedURLExpiry              string `mapstructure:"signed_url_expiry"`
 	WorkflowCachePrefix          string `mapstructure:"workflow_cache_prefix"`
@@ -505,16 +487,6 @@ type BlobConfig struct {
 	// per-repository smithers build cache; 0 selects the protocol default of
 	// 16 MiB, which is also the absolute ceiling.
 	BuildCacheArtifactMaxBytes int64 `mapstructure:"build_cache_artifact_max_bytes"`
-}
-
-// AgentLogsBucket returns the bucket agent session transcripts are archived
-// to: the dedicated retention-limited bucket when configured, otherwise the
-// general blobs bucket (the pre-dedicated-bucket behavior).
-func (b BlobConfig) AgentLogsBucket() string {
-	if bucket := strings.TrimSpace(b.AgentLogsGCSBucket); bucket != "" {
-		return bucket
-	}
-	return strings.TrimSpace(b.GCSBucket)
 }
 
 // MetricsQueryProjectID returns the GCP project the admin metrics query
@@ -651,10 +623,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("provider_connections.codex_token_url", "https://auth.openai.com/oauth/token")
 	v.SetDefault("provider_connections.codex_client_id", "app_EMoamEEZ73f0CkXaXp7hrann")
 	v.SetDefault("webhook.github_app_secret", "")
-	v.SetDefault("runner.pool_size", 10)
-	v.SetDefault("runner.warm_timeout", "30s")
-	v.SetDefault("runner.task_timeout", "30m")
-	v.SetDefault("runner.max_agent_session_duration", "30m")
 	v.SetDefault("agents.never_started_timeout", "1h")
 	v.SetDefault("cleanup.auth_interval", "5m")
 	v.SetDefault("cleanup.workflow_cache_interval", "1h")
@@ -664,7 +632,6 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("blob.transfer_signing_key", "")
 	v.SetDefault("blob.max_bytes", 0)
 	v.SetDefault("blob.reserve_bytes", 256*1024*1024)
-	v.SetDefault("blob.agent_logs_gcs_bucket", "")
 	v.SetDefault("blob.gcs_project", "")
 	v.SetDefault("blob.signed_url_expiry", "5m")
 	v.SetDefault("blob.workflow_cache_prefix", "workflow-cache")
@@ -675,9 +642,8 @@ func Load(configFile string) (*Config, error) {
 	v.SetDefault("observability.log_level", "info")
 	v.SetDefault("observability.trace_sample_rate", 0.01)
 	v.SetDefault("observability.cloud_trace_project_id", "")
-	v.SetDefault("observability.otel_exporter", "cloudtrace")
+	v.SetDefault("observability.otel_exporter", "none")
 	v.SetDefault("observability.otlp_endpoint", "")
-	v.SetDefault("observability.metrics_export_target", "prometheus")
 	v.SetDefault("observability.metrics_project_id", "")
 	v.SetDefault("email.sendgrid_api_key", "")
 	v.SetDefault("email.smtp_host", "")
@@ -818,10 +784,6 @@ func Load(configFile string) (*Config, error) {
 		{"billing.enterprise_annual_price_id", "SMITHERS_BILLING_ENTERPRISE_ANNUAL_PRICE_ID"},
 		{"webhook.secret_encryption_key", "SMITHERS_WEBHOOK_SECRET_ENCRYPTION_KEY"},
 		{"webhook.github_app_secret", "SMITHERS_WEBHOOK_GITHUB_APP_SECRET"},
-		{"runner.pool_size", "SMITHERS_RUNNER_POOL_SIZE"},
-		{"runner.warm_timeout", "SMITHERS_RUNNER_WARM_TIMEOUT"},
-		{"runner.task_timeout", "SMITHERS_RUNNER_TASK_TIMEOUT"},
-		{"runner.max_agent_session_duration", "SMITHERS_RUNNER_MAX_AGENT_SESSION_DURATION"},
 		{"agents.never_started_timeout", "SMITHERS_AGENT_NEVER_STARTED_TIMEOUT"},
 		{"cleanup.auth_interval", "SMITHERS_CLEANUP_AUTH_INTERVAL"},
 		{"cleanup.workflow_cache_interval", "SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL"},
@@ -831,7 +793,6 @@ func Load(configFile string) (*Config, error) {
 		{"blob.transfer_signing_key", "SMITHERS_BLOB_TRANSFER_SIGNING_KEY"},
 		{"blob.max_bytes", "SMITHERS_BLOB_MAX_BYTES"},
 		{"blob.reserve_bytes", "SMITHERS_BLOB_RESERVE_BYTES"},
-		{"blob.agent_logs_gcs_bucket", "SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET"},
 		{"blob.gcs_project", "SMITHERS_BLOB_GCS_PROJECT"},
 		{"blob.signed_url_expiry", "SMITHERS_BLOB_SIGNED_URL_EXPIRY"},
 		{"blob.workflow_cache_prefix", "SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX"},
@@ -844,7 +805,6 @@ func Load(configFile string) (*Config, error) {
 		{"observability.cloud_trace_project_id", "SMITHERS_CLOUD_TRACE_PROJECT_ID"},
 		{"observability.otel_exporter", "SMITHERS_OTEL_EXPORTER"},
 		{"observability.otlp_endpoint", "SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT"},
-		{"observability.metrics_export_target", "SMITHERS_METRICS_EXPORT_TARGET"},
 		{"observability.metrics_project_id", "SMITHERS_METRICS_PROJECT_ID"},
 		{"email.sendgrid_api_key", "SMITHERS_EMAIL_SENDGRID_API_KEY"},
 		{"email.smtp_host", "SMITHERS_EMAIL_SMTP_HOST"},

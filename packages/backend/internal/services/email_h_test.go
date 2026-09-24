@@ -59,26 +59,6 @@ func TestEmail_H_DefaultSpawnAndNotificationBranches(t *testing.T) {
 	assert.Empty(t, failing.sent)
 	svc.SendMentionNotification(context.Background(), "mention@example.com", "alice", "Issue #1", "snippet", "")
 	require.Len(t, failing.sent, 1)
-
-	svc.SendSecurityAlert(context.Background(), "security@example.com", email.SecurityAlertTemplateData{})
-	require.Len(t, failing.sent, 1)
-	svc.SendSecurityAlert(context.Background(), "security@example.com", email.SecurityAlertTemplateData{Detail: "new key"})
-	require.Len(t, failing.sent, 2)
-
-	svc.SendDigestNotification(context.Background(), "digest@example.com", email.DigestTemplateData{})
-	require.Len(t, failing.sent, 2)
-	svc.SendDigestNotification(context.Background(), "digest@example.com", email.DigestTemplateData{
-		Items:          []email.DigestItem{{Subject: "Build", Body: "failed", Time: "now"}},
-		TotalCount:     0,
-		UnsubscribeURL: "https://example.test/unsub",
-	})
-	require.Len(t, failing.sent, 3)
-	var sent []email.Message
-	for len(failing.sent) > 0 {
-		sent = append(sent, <-failing.sent)
-	}
-	require.Len(t, sent, 3)
-	assert.Equal(t, "You have 0 notifications — Smithers", sent[2].Subject)
 }
 
 func TestEmail_H_RequestVerificationErrorBranches(t *testing.T) {

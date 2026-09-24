@@ -54,7 +54,7 @@ func (m *MemoryStore) Delete(_ context.Context, key string) error {
 }
 
 // PromoteCreateOnly mirrors the create-only promotion contract for local
-// development. MemoryStore retains only attributes, not payload bytes.
+// development. It moves the attributes and any bytes written through Put.
 func (m *MemoryStore) PromoteCreateOnly(_ context.Context, sourceKey, destinationKey string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -67,6 +67,10 @@ func (m *MemoryStore) PromoteCreateOnly(_ context.Context, sourceKey, destinatio
 	}
 	m.objects[destinationKey] = attrs
 	delete(m.objects, sourceKey)
+	if payload, ok := m.data[sourceKey]; ok {
+		m.data[destinationKey] = payload
+		delete(m.data, sourceKey)
+	}
 	return nil
 }
 

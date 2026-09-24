@@ -37,46 +37,26 @@ func (d *dispatcher) DispatchEvent(ctx context.Context, repoID int64, eventType 
 	if repoID <= 0 {
 		return fmt.Errorf("invalid repository id: %d", repoID)
 	}
-
-	webhooks, err := d.store.ListActiveWebhooksByRepo(ctx, repoID)
+	hooks, err := d.store.ListActiveWebhooksByRepo(ctx, repoID)
 	if err != nil {
 		return err
 	}
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	event := string(eventType)
-	for _, hook := range webhooks {
-		if !hook.IsActive || !isSubscribedToEvent(hook.Events, event) {
-			continue
-		}
-
-		if _, err := d.store.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
-			WebhookID: hook.ID,
-			EventType: event,
-			Payload:   body,
-			Status:    "pending",
-		}); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return d.enqueue(ctx, hooks, eventType, payload)
 }
 
 func (d *dispatcher) DispatchOrgEvent(ctx context.Context, orgID int64, eventType EventType, payload any) error {
 	if orgID <= 0 {
 		return fmt.Errorf("invalid organization id: %d", orgID)
 	}
-
 	hooks, err := d.store.ListActiveWebhooksByOrg(ctx, orgID)
 	if err != nil {
 		return err
 	}
+	return d.enqueue(ctx, hooks, eventType, payload)
+}
 
+// enqueue creates a pending delivery for every active hook subscribed to the event.
+func (d *dispatcher) enqueue(ctx context.Context, hooks []db.Webhook, eventType EventType, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -87,7 +67,6 @@ func (d *dispatcher) DispatchOrgEvent(ctx context.Context, orgID int64, eventTyp
 		if !hook.IsActive || !isSubscribedToEvent(hook.Events, event) {
 			continue
 		}
-
 		if _, err := d.store.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 			WebhookID: hook.ID,
 			EventType: event,
@@ -97,7 +76,6 @@ func (d *dispatcher) DispatchOrgEvent(ctx context.Context, orgID int64, eventTyp
 			return err
 		}
 	}
-
 	return nil
 }
 

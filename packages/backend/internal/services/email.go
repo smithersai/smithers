@@ -262,29 +262,6 @@ func (s *EmailService) SendMentionNotification(ctx context.Context, toEmail stri
 	})
 }
 
-// SendSecurityAlert sends a security alert email to the given address.
-// This is best-effort -- errors are logged but not returned.
-func (s *EmailService) SendSecurityAlert(ctx context.Context, toEmail string, data email.SecurityAlertTemplateData) {
-	s.spawn(func() {
-		htmlBody, textBody, renderErr := email.RenderSecurityAlertEmail(data)
-		if renderErr != nil {
-			slog.Error("failed to render security alert email", "email", toEmail, "error", renderErr)
-			return
-		}
-
-		msg := email.Message{
-			From:    s.cfg.From,
-			To:      []string{toEmail},
-			Subject: "Security Alert — Smithers",
-			HTML:    htmlBody,
-			Text:    textBody,
-		}
-		if sendErr := s.transport.Send(context.Background(), msg); sendErr != nil {
-			slog.Error("failed to send security alert email", "email", toEmail, "error", sendErr)
-		}
-	})
-}
-
 // SendBillingNotification sends a plain billing lifecycle notice.
 // This is best-effort -- errors are logged but not returned.
 func (s *EmailService) SendBillingNotification(ctx context.Context, toEmail string, subject string, body string) {
@@ -305,30 +282,6 @@ func (s *EmailService) SendBillingNotification(ctx context.Context, toEmail stri
 		}
 		if sendErr := s.transport.Send(context.Background(), msg); sendErr != nil {
 			slog.Error("failed to send billing email", "email", toEmail, "error", sendErr)
-		}
-	})
-}
-
-// SendDigestNotification sends a notification digest email to the given address.
-// This is best-effort -- errors are logged but not returned.
-func (s *EmailService) SendDigestNotification(ctx context.Context, toEmail string, data email.DigestTemplateData) {
-	s.spawn(func() {
-		htmlBody, textBody, renderErr := email.RenderDigestEmail(data)
-		if renderErr != nil {
-			slog.Error("failed to render digest email", "email", toEmail, "error", renderErr)
-			return
-		}
-
-		msg := email.Message{
-			From:           s.cfg.From,
-			To:             []string{toEmail},
-			Subject:        fmt.Sprintf("You have %d notifications — Smithers", data.TotalCount),
-			HTML:           htmlBody,
-			Text:           textBody,
-			UnsubscribeURL: data.UnsubscribeURL,
-		}
-		if sendErr := s.transport.Send(context.Background(), msg); sendErr != nil {
-			slog.Error("failed to send digest email", "email", toEmail, "error", sendErr)
 		}
 	})
 }

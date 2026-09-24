@@ -141,11 +141,6 @@ var allEnvKeys = []string{
 	"SMITHERS_PROVIDER_CONNECTIONS_CLAUDE_CLIENT_ID",
 	"SMITHERS_PROVIDER_CONNECTIONS_CODEX_TOKEN_URL",
 	"SMITHERS_PROVIDER_CONNECTIONS_CODEX_CLIENT_ID",
-	// Runner
-	"SMITHERS_RUNNER_POOL_SIZE",
-	"SMITHERS_RUNNER_WARM_TIMEOUT",
-	"SMITHERS_RUNNER_TASK_TIMEOUT",
-	"SMITHERS_RUNNER_MAX_AGENT_SESSION_DURATION",
 	// Cleanup
 	"SMITHERS_CLEANUP_AUTH_INTERVAL",
 	"SMITHERS_CLEANUP_WORKFLOW_CACHE_INTERVAL",
@@ -156,7 +151,6 @@ var allEnvKeys = []string{
 	"SMITHERS_BLOB_TRANSFER_SIGNING_KEY",
 	"SMITHERS_BLOB_MAX_BYTES",
 	"SMITHERS_BLOB_RESERVE_BYTES",
-	"SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET",
 	"SMITHERS_BLOB_GCS_PROJECT",
 	"SMITHERS_BLOB_SIGNED_URL_EXPIRY",
 	"SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX",
@@ -170,7 +164,6 @@ var allEnvKeys = []string{
 	"SMITHERS_CLOUD_TRACE_PROJECT_ID",
 	"SMITHERS_OTEL_EXPORTER",
 	"SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT",
-	"SMITHERS_METRICS_EXPORT_TARGET",
 	"SMITHERS_METRICS_PROJECT_ID",
 	// Email
 	"SMITHERS_EMAIL_SENDGRID_API_KEY",
@@ -442,33 +435,6 @@ func TestLoad_SSHConfigEnvOverrides(t *testing.T) {
 	assert.Equal(t, 4, cfg.SSH.MaxSessionsPerConn)
 }
 
-func TestLoad_RunnerConfigDefaults(t *testing.T) {
-	clearConfigEnv(t)
-	cfg, err := Load("")
-	require.NoError(t, err)
-
-	assert.Equal(t, 10, cfg.Runner.PoolSize)
-	assert.Equal(t, "30s", cfg.Runner.WarmTimeout)
-	assert.Equal(t, "30m", cfg.Runner.TaskTimeout)
-	assert.Equal(t, "30m", cfg.Runner.MaxAgentSessionDuration)
-}
-
-func TestLoad_RunnerConfigEnvOverrides(t *testing.T) {
-	clearConfigEnv(t)
-	t.Setenv("SMITHERS_RUNNER_POOL_SIZE", "25")
-	t.Setenv("SMITHERS_RUNNER_WARM_TIMEOUT", "45s")
-	t.Setenv("SMITHERS_RUNNER_TASK_TIMEOUT", "1h")
-	t.Setenv("SMITHERS_RUNNER_MAX_AGENT_SESSION_DURATION", "2h")
-
-	cfg, err := Load("")
-	require.NoError(t, err)
-
-	assert.Equal(t, 25, cfg.Runner.PoolSize)
-	assert.Equal(t, "45s", cfg.Runner.WarmTimeout)
-	assert.Equal(t, "1h", cfg.Runner.TaskTimeout)
-	assert.Equal(t, "2h", cfg.Runner.MaxAgentSessionDuration)
-}
-
 // TestLoad_AnonSandboxConfigEnvOverrides guards the anonymous-sandbox kill
 // switch and limits: these are the only knobs for the unauthenticated
 // VM-creating route, and prod supplies config through env only.
@@ -520,55 +486,12 @@ func TestLoad_BlobConfigDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "", cfg.Blob.GCSBucket, "blob.gcs_bucket should default to empty string")
-	assert.Equal(t, "", cfg.Blob.AgentLogsGCSBucket, "blob.agent_logs_gcs_bucket should default to empty string")
 	assert.Equal(t, "", cfg.Blob.GCSProject, "blob.gcs_project should default to empty string")
 	assert.Equal(t, "5m", cfg.Blob.SignedURLExpiry, "blob.signed_url_expiry should default to 5m")
 	assert.Equal(t, "workflow-cache", cfg.Blob.WorkflowCachePrefix, "blob.workflow_cache_prefix should default to workflow-cache")
 	assert.Equal(t, "168h", cfg.Blob.WorkflowCacheTTL, "blob.workflow_cache_ttl should default to 168h")
 	assert.Equal(t, int64(2*1024*1024*1024), cfg.Blob.WorkflowCacheRepoQuotaBytes, "blob.workflow_cache_repo_quota_bytes should default to 2 GiB")
 	assert.Equal(t, int64(1024*1024*1024), cfg.Blob.WorkflowCacheArchiveMaxBytes, "blob.workflow_cache_archive_max_bytes should default to 1 GiB")
-}
-
-// TestBlobConfig_AgentLogsBucket verifies transcripts target the dedicated
-// retention-limited bucket when configured and fall back to the general blobs
-// bucket otherwise.
-func TestBlobConfig_AgentLogsBucket(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		cfg  BlobConfig
-		want string
-	}{
-		{
-			name: "dedicated bucket wins",
-			cfg:  BlobConfig{GCSBucket: "smithers-blobs", AgentLogsGCSBucket: "smithers-agent-logs"},
-			want: "smithers-agent-logs",
-		},
-		{
-			name: "empty dedicated bucket falls back to blobs bucket",
-			cfg:  BlobConfig{GCSBucket: "smithers-blobs"},
-			want: "smithers-blobs",
-		},
-		{
-			name: "whitespace dedicated bucket falls back to blobs bucket",
-			cfg:  BlobConfig{GCSBucket: "smithers-blobs", AgentLogsGCSBucket: "   "},
-			want: "smithers-blobs",
-		},
-		{
-			name: "both empty",
-			cfg:  BlobConfig{},
-			want: "",
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, tt.want, tt.cfg.AgentLogsBucket())
-		})
-	}
 }
 
 // TestLoad_BlobConfigEnvOverrides verifies cluster and local adapter settings
@@ -580,7 +503,6 @@ func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	t.Setenv("SMITHERS_BLOB_TRANSFER_SIGNING_KEY", "01234567890123456789012345678901")
 	t.Setenv("SMITHERS_BLOB_MAX_BYTES", "987654")
 	t.Setenv("SMITHERS_BLOB_RESERVE_BYTES", "456789")
-	t.Setenv("SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET", "smithers-agent-logs")
 	t.Setenv("SMITHERS_BLOB_GCS_PROJECT", "smithers-prod")
 	t.Setenv("SMITHERS_BLOB_SIGNED_URL_EXPIRY", "15m")
 	t.Setenv("SMITHERS_BLOB_WORKFLOW_CACHE_PREFIX", "wf-cache")
@@ -596,7 +518,6 @@ func TestLoad_BlobConfigEnvOverrides(t *testing.T) {
 	assert.Equal(t, "01234567890123456789012345678901", cfg.Blob.TransferSigningKey)
 	assert.Equal(t, int64(987654), cfg.Blob.MaxBytes)
 	assert.Equal(t, int64(456789), cfg.Blob.ReserveBytes)
-	assert.Equal(t, "smithers-agent-logs", cfg.Blob.AgentLogsGCSBucket)
 	assert.Equal(t, "smithers-prod", cfg.Blob.GCSProject)
 	assert.Equal(t, "15m", cfg.Blob.SignedURLExpiry)
 	assert.Equal(t, "wf-cache", cfg.Blob.WorkflowCachePrefix)
@@ -613,9 +534,8 @@ func TestLoad_ObservabilityConfigDefaults(t *testing.T) {
 	assert.Equal(t, "info", cfg.Observability.LogLevel, "observability.log_level should default to 'info'")
 	assert.Equal(t, 0.01, cfg.Observability.TraceSampleRate, "observability.trace_sample_rate should default to 0.01")
 	assert.Equal(t, "", cfg.Observability.CloudTraceProjectID, "observability.cloud_trace_project_id should default to empty string")
-	assert.Equal(t, "cloudtrace", cfg.Observability.OTelExporter, "observability.otel_exporter should default to cloudtrace")
+	assert.Equal(t, "none", cfg.Observability.OTelExporter, "observability.otel_exporter should default to none")
 	assert.Equal(t, "", cfg.Observability.OTLPEndpoint, "observability.otlp_endpoint should default to empty string")
-	assert.Equal(t, "prometheus", cfg.Observability.MetricsExportTarget, "observability.metrics_export_target should default to 'prometheus'")
 	assert.Equal(t, "", cfg.Observability.MetricsProjectID, "observability.metrics_project_id should default to empty string")
 }
 
@@ -626,7 +546,6 @@ func TestLoad_ObservabilityConfigEnvOverrides(t *testing.T) {
 	t.Setenv("SMITHERS_CLOUD_TRACE_PROJECT_ID", "smithers-observability-dev")
 	t.Setenv("SMITHERS_OTEL_EXPORTER", "otlp")
 	t.Setenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318")
-	t.Setenv("SMITHERS_METRICS_EXPORT_TARGET", "cloud_monitoring")
 	t.Setenv("SMITHERS_METRICS_PROJECT_ID", "smithers-metrics-dev")
 
 	cfg, err := Load("")
@@ -637,7 +556,6 @@ func TestLoad_ObservabilityConfigEnvOverrides(t *testing.T) {
 	assert.Equal(t, "smithers-observability-dev", cfg.Observability.CloudTraceProjectID)
 	assert.Equal(t, "otlp", cfg.Observability.OTelExporter)
 	assert.Equal(t, "http://collector:4318", cfg.Observability.OTLPEndpoint)
-	assert.Equal(t, "cloud_monitoring", cfg.Observability.MetricsExportTarget)
 	assert.Equal(t, "smithers-metrics-dev", cfg.Observability.MetricsProjectID)
 }
 
@@ -941,12 +859,6 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			CodexTokenURL:  "https://auth.openai.com/oauth/token",
 			CodexClientID:  "app_EMoamEEZ73f0CkXaXp7hrann",
 		},
-		Runner: RunnerConfig{
-			PoolSize:                10,
-			WarmTimeout:             "30s",
-			TaskTimeout:             "30m",
-			MaxAgentSessionDuration: "30m",
-		},
 		Cleanup: CleanupConfig{
 			AuthInterval:                    "5m",
 			WorkflowCacheInterval:           "1h",
@@ -968,9 +880,8 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			LogLevel:            "info",
 			TraceSampleRate:     0.01,
 			CloudTraceProjectID: "",
-			OTelExporter:        "cloudtrace",
+			OTelExporter:        "none",
 			OTLPEndpoint:        "",
-			MetricsExportTarget: "prometheus",
 		},
 		Email: EmailConfig{
 			SendGridAPIKey:             "",
@@ -997,13 +908,13 @@ func TestLoad_FullConfigDefaults(t *testing.T) {
 			WebEditor:            false,
 			ClientErrorReporting: true,
 			ClientMetrics:        true,
-			StackedPRs: true,
-			Workflows:  false,
-			Sandboxes:  true,
-			AutoPush:   true,
-			Issues:     true,
-			Workspaces: true,
-			Secrets:    true,
+			StackedPRs:           true,
+			Workflows:            false,
+			Sandboxes:            true,
+			AutoPush:             true,
+			Issues:               true,
+			Workspaces:           true,
+			Secrets:              true,
 		},
 		RateLimit: RateLimitConfig{
 			TerminalOpenPerMin:       20,
@@ -1448,31 +1359,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 				assert.Equal(t, "https://api.ghe.internal.example", cfg.Auth.GitHubAPIBaseURL)
 			},
 		},
-		// Runner
-		{
-			envKey: "SMITHERS_RUNNER_POOL_SIZE", envValue: "17",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, 17, cfg.Runner.PoolSize)
-			},
-		},
-		{
-			envKey: "SMITHERS_RUNNER_WARM_TIMEOUT", envValue: "99s",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "99s", cfg.Runner.WarmTimeout)
-			},
-		},
-		{
-			envKey: "SMITHERS_RUNNER_TASK_TIMEOUT", envValue: "90m",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "90m", cfg.Runner.TaskTimeout)
-			},
-		},
-		{
-			envKey: "SMITHERS_RUNNER_MAX_AGENT_SESSION_DURATION", envValue: "2h",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "2h", cfg.Runner.MaxAgentSessionDuration)
-			},
-		},
 		// Cleanup
 		{
 			envKey: "SMITHERS_CLEANUP_AUTH_INTERVAL", envValue: "11m",
@@ -1491,12 +1377,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			envKey: "SMITHERS_BLOB_GCS_BUCKET", envValue: "my-custom-bucket",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "my-custom-bucket", cfg.Blob.GCSBucket)
-			},
-		},
-		{
-			envKey: "SMITHERS_BLOB_AGENT_LOGS_GCS_BUCKET", envValue: "my-agent-logs-bucket",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "my-agent-logs-bucket", cfg.Blob.AgentLogsGCSBucket)
 			},
 		},
 		{
@@ -1564,12 +1444,6 @@ func TestLoad_EveryEnvVarOverrides_TableDriven(t *testing.T) {
 			envKey: "SMITHERS_LOG_LEVEL", envValue: "debug",
 			check: func(t *testing.T, cfg *Config) {
 				assert.Equal(t, "debug", cfg.Observability.LogLevel)
-			},
-		},
-		{
-			envKey: "SMITHERS_METRICS_EXPORT_TARGET", envValue: "cloud_monitoring",
-			check: func(t *testing.T, cfg *Config) {
-				assert.Equal(t, "cloud_monitoring", cfg.Observability.MetricsExportTarget)
 			},
 		},
 		{
@@ -1745,14 +1619,13 @@ func TestLoad_ConfigStructFieldCount(t *testing.T) {
 	require.NoError(t, err)
 
 	// Config should have exactly 10 top-level sections:
-	// Server, Database, RepoHost, SSH, Auth, Runner, Cleanup, Blob, Observability, Email
+	// Server, Database, RepoHost, SSH, Auth, Cleanup, Blob, Observability, Email
 	// If a new section is added, this test forces adding tests for it.
 	_ = cfg.Server
 	_ = cfg.Database
 	_ = cfg.RepoHost
 	_ = cfg.SSH
 	_ = cfg.Auth
-	_ = cfg.Runner
 	_ = cfg.Cleanup
 	_ = cfg.Blob
 	_ = cfg.Observability
@@ -1767,7 +1640,6 @@ func TestLoad_ConfigStructFieldCount(t *testing.T) {
 	assert.NotEmpty(t, cfg.RepoHost.URL, "RepoHost section present")
 	assert.NotEmpty(t, cfg.SSH.Addr, "SSH section present")
 	assert.NotEmpty(t, cfg.Auth.SessionDuration, "Auth section present")
-	assert.NotZero(t, cfg.Runner.PoolSize, "Runner section present")
 	assert.NotEmpty(t, cfg.Cleanup.AuthInterval, "Cleanup section present")
 	// Blob defaults to empty strings, so we verify it's accessible
 	_ = cfg.Blob.GCSBucket
@@ -1778,7 +1650,6 @@ func TestLoad_ConfigStructFieldCount(t *testing.T) {
 	_ = cfg.Observability.CloudTraceProjectID
 	_ = cfg.Observability.OTelExporter
 	_ = cfg.Observability.OTLPEndpoint
-	_ = cfg.Observability.MetricsExportTarget
 	_ = cfg.Observability.MetricsProjectID
 	// Email checks
 	assert.Equal(t, 587, cfg.Email.SMTPPort, "Email section present")
@@ -1812,24 +1683,12 @@ server:
 		"config.yaml in current directory should be loaded when Load(\"\") is called")
 }
 
-// TestLoad_SpecCompliance_RunnerConfig verifies runner defaults match spec.
-func TestLoad_SpecCompliance_RunnerConfig(t *testing.T) {
-	clearConfigEnv(t)
-	cfg, err := Load("")
-	require.NoError(t, err)
-
-	assert.Equal(t, 10, cfg.Runner.PoolSize, "spec: runner.pool_size=10")
-	assert.Equal(t, "30s", cfg.Runner.WarmTimeout, "spec: runner.warm_timeout=30s")
-	assert.Equal(t, "30m", cfg.Runner.TaskTimeout, "spec: runner.task_timeout=30m")
-	assert.Equal(t, "30m", cfg.Runner.MaxAgentSessionDuration, "spec: runner.max_agent_session_duration=30m")
-}
-
 // TestLoad_AllEnvKeysMatchBindEnvCalls verifies that the allEnvKeys list
 // used by clearConfigEnv contains exactly the env vars that Load() binds.
 // This ensures test isolation covers all env vars.
 func TestLoad_AllEnvKeysMatchBindEnvCalls(t *testing.T) {
 	// The allEnvKeys list should include every unique env name that Load binds.
-	assert.Len(t, allEnvKeys, 197,
+	assert.Len(t, allEnvKeys, 191,
 		"allEnvKeys should match the number of BindEnv calls in Load()")
 	assert.ElementsMatch(t, configEnvKeyLiterals(t), allEnvKeys,
 		"allEnvKeys should match the env-key string literals in config.go")
@@ -1938,7 +1797,7 @@ func TestLoad_EnvOverrideMidFlight(t *testing.T) {
 // config struct without updating this test, ensuring test coverage keeps pace.
 func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 	expectedFieldCounts := map[string]int{
-		"Config":              17, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Runner, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit
+		"Config":              16, // Server, Database, RepoHost, Sandbox, SSH, Auth, Billing, Webhook, ProviderConnections, Cleanup, Blob, Observability, Email, FeatureFlags, RateLimit
 		"ServerConfig":        8,  // Addr, PublicURL, ReadTimeoutSecs, WriteTimeoutSecs, ShutdownTimeout, SSHHost, AllowedOrigins, TrustedProxyHops
 		"DatabaseConfig":      5,  // URL, MaxConns, MinConns, MaxConnLifetime, MaxConnIdleTime
 		"RepoHostConfig":      3,  // URL, AuthToken, PushHookCallbackToken
@@ -1948,10 +1807,9 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		"BillingConfig":       16, // authority mode, Stripe credentials, portal URLs, and plan price ids
 		"WebhookConfig":       2,  // SecretEncryptionKey, GitHubAppSecret
 		"AgentsConfig":        1,
-		"RunnerConfig":        4,  // PoolSize, WarmTimeout, TaskTimeout, MaxAgentSessionDuration
 		"CleanupConfig":       3,  // AuthInterval, WorkflowCacheInterval, SandboxEgressAuditRetentionDays
-		"BlobConfig":          14, // cluster/local adapter settings, shared transfer origin, and workflow cache policy
-		"ObservabilityConfig": 7,  // LogLevel, TraceSampleRate, CloudTraceProjectID, OTelExporter, OTLPEndpoint, MetricsExportTarget, MetricsProjectID
+		"BlobConfig":          13, // cluster/local adapter settings, shared transfer origin, and workflow cache policy
+		"ObservabilityConfig": 6,  // LogLevel, TraceSampleRate, CloudTraceProjectID, OTelExporter, OTLPEndpoint, MetricsProjectID
 		"EmailConfig":         11, // SendGridAPIKey, SMTPHost, SMTPPort, SMTPUser, SMTPPass, SMTPFrom, SESRegion, SESFrom, From, RateLimitPerSecond, RateLimitPerRecipientPerHr
 		"FeatureFlagsConfig":  37, // 11 base + 4 remote-client rollout + 21 ticket-12 MVP flags + Changesets (orgs is not a flag)
 		"RateLimitConfig":     7,  // TerminalOpenPerMin, TerminalActiveMax, ApprovalDecidePerMin, AppTimelineWritePerMin, ShareListingEventPerMin, AnonSandboxCreatePerHour, BuildCachePerMinute
@@ -1968,7 +1826,6 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 		reflect.TypeOf(AuthConfig{}),
 		reflect.TypeOf(BillingConfig{}),
 		reflect.TypeOf(WebhookConfig{}),
-		reflect.TypeOf(RunnerConfig{}),
 		reflect.TypeOf(CleanupConfig{}),
 		reflect.TypeOf(BlobConfig{}),
 		reflect.TypeOf(ObservabilityConfig{}),
@@ -1991,7 +1848,7 @@ func TestLoad_ConfigStructFieldCountReflection(t *testing.T) {
 			totalSubFields += count
 		}
 	}
-	assert.Equal(t, 193, totalSubFields,
+	assert.Equal(t, 187, totalSubFields,
 		"total leaf fields across all config sub-structs")
 }
 
@@ -2010,7 +1867,6 @@ func TestLoad_AllFieldsHaveMapstructureTags(t *testing.T) {
 		reflect.TypeOf(AuthConfig{}),
 		reflect.TypeOf(BillingConfig{}),
 		reflect.TypeOf(WebhookConfig{}),
-		reflect.TypeOf(RunnerConfig{}),
 		reflect.TypeOf(CleanupConfig{}),
 		reflect.TypeOf(BlobConfig{}),
 		reflect.TypeOf(ObservabilityConfig{}),
@@ -2046,7 +1902,6 @@ func TestLoad_MapstructureTagsMatchViperKeys(t *testing.T) {
 		"Billing":             "billing",
 		"Webhook":             "webhook",
 		"ProviderConnections": "provider_connections",
-		"Runner":              "runner",
 		"Cleanup":             "cleanup",
 		"Blob":                "blob",
 		"Observability":       "observability",

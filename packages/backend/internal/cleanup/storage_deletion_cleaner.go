@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
@@ -147,17 +146,11 @@ func deleteClaimedStorageDeletion(ctx context.Context, queries storageDeletionTx
 // deletion triggers durably enqueued. A row remains metered until every key in
 // its allocation has been permanently purged.
 type StorageDeletionCleaner struct {
+	periodicRunner
 	coordinator  storageDeletionCoordinator
 	store        blob.Store
-	interval     time.Duration
 	batchSize    int32
 	purgeTimeout time.Duration
-	ticker       ticker
-	newTicker    func(time.Duration) ticker
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
-	mu           sync.Mutex
-	running      bool
 }
 
 func NewStorageDeletionCleaner(pool *pgxpool.Pool, store blob.Store, interval time.Duration, batchSize int32) *StorageDeletionCleaner {
@@ -165,55 +158,30 @@ func NewStorageDeletionCleaner(pool *pgxpool.Pool, store blob.Store, interval ti
 }
 
 func newStorageDeletionCleaner(coordinator storageDeletionCoordinator, store blob.Store, interval time.Duration, batchSize int32) *StorageDeletionCleaner {
-	if interval <= 0 {
-		interval = defaultStorageDeletionInterval
-	}
 	if batchSize <= 0 {
 		batchSize = 250
 	}
-	return &StorageDeletionCleaner{
+	c := &StorageDeletionCleaner{
 		coordinator:  coordinator,
 		store:        store,
-		interval:     interval,
 		batchSize:    batchSize,
 		purgeTimeout: storageDeletionPurgeTimeout,
-		stopCh:       make(chan struct{}),
-		newTicker: func(d time.Duration) ticker {
-			return &realTicker{t: time.NewTicker(d)}
-		},
 	}
+	c.init("storage_deletion", interval, defaultStorageDeletionInterval)
+	return c
 }
 
 func (c *StorageDeletionCleaner) Start(ctx context.Context) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.running {
-		return
-	}
-	c.running = true
-	c.ticker = c.newTicker(c.interval)
-	c.wg.Add(1)
-	go c.loop(ctx)
-}
-
-func (c *StorageDeletionCleaner) loop(ctx context.Context) {
-	defer c.wg.Done()
-	defer c.ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-c.stopCh:
-			return
-		case <-c.ticker.Chan():
-			processed, err := c.sweep(ctx)
-			if err != nil {
-				slog.Warn("storage deletion cleanup failed", "processed", processed, "error", err)
-			} else if processed > 0 {
-				slog.Info("storage deletion cleanup completed", "processed", processed)
-			}
+	c.start(ctx, func(ctx context.Context) error {
+		processed, err := c.sweep(ctx)
+		if err != nil {
+			return fmt.Errorf("processed %d: %w", processed, err)
 		}
-	}
+		if processed > 0 {
+			slog.Info("storage deletion cleanup completed", "processed", processed)
+		}
+		return nil
+	})
 }
 
 func (c *StorageDeletionCleaner) sweep(ctx context.Context) (int, error) {
@@ -246,20 +214,4 @@ func (c *StorageDeletionCleaner) sweep(ctx context.Context) (int, error) {
 		}
 	}
 	return processed, errors.Join(errs...)
-}
-
-func (c *StorageDeletionCleaner) Stop() {
-	c.mu.Lock()
-	if !c.running {
-		c.mu.Unlock()
-		return
-	}
-	c.running = false
-	close(c.stopCh)
-	c.mu.Unlock()
-	c.wg.Wait()
-}
-
-func (c *StorageDeletionCleaner) Wait() {
-	c.wg.Wait()
 }

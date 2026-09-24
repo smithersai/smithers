@@ -180,7 +180,7 @@ func envOrDefault(name, fallback string) string {
 }
 
 // observabilityFromEnv reads OpenTelemetry configuration from the same env
-// vars the API server uses. Cloud Trace remains the default exporter; set
+// vars the API server uses. Tracing is off by default; set
 // SMITHERS_OTEL_EXPORTER=otlp plus SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT to send
 // traces to the self-hosted collector.
 func observabilityFromEnv() (config.ObservabilityConfig, error) {
@@ -197,7 +197,7 @@ func observabilityFromEnv() (config.ObservabilityConfig, error) {
 	}
 	return config.ObservabilityConfig{
 		CloudTraceProjectID: strings.TrimSpace(os.Getenv("SMITHERS_CLOUD_TRACE_PROJECT_ID")),
-		OTelExporter:        envOrDefault("SMITHERS_OTEL_EXPORTER", "cloudtrace"),
+		OTelExporter:        envOrDefault("SMITHERS_OTEL_EXPORTER", "none"),
 		OTLPEndpoint:        strings.TrimSpace(os.Getenv("SMITHERS_OTEL_EXPORTER_OTLP_ENDPOINT")),
 		TraceSampleRate:     sampleRate,
 	}, nil

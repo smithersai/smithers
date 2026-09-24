@@ -1,14 +1,25 @@
 package email
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"mime"
+	"mime/quotedprintable"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strings"
+	"time"
 )
+
+// defaultSMTPIOTimeout bounds a whole SMTP session so a hung or tarpitting
+// server cannot block a send goroutine forever.
+const defaultSMTPIOTimeout = 30 * time.Second
 
 // SMTPConfig holds SMTP server connection details.
 type SMTPConfig struct {
@@ -25,6 +36,7 @@ type SMTPTransport struct {
 	dialContext    func(ctx context.Context, network, addr string) (net.Conn, error)
 	dialTLSContext func(ctx context.Context, network, addr string, config *tls.Config) (net.Conn, error)
 	newClient      func(conn net.Conn, host string) (smtpClient, error)
+	ioTimeout      time.Duration
 }
 
 // NewSMTPTransport creates a new SMTPTransport with the given config.
@@ -33,8 +45,9 @@ func NewSMTPTransport(cfg SMTPConfig) *SMTPTransport {
 		cfg:         cfg,
 		dialContext: (&net.Dialer{}).DialContext,
 		dialTLSContext: func(ctx context.Context, network, addr string, config *tls.Config) (net.Conn, error) {
-			return tls.DialWithDialer(&net.Dialer{}, network, addr, config)
+			return (&tls.Dialer{Config: config}).DialContext(ctx, network, addr)
 		},
+		ioTimeout: defaultSMTPIOTimeout,
 		newClient: func(conn net.Conn, host string) (smtpClient, error) {
 			return smtp.NewClient(conn, host)
 		},
@@ -86,7 +99,19 @@ type smtpClient interface {
 	StartTLS(config *tls.Config) error
 }
 
+// sessionDeadline is the earlier of the context deadline and the I/O timeout.
+func (t *SMTPTransport) sessionDeadline(ctx context.Context) time.Time {
+	deadline := time.Now().Add(t.ioTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	return deadline
+}
+
 func (t *SMTPTransport) connect(ctx context.Context, addr string) (smtpClient, error) {
+	deadline := t.sessionDeadline(ctx)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		ServerName: t.cfg.Host,
@@ -96,6 +121,10 @@ func (t *SMTPTransport) connect(ctx context.Context, addr string) (smtpClient, e
 		conn, err := t.dialTLSContext(ctx, "tcp", addr, tlsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("email: connect SMTPS %s: %w", addr, err)
+		}
+		if err := conn.SetDeadline(deadline); err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("email: set SMTP deadline: %w", err)
 		}
 		client, err := t.newClient(conn, t.cfg.Host)
 		if err != nil {
@@ -108,6 +137,10 @@ func (t *SMTPTransport) connect(ctx context.Context, addr string) (smtpClient, e
 	conn, err := t.dialContext(ctx, "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("email: connect SMTP %s: %w", addr, err)
+	}
+	if err := conn.SetDeadline(deadline); err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("email: set SMTP deadline: %w", err)
 	}
 
 	client, err := t.newClient(conn, t.cfg.Host)
@@ -172,10 +205,12 @@ func (t *SMTPTransport) sendWithClient(client smtpClient, from string, to []stri
 	return nil
 }
 
-// buildMIMEMessage constructs a multipart MIME email with both HTML and plain text.
+// buildMIMEMessage constructs an RFC 5322 message with Date and Message-ID
+// headers, an RFC 2047 encoded subject, and quoted-printable parts so no line
+// exceeds the 998-byte limit and 8-bit text survives 7-bit relays.
 func buildMIMEMessage(from string, msg Message) []byte {
 	var b strings.Builder
-	boundary := "==SmithersEmailBoundary=="
+	boundary := "smithers-" + randomHex(16)
 
 	from = sanitizeMIMEHeaderField(from)
 	to := make([]string, len(msg.To))
@@ -185,47 +220,53 @@ func buildMIMEMessage(from string, msg Message) []byte {
 
 	b.WriteString("From: " + from + "\r\n")
 	b.WriteString("To: " + strings.Join(to, ", ") + "\r\n")
-	b.WriteString("Subject: " + sanitizeMIMEHeaderField(msg.Subject) + "\r\n")
+	b.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", sanitizeMIMEHeaderField(msg.Subject)) + "\r\n")
+	b.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
+	b.WriteString("Message-ID: <" + randomHex(16) + "@" + messageIDDomain(from) + ">\r\n")
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("X-Mailer: Smithers\r\n")
 
-	// RFC 8058: List-Unsubscribe and one-click unsubscribe.
-	if msg.UnsubscribeURL != "" {
-		b.WriteString("List-Unsubscribe: <" + sanitizeMIMEHeaderField(msg.UnsubscribeURL) + ">\r\n")
-		b.WriteString("List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
-	}
-
-	// Additional custom headers.
-	for k, v := range msg.Headers {
-		b.WriteString(sanitizeMIMEHeaderField(k) + ": " + sanitizeMIMEHeaderField(v) + "\r\n")
-	}
-
 	if msg.Text != "" && msg.HTML != "" {
-		// Multipart message
 		b.WriteString("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n")
 		b.WriteString("\r\n")
 		b.WriteString("--" + boundary + "\r\n")
-		b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-		b.WriteString("\r\n")
-		b.WriteString(msg.Text)
-		b.WriteString("\r\n")
-		b.WriteString("--" + boundary + "\r\n")
-		b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-		b.WriteString("\r\n")
-		b.WriteString(msg.HTML)
-		b.WriteString("\r\n")
-		b.WriteString("--" + boundary + "--\r\n")
+		writeMIMEPart(&b, "text/plain", msg.Text)
+		b.WriteString("\r\n--" + boundary + "\r\n")
+		writeMIMEPart(&b, "text/html", msg.HTML)
+		b.WriteString("\r\n--" + boundary + "--\r\n")
 	} else if msg.HTML != "" {
-		b.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
-		b.WriteString("\r\n")
-		b.WriteString(msg.HTML)
+		writeMIMEPart(&b, "text/html", msg.HTML)
 	} else {
-		b.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-		b.WriteString("\r\n")
-		b.WriteString(msg.Text)
+		writeMIMEPart(&b, "text/plain", msg.Text)
 	}
 
 	return []byte(b.String())
+}
+
+func writeMIMEPart(b *strings.Builder, contentType, body string) {
+	b.WriteString("Content-Type: " + contentType + "; charset=UTF-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n")
+	b.WriteString("\r\n")
+	var encoded bytes.Buffer
+	w := quotedprintable.NewWriter(&encoded)
+	_, _ = w.Write([]byte(body))
+	_ = w.Close()
+	b.WriteString(encoded.String())
+}
+
+func messageIDDomain(from string) string {
+	if addr, err := mail.ParseAddress(from); err == nil {
+		if at := strings.LastIndexByte(addr.Address, '@'); at >= 0 && at < len(addr.Address)-1 {
+			return addr.Address[at+1:]
+		}
+	}
+	return "smithers.invalid"
+}
+
+func randomHex(n int) string {
+	buf := make([]byte, n)
+	_, _ = rand.Read(buf)
+	return hex.EncodeToString(buf)
 }
 
 func sanitizeMIMEHeaderField(s string) string {

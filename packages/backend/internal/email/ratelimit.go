@@ -3,6 +3,7 @@ package email
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -16,6 +17,8 @@ type RateLimitConfig struct {
 }
 
 // RateLimitedTransport wraps a Transport and enforces rate limits on email sends.
+// Limits are per process: N replicas together admit N times the configured
+// rate.
 type RateLimitedTransport struct {
 	inner Transport
 	cfg   RateLimitConfig
@@ -65,44 +68,52 @@ func (t *RateLimitedTransport) Send(ctx context.Context, msg Message) error {
 	return t.inner.Send(ctx, msg)
 }
 
+// checkLimits admits a message only if every limit allows it, and spends
+// quota only for an admitted message.
 func (t *RateLimitedTransport) checkLimits(msg Message) error {
 	now := time.Now()
 
 	// Global rate limit: refill tokens every second.
-	if t.cfg.MaxPerSecond > 0 {
-		elapsed := now.Sub(t.lastReset)
-		if elapsed >= time.Second {
-			t.tokens = t.cfg.MaxPerSecond
-			t.lastReset = now
-		}
-		if t.tokens <= 0 {
-			return fmt.Errorf("email: global rate limit exceeded (%d/sec)", t.cfg.MaxPerSecond)
-		}
-		t.tokens--
+	if t.cfg.MaxPerSecond > 0 && now.Sub(t.lastReset) >= time.Second {
+		t.tokens = t.cfg.MaxPerSecond
+		t.lastReset = now
+	}
+	if t.cfg.MaxPerSecond > 0 && t.tokens <= 0 {
+		return fmt.Errorf("email: global rate limit exceeded (%d/sec)", t.cfg.MaxPerSecond)
 	}
 
-	// Per-recipient rate limit.
+	// Per-recipient rate limit. Addresses are keyed case-insensitively so a
+	// case change cannot bypass the cap.
+	var recipients []string
 	if t.cfg.MaxPerRecipientPerHour > 0 {
 		for recipient, w := range t.recipientCounts {
 			if now.After(w.resetAt) {
 				delete(t.recipientCounts, recipient)
 			}
 		}
-		for _, recipient := range msg.To {
-			w, exists := t.recipientCounts[recipient]
-			if !exists {
-				t.recipientCounts[recipient] = &recipientWindow{
-					count:   1,
-					resetAt: now.Add(time.Hour),
-				}
+		seen := make(map[string]struct{}, len(msg.To))
+		for _, to := range msg.To {
+			recipient := strings.ToLower(strings.TrimSpace(to))
+			if _, dup := seen[recipient]; dup {
 				continue
 			}
-			if w.count >= t.cfg.MaxPerRecipientPerHour {
-				return fmt.Errorf("email: per-recipient rate limit exceeded for %s (%d/hour)", recipient, t.cfg.MaxPerRecipientPerHour)
+			seen[recipient] = struct{}{}
+			if w, ok := t.recipientCounts[recipient]; ok && w.count >= t.cfg.MaxPerRecipientPerHour {
+				return fmt.Errorf("email: per-recipient rate limit exceeded for %s (%d/hour)", to, t.cfg.MaxPerRecipientPerHour)
 			}
-			w.count++
+			recipients = append(recipients, recipient)
 		}
 	}
 
+	if t.cfg.MaxPerSecond > 0 {
+		t.tokens--
+	}
+	for _, recipient := range recipients {
+		if w, ok := t.recipientCounts[recipient]; ok {
+			w.count++
+			continue
+		}
+		t.recipientCounts[recipient] = &recipientWindow{count: 1, resetAt: now.Add(time.Hour)}
+	}
 	return nil
 }

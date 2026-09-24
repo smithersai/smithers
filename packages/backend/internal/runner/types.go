@@ -22,9 +22,8 @@ type RunnerPool struct {
 	now              func() time.Time
 }
 
-// NOTE: RUNNER-002 intentionally focuses on runner lifecycle + task queueing.
-// Warm-pool sizing/orchestration (pool_size, warm_timeout, task_timeout) is
-// tracked for follow-up runner-manager integration work.
+// NewRunnerPool tracks runner lifecycle and task queueing. It has no warm-pool
+// sizing; the task timeout lives in the executor configuration.
 func NewRunnerPool(store Store, cfg Config) *RunnerPool {
 	timeout := cfg.HeartbeatTimeout
 	if timeout <= 0 {

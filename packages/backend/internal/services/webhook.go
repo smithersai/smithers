@@ -18,6 +18,7 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/webhook"
+	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 type CreateWebhookInput struct {
@@ -180,6 +181,9 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, actor *db.User, owne
 	if events == nil {
 		events = []string{}
 	}
+	if err := webhooks.ValidateSubscribedEvents(events); err != nil {
+		return db.Webhook{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Webhook", Field: "events", Code: "invalid"})
+	}
 
 	encryptedSecret, err := s.secretCodec.EncryptString(req.Secret)
 	if err != nil {
@@ -267,6 +271,9 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, actor *db.User, owne
 	events := current.Events
 	if req.Events != nil {
 		events = *req.Events
+		if err := webhooks.ValidateSubscribedEvents(events); err != nil {
+			return db.Webhook{}, pkgerrors.ValidationFailed(pkgerrors.FieldError{Resource: "Webhook", Field: "events", Code: "invalid"})
+		}
 	}
 
 	isActive := current.IsActive

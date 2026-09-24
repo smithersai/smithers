@@ -14,11 +14,6 @@ type Message struct {
 	Subject string
 	HTML    string
 	Text    string
-	// UnsubscribeURL is the one-click unsubscribe URL. When set, transports
-	// should include List-Unsubscribe and List-Unsubscribe-Post headers (RFC 8058).
-	UnsubscribeURL string
-	// Headers holds additional custom headers to include in the email.
-	Headers map[string]string
 }
 
 // Transport is the interface for sending email messages.

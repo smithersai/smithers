@@ -12,6 +12,9 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/smithersai/smithers/packages/backend/internal/githubrepo"
+	webhookevents "github.com/smithersai/smithers/packages/backend/internal/webhooks"
 )
 
 var (
@@ -132,8 +135,8 @@ func parseConfigFile(content []byte) (ConfigFile, error) {
 					return ConfigFile{}, fmt.Errorf("%s: repository.mirror.destination is required when repository.mirror.enabled is true", configFilePath)
 				}
 				destination := strings.TrimSpace(*cfg.Repository.Mirror.Destination)
-				if _, err := url.ParseRequestURI(destination); err != nil {
-					return ConfigFile{}, fmt.Errorf("%s: repository.mirror.destination must be a valid URL", configFilePath)
+				if _, _, err := githubrepo.ParseMirrorDestination(destination); err != nil {
+					return ConfigFile{}, fmt.Errorf("%s: repository.mirror.destination: %w", configFilePath, err)
 				}
 				cfg.Repository.Mirror.Destination = &destination
 			}
@@ -344,6 +347,9 @@ func parseWebhooksFile(content []byte) ([]WebhookDefinition, error) {
 
 		events, err := normalizeWebhookEvents(hook.Events)
 		if err != nil {
+			return nil, fmt.Errorf("%s: webhooks.events: %w", webhooksFilePath, err)
+		}
+		if err := webhookevents.ValidateSubscribedEvents(events); err != nil {
 			return nil, fmt.Errorf("%s: webhooks.events: %w", webhooksFilePath, err)
 		}
 		if len(events) == 0 {

@@ -184,6 +184,9 @@ func redactURLAttributes(attrs []attribute.KeyValue) []attribute.KeyValue {
 					parsed.Path, parsed.RawPath = path, ""
 				}
 				parsed.RawQuery = redactSecretQuery(parsed.RawQuery)
+				if parsed.User != nil {
+					parsed.User = url.User("REDACTED")
+				}
 				redacted = parsed.String()
 			}
 		default:
@@ -202,14 +205,35 @@ func redactURLAttributes(attrs []attribute.KeyValue) []attribute.KeyValue {
 	return clean
 }
 
-// Preserve query order and escaping while stripping the noVNC password and
-// token-bearing websockify path, including percent-encoded parameter names.
+// secretQueryKeys are query parameter names whose values are credentials or
+// one-time grants. Outbound client spans record url.full including the query,
+// and proxies forward user queries unchanged, so these never reach a trace.
+var secretQueryKeys = map[string]struct{}{
+	"password": {}, "path": {}, "token": {}, "access_token": {}, "refresh_token": {},
+	"id_token": {}, "code": {}, "state": {}, "key": {}, "api_key": {}, "apikey": {},
+	"sig": {}, "signature": {}, "x-goog-signature": {}, "x-goog-credential": {},
+	"x-amz-signature": {}, "x-amz-credential": {}, "x-amz-security-token": {},
+	"client_secret": {}, "secret": {}, "auth": {}, "authorization": {}, "ticket": {},
+	"jwt": {}, "session": {},
+}
+
+func isSecretQueryKey(key string) bool {
+	key = strings.ToLower(key)
+	if _, ok := secretQueryKeys[key]; ok {
+		return true
+	}
+	return strings.HasSuffix(key, "token") || strings.HasSuffix(key, "secret") ||
+		strings.HasSuffix(key, "signature") || strings.HasSuffix(key, "password")
+}
+
+// Preserve query order and escaping while stripping credential values,
+// including percent-encoded parameter names.
 func redactSecretQuery(query string) string {
 	pairs := strings.Split(query, "&")
 	for i, pair := range pairs {
 		key, _, hasValue := strings.Cut(pair, "=")
 		decoded, err := url.QueryUnescape(key)
-		if err == nil && hasValue && (strings.EqualFold(decoded, "password") || strings.EqualFold(decoded, "path")) {
+		if err == nil && hasValue && isSecretQueryKey(decoded) {
 			pairs[i] = key + "=REDACTED"
 		}
 	}

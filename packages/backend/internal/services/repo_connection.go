@@ -3,17 +3,15 @@ package services
 import (
 	"context"
 	stdErrors "errors"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/smithersai/smithers/packages/backend/internal/githubrepo"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
-
-var githubRepositoryNameRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
 
 const upsertRepoConnectionSQL = `
 INSERT INTO repo_connections (
@@ -231,23 +229,9 @@ func (s *RepoConnectionService) GetRepoConnectionStatus(
 }
 
 func normalizeRepoRef(owner string, repo string) (string, string, error) {
-	normalizedOwner := strings.ToLower(strings.TrimSpace(owner))
-	normalizedRepo := strings.ToLower(strings.TrimSpace(repo))
-	if normalizedOwner == "" {
-		return "", "", pkgerrors.BadRequest("owner is required")
-	}
-	if normalizedRepo == "" {
-		return "", "", pkgerrors.BadRequest("repository name is required")
-	}
-	if !ownerSegmentRegex.MatchString(normalizedOwner) || len(normalizedOwner) > 255 {
-		return "", "", pkgerrors.BadRequest("invalid owner")
-	}
-	// GitHub repository names use a slightly broader namespace than local
-	// Smithers repositories. In particular, leading-dot repositories such as
-	// the well-known .github repository are valid source references.
-	if normalizedRepo == "." || normalizedRepo == ".." ||
-		!githubRepositoryNameRegex.MatchString(normalizedRepo) || len(normalizedRepo) > 100 {
-		return "", "", pkgerrors.BadRequest("invalid repository name")
+	normalizedOwner, normalizedRepo, err := githubrepo.NormalizeRef(owner, repo)
+	if err != nil {
+		return "", "", pkgerrors.BadRequest(err.Error())
 	}
 	return normalizedOwner, normalizedRepo, nil
 }

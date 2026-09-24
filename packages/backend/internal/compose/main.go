@@ -243,8 +243,10 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		tp, err = otelInit(ctx, cfg.Observability)
 	}
 	if err != nil {
-		slog.Warn("failed to initialize OpenTelemetry", "error", err)
-		// Continue without tracing - don't fail startup
+		// Tracing defaults to "none", so an error means an exporter was
+		// configured and cannot be built. Fail instead of running untraced.
+		slog.Error("failed to initialize OpenTelemetry", "error", err)
+		return err
 	}
 	if tp != nil {
 		defer func() {

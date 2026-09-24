@@ -171,9 +171,8 @@ func ParseCODEOWNERS(content string) ([]CodeownersRule, error) {
 		if len(fields) == 0 {
 			continue
 		}
-		if len(fields) < 2 {
-			return nil, fmt.Errorf("line %d: CODEOWNERS rule has no owners", lineNo)
-		}
+		// A pattern with no owners is valid: it clears ownership for the
+		// paths it matches.
 		r := CodeownersRule{pattern: fields[0]}
 		for _, raw := range fields[1:] {
 			raw = strings.TrimPrefix(raw, "@")
@@ -194,6 +193,8 @@ type Tree struct {
 	Files      map[string]File
 	Codeowners []CodeownersRule
 }
+
+var codeownersLocations = []string{".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"}
 
 type FileLoader interface {
 	LoadFile(ctx context.Context, revision, filePath string) (content string, found bool, err error)
@@ -232,15 +233,20 @@ func LoadTree(ctx context.Context, loader FileLoader, revision string, paths []s
 		}
 		tree.Files[dir] = parsed
 	}
-	content, found, err := loader.LoadFile(ctx, revision, "CODEOWNERS")
-	if err != nil {
-		return Tree{}, fmt.Errorf("load CODEOWNERS: %w", err)
-	}
-	if found {
+	// GitHub reads the first CODEOWNERS it finds in this order.
+	for _, filePath := range codeownersLocations {
+		content, found, err := loader.LoadFile(ctx, revision, filePath)
+		if err != nil {
+			return Tree{}, fmt.Errorf("load %s: %w", filePath, err)
+		}
+		if !found {
+			continue
+		}
 		tree.Codeowners, err = ParseCODEOWNERS(content)
 		if err != nil {
-			return Tree{}, fmt.Errorf("parse CODEOWNERS: %w", err)
+			return Tree{}, fmt.Errorf("parse %s: %w", filePath, err)
 		}
+		break
 	}
 	return tree, nil
 }
@@ -301,7 +307,7 @@ func (t Tree) Resolve(filePath string) PathResolution {
 	if !hadOwnersFile {
 		for _, r := range t.Codeowners {
 			if matchCodeowners(r.pattern, filePath) {
-				owners = append([]Principal(nil), r.owners...) // last rule wins
+				owners = append(make([]Principal, 0, len(r.owners)), r.owners...) // last rule wins
 			}
 		}
 	}
@@ -385,17 +391,62 @@ func cleanRepoPath(p string) string {
 	return p
 }
 
+// matchCodeowners follows GitHub's CODEOWNERS rules, which are gitignore
+// rules: a leading or middle slash anchors the pattern to the root, a
+// trailing slash matches only directories, a pattern that matches a
+// directory covers everything under it, and "dir/*" covers only the files
+// directly in dir.
 func matchCodeowners(pattern, p string) bool {
 	pattern = strings.TrimSpace(pattern)
-	anchored := strings.HasPrefix(pattern, "/")
+	dirOnly := strings.HasSuffix(pattern, "/")
+	pattern = strings.TrimSuffix(pattern, "/")
+	anchored := strings.Contains(pattern, "/")
 	pattern = strings.TrimPrefix(pattern, "/")
-	if strings.HasSuffix(pattern, "/") {
-		pattern += "**"
+	if pattern == "" || p == "" {
+		return false
 	}
-	if !anchored && !strings.Contains(pattern, "/") {
-		pattern = "**/" + pattern
+	re := codeownersRegexp(pattern, anchored)
+	coversDescendants := pattern != "*" && !strings.HasSuffix(pattern, "/*")
+	segments := strings.Split(p, "/")
+	for i := 1; i <= len(segments); i++ {
+		isFile := i == len(segments)
+		if (isFile && dirOnly) || (!isFile && !coversDescendants) {
+			continue
+		}
+		if re.MatchString(strings.Join(segments[:i], "/")) {
+			return true
+		}
 	}
-	return matchGlob(pattern, p)
+	return false
+}
+
+func codeownersRegexp(pattern string, anchored bool) *regexp.Regexp {
+	var b strings.Builder
+	b.WriteString("^")
+	if !anchored {
+		b.WriteString("(?:.*/)?")
+	}
+	for i := 0; i < len(pattern); {
+		switch {
+		case strings.HasPrefix(pattern[i:], "**/"):
+			b.WriteString("(?:.*/)?")
+			i += 3
+		case strings.HasPrefix(pattern[i:], "**"):
+			b.WriteString(".*")
+			i += 2
+		case pattern[i] == '*':
+			b.WriteString("[^/]*")
+			i++
+		case pattern[i] == '?':
+			b.WriteString("[^/]")
+			i++
+		default:
+			b.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+			i++
+		}
+	}
+	b.WriteString("$")
+	return regexp.MustCompile(b.String())
 }
 
 // matchGlob implements the Smithers ownership glob subset. A bare file glob

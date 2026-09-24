@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 )
 
@@ -17,59 +16,21 @@ type WorkspaceCleanupStore interface {
 
 // WorkspaceCleaner periodically cleans up idle workspace sessions and workspaces.
 type WorkspaceCleaner struct {
-	store     WorkspaceCleanupStore
-	interval  time.Duration
-	ticker    ticker
-	newTicker func(time.Duration) ticker
-	stopCh    chan struct{}
-	wg        sync.WaitGroup
-	mu        sync.Mutex
-	running   bool
+	periodicRunner
+	store WorkspaceCleanupStore
 }
+
+const defaultWorkspaceCleanupInterval = 5 * time.Minute
 
 // NewWorkspaceCleaner creates a new WorkspaceCleaner.
 func NewWorkspaceCleaner(store WorkspaceCleanupStore, interval time.Duration) *WorkspaceCleaner {
-	return &WorkspaceCleaner{
-		store:    store,
-		interval: interval,
-		stopCh:   make(chan struct{}),
-		newTicker: func(d time.Duration) ticker {
-			return &realTicker{t: time.NewTicker(d)}
-		},
-	}
+	c := &WorkspaceCleaner{store: store}
+	c.init("workspace", interval, defaultWorkspaceCleanupInterval)
+	return c
 }
 
 // Start begins the periodic cleanup loop.
-func (c *WorkspaceCleaner) Start(ctx context.Context) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.running {
-		return
-	}
-	c.running = true
-
-	c.ticker = c.newTicker(c.interval)
-	c.wg.Add(1)
-	go c.loop(ctx)
-}
-
-// loop runs the cleanup loop until stopped.
-func (c *WorkspaceCleaner) loop(ctx context.Context) {
-	defer c.wg.Done()
-	defer c.ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-c.stopCh:
-			return
-		case <-c.ticker.Chan():
-			_ = c.sweep(ctx)
-		}
-	}
-}
+func (c *WorkspaceCleaner) Start(ctx context.Context) { c.start(ctx, c.sweep) }
 
 // sweep performs a single cleanup pass.
 func (c *WorkspaceCleaner) sweep(ctx context.Context) error {
@@ -89,23 +50,4 @@ func (c *WorkspaceCleaner) sweep(ctx context.Context) error {
 		return errors.Join(errs...)
 	}
 	return nil
-}
-
-// Stop stops the cleaner. It blocks until the current sweep completes.
-func (c *WorkspaceCleaner) Stop() {
-	c.mu.Lock()
-	if !c.running {
-		c.mu.Unlock()
-		return
-	}
-	c.running = false
-	close(c.stopCh)
-	c.mu.Unlock()
-
-	c.wg.Wait()
-}
-
-// Wait waits for the cleaner to finish.
-func (c *WorkspaceCleaner) Wait() {
-	c.wg.Wait()
 }

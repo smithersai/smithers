@@ -223,35 +223,13 @@ func TestSmtp_Cov_SendWithClientCommandErrors(t *testing.T) {
 	}
 }
 
-func TestSmtp_Cov_BuildMIMEMessageAddsHeadersAndUnsubscribe(t *testing.T) {
-	t.Parallel()
-
-	raw := string(buildMIMEMessage("from@example.com", Message{
-		To:             []string{"user@example.com"},
-		Subject:        "headers",
-		Text:           "hello",
-		UnsubscribeURL: "https://smithers.sh/unsubscribe?token=abc",
-		Headers: map[string]string{
-			"X-Campaign-ID": "digest-42",
-		},
-	}))
-
-	assert.Contains(t, raw, "List-Unsubscribe: <https://smithers.sh/unsubscribe?token=abc>\r\n")
-	assert.Contains(t, raw, "List-Unsubscribe-Post: List-Unsubscribe=One-Click\r\n")
-	assert.Contains(t, raw, "X-Campaign-ID: digest-42\r\n")
-}
-
 func TestSmtp_Cov_BuildMIMEMessageStripsHeaderNewlines(t *testing.T) {
 	t.Parallel()
 
 	raw := string(buildMIMEMessage("from@example.com\rBcc: from-injected@example.com", Message{
-		To:             []string{"user@example.com\nBcc: to-injected@example.com"},
-		Subject:        "digest\r\nBcc: subject-injected@example.com",
-		Text:           "hello",
-		UnsubscribeURL: "https://smithers.sh/unsubscribe?token=abc\nBcc: unsubscribe-injected@example.com",
-		Headers: map[string]string{
-			"X-Campaign-ID\rBcc": "digest-42\nBcc: header-injected@example.com",
-		},
+		To:      []string{"user@example.com\nBcc: to-injected@example.com"},
+		Subject: "digest\r\nBcc: subject-injected@example.com",
+		Text:    "hello",
 	}))
 
 	assert.NotContains(t, raw, "\rBcc:")
@@ -259,13 +237,9 @@ func TestSmtp_Cov_BuildMIMEMessageStripsHeaderNewlines(t *testing.T) {
 	assert.NotContains(t, raw, "\r\nBcc: from-injected@example.com")
 	assert.NotContains(t, raw, "\r\nBcc: to-injected@example.com")
 	assert.NotContains(t, raw, "\r\nBcc: subject-injected@example.com")
-	assert.NotContains(t, raw, "\r\nBcc: unsubscribe-injected@example.com")
-	assert.NotContains(t, raw, "\r\nBcc: header-injected@example.com")
 	assert.Contains(t, raw, "From: from@example.comBcc: from-injected@example.com\r\n")
 	assert.Contains(t, raw, "To: user@example.comBcc: to-injected@example.com\r\n")
 	assert.Contains(t, raw, "Subject: digestBcc: subject-injected@example.com\r\n")
-	assert.Contains(t, raw, "List-Unsubscribe: <https://smithers.sh/unsubscribe?token=abcBcc: unsubscribe-injected@example.com>\r\n")
-	assert.Contains(t, raw, "X-Campaign-IDBcc: digest-42Bcc: header-injected@example.com\r\n")
 }
 
 type smtpCovClient struct {

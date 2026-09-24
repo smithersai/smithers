@@ -261,12 +261,6 @@ func TestValidateServerStartup_EmptyNarrowRepoHostTokensRejected(t *testing.T) {
 	}
 }
 
-func TestValidateRunnerStartup_RequiresConfig(t *testing.T) {
-	t.Parallel()
-	require.Error(t, ValidateRunnerStartup(nil))
-	require.NoError(t, ValidateRunnerStartup(&Config{}))
-}
-
 // Database URL must be supplied; there is no insecure default any more. An empty
 // URL is rejected by the shared startup validation used by both the API and SSH
 // binaries.

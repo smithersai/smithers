@@ -2,6 +2,7 @@ package diffview
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -204,13 +205,21 @@ func buildFileDiff(
 		return degradeTooLarge(fileDiff), true, nil
 	}
 
-	if opts.IgnoreWhitespace && collapseWhitespace(oldContent) == collapseWhitespace(newContent) {
-		return repohost.FileDiff{}, false, nil
-	}
-
-	patch, additions, deletions, err := buildUnifiedPatch(fileDiff, oldContent, newContent)
-	if err != nil {
-		return repohost.FileDiff{}, false, err
+	var (
+		patch                string
+		additions, deletions int
+		err                  error
+	)
+	if opts.IgnoreWhitespace {
+		patch, additions, deletions = buildIgnoreWhitespacePatch(fileDiff, oldContent, newContent)
+		if patch == "" {
+			return repohost.FileDiff{}, false, nil
+		}
+	} else {
+		patch, additions, deletions, err = buildUnifiedPatch(fileDiff, oldContent, newContent)
+		if err != nil {
+			return repohost.FileDiff{}, false, err
+		}
 	}
 
 	fileDiff.Patch = patch
@@ -253,9 +262,9 @@ func lineCount(content string) int {
 	return strings.Count(content, "\n") + 1
 }
 
-func buildUnifiedPatch(fileDiff repohost.FileDiff, oldContent, newContent string) (string, int, int, error) {
-	oldLabel := "a/" + fileDiff.Path
-	newLabel := "b/" + fileDiff.Path
+func patchLabels(fileDiff repohost.FileDiff) (oldLabel, newLabel string) {
+	oldLabel = "a/" + fileDiff.Path
+	newLabel = "b/" + fileDiff.Path
 	if fileDiff.ChangeType == "added" {
 		oldLabel = "/dev/null"
 	}
@@ -265,6 +274,11 @@ func buildUnifiedPatch(fileDiff repohost.FileDiff, oldContent, newContent string
 	if fileDiff.ChangeType != "added" && strings.TrimSpace(fileDiff.OldPath) != "" {
 		oldLabel = "a/" + fileDiff.OldPath
 	}
+	return oldLabel, newLabel
+}
+
+func buildUnifiedPatch(fileDiff repohost.FileDiff, oldContent, newContent string) (string, int, int, error) {
+	oldLabel, newLabel := patchLabels(fileDiff)
 
 	patch, err := diffviewGetUnifiedDiffString(difflib.UnifiedDiff{
 		A:        difflib.SplitLines(oldContent),
@@ -301,6 +315,70 @@ func buildUnifiedPatch(fileDiff repohost.FileDiff, oldContent, newContent string
 	}
 
 	return patch, additions, deletions, nil
+}
+
+// buildIgnoreWhitespacePatch diffs lines compared with all whitespace removed,
+// like git diff -w, and renders the original lines. Lines that differ only in
+// whitespace show as new-side context, not as changes. It returns an empty
+// patch when every difference is whitespace.
+func buildIgnoreWhitespacePatch(fileDiff repohost.FileDiff, oldContent, newContent string) (string, int, int) {
+	oldLines := difflib.SplitLines(oldContent)
+	newLines := difflib.SplitLines(newContent)
+	matcher := difflib.NewMatcher(collapseEach(oldLines), collapseEach(newLines))
+	groups := matcher.GetGroupedOpCodes(3)
+	if len(groups) == 0 {
+		return "", 0, 0
+	}
+
+	oldLabel, newLabel := patchLabels(fileDiff)
+	var b strings.Builder
+	b.WriteString("--- " + oldLabel + "\n+++ " + newLabel + "\n")
+	additions, deletions := 0, 0
+	for _, group := range groups {
+		first, last := group[0], group[len(group)-1]
+		fmt.Fprintf(&b, "@@ -%s +%s @@\n", unifiedRange(first.I1, last.I2), unifiedRange(first.J1, last.J2))
+		for _, op := range group {
+			if op.Tag == 'e' {
+				for _, line := range newLines[op.J1:op.J2] {
+					b.WriteString(" " + line)
+				}
+				continue
+			}
+			if op.Tag == 'r' || op.Tag == 'd' {
+				for _, line := range oldLines[op.I1:op.I2] {
+					b.WriteString("-" + line)
+					deletions++
+				}
+			}
+			if op.Tag == 'r' || op.Tag == 'i' {
+				for _, line := range newLines[op.J1:op.J2] {
+					b.WriteString("+" + line)
+					additions++
+				}
+			}
+		}
+	}
+	return b.String(), additions, deletions
+}
+
+// unifiedRange formats a hunk range the way difflib's unified diff does.
+func unifiedRange(start, stop int) string {
+	beginning, length := start+1, stop-start
+	if length == 1 {
+		return fmt.Sprintf("%d", beginning)
+	}
+	if length == 0 {
+		beginning--
+	}
+	return fmt.Sprintf("%d,%d", beginning, length)
+}
+
+func collapseEach(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, line := range lines {
+		out[i] = collapseWhitespace(line)
+	}
+	return out
 }
 
 func collapseWhitespace(content string) string {

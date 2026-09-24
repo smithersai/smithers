@@ -97,37 +97,12 @@ func TestEmail_Cov_BestEffortNotifications(t *testing.T) {
 	svc := newTestEmailServiceWithTransport(mockEmailQuerier{}, transport)
 
 	svc.SendMentionNotification(context.Background(), "mention@example.com", "alice", "Issue #1", "hello", "https://example.test/issues/1")
-	svc.SendSecurityAlert(context.Background(), "security@example.com", email.SecurityAlertTemplateData{
-		Username:  "alice",
-		AlertType: "new_login",
-		Detail:    "New sign-in",
-		IPAddress: "203.0.113.10",
-		Timestamp: "2026-07-07 12:00 UTC",
-		ActionURL: "https://example.test/settings/security",
-	})
 	svc.SendBillingNotification(context.Background(), " billing@example.com ", " Payment failed ", "Line one\nLine two")
 	svc.SendBillingNotification(context.Background(), "", "missing", "body")
-	svc.SendDigestNotification(context.Background(), "digest@example.com", email.DigestTemplateData{
-		Username:   "alice",
-		TotalCount: 1,
-		Items: []email.DigestItem{{
-			Subject: "Build passed",
-			Body:    "All checks passed",
-			URL:     "https://example.test/run/1",
-			Time:    "now",
-		}},
-		SettingsURL:    "https://example.test/settings/notifications",
-		UnsubscribeURL: "https://example.test/unsubscribe",
-	})
-	svc.SendSecurityAlert(context.Background(), "bad-security@example.com", email.SecurityAlertTemplateData{Username: "alice"})
-	svc.SendDigestNotification(context.Background(), "bad-digest@example.com", email.DigestTemplateData{Username: "alice"})
-
-	require.Len(t, transport.Sent, 4)
+	require.Len(t, transport.Sent, 2)
 	assert.Contains(t, transport.Sent[0].Subject, "You were mentioned")
-	assert.Equal(t, []string{"security@example.com"}, transport.Sent[1].To)
-	assert.Equal(t, "Payment failed", transport.Sent[2].Subject)
-	assert.Contains(t, transport.Sent[2].HTML, "Line one<br>Line two")
-	assert.Equal(t, "https://example.test/unsubscribe", transport.Sent[3].UnsubscribeURL)
+	assert.Equal(t, "Payment failed", transport.Sent[1].Subject)
+	assert.Contains(t, transport.Sent[1].HTML, "Line one<br>Line two")
 }
 
 func TestEmail_Cov_VerifyEmailSuccessAndFailures(t *testing.T) {

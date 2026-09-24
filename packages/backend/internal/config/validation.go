@@ -122,16 +122,6 @@ func billingStripeConfigured(cfg BillingConfig) bool {
 	return false
 }
 
-// ValidateRunnerStartup checks the runner configuration object. Runtime HTTP
-// authentication is validated by the controller client that consumes the
-// shared runner credential; Git clones use a task-scoped token minted by API.
-func ValidateRunnerStartup(cfg *Config) error {
-	if cfg == nil {
-		return fmt.Errorf("config must not be nil")
-	}
-	return nil
-}
-
 // ValidateSSHStartup performs fail-fast checks for SSH server startup-critical settings.
 func ValidateSSHStartup(cfg *Config) error {
 	if cfg == nil {

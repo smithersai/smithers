@@ -2,6 +2,8 @@ package webhooks
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -17,21 +19,38 @@ const (
 	EventTypeIssueComment          EventType = "issue_comment"
 	EventTypeCreate                EventType = "create"
 	EventTypeDelete                EventType = "delete"
-	EventTypeStar                  EventType = "star"
-	EventTypeWatch                 EventType = "watch"
-	EventTypeMember                EventType = "member"
 	EventTypeTeam                  EventType = "team"
 	EventTypeOrganization          EventType = "organization"
 	EventTypeWorkflowRun           EventType = "workflow_run"
 	EventTypeWorkflowArtifact      EventType = "workflow_artifact"
-	EventTypeRelease               EventType = "release"
 	EventTypeStatus                EventType = "status"
-	EventTypePing                  EventType = "ping"
-	EventTypeAgentSession          EventType = "agent.session"
-	EventTypeAgentMessage          EventType = "agent.message"
 	EventTypeLandingConflict       EventType = "landing.conflict"
 	EventWiki                      EventType = "wiki"
 )
+
+// subscribableEvents is every event the product dispatches, plus the
+// wildcards isSubscribedToEvent honors.
+var subscribableEvents = map[string]struct{}{
+	string(EventTypePush): {}, string(EventTypeLandingRequest): {},
+	string(EventTypeLandingRequestReview): {}, string(EventTypeLandingRequestComment): {},
+	string(EventTypeIssues): {}, string(EventTypeIssueComment): {},
+	string(EventTypeCreate): {}, string(EventTypeDelete): {},
+	string(EventTypeTeam): {}, string(EventTypeOrganization): {},
+	string(EventTypeWorkflowRun): {}, string(EventTypeWorkflowArtifact): {},
+	string(EventTypeStatus): {}, string(EventTypeLandingConflict): {},
+	string(EventWiki): {}, "*": {}, "all": {},
+}
+
+// ValidateSubscribedEvents rejects a subscription to an event that never
+// fires, so a webhook cannot silently wait for deliveries that never come.
+func ValidateSubscribedEvents(events []string) error {
+	for _, event := range events {
+		if _, ok := subscribableEvents[strings.ToLower(strings.TrimSpace(event))]; !ok {
+			return fmt.Errorf("unsupported webhook event %q", event)
+		}
+	}
+	return nil
+}
 
 type UserPayload struct {
 	ID    int64  `json:"id"`
@@ -248,41 +267,6 @@ type WorkflowArtifactEventPayload struct {
 	Sender     UserPayload             `json:"sender"`
 }
 
-type ReleaseAssetPayload struct {
-	ID            int64      `json:"id"`
-	Name          string     `json:"name"`
-	Size          int64      `json:"size"`
-	DownloadCount int64      `json:"download_count"`
-	ContentType   string     `json:"content_type"`
-	Status        string     `json:"status"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	ConfirmedAt   *time.Time `json:"confirmed_at,omitempty"`
-}
-
-type ReleasePayload struct {
-	ID              int64                 `json:"id"`
-	TagName         string                `json:"tag_name"`
-	TargetCommitish string                `json:"target_commitish,omitempty"`
-	CommitSHA       string                `json:"commit_sha,omitempty"`
-	Title           string                `json:"title"`
-	Body            string                `json:"body"`
-	IsDraft         bool                  `json:"draft"`
-	IsPrerelease    bool                  `json:"prerelease"`
-	Author          UserPayload           `json:"author"`
-	Assets          []ReleaseAssetPayload `json:"assets,omitempty"`
-	CreatedAt       time.Time             `json:"created_at"`
-	UpdatedAt       time.Time             `json:"updated_at"`
-	PublishedAt     *time.Time            `json:"published_at,omitempty"`
-}
-
-type ReleaseEventPayload struct {
-	Action     string            `json:"action"`
-	Release    ReleasePayload    `json:"release"`
-	Repository RepositoryPayload `json:"repository"`
-	Sender     UserPayload       `json:"sender"`
-}
-
 // OrganizationEventPayload is the payload for organization webhook events.
 type OrganizationEventPayload struct {
 	Action string      `json:"action"`
@@ -294,40 +278,6 @@ type TeamEventPayload struct {
 	Action     string            `json:"action"`
 	Repository RepositoryPayload `json:"repository,omitempty"`
 	Sender     UserPayload       `json:"sender"`
-}
-
-// AgentSessionPayload represents an agent session in a webhook event.
-type AgentSessionPayload struct {
-	ID        string    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-// AgentSessionEventPayload is the payload for agent.session webhook events.
-type AgentSessionEventPayload struct {
-	Action       string              `json:"action"`
-	AgentSession AgentSessionPayload `json:"agent_session"`
-	Repository   RepositoryPayload   `json:"repository"`
-	Sender       UserPayload         `json:"sender"`
-}
-
-// AgentMessagePayload represents an agent message in a webhook event.
-type AgentMessagePayload struct {
-	ID        int64     `json:"id"`
-	SessionID string    `json:"session_id"`
-	Role      string    `json:"role"`
-	Sequence  int64     `json:"sequence"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// AgentMessageEventPayload is the payload for agent.message webhook events.
-type AgentMessageEventPayload struct {
-	Action     string              `json:"action"`
-	Message    AgentMessagePayload `json:"message"`
-	Repository RepositoryPayload   `json:"repository"`
-	Sender     UserPayload         `json:"sender"`
 }
 
 // WikiPayload represents a wiki page in a webhook event.

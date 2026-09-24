@@ -277,19 +277,13 @@ func TestDispatchEvent_AllEventTypes_EnqueuesForWildcardHook(t *testing.T) {
 		EventTypeIssueComment,
 		EventTypeCreate,
 		EventTypeDelete,
-		EventTypeStar,
-		EventTypeWatch,
-		EventTypeMember,
 		EventTypeTeam,
 		EventTypeOrganization,
 		EventTypeWorkflowRun,
 		EventTypeWorkflowArtifact,
-		EventTypeRelease,
 		EventTypeStatus,
-		EventTypePing,
-		EventTypeAgentSession,
-		EventTypeAgentMessage,
 		EventTypeLandingConflict,
+		EventWiki,
 	}
 
 	for _, et := range eventTypes {

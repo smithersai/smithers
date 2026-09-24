@@ -53,7 +53,7 @@ var credentialRules = []credentialRule{
 	{
 		rule:    "openai_api_key",
 		hint:    "an OpenAI API key",
-		pattern: regexp.MustCompile(`\bsk-(?:proj-)?[A-Za-z0-9]{32,}`),
+		pattern: regexp.MustCompile(`\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}`),
 	},
 	{
 		rule:    "aws_access_key_id",
@@ -164,17 +164,27 @@ func ScanForCredentialMaterial(text string) *CredentialFinding {
 			continue
 		}
 		for _, rule := range credentialRules {
-			match := rule.pattern.FindStringSubmatch(line)
-			if match == nil {
-				continue
+			if ruleMatches(rule, line) {
+				return &CredentialFinding{Rule: rule.rule, Hint: rule.hint, Line: i + 1}
 			}
-			if rule.generic && !looksLikeSecretValue(match[1]) {
-				continue
-			}
-			return &CredentialFinding{Rule: rule.rule, Hint: rule.hint, Line: i + 1}
 		}
 	}
 	return nil
+}
+
+// ruleMatches reports whether rule fires on line. A generic rule checks every
+// assignment on the line, so a placeholder first cannot hide a real secret
+// later in minified JSON or single-line config.
+func ruleMatches(rule credentialRule, line string) bool {
+	if !rule.generic {
+		return rule.pattern.MatchString(line)
+	}
+	for _, match := range rule.pattern.FindAllStringSubmatch(line, -1) {
+		if looksLikeSecretValue(match[1]) {
+			return true
+		}
+	}
+	return false
 }
 
 // looksLikeSecretValue decides whether the value side of a `secret: <value>`

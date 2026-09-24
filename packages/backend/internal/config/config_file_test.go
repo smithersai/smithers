@@ -153,10 +153,6 @@ auth:
   github_redirect_url: "http://localhost:4100/callback"
   github_oauth_base_url: "https://ghe.example.com/login"
   github_api_base_url: "https://ghe.example.com/api/v3"
-runner:
-  pool_size: 17
-  warm_timeout: "90s"
-  task_timeout: "75m"
 `), 0o644)
 	require.NoError(t, err)
 
@@ -197,11 +193,6 @@ runner:
 	assert.Equal(t, "http://localhost:4100/callback", cfg.Auth.GitHubRedirectURL)
 	assert.Equal(t, "https://ghe.example.com/login", cfg.Auth.GitHubOAuthBaseURL)
 	assert.Equal(t, "https://ghe.example.com/api/v3", cfg.Auth.GitHubAPIBaseURL)
-
-	assert.Equal(t, 17, cfg.Runner.PoolSize)
-	assert.Equal(t, "90s", cfg.Runner.WarmTimeout)
-	assert.Equal(t, "75m", cfg.Runner.TaskTimeout)
-	assert.Equal(t, "30m", cfg.Runner.MaxAgentSessionDuration)
 }
 
 func TestLoad_ConfigFile_PartialSections(t *testing.T) {
@@ -259,7 +250,6 @@ func TestLoad_ConfigFile_EmptyFile(t *testing.T) {
 	assert.Equal(t, ":4000", cfg.Server.Addr)
 	assert.Equal(t, "", cfg.Database.URL)
 	assert.Equal(t, int32(25), cfg.Database.MaxConns)
-	assert.Equal(t, 10, cfg.Runner.PoolSize)
 }
 
 func TestLoad_ConfigFile_YAMLTypeCoercion(t *testing.T) {
@@ -276,8 +266,6 @@ database:
   min_conns: 10
 auth:
   cookie_secure: false
-runner:
-  pool_size: 20
 `), 0o644)
 	require.NoError(t, err)
 
@@ -289,7 +277,6 @@ runner:
 	assert.Equal(t, int32(50), cfg.Database.MaxConns)
 	assert.Equal(t, int32(10), cfg.Database.MinConns)
 	assert.Equal(t, false, cfg.Auth.CookieSecure)
-	assert.Equal(t, 20, cfg.Runner.PoolSize)
 }
 
 func TestLoad_ConfigFile_DiscoveryModeYMLExtension(t *testing.T) {
