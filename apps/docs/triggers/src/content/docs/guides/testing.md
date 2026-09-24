@@ -41,8 +41,8 @@ under test is a SQL behavior, such as migration application or a row shape.
 
 ## Record launches instead of performing them
 
-`Scheduler.layerNoopRunner` answers `isActive` with `false` and `cancel` with
-nothing, so launched work settles immediately. Override only what the test
+`Scheduler.layerNoopRunner` answers `inspect` with `"completed"` and `cancel`
+with nothing, so launched work settles immediately. Override only what the test
 needs to observe:
 
 ```ts
@@ -64,7 +64,9 @@ Assert on `idempotencyKey`. It is `<triggerId>:<occurrence ISO instant>`, so it
 pins which boundary fired, not merely that something fired.
 
 To exercise a run that stays alive, keep a set of active run ids and answer
-`isActive` from it. To exercise supersede, record what `cancel` was called with.
+`inspect` from it: `"active"` while the id is in the set, and the state you
+want recorded once it leaves. To exercise supersede, record what `cancel` was
+called with.
 
 ## Move the clock instead of waiting
 

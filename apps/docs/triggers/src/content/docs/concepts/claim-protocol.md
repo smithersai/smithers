@@ -151,8 +151,8 @@ than leaving two runs alive.
 | Outcome      | Written when                                                          |
 | ------------ | --------------------------------------------------------------------- |
 | `launched`   | The runner returned a run id. The reservation is replaced by that id. |
-| `completed`  | The run stopped and the host observed it stop.                        |
-| `failed`     | The launch or the run failed. The message is kept on the fire row.    |
+| `completed`  | The runner reported the run completed.                                |
+| `failed`     | The launch failed, or the run failed, was cancelled, or vanished.     |
 | `skipped`    | The overlap policy dropped the occurrence.                            |
 | `buffered`   | The overlap policy remembered the occurrence.                         |
 | `superseded` | A newer occurrence replaced this one.                                 |
@@ -216,9 +216,9 @@ The two are different questions. `lastFiredAt` answers "what does this trigger
 owe after downtime". The in-process watermark answers "what has this process
 already handled since it started", and a fresh process has none, which is why
 first sight of a trigger establishes one and computes catch-up from `lastFiredAt`
-when that durable cursor exists. A first-poll bound breach abandons the entire
-owed list, including the current occurrence; subsequent polls still dispatch
-the current occurrence subject to overlap. See [Overlap and catch-up](/concepts/policies/).
+when that durable cursor exists. A bound breach abandons the backlog, never the
+current occurrence: every poll, the first included, dispatches the current
+occurrence subject to overlap. See [Overlap and catch-up](/concepts/policies/).
 
 ## Both stores obey this contract
 

@@ -87,8 +87,8 @@ const owed = Effect.gen(function*() {
 ```
 
 These are occurrences to dispatch subject to overlap, not a guarantee that
-every run completes. Dispatch waits for launch acknowledgement, not completion.
-With a run active, `skip` drops subsequent occurrences and `buffer-one` keeps
+every run completes. A launched occurrence holds the trigger until its run
+settles. With a run active, `skip` drops subsequent occurrences and `buffer-one` keeps
 only the newest pending occurrence. For every-boundary work, use a durable
 queue or a flow that processes its own interval backlog.
 
@@ -115,11 +115,9 @@ written.
 ## What a breached bound does to a tick
 
 The scheduler logs a warning annotated with the trigger id and abandons the
-backlog when catch-up exceeds its bound. On the first poll of a trigger in a
-process, including after restart, it drops the entire owed list, including the
-current occurrence, records the current in-process watermark, and waits for a
-later boundary. On subsequent polls, it drops the missed backlog but still
-dispatches the current occurrence subject to overlap.
+backlog when catch-up exceeds its bound. It still dispatches the current
+occurrence subject to overlap, on the first poll after a restart and on every
+later poll.
 
 ## Choosing
 
