@@ -14,8 +14,7 @@
  * vocabularies from the application, extracts the literals from the suites, and
  * fails by name when one no longer resolves.
  *
- * It lives under `src/` so `bun test src` runs it in the fast unit gate on
- * every push. The rot it catches is cheap to detect and expensive to miss.
+ * It lives under `lint/conformance/` and runs in the conformance gate.
  */
 import { describe, expect, test } from "bun:test"
 import { relative } from "node:path"
@@ -52,10 +51,8 @@ import {
 } from "./Vocabulary"
 
 /*
- * The trees under test. `scripts/` holds the standalone runners, the test
- * doubles and `scripts/launch-checklist/`'s canary rows and probe vocabulary;
- * `e2e/` holds the hermetic harness and its suites. Both assert against the
- * app with literals, so both rot the same way.
+ * The trees under test: standalone runners and checklist probes in
+ * `scripts/`, and browser, graph, real and packaged suites in `e2e/`.
  */
 const TREES = [SCRIPTS, E2E] as const
 

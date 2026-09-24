@@ -30,10 +30,8 @@ The unit/source suite does not automatically adopt personal host checkouts.
 Host-workspace integration cases require explicit opt-in and retain their run
 histories; see [build and verification](docs/LOCAL-APP.md#build-and-verification).
 The default Playwright host uses a temporary home/state directory, a chat stub,
-and no real harness discovery or credential-bearing shell environment. The
-real-harness browser cases require `SMITHERS_E2E_HOST_HARNESSES=1`; this permits
-reading local account state and launching installed harnesses. Real chat is a
-separate opt-in, `SMITHERS_CHAT_STUB=0`.
+and no real harness discovery or credential-bearing shell environment.
+Real chat is a separate opt-in, `SMITHERS_CHAT_STUB=0`.
 Packaged native testing is a separate lane (`test:e2e:packaged`) with its own
 platform/network requirements.
 

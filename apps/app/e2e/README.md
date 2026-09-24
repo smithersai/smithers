@@ -1,22 +1,15 @@
 # End-to-end tiers (`apps/app/e2e/`)
 
-The hermetic web harness that lived here (`run.ts`, `suites/`, the Worker
-doubles) was removed with the web build path on 2026-08-26
-(`docs/LOCAL-APP.md`). End-to-end coverage has one browser tier and one
-packaged-app tier.
-
 | Tier | Script                               | Runner                 | Specs                    |
 | ---- | ------------------------------------ | ---------------------- | ------------------------ |
 | T1   | `pnpm --filter smithers-app test:e2e` | `playwright.config.ts` | `playwright/*.spec.ts`   |
 | T2   | `bun run test:e2e` (repository root) | `packaged/run.ts`      | `packaged/*.e2e.test.ts` |
 | Real | `pnpm --filter smithers-app test:e2e:real` | `scripts/run-real-e2e.ts` | `real/**/*.spec.ts` |
 
-T1 boots the local origin without a window (`playwright/webserver.ts` builds
-the SPA and runs `bun src/bun/serve.ts` on port 47311 with
-`SMITHERS_CHAT_STUB=1`) and drives it with headless Chromium. Specs that
-belong to a lane whose server seams do not exist yet keep the server behind
-`page.route` / `page.routeWebSocket` (`tabs.spec.ts`), so they pass unchanged
-against the real origin.
+T1 builds the SPA through `playwright/webserver.ts`, runs
+`scripts/browser-test-host.ts` on port 47311 with `SMITHERS_CHAT_STUB=1`,
+and drives it with headless Chromium. Individual specs use `page.route`
+and `page.routeWebSocket` for their fixture seams.
 
 T2 builds the stable Electrobun package and launches its real executable with
 the production native renderer. A test-only, bearer-authenticated HTTP bridge
@@ -161,7 +154,7 @@ with the leased persistent profile; no test reads a GitHub password.
 
 ## The identity the suites run as
 
-Will's ruling (Factory spec 2026-09-08, `review/RULINGS.md` 35): open sign-in
+Open sign-in
 is on and the permission tiers behind it stay deliberately narrow, so the e2e
 and canary suites run as a scoped-down signed-in user and prove the product
 works under the permissions a real visitor has. A suite that authenticates as
