@@ -262,8 +262,8 @@ waits for **a** (or Enter in its form) instead of starting. Its status settles
 only from the control plane's watch; **x** asks the control plane to cancel.
 
 Listing reads `flows/` without importing anything and refreshes within 300 ms
-of any change there; the first run imports the flow modules and opens
-`<cwd>/.flows` (the store `smthrs runs` reads), so an edited `flow.ts` needs a
+of any change there. After first draw, projects with `flows/` warm the host
+in the background, importing modules and opening `<cwd>/.flows` (the store `smthrs runs` reads), so an edited `flow.ts` needs a
 restart to run. A markdown flow is a custom agent (below); choosing one in
 `/flows` starts `/agent <name> `. Do not run `smthrs` executors in the same
 directory at the same time. Restarting marks unfinished runs interrupted; retry

@@ -1,7 +1,7 @@
 /**
  * The real `Flows.Port`: the native control host `smthrs up` drives, composed
- * for Bun and opened in-process. Discovery reads the registry only; the first
- * run imports the project's flow modules.
+ * for Bun and opened in-process. Discovery reads the registry only; warming
+ * imports the project's flow modules.
  */
 import { NodeServices } from "@effect/platform-node"
 import * as BunControl from "@smthrs/cli/BunControl"
