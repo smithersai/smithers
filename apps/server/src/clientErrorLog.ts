@@ -3,6 +3,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Ref from "effect/Ref"
+import * as Semaphore from "effect/Semaphore"
 import { runDurable } from "./Boundary"
 import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
@@ -248,22 +249,19 @@ const isRecord = (value: unknown): value is ClientErrorRecord => typeof value ==
  * window or the source is spent) and records it; `GET /read?limit=` answers
  * the newest. A storage failure is the object's own 500; the Worker-side
  * `append` reports it as "failed", because the report must never fail.
+ * An append holds `writes` from its read of the ring to its write, so a
+ * storm never loads one snapshot twice; the body is read before, so a slow
+ * body never holds the log.
  */
 export const clientErrorLogRequest = (
-  request: Request
+  request: Request,
+  writes: Semaphore.Semaphore
 ): Effect.Effect<Response, never, DurableStorage | ClientErrorThrottle> =>
   Effect.gen(function*() {
     const storage = yield* DurableStorage
     const url = new URL(request.url)
     switch (url.pathname) {
       case "/append": {
-        // The body is read to completion BEFORE the log is, and nothing but
-        // storage is awaited between the read and the write. A Durable Object
-        // only defers concurrent events while a storage operation is pending,
-        // so an await on request I/O in the middle of a read-modify-write lets
-        // a second append load the same snapshot and overwrite the first one's
-        // put. During a storm, which is the only time this log is read, that
-        // silently drops reports.
         const record = yield* readJsonOrUndefined(request)
         if (!isRecord(record)) return new Response("bad record", { status: 400 })
         const throttle = yield* ClientErrorThrottle
@@ -275,14 +273,16 @@ export const clientErrorLogRequest = (
             headers: { "content-type": "application/json" }
           })
         }
-        const stored = (yield* storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
-        // Newest first, oldest evicted: a storm never buries the report
-        // that is being read right now.
-        const next = bounded([capRecord(record), ...stored])
-        yield* storage.put(LOG_KEY, next)
-        return new Response(JSON.stringify({ status: "ok", kept: next.length }), {
-          headers: { "content-type": "application/json" }
-        })
+        return yield* writes.withPermit(Effect.gen(function*() {
+          const stored = (yield* storage.get<ReadonlyArray<ClientErrorRecord>>(LOG_KEY)) ?? []
+          // Newest first, oldest evicted: a storm never buries the report
+          // that is being read right now.
+          const next = bounded([capRecord(record), ...stored])
+          yield* storage.put(LOG_KEY, next)
+          return new Response(JSON.stringify({ status: "ok", kept: next.length }), {
+            headers: { "content-type": "application/json" }
+          })
+        }))
       }
       case "/read": {
         const asked = Number(url.searchParams.get("limit") ?? CLIENT_ERROR_LOG_LIMIT)
@@ -304,12 +304,13 @@ export const clientErrorLogRequest = (
 
 export class ClientErrorLog {
   private readonly throttle = makeClientErrorThrottle()
+  private readonly writes = Semaphore.makeUnsafe(1)
 
   constructor(private readonly ctx: { readonly storage: NativeStorage }) {}
 
   fetch(request: Request): Promise<Response> {
     return runDurable(
-      clientErrorLogRequest(request).pipe(
+      clientErrorLogRequest(request, this.writes).pipe(
         Effect.provide(Layer.mergeAll(storageLayer(this.ctx.storage), clientErrorThrottleLayer(this.throttle)))
       )
     )

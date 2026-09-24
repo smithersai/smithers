@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
 import * as Result from "effect/Result"
+import * as Semaphore from "effect/Semaphore"
 import { runDurable } from "./Boundary"
 import { ServerConfig } from "./Config"
 import { answeredJson, namespaceCall } from "./DurableStorage"
@@ -301,27 +302,30 @@ const isRow = (value: unknown): value is Omit<RecommendLogRow, "id"> =>
 /**
  * The log's request: `POST /append` mints an id and keeps the row, `POST
  * /outcome` records what the user ran next, `GET /read?limit=` answers the
- * newest rows. A storage failure is the object's own 500.
+ * newest rows. A storage failure is the object's own 500. Each append and
+ * outcome reads before it writes, so both hold `writes` from the read to the
+ * last write; bodies are read before, so a slow body never holds the log.
  */
-export const recommendLogRequest = (request: Request): Effect.Effect<Response, never, RecommendStorage> =>
+export const recommendLogRequest = (
+  request: Request,
+  writes: Semaphore.Semaphore
+): Effect.Effect<Response, never, RecommendStorage> =>
   Effect.gen(function*() {
     const storage = yield* RecommendStorage
     const url = new URL(request.url)
     switch (url.pathname) {
       case "/append": {
-        // The body is read before any storage call, so nothing but storage is
-        // awaited between the sequence read and the writes: a Durable Object
-        // defers concurrent events only while a storage operation is pending,
-        // and two appends that both read the same sequence would share a key.
         const row = yield* readJsonOrUndefined(request)
         if (!isRow(row)) return answer(400, { status: "error", code: "request_invalid", message: "bad row" })
-        const seq = ((yield* storage.get<number>(SEQ_KEY)) ?? 0) + 1
-        const id = mintId(seq)
-        yield* storage.put(SEQ_KEY, seq)
-        yield* storage.put(rowKey(seq), { ...row, id })
-        // A ring: the row that fell off the far end goes with each append.
-        if (seq > RECOMMEND_LOG_LIMIT) yield* storage.delete(rowKey(seq - RECOMMEND_LOG_LIMIT))
-        return answer(200, { id })
+        return yield* writes.withPermit(Effect.gen(function*() {
+          const seq = ((yield* storage.get<number>(SEQ_KEY)) ?? 0) + 1
+          const id = mintId(seq)
+          yield* storage.put(SEQ_KEY, seq)
+          yield* storage.put(rowKey(seq), { ...row, id })
+          // A ring: the row that fell off the far end goes with each append.
+          if (seq > RECOMMEND_LOG_LIMIT) yield* storage.delete(rowKey(seq - RECOMMEND_LOG_LIMIT))
+          return answer(200, { id })
+        }))
       }
       case "/outcome": {
         const body = (yield* readJsonOrUndefined(request)) as
@@ -334,15 +338,18 @@ export const recommendLogRequest = (request: Request): Effect.Effect<Response, n
         ) return answer(400, { status: "error", code: "request_invalid", message: "bad outcome" })
         const seq = seqOf(body.id)
         if (seq === undefined) return answer(404, { status: "error", code: "route_not_found", message: "unknown id" })
-        const row = yield* storage.get<RecommendLogRow>(rowKey(seq))
-        if (row === undefined || row.id !== body.id) {
-          return answer(404, { status: "error", code: "route_not_found", message: "unknown id" })
-        }
-        if (row.outcome !== null) {
-          return answer(409, { status: "error", code: "request_conflict", message: "outcome already recorded" })
-        }
-        yield* storage.put(rowKey(seq), { ...row, outcome: { command: body.command, at: body.at } })
-        return answer(204, undefined)
+        const { id, command, at } = body
+        return yield* writes.withPermit(Effect.gen(function*() {
+          const row = yield* storage.get<RecommendLogRow>(rowKey(seq))
+          if (row === undefined || row.id !== id) {
+            return answer(404, { status: "error", code: "route_not_found", message: "unknown id" })
+          }
+          if (row.outcome !== null) {
+            return answer(409, { status: "error", code: "request_conflict", message: "outcome already recorded" })
+          }
+          yield* storage.put(rowKey(seq), { ...row, outcome: { command, at } })
+          return answer(204, undefined)
+        }))
       }
       case "/read": {
         const asked = Number(url.searchParams.get("limit") ?? "")
@@ -361,10 +368,11 @@ export const recommendLogRequest = (request: Request): Effect.Effect<Response, n
   )
 
 export class RecommendLog {
+  private readonly writes = Semaphore.makeUnsafe(1)
   constructor(private readonly ctx: { readonly storage: NativeRecommendStorage }) {}
 
   fetch(request: Request): Promise<Response> {
-    return runDurable(recommendLogRequest(request).pipe(Effect.provide(recommendStorageLayer(this.ctx.storage))))
+    return runDurable(recommendLogRequest(request, this.writes).pipe(Effect.provide(recommendStorageLayer(this.ctx.storage))))
   }
 }
 

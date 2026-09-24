@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Semaphore from "effect/Semaphore"
 import { AppBootstrapSchema } from "@smthrs/rpc/AppBootstrap"
 import { cloudCapabilities } from "@smthrs/rpc/HostCapabilities"
 import { CLOUD_ROUTE_PREFIX } from "@smthrs/rpc/CloudTunnel"
@@ -4946,9 +4947,10 @@ describe("the client-error route", () => {
             log = (request) => object.fetch(request)
           } else {
             const layers = Layer.mergeAll(storageLayer(memoryObjectStorage()), clientErrorThrottleLayer(makeClientErrorThrottle()))
+            const writes = Semaphore.makeUnsafe(1)
             log = (request) =>
               Effect.runPromise(
-                clientErrorLogRequest(request).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
+                clientErrorLogRequest(request, writes).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
               )
           }
           logs.set(name, log)

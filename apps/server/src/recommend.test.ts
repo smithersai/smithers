@@ -754,6 +754,44 @@ describe("the recommendation log", () => {
     expect(rows[rows.length - 1]!.at).toBe(new Date(overflow).toISOString())
   }, 60_000)
 
+  test("concurrent appends keep every row under its own id, and concurrent outcomes record once", async () => {
+    // Every read answers its snapshot a macrotask later, which is where a
+    // second request can arrive between one append's sequence read and its
+    // writes.
+    const inner = memoryRecommendStorage()
+    const log = new RecommendLog({
+      storage: {
+        ...inner,
+        get: async <T,>(key: string) => {
+          const snapshot = await inner.get<T>(key)
+          await new Promise((resolve) => setTimeout(resolve, 1))
+          return snapshot
+        }
+      }
+    })
+    const append = async (index: number): Promise<string> => {
+      const response = await log.fetch(
+        new Request("https://recommend-log.internal/append", {
+          method: "POST",
+          body: JSON.stringify({ at: new Date(index).toISOString(), repo: null, tailDigest: "0", commandCount: 1, commands: [], model: "m", outcome: null })
+        })
+      )
+      return ((await response.json()) as { id: string }).id
+    }
+    const ids = await Promise.all([append(0), append(1), append(2)])
+    expect(new Set(ids).size).toBe(3)
+    const rows = await inner.list<RecommendLogRow>({ prefix: "row:", reverse: false, limit: 10 })
+    expect([...rows.values()].map((row) => row.id).sort()).toEqual([...ids].sort())
+    const outcome = (command: string) =>
+      log.fetch(
+        new Request("https://recommend-log.internal/outcome", {
+          method: "POST",
+          body: JSON.stringify({ id: ids[0], command, at: "2026-01-01T00:00:00.000Z" })
+        })
+      ).then((response) => response.status)
+    expect((await Promise.all([outcome("run.start"), outcome("repo.open")])).sort()).toEqual([204, 409])
+  })
+
   test("the object refuses a bad row, a bad outcome, and an unknown path in its own words", async () => {
     const log = new RecommendLog({ storage: memoryRecommendStorage() })
     expect((await log.fetch(new Request("https://recommend-log.internal/append", { method: "POST", body: "nope" }))).status).toBe(400)

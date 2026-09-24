@@ -2,6 +2,7 @@ import { describe, expect, spyOn, test } from "bun:test"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Semaphore from "effect/Semaphore"
 import {
   bounded,
   capRecord,
@@ -64,9 +65,10 @@ const memoryLog = (now?: () => number): NativeNamespace & { readonly names: () =
           log = (request) => object.fetch(request)
         } else {
           const layers = Layer.mergeAll(storageLayer(memoryStorage()), clientErrorThrottleLayer(makeClientErrorThrottle()))
+          const writes = Semaphore.makeUnsafe(1)
           log = (request) =>
             Effect.runPromise(
-              clientErrorLogRequest(request).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
+              clientErrorLogRequest(request, writes).pipe(Effect.provide(layers), Effect.provideService(Clock.Clock, clockOf(now)))
             )
         }
         logs.set(name, log)
@@ -164,6 +166,38 @@ describe("the client-error log (Durable Object state)", () => {
     expect(read.reports.map((row) => row.report.message).sort()).toEqual(["prompt", "slow"])
     // Every read is followed by its own write: no snapshot is read twice.
     expect(trace.slice(0, 4)).toEqual(["get", "put", "get", "put"])
+  })
+
+  test("concurrent appends keep every report", async () => {
+    // Every read answers its snapshot a macrotask later, which is where a
+    // second append can arrive between one append's read of the ring and
+    // its write.
+    const inner = memoryStorage()
+    const log = new ClientErrorLog({
+      storage: {
+        ...inner,
+        get: async (key) => {
+          const snapshot = await inner.get(key)
+          await new Promise((resolve) => setTimeout(resolve, 1))
+          return snapshot as never
+        }
+      }
+    })
+    const append = (index: number) =>
+      log.fetch(
+        new Request("https://client-errors.internal/append", {
+          method: "POST",
+          body: JSON.stringify({ at: new Date(index).toISOString(), report: { index } })
+        })
+      )
+    const answers = await Promise.all([append(0), append(1), append(2)])
+    expect(answers.map((response) => response.status)).toEqual([200, 200, 200])
+    const read = (await (await log.fetch(new Request("https://client-errors.internal/read"))).json()) as {
+      total: number
+      reports: Array<{ report: { index: number } }>
+    }
+    expect(read.total).toBe(3)
+    expect(read.reports.map((row) => row.report.index).sort()).toEqual([0, 1, 2])
   })
 
   test("a body that is not a record is 400 and an unknown path 404", async () => {

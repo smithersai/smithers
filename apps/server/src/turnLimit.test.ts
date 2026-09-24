@@ -151,6 +151,27 @@ describe("the per-login turn ceiling (Durable Object state)", () => {
     expect((await peek()).remaining).toBe(TURN_WINDOW_MAX - 1)
   })
 
+  test("concurrent spends never admit past the ceiling", async () => {
+    // Every read answers its snapshot a macrotask later, which is where a
+    // second request can arrive between one spend's read and its write.
+    const inner = memoryStorage()
+    const limiter = new TurnRateLimiter({
+      storage: {
+        ...inner,
+        get: async (key) => {
+          const snapshot = await inner.get(key)
+          await new Promise((resolve) => setTimeout(resolve, 1))
+          return snapshot as never
+        }
+      }
+    })
+    const spendOne = async (): Promise<TurnBudget> =>
+      (await (await limiter.fetch(new Request("https://turn-limit.internal/spend?max=1&windowMs=60000", { method: "POST" }))).json()) as TurnBudget
+    const budgets = await Promise.all([spendOne(), spendOne(), spendOne()])
+    expect(budgets.filter((budget) => budget.allowed)).toHaveLength(1)
+    expect((inner.data.get("window") as { count: number }).count).toBe(1)
+  })
+
   test("an unknown path is the object's own 404", async () => {
     const limiter = new TurnRateLimiter({ storage: memoryStorage() })
     expect((await limiter.fetch(new Request("https://turn-limit.internal/nope"))).status).toBe(404)

@@ -2,6 +2,7 @@ import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
+import * as Semaphore from "effect/Semaphore"
 import { runDurable } from "./Boundary"
 import { answeredJson, DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
@@ -219,11 +220,17 @@ export const turnRateLimiterRequest = (request: Request): Effect.Effect<Response
     )
   )
 
+/**
+ * A spend reads the window and writes it back. The object's requests run one
+ * at a time, so a burst can never read the same count twice and admit past
+ * the ceiling.
+ */
 export class TurnRateLimiter {
+  private readonly spends = Semaphore.makeUnsafe(1)
   constructor(private readonly ctx: { readonly storage: NativeStorage }) {}
 
   fetch(request: Request): Promise<Response> {
-    return runDurable(turnRateLimiterRequest(request).pipe(Effect.provide(storageLayer(this.ctx.storage))))
+    return runDurable(this.spends.withPermit(turnRateLimiterRequest(request)).pipe(Effect.provide(storageLayer(this.ctx.storage))))
   }
 }
 
