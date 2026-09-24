@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/smithersai/smithers/packages/backend/db/product"
 	"github.com/smithersai/smithers/packages/backend/internal/database"
 )
 
@@ -72,10 +72,6 @@ func setupServicesIntegrationDatabase(databaseURL string) error {
 		_, _ = adminConn.Exec(context.Background(), `CREATE DATABASE "`+strings.ReplaceAll(dbName, `"`, `""`)+`"`)
 	}
 
-	schemaBytes, err := os.ReadFile(findSchemaPath())
-	if err != nil {
-		return fmt.Errorf("cannot read schema: %w", err)
-	}
 	schemaConn, err := pgx.Connect(context.Background(), databaseURL)
 	if err != nil {
 		return fmt.Errorf("cannot connect to test db for schema setup: %w", err)
@@ -84,8 +80,7 @@ func setupServicesIntegrationDatabase(databaseURL string) error {
 
 	_, _ = schemaConn.Exec(context.Background(),
 		`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()`)
-	combined := `DROP SCHEMA IF EXISTS plue_storage CASCADE; DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;` + "\n" + string(schemaBytes)
-	if _, err := schemaConn.Exec(context.Background(), combined); err != nil {
+	if _, err := schemaConn.Exec(context.Background(), `DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;`); err != nil {
 		return fmt.Errorf("schema setup failed: %w", err)
 	}
 
@@ -104,20 +99,12 @@ func setupServicesIntegrationDatabase(databaseURL string) error {
 		return fmt.Errorf("cannot create pool: %w", err)
 	}
 
+	if err := product.Apply(context.Background(), agentTestDB); err != nil {
+		agentTestDB.Close()
+		agentTestDB = nil
+		return fmt.Errorf("product migration setup failed: %w", err)
+	}
 	return nil
-}
-
-func findSchemaPath() string {
-	candidates := []string{
-		filepath.Join("..", "..", "db", "cluster", "sqlc_schema.sql"),
-		filepath.Join("db", "cluster", "sqlc_schema.sql"),
-	}
-	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
-			return p
-		}
-	}
-	return candidates[0]
 }
 
 // getAgentTestPool returns the shared test pool if available, or skips the test.
