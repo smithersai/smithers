@@ -26,6 +26,7 @@
     "@smthrs/flow": "workspace:*",
     "@smthrs/gateway": "workspace:*",
     "@smthrs/harness": "workspace:*",
+    "@smthrs/journal": "workspace:*",
     "@smthrs/kernel": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/plan": "workspace:*",

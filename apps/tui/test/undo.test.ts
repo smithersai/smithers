@@ -149,6 +149,27 @@ describe("undo", () => {
     expect(get(cwd, "a.ts")).toBe("before\n")
   })
 
+  it("reverses a credential edit after the session was saved and reopened, byte for byte", async () => {
+    const cwd = scratch()
+    const before = "ANTHROPIC_API_KEY=sk-ant-api03-Qx7Lm2Vb9Tz4Rk8Wp1Ns6Hd3\n"
+    const after = "ANTHROPIC_API_KEY=sk-ant-api03-Rotated9Tz4Rk8Wp1Ns6Hd3\n"
+    put(cwd, ".env", before)
+    const r = recorder(cwd)
+    r.prompt("rotate the key")
+    r.cell()
+    await r.call("write", { path: ".env", content: after }, write(cwd, ".env", after))
+    r.settle()
+    process.env.SMITHERS_TUI_SESSION_DIR = scratch()
+    const writer = Session.create(cwd)
+    for (const record of r.records) writer.append(record)
+    expect(readFileSync(writer.file, "utf8").split("\n").filter((line) => line.includes("\"event\"")).join("\n")).not.toContain("Rotated9")
+
+    const transcript = Session.restore(Session.load(writer.file)).transcript
+    const result = await undo(cwd, transcript, cellRows(transcript)[0]!.id)
+    expect("_tag" in result).toBe(false)
+    expect(get(cwd, ".env")).toBe(before)
+  })
+
   it("restores a deleted file and removes a created one", async () => {
     const cwd = scratch()
     put(cwd, "c.ts", "keep me\n")

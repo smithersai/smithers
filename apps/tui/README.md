@@ -122,7 +122,9 @@ repository root down, or the working directory alone outside a repository,
 after `~/.smithers/agent/AGENTS.md`), and the conversation so far.
 Sessions are owner-only JSONL under `~/.smithers/tui/sessions/<cwd>--<hash>/`
 (`SMITHERS_TUI_SESSION_DIR` overrides). A torn last line is dropped; a file
-damaged earlier is renamed `.damaged` and left out of the list. `/fork` starts a new session from the
+damaged earlier is renamed `.damaged` and left out of the list. Credential
+shapes in prompts, shell output and flow calls are saved as `[REDACTED]`; file
+patches keep their bytes so undo can apply them. `/fork` starts a new session from the
 messages before a chosen one and puts that message back in the editor; the
 original stays resumable.
 

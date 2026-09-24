@@ -5,8 +5,10 @@
  * The file is the transcript's own input: prompts, every harness event but
  * the model's token deltas, shell results and turn outcomes. Folding it
  * again rebuilds the screen and the conversation the next turn is told.
+ * Credential shapes in that text are redacted before a line reaches the disk.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
+import * as Redaction from "@smthrs/journal/Redaction"
 import { createHash, randomUUID } from "node:crypto"
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -95,6 +97,53 @@ const privateFolder = (folder: string): void => {
 }
 const append = (file: string, text: string): void => appendFileSync(file, text, { mode: 0o600 })
 
+const text = (value: string): string =>
+  Redaction.defaultRules.reduce((redacted, rule) => redacted.replace(rule.pattern, rule.replace ?? Redaction.placeholder), value)
+
+/** `value` as JSON with every string redacted. */
+const strings = (value: unknown): string =>
+  JSON.stringify(value, (_, each: unknown) => (typeof each === "string" ? text(each) : each))
+
+/** A tab's or a flow run's result text, redacted; the rest of it is what a retry relaunches. */
+const said = <A extends { readonly answer?: string; readonly message?: string }>(value: A): A => ({
+  ...value,
+  ...(value.answer === undefined ? {} : { answer: text(value.answer) }),
+  ...(value.message === undefined ? {} : { message: text(value.message) })
+})
+
+/**
+ * A record as a session file holds it: the journal's textual credential rules
+ * applied to its text, so `!printenv` or an agent reading `~/.ssh` leaves
+ * `[REDACTED]` on disk, not the secret. Field names are not judged, because a
+ * call identity's `session` is not a credential and undo matches on it.
+ *
+ * What the TUI re-executes keeps its bytes: a placeholder in a `patch` is what
+ * undo would write into the file, one in a flow run's input or a worker tab's
+ * prompt is what retry would relaunch, one in a monitor's source is what its
+ * next tick would run, and one in a view is what selecting its action would
+ * send. `session` and `undo` hold ids and paths, which a rule could mistake for
+ * a key (`~/sk-demo-project`).
+ */
+const line = (record: Record): string => {
+  switch (record.type) {
+    case "session":
+    case "patch":
+    case "undo":
+    case "panel":
+      return JSON.stringify(record) + "\n"
+    case "tab":
+      return JSON.stringify({ ...record, tab: said(record.tab) }) + "\n"
+    case "flow":
+      return JSON.stringify({ ...record, run: said(record.run) }) + "\n"
+    case "monitor": {
+      const { source, ...rest } = record.monitor
+      return JSON.stringify({ ...record, monitor: { ...(JSON.parse(strings(rest)) as typeof rest), source } }) + "\n"
+    }
+    default:
+      return strings(record) + "\n"
+  }
+}
+
 export interface Writer {
   readonly file: string
   readonly append: (record: Record) => void
@@ -128,7 +177,7 @@ export const create = (
   if (options.seed !== undefined && options.seed.length > 0) {
     try {
       prepare()
-      writeFileSync(file, [header(), ...options.seed].map((record) => JSON.stringify(record)).join("\n") + "\n", {
+      writeFileSync(file, [header(), ...options.seed].map(line).join(""), {
         flag: "wx",
         mode: 0o600
       })
@@ -143,10 +192,10 @@ export const create = (
     append: (record) => {
       if (!opened) {
         prepare()
-        append(file, JSON.stringify(header()) + "\n")
+        append(file, line(header()))
         opened = true
       }
-      append(file, JSON.stringify(record) + "\n")
+      append(file, line(record))
     }
   }
 }
@@ -159,7 +208,7 @@ export const reopen = (file: string): Writer => {
     append: (record) => {
       if (!repaired && existsSync(file)) chmodSync(file, 0o600)
       repaired = true
-      append(file, JSON.stringify(record) + "\n")
+      append(file, line(record))
     }
   }
 }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "bun:test"
-import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, statSync, writeFileSync } from "node:fs"
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as Session from "../src/session.ts"
@@ -110,5 +110,102 @@ describe("Session.guarded", () => {
     writer.append(record("refused after recovery"))
     expect(reports).toHaveLength(2)
     expect(Session.load(file).map((each) => (each.type === "user" ? each.text : each.type))).toEqual(["saved", "saved again"])
+  })
+})
+
+describe("credentials in a saved session", () => {
+  const key = "sk-ant-api03-Qx7Lm2Vb9Tz4Rk8Wp1Ns6Hd3"
+  const pat = "ghp_R4nD0mT0k3nV4lu3F0rT3st1ngPurp0s3s12"
+  const pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ\n-----END OPENSSH PRIVATE KEY-----"
+  const identity = { session: "tui-1-0", frame: 1, cell: "c", ordinal: 0, declaration: "d", layers: [] }
+  const records: ReadonlyArray<Session.Record> = [
+    { type: "user", at: 1, text: "why does auth fail" },
+    {
+      type: "shell",
+      at: 2,
+      excluded: false,
+      result: { command: "cat ~/.config/gh/hosts.yml", output: `github.com:\n  oauth_token: ${pat}\n`, exitCode: 0, cancelled: false }
+    },
+    { type: "event", at: 3, event: { _tag: "cell-call-started", call: { flowName: "read", input: { path: "~/.ssh/id_ed25519" }, identity } } as never },
+    {
+      type: "event",
+      at: 4,
+      event: { _tag: "cell-call-settled", flowName: "read", identity, result: { outcome: "success", value: { content: pem } } } as never
+    },
+    { type: "event", at: 5, event: { _tag: "cell-printed", cell: "c", text: `ANTHROPIC_API_KEY=${key}\n` } as never },
+    { type: "outcome", at: 6, prompt: "why does auth fail", outcome: { _tag: "done", answer: `Your token ${pat} is expired.` } }
+  ]
+
+  for (const kind of ["chat", "worker"] as const) {
+    it(`a ${kind} file holds no credential the shell or a harness call surfaced, and still restores`, () => {
+      const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")), kind)
+      for (const record of records) writer.append(record)
+
+      const saved = readFileSync(writer.file, "utf8")
+      for (const secret of [key, pat, "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ"]) expect(saved).not.toContain(secret)
+
+      const restored = Session.restore(Session.load(writer.file))
+      expect(restored.prompts).toEqual(["why does auth fail", "!cat ~/.config/gh/hosts.yml"])
+      const shell = restored.transcript.items.find((item) => item.kind === "shell")
+      expect(shell).toMatchObject({ output: "github.com:\n  oauth_token: [REDACTED]\n" })
+      expect(restored.entries).toContainEqual({ kind: "exchange", user: "why does auth fail", answer: "Your token [REDACTED] is expired." })
+    })
+  }
+
+  it("a fork of a session saved before redaction copies no credential either", () => {
+    const cwd = mkdtempSync(join(tmpdir(), "tui-cwd-"))
+    const source = join(mkdtempSync(join(tmpdir(), "tui-old-")), "old.jsonl")
+    writeFileSync(source, [...records, { type: "user", at: 7, text: "next" }].map((record) => JSON.stringify(record)).join("\n") + "\n")
+    const [turn] = Session.turns(Session.load(source))
+    const forked = Session.fork(source, cwd, turn!)
+    if (forked._tag !== "Forked") throw new Error(forked._tag)
+    const saved = readFileSync(forked.writer.file, "utf8")
+    for (const secret of [key, pat]) expect(saved).not.toContain(secret)
+  })
+
+  it("keeps the bytes the TUI re-executes: a patch undo applies, a flow input and a worker prompt retry relaunches, a monitor's source", () => {
+    const writer = Session.create(mkdtempSync(join(tmpdir(), "tui-cwd-")))
+    const patch: Session.Record = {
+      type: "patch",
+      receipt: { call: "[]", patches: [{ path: ".env", patch: `-ANTHROPIC_API_KEY=${key}\n+ANTHROPIC_API_KEY=rotated\n` }] }
+    }
+    const flow: Extract<Session.Record, { type: "flow" }> = {
+      type: "flow",
+      run: {
+        id: "r",
+        flow: "deploy",
+        by: "user",
+        input: { token: pat, message: pat },
+        requested: JSON.stringify({ token: pat }),
+        status: "failed",
+        startedAt: 1,
+        message: `401 for ${pat}`
+      }
+    }
+    const tab: Extract<Session.Record, { type: "tab" }> = {
+      type: "tab",
+      tab: { id: "t", title: "Rotate", prompt: `rotate ${pat}`, seat: "s", file: "/w.jsonl", depth: 1, status: "done", startedAt: 1, answer: `new token ${pat}` }
+    }
+    const monitor: Extract<Session.Record, { type: "monitor" }> = {
+      type: "monitor",
+      monitor: {
+        id: "m",
+        title: "Token",
+        watch: "the token changes",
+        source: { kind: "shell", command: `curl -H 'Authorization: Bearer ${pat}' https://example.com` },
+        trigger: { kind: "interval", seconds: 60 },
+        status: "active",
+        seen: `token=${pat}`,
+        updates: 0,
+        createdAt: 1
+      }
+    }
+    for (const record of [patch, flow, tab, monitor]) writer.append(record)
+    expect(Session.load(writer.file).slice(1)).toEqual([
+      patch,
+      { ...flow, run: { ...flow.run, message: "401 for [REDACTED]" } },
+      { ...tab, tab: { ...tab.tab, answer: "new token [REDACTED]" } },
+      { ...monitor, monitor: { ...monitor.monitor, seen: "token=[REDACTED]" } }
+    ])
   })
 })
