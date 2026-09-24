@@ -290,8 +290,17 @@ fn glob_walk(
     Ok(())
 }
 fn glob_pattern(pattern: &str, base: &str, exclusion: bool) -> String {
-    let pattern = if Path::new(pattern).is_absolute() {
+    let path = Path::new(pattern);
+    let pattern = if path.is_absolute() {
         pattern.replace('\\', "/")
+    } else if exclusion && path.has_root() {
+        // A leading backslash is rooted on the glob root's drive, not an
+        // escape that can be dropped to turn it into a workspace basename.
+        let prefix = match Path::new(base).components().next() {
+            Some(Component::Prefix(prefix)) => prefix.as_os_str().to_string_lossy(),
+            _ => return "\0".to_owned(),
+        };
+        format!("{prefix}{}", pattern.replace('\\', "/"))
     } else {
         pattern.to_owned()
     };
@@ -635,6 +644,14 @@ mod tests {
     use super::*;
     use std::fs;
     use std::os::windows::fs::symlink_file;
+
+    #[test]
+    fn drive_rooted_exclusions_do_not_become_workspace_basenames() {
+        assert_eq!(glob_pattern(r"\a-b.txt", r"C:\workspace", true), "C:/a-b.txt");
+        assert_eq!(glob_pattern(r"\a-b.txt", r"C:\", true), "a-b.txt");
+        assert_eq!(glob_pattern(r"\workspace\a-b.txt", r"C:\workspace", true), "a-b.txt");
+        assert_eq!(glob_pattern(r"\*.txt", r"C:\workspace", false), "\0");
+    }
 
     struct Fixture {
         _temporary: tempfile::TempDir,
