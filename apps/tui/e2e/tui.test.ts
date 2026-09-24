@@ -132,6 +132,8 @@ describe("which-key", () => {
     await tui.press(key.ctrlK)
     await tui.until((screen) => !popup(screen) && screen.includes("Search"), 5_000, "palette from which-key")
     await tui.press(key.escape)
+    // A lone ESC and a key read together are Alt+key; wait for the chat footer before the next key.
+    await tui.until((screen) => screen.includes("ctrl+] Next tab  ? Keys"), 5_000, "palette closed")
 
     await tui.press("?")
     await tui.until(popup, 5_000, "which-key reopen")
@@ -205,6 +207,14 @@ describe("tabs", () => {
     await tui.until((screen) => !screen.includes("esc Chat") && screen.includes("ctrl+k Search"), 5_000, "chat after ctrl+]")
     await tui.press(key.ctrlBackslash)
     await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary after ctrl+\\")
+  }, 60_000)
+
+  it("steps once per ctrl+] even when two arrive before the next render", async () => {
+    const { tui } = await start()
+    // One PTY write: the second ctrl+] is handled before the first one's tab has drawn.
+    await tui.press(`${key.ctrlBracket}${key.ctrlBracket}`)
+    await tui.press(key.ctrlBracket)
+    await tui.until((screen) => screen.includes("esc Chat"), 5_000, "summary after three ctrl+]")
   }, 60_000)
 })
 

@@ -243,7 +243,7 @@ export function App(props: AppProps) {
     liveForm.current = next
     setForm(next)
   }, [])
-  const { surface, setSurface, panelFocus, setPanelFocus, navigation, setNavigation, steerTarget, setSteerTarget, showTab } = Surfaces.useSurface()
+  const { surface, setSurface, panelFocus, setPanelFocus, navigation, setNavigation, steerTarget, setSteerTarget, showTab, stepTab } = Surfaces.useSurface()
   const [whichKey, setWhichKey] = useState(false)
   const whichKeyRef = useRef(false)
   const setWhichKeyOpen = useCallback((open: boolean) => {
@@ -1325,7 +1325,7 @@ export function App(props: AppProps) {
       (key.ctrl && ["right", "left", "]", "\\"].includes(key.name)) || (key.name === "tab" && panelFocus && !key.shift)
     ) {
       key.preventDefault()
-      showTab(Surfaces.step(surfaces, surface, key.name === "left" || key.name === "\\"))
+      stepTab(surfaces, key.name === "left" || key.name === "\\")
       return
     }
     // Contributed keys never shadow a built-in one (`Contributions` refused those), and a

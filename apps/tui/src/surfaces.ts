@@ -3,7 +3,7 @@
  * runs, custom views) and which one shows. Routing is by id: `chat`,
  * `summary`, `tab:<worker>`, `tree:<worker>`, `flow:<run>` and `ui:<panel>`.
  */
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import type { Run } from "./flows.ts"
 import * as Panels from "./panels.ts"
 import type { Chip } from "./tabs-view.tsx"
@@ -105,11 +105,17 @@ export const useSurface = () => {
   const [steerTarget, setSteerTarget] = useState<string | undefined>()
   // Steering is for the tab it started in: any surface change ends it.
   useEffect(() => setSteerTarget(undefined), [surface])
+  // Keys in one input burst are handled before the next render: a second Ctrl+] must step from the first one's tab.
+  const shown = useRef(surface)
+  shown.current = surface
   /** Shows `id`; any surface but the chat takes the keys. */
   const showTab = (id: string) => {
+    shown.current = id
     setSurface(id)
     setPanelFocus(id !== "chat")
     setNavigation(Panels.initial())
   }
-  return { surface, setSurface, panelFocus, setPanelFocus, navigation, setNavigation, steerTarget, setSteerTarget, showTab }
+  /** Shows the tab after (or before) the one the last key showed. */
+  const stepTab = (strip: ReadonlyArray<Chip>, back: boolean) => showTab(step(strip, shown.current, back))
+  return { surface, setSurface, panelFocus, setPanelFocus, navigation, setNavigation, steerTarget, setSteerTarget, showTab, stepTab }
 }
