@@ -60,7 +60,10 @@ export function gateEvent({ eventName, payload }: GateInput): GateDecision {
     const base = obj(pr.base);
     const headFull = obj(head?.repo)?.full_name;
     const baseFull = obj(base?.repo)?.full_name ?? obj(top.repository)?.full_name;
-    if (typeof headFull === "string" && typeof baseFull === "string" && headFull !== baseFull) {
+    if (typeof headFull !== "string" || !headFull || typeof baseFull !== "string" || !baseFull) {
+      return { run: false, reason: "pull request repository unavailable" };
+    }
+    if (headFull.toLowerCase() !== baseFull.toLowerCase()) {
       return { run: false, reason: "fork pull requests are not reviewed" };
     }
     const number = pr.number;

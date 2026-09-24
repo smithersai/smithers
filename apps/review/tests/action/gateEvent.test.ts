@@ -3,6 +3,12 @@ import { gateEvent } from "../../action/src/gateEvent.ts";
 
 describe("gateEvent", () => {
   describe("pull_request", () => {
+    test.each([null, {}, { full_name: "" }])("skips missing head repository %j", (repo) => {
+      expect(gateEvent({ eventName: "pull_request", payload: {
+        action: "opened", pull_request: { number: 1, head: { repo }, base: { repo: { full_name: "octo/widgets" } } },
+      } }).run).toBe(false);
+    });
+
     test("runs non-draft same-repo PR and surfaces the head sha", () => {
       const decision = gateEvent({
         eventName: "pull_request",
