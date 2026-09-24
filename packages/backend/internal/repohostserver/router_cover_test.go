@@ -64,6 +64,28 @@ func TestRouter_Cov_InitRepoDefaultsAutoInitAndErrorBranches(t *testing.T) {
 		assertGiteaErrorJSON(t, rec.Body.Bytes())
 	})
 
+	for name, body := range map[string]string{
+		"concatenated_json": `{"owner":"alice","repo":"demo"}{"owner":"mallory","repo":"demo"}`,
+		"trailing_garbage":  `{"owner":"alice","repo":"demo"} trailing`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			initCalls := 0
+			mock := &mockFFI{
+				initRepoFn: func(storePath string) (repohostffi.InitRepoResult, error) {
+					initCalls++
+					return repohostffi.InitRepoResult{Status: "ok", Path: storePath}, nil
+				},
+			}
+			srv := newTestServerWithMock(t, mock)
+			rec := routerCovServe(t, srv.Handler(), http.MethodPost, "/repos/init", strings.NewReader(body))
+			routerCovRequireStatus(t, rec, http.StatusBadRequest)
+			assertGiteaErrorJSON(t, rec.Body.Bytes())
+			if initCalls != 0 {
+				t.Fatalf("init ran %d times for a body with trailing data", initCalls)
+			}
+		})
+	}
+
 	t.Run("ffi_error", func(t *testing.T) {
 		mock := &mockFFI{
 			initRepoFn: func(storePath string) (repohostffi.InitRepoResult, error) {

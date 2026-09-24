@@ -3,6 +3,7 @@ package repohostserver
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -163,10 +164,42 @@ func validGitObjectID(s string) bool {
 	return true
 }
 
+// maxRefListingBytes caps the for-each-ref output listGitRefs buffers. Every
+// receive-pack snapshots refs while holding the repository write lock, so a
+// pathological ref set must fail closed instead of growing memory without
+// bound. Matches maxRefAdvertisementBytes. Variable so tests can lower it.
+var maxRefListingBytes int64 = 64 * 1024 * 1024
+
+// errRefListingTooLarge reports a ref listing past maxRefListingBytes.
+var errRefListingTooLarge = errors.New("git ref listing exceeds maximum size")
+
 func listGitRefs(ctx context.Context, gitDir string) (map[string]string, error) {
-	output, err := exec.CommandContext(ctx, "git", "--git-dir", gitDir, "for-each-ref", "--format=%(refname)%00%(objectname)").Output()
+	cmdCtx, cancelCmd := context.WithCancel(ctx)
+	defer cancelCmd()
+	cmd := exec.CommandContext(cmdCtx, "git", "--git-dir", gitDir, "for-each-ref", "--format=%(refname)%00%(objectname)")
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, fmt.Errorf("list git refs: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("list git refs: %w", err)
+	}
+	output, readErr := io.ReadAll(io.LimitReader(stdout, maxRefListingBytes+1))
+	tooLarge := int64(len(output)) > maxRefListingBytes
+	if tooLarge {
+		// Kill git instead of draining an arbitrarily large listing.
+		cancelCmd()
+	}
+	_, _ = io.Copy(io.Discard, stdout)
+	waitErr := cmd.Wait()
+	if tooLarge {
+		return nil, fmt.Errorf("list git refs: %w", errRefListingTooLarge)
+	}
+	if readErr != nil {
+		return nil, fmt.Errorf("list git refs: %w", readErr)
+	}
+	if waitErr != nil {
+		return nil, fmt.Errorf("list git refs: %w", waitErr)
 	}
 
 	refs := make(map[string]string)

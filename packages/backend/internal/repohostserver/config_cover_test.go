@@ -128,6 +128,37 @@ func TestConfig_Cov_LoadConfigRejectsInvalidTraceSampleRate(t *testing.T) {
 	}
 }
 
+func TestConfig_Cov_LoadConfigRejectsOutOfRangeTraceSampleRate(t *testing.T) {
+	for _, raw := range []string{"-1", "-0.01", "1.01", "2", "NaN", "Inf", "-Inf", "+Infinity"} {
+		t.Run(raw, func(t *testing.T) {
+			configCovClearEnv(t)
+			t.Setenv("SMITHERS_REPO_HOST_AUTH_TOKEN", "token")
+			t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN", "callback-token")
+			t.Setenv("SMITHERS_TRACE_SAMPLE_RATE", raw)
+			t.Setenv("SMITHERS_FFI_LIBRARY_PATH", "/tmp/no-real-load-required")
+
+			_, err := LoadConfig()
+			if err == nil || !strings.Contains(err.Error(), "SMITHERS_TRACE_SAMPLE_RATE must be a number between 0 and 1") {
+				t.Fatalf("LoadConfig error = %v, want out-of-range rejection", err)
+			}
+		})
+	}
+	for _, raw := range []string{"0", "1", "0.5"} {
+		t.Run("accepts_"+raw, func(t *testing.T) {
+			configCovClearEnv(t)
+			t.Setenv("SMITHERS_REPO_HOST_AUTH_TOKEN", "token")
+			t.Setenv("SMITHERS_PUSH_HOOK_CALLBACK_TOKEN", "callback-token")
+			t.Setenv("SMITHERS_TRACE_SAMPLE_RATE", raw)
+			t.Setenv("SMITHERS_FFI_LIBRARY_PATH", "/tmp/no-real-load-required")
+			t.Setenv("SMITHERS_REPO_STORAGE_PATH", t.TempDir())
+
+			if _, err := LoadConfig(); err != nil && strings.Contains(err.Error(), "SMITHERS_TRACE_SAMPLE_RATE") {
+				t.Fatalf("LoadConfig rejected valid rate %s: %v", raw, err)
+			}
+		})
+	}
+}
+
 func TestConfig_Cov_LoadConfigReportsStorageCreateError(t *testing.T) {
 	configCovClearEnv(t)
 	parentFile := filepath.Join(t.TempDir(), "not-a-dir")

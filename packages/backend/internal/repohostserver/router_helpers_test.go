@@ -138,6 +138,9 @@ func TestDecodeRequest_Matrix(t *testing.T) {
 		{name: "valid_json", body: `{"name":"alice"}`, wantName: "alice"},
 		{name: "invalid_json", body: `{`, wantError: "invalid JSON"},
 		{name: "wrong_type", body: `{"name":1}`, wantError: "invalid JSON"},
+		{name: "trailing_whitespace", body: "{\"name\":\"alice\"}\n\t ", wantName: "alice"},
+		{name: "concatenated_json", body: `{"name":"alice"}{"name":"mallory"}`, wantError: "invalid JSON"},
+		{name: "trailing_garbage", body: `{"name":"alice"} x`, wantError: "invalid JSON"},
 	}
 
 	for _, tc := range tests {

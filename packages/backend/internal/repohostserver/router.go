@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1862,6 +1863,11 @@ func (s *Server) repoPathFromID(repoID string) (string, error) {
 func decodeRequest(r *http.Request, out any) error {
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(out); err != nil {
+		return badRequest("invalid JSON")
+	}
+	// Exactly one JSON value: a second value or trailing bytes would let
+	// proxies, signers, and this server read the same body differently.
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
 		return badRequest("invalid JSON")
 	}
 	return nil

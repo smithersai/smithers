@@ -6,6 +6,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 type gitCovErrReader struct{}
@@ -121,5 +122,28 @@ func TestGit_Cov_ListGitRefsRejectsMalformedLines(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+// A repository with a pathological ref set must not make listGitRefs buffer
+// an unbounded listing while the push holds the repository write lock: past
+// the cap git is killed and the snapshot fails with a typed error.
+func TestGit_Cov_ListGitRefsFailsClosedPastByteCap(t *testing.T) {
+	oldMax := maxRefListingBytes
+	maxRefListingBytes = 1024
+	t.Cleanup(func() { maxRefListingBytes = oldMax })
+
+	// An endless listing: only a killed subprocess ends it.
+	installGitStub(t, "#!/bin/sh\nwhile :; do printf 'refs/heads/x\\000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\n'; done\n")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	start := time.Now()
+	_, err := listGitRefs(ctx, t.TempDir())
+	if !errors.Is(err, errRefListingTooLarge) {
+		t.Fatalf("listGitRefs error = %v, want errRefListingTooLarge", err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("listGitRefs took %s; git was not killed at the cap", elapsed)
 	}
 }

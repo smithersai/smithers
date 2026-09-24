@@ -3,6 +3,7 @@ package repohostserver
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -188,6 +189,9 @@ func observabilityFromEnv() (config.ObservabilityConfig, error) {
 		parsed, err := strconv.ParseFloat(raw, 64)
 		if err != nil {
 			return config.ObservabilityConfig{}, fmt.Errorf("SMITHERS_TRACE_SAMPLE_RATE must be a number between 0 and 1: %w", err)
+		}
+		if math.IsNaN(parsed) || parsed < 0 || parsed > 1 {
+			return config.ObservabilityConfig{}, fmt.Errorf("SMITHERS_TRACE_SAMPLE_RATE must be a number between 0 and 1: got %q", raw)
 		}
 		sampleRate = parsed
 	}
