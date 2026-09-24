@@ -1916,7 +1916,7 @@ describe("the smthrs init scaffold, launched as written", processBudget, () => {
       expect(smithers(cwd, ["init", "hello", "--json"], environment).status).toBe(0)
 
       const flow = readFileSync(join(cwd, "flows", "hello", "flow.mdx"), "utf8")
-      expect(flow).toContain("\nmodel: openai:gpt-5.6-sol\n")
+      expect(flow).toContain("\nmodel: openai:gpt-6-sol\n")
       // The scaffold says which key chose the seat and where to see the rest,
       // as a YAML comment: the markdown body is the agent's instructions.
       expect(flow).toContain("OPENAI_API_KEY")
@@ -2037,7 +2037,7 @@ describe.skipIf(!chatgptSeat)("the smthrs init scaffold on a funded seat", { tim
         env: environment
       })
       expect(initialized.status).toBe(0)
-      expect((JSON.parse(initialized.stdout) as { readonly seat: string }).seat).toBe("openai:gpt-5.6-sol")
+      expect((JSON.parse(initialized.stdout) as { readonly seat: string }).seat).toBe("openai:gpt-6-sol")
 
       const launched = spawnSync(process.execPath, [
         "--no-warnings",

@@ -28,7 +28,7 @@ const TREE = `aomi/
 │     └─ chain-balance.tsx        Pane           chain-balance
 ├─ flows/
 │  ├─ build/
-│  │  ├─ AGENT.ts                 Agent    openai:gpt-5.6-sol
+│  │  ├─ AGENT.ts                 Agent    openai:gpt-6-sol
 │  │  └─ flow.ts                  Flow           build
 │  └─ chat/flow.ts                Flow           chat
 └─ tools/
@@ -58,7 +58,7 @@ const FLOWS = [
     sandboxUp: "2 up",
     tools: "TOOLS.ts",
     toolsUp: "2 up",
-    seat: "openai:gpt-5.6-sol",
+    seat: "openai:gpt-6-sol",
     calls: 64,
     maxFrames: 24
   },

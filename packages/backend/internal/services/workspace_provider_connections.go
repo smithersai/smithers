@@ -141,7 +141,7 @@ func (b *workspaceProviderBinding) availableProviderNames() map[string]bool {
 }
 
 // These defaults are already present in the current native model catalog and
-// deployed app: DeferredTools/ReviewLint (Luna), ModelCatalog (Sonnet), and the
+// deployed app: ReviewLint (GPT-6 Luna), ModelCatalog (Sonnet), and the
 // Worker recommendation + Cerebras integration test (gpt-oss). A deployment can
 // pin a different model without adding a repository setting. Never probe or
 // silently retry a failed completion against a different provider.
@@ -149,7 +149,7 @@ var workspaceCodingModels = []struct {
 	Provider, Model string
 	Keys            []string
 }{
-	{"openai", "gpt-5.6-luna", []string{"OPENAI_CODEX_ACCESS_TOKEN", "OPENAI_API_KEY"}},
+	{"openai", "gpt-6-luna", []string{"OPENAI_CODEX_ACCESS_TOKEN", "OPENAI_API_KEY"}},
 	{"anthropic", "claude-sonnet-4-6", []string{"ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"}},
 	{"cerebras", "gpt-oss-120b", []string{"CEREBRAS_API_KEY"}},
 }

@@ -9,7 +9,7 @@ import type { Input } from "./schema.ts"
 
 const { values } = parseArgs({ options: {
   check: { type: "boolean" }, root: { type: "string" }, output: { type: "string" }, verified: { type: "boolean" },
-  model: { type: "string", default: "openai:gpt-5.6-sol" }, run: { type: "string" },
+  model: { type: "string", default: "openai:gpt-6-sol" }, run: { type: "string" },
   database: { type: "string" }, help: { type: "boolean" }, "reuse-run": { type: "string" }
 } })
 if (values.help) {

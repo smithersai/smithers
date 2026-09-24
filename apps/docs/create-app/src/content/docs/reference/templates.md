@@ -105,7 +105,7 @@ The Aomi Build page as a Smithers app: a chat flow and a build pipeline over an
 in-memory EVM fork, six panes, a full Worker, and a Cloudflare deploy.
 
 - **Seats.** The root `AGENT.ts` seats `openai:gpt-5.5` with 32 calls and 12
-  frames. `flows/build/AGENT.ts` seats `openai:gpt-5.6-sol` with 64 calls and
+  frames. `flows/build/AGENT.ts` seats `openai:gpt-6-sol` with 64 calls and
   24 frames, which is the layer rule in one file: it moves the build pipeline
   to a stronger seat and leaves its sandbox and tools resolving to the root.
 - **Flows.** `chat` (a chat flow, answering chain questions) and `build` (a

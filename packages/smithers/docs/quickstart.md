@@ -166,7 +166,7 @@ With no resolvable provider credential the launch is refused rather than left
 hanging, and the run row settles `failed`:
 
 ```text
-LaunchFailed: Set OPENAI_API_KEY to run the openai:gpt-5.6-sol seat
+LaunchFailed: Set OPENAI_API_KEY to run the openai:gpt-6-sol seat
 ```
 
 ## Read the run back

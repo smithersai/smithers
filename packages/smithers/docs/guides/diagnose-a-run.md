@@ -41,11 +41,11 @@ smthrs status <run-id>
 The status card is the diagnosis, computed from the run's journal events alone:
 
 ```text
-Verdict   failed: Set OPENAI_API_KEY to run the openai:gpt-5.6-sol seat
+Verdict   failed: Set OPENAI_API_KEY to run the openai:gpt-6-sol seat
 Run       run-1 · hello · 0s
 Activity  0 turns · 0 calls (0 refused, 0 duplicate) · edits 0/0
 Tokens    0 in / 0 out
-Cause     Set OPENAI_API_KEY to run the openai:gpt-5.6-sol seat
+Cause     Set OPENAI_API_KEY to run the openai:gpt-6-sol seat
 Next      smthrs logs run-1    # turn-by-turn transcript
 ```
 

@@ -18,7 +18,7 @@ Generation output must be a dedicated directory inside the source workspace. To 
 Run the semantic reviewer and require every section to be supported:
 
 ```sh
-node --experimental-strip-types flows/wiki/main.ts --verified --model openai:gpt-5.6-sol
+node --experimental-strip-types flows/wiki/main.ts --verified --model openai:gpt-6-sol
 node --experimental-strip-types flows/wiki/main.ts --check --verified
 ```
 

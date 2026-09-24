@@ -24,7 +24,7 @@
 # dataset.
 set -eu
 S="$(cd "$(dirname "$0")" && pwd)"
-SEAT="${1:-openai:gpt-5.6-sol}"
+SEAT="${1:-openai:gpt-6-sol}"
 WORK="$S/work-liveness"
 CAP="${SWB_READ_ONLY_CAP:-12}"
 

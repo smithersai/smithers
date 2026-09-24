@@ -95,9 +95,9 @@ run_one() {
   if [ -n "${SWB_RUN_CMD:-}" ]; then
     "$SWB_RUN_CMD" "$ID" "${BUDGET:-}" "" "$INDEX"
   elif [ "$HARNESS" = "codex" ]; then
-    "$S/run-instance-codex.sh" "$ID" "${BUDGET:-1500}" "${SWB_CODEX_MODEL:-gpt-5.6-sol}" "$INDEX"
+    "$S/run-instance-codex.sh" "$ID" "${BUDGET:-1500}" "${SWB_CODEX_MODEL:-gpt-6-sol}" "$INDEX"
   else
-    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-5.6-sol}" "${BUDGET:-1200}" "$INDEX"
+    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6-sol}" "${BUDGET:-1200}" "$INDEX"
   fi
   CODE=$?
   END=$(date +%s)

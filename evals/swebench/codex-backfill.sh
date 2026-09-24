@@ -141,7 +141,7 @@ SWB_CODEX_NETWORK="${SWB_CODEX_NETWORK:-$LANE_NETWORK}"
 SWB_CODEX_EFFORT="${SWB_CODEX_EFFORT:-$LANE_EFFORT}"
 SWB_TESTBED_NETWORK="${SWB_TESTBED_NETWORK:-$LANE_TESTBED}"
 export SWB_CODEX_NETWORK SWB_CODEX_EFFORT SWB_TESTBED_NETWORK
-MODEL="${SWB_CODEX_MODEL:-gpt-5.6-sol}"
+MODEL="${SWB_CODEX_MODEL:-gpt-6-sol}"
 MODEL_NAME="${SWB_MODEL_NAME:-codex-cli}"
 # The same per-instance budget the flows side was given by the full benchmark.
 # A baseline run under a different clock is not a baseline.

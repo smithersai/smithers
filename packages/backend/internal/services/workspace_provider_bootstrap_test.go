@@ -67,13 +67,13 @@ func TestWorkspaceProviderBootstrapPrecedenceAndRedaction(t *testing.T) {
 
 func TestWorkspaceProviderBootstrapDefaultsAndExplicitChoice(t *testing.T) {
 	for _, tc := range []struct{ name, key, value, pin, want string }{
-		{"openai", "OPENAI_API_KEY", "real-openai", "", "openai:gpt-5.6-luna"},
+		{"openai", "OPENAI_API_KEY", "real-openai", "", "openai:gpt-6-luna"},
 		{"anthropic", "ANTHROPIC_API_KEY", "real-anthropic", "", "anthropic:claude-sonnet-4-6"},
 		{"cerebras", "CEREBRAS_API_KEY", "real-cerebras", "", "cerebras:gpt-oss-120b"},
 		{"placeholder", "OPENAI_API_KEY", "placeholder-pending-seed", "", ""},
 		{"proxy-placeholder", "OPENAI_API_KEY", sandbox.EgressProxyPlaceholder("OPENAI_API_KEY"), "", ""},
 		{"unsupported", "UNKNOWN_KEY", "real-unsupported", "", ""},
-		{"unavailable pin", "CEREBRAS_API_KEY", "real-cerebras", "openai:gpt-5.6-luna", ""},
+		{"unavailable pin", "CEREBRAS_API_KEY", "real-cerebras", "openai:gpt-6-luna", ""},
 		{"malformed pin", "CEREBRAS_API_KEY", "real-cerebras", "invalid", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -132,7 +132,7 @@ func TestWorkspaceCodingModelFallbackOnlyChangesPublicModel(t *testing.T) {
 		want string
 	}{
 		{nil, ""},
-		{[]string{"OPENAI_API_KEY=" + sandbox.EgressProxyPlaceholder("OPENAI_API_KEY")}, "openai:gpt-5.6-luna"},
+		{[]string{"OPENAI_API_KEY=" + sandbox.EgressProxyPlaceholder("OPENAI_API_KEY")}, "openai:gpt-6-luna"},
 		{[]string{"CEREBRAS_API_KEY=placeholder-pending-seed"}, ""},
 		{[]string{"OPENAI_API_KEY=private-owner-value", "SMITHERS_CODING_IMPLEMENT_MODEL=owner:chosen"}, "owner:chosen"},
 		{[]string{"OPENAI_API_KEY=private-owner-value", "SMITHERS_CODING_IMPLEMENT_MODEL="}, ""},

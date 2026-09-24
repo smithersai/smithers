@@ -158,7 +158,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
     id: "implementation",
     label: "Implementation",
     purpose: "Implements non-trivial changes end to end, with tests.",
-    model: { provider: "openai", id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
+    model: { provider: "openai", id: "gpt-6-sol", label: "GPT-6 Sol" },
     harness: "codex",
     delegates: false
   }),
@@ -166,7 +166,7 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
     id: "trivial-implementation",
     label: "Trivial implementation",
     purpose: "Makes small, low-risk, mechanical changes quickly.",
-    model: { provider: "openai", id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
+    model: { provider: "openai", id: "gpt-6-luna", label: "GPT-6 Luna" },
     harness: "codex",
     delegates: false
   }),

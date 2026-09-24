@@ -106,7 +106,7 @@ const HOOKS: ReadonlyArray<Hook> = [
     ],
     resolution: [
       { id: "a", path: "system", value: "4 lines", plugin: "flows-plugin-audit" },
-      { id: "b", path: "seat", value: "openai:gpt-5.6-sol", plugin: "flows-plugin-cache" }
+      { id: "b", path: "seat", value: "openai:gpt-6-sol", plugin: "flows-plugin-cache" }
     ],
     errors: []
   }

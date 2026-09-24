@@ -179,7 +179,7 @@ describe("the seat the scaffold writes", () => {
       resolved: true
     })
     expect(Init.defaultSeat({ OPENAI_API_KEY: "k" })).toEqual({
-      seat: "openai:gpt-5.6-sol",
+      seat: "openai:gpt-6-sol",
       variable: "OPENAI_API_KEY",
       resolved: true
     })
@@ -195,7 +195,7 @@ describe("the seat the scaffold writes", () => {
 
   it("counts the ChatGPT session as the openai credential, and an exported empty key as unset", () => {
     expect(Init.defaultSeat({ SMITHERS_OPENAI_AUTH: "chatgpt" })).toEqual({
-      seat: "openai:gpt-5.6-sol",
+      seat: "openai:gpt-6-sol",
       variable: "SMITHERS_OPENAI_AUTH",
       resolved: true
     })
@@ -226,7 +226,7 @@ describe("the seat the scaffold writes", () => {
   it("writes the seat, and the sentence that says how to change it, into the frontmatter", () => {
     const body = Init.template("review", Init.defaultSeat({ OPENAI_API_KEY: "k" }))
 
-    expect(body).toContain("\nmodel: openai:gpt-5.6-sol\n")
+    expect(body).toContain("\nmodel: openai:gpt-6-sol\n")
     expect(body).toContain("OPENAI_API_KEY")
     expect(body).toContain("smthrs doctor")
     // The explanation is a YAML comment, not prose: every line of the body is
@@ -270,7 +270,7 @@ describe("the seat the scaffold writes", () => {
 
     const result = Init.scaffold(root, "review", { OPENAI_API_KEY: "k" })
 
-    expect(result.seat).toBe("openai:gpt-5.6-sol")
-    expect(readFileSync(result.flowFile, "utf8")).toContain("model: openai:gpt-5.6-sol")
+    expect(result.seat).toBe("openai:gpt-6-sol")
+    expect(readFileSync(result.flowFile, "utf8")).toContain("model: openai:gpt-6-sol")
   })
 })

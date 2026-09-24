@@ -152,11 +152,11 @@ export const compatibleKey = (
  * @since 1.0.0-rc.0
  */
 export const defaultSeat: Readonly<Record<Candidate, string>> = {
-  "codex-subscription": "openai:gpt-5.6-sol",
+  "codex-subscription": "openai:gpt-6-sol",
   "kimi-k3": "moonshot:kimi-k3",
-  openai: "openai:gpt-5.6-sol",
+  openai: "openai:gpt-6-sol",
   gemini: "gemini:gemini-2.5-pro",
-  openrouter: "openrouter:openai/gpt-5.6-sol",
+  openrouter: "openrouter:openai/gpt-6-sol",
   cerebras: "cerebras:qwen-3.8-27b"
 }
 

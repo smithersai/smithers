@@ -54,13 +54,17 @@ describe("the BYO-OpenAI seats name models that exist", () => {
   // that 404s on first use, and both steps that run on the cheap seat catch
   // their own failure, so the mode degrades to "no narration, no quiz" with
   // nothing in the log. The pin is what makes a typo loud.
-  test("both models are ones @smthrs/model reports wire support for", () => {
-    for (const modelId of openaiSeatModels()) {
-      expect({ modelId, supported: DeferredTools.supportsDeferred("openai-responses", modelId) }).toEqual({
-        modelId,
-        supported: true,
-      });
-    }
+  test("the review seat is GPT-6 Sol and the cheap seat is one @smthrs/model reports wire support for", () => {
+    const [review, cheap] = openaiSeatModels();
+    expect(review).toBe("gpt-6-sol");
+    expect({ modelId: cheap, supported: DeferredTools.supportsDeferred("openai-responses", cheap!) }).toEqual({
+      modelId: cheap,
+      supported: true,
+    });
+  });
+
+  test("neither seat is a GPT-5.6 model", () => {
+    expect(openaiSeatModels().filter((modelId) => /gpt-5\.6/.test(modelId))).toEqual([]);
   });
 
   const liveModels = liveSuiteGate({

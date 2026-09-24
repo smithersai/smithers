@@ -72,7 +72,7 @@ const SEATS = [
     kind: "role" as const,
     label: "Implementation",
     purpose: "Implements non-trivial changes end to end, with tests.",
-    modelId: "gpt-5.6-sol",
+    modelId: "gpt-6-sol",
     modelLabel: "GPT-5.6 Sol",
     harness: "codex",
     harnessState: "signed-in",
@@ -98,7 +98,7 @@ const SEATS = [
     kind: "role" as const,
     label: "Trivial implementation",
     purpose: "Small, low-risk, mechanical changes, quickly.",
-    modelId: "gpt-5.6-luna",
+    modelId: "gpt-6-luna",
     modelLabel: "GPT-5.6 Luna",
     harness: "codex",
     harnessState: "signed-in",
@@ -254,8 +254,8 @@ const SEATS = [
 const MODELS = [
   { id: "claude-fable-5", provider: "anthropic", protocol: "anthropic-messages", window: "1 000 000", seats: "1" },
   { id: "claude-sonnet-4-5", provider: "anthropic", protocol: "anthropic-messages", window: "200 000", seats: "0" },
-  { id: "gpt-5.6-sol", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
-  { id: "gpt-5.6-luna", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
+  { id: "gpt-6-sol", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
+  { id: "gpt-6-luna", provider: "openai", protocol: "openai-responses", window: "400 000", seats: "1" },
   { id: "kimi-for-coding/k3", provider: "kimi-for-coding", protocol: "openai-chat-completions", window: "128 000", seats: "2" },
   { id: "cerebras/qwen-3.8-27b", provider: "cerebras", protocol: "openai-chat-completions", window: "128 000", seats: "1" },
   { id: "typesafe-ai/jev", provider: "typesafe-ai", protocol: "evaluation-model", window: "—", seats: "3" }

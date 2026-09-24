@@ -86,7 +86,7 @@ Add an `AGENT.ts` beside the flow:
 import { defineAgent } from "@smthrs/create-app/app"
 
 export const Agent = defineAgent({
-  seat: "openai:gpt-5.6-sol",
+  seat: "openai:gpt-6-sol",
   system: ["You review ledger entries for compliance risk."],
   limits: { calls: 64 },
   maxFrames: 24

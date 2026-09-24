@@ -50,15 +50,15 @@ export interface ResolvedInferenceEnv {
 /**
  * The seats a BYO OpenAI key runs on, matching the Anthropic defaults' tiers.
  *
- * Both model ids are ones `@smthrs/model` reports OpenAI wire support for, and
- * `tests/action/resolveInferenceEnv.test.ts` pins that. A seat string is never
- * validated at resolve time: an unserved id becomes a route that 404s on first
- * use, and the two steps on the cheap seat catch their own failure, so a typo
- * here degrades the mode to "no narration, no quiz" without a word in the log.
- * `gpt-5.6-sol` is the reviewing model 0.x's action used; `gpt-5.4-mini` is the
- * served small model in the same family.
+ * The review seat is `gpt-6-sol`, the GPT-6 workhorse; GPT-5.6 is never
+ * selected. The cheap seat is `gpt-5.4-mini`, which `@smthrs/model` reports
+ * OpenAI wire support for. `tests/action/resolveInferenceEnv.test.ts` pins
+ * both. A seat string is never validated at resolve time: an unserved id
+ * becomes a route that 404s on first use, and the two steps on the cheap seat
+ * catch their own failure, so a typo here degrades the mode to "no narration,
+ * no quiz" without a word in the log.
  */
-const OPENAI_REVIEW_SEAT = "openai:gpt-5.6-sol";
+const OPENAI_REVIEW_SEAT = "openai:gpt-6-sol";
 const OPENAI_CHEAP_SEAT = "openai:gpt-5.4-mini";
 
 /**

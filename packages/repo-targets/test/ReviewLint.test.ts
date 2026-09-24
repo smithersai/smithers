@@ -77,7 +77,7 @@ describe("ReviewTagsMigrationsAndKeys", () => {
   it("bakes the engine, the model tier, the batch size and the failure threshold", () => {
     const attrs = attrsOf(target)
     expect(attrs.engine).toBe("codex")
-    expect(attrs.model).toBe("gpt-5.6-luna")
+    expect(attrs.model).toBe("gpt-6-luna")
     expect(attrs.batchSize).toBe(2)
     expect(attrs.failOn).toBe("error")
     expect(attrs.prompt).toBe(smithersReviewPrompt)
@@ -211,13 +211,13 @@ describe("the macros take a caller's base revision, model tier and dependencies"
     const target = ReviewTagsMigrationsAndKeys({
       cwd: "packages/smithers/flows/journal",
       base: "origin/next",
-      model: "gpt-5.6-sol",
+      model: "gpt-6-sol",
       deps: [dependency]
     })
     const attrs = attrsOf(target)
 
     expect(attrs.changes.base).toBe("origin/next")
-    expect(attrs.model).toBe("gpt-5.6-sol")
+    expect(attrs.model).toBe("gpt-6-sol")
     expect(Target.metadata(target).dependencies).toEqual([dependency])
   })
 })
@@ -226,7 +226,7 @@ describe("the macros pair the engine with the model id it runs", () => {
   it("defaults to codex with the codex tier, matching the README's Ask Codex wording", () => {
     const attrs = attrsOf(ReviewJsdocAgainstCode({ cwd: "packages/smithers/flows/journal" }))
     expect(attrs.engine).toBe("codex")
-    expect(attrs.model).toBe("gpt-5.6-luna")
+    expect(attrs.model).toBe("gpt-6-luna")
   })
 
   it("threads a claude engine and its model id through to the emitted attrs", () => {

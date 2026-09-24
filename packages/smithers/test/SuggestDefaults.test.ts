@@ -110,10 +110,10 @@ describe("the credential store, read off disk when no reader is injected", () =>
 
     // Nothing but the file on disk makes this seat available: the
     // environment is empty and no reader was passed.
-    expect(outcome.seat).toBe("openai:gpt-5.6-sol")
+    expect(outcome.seat).toBe("openai:gpt-6-sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
-      seat: "openai:gpt-5.6-sol",
+      seat: "openai:gpt-6-sol",
       source: "codex-subscription",
       label: "Codex subscription"
     })
@@ -199,7 +199,7 @@ describe("a repository that cannot be read", () => {
     expect(error.message).toBe("the scan of /gone failed: EACCES: permission denied")
     // The intro is printed before anything is read, so a failed scan still
     // tells the operator which seat the run had picked.
-    expect(terminal.text()).toContain("smthrs suggest on openai:gpt-5.6-sol (OpenAI)")
+    expect(terminal.text()).toContain("smthrs suggest on openai:gpt-6-sol (OpenAI)")
   })
 })
 
@@ -285,7 +285,7 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
           // key for: the composition is built and the seat is resolved for
           // real, and the refusal is the last thing that happens before a
           // request would be signed.
-          seat: "openrouter:openai/gpt-5.6-sol",
+          seat: "openrouter:openai/gpt-6-sol",
           environment: {},
           readFile: () => undefined
         }).pipe(Effect.provideService(Ui.Ui, service))
@@ -297,7 +297,7 @@ describe("the implementing step, defaulted to the bundled flow on this host", ()
     // The step is named first, so an operator watching several of them knows
     // which one stopped, and the resolver's own sentence says what to set.
     expect(error.message).toMatch(new RegExp(`^${onlyMatch}: `))
-    expect(error.message).toContain("Set OPENROUTER_API_KEY to run the openrouter:openai/gpt-5.6-sol seat")
+    expect(error.message).toContain("Set OPENROUTER_API_KEY to run the openrouter:openai/gpt-6-sol seat")
     // The spinner for that step settled as an error rather than being left
     // spinning over a failure.
     expect(settled).toEqual([`${onlyMatch}: failed`])

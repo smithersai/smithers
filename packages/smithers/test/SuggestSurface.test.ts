@@ -168,10 +168,10 @@ describe("the credential store the seat scan reads when it is handed no reader",
 
     // No `readFile`, no `MOONSHOT_API_KEY`: the only thing that can have
     // chosen this seat is the file the default reader opened under `home`.
-    expect(outcome.seat).toBe("openai:gpt-5.6-sol")
+    expect(outcome.seat).toBe("openai:gpt-6-sol")
     expect(JSON.parse(documents.at(-2)!)).toEqual({
       document: "seat",
-      seat: "openai:gpt-5.6-sol",
+      seat: "openai:gpt-6-sol",
       source: "codex-subscription",
       label: "Codex subscription"
     })

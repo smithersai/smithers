@@ -158,7 +158,7 @@ they need, on demand. Nothing in bootstrap spends model tokens.
 ```sh
 export OPENAI_API_KEY=sk-...
 ./preflight.sh                                                   # once per wave
-./run-instance.sh django__django-16612 openai:gpt-5.6-sol 1200
+./run-instance.sh django__django-16612 openai:gpt-6-sol 1200
 ```
 
 The script extracts the instance's testbed out of the official image, bind
@@ -1837,7 +1837,7 @@ split, and the bundle says so instead of printing one.
 | `SWB_CODEX_LANE` | `net` | the lane, and with it the five rows below it |
 | `SWB_CODEX_NETWORK` | the lane's | `on`, `sealed` or `off`; see the sealed lane |
 | `SWB_CODEX_EFFORT` | the lane's | `minimal`, `low`, `medium`, `high` or `xhigh`; see [Reasoning effort](#reasoning-effort) |
-| `SWB_CODEX_MODEL` | `gpt-5.6-sol` | the model, which must be the one the flows side ran |
+| `SWB_CODEX_MODEL` | `gpt-6-sol` | the model, which must be the one the flows side ran |
 
 ### Lanes, and the sealed one
 

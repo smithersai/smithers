@@ -34,8 +34,7 @@ const byProvider: Readonly<Record<Providers.Candidate, ReadonlyArray<Omit<Model,
   openai: subscription,
   "kimi-k3": [{ seat: Providers.defaultSeat["kimi-k3"], label: "Kimi K3" }],
   gemini: [{ seat: Providers.defaultSeat.gemini, label: "Gemini 2.5 Pro" }],
-  // Pinned: the shared OpenRouter default seat is an older OpenAI model.
-  openrouter: [{ seat: "openrouter:openai/gpt-6-sol", label: "GPT-6 Sol" }],
+  openrouter: [{ seat: Providers.defaultSeat.openrouter, label: "GPT-6 Sol" }],
   cerebras: [{ seat: Providers.defaultSeat.cerebras, label: "Qwen 3.8" }]
 }
 

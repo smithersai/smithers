@@ -25,7 +25,7 @@
  *
  * @since 0.1.0
  */
-const [, , seat = "openai:gpt-5.6-sol", cap = "12"] = process.argv
+const [, , seat = "openai:gpt-6-sol", cap = "12"] = process.argv
 const frames = Number.parseInt(cap, 10) + 2
 
 process.stdout.write(`---

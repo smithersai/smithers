@@ -113,7 +113,7 @@ export const isAgentDeclaration: (value: unknown) => value is AgentDeclaration =
 /**
  * Schema for the `agent` attr: a reference to a workspace-declared agent
  * (`S.Agents.luna`), or an agent declaration written where it is used
- * (`S.Agent.Codex("gpt-5.6-luna")`).
+ * (`S.Agent.Codex("gpt-6-luna")`).
  *
  * Both spellings say the same thing about which agent runs. The reference
  * form names the workspace's reviewed set and is what a repository with an
@@ -949,8 +949,8 @@ export const Pr = prDefinition
  * The model name one agent declaration names.
  *
  * The model is the whole declaration, so a bare string is the same
- * declaration written shorter: `S.Agent.Codex("gpt-5.6-luna")` and
- * `S.Agent.Codex({ model: "gpt-5.6-luna" })` construct the same value. Both spellings
+ * declaration written shorter: `S.Agent.Codex("gpt-6-luna")` and
+ * `S.Agent.Codex({ model: "gpt-6-luna" })` construct the same value. Both spellings
  * appear in design-partner declarations, and neither is more correct than the
  * other.
  */

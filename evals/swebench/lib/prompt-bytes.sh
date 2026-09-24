@@ -27,7 +27,7 @@ if [ -z "$LOG" ] || [ ! -f "$LOG" ]; then
   exit 2
 fi
 DATASET="${SWB_DATASET:-$S/swb-verified.json}"
-SEAT="${SWB_SEAT:-openai:gpt-5.6-sol}"
+SEAT="${SWB_SEAT:-openai:gpt-6-sol}"
 PY="$S/.venv-swb/bin/python"
 if [ ! -x "$PY" ]; then
   echo "prompt-bytes.sh: no evaluator venv at $PY — run ./bootstrap.sh first" >&2

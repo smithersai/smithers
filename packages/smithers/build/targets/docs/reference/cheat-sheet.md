@@ -143,7 +143,7 @@ const goExecutable = S.Go.bin
 // Agents and pools
 const agents = S.Agents({
   claude: S.Agent.ClaudeCode("opus"),
-  codex: S.Agent.Codex({ model: "gpt-5.6-luna" }),
+  codex: S.Agent.Codex({ model: "gpt-6-luna" }),
   reviewers: S.Agent.Pool(["claude", "codex"])
 })
 const reviewer = agents.reviewers
@@ -728,7 +728,7 @@ const llmLint = S.LlmLint({
   prompt: "Review these changes for correctness.",
   rubric: "Report concrete bugs, unsafe behavior, and missing tests.",
   engine: "codex",
-  model: "gpt-5.6-luna",
+  model: "gpt-6-luna",
   batchSize: 4,
   failOn: "error"
 })

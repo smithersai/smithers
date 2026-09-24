@@ -63,7 +63,7 @@ The string holds no credential, endpoint, or client. At launch the CLI's seat re
 OpenRouter seats spell the model as `openrouter:vendor/model`, for example `openrouter:anthropic/claude-sonnet-4.5`. A seat with no `:` reads as a bare model id on the Anthropic route. Any other provider prefix declines the launch: the resolver reports that no route is configured for that provider.
 
 :::note
-`smthrs init` writes the scaffold's `model:` line from the first provider credential your environment sets, in the order `smthrs doctor` reports them: `ANTHROPIC_API_KEY` gives `anthropic:claude-sonnet-4-5`, `OPENAI_API_KEY` gives `openai:gpt-5.6-sol`, and `OPENROUTER_API_KEY` gives `openrouter:anthropic/claude-sonnet-4.5`. Moonshot, Gemini, and Cerebras follow. See the [init reference](/docs/reference/cli/init/) for the full order.
+`smthrs init` writes the scaffold's `model:` line from the first provider credential your environment sets, in the order `smthrs doctor` reports them: `ANTHROPIC_API_KEY` gives `anthropic:claude-sonnet-4-5`, `OPENAI_API_KEY` gives `openai:gpt-6-sol`, and `OPENROUTER_API_KEY` gives `openrouter:anthropic/claude-sonnet-4.5`. Moonshot, Gemini, and Cerebras follow. See the [init reference](/docs/reference/cli/init/) for the full order.
 :::
 
 [Agent runtime](/docs/concepts/agent-runtime/) explains the two halves of a seat and what `SeatResolver` does with them.

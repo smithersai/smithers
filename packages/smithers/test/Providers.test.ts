@@ -31,11 +31,11 @@ describe("Providers.detect", () => {
     ])
     expect(detections.every((detection) => !detection.available)).toBe(true)
     expect(detections.map((detection) => detection.seat)).toEqual([
-      "openai:gpt-5.6-sol",
+      "openai:gpt-6-sol",
       "moonshot:kimi-k3",
-      "openai:gpt-5.6-sol",
+      "openai:gpt-6-sol",
       "gemini:gemini-2.5-pro",
-      "openrouter:openai/gpt-5.6-sol",
+      "openrouter:openai/gpt-6-sol",
       "cerebras:qwen-3.8-27b"
     ])
     expect(detections.some((detection) => detection.seat.startsWith("anthropic"))).toBe(false)
@@ -124,7 +124,7 @@ describe("Providers.chooseSeat", () => {
     const chosen = Providers.chooseSeat(detections)
 
     expect(chosen).toMatchObject({
-      seat: "openai:gpt-5.6-sol",
+      seat: "openai:gpt-6-sol",
       source: "codex-subscription",
       environment: { SMITHERS_OPENAI_AUTH: "chatgpt" }
     })
@@ -137,9 +137,9 @@ describe("Providers.chooseSeat", () => {
     expect(chosen).toBeInstanceOf(Providers.NoSeatError)
     const message = (chosen as Providers.NoSeatError).message
     expect(message).toContain("No model seat is available")
-    expect(message).toContain("Codex subscription (openai:gpt-5.6-sol): no /home/op/.codex/auth.json")
+    expect(message).toContain("Codex subscription (openai:gpt-6-sol): no /home/op/.codex/auth.json")
     expect(message).toContain("Kimi K3 (moonshot:kimi-k3): $MOONSHOT_API_KEY is not set")
-    expect(message).toContain("OpenAI (openai:gpt-5.6-sol): $OPENAI_API_KEY exported but empty")
+    expect(message).toContain("OpenAI (openai:gpt-6-sol): $OPENAI_API_KEY exported but empty")
     expect(message).toContain("Gemini (gemini:gemini-2.5-pro): $GEMINI_API_KEY or $GOOGLE_API_KEY is not set")
     expect(message).toContain("Cerebras (cerebras:qwen-3.8-27b)")
     expect(message).toContain("--seat <provider:model>")
@@ -183,5 +183,15 @@ describe("Providers.compatibleKey", () => {
     })
     expect(Providers.compatibleKey("moonshot", {})).toBeUndefined()
     expect(Providers.compatibleKey("constructor", { MOONSHOT_API_KEY: "m" })).toBeUndefined()
+  })
+})
+
+describe("Providers default seats", () => {
+  it("never default a candidate or a starter credential to a GPT-5.6 model", () => {
+    const seats = [...Object.values(Providers.defaultSeat), ...Providers.starterSeats.map(([, seat]) => seat)]
+    expect(seats.filter((seat) => /gpt-5\.6/.test(seat))).toEqual([])
+    expect(Providers.defaultSeat.openai).toBe("openai:gpt-6-sol")
+    expect(Providers.defaultSeat["codex-subscription"]).toBe("openai:gpt-6-sol")
+    expect(Providers.defaultSeat.openrouter).toBe("openrouter:openai/gpt-6-sol")
   })
 })

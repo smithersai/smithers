@@ -15,7 +15,7 @@ import { Badge, Code, Facts, Graph, Section, Split, Table, type Tone } from "../
 const MARKDOWN = `---
 description: Reviews the uncommitted change in this repository and returns a verdict with the reasons behind it.
 capabilities: ["fs:read:**", "proc:spawn:*"]
-model: openai:gpt-5.6-sol
+model: openai:gpt-6-sol
 budget:
   tokens: 200000
   milliseconds: 600000
@@ -192,7 +192,7 @@ function FlowsBody({ props, set: runCommandSet }: ExperimentalPaneContext) {
               { label: "body", value: "Markdown", mono: true },
               { label: "input", value: "MarkdownArgs", mono: true },
               { label: "output", value: "MarkdownOutput", mono: true },
-              { label: "model", value: "openai:gpt-5.6-sol", mono: true },
+              { label: "model", value: "openai:gpt-6-sol", mono: true },
               { label: "capabilities", value: "fs:read:** · proc:spawn:*", mono: true },
               { label: "budget", value: "200 000 tokens · 600 000 ms", mono: true },
               { label: "modelInvocable", value: "true", mono: true },

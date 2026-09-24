@@ -52,7 +52,7 @@ CHECKPOINT_EVERY="${SWB_FULLBENCH_CHECKPOINT_EVERY:-25}"
 MIN_FREE_MIB="${SWB_FULLBENCH_MIN_FREE_MIB:-8192}"
 RUN_ID="${SWB_FULLBENCH_RUN_ID:-fullbench}"
 INDEX="${SWB_FULLBENCH_INDEX:-r90}"
-SEAT="${SWB_SEAT:-openai:gpt-5.6-sol}"
+SEAT="${SWB_SEAT:-openai:gpt-6-sol}"
 # `api-key` bills OPENAI_API_KEY credits; `chatgpt` runs the same seat on the
 # operator's ChatGPT plan through the codex CLI's session. Ledger dollars under
 # `chatgpt` are derived at API list prices, not billed; the header records the

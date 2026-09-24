@@ -31,7 +31,7 @@ import type * as Target from "@smthrs/targets/Target"
 const defaultBase = "origin/main"
 
 /** The cheap fast codex tier the reviews run on when the caller names none. */
-const defaultModel = "gpt-5.6-luna"
+const defaultModel = "gpt-6-luna"
 
 /**
  * The framing every review rubric is prepended with.
@@ -53,8 +53,8 @@ export const smithersReviewPrompt = "You are reviewing a diff in `smithers`, an 
  * declaration passes `"."` beside its `//`-rooted globs.
  *
  * `engine` selects the CLI the review runs through and `model` is an id that
- * engine accepts. Omitted, the review runs on `codex` with `gpt-5.6-luna`; a
- * Codex review names another Codex tier such as `gpt-5.6-sol`. Any other engine
+ * engine accepts. Omitted, the review runs on `codex` with `gpt-6-luna`; a
+ * Codex review names another Codex tier such as `gpt-6-sol`. Any other engine
  * has no default model, so a `claude` review must name a Claude id.
  *
  * @category models
@@ -67,7 +67,7 @@ type EngineOptions =
   | {
     /** @default "codex" */
     readonly engine?: "codex" | undefined
-    /** A Codex model id. @default "gpt-5.6-luna" */
+    /** A Codex model id. @default "gpt-6-luna" */
     readonly model?: string | undefined
   }
   | {

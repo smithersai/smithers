@@ -41,7 +41,7 @@ untouched.
 
 | Name         | Type                              | Default  | Description                                                                                                                     |
 | ------------ | --------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `agent`      | `AgentSelector`                   | workspace default | A workspace agent reference (`Smithers.Agents.luna`) or an inline declaration (`Smithers.Agent.Codex("gpt-5.6-luna")`).  |
+| `agent`      | `AgentSelector`                   | workspace default | A workspace agent reference (`Smithers.Agents.luna`) or an inline declaration (`Smithers.Agent.Codex("gpt-6-luna")`).    |
 | `brief`      | `Input.File`                      | required | The human-written paragraph saying what the page is for, its audience, and its type. A declared file input.                    |
 | `prompt`     | `Input.File`                      | required | The page-type instructions the session runs with. A declared file input, at most 1 MiB.                                        |
 | `references` | `Attr.Data`                       | required | Files, globs, filegroups, and targets the writer may read for style and taxonomy. Rendered under `=== FILES ===` in the prompt. |

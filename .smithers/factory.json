@@ -12,7 +12,7 @@
         "fs:read:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-5.6-sol",
+      "model": "openai:gpt-6-sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -43,7 +43,7 @@
         "fs:write:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-5.6-sol",
+      "model": "openai:gpt-6-sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -74,7 +74,7 @@
         "fs:write:.triage/report.json",
         "proc:spawn:rg *"
       ],
-      "model": "openai:gpt-5.6-sol",
+      "model": "openai:gpt-6-sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -109,7 +109,7 @@
         "proc:spawn:pnpm test *",
         "proc:spawn:pnpm exec vitest *"
       ],
-      "model": "openai:gpt-5.6-sol",
+      "model": "openai:gpt-6-sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",
@@ -139,7 +139,7 @@
         "fs:read:**",
         "proc:spawn:*"
       ],
-      "model": "openai:gpt-5.6-sol",
+      "model": "openai:gpt-6-sol",
       "modelInvocable": true,
       "inputSchema": {
         "dialect": "draft-2020-12",

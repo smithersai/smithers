@@ -58,7 +58,7 @@ run_one() {
   if [ "$HARNESS" = "codex" ]; then
     "$S/run-instance-codex.sh" "$ID" ${BUDGET:+"$BUDGET"}
   else
-    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-5.6-sol}" ${BUDGET:+"$BUDGET"}
+    "$S/run-instance.sh" "$ID" "${SWB_SEAT:-openai:gpt-6-sol}" ${BUDGET:+"$BUDGET"}
   fi
 }
 

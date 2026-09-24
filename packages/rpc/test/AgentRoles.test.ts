@@ -48,8 +48,8 @@ describe("the agent role registry", () => {
       model: { id: "kimi-for-coding/k3", provider: "kimi-for-coding" },
       harness: "opencode-kimi"
     })
-    expect(agentRole("implementation")).toMatchObject({ model: { id: "gpt-5.6-sol" }, harness: "codex" })
-    expect(agentRole("trivial-implementation")).toMatchObject({ model: { id: "gpt-5.6-luna" }, harness: "codex" })
+    expect(agentRole("implementation")).toMatchObject({ model: { id: "gpt-6-sol" }, harness: "codex" })
+    expect(agentRole("trivial-implementation")).toMatchObject({ model: { id: "gpt-6-luna" }, harness: "codex" })
     expect(agentRole("ui")).toMatchObject({ harness: "opencode-kimi", model: { id: "kimi-for-coding/k3" } })
     expect(agentRole("fast-ui")).toMatchObject({ harness: "opencode-cerebras", model: { id: "cerebras/qwen-3.8-27b" } })
     expect(AGENT_ROLES.filter((role) => role.delegates).map((role) => role.id)).toEqual(["orchestrator"])

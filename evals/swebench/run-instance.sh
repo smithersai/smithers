@@ -26,7 +26,7 @@
 set -euo pipefail
 S="$(cd "$(dirname "$0")" && pwd)"
 INSTANCE="${1:-}"
-SEAT="${2:-openai:gpt-5.6-sol}"
+SEAT="${2:-openai:gpt-6-sol}"
 BUDGET="${3:-1200}"
 INDEX="${4:-}"
 DATASET="${SWB_DATASET:-$S/swb-verified.json}"

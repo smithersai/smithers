@@ -26,7 +26,7 @@ artifacts. A dry run never asks for publication approval or publishes.
 
 Use Node 26.4+, pnpm, Bun, and the repository's build prerequisites.
 The live model uses the existing Smithers CLI seat resolver and its configured
-credentials; `--model` defaults to `openai:gpt-5.6-sol`. `--max-tokens` defaults
+credentials; `--model` defaults to `openai:gpt-6-sol`. `--max-tokens` defaults
 to 250000 for the whole run. Credentials are not written into the run input.
 Models receive evidence and return typed content; they have no publication or
 shell tools.

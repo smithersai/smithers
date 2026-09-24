@@ -11,7 +11,7 @@
 # Produces patches-codex/<instance_id>.patch, timings-codex/<instance_id>.json,
 # and logs-codex/<instance_id>.*.
 #
-# With a run index — `run-instance-codex.sh <id> 1500 gpt-5.6-sol r3` — every one
+# With a run index — `run-instance-codex.sh <id> 1500 gpt-6-sol r3` — every one
 # of those names carries `-r3`, from the same `lib/run-paths.sh` the flows script
 # derives its names from, so a matrix run of five attempts per instance names its
 # artifacts identically on both sides. A codex run deletes its workspace only
@@ -22,7 +22,7 @@ set -euo pipefail
 S="$(cd "$(dirname "$0")" && pwd)"
 INSTANCE="$1"
 BUDGET="${2:-1500}"
-MODEL="${3:-gpt-5.6-sol}"
+MODEL="${3:-gpt-6-sol}"
 INDEX="${4:-}"
 DATASET="${SWB_DATASET:-$S/swb-verified.json}"
 

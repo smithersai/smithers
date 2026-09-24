@@ -28,7 +28,7 @@ human approval before writes/publication. --input-file accepts a JSON file.
 
 --run <id>      Create/reopen a named run with the same input and model settings.
 --resume <id>   Reopen the stored run without resupplying its input.
---model <seat>  Use the CLI provider seat (default openai:gpt-5.6-sol).
+--model <seat>  Use the CLI provider seat (default openai:gpt-6-sol).
 --max-tokens N  Total model token budget (default 250000).
 
 pnpm release:status <id>          Read stored status without starting the engine.
@@ -125,7 +125,7 @@ export const main = async (argv: readonly string[]) => {
     const current = JSON.parse(await readFile(join(root, "packages/smithers/package.json"), "utf8")) as { version: string }
     const maxTokens = Number(values["max-tokens"] ?? "250000")
     if (!Number.isSafeInteger(maxTokens) || maxTokens < 1) throw new Error("max-tokens must be a positive integer")
-    const settings = { schemaVersion: 1 as const, id, model: values.model ?? "openai:gpt-5.6-sol", maxTokens }
+    const settings = { schemaVersion: 1 as const, id, model: values.model ?? "openai:gpt-6-sol", maxTokens }
     stored = command === "release"
       ? { ...settings, kind: command, input: releaseInput(supplied, current.version) }
       : { ...settings, kind: command, input: contentInput(supplied, current.version) }

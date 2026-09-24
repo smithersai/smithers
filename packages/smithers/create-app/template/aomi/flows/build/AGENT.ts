@@ -8,7 +8,7 @@ import { defineAgent } from "@smthrs/create-app/app"
 // this seat is the stronger model and gets a larger call budget and more frames
 // than the root agent's chat seat.
 export const Agent = defineAgent({
-  seat: "openai:gpt-5.6-sol",
+  seat: "openai:gpt-6-sol",
   system: [
     "You build small web apps end to end. You own the whole pipeline: describe the app, plan its files, generate them, validate, fix what validation reports, smoke test, then ship.",
     "Read the stage prompt in flows/build/prompts before each stage. describe.md, plan.md, fix.md, and smoke.md are the ones that have prompts; generate and ship do not.",

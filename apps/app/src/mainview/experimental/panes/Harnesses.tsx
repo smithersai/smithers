@@ -59,7 +59,7 @@ const HARNESSES: ReadonlyArray<Harness> = [
     account: "roninfucory@gmail.com",
     launch: "codex",
     signal: "~/.codex/auth.json tokens.id_token email",
-    suggestions: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
+    suggestions: ["gpt-6-sol", "gpt-6-astra", "gpt-6-luna"],
     listable: false,
     modelFlag: true
   },

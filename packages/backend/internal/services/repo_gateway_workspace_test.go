@@ -444,7 +444,7 @@ func TestWorkspaceGateway_ProviderBootstrapPreservesHealthyHost(t *testing.T) {
 	q.active = &clusterdb.RepoGateway{ID: first.GatewayID, RepositoryID: w.RepositoryID, UserID: w.UserID,
 		WorkspaceID: pgtype.UUID{Bytes: uuid.MustParse(w.ID), Valid: true}, VmID: w.VmID,
 		AuthTokenCiphertext: "enc:" + first.Token, Status: "running"}
-	WithWorkspaceProviderBootstrap(map[string]string{"OPENAI_API_KEY": "platform-private"}, "openai:gpt-5.6-luna")(s.workspaces)
+	WithWorkspaceProviderBootstrap(map[string]string{"OPENAI_API_KEY": "platform-private"}, "openai:gpt-6-luna")(s.workspaces)
 	s.workspaces.sandbox = &mockWorkspaceSandboxVMClient{
 		startVMFn: func(context.Context, string, sandbox.StartRequest) (sandbox.StartResult, error) {
 			t.Error("a healthy host must not replace its live egress proxy")

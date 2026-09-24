@@ -1,7 +1,7 @@
 ---
 description: Reproduces and triages one GitHub issue, producing a structured maintainer response without holding a GitHub write token.
 capabilities: ["fs:read:**", "fs:write:.triage/report.json", "proc:spawn:rg *", "proc:spawn:git status *", "proc:spawn:git diff *", "proc:spawn:pnpm test *", "proc:spawn:pnpm exec vitest *"]
-model: openai:gpt-5.6-sol
+model: openai:gpt-6-sol
 budget:
   tokens: 120000
   milliseconds: 600000
