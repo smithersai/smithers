@@ -44,7 +44,7 @@ export const UNSCENARIOED_ACTIONS: Readonly<Record<Deferral, readonly string[]>>
     "env.set", "env.view", "feature.prototype", "feature.setup", "files.list", "files.open-diff",
     "files.read", "findings.not-useful", "findings.please-fix", "flow.plan", "flow.run.retry", "flows",
     "github.app.choose", "github.app.open", "github.mirror-sync", "github.mirror.retry-ref",
-    "github.reconcile", "history.amend", "history.bootstrap", "history.fold", "history.show", "issues",
+    "github.reconcile", "history.bootstrap", "history.show", "issues",
     "issues.setup", "notifications.read-update", "notifications.tag", "plugins", "plugins.install",
     "plugins.list", "plugins.remove", "prs", "repo.choose", "repo.overview", "repo.tree", "repo.update",
     "repos.import.retry", "review.ack", "review.done", "review.reopen", "review.setup", "review.since-mine",
