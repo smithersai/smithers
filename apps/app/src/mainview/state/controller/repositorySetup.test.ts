@@ -1,3 +1,4 @@
+import { createOperationalFailureReporter } from "../OperationalFailures"
 import { expect, spyOn, test } from "bun:test"
 import { editSetup, initialSetup, setupActivationProblems, setupCandidate, type RepositorySetup, type SetupManualRequest, type SetupDraft, type SetupRecoveryResponse } from "@smthrs/rpc/RepositorySetup"
 import { createAppStore } from "../AppStore"
@@ -42,7 +43,7 @@ async function fixture(answer: (body: Body, method: string) => Promise<Response>
   const asked: Array<{ name: string; args: string }> = []
   let holdAsk: Promise<void> | undefined
   let previous: Body
-  const ctx = { store, commandActor: "user", baseUrl: "", workflowPollMs: 5, toastRuns: new Map(),
+  const ctx = { failures: createOperationalFailureReporter(), store, commandActor: "user", baseUrl: "", workflowPollMs: 5, toastRuns: new Map(),
     commands: { runAsAgent: async (name: string, args: string) => {
       asked.push({ name, args })
       if (holdAsk) await holdAsk

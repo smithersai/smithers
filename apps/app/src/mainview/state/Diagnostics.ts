@@ -1,7 +1,8 @@
+import type { OperationalFailure } from "./OperationalFailures"
 import type { Toast, ToolCallRecord, TransitionRecord } from "./AppState"
 import type { NetEntry } from "./controller/context"
 
-const SOURCES = ["toast", "network", "event", "tool"] as const
+const SOURCES = ["toast", "network", "event", "tool", "operation"] as const
 type Source = typeof SOURCES[number]
 
 export interface DiagnosticQuery {
@@ -25,7 +26,7 @@ export const parseDiagnosticQuery = (query = ""): DiagnosticQuery | string => {
     if (token === "--all") { all = true; continue }
     if (token === "--source") {
       const value = tokens[++index]
-      if (!SOURCES.includes(value as Source)) return "Source must be toast, network, event or tool."
+      if (!SOURCES.includes(value as Source)) return "Source must be toast, network, event, tool or operation."
       source = value as Source
     } else if (token === "--since") {
       const value = tokens[++index] ?? ""
@@ -83,6 +84,7 @@ export const readDiagnostics = (input: {
   readonly toasts: ReadonlyArray<Toast>
   readonly toolCalls: ReadonlyArray<ToolCallRecord>
   readonly network: ReadonlyArray<NetEntry>
+  readonly operations?: ReadonlyArray<OperationalFailure>
 }, query: DiagnosticQuery) => {
   const entries: DiagnosticEntry[] = []
   const toastTitles = new Map<string, string>()
@@ -133,6 +135,10 @@ export const readDiagnostics = (input: {
     detail: `${entry.status === "error" ? "Request failed" : `HTTP ${entry.status}`} · ${entry.ms}ms`,
     error: entry.status === "error" || entry.status >= 400
   }))
+  input.operations?.forEach((entry, index) => add({
+    id: `operation-${entry.at}-${index}`, source: "operation", at: entry.at, status: entry.lost,
+    title: `${entry.seam}${entry.subject ? ` ${entry.subject}` : ""}`, detail: `${entry.message} ×${entry.count}`, error: true
+  }))
   const matches = entries.filter(entry =>
     (query.all || entry.error) && (query.source === undefined || entry.source === query.source) &&
     (query.since === undefined || entry.at >= query.since) &&
@@ -152,7 +158,7 @@ export const readDiagnostics = (input: {
     coverage: {
       transitions: input.transitions.length, toolCalls: input.toolCalls.length, network: input.network.length,
       oldestTransitionAt: input.transitions.length === 0 ? null : new Date(Math.min(...input.transitions.map(row => row.createdAt))).toISOString(),
-      note: "Retained app evidence only: newest 500 transitions and 250 tool calls, plus active toasts and this controller's last 100 requests. Dismissed toasts remain only while their transitions are retained. Console logs and server logs are not captured. Empty results do not prove no errors occurred."
+      note: "Retained app evidence only: newest 500 transitions and 250 tool calls, plus active toasts and this controller's last 100 requests and 100 operational failures. Dismissed toasts remain only while their transitions are retained. Console logs and server logs are not captured. Empty results do not prove no errors occurred."
     }
   }
 }

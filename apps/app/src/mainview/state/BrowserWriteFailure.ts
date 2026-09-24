@@ -215,3 +215,6 @@ export const browserWriteRefusal = (error: unknown): string => BROWSER_WRITE_COP
  * @category constants
  */
 export const browserWriteFaultClass = (error: unknown): PlueFault => BROWSER_WRITE_COPY[browserWriteFault(error)].fault
+
+/** Fault class for any lost act, using the same table as its refusal. */
+export const lostActFaultClass = (error: unknown): PlueFault => BROWSER_WRITE_COPY[lostActFault(error)].fault

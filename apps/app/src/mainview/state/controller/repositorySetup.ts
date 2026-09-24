@@ -278,7 +278,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
         if (ctx.disposed || shared.disposed || owner() !== login || epoch() !== accountEpoch) return
         if (["requested", "running"].includes(get(card.id)?.payload.request?.state ?? "")) shared.expiredSchedules.set(card.id, { login, accountEpoch })
         else void requestRecovery(card.id)
-      })).catch(() => {}) // The store retains its own failed-persistence state.
+      })).catch(error => ctx.failures.report("setup.schedule", error, card.id))
     }, Math.min(at - Date.now(), 2_147_483_647))
     shared.scheduleTimers.set(card.id, { timer, at, login, accountEpoch, registrationId: active!.registrationId })
     ctx.unref(timer)
@@ -422,7 +422,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
                 if (!guidanceCurrent(card.id, intent.id, login, accountEpoch)) return
                 const latest = get(card.id)!
                 await upsert({ ...latest, payload: { ...latest.payload, guidance: { id: intent.id, state: accepted ? "admitted" : "failed", error: message } } }, "system")
-              }).catch(() => {})
+              }).catch(error => ctx.failures.report("setup.guidance", error, intent.id))
               settled = true
               if (guidanceCurrent(card.id, intent.id, login, accountEpoch)) dependencies.guidanceFailed(accepted
                 ? "The command's outcome could not be saved. Check its result before trying again." : message, accepted)
@@ -466,7 +466,7 @@ export function createRepositorySetupController(ctx: ControllerContext, dependen
       if (recorded || shared.openingRuns.has(key)) continue
       shared.openingRuns.add(key)
       // Reading an observed run cannot hold up its setup receipt or the Chat turn.
-      void dependencies.openRun(runId, card.payload.repo, card.id).catch(() => {}).finally(() => shared.openingRuns.delete(key))
+      void dependencies.openRun(runId, card.payload.repo, card.id).catch(error => ctx.failures.report("setup.open-run", error, runId)).finally(() => shared.openingRuns.delete(key))
     }
   }
 

@@ -67,8 +67,9 @@ export const applyAppearance = (root: HTMLElement = document.documentElement): v
  */
 export function mountApp(container: HTMLElement, options: MountAppOptions): MountedApp {
   applyAppearance()
-  configureControllerBoot({ keepUrl: options.keepUrl === true })
-  const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: runtimeApplicationFetch }) })
+  const clientErrors = createClientErrorReporter({ fetchImpl: runtimeApplicationFetch })
+  configureControllerBoot({ keepUrl: options.keepUrl === true, clientErrors })
+  const watchdog = browserStartupWatchdog({ clientErrors })
   const root = createRoot(container)
   flushSync(() => root.render(<AppRoot watchdog={watchdog} />))
   return { unmount: () => root.unmount(), mark: appWordmark(container) }

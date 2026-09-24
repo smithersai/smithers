@@ -75,3 +75,18 @@ test("a completed sign-out ends the account generation once, whether or not clea
     expect(t.delta()).toBe(2)
   } finally { await t.dispose() }
 })
+
+test("the controller posts through its supplied reporter and resets evidence on account change", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  const sent: unknown[] = []
+  const clientErrors = { report: (kind: string, error: unknown) => { sent.push({ kind, error }) }, reported: () => sent.length }
+  const ctx = createControllerContext(store, unavailableRepositories, unavailableAgent, { clientErrors })
+  try {
+    ctx.failures.report("run.pump", Error("unavailable"), "run")
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ kind: "operational" })
+    expect(ctx.failures.recent()).toHaveLength(1)
+    await signedIn(store, "new-owner")
+    expect(ctx.failures.recent()).toEqual([])
+  } finally { await ctx.dispose(); await store.dispose?.() }
+})

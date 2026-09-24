@@ -1,3 +1,4 @@
+import type { ClientErrorReporter } from "./state/ClientErrors"
 import { isWriterOwnershipError } from "./state/StorageRecoveryContract"
 import { selectFirstRunRepository } from "./state/FirstRunRepository"
 import { Effect } from "effect"
@@ -36,6 +37,7 @@ const promiseEffect = <A>(label: string, run: () => Promise<A>) =>
  */
 /** How the one boot runs; AppMount.tsx sets it before the first render. */
 export interface ControllerBootOptions {
+  readonly clientErrors?: ClientErrorReporter
   /** Keep the address bar on the entry URL (runtime/FrameHistory.ts `keepUrl`). */
   readonly keepUrl?: boolean
 }
@@ -71,6 +73,7 @@ const bootProgram = (options: ControllerBootOptions = {}) =>
         agent,
         {
           fetchImpl: runtime.http,
+          clientErrors: options.clientErrors,
           baseUrl: client.baseUrl,
           applicationTarget: client.target,
           localIdentity: client.localIdentity,

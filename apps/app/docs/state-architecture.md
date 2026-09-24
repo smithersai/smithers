@@ -163,3 +163,16 @@ The remaining architectural work is now easier to name: connect additional backe
 
 To evaluate a new state field, ask: who accepts writes, what durable receipt proves acceptance, which facts reconstruct it, what cursor names the applied prefix, what survives retention, what happens after a crash, and what must be erased on an ownership change. If those answers are explicit, keeping a fast materialized table is compatible with an event-derived architecture.
 
+
+## Operational failures
+
+ControllerContext owns a bounded ring of the last 100 operational failures,
+classified by the existing lost-act fault table. Closed seam names identify
+the failed operation. Reports with the same seam, fault and subject coalesce
+for 60 seconds; repeated reports increment their count. Account changes clear
+the ring. `/debug.errors --source operation` reads this evidence.
+
+The controller and startup watchdog share one client-error reporter. Each
+report kind has its own page budget, so maintenance errors cannot consume the
+crash budget. The existing telemetry endpoint receives operational reports;
+no new server route is required. Reporting never throws or blocks an action.

@@ -52,9 +52,12 @@ test("failed automatic checkpoint retains its suffix and retries after a committ
       await store.dispatch({ type: "tab.menu.toggled", actor: "user", open: index % 2 === 0 }).isPersisted.promise
     }
     const before = await store.eventHistory()
+    const failures: number[] = []
+    store.onMaintenanceFailure((_error, streak) => failures.push(streak))
     rejectWrites = true
     await until(async () => refused > 0)
     rejectWrites = false
+    expect(failures).toEqual([1])
     const retained = await store.eventHistory()
     expect(retained.head).toEqual(before.head)
     expect(retained.events).toEqual(before.events)

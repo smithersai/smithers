@@ -261,6 +261,7 @@ export const createPresentationController = (
     const filters = parseDiagnosticQuery(query)
     if (typeof filters === "string") return filters
     const result = readDiagnostics({
+      operations: ctx.failures.recent(),
       transitions: [...ctx.store.collections.transitions.values()],
       toasts: [...ctx.store.collections.toasts.values()],
       toolCalls: [...ctx.store.collections.toolCalls.values()],

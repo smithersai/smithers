@@ -1,3 +1,4 @@
+import { createOperationalFailureReporter, type OperationalFailureReporter } from "../OperationalFailures"
 import { Effect } from "effect"
 import type { AgentChatMessage, FetchLike } from "@smthrs/rpc/NativeAgent"
 import { accountOwnerOf } from "../AccountOwner"
@@ -79,6 +80,7 @@ export interface ControllerContext {
   readonly toastAutoDismissMs: number
   readonly workflowPollMs: number
   readonly workflowPreparationTimeoutMs: number
+  readonly failures: OperationalFailureReporter
   readonly netRing: NetEntry[]
   readonly toastRuns: Map<string, number>
   readonly pumpPokes: Map<string, () => void>
@@ -155,6 +157,7 @@ export const createControllerContext = (
    * debug mode adds beyond what the app already stores.
    */
   const netRing: NetEntry[] = []
+  const failures = createOperationalFailureReporter({ clientErrors: services.clientErrors })
   const accountOwner = (): string | null | undefined => accountOwnerOf(store.collections.identitySessions.get("identity"))
   let owner = accountOwner()
   let accountEpoch = 0
@@ -162,6 +165,7 @@ export const createControllerContext = (
     owner = next
     accountEpoch += 1
     netRing.length = 0
+    failures.reset()
   }
   const recordNet = (entry: NetEntry, generation: number): void => {
     if (generation !== accountEpoch) return
@@ -196,6 +200,7 @@ export const createControllerContext = (
     workflowPollMs: services.workflowPollMs ?? 2500,
     workflowPreparationTimeoutMs: services.workflowPreparationTimeoutMs ?? 21 * 60_000,
     netRing,
+    failures,
     toastRuns: new Map<string, number>(),
     pumpPokes: new Map<string, () => void>(),
     runPumps: new Map<string, { stopped: boolean }>(),

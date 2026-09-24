@@ -1,3 +1,4 @@
+import { configureControllerBoot } from "./ControllerProvider"
 import { AppRoot } from "./AppRoot"
 import { mountApp, warmApp } from "./AppMount"
 import { browserStartupWatchdog } from "./StartupWatchdog"
@@ -18,9 +19,13 @@ import { createClientErrorReporter } from "./state/ClientErrors"
  * homepage and `?tutorial` entries open the same app.
  */
 
+let clientErrors: ReturnType<typeof createClientErrorReporter> | undefined
+
 function AppIsland() {
   // One watchdog per page (browserStartupWatchdog is a singleton), so a re-render re-reads it.
-  const watchdog = browserStartupWatchdog({ clientErrors: createClientErrorReporter({ fetchImpl: createAppFetch() }) })
+  clientErrors ??= createClientErrorReporter({ fetchImpl: createAppFetch() })
+  configureControllerBoot({ clientErrors })
+  const watchdog = browserStartupWatchdog({ clientErrors })
   return <AppRoot watchdog={watchdog} />
 }
 

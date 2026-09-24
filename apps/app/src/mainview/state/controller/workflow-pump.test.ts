@@ -1,3 +1,4 @@
+import { createOperationalFailureReporter } from "../OperationalFailures"
 import { observeRuntimeRun, projectRuntimeCard, runtimeRunKey, type RuntimeRun } from "../RuntimeProjection"
 import { canonicalEventValue } from "../EventValue"
 import type { RuntimeRunObservation } from "../RuntimeProjection"
@@ -99,6 +100,7 @@ const poll = async (cycles: Cycle[], options: {
     }
   })
   const ctx = {
+    failures: createOperationalFailureReporter(),
     finishTutorialChange: async () => {},
     resumeFlowAuthoring: () => {},
     store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, approvalRequest: () => undefined, collections: { cards, runtimeRuns, runtimeApprovals: new Map() }, dispatch: (action: any) => {
@@ -137,7 +139,7 @@ const poll = async (cycles: Cycle[], options: {
     pump.resumeWorkflowRuns()
     for (let tick = 0; tick < 100 && (iteration < 0 || ctx.runPumps.size > 0); tick++) await Bun.sleep(1)
   } else await pump.pumpWorkflowRun(card.id)
-  return { card, run: runtimeRuns.get(key), updates, rowsRequested, journalRequests, messages, dispatched, runPumps: ctx.runPumps }
+  return { card, run: runtimeRuns.get(key), updates, rowsRequested, journalRequests, messages, dispatched, failures: ctx.failures.recent(), runPumps: ctx.runPumps }
 }
 
 const notSaved = "This browser did not save the run's latest evidence. Retrying."
@@ -163,6 +165,7 @@ test.each([
     { refusals: [{ type, error: new Error("The app state owner is closed.") }] })
   expect([result.card.payload.phase, result.card.payload.observationError]).toEqual([phase, "This browser did not save the run's latest evidence."])
   expect(result.runPumps.size).toBe(0)
+  expect(result.failures).toEqual([expect.objectContaining({ seam: "run.pump", subject: "run-card" })])
 })
 
 test("an approval receipt this browser fails to save is retried until the gate is in hand", async () => {

@@ -64,7 +64,7 @@ producer that never committed its remaining output.
 | Terminal batch asking for a tool | The controller may admit that previously unstarted tool. It first persists `http.tool.started`, then enters the shared durable command-intent door. |
 | `http.tool.started`, no `http.tool.settled` | Report an unknown tool outcome. The tool may already have run; neither the tool nor a continuation is started automatically. |
 | Settled tool result, no next leg | Derive continuation items from the saved result and prepare a fresh leg before its POST. The tool is not rerun. |
-| Failed local batch or tool receipt | Stop this controller's HTTP effect driver. No tool or continuation follows optimistic state. Reopening verifies the last committed prefix. |
+| Failed local batch or tool receipt | Stop this controller's HTTP effect driver and report the failure. No tool or continuation follows optimistic state. The person can stop the turn; reopening verifies the last committed prefix. |
 | Terminal turn batch | Restore the settled presentation; no recovery work is started. |
 
 The `http.tool.started` marker deliberately precedes actual invocation. A crash

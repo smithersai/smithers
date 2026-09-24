@@ -98,6 +98,7 @@ export const createCommandIntentLifecycle = (ctx: ControllerContext, onAccepted?
       }
     } catch (error) {
       pendingInput?.clear()
+      ctx.failures.report("command.boundary", error, request.name)
       return { refusal: lostActRefusal(error), persistenceFailed: true, writeRefused: true }
     }
     try {

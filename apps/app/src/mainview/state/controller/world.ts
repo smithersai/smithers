@@ -142,7 +142,7 @@ export const createWorldController = (
                 type: "message.appended",
                 actor: "system",
                 text: "Stopping the archived turn could not be confirmed by the remote agent."
-              }).isPersisted.promise.catch(() => {})
+              }).isPersisted.promise.catch(error => ctx.failures.report("archive.notice", error, branchId))
             })
           }
           try {
@@ -165,7 +165,7 @@ export const createWorldController = (
                 actor: "system",
                 turnId: turn.id,
                 detail: "This turn stopped while trying to archive the conversation; the archive was not saved."
-              }).isPersisted.promise.catch(() => {})
+              }).isPersisted.promise.catch(error => ctx.failures.report("archive.notice", error, branchId))
             }
             return wikiEnabled
               ? "The archive could not be saved. Your conversation and Wiki notes were not cleared; check local storage and reload before retrying."
@@ -192,7 +192,7 @@ export const createWorldController = (
                 actor: "system",
                 text:
                   "The archive was saved, but browser history could not be updated. Use the archive link above to open it."
-              }).isPersisted.promise.catch(() => {})
+              }).isPersisted.promise.catch(error => ctx.failures.report("archive.notice", error, branchId))
             }
           }
           return true

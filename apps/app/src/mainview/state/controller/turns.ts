@@ -1,3 +1,5 @@
+import { releaseInterruptedApproval } from "../ApprovalRecovery"
+import { lostActRefusal } from "../BrowserWriteFailure"
 import type { AgentRuntimeContext } from "@smthrs/rpc/AgentContext"
 import type { ModelBinding } from "@smthrs/rpc/ConfiguredModel"
 import { AGENT_RUNTIME_CONTEXT_VERSION,composeAgentInstructions,renderAgentRuntimeContext } from "@smthrs/rpc/AgentContext"
@@ -639,7 +641,7 @@ export const createTurnController = (
     const settled = () => { pendingCancellations.delete(turnId) }
     // Handle rejection even when no retry is waiting; a queued launch still
     // observes the original rejection through its ordinary failure handler.
-    void pending.then(settled, settled)
+    void pending.then(settled, error => { ctx.failures.report("turn.cancel", error, turnId); settled() })
   }
 
   // A turn belongs to the account generation it started in (ctx.accountEpoch).
@@ -1128,6 +1130,8 @@ export const createTurnController = (
           .catch(() => {
             // The draft remains untouched, so a rejected steer is retryable.
           })
+      } else {
+        void ctx.withToast("chat.busy", "Chat", "Chat", async () => "A response is still in progress — stop it first, then retry.")
       }
       return
     }
@@ -1197,12 +1201,19 @@ export const createTurnController = (
     })
   }
 
+  const approvalFailed = (cardId: string, error: unknown, generation: number, target?: { requestId: string; runId?: string }): void => {
+    ctx.failures.report("approval.forward", error, cardId)
+    if (!ownershipCurrent(generation)) return
+    void releaseInterruptedApproval(store, store.collections.cards.get(cardId), lostActRefusal(error), target)
+      .catch(failure => ctx.failures.report("approval.forward", failure, cardId))
+  }
+
   const commitApprovalDecision = (id: string, decision: "approved" | "denied", answer?: unknown): void => {
     if (ctx.disposed) return
     const generation = ctx.accountEpoch
     const rowTarget = parseApprovalActionId(id)
     if (rowTarget !== undefined) {
-      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer).catch(() => {})
+      void forwardInboxApprovalDecision(rowTarget.cardId, rowTarget.requestId, decision, rowTarget.runId, answer).catch(error => approvalFailed(rowTarget.cardId, error, generation, rowTarget))
       return
     }
     /*
@@ -1217,7 +1228,7 @@ export const createTurnController = (
       const requestId = id.slice(separator + 1)
       const inbox = store.collections.cards.get(inboxCardId)
       if (inbox?.kind === "approvals-inbox") {
-        void forwardInboxApprovalDecision(inboxCardId, requestId, decision, undefined, answer).catch(() => {})
+        void forwardInboxApprovalDecision(inboxCardId, requestId, decision, undefined, answer).catch(error => approvalFailed(inboxCardId, error, generation, { requestId }))
         return
       }
     }
@@ -1238,7 +1249,7 @@ export const createTurnController = (
       return
     }
     const pending = store.dispatch({ type: "card.approval.decision.pending", actor: "user", id })
-    void pending.isPersisted.promise.then(() => ownershipCurrent(generation) ? forwardApprovalDecision(card, decision, answer) : undefined).catch(() => {})
+    void pending.isPersisted.promise.then(() => ownershipCurrent(generation) ? forwardApprovalDecision(card, decision, answer) : undefined).catch(error => approvalFailed(id, error, generation))
   }
 
   const decideApproval = (id: string, decision: "approved" | "denied", answer?: unknown, question?: string): void => {
@@ -1252,7 +1263,7 @@ export const createTurnController = (
     void receipt.isPersisted.promise.then(() => {
       if (!ownershipCurrent(generation) || !isCurrentApprovalAnswer(store.collections.runtimeApprovals.get(input.id), input)) return
       commitApprovalDecision(id, decision, answer)
-    }).catch(() => {})
+    }).catch(error => approvalFailed(id, error, generation))
   }
 
   /*

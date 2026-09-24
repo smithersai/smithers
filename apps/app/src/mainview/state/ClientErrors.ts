@@ -20,7 +20,7 @@
  *     Go's byte-index truncation never splits a character;
  *   - the posted body is cut to CLIENT_ERROR_BODY_MAX_BYTES, so escaping
  *     cannot push a report past the Worker route's cap and be answered 413;
- *   - a page reports at most CLIENT_ERROR_REPORT_LIMIT times, so an error in
+ *   - a page reports each kind at most CLIENT_ERROR_REPORT_LIMIT times, so an error in
  *     a render loop cannot turn one broken tab into a request storm.
  *
  * Reporting is fire-and-forget in both directions: it never throws, never
@@ -31,7 +31,7 @@
 /** The crash sink every target routes: the Go backend, Plue and the Worker. */
 export const CLIENT_ERRORS_PATH = "/api/telemetry/errors"
 
-/** Reports one page may send. An error inside a render loop fires without end. */
+/** Reports per kind one page may send. A render loop can fail without end. */
 export const CLIENT_ERROR_REPORT_LIMIT = 20
 
 /**
@@ -60,7 +60,7 @@ export const CLIENT_ERROR_TYPE_MAX_BYTES = 128
  */
 export const CLIENT_ERROR_URL_MAX_BYTES = 1024
 
-export type ClientErrorKind = "error" | "unhandledrejection"
+export type ClientErrorKind = "error" | "unhandledrejection" | "operational"
 
 /** Exactly what is posted: the Go backend's ClientErrorReport plus `kind` and `at`. */
 export interface ClientErrorReport {
@@ -207,14 +207,14 @@ export const createClientErrorReporter = (
   const limit = options?.limit ?? CLIENT_ERROR_REPORT_LIMIT
   const now = options?.now ?? ((): Date => new Date())
   const pathname = options?.pathname ?? currentPathname
-  let sent = 0
+  const sent = new Map<ClientErrorKind, number>()
 
   const report = (kind: ClientErrorKind, error: unknown): void => {
     try {
-      if (sent >= limit) return
+      if ((sent.get(kind) ?? 0) >= limit) return
       // Counted before construction and sending: the cap bounds attempts,
       // so any failure cannot be retried into a storm.
-      sent += 1
+      sent.set(kind, (sent.get(kind) ?? 0) + 1)
       const body = clientErrorBody(kind, error, now(), pathname())
       // keepalive so a report survives the navigation that a crash often
       // triggers. The browser allows 64 KiB of keepalive bodies in flight
@@ -234,5 +234,5 @@ export const createClientErrorReporter = (
     }
   }
 
-  return { report, reported: (): number => sent }
+  return { report, reported: (): number => [...sent.values()].reduce((sum, count) => sum + count, 0) }
 }

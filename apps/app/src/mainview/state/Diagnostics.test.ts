@@ -147,3 +147,13 @@ describe("app diagnostics without a repository", () => {
     expect(JSON.stringify(result)).not.toContain("private file bytes")
   })
 })
+
+test("operational failures are available through the diagnostic source filter", () => {
+  const query = parseDiagnosticQuery("--source operation")
+  expect(typeof query).toBe("object")
+  if (typeof query === "string") throw Error(query)
+  const result = readDiagnostics({ transitions: [], toasts: [], toolCalls: [], network: [], operations: [
+    { seam: "run.pump", subject: "run-1", lost: "app-bug", fault: "infra", message: "disk", at: 100, count: 3 }
+  ] }, query)
+  expect(result.items).toEqual([{ id: "operation-100-0", source: "operation", status: "app-bug", title: "run.pump run-1", detail: "disk ×3", at: new Date(100).toISOString() }])
+})

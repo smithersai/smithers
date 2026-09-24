@@ -317,3 +317,15 @@ describe("the client-error reporter", () => {
     ).not.toThrow()
   })
 })
+
+ test("operational reports have their own page budget", () => {
+  const posts: unknown[] = []
+  const reporter = createClientErrorReporter({ limit: 1, fetchImpl: async (_url, init) => {
+    posts.push(JSON.parse(String(init.body))); return new Response()
+  } })
+  reporter.report("error", Error("crash"))
+  reporter.report("error", Error("repeat"))
+  reporter.report("operational", "run.pump")
+  expect(posts).toHaveLength(2)
+  expect(reporter.reported()).toBe(2)
+})

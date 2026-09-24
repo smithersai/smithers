@@ -68,7 +68,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     if (journal === undefined || !active(attemptId) || timers.has(attemptId)) return
     const timer = setTimeout(() => {
       timers.delete(attemptId)
-      void catchUp(attemptId).catch(() => {}).finally(() => schedule(attemptId))
+      void catchUp(attemptId).catch(error => ctx.failures.report("http.turn.driver", error)).finally(() => schedule(attemptId))
     }, 1_000)
     timers.set(attemptId, timer); ctx.unref(timer)
   }
@@ -82,7 +82,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     clearTimer(attemptId)
     const turn = ctx.disposed ? undefined : store.collections.httpTurns.get(attemptId)
     if (turn) journal?.disconnect(turn.turnId)
-    await interrupt(attemptId, "ambiguous", "This response could not be saved. Its outcome is unknown; it was not restarted.").catch(() => {})
+    await interrupt(attemptId, "ambiguous", "This response could not be saved. Its outcome is unknown; it was not restarted.").catch(error => ctx.failures.report("http.turn.driver", error))
   }
   const launch = async (attemptId: string): Promise<void> => {
     const turn = active(attemptId), leg = turn && store.collections.httpTurnLegs.get(turn.legId)
@@ -139,7 +139,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         if (active(attemptId)?.legId !== next.legId) return
         await launch(attemptId)
       }
-    } catch { await fail(attemptId) } finally { driving.delete(attemptId) }
+    } catch (error) { ctx.failures.report("http.turn.driver", error, attemptId); await fail(attemptId) } finally { driving.delete(attemptId) }
   }
   const afterCommit = (attemptId: string): void => {
     if (ctx.disposed) return
@@ -171,13 +171,14 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
         afterCommit(leg.attemptId)
       }
     } catch (error) {
+      ctx.failures.report("http.turn.driver", error, leg.attemptId)
       await fail(leg.attemptId)
       throw error
     }
   }
   const enqueue = (work: () => Promise<void>): Promise<void> => {
     const next = pending.then(work)
-    pending = next.catch(() => {})
+    pending = next.catch(error => ctx.failures.report("http.turn.driver", error))
     return next
   }
   const applyPage = async (attemptId: string, requested: HttpTurnLeg, reply: AgentTurnJournalReply): Promise<void> => {
@@ -239,7 +240,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     if (!journal) {
       if (saved && store.session().phase === "responding") {
         ctx.activeTurn = mirror(saved)
-        void interrupt(saved.id, "ambiguous", "This host cannot resume the saved HTTP turn. It was not restarted.").catch(() => {})
+        void interrupt(saved.id, "ambiguous", "This host cannot resume the saved HTTP turn. It was not restarted.").catch(error => ctx.failures.report("http.turn.driver", error))
       }
       return
     }
@@ -249,9 +250,9 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
     ctx.activeTurn = mirror(saved); recovering.add(saved.legId)
     const leg = store.collections.httpTurnLegs.get(saved.legId)
     if (leg?.status === "tool-executing") {
-      void interrupt(saved.id, "ambiguous", "A tool was accepted before the app closed, but its result was not saved. Check its result before explicitly trying again.").catch(() => {})
+      void interrupt(saved.id, "ambiguous", "A tool was accepted before the app closed, but its result was not saved. Check its result before explicitly trying again.").catch(error => ctx.failures.report("http.turn.driver", error))
     } else {
-      void catchUp(saved.id).catch(() => {}).finally(() => schedule(saved.id))
+      void catchUp(saved.id).catch(error => ctx.failures.report("http.turn.driver", error)).finally(() => schedule(saved.id))
       void drive(saved.id)
     }
   }
@@ -268,7 +269,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
       if (ctx.activeTurn === pendingTurn) ctx.activeTurn = undefined
       throw error
     })
-    void admitted.then(() => { if (active(attemptId)) return launch(attemptId) }).catch(() => {})
+    void admitted.then(() => { if (active(attemptId)) return launch(attemptId) }).catch(error => ctx.failures.report("http.turn.driver", error))
     return admitted
   }
   const stop = (): boolean => {
@@ -282,7 +283,7 @@ export const createHttpTurnDriver = (ctx: ControllerContext, dependencies: Depen
       stopping.set(turn.turnId, cancelled)
       const remove = () => { if (stopping.get(turn.turnId) === cancelled) stopping.delete(turn.turnId) }
       void cancelled.then(remove, remove)
-    } else void cancelled.catch(() => {})
+    } else void cancelled.catch(error => ctx.failures.report("http.turn.driver", error))
     return true
   }
   return { subscribe, start, stop, catchUp }

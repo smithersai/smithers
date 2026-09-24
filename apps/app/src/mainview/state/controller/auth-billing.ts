@@ -114,7 +114,7 @@ export const createAuthBillingController = (
     if (!force && ctx.accountOwner() === nextOwner) return
     const turn = ctx.activeTurn
     ctx.activeTurn = undefined
-    if (turn !== undefined) void ctx.agent.cancelTurn(turn.id).catch(() => {})
+    if (turn !== undefined) void ctx.agent.cancelTurn(turn.id).catch(error => ctx.failures.report("turn.cancel", error, turn.id))
   }
   /**
    * Returning from a failed OAuth redirect is a chat message, never a bare

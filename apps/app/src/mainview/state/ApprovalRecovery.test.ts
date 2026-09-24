@@ -1,3 +1,4 @@
+import { releaseInterruptedApproval } from "./ApprovalRecovery"
 import { describe, expect, test } from "bun:test"
 import type { ApprovalRow } from "@smthrs/gateway/GatewayProjection"
 import type { Card } from "./AppState"
@@ -115,4 +116,18 @@ describe("approval observation recovery", () => {
     expect(store.collections.cards.get("trace")?.status).toBe("acted")
     await store.dispose?.()
   })
+})
+
+test("a failed inbox forward releases only that request and retains other pending decisions", async () => {
+  const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
+  try {
+    const value = inbox("inbox", workspaceA)
+    await store.dispatch({ type: "card.upsert", actor: "system", card: value }).isPersisted.promise
+    await releaseInterruptedApproval(store, store.collections.cards.get(value.id), "The browser did not save the decision.", { requestId: "deploy", runId: "run-a" })
+    const current = store.collections.cards.get(value.id)
+    expect(current?.kind).toBe("approvals-inbox")
+    if (current?.kind !== "approvals-inbox") throw Error("missing inbox")
+    expect(current.payload.approvals[0]).toMatchObject({ pending: undefined, decisionError: "The browser did not save the decision." })
+    expect(current.payload.approvals[1]?.pending).toBe(true)
+  } finally { await store.dispose?.() }
 })

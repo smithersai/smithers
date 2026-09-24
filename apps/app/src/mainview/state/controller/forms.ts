@@ -451,7 +451,7 @@ export const createFormsController = (ctx: ControllerContext, deps: FormsControl
     void rendered.isPersisted.promise.then(async () => {
       if (ctx.disposed) return
       await refreshFileList(cardId)
-    }).catch(() => {})
+    }).catch(error => ctx.failures.report("form.file-list", error, cardId))
     const missing = missingFields(resolved, draft)
     return { cardId, missing: missing.length > 0 ? missing : resolved.map((field) => field.name) }
   }

@@ -265,6 +265,7 @@ export const createWorkflowPumpController = (
      * counts toward the quiet bound. `true` means this pump is done.
      */
     const applyFailed = (error: unknown): boolean => {
+      ctx.failures.report("run.pump", error, cardId)
       if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return true
       if (error instanceof RuntimeProjectionIntegrityError || (error instanceof AppEventIntegrityError && error.reason === "event")) {
         patchRunCard(cardId, { observationError: "The workspace returned conflicting recorded history. The last verified evidence was preserved.", phase: "stopped" })
@@ -517,7 +518,8 @@ export const createWorkflowPumpController = (
         previous = row
         await pokeableWait(cardId, RUN_POLL_MS)
       }
-    } catch {
+    } catch (error) {
+      ctx.failures.report("run.pump", error, cardId)
       /*
        * The store refused a transition outright (a lost owner, a privacy
        * retirement, a projection it would not apply). Nothing this pump does
@@ -574,7 +576,7 @@ export const createWorkflowPumpController = (
       // lifecycle before rendering a terminal execution outcome.
       patchRunCard(cardId, { phase: "running" })
       await pumpWorkflowRun(cardId, true)
-    }).catch(() => {})
+    }).catch(error => ctx.failures.report("run.cancel", error, cardId))
     return undefined
   }
 
@@ -609,7 +611,8 @@ export const createWorkflowPumpController = (
     }
     for (const scope of scopes) void gateway.approvals(scope.repo, scope.runId, { workspaceId: scope.workspaceId }).then(async result => {
       if (result.status === "ok" && !ctx.disposed) await reconcileRunApprovals(store, scope, result.value)
-    }).catch(() => {})
+      else if (result.status !== "ok") ctx.failures.report("approval.reconcile", result.message, scope.runId)
+    }).catch(error => ctx.failures.report("approval.reconcile", error, scope.runId))
   }
   ctx.resumeWorkflowRuns = resumeWorkflowRuns
 

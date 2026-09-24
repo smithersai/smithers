@@ -280,10 +280,11 @@ exceeds the budget, boot refuses before repairs or a new baseline; the source
 stays intact. This includes heads, checkpoints, events, retirement tombstones,
 and projected rows. A partial cache must never become an invented legacy
 baseline, and a missing terminal suffix cannot be treated as a fresh run.
-Explicit app event compaction can reduce a retained event suffix before it
-reaches this limit; it cannot shrink a checkpoint whose domain state is itself
-oversized. There is no automatic app event compaction timer or streaming replay
-of an oversized checkpoint. An oversized store requires recovery or an explicit
+A one-second idle maintenance task compacts a retained suffix; explicit
+compaction uses the same verified checkpoint path. Failures report their
+consecutive streak and retain the suffix for retry after the next write.
+Compaction cannot shrink an oversized domain checkpoint; there is no streaming
+replay of an oversized checkpoint. An oversized store requires recovery or an explicit
 human reset. Recovery downloads have their own size limit and may also refuse;
 refusal does not delete the database.
 

@@ -149,7 +149,8 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     let outcome: T | string
     try {
       outcome = await work()
-    } catch {
+    } catch (error) {
+      ctx.failures.report("toast.work", error, key)
       outcome = unexpectedFailure(title)
     }
     if (ctx.disposed || current?.() === false) return outcome
@@ -208,7 +209,8 @@ export const createFailureController = (ctx: ControllerContext): FailureControll
     let outcome: T | string
     try {
       outcome = await work()
-    } catch {
+    } catch (error) {
+      ctx.failures.report("toast.work", error, key)
       outcome = unexpectedFailure(title)
     } finally {
       clearTimeout(debounce)

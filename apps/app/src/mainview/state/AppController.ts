@@ -1,3 +1,4 @@
+import type { ClientErrorReporter } from "./ClientErrors"
 import type { FlowSubmission } from "../flows/Commands"
 import { createRepositoryReadiness } from "./controller/repositoryReadiness"
 import { lostActRefusal } from "./BrowserWriteFailure"
@@ -649,6 +650,7 @@ export interface AppController extends TutorialChangeController, IssueFlowsContr
  * bind honest doubles instead of a network; production uses same-origin fetch.
  */
 export interface AppServices {
+  readonly clientErrors?: ClientErrorReporter
   /** Trusted local handoff, injectable by the embedding host; never projected as a tool. */
   readonly storageRecoveryHost?: StorageRecoveryHost
   readonly fetchImpl?: FetchLike
@@ -768,6 +770,7 @@ export const createAppController = (
   })
   const actors = createActorBindings(ctx.onDispose)
   if (store.dispose !== undefined) ctx.onDispose(store.dispose)
+  ctx.onDispose(store.onMaintenanceFailure((error, streak) => ctx.failures.report("journal.compaction", error, String(streak))))
   if (store.onWriterLost !== undefined) ctx.onDispose(store.onWriterLost(() => {
     // Mark the controller closed synchronously, before React unmount refs or
     // background pumps can dispatch into the revoked store.
@@ -2011,6 +2014,7 @@ export const createAppController = (
          * `unhandledrejection` handler that reports to maintainers. No gesture
          * leaves here without an outcome, and a bug says it is a bug.
          */
+        ctx.failures.report("command.boundary", error, name)
         return { status: "failed", error: lostActRefusal(error), writeRefused: true }
       }
     }

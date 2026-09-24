@@ -131,7 +131,7 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
     const closing = ctx.onDispose(async () => {
       if (!settled) {
         finish("failed", "The explanation was stopped.")
-        await agent.cancelTurn(runId).catch(() => {})
+        await agent.cancelTurn(runId).catch(error => ctx.failures.report("explain.cancel", error, runId))
       }
       await cleanup
     })
@@ -225,7 +225,7 @@ export const createExplainController = (ctx: ControllerContext, config: ExplainC
     }
     timer = setTimeout(() => {
       finish("failed", launchFailure ?? "The explainer took too long to answer.")
-      void agent.cancelTurn(runId).catch(() => {})
+      void agent.cancelTurn(runId).catch(error => ctx.failures.report("explain.cancel", error, runId))
     }, timeoutMs)
     ctx.unref(timer)
     try {

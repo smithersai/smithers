@@ -1,3 +1,4 @@
+import { releaseInterruptedApproval } from "./ApprovalRecovery"
 import type { StandardSchemaV1 } from "@standard-schema/spec"
 import { openBrowserWASQLiteOPFSDatabase } from "@tanstack/browser-db-sqlite-persistence"
 import type { InferSchemaOutput,StorageApi,StorageEventApi } from "@tanstack/db"
@@ -781,6 +782,8 @@ export interface AppStore {
   readonly privacyRetirementStatus: () => { readonly phase: "none" | PrivacyRetirement["phase"]; readonly remotePending: number }
   /** Save a delete-only obligation before releasing an ephemeral side-turn token. */
   readonly queueTurnErasure: (runId: string, journal: { readonly legId: string; readonly token: string }) => boolean
+  /** Report failed background compaction attempts with their consecutive failure count. */
+  readonly onMaintenanceFailure: (listener: (error: unknown, streak: number) => void) => () => void
   /** Stop controller producers before replacing the revoked document's UI. */
   readonly onWriterLost?: (listener: () => void) => () => void
   /** Commit a pending draft, then release persistence resources acquired for this store. */
@@ -1656,15 +1659,8 @@ const initializeAppStore = async (
   // reviewed request and uncertain outcome; projection reads or an idempotent
   // retry will establish whether the decision reached its authority.
   for (const card of collections.cards.values()) {
-    if (card.kind === "approval" && card.payload.pending === true && card.status !== "acted") {
-      await dispatch({ type: "card.approval.decision.failed", actor: "system", id: card.id,
-        message: "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision." }).isPersisted.promise
-    } else if (card.kind === "approvals-inbox" && card.payload.approvals.some((row) => row.pending === true)) {
-      await dispatch({ type: "card.updated", actor: "system", id: card.id, patch: { payload: { ...card.payload,
-        approvals: card.payload.approvals.map((row) => row.pending === true ? { ...row, pending: undefined,
-          decisionError: "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision." } : row)
-      } } }).isPersisted.promise
-    }
+    await releaseInterruptedApproval({ dispatch }, card,
+      "The decision was interrupted. Its outcome is unknown; check the run or retry the same decision.")
   }
 
   // Boot reconciliation: a persisted "responding" phase means the app went
@@ -1842,6 +1838,8 @@ const initializeAppStore = async (
   // Bound replay work without discarding any materialized conversation, frame,
   // draft or run. The existing atomic checkpoint path retains those rows and
   // refuses compaction while a prepared edit still needs the covered prefix.
+  const maintenanceListeners = new Set<(error: unknown, streak: number) => void>()
+  let maintenanceStreak = 0
   scheduleAutoCompaction = () => {
     if (disposed || compacting || compactionTimer !== undefined || pendingWrites.size > 0 ||
       (committedEvents.length < 64 && committedEventBytes < PERSISTED_JOURNAL_COMPACTION_BYTES)) return
@@ -1849,7 +1847,11 @@ const initializeAppStore = async (
       compactionTimer = undefined
       if (disposed || pendingWrites.size > 0) return
       compacting = true
-      void compactEvents().catch(() => {
+      void compactEvents().then(() => { maintenanceStreak = 0 }).catch(error => {
+        maintenanceStreak += 1
+        for (const listener of maintenanceListeners) {
+          try { listener(error, maintenanceStreak) } catch { /* Maintenance observers cannot break persistence. */ }
+        }
         // Optional maintenance must not turn saved work into an app failure.
         // The original suffix remains authoritative; retry after a later write.
       }).finally(() => { compacting = false })
@@ -1890,6 +1892,7 @@ const initializeAppStore = async (
       return verifyAppProjection(replayAppEvents(committedCheckpoint, committedEvents, committed.head), readProjection(collections))
     },
     compactEvents,
+    onMaintenanceFailure: listener => { maintenanceListeners.add(listener); return () => { maintenanceListeners.delete(listener) } },
     readRecovery: () => captureBrowserStorageRecovery({
       session: resolved.mode,
       requirePrivacyBarrier: resolved.privacy !== undefined,

@@ -1,3 +1,4 @@
+import { createOperationalFailureReporter } from "../OperationalFailures"
 import type { StorageApi } from "@tanstack/db"
 import { afterEach,describe,expect,test } from "bun:test"
 import { createAppStore } from "../AppStore"
@@ -39,7 +40,7 @@ const fakeContext = async (options?: {
   const store = await createAppStore({ kind: "localStorage", storage: memoryStorage() })
   let disposed = false
   const cleanups: Array<() => void> = []
-  const ctx = {
+  const ctx = { failures: createOperationalFailureReporter(),
     store,
     get disposed() { return disposed },
     onDispose: (cleanup: () => void) => { cleanups.push(cleanup) },

@@ -218,7 +218,7 @@ export const createRecommendController = (ctx: ControllerContext, deps: Recommen
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ id: outcome.id, command: clean })
-    }).catch(() => {})
+    }).catch(error => ctx.failures.report("recommend.outcome", error, outcome.id))
   }
 
   const schedule = (): void => {
