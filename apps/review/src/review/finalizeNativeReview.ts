@@ -26,7 +26,7 @@ function skippedReviewOutput(prepared: NativeReviewPrompt): ReviewRunOutput {
     message: prepared.message || "Review skipped.",
     summary: null,
     comments: [],
-    warnings: [],
+    warnings: prepared.warnings,
     error: "",
   });
 }
@@ -81,7 +81,7 @@ export function finalizeNativeReview(
   const orderedResults = prepared.files.map((file) => byFileId.get(file.id) ?? { file, output: null });
 
   const reviewablePaths = new Set(preview.entries.filter((entry) => entry.willReview).map((entry) => entry.path));
-  const warnings: Array<ReviewWarning> = [];
+  const warnings: Array<ReviewWarning> = [...prepared.warnings];
   const comments: Array<ReviewComment> = [];
   let failedFiles = 0;
 

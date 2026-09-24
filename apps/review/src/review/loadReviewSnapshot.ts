@@ -37,10 +37,12 @@ export async function loadReviewSnapshot(
   const normalized = normalizeOpenCodeReviewInput(input);
   const target = await resolveReviewTarget(normalized);
   const pinned = await pinRevisions(target.repoDir, normalized);
+  const { filter, warnings } = await buildFileFilter(target.repoDir, pinned);
   return {
     input: pinned,
     target,
-    filter: buildFileFilter(target.repoDir, pinned.rule.trim()),
+    filter,
+    warnings,
     diffs: await loadDiffs(target.repoDir, pinned, reviewOwnPaths(target.repoDir, outputs)),
   };
 }

@@ -36,6 +36,7 @@ describe("finalizeNativeReview", () => {
         prompt: "",
       })),
       message: "prepared",
+      warnings: [],
     };
   }
 

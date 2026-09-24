@@ -31,8 +31,6 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     write(join(dir, "src/big.ts"), `export const big = "${"x".repeat(70_000)}";\n`); // trimDiff truncation at the reviewer limit
     // node_modules provider-excluded path.
     write(join(dir, "node_modules/dep.js"), "module.exports = 1;\n");
-    // .gitignore with negation, dir, no-slash, and slash patterns (all non-matching for src/app.ts).
-    write(join(dir, ".gitignore"), "!keep.ts\nbuildonly/\n*.tmplog\nsrc/never-there.ts\n");
 
     const preview = await previewOpenCodeReview({ ...normalizeOpenCodeReviewInput({}), repo: dir });
     expect(preview.totalFiles).toBeGreaterThan(0);
@@ -40,7 +38,7 @@ describe("previewOpenCodeReview + buildNativeReviewPrompt (real git)", () => {
     // notes.md is unsupported-ext excluded; node_modules is provider excluded.
     const paths = preview.entries.map((e) => e.path);
     expect(paths).toContain("src/app.ts");
-    expect(paths).not.toContain("node_modules/dep.js");
+    expect(preview.entries.find((e) => e.path === "node_modules/dep.js")?.excludeReason).toBe("provider_dir");
     const md = preview.entries.find((e) => e.path === "notes.md");
     expect(md?.willReview).toBe(false);
     expect(md?.excludeReason).toBe("unsupported_ext");

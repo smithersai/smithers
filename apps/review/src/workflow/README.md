@@ -69,12 +69,13 @@ The steps call two sibling directories:
 
 - `../git/` reads the change set: `runCommand.ts`, `runGit.ts`,
   `parseGitDiff.ts`, `loadDiffs.ts` (range, commit, or working tree, with
-  untracked files and provider-directory filtering), `effectivePath.ts`,
-  `diffStatus.ts`, `diffRecord.ts`.
+  untracked files), `mergeBase.ts`, `effectivePath.ts`, `diffStatus.ts`,
+  `diffRecord.ts`.
 - `../review/` decides what to review and folds the answers:
   `loadReviewSnapshot.ts` (one git read), `resolveReviewTarget.ts`,
   `reviewMode.ts`, `validateReviewInput.ts`, `globMatch.ts`,
-  `buildFileFilter.ts` (`.opencodereview/rule.json`), `whyExcluded.ts`,
+  `buildFileFilter.ts` (`.opencodereview/rule.json`, read from the base
+  revision in range and commit mode), `whyExcluded.ts`,
   `previewFromSnapshot.ts`, `reviewChecklistForPath.ts`,
   `buildFileReviewPrompt.ts` (the per-file seat prompt), `reviewFileTaskId.ts`,
   `nativeReviewPromptFromSnapshot.ts`, `anchorFinding.ts`,

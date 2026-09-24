@@ -15,6 +15,7 @@ describe("snapshot builders (no git repository)", () => {
       input: { ...normalizeOpenCodeReviewInput({}), repo: absent },
       target: { repoDir: absent, mode: "workspace", ref: "workspace" },
       filter: null,
+      warnings: [],
       diffs,
     };
   }

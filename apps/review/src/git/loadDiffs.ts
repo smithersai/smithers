@@ -1,58 +1,14 @@
-import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readFileSync, readlinkSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync } from "node:fs";
 import { join } from "node:path";
 import { runCommand } from "./runCommand.ts";
 import { runGit } from "./runGit.ts";
 import { parseGitDiff } from "./parseGitDiff.ts";
 import { effectivePath } from "./effectivePath.ts";
-import { globMatch } from "../review/globMatch.ts";
+import { mergeBase } from "./mergeBase.ts";
 import { reviewMode } from "../review/reviewMode.ts";
 import type { OpenCodeReviewInput } from "../workflow/openCodeReviewInputSchema.ts";
 
 const DIFF_CONTEXT_LINES = 3;
-
-const providerDirIgnoreDirs = [
-  ".idea/",
-  ".vscode/",
-  ".svn/",
-  ".git/",
-  "vendor/",
-  "node_modules/",
-  "target/",
-  ".happypack/",
-  ".cachefile/",
-  "_packages/",
-  "rpm/",
-  "pkgs/",
-];
-
-function loadGitignorePatterns(repoDir: string) {
-  const path = join(repoDir, ".gitignore");
-  if (!existsSync(path)) return [];
-  return readFileSync(path, "utf8")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
-}
-
-function gitignorePatternMatches(pattern: string, relPath: string) {
-  if (pattern.startsWith("!")) return false;
-  if (pattern.endsWith("/")) {
-    const dirName = pattern.slice(0, -1);
-    return relPath.split("/").includes(dirName);
-  }
-  if (!pattern.includes("/")) {
-    return globMatch(pattern, relPath.split("/").pop() ?? relPath);
-  }
-  return globMatch(pattern, relPath) || relPath.endsWith(pattern);
-}
-
-function isProviderExcluded(path: string, gitignorePatterns: string[]) {
-  for (const prefix of providerDirIgnoreDirs) {
-    const dirPart = prefix.replace(/\/$/, "");
-    if (path === dirPart || path.startsWith(prefix)) return true;
-  }
-  return gitignorePatterns.some((pattern) => gitignorePatternMatches(pattern, path));
-}
 
 /**
  * Reads one untracked path the way Git records it, never following a symlink.
@@ -130,6 +86,11 @@ function isOwnPath(path: string, own: ReadonlyArray<string>) {
  * they and the `.smithers-review` state dir are left out, so a repository
  * that does not ignore them never has the tool's output reviewed.
  *
+ * Nothing else is dropped. A tracked change is part of the change set whatever
+ * `.gitignore` says, and in range and commit mode that file belongs to the
+ * change under review. Untracked files follow git's own ignore rules.
+ * Scope filters (`whyExcluded`) mark files unreviewed; they never hide them.
+ *
  * @since 1.0.0
  * @category constructors
  */
@@ -137,8 +98,7 @@ export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput, own
   const mode = reviewMode(input);
   let diffText = "";
   if (mode === "range") {
-    const base = (await runGit(repoDir, ["merge-base", "--end-of-options", input.from.trim(), input.to.trim()])).trim();
-    if (!base) throw new Error(`Cannot find merge-base between ${input.from} and ${input.to}.`);
+    const base = await mergeBase(repoDir, input.from, input.to);
     diffText = await runGit(repoDir, [
       "diff",
       "--no-color",
@@ -160,9 +120,5 @@ export async function loadDiffs(repoDir: string, input: OpenCodeReviewInput, own
     diffText = await workspaceDiffText(repoDir);
   }
 
-  const gitignorePatterns = loadGitignorePatterns(repoDir);
-  return parseGitDiff(diffText).filter((diff) => {
-    const path = effectivePath(diff);
-    return !isOwnPath(path, own) && !isProviderExcluded(path, gitignorePatterns);
-  });
+  return parseGitDiff(diffText).filter((diff) => !isOwnPath(effectivePath(diff), own));
 }

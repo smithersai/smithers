@@ -93,6 +93,26 @@ const defaultExcludePatterns = [
   "**/*.test.ets",
 ];
 
+// Tool state and vendored or packaged third-party code. Reported as
+// `provider_dir`, never hidden, and a rule `include` brings a path back.
+const providerDirs = [
+  ".idea/",
+  ".vscode/",
+  ".svn/",
+  "vendor/",
+  "node_modules/",
+  "target/",
+  ".happypack/",
+  ".cachefile/",
+  "_packages/",
+  "rpm/",
+  "pkgs/",
+];
+
+function isProviderDir(path: string) {
+  return providerDirs.some((prefix) => path.startsWith(prefix));
+}
+
 function isAllowedExt(path: string) {
   const ext = extFromPath(path);
   return ext === "" || supportedExtensions.has(ext);
@@ -130,6 +150,7 @@ export function whyExcluded(diff: DiffRecord, filter: FileFilter | null) {
   if (isUserExcluded(filter, path)) return "user_exclude";
   if (!isAllowedExt(path)) return "unsupported_ext";
   if (filter && filter.include.length > 0 && isUserIncluded(filter, path)) return "";
+  if (isProviderDir(path)) return "provider_dir";
   if (isDefaultExcluded(path)) return "default_path";
   return "";
 }

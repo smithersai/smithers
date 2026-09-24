@@ -5,6 +5,7 @@ const reasonLabels: Record<string, string> = {
   user_exclude: "excluded by review rules",
   unsupported_ext: "file type not reviewed",
   default_path: "outside the default review set",
+  provider_dir: "vendor or tool directory",
   deleted: "deleted with no reviewable content",
 };
 
