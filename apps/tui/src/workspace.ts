@@ -98,6 +98,8 @@ export class Workspace {
   private closed = false
   constructor(
     private options: {
+      /** Ids owned by flow runs in the same session. */
+      occupied?: (id: string) => boolean
       host: Host.Host
       workerSeat: string
       history: () => ReadonlyArray<Context.Entry>
@@ -168,6 +170,7 @@ export class Workspace {
   private changed() {
     for (const listener of this.listeners) listener()
   }
+  has = (id: string): boolean => this.tabs.has(id)
   snapshot = (): Snapshot => ({ tabs: [...this.tabs.values()], panels: [...this.panels.values()], cards: [...this.cards] })
   get busy(): boolean {
     return [...this.tabs.values()].some((tab) => active(tab) || tab.status === "waiting" || tab.status === "queued" || tab.status === "parked")
@@ -300,6 +303,7 @@ export class Workspace {
       if (!same) throw new Error("Request id already belongs to another task")
       return { id: existing.id, status: existing.status }
     }
+    if (this.options.occupied?.(request.id)) throw new Error("Request id already belongs to a flow run")
     // Refuses now when the listing is known; otherwise the launch re-lists and fails the tab.
     const listed = request.agent === undefined ? undefined : this.agents().listed()
     const agent = request.agent === undefined || listed === undefined

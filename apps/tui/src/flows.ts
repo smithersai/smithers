@@ -152,6 +152,8 @@ export class FlowRuns {
   private closed = false
   constructor(
     private options: {
+      /** Ids owned by worker tabs in the same session. */
+      occupied?: (id: string) => boolean
       port?: Port | undefined
       persist: (record: Session.Record) => void
       restored?: ReadonlyArray<Run> | undefined
@@ -307,6 +309,7 @@ export class FlowRuns {
       return { id: existing.id, status: existing.status }
     }
     const id = request.id ?? `${request.flow}-${Date.now().toString(36)}`
+    if (this.options.occupied?.(id)) throw new Error("Request id already belongs to a worker tab")
     const run: Run = {
       id,
       flow: request.flow,

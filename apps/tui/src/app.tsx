@@ -312,8 +312,10 @@ export function App(props: AppProps) {
   }, [contributions])
   // Agents read the current session's flow runs: their listing, and a fresh one at launch.
   const runsRef = useRef<FlowRuns | undefined>(undefined)
+  const workspaceRef = useRef<Workspace | undefined>(undefined)
   const makeWorkspace = (restoredTabs?: Snapshot) =>
     new Workspace({
+      occupied: (id) => runsRef.current?.has(id) ?? false,
       host: props.host,
       workerSeat: props.workerSeat ?? props.seat,
       history: () => entries.current,
@@ -331,7 +333,7 @@ export function App(props: AppProps) {
   const [workspace, setWorkspace] = useState(() => makeWorkspace(restored.current?.workspace))
   const [revision, setRevision] = useState(0)
   const [runs, setRuns] = useState(() =>
-    new FlowRuns({ port: props.flows, persist: writer.current.append, restored: restored.current?.flows })
+    new FlowRuns({ occupied: (id) => workspaceRef.current?.has(id) ?? false, port: props.flows, persist: writer.current.append, restored: restored.current?.flows })
   )
   /** Monitor updates reach the screen through this; it is set once the toast exists. */
   const deliver = useRef<(delivery: Monitors.Delivery) => void>(() => {})
@@ -383,6 +385,7 @@ export function App(props: AppProps) {
     })
   )
   runsRef.current = runs
+  workspaceRef.current = workspace
   /** Runs the user started here; their form opens without a key. */
   const userRuns = useRef(new Set<string>())
   const formOpened = useRef(new Set<string>())
@@ -1051,7 +1054,7 @@ export function App(props: AppProps) {
     writer.current = Session.guarded(next, unsaved)
     entries.current = state.entries
     if (records.length > 0) history.current = new Editor.History(state.prompts)
-    const nextRuns = new FlowRuns({ port: props.flows, persist: writer.current.append, restored: state.flows })
+    const nextRuns = new FlowRuns({ occupied: (id) => workspaceRef.current?.has(id) ?? false, port: props.flows, persist: writer.current.append, restored: state.flows })
     setRuns(nextRuns)
     // Agents list the next session's flows, before the render that would set this.
     runsRef.current = nextRuns
@@ -1065,6 +1068,7 @@ export function App(props: AppProps) {
     setNavigation(Panels.initial())
     setCompact(undefined)
     const nextWorkspace = makeWorkspace(state.workspace)
+    workspaceRef.current = nextWorkspace
     setWorkspace(nextWorkspace)
     setMonitors(makeMonitors(nextWorkspace, nextRuns, writer.current.append, state.monitors))
     contributions.clearRuntime()

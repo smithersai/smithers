@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test"
 import { Schema } from "effect"
 import { type Card, FlowError, FlowRuns, interrupted, type Listed, type Port, type Run, type Settled } from "../src/flows.ts"
 import * as Session from "../src/session.ts"
+import { Workspace } from "../src/workspace.ts"
+import type * as Host from "../src/host.ts"
 
 /** A module flow as discovery lists it. */
 const flow = (name: string, description: string, modelInvocable = true): Listed => ({
@@ -576,5 +578,23 @@ it("reads restored events only when hydrated and retains a retryable failure", a
   await runs.hydrate("r")
   expect(calls).toBe(2)
   expect(runs.panel("r").summary).toBe("Done.")
+  await runs.dispose()
+})
+
+it("refuses cross-registry ids before persisting or launching in either order", async () => {
+  const f = fake()
+  const records: Session.Record[] = []
+  const runs: FlowRuns = new FlowRuns({ port: f.port, persist: (r) => records.push(r), occupied: (id) => workspace.has(id) })
+  const workspace: Workspace = new Workspace({
+    host: { cwd: "/tmp", run: () => { throw new Error("must not launch") } } as unknown as Host.Host,
+    workerSeat: "test", history: () => [], persist: (r) => records.push(r), occupied: runs.has
+  })
+  runs.request({ id: "flow-first", flow: "review", input: {}, by: "user" })
+  expect(() => workspace.request({ id: "flow-first", title: "Work", prompt: "Work" })).toThrow("already belongs")
+  workspace.request({ id: "worker-first", title: "Work", prompt: "Work" })
+  expect(() => runs.request({ id: "worker-first", flow: "review", input: {}, by: "user" })).toThrow("already belongs")
+  expect(records).toHaveLength(2)
+  expect(f.calls).toEqual([])
+  workspace.dispose()
   await runs.dispose()
 })
