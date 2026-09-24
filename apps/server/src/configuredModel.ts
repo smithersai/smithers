@@ -146,7 +146,7 @@ export const handleConfiguredModelTurn = (
       maxTokens: CLOUD_ROLE_MAX_TOKENS,
       temperature: CLOUD_ROLE_TEMPERATURE,
       reasoningEffort: CLOUD_ROLE_REASONING_EFFORT
-    }, deadlineMs, "manual")
+    }, deadlineMs)
     if (!answer.ok) {
       switch (answer.reason) {
         case "http":

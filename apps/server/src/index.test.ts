@@ -2900,6 +2900,55 @@ describe("the browser tool route (§2d)", () => {
   })
 
   /*
+   * The Transport never follows a redirect (a Location would receive the
+   * user's Cloud bearer), so a 3xx is the platform's answer. It is not a
+   * success to stream back: the page would get a bodyless 302 with no
+   * Location. It is the refusal it is, and the host it names is never asked.
+   */
+  test("a platform redirect is refused, never followed or passed through", async () => {
+    const env: WorkerEnv = {
+      ...assetsEnv(),
+      IDENTITY_UPSTREAM_URL: "https://identity.test",
+      IDENTITY_SERVICE_TOKEN: "svc",
+      SMITHERS_CLOUD_API_BASE_URL: "https://cloud.test"
+    }
+    const seen: Array<{ url: string; redirect: RequestRedirect | undefined }> = []
+    const original = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
+      seen.push({ url, redirect: init?.redirect })
+      if (url.includes("/api/identity/validate")) {
+        return new Response(JSON.stringify({ login: "will", allowlisted: true, admin: false, scopes: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      }
+      if (url.includes("/api/identity/cloud-token")) {
+        return new Response(JSON.stringify({ found: true, token: "cloud-token-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      }
+      if (url.startsWith("https://cloud.test/")) {
+        return new Response("moved", { status: 302, headers: { location: "https://elsewhere.test/api/user/repos" } })
+      }
+      return new Response("followed", { status: 200 })
+    }) as unknown as typeof fetch
+    try {
+      const response = await worker.fetch(new Request("https://mvp.test/api/user/repos"), env)
+      expect(response.status).toBe(502)
+      expect(response.headers.get("location")).toBeNull()
+      const body = (await response.json()) as { status: string; code: string; message: string }
+      expect(body.code).toBe("upstream_refused")
+      expect(body.message).not.toContain("moved")
+      expect(seen.some((call) => call.url.startsWith("https://elsewhere.test/"))).toBe(false)
+      expect(seen.every((call) => call.redirect === "manual")).toBe(true)
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  /*
    * Repro apps/app/canary-repros/money/17.4: `/billing.upgrade` on an MVP
    * account fired a live POST /api/billing/checkout and came back the
    * platform's `stripe billing is not configured`. The alpha comps every

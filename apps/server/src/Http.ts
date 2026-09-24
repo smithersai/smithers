@@ -17,6 +17,14 @@ import type { BodyFailure, UpstreamFailure } from "./Failures"
  * Interruption is cancellation: `Effect.tryPromise` hands the fiber's
  * AbortSignal to `fetch`, so a deadline that wins, or a client that
  * disconnects, aborts the socket instead of leaking it.
+ *
+ * A redirect is never followed, whatever the caller or its Request asked for.
+ * Every upstream call carries a credential (a Cloud bearer, the identity
+ * service token, the admin token, a provider key), and a followed redirect
+ * forwards custom headers to whatever host a Location names. A 3xx comes back
+ * as the answer; each caller reads it as the refusal it is, and the identity
+ * proxy hands the OAuth redirects to the browser. `manual`, not `error`:
+ * workerd throws on `error` before the request is sent.
  */
 
 export type FetchInput = Request | string | URL
@@ -43,7 +51,7 @@ export const transportFrom = (fetchImpl: FetchImplementation): TransportShape =>
         return Effect.fail(new UpstreamUnreachable({ seam, cause: incoming.reason ?? new DOMException("The operation was aborted.", "AbortError") }))
       }
       return Effect.tryPromise({
-        try: (signal) => fetchImpl(input, { ...init, signal: combineSignals(incoming, signal) }),
+        try: (signal) => fetchImpl(input, { ...init, redirect: "manual", signal: combineSignals(incoming, signal) }),
         catch: (cause) => new UpstreamUnreachable({ seam, cause })
       })
     })

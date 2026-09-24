@@ -3,7 +3,8 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import { BodyNotJson, BodyTooLarge, UpstreamTimeout, UpstreamUnreachable } from "./Failures"
-import { fetchWithDeadline, readBoundedBytes, readBoundedJson, readText, transportLayer } from "./Http"
+import { fetchWithDeadline, readBoundedBytes, readBoundedJson, readText, transportLayer, TransportLive } from "./Http"
+import type { FetchInput } from "./Http"
 
 const encoder = new TextEncoder()
 
@@ -163,4 +164,48 @@ describe("fetchWithDeadline bounds the headers only", () => {
     expect(Exit.isFailure(exit) && String(exit.cause)).toContain(UpstreamUnreachable.name)
     expect(Exit.isFailure(exit) && String(exit.cause)).toContain("client left")
   })
+})
+
+/*
+ * Every upstream call carries a credential (a Cloud bearer, the identity
+ * service token, the admin token, a provider key), and a followed redirect
+ * forwards custom headers to whatever host a Location names. The Transport is
+ * the one place `fetch` runs, so the rule lives there and covers every seam:
+ * a 3xx comes back as the answer and the host it names is never contacted.
+ */
+describe("the Transport never follows a redirect", () => {
+  const redirectPair = () => {
+    const reached: Array<Headers> = []
+    const elsewhere = Bun.serve({ port: 0, fetch: (request) => { reached.push(request.headers); return new Response("followed") } })
+    const upstream = Bun.serve({
+      port: 0,
+      fetch: () => new Response(null, { status: 302, headers: { location: `http://localhost:${elsewhere.port}/stolen` } })
+    })
+    return {
+      url: `http://127.0.0.1:${upstream.port}/api/identity/cloud-token`,
+      reached,
+      stop: () => { upstream.stop(true); elsewhere.stop(true) }
+    }
+  }
+
+  const inits: ReadonlyArray<readonly [string, (url: string) => [FetchInput, RequestInit | undefined]]> = [
+    ["a URL with no init", (url) => [url, { headers: { "x-smithers-service-token": "svc-secret" } }]],
+    ["an init that asks to follow", (url) => [url, { redirect: "follow", headers: { "x-smithers-service-token": "svc-secret" } }]],
+    ["a Request whose own mode is follow", (url) => [new Request(url, { headers: { "x-smithers-service-token": "svc-secret" } }), undefined]]
+  ]
+  for (const [name, build] of inits) {
+    test(`${name}: the 3xx is the answer and the Location host is never contacted`, async () => {
+      const pair = redirectPair()
+      try {
+        const [input, init] = build(pair.url)
+        const response = await Effect.runPromise(
+          fetchWithDeadline("The Cloud token door", input, init, 2_000).pipe(Effect.provide(TransportLive))
+        )
+        expect(response.status).toBe(302)
+        expect(pair.reached).toHaveLength(0)
+      } finally {
+        pair.stop()
+      }
+    })
+  }
 })

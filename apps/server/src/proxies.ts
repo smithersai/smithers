@@ -16,7 +16,7 @@ import { ServerConfig } from "./Config"
 import { BrowserEgress } from "./Environment"
 import type { DeploymentBindings, ExecutionContext } from "./Environment"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
-import { fetchWithDeadline, readBoundedBytes, readText } from "./Http"
+import { discardBody, fetchWithDeadline, readBoundedBytes, readText } from "./Http"
 import type { Transport } from "./Http"
 import { requireTurnSession } from "./identity"
 import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
@@ -198,6 +198,12 @@ export const handlePlatformProxy = (
     )
     if (Result.isFailure(fetched)) return upstreamUnreachable("Smithers Cloud", fetched.failure)
     const upstream = fetched.success
+    // The Transport never follows a redirect (the Location would get the
+    // bearer), so a 3xx is Cloud's answer, and it is no page's success.
+    if (upstream.status >= 300 && upstream.status < 400) {
+      yield* discardBody(upstream)
+      return refuse("upstream_refused", `Smithers Cloud answered an unexpected redirect (HTTP ${upstream.status}).`)
+    }
     /*
      * A failure's PROSE never passes through: the upstream's body is written
      * for its own callers, and the product renders whatever comes back
