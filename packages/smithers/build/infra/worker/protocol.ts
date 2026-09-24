@@ -480,22 +480,22 @@ const boundedOperation = <Args extends Array<unknown>, A>(
   name: CacheFailure["operation"],
   operation: (...args: [...Args, AbortSignal?]) => Promise<A>,
   maximum: number,
+  admission: Map<string, number>,
   discard?: (value: A) => void
 ): (signal: AbortSignal | undefined, ...args: Args) => Promise<A> => {
-  let active = 0
   return (signal, ...args) =>
     boundedWait(
       async (cancellation) => {
-        if (active >= maximum) {
+        if ((admission.get(name) ?? 0) >= maximum) {
           throw new CacheFailure("DEPENDENCY_OCCUPIED", "wait", "cache dependency is still occupied")
         }
-        active += 1
+        admission.set(name, (admission.get(name) ?? 0) + 1)
         try {
           const value = await operation(...args, cancellation)
           if (cancellation.aborted) discard?.(value)
           return value
         } finally {
-          active -= 1
+          admission.set(name, admission.get(name)! - 1)
         }
       },
       signal,
@@ -1109,8 +1109,22 @@ const handleArtifact = async (
 const heldWhileStreaming = (
   response: Response,
   body: NonNullable<Response["body"]>,
-  release: () => void
+  release: () => void,
+  operation: CacheFailure["operation"],
+  onEnd?: (outcome: "complete" | "failed" | "cancelled") => void
 ): Response => {
+  let ended = false
+  const finish = (outcome: "complete" | "failed" | "cancelled", cause?: unknown): void => {
+    if (ended) return
+    ended = true
+    release()
+    if (outcome === "failed") {
+      console.error(
+        describeFailure(new CacheFailure("STREAM_READ_FAILED", operation, "cache stream failed", { cause }))
+      )
+    }
+    onEnd?.(outcome)
+  }
   const reader = body.getReader()
   const held = new ReadableStream<Uint8Array>({
     async pull(controller) {
@@ -1118,20 +1132,20 @@ const heldWhileStreaming = (
         const chunk = await reader.read()
         if (chunk.done) {
           controller.close()
-          release()
+          finish("complete")
           return
         }
         controller.enqueue(chunk.value)
       } catch (cause) {
-        release()
+        finish("failed", cause)
         controller.error(cause)
       }
     },
     cancel(reason) {
-      release()
+      finish("cancelled")
       return reader.cancel(reason)
     }
-  })
+  }, { highWaterMark: 0 })
   return new Response(held, { status: response.status, headers: response.headers })
 }
 
@@ -1409,10 +1423,24 @@ const normalizeDependencies = (value: ProtocolDependencies): NormalizedProtocolD
 }
 
 /**
+ * Creates admission accounting shared by all binding generations in an isolate.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeAdmissionState = () => ({
+  activeCacheRequests: 0,
+  activeActionCachePublications: 0,
+  activeArtifactTransfers: 0,
+  activeFindMissingRequests: 0,
+  dependencies: new Map<string, number>()
+})
+
+/**
  * Creates the authenticated HTTP handler for the remote-cache protocol.
  *
- * The returned function owns its admission counters and readiness cache, so a
- * production caller must retain it for the lifetime of one Worker isolate.
+ * Retain the handler while bindings are unchanged. Pass the same admission
+ * state when rebuilding it so in-flight work remains counted across rotations.
  * `maxArtifactBytes` defaults to 16 MiB, `health` to an async no-op, and an
  * omitted credential budget admits every request within the isolate limits.
  *
@@ -1429,28 +1457,32 @@ const normalizeDependencies = (value: ProtocolDependencies): NormalizedProtocolD
  * @category constructors
  * @since 0.1.0
  */
-export const createHandler = (dependencies: ProtocolDependencies) => {
+export const createHandler = (dependencies: ProtocolDependencies, admission = makeAdmissionState()) => {
   const normalized = normalizeDependencies(dependencies)
   const { maxArtifactBytes, readTokenHash, writeTokenHash } = normalized
   const actionGet = boundedOperation<[string], string | null>(
     "actionCache.get",
     normalized.actionCache.get,
-    maxConcurrentCacheRequests
+    maxConcurrentCacheRequests,
+    admission.dependencies
   )
   const actionPut = boundedOperation<[string, ActionCachePublication], Publication>(
     "actionCache.put",
     normalized.actionCache.put,
-    maxConcurrentActionCachePublications
+    maxConcurrentActionCachePublications,
+    admission.dependencies
   )
   const actionDelete = boundedOperation<[string, DeleteFence | null], boolean>(
     "actionCache.delete",
     normalized.actionCache.delete,
-    maxConcurrentCacheRequests
+    maxConcurrentCacheRequests,
+    admission.dependencies
   )
   const contentGet = boundedOperation<[string], ContentObject | null>(
     "contentStore.get",
     normalized.contentStore.get,
     maxConcurrentArtifactTransfers,
+    admission.dependencies,
     (object) => {
       if (object?.body instanceof ReadableStream) void discardBody(object.body)
     }
@@ -1458,22 +1490,26 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
   const contentHas = boundedOperation<[string], boolean>(
     "contentStore.has",
     normalized.contentStore.has,
-    maxConcurrentCacheRequests
+    maxConcurrentCacheRequests,
+    admission.dependencies
   )
   const contentPut = boundedOperation<[string, Uint8Array<ArrayBuffer>], "inserted" | "present">(
     "contentStore.put",
     normalized.contentStore.put,
-    maxConcurrentArtifactTransfers
+    maxConcurrentArtifactTransfers,
+    admission.dependencies
   )
   const contentPresent = boundedOperation<[ReadonlyArray<string>], ReadonlySet<string>>(
     "contentStore.presentDigests",
     normalized.contentStore.presentDigests,
-    maxConcurrentFindMissingRequests
+    maxConcurrentFindMissingRequests,
+    admission.dependencies
   )
   const budgetCharge = boundedOperation<[string, CredentialBudgetRoute], boolean>(
     "credentialBudget.charge",
     normalized.credentialBudget.charge,
-    maxConcurrentCacheRequests
+    maxConcurrentCacheRequests,
+    admission.dependencies
   )
   // A budget that cannot answer, or a request already cancelled when it is
   // asked, still owes the body a cancellation: the failure path below answers
@@ -1486,7 +1522,7 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
       throw cause
     }
   }
-  const health = boundedOperation<[], void>("health", normalized.health, 1)
+  const health = boundedOperation<[], void>("health", normalized.health, 1, admission.dependencies)
   const actionCache: ActionCache = {
     get: (key, signal) => actionGet(signal, key),
     put: (key, publication, signal) => actionPut(signal, key, publication),
@@ -1501,10 +1537,6 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
   const expectedReadTokenHash = digestBytes(readTokenHash)
   const expectedWriteTokenHash = digestBytes(writeTokenHash)
 
-  let activeCacheRequests = 0
-  let activeActionCachePublications = 0
-  let activeArtifactTransfers = 0
-  let activeFindMissingRequests = 0
   let healthInFlight: {
     readonly promise: Promise<void>
     readonly controller: AbortController
@@ -1534,7 +1566,10 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
     }
   }
 
-  const handle = async (request: Request): Promise<Response> => {
+  const handle = async (
+    request: Request,
+    onStreamEnd?: (outcome: "complete" | "failed" | "cancelled") => void
+  ): Promise<Response> => {
     let url: URL
     try {
       url = new URL(request.url)
@@ -1557,11 +1592,11 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
         await ready(request.signal)
         return request.method === "HEAD" ? empty(200) : json(200, { ok: true })
       }
-      if (activeCacheRequests >= maxConcurrentCacheRequests) {
+      if (admission.activeCacheRequests >= maxConcurrentCacheRequests) {
         await discardBody(request.body)
         return busy("too many simultaneous cache requests")
       }
-      activeCacheRequests += 1
+      admission.activeCacheRequests += 1
       try {
         const credential = await presentedCredential(request, expectedWriteTokenHash, expectedReadTokenHash)
         if (credential.kind === "none") {
@@ -1590,7 +1625,7 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
         // first slash and exactly one segment after the route.
         const routed = root === "" && encoded !== undefined && rest.length === 0
         if (routed && route === "cas" && encoded === "findMissing") {
-          if (activeFindMissingRequests >= maxConcurrentFindMissingRequests) {
+          if (admission.activeFindMissingRequests >= maxConcurrentFindMissingRequests) {
             await discardBody(request.body)
             return busy("too many simultaneous findMissing requests")
           }
@@ -1598,11 +1633,11 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
             await discardBody(request.body)
             return throttled("this credential's findMissing budget is spent")
           }
-          activeFindMissingRequests += 1
+          admission.activeFindMissingRequests += 1
           try {
             return await handleFindMissing(request, contentStore)
           } finally {
-            activeFindMissingRequests -= 1
+            admission.activeFindMissingRequests -= 1
           }
         }
         if (routed && route === "ac") {
@@ -1614,15 +1649,15 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
             return json(400, { error: "keyDigest must be valid URL encoding" })
           }
           if (request.method === "PUT") {
-            if (activeActionCachePublications >= maxConcurrentActionCachePublications) {
+            if (admission.activeActionCachePublications >= maxConcurrentActionCachePublications) {
               await discardBody(request.body)
               return busy("too many simultaneous action-cache publications")
             }
-            activeActionCachePublications += 1
+            admission.activeActionCachePublications += 1
             try {
               return await handleActionCache(request, keyDigest, url, actionCache)
             } finally {
-              activeActionCachePublications -= 1
+              admission.activeActionCachePublications -= 1
             }
           }
           const response = await handleActionCache(request, keyDigest, url, actionCache)
@@ -1632,7 +1667,6 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
           if (request.method !== "GET" || response.status !== 200 || body === null) {
             return response
           }
-          let released = false
           // The flag is set only once the wrapper exists. Setting it first
           // would leak the counter for the isolate's lifetime if wrapping
           // threw: the wrapper that owes the decrement would never have been
@@ -1640,11 +1674,15 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
           // This body is built here from validated stored text, so no store
           // can hand the wrapper something that refuses a reader; the order
           // matches the artifact path, where a store can.
-          const held = heldWhileStreaming(response, body, () => {
-            if (released) return
-            released = true
-            activeCacheRequests -= 1
-          })
+          const held = heldWhileStreaming(
+            response,
+            body,
+            () => {
+              admission.activeCacheRequests -= 1
+            },
+            "actionCache.get",
+            onStreamEnd
+          )
           streaming = true
           return held
         }
@@ -1657,11 +1695,11 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
             return json(400, { error: "digest must be valid URL encoding" })
           }
           if (request.method === "GET" || request.method === "PUT") {
-            if (activeArtifactTransfers >= maxConcurrentArtifactTransfers) {
+            if (admission.activeArtifactTransfers >= maxConcurrentArtifactTransfers) {
               await discardBody(request.body)
               return busy("too many simultaneous artifact transfers")
             }
-            activeArtifactTransfers += 1
+            admission.activeArtifactTransfers += 1
             let transferred = false
             try {
               const response = await handleArtifact(
@@ -1678,22 +1716,25 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
               if (request.method !== "GET" || response.status !== 200 || body === null) {
                 return response
               }
-              let released = false
               // Both flags are set only once the wrapper exists, so a throw
               // inside the wrapping leaves this request's own `finally` and
               // the outer one still responsible for the two counters. Setting
               // them first would strand both for the isolate's lifetime.
-              const held = heldWhileStreaming(response, body, () => {
-                if (released) return
-                released = true
-                activeArtifactTransfers -= 1
-                activeCacheRequests -= 1
-              })
+              const held = heldWhileStreaming(
+                response,
+                body,
+                () => {
+                  admission.activeArtifactTransfers -= 1
+                  admission.activeCacheRequests -= 1
+                },
+                "contentStore.get",
+                onStreamEnd
+              )
               transferred = true
               streaming = true
               return held
             } finally {
-              if (!transferred) activeArtifactTransfers -= 1
+              if (!transferred) admission.activeArtifactTransfers -= 1
             }
           }
           return await handleArtifact(request, digest, contentStore, maxArtifactBytes)
@@ -1701,7 +1742,7 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
         await discardBody(request.body)
         return empty(404)
       } finally {
-        if (!streaming) activeCacheRequests -= 1
+        if (!streaming) admission.activeCacheRequests -= 1
       }
     } catch (cause) {
       console.error(describeFailure(cause))
@@ -1709,8 +1750,11 @@ export const createHandler = (dependencies: ProtocolDependencies) => {
     }
   }
 
-  return async (request: Request): Promise<Response> => {
-    const response = await handle(request)
+  return async (
+    request: Request,
+    onStreamEnd?: (outcome: "complete" | "failed" | "cancelled") => void
+  ): Promise<Response> => {
+    const response = await handle(request, onStreamEnd)
     response.headers.set("Smithers-Cache-Contract", "result-only-v1")
     return response
   }

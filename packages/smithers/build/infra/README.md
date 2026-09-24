@@ -324,11 +324,14 @@ it; a `503` fails the CAS existence probe instead of identifying missing content
 
 ## Observability
 
-The Worker writes one Analytics Engine datapoint per request to the dataset
+The Worker writes one Analytics Engine datapoint at response headers to the dataset
 `smithers_build_cache_requests_<stage>`: the route class (`ac`, `cas`,
 `findMissing`, `healthz`, or `other`) as the index, then the route class,
 method, and status as blobs and the duration in milliseconds as the first
-double. Each retention run writes one more under `retention`, with `ok` or
+double. Streamed hits also write a terminal `stream_complete`, `stream_failed`,
+or `stream_cancelled` outcome with elapsed time through the transfer's end.
+Stream failures log an allowlisted `STREAM_READ_FAILED` diagnostic for the
+store read. Each retention run writes one more under `retention`, with `ok` or
 `failed` as its outcome, the rows removed as the second double, and `1` as the
 third double when the run stopped with stale rows left. The retention run also
 logs one JSON record, `{"event":"smithers.build.retention","removed":...,
@@ -398,8 +401,11 @@ Redaction uses bounded descriptor-stable reads and atomic durable publication;
 the stack refuses to run unless the wrapper started it.
 
 The wrapper owns the state directory for the whole run, from before Alchemy
-starts until redaction has published its last file, through a lock file
-inside that directory holding its process id. A second deployment or a
+starts until redaction has published its last file, through an exclusive SQLite
+transaction. The OS releases ownership if the process exits. The persistent
+`.smithers-state-owner.sqlite` file must not be deleted or replaced; all callers
+must lock the same file. A separate PID file supports diagnostics and older
+wrappers; stale PID reclamation is serialized under the SQLite lock. A second deployment or a
 standalone `scripts/redact-state.ts` run against the same state is refused
 while it runs; a lock left by a process that no longer exists is reclaimed.
 

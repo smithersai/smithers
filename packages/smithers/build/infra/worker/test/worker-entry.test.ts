@@ -184,6 +184,27 @@ describe("worker entry point", () => {
     }
   })
 
+  it("reports a scheduled retention backlog in metrics", async () => {
+    const worker = await load()
+    const retentionBatchRows = 500
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const clock = vi.spyOn(Date, "now").mockReturnValue(0)
+    const logs = vi.spyOn(console, "log").mockImplementation(() => undefined)
+    try {
+      await worker.scheduled({} as ScheduledController, env({
+        CACHE_REQUEST_METRICS: { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) },
+        CACHE_DATABASE: { prepare: () => ({ bind: () => ({ all: async () => {
+          clock.mockReturnValue(60_000)
+          return { results: Array.from({ length: retentionBatchRows }, () => ({ key_digest: "key" })) }
+        } }) }) }
+      }))
+      expect(points[0]?.doubles).toEqual([60_000, retentionBatchRows, 1])
+    } finally {
+      clock.mockRestore()
+      logs.mockRestore()
+    }
+  })
+
   it("answers 400 to an unparseable request URL and counts it under other", async () => {
     const worker = await load()
     const points: Array<AnalyticsEngineDataPoint> = []
@@ -224,20 +245,119 @@ describe("worker entry point", () => {
     expect(healthy.status).toBe(200)
   })
 
-  it("keeps one handler per isolate so admission counters and the health cache mean something", async () => {
+  it("rotates both credentials and rebinds storage and budgets in the same isolate", async () => {
     const worker = await load()
-    let firstHeads = 0
-    let secondHeads = 0
-    const first = { ...bucket(), head: async () => (firstHeads += 1, null) } as unknown as R2Bucket
-    const second = { ...bucket(), head: async () => (secondHeads += 1, null) } as unknown as R2Bucket
+    const replacement = await makeTestDatabase()
+    const request = (token: string, method = "GET") => new Request("https://cache.test/ac/key", {
+      method,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      ...(method === "PUT" ? { body: '{"ok":true}' } : {})
+    })
+    try {
+      expect((await worker.fetch(request("entry-point-write-token", "PUT"), env())).status).toBe(201)
+      const requests = budget()
+      const probes = budget(false)
+      let heads = 0
+      const next = env({
+        CACHE_READ_TOKEN: createHash("sha256").update("next-reader").digest("hex"),
+        CACHE_WRITE_TOKEN: createHash("sha256").update("next-writer").digest("hex"),
+        CACHE_DATABASE: replacement.database,
+        CACHE_BUCKET: { ...bucket(), head: async () => (heads += 1, null) },
+        CACHE_REQUEST_BUDGET: requests.binding,
+        CACHE_FIND_MISSING_BUDGET: probes.binding
+      })
+      expect((await worker.fetch(request("entry-point-write-token", "DELETE"), next)).status).toBe(401)
+      expect((await worker.fetch(request("entry-point-read-token"), next)).status).toBe(401)
+      expect((await worker.fetch(request("next-writer", "PUT"), next)).status).toBe(201)
+      const read = await worker.fetch(request("next-reader"), next)
+      expect(read.status).toBe(200)
+      await read.text()
+      expect((await worker.fetch(new Request("https://cache.test/healthz"), next)).status).toBe(200)
+      expect(heads).toBe(1)
+      expect(requests.keys).toHaveLength(2)
+      expect((await worker.fetch(new Request("https://cache.test/cas/findMissing", {
+        method: "POST", headers: { authorization: "Bearer next-reader" }
+      }), next)).status).toBe(429)
+      expect(probes.keys).toHaveLength(1)
+      expect(d1.sqlite.prepare("SELECT COUNT(*) AS count FROM smithers_build_cache_entry").get()?.count).toBe(1)
+    } finally {
+      replacement.close()
+    }
+  })
 
-    await worker.fetch(new Request("https://cache.test/healthz"), env({ CACHE_BUCKET: first }))
-    // A second environment must not build a second handler: the readiness
-    // cache and every admission counter live on the first one.
-    await new Promise((resolve) => setTimeout(resolve, 1100))
-    await worker.fetch(new Request("https://cache.test/healthz"), env({ CACHE_BUCKET: second }))
+  it("preserves streaming admission across binding rotations and returns each permit once", async () => {
+    const worker = await load()
+    const digest = createHash("sha256").update("artifact").digest("hex")
+    const sources: Array<ReadableStreamDefaultController<Uint8Array>> = []
+    const makeEnv = () => env({ CACHE_BUCKET: { ...bucket(), get: async () => ({
+      key: digest, size: 8, checksums: { sha256: Uint8Array.from(Buffer.from(digest, "hex")).buffer },
+      body: new ReadableStream<Uint8Array>({ start(controller) { sources.push(controller) } })
+    }) } })
+    const get = () => worker.fetch(new Request(`https://cache.test/cas/${digest}`, {
+      headers: { authorization: "Bearer entry-point-read-token" }
+    }), makeEnv())
+    const first = await get()
+    const second = await get()
+    expect(first.status).toBe(200)
+    expect(second.status).toBe(200)
+    expect((await get()).status).toBe(429)
+    sources[0]!.error(new Error("download failed"))
+    await expect(first.arrayBuffer()).rejects.toThrow()
+    const third = await get()
+    expect(third.status).toBe(200)
+    expect((await get()).status).toBe(429)
+    await second.body!.cancel()
+    await second.body!.cancel()
+    const fourth = await get()
+    expect(fourth.status).toBe(200)
+    expect((await get()).status).toBe(429)
+    await third.body!.cancel()
+    await fourth.body!.cancel()
+  })
 
-    expect(firstHeads).toBe(2)
-    expect(secondHeads).toBe(0)
+  it.each(["complete", "failed", "cancelled", "cancelled_during_read"])("records terminal stream %s after headers and releases admission", async (outcome) => {
+    const worker = await load()
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const digest = createHash("sha256").update("artifact").digest("hex")
+    let source!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({ start(controller) { source = controller } })
+    const environment = env({
+      CACHE_REQUEST_METRICS: { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) },
+      CACHE_BUCKET: { ...bucket(), get: async () => ({
+        key: digest, size: 8, checksums: { sha256: Uint8Array.from(Buffer.from(digest, "hex")).buffer }, body
+      }) }
+    })
+    const response = await worker.fetch(new Request(`https://cache.test/cas/${digest}`, {
+      headers: { authorization: "Bearer entry-point-read-token" }
+    }), environment)
+    expect(response.status).toBe(200)
+    expect(points.map((point) => point.blobs)).toEqual([["cas", "GET", "200"]])
+    await new Promise((resolve) => setTimeout(resolve, 25))
+    if (outcome === "failed") {
+      source.error(new Error("private provider payload"))
+      await expect(response.arrayBuffer()).rejects.toThrow()
+      expect(errors).toHaveBeenCalledTimes(1)
+      expect(String(errors.mock.calls[0]?.[0])).toContain("code=STREAM_READ_FAILED")
+      expect(String(errors.mock.calls[0]?.[0])).toContain("operation=contentStore.get")
+      expect(String(errors.mock.calls[0]?.[0])).not.toContain("private provider payload")
+    } else if (outcome === "cancelled_during_read") {
+      const reader = response.body!.getReader()
+      const pending = reader.read()
+      await Promise.resolve()
+      await reader.cancel()
+      await pending
+      expect(errors).not.toHaveBeenCalled()
+    } else if (outcome === "cancelled") {
+      await response.body!.cancel()
+      expect(errors).not.toHaveBeenCalled()
+    } else {
+      source.enqueue(new TextEncoder().encode("artifact"))
+      source.close()
+      expect(await response.text()).toBe("artifact")
+    }
+    expect(points.map((point) => point.blobs)).toEqual([
+      ["cas", "GET", "200"], ["cas", "GET", `stream_${outcome === "cancelled_during_read" ? "cancelled" : outcome}`]
+    ])
+    expect(points[1]?.doubles?.[0]).toBeGreaterThanOrEqual(20)
   })
 })

@@ -10,8 +10,11 @@
  * standalone redaction holds it across its own read, replacement, and
  * directory sync.
  *
- * Ownership is a lock file inside the state directory, created exclusively and
- * holding the owner's process id. Alchemy reads only `.json` entries there, so
+ * Ownership holds an exclusive SQLite transaction for the entire operation.
+ * Its stable database file must never be unlinked: the OS releases the lock
+ * when a process exits. A PID file preserves diagnostics and fences older
+ * deployment wrappers; stale PID reclamation runs under the SQLite lock.
+ * Alchemy reads only `.json` entries there, so
  * the file is invisible to it. A lock whose owner is gone is reclaimed; one
  * whose owner is alive, or cannot be read, refuses the caller.
  *
@@ -20,6 +23,7 @@
 import { errorCode } from "@smthrs/targets/SafeFs"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
+import { DatabaseSync } from "node:sqlite"
 
 /**
  * Ownership of one Alchemy state directory, released once by its taker.
@@ -30,7 +34,7 @@ import * as NodePath from "node:path"
 export interface StateOwnership {
   /** The state directory the lock file lives in. */
   readonly directory: string
-  /** Removes the lock file. */
+  /** Releases this ownership once; repeated calls share its completion. */
   readonly release: () => Promise<void>
 }
 
@@ -54,6 +58,40 @@ const holderAlive = (pid: number): boolean => {
 }
 
 /**
+ * Takes exclusive state ownership using an OS-released SQLite process lock.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const acquireStateOwnership = async (directory: string): Promise<StateOwnership> => {
+  await Fs.stat(directory)
+  const database = new DatabaseSync(NodePath.join(directory, ".smithers-state-owner.sqlite"))
+  try {
+    database.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE")
+  } catch (cause) {
+    database.close()
+    const file = NodePath.join(directory, lockName)
+    const holder = holderOf(await Fs.readFile(file, "utf8").catch(() => ""))
+    throw new Error(
+      `Alchemy state is owned by another deployment${holder === undefined ? "" : ` (pid ${holder})`}; ` +
+        `remove ${file} only once that process is gone`,
+      { cause }
+    )
+  }
+  try {
+    const ownership = await acquirePidFile(directory)
+    let releasing: Promise<void> | undefined
+    return {
+      directory,
+      release: () => releasing ??= ownership.release().finally(() => database.close())
+    }
+  } catch (cause) {
+    database.close()
+    throw cause
+  }
+}
+
+/**
  * Takes exclusive ownership of an existing Alchemy state directory.
  *
  * A lock left by a process that no longer exists is reclaimed; one held by a
@@ -62,7 +100,7 @@ const holderAlive = (pid: number): boolean => {
  * @category constructors
  * @since 0.1.0
  */
-export const acquireStateOwnership = async (directory: string): Promise<StateOwnership> => {
+const acquirePidFile = async (directory: string): Promise<StateOwnership> => {
   const file = NodePath.join(directory, lockName)
   for (let attempt = 0; attempt < reclaimAttempts; attempt += 1) {
     try {

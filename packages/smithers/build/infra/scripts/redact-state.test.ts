@@ -949,7 +949,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
           denied = true
         }
         if (!denied) context.skip("this process creates files in a directory without write permission")
-        await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(/EACCES|EPERM/)
+        await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(/EACCES|EPERM|unable to open database file/)
       } finally {
         await Fs.chmod(root, 0o700)
       }
@@ -964,7 +964,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       await Fs.writeFile(file, workerState("CACHE_TOKEN", "raw-token"))
 
       expect(await redactAlchemyState({ directory: root, bearerToken: "token" })).toBe(1)
-      expect(await Fs.readdir(root)).toEqual(["CacheWorker.json"])
+      expect((await Fs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
 
       await Fs.writeFile(file, workerState("CACHE_TOKEN", "raw-token"))
       const held = await acquireStateOwnership(root)
@@ -982,7 +982,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       } finally {
         await held.release()
       }
-      expect(await Fs.readdir(root)).toEqual(["CacheWorker.json"])
+      expect((await Fs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
     })
   })
 
@@ -997,7 +997,7 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
         } finally {
           await held.release()
         }
-        expect(await Fs.readdir(root)).toEqual(["CacheWorker.json"])
+        expect((await Fs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
       })
     })
   })
@@ -1007,14 +1007,14 @@ describe("redactAlchemyState", { timeout: 120_000 }, () => {
       await Fs.writeFile(NodePath.join(root, "CacheWorker.json"), "not json")
 
       await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow()
-      expect(await Fs.readdir(root)).toEqual(["CacheWorker.json"])
+      expect((await Fs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
 
       const held = await acquireStateOwnership(root)
       try {
         await expect(redactAlchemyState({ directory: root, bearerToken: "token", ownership: held })).rejects
           .toThrow()
         // The deployment that owns the state keeps it until its own release.
-        expect(await Fs.readdir(root)).toEqual([".smithers-state-owner.lock", "CacheWorker.json"])
+        expect((await Fs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual([".smithers-state-owner.lock", "CacheWorker.json"])
       } finally {
         await held.release()
       }

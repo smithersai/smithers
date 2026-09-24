@@ -5,7 +5,7 @@
  */
 import { CacheFailure } from "./cache-failure.ts"
 import { makeActionCache } from "./D1ActionCache.ts"
-import { createHandler, describeFailure } from "./protocol.ts"
+import { createHandler, describeFailure, makeAdmissionState } from "./protocol.ts"
 import { makeContentStore } from "./R2ContentStore.ts"
 import { makeCredentialBudget } from "./RateLimitCredentialBudget.ts"
 import { pruneStaleEntries, retentionDays } from "./RetentionSweep.ts"
@@ -22,7 +22,8 @@ interface CacheWorkerEnv {
   /** SHA-256 of the publish credential only post-merge jobs may hold. */
   readonly CACHE_WRITE_TOKEN: string
   /**
-   * One datapoint per request and per retention run. The deployment always
+   * One header datapoint per request, a terminal datapoint per streamed hit,
+   * and one per retention run. The deployment always
    * binds it; an environment without it records nothing.
    */
   readonly CACHE_REQUEST_METRICS?: AnalyticsEngineDataset
@@ -84,10 +85,22 @@ const record = (
 
 type CacheHandler = ReturnType<typeof createHandler>
 
+const admission = makeAdmissionState()
 let isolateHandler: CacheHandler | null = null
+let capturedBindings: ReadonlyArray<unknown> = []
 
 const handlerFor = (env: CacheWorkerEnv): CacheHandler => {
-  if (isolateHandler !== null) return isolateHandler
+  const bindings = [
+    env.CACHE_DATABASE,
+    env.CACHE_BUCKET,
+    env.CACHE_READ_TOKEN,
+    env.CACHE_WRITE_TOKEN,
+    env.CACHE_REQUEST_BUDGET,
+    env.CACHE_FIND_MISSING_BUDGET
+  ]
+  if (isolateHandler !== null && bindings.every((value, index) => value === capturedBindings[index])) {
+    return isolateHandler
+  }
   isolateHandler = createHandler({
     actionCache: makeActionCache(env.CACHE_DATABASE),
     contentStore: makeContentStore(env.CACHE_BUCKET),
@@ -95,7 +108,8 @@ const handlerFor = (env: CacheWorkerEnv): CacheHandler => {
     writeTokenHash: env.CACHE_WRITE_TOKEN,
     credentialBudget: makeCredentialBudget(env.CACHE_REQUEST_BUDGET, env.CACHE_FIND_MISSING_BUDGET),
     health: makeHealth(env.CACHE_DATABASE, env.CACHE_BUCKET)
-  })
+  }, admission)
+  capturedBindings = bindings
   return isolateHandler
 }
 
@@ -111,7 +125,9 @@ const worker = {
     const route = routeOf(request)
     let response: Response
     try {
-      response = await handlerFor(env)(request)
+      response = await handlerFor(env)(request, (outcome) => {
+        record(env.CACHE_REQUEST_METRICS, route, request.method, `stream_${outcome}`, [Date.now() - started])
+      })
     } catch (cause) {
       console.error(describeFailure(cause))
       response = new Response(JSON.stringify({ error: "the cache tier failed to initialize" }), {

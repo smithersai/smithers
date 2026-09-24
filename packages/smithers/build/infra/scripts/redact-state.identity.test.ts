@@ -302,7 +302,7 @@ describe("Alchemy state file identity", () => {
       await expect(competitor).rejects.toThrow(/owned by another deployment \(pid \d+\)/)
       expect(JSON.parse(await RealFs.readFile(file, "utf8")).props.env.CACHE_TOKEN.__redacted__).toBe(sentinel)
       expect(await temporaryFilesIn(root)).toEqual([])
-      expect(await RealFs.readdir(root)).toEqual(["CacheWorker.json"])
+      expect((await RealFs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
     })
   })
 
@@ -314,7 +314,7 @@ describe("Alchemy state file identity", () => {
 
       await expect(redactAlchemyState({ directory: root, bearerToken: "token" })).rejects.toThrow(/EACCES/)
       expect(await RealFs.readFile(file, "utf8")).toBe(rawState)
-      expect(await RealFs.readdir(root)).toEqual(["CacheWorker.json"])
+      expect((await RealFs.readdir(root)).filter((name) => !name.startsWith(".smithers-state-owner.sqlite"))).toEqual(["CacheWorker.json"])
     })
   })
 
