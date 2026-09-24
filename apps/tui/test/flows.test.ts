@@ -540,3 +540,20 @@ it("reports a typed discovery failure and clears it after recovery", async () =>
   expect(runs.failure()).toBeUndefined()
   expect(runs.listed()).toHaveLength(1)
 })
+
+it("opens the host once in the background and exposes opening until ready", async () => {
+  const f = fake()
+  const opened = pending<void>()
+  let calls = 0
+  const runs = new FlowRuns({ port: { ...f.port, warm: () => { calls++; return opened.promise } }, persist: () => {} })
+  runs.warm()
+  runs.warm()
+  expect(calls).toBe(1)
+  expect(runs.opening).toBe(true)
+  expect(runs.request({ id: "r", flow: "review", input: {}, by: "user" }).status).toBe("requested")
+  expect(runs.panel("r").summary).toBe("Opening flows")
+  opened.resolve()
+  await tick()
+  expect(runs.opening).toBe(false)
+  await runs.dispose()
+})

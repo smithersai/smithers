@@ -411,7 +411,8 @@ export function App(props: AppProps) {
   useEffect(() => contributions.subscribe(() => setRevision((value) => value + 1)), [contributions])
   useEffect(() => {
     runs.refresh()
-    return () => { void runs.dispose() }
+    const warm = setTimeout(() => runs.warm(), 0)
+    return () => { clearTimeout(warm); void runs.dispose() }
   }, [runs])
   // Every listing replaces the `repo:` contributions; `metadata.tui` is metadata, so nothing is imported.
   useEffect(() => {
@@ -2342,7 +2343,7 @@ export function App(props: AppProps) {
               empty={picker.kind === "resume"
                 ? "No sessions in this directory"
                 : picker.kind === "flows"
-                ? runs.failure()?.message ?? "No flows"
+                ? runs.failure()?.message ?? (runs.opening ? "Opening flows" : "No flows")
                 : picker.kind === "agents"
                 ? "No agents"
                 : picker.kind === "palette"

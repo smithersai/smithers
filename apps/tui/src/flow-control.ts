@@ -106,6 +106,7 @@ export const make = (options: {
     control((service) => service.watch({ runId, follow: false }).pipe(Stream.runCollect)).then((events) => [...events])
 
   return {
+    warm: () => existsSync(join(options.cwd, "flows")) ? control(() => Effect.void) : Promise.resolve(),
     discover: () =>
       Effect.runPromise(
         Registry.Registry.pipe(Effect.flatMap((each) => each.list()), Effect.provide(registry()))

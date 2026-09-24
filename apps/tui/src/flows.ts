@@ -55,6 +55,8 @@ export interface Watch {
   readonly close: () => void
 }
 export interface Port {
+  /** Initialize the control host after the terminal has drawn. */
+  readonly warm?: () => Promise<void>
   /** Registry only; never imports a flow module. */
   readonly discover: () => Promise<ReadonlyArray<Listed>>
   readonly input: (flow: string) => Promise<Schema.Top | undefined>
@@ -143,6 +145,9 @@ export class FlowRuns {
   private inputs = new Map<string, Schema.Top | undefined>()
   private discovery = 0
   private listeners = new Set<() => void>()
+  private warming: Promise<void> | undefined
+  private opened = false
+  private isOpening = false
   private closed = false
   constructor(
     private options: {
@@ -157,6 +162,18 @@ export class FlowRuns {
       else this.runs.set(run.id, run)
     }
   }
+  /** Idempotent background host opening, independent of request acknowledgments. */
+  warm = (): void => {
+    if (this.opened || this.warming !== undefined || this.closed || this.options.port?.warm === undefined) return
+    this.isOpening = true
+    this.changed()
+    this.warming = this.options.port.warm().then(() => { this.opened = true }, (error) => Log.write("flow.open", error)).finally(() => {
+      this.isOpening = false
+      this.warming = undefined
+      if (!this.closed) this.changed()
+    })
+  }
+  get opening(): boolean { return this.isOpening }
   subscribe = (listener: () => void): () => void => {
     this.listeners.add(listener)
     return () => {
@@ -482,7 +499,7 @@ export class FlowRuns {
       (run.status === "done"
         ? Summary.sentence(run.answer ?? "Done.")
         : run.status === "requested"
-        ? "Requested."
+        ? this.opening ? "Opening flows" : "Requested."
         : run.status === "queued"
         ? "Queued."
         : run.status === "cancelled"
