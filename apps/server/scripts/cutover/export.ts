@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { EXPORT_PATH } from "../../src/MaintenanceExport"
 import type { SealedSnapshot } from "../../src/SealedSnapshot"
@@ -9,6 +9,7 @@ import { Inventory } from "./inventory"
 import { openSnapshot } from "./sealed"
 import { verifyVaultRecovery } from "./vault"
 import { requireExportVersion } from "./deployment"
+import { exportBatch } from "./batch"
 
 const directory = process.argv[2]
 if (!directory || process.argv.length !== 3) throw new Error("Usage: bun scripts/cutover/export.ts PRIVATE_DIRECTORY")
@@ -29,7 +30,10 @@ await guardVersion()
 const settings = (await api<Settings>(scriptPath + "/settings")).result
 const namespaces = validateBindings(settings)
 const destination = resolve(directory, "web-snapshots")
-mkdirSync(destination, { mode: 0o700 })
+if (!existsSync(destination)) mkdirSync(destination, { mode: 0o700 })
+const destinationStat = lstatSync(destination)
+if (destinationStat.isSymbolicLink() || !destinationStat.isDirectory() || (destinationStat.mode & 0o077) !== 0) throw new Error("Snapshot destination must be owner-only")
+if (existsSync(resolve(destination, "manifest.json"))) throw new Error("Snapshot already completed; existing archive is immutable")
 const inventory = new Inventory()
 const manifest: Array<{ binding: string; objectId: string; capturedAt: string; sha256: string; bytes: number }> = []
 let emptyAtListing = 0
@@ -37,14 +41,23 @@ const vaultRecovery = { objectsWithKey: 0, objectsWithoutKey: 0, sealedEntries: 
 const startedAt = new Date().toISOString()
 for (const namespace of namespaces) {
   const objects = await listObjects(namespace.namespace_id!)
-  for (const object of objects) {
-    if (!object.hasStoredData) { emptyAtListing++; continue }
+  emptyAtListing += objects.filter(object => !object.hasStoredData).length
+  await exportBatch(objects.filter(object => object.hasStoredData), async object => {
     await guardVersion()
-    const response = await fetch(`https://${WORKER_IDENTITY.domain.name}${EXPORT_PATH}`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(60_000),
-      headers: { authorization: `Bearer ${recipient.token}`, "content-type": "application/json" },
-      body: JSON.stringify({ migrationId: recipient.migrationId, binding: namespace.name, objectId: object.id }) })
-    if (!response.ok) throw new Error(`Snapshot refused (${response.status}); partial sealed files retained`)
-    const text = await response.text()
+    const path = resolve(destination, `${namespace.name}-${object.id}.json`)
+    const cached = existsSync(path)
+    let text: string
+    if (cached) {
+      const stat = lstatSync(path)
+      if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) throw new Error("Retained snapshot must be an owner-only file")
+      text = readFileSync(path, "utf8")
+    } else {
+      const response = await fetch(`https://${WORKER_IDENTITY.domain.name}${EXPORT_PATH}`, { method: "POST", redirect: "error", signal: AbortSignal.timeout(60_000),
+        headers: { authorization: `Bearer ${recipient.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ migrationId: recipient.migrationId, binding: namespace.name, objectId: object.id }) })
+      if (!response.ok) throw new Error(`Snapshot refused (${response.status}); partial sealed files retained`)
+      text = await response.text()
+    }
     if (text.length > 12_000_000) throw new Error("Snapshot exceeds operator limit")
     const sealed = JSON.parse(text) as SealedSnapshot
     if (sealed.metadata.binding !== namespace.name || sealed.metadata.objectId !== object.id || sealed.metadata.migrationId !== recipient.migrationId ||
@@ -57,10 +70,10 @@ for (const namespace of namespaces) {
       for (const name of ["sealedEntries", "decryptVerified", "decryptFailed", "unclassified"] as const) vaultRecovery[name] += recovery[name]
     }
     inventory.include(namespace.name, payload, sealed.metadata.capturedAt)
-    writeFileSync(resolve(destination, `${namespace.name}-${object.id}.json`), text, { mode: 0o600, flag: "wx" })
+    if (!cached) writeFileSync(path, text, { mode: 0o600, flag: "wx" })
     manifest.push({ binding: namespace.name, objectId: object.id, capturedAt: sealed.metadata.capturedAt,
       sha256: createHash("sha256").update(text).digest("hex"), bytes: Buffer.byteLength(text) })
-  }
+  })
   console.log(JSON.stringify({ binding: namespace.name, exportedObjects: manifest.filter(item => item.binding === namespace.name).length }))
 }
 // This is an inventory snapshot while the old service is live, not a drain receipt.
