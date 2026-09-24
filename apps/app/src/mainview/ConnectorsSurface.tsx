@@ -1,7 +1,7 @@
 import { dynamicFlowProps, flowAction } from "./flows/FlowAction"
 import { Alert, AlertDescription, AlertTitle, Badge, Button, Separator } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
-import { FolderGit2, GitPullRequest, HardDrive, Plug, Server } from "lucide-react"
+import { FolderGit2, GitPullRequest, Plug, Server } from "lucide-react"
 import type { KeyboardEvent } from "react"
 import { useController } from "./ControllerContext"
 import { rovingKeyDown } from "./RovingKeyDown"
@@ -21,10 +21,15 @@ export function ConnectorsSurface() {
   const { data: identityRows } = useLiveQuery(collections.identitySessions)
 
   const { data: gitHubAppStatusRows } = useLiveQuery(collections.githubAppStatuses)
+  const { data: repositoryRows } = useLiveQuery(collections.repositories)
+  // A public catalog row is readable by anyone; only the signed-in inventory is connected.
+  const connectedRepositories = repositoryRows
+    .filter((row) => row.catalog !== true)
+    .map((row) => row.id)
+    .sort((left, right) => left.localeCompare(right))
   const installedRepositories = gitHubAppStatusRows.filter((row) => row.installed && row.configured).length
   const operation = operationRows.find((candidate) => candidate.id === "connector-operation") ??
     collections.connectorOperations.get("connector-operation")
-  const selecting = operation?.phase === "selecting-local-repository"
   const identity = identityRows[0]
   const signedIn = identity?.state === "signed-in"
   const githubAvailable = controller.commands.find(signedIn ? "auth.sign-out" : "auth.sign-in") !== undefined
@@ -32,7 +37,7 @@ export function ConnectorsSurface() {
 
   interface StoreRow {
     readonly key: string
-    readonly icon: "github" | "local" | "cloud"
+    readonly icon: "github" | "cloud"
     readonly name: string
     readonly repositoryCount?: number
     readonly action:
@@ -40,8 +45,6 @@ export function ConnectorsSurface() {
         readonly kind: "button"
         readonly label: string
         readonly flow: string
-        readonly args?: string
-        readonly disabled?: boolean
       }
       | { readonly kind: "badge"; readonly label: string; readonly variant: "success" | "outline" }
   }
@@ -84,8 +87,6 @@ export function ConnectorsSurface() {
   const rowIcon = (icon: StoreRow["icon"]) =>
     icon === "github" ?
       <GitPullRequest size={16} aria-hidden="true" /> :
-      icon === "local" ?
-      <HardDrive size={16} aria-hidden="true" /> :
       <Server size={16} aria-hidden="true" />
 
   const onRowsKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
@@ -140,11 +141,9 @@ export function ConnectorsSurface() {
                     variant="outline"
                     {...dynamicFlowProps(row.action.flow)}
                     data-row-action
-                    disabled={row.action.disabled === true}
-                    loading={row.action.flow === "connector.add" && selecting}
                     onClick={() =>
                       row.action.kind === "button"
-                        ? controller.runCommand(row.action.flow, row.action.args)
+                        ? controller.runCommand(row.action.flow)
                         : undefined}
                   >
                     {row.action.label}
@@ -174,28 +173,40 @@ export function ConnectorsSurface() {
             </div>
           </div>
 
-          {/*
-           * §11.6: the zero case told the reader a fact and gave them no
-           * move. Since the local backend retired there is one door, import,
-           * and signed out there is exactly one before it, the GitHub row.
-           */}
-          <div className="connector-empty">
-            <FolderGit2 size={20} />
-            <div>
-              <strong>No repositories connected</strong>
-              {signedIn && cloudAvailable ?
-                (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    {...flowAction(controller.runCommand, "repos.import")}
-                  >
-                    Import a repository
-                  </Button>
-                ) :
-                null}
-            </div>
-          </div>
+          {connectedRepositories.length > 0 ?
+            (
+              <ul className="connected-repository-list" role="list" aria-labelledby="connected-repositories-title">
+                {connectedRepositories.map((id) => (
+                  <li className="connected-repository" role="listitem" key={id}>
+                    <FolderGit2 size={16} aria-hidden="true" />
+                    <span>{id}</span>
+                  </li>
+                ))}
+              </ul>
+            ) :
+            (
+              /*
+               * §11.6: the zero case names its one move, import; signed out
+               * the GitHub row above comes first.
+               */
+              <div className="connector-empty">
+                <FolderGit2 size={20} />
+                <div>
+                  <strong>No repositories connected</strong>
+                  {signedIn && cloudAvailable ?
+                    (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        {...flowAction(controller.runCommand, "repos.import")}
+                      >
+                        Import a repository
+                      </Button>
+                    ) :
+                    null}
+                </div>
+              </div>
+            )}
         </section>
       </main>
 

@@ -342,9 +342,9 @@ describe("launch-law parity: every affordance is a command", () => {
       "../Composer.tsx": 9,
       /*
        * 3 — the GitHub connect / disconnect pair and the empty state's own
-       * import affordance (§11.6). The local-repository row, the connected
-       * list and the disconnect dialog went with the local backend
-       * (docs/LOCAL-BACKEND-RETIREMENT.md).
+       * import affordance (§11.6). The connected list carries no control.
+       * The local-repository row and the disconnect dialog went with the
+       * local backend (docs/LOCAL-BACKEND-RETIREMENT.md).
        */
       "../ConnectorsSurface.tsx": 3,
       /*

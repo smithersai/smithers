@@ -130,3 +130,26 @@ describe("the connectors surface with nothing connected", () => {
     expect(empty?.querySelector("[data-flow=\"repos.import\"]")).toBeNull()
   })
 })
+
+describe("the connectors surface with repositories", () => {
+  test("it lists the signed-in inventory and drops the empty state", async () => {
+    const { host, store } = await openConnectors(true)
+    flushSync(() =>
+      store.dispatch({
+        type: "repositories.loaded",
+        actor: "system",
+        repositories: [
+          { id: "will/smithers", org: "will", ownerKind: "user", name: "smithers", head: null },
+          { id: "acme/force", org: "acme", ownerKind: "org", name: "force", head: null },
+          { id: "public/catalog", org: "public", ownerKind: "org", name: "catalog", head: null, catalog: true }
+        ]
+      })
+    )
+    const section = host.querySelector(".connected-repositories")
+    expect(section?.querySelector(".connector-empty")).toBeNull()
+    expect(section?.textContent).not.toContain("No repositories connected")
+    const listed = Array.from(section?.querySelectorAll("[role=\"listitem\"]") ?? []).map((row) => row.textContent)
+    // A public catalog row is readable by anyone; it is not a connected repository.
+    expect(listed).toEqual(["acme/force", "will/smithers"])
+  })
+})
