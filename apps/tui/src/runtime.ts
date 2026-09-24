@@ -3,6 +3,7 @@ import * as SmithersPlugin from "@smthrs/agent/SmithersPlugin"
 import { Flow } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
+import * as Sandbox from "@smthrs/harness/Sandbox"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Node } from "@smthrs/plan"
 import { Effect, Schema } from "effect"
@@ -24,8 +25,25 @@ export interface Ports {
   readonly flows?: SmithersPlugin.Ports
   readonly monitors?: Pick<Monitors.Monitors, "create" | "list" | "stop">
 }
-/** The plugins every turn runs with: Smithers, with the flow ports when the role has them. */
-export const plugins = (ports?: Ports) => [SmithersPlugin.make(ports?.flows)]
+/** Keeps every ordinary flow call bounded; only `agent.wait` holds a worker cell open. */
+export const boundedBinding = (binding: FlowBinding.Binding, callMs: number): FlowBinding.Binding =>
+  binding.descriptor.name === "agent.wait" ? binding : {
+    ...binding,
+    run: (call) => binding.run(call).pipe(Effect.timeoutOrElse({
+      duration: callMs,
+      orElse: () => Effect.succeed(Sandbox.callTimedOut(call.flowName, callMs))
+    }))
+  }
+/** Smithers flows and the TUI's ordinary per-call ceiling. */
+export const plugins = (ports?: Ports, callMs?: number) => [
+  SmithersPlugin.make(ports?.flows),
+  ...(callMs === undefined ? [] : [{
+    name: "tui-call-ceiling",
+    apply: "harness" as const,
+    hooks: { cellFlows: (bindings: ReadonlyArray<FlowBinding.Binding>) =>
+      Effect.succeed(bindings.map((binding) => boundedBinding(binding, callMs))) }
+  }])
+]
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))
 /**
  * A thrown error's public text. A tagged error (`_tag`, optional `code`) keeps

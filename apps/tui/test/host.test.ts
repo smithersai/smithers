@@ -140,6 +140,29 @@ test("Host.run lets agent.wait settle after the ordinary flow call ceiling", asy
   } finally { await host.dispose() }
 })
 
+test("Host.run keeps the call ceiling on plugin flows while worker waits are exempt", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-plugin-limit-"))
+  roots.push(cwd)
+  const host = Host.make({ cwd, environment: {}, callMs: 20 })
+  let settle!: (value: AgentEvent.AgentEvent) => void
+  const observed = new Promise<AgentEvent.AgentEvent>((resolve) => { settle = resolve })
+  try {
+    const turn = host.run({ prompt: "list", role: "worker", seat: `replay:${doneReplay(cwd,
+      'await ctx.call("smithers.flows", {}); ctx.done("listed")')}`,
+      history: [], runtime: { publish: () => {}, flows: {
+        list: async () => { await new Promise((resolve) => setTimeout(resolve, 80)); return [] },
+        run: () => ({}), inspect: () => ({})
+      } }, onEvent: (event) => {
+        if (event._tag === "cell-call-settled" && event.flowName === "smithers.flows") settle(event)
+      }
+    })
+    const event = await observed
+    turn.cancel()
+    await turn.done
+    expect(event).toMatchObject({ result: { outcome: "failure", message: expect.stringContaining("timed out") } })
+  } finally { await host.dispose() }
+})
+
 test("Host.run exposes non-parked usage-limit copy for a failure card", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-limit-"))
   roots.push(cwd)

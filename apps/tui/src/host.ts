@@ -296,7 +296,7 @@ export const make = (options: {
           ? {}
           : { modelParams: ModelRequest.GenerationParams.make({ reasoningEffort: turn.reasoningEffort }) }),
         registry,
-        plugins: Runtime.plugins(input.runtime),
+        plugins: Runtime.plugins(input.runtime, callMs),
         flows: turn.flows.map((source) => boundedCalls(source, callMs)),
         capabilityEnvelope: turn.capabilityEnvelope,
         ...(approvalMode === "all"
@@ -383,14 +383,7 @@ export const make = (options: {
 const boundedCalls = (source: FlowBinding.Source, callMs: number): FlowBinding.Source => ({
   ...source,
   bindings: () => source.bindings().pipe(Effect.map((bindings) => bindings.map((binding) =>
-    binding.descriptor.name === "agent.wait" ? binding : {
-      ...binding,
-      run: (call) => binding.run(call).pipe(Effect.timeoutOrElse({
-        duration: callMs,
-        orElse: () => Effect.succeed(Sandbox.callTimedOut(call.flowName, callMs))
-      }))
-    }
-  )))
+    Runtime.boundedBinding(binding, callMs))))
 })
 
 /**
