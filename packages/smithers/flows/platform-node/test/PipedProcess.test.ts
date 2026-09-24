@@ -109,21 +109,27 @@ describe("native pipe adapter", () => {
     }
   )
 
-  it("preserves literal argv, native Windows verbatim options and independent byte streams", async () => {
+  it.each([false, true])("matches native argv and streams with windowsVerbatimArguments=%s", async (verbatim) => {
     const directory = await mkdtemp(join(tmpdir(), "scoped-pipes-"))
     const spawn = vi.spyOn(NativeMutable, "spawn")
     syncBuiltinESMExports()
     try {
+      const args = [
+        "-e",
+        "process.stdin.on('data',b=>process.stdout.write(b));process.stdin.on('end',()=>{process.stderr.write(JSON.stringify({args:process.argv.slice(1),cwd:process.cwd(),env:process.env}));process.exitCode=23})",
+        "a b",
+        "literal;$value",
+        "☃"
+      ]
       const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(
-          ChildProcess.make(process.execPath, [
-            "-e",
-            "process.stdin.on('data',b=>process.stdout.write(b));process.stdin.on('end',()=>{process.stderr.write(JSON.stringify({args:process.argv.slice(1),cwd:process.cwd(),env:process.env}));process.exitCode=23})",
-            "a b",
-            "literal;$value",
-            "☃"
-          ], { cwd: directory, env: { ONLY: "value" }, extendEnv: false, stdin: "pipe" }),
-          true
+          ChildProcess.make(process.execPath, args, {
+            cwd: directory,
+            env: { ONLY: "value" },
+            extendEnv: false,
+            stdin: "pipe"
+          }),
+          verbatim
         )
         const [code, stdout, stderr] = yield* Effect.all([
           handle.exitCode,
@@ -139,18 +145,17 @@ describe("native pipe adapter", () => {
       })))
       expect(result.code).toBe(23)
       expect(result.stdout).toBe("input é🙂\n")
-      const report = JSON.parse(result.stderr)
-      expect(report.args).toEqual(["a b", "literal;$value", "☃"])
-      // Node preserves the supplied cwd's canonical OS spelling.
-      expect(report.cwd.replace(/^\/private/, "")).toBe(directory.replace(/^\/private/, ""))
-      const nativeEnvironment = Native.spawnSync(process.execPath, ["-p", "JSON.stringify(process.env)"], {
+      const native = Native.spawnSync(process.execPath, args, {
+        cwd: directory,
         env: { ONLY: "value" },
+        windowsVerbatimArguments: verbatim,
+        input: "input é🙂\n",
         encoding: "utf8"
       })
-      expect(nativeEnvironment.status).toBe(0)
-      expect(report.env).toEqual(JSON.parse(nativeEnvironment.stdout))
+      expect(result).toEqual({ code: native.status, stdout: native.stdout, stderr: native.stderr })
+      if (!verbatim) expect(JSON.parse(result.stderr).args).toEqual(["a b", "literal;$value", "☃"])
       expect(spawn.mock.calls[0]?.[2]).toMatchObject({
-        windowsVerbatimArguments: true,
+        windowsVerbatimArguments: verbatim,
         stdio: ["pipe", "pipe", "pipe"]
       })
     } finally {

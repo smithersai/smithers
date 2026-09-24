@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { vi } from "vitest"
 import * as PipedProcess from "../src/internal/PipedProcess.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
@@ -91,14 +91,18 @@ describe("scoped transient processes", () => {
           return { stdout, stderr, status, targetPid: handle.targetPid, ownerPid: handle.pid }
         }))
         const report = JSON.parse(result.stdout)
+        const native = JSON.parse(execFileSync(process.execPath, [
+          "-p",
+          "JSON.stringify({cwd:process.cwd(),path:typeof process.env.PATH})"
+        ], { cwd: directory, env: { ONLY: "scoped-fixture" }, encoding: "utf8" }))
         expect(report).toMatchObject({
           input: "input é🙂\n",
           args: ["a b", "literal;$value", "é🙂"],
           pid: result.targetPid,
           only: "scoped-fixture",
-          path: "undefined"
+          path: native.path,
+          cwd: native.cwd
         })
-        expect(resolve(report.cwd).replace(/^\/private/, "")).toBe(resolve(directory).replace(/^\/private/, ""))
         expect(result.stderr).toBe("diagnostic")
         expect(result.status).toEqual({ code: 23, signal: null })
         expect(result.targetPid).toBeGreaterThan(1)
