@@ -75,6 +75,23 @@ type RepositoryJobService struct {
 	flowDispatcher RepositoryJobFlowDispatcher
 	now            func() time.Time
 	transactions   RepositoryJobTransactions
+	githubRead     RepositoryJobGitHubReadAccess
+}
+
+// RepositoryJobGitHubReadAccess proves that the user's own GitHub credential
+// can read owner/repo now. The synced GitHub store is shared and keeps filling
+// from other users' installations, so import provenance alone never
+// authorizes reading it. Implemented by *GitHubUserReposService.
+type RepositoryJobGitHubReadAccess interface {
+	GitHubRepoReadAuthorized(ctx context.Context, userID int64, owner, repo string) bool
+}
+
+// SetGitHubReadAccess wires the proof GitHub-sourced manual subjects need.
+// Without it those subjects fail closed.
+func (s *RepositoryJobService) SetGitHubReadAccess(access RepositoryJobGitHubReadAccess) {
+	if s != nil {
+		s.githubRead = access
+	}
 }
 
 // SetFlowDispatcher completes the construction cycle shared with AgentService:

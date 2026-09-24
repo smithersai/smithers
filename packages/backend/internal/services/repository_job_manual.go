@@ -147,7 +147,9 @@ func (s *RepositoryJobService) RunManual(ctx context.Context, gatewayID, bearer,
 			return empty, pkgerrors.BadRequest("selected step is absent or switched off")
 		}
 	}
-	payload, source, number, err := repositoryJobManualPayload(ctx, q, repo.ID, input, wire)
+	payload, source, number, err := repositoryJobManualPayload(ctx, q, repo.ID, input, wire, func(owner, name string) bool {
+		return s.githubRead != nil && s.githubRead.GitHubRepoReadAuthorized(ctx, target.UserID, owner, name)
+	})
 	if err != nil {
 		return empty, err
 	}
@@ -171,7 +173,7 @@ func repositoryJobManualResult(d db.RepositoryJobDispatch) RepositoryJobManualRe
 		Digest: d.Digest, DeliveryKey: d.DeliveryKey, Status: d.Status, RunID: d.RunID}
 }
 
-func repositoryJobManualPayload(ctx context.Context, q *db.Queries, repoID int64, input RepositoryJobManualInput, wire json.RawMessage) (json.RawMessage, string, int64, error) {
+func repositoryJobManualPayload(ctx context.Context, q *db.Queries, repoID int64, input RepositoryJobManualInput, wire json.RawMessage, canReadGitHub func(owner, repo string) bool) (json.RawMessage, string, int64, error) {
 	payload := map[string]interface{}{"_manualRequest": wire, "manual": map[string]string{"stepId": input.StepID, "prompt": input.Prompt}, "repository": map[string]interface{}{"id": repoID, "full_name": input.Repo}}
 	source, number := "smithers-cloud", int64(0)
 	if subject := input.Subject; subject != nil {
@@ -189,6 +191,12 @@ func repositoryJobManualPayload(ctx context.Context, q *db.Queries, repoID int64
 			}
 			if len(rows) != 1 {
 				return nil, "", 0, pkgerrors.Conflict("repository needs one verified GitHub source")
+			}
+			// Import provenance only proves the importer could read the repo
+			// once; the shared store keeps filling after that. The caller's own
+			// credential must still read it.
+			if !canReadGitHub(rows[0].GithubOwner, rows[0].GithubRepo) {
+				return nil, "", 0, pkgerrors.Forbidden("your GitHub account cannot read this repository's GitHub source; reconnect GitHub and retry")
 			}
 			resource := "issues"
 			if subject.Kind == "pr" {

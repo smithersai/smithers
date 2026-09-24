@@ -55,6 +55,10 @@ func newPrivateRepoFixture(t *testing.T) *privateRepoFixture {
 			_, _ = w.Write([]byte(`{"message":"Not Found"}`))
 			return
 		}
+		if r.URL.Path == "/repos/acme/secret" {
+			_, _ = w.Write([]byte(`{"id":1,"full_name":"acme/secret","private":true}`))
+			return
+		}
 		_, _ = w.Write([]byte(`[{"number":1,"body":"live"}]`))
 	}))
 	t.Cleanup(srv.Close)

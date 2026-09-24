@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -215,6 +216,7 @@ func TestRepositoryJobsIntegrationManualSubjectBoundaries(t *testing.T) {
 			own = synced
 			_, err = pool.Exec(ctx, `INSERT INTO import_jobs(user_id,repository_id,github_owner,github_repo,status) VALUES($1,$2,$3,$4,'ready')`, g.target.UserID, g.target.RepositoryID, synced.OwnerLogin, synced.RepoName)
 			require.NoError(t, err)
+			s.SetGitHubReadAccess(&repositoryJobGitHubReadStub{allowed: map[string]bool{repositoryJobGitHubReadKey(g.target.UserID, synced.OwnerLogin, synced.RepoName): true}})
 		} else {
 			require.NoError(t, q.UpsertGitHubSyncedIssue(ctx, db.UpsertGitHubSyncedIssueParams{SyncedRepoID: synced.ID, Resource: "pulls", Number: 42, GithubID: 900, State: "open", Payload: json.RawMessage(`{"id":900,"number":42,"title":"Wrong repo"}`)}))
 		}
@@ -236,4 +238,69 @@ func TestRepositoryJobsIntegrationManualSubjectBoundaries(t *testing.T) {
 	require.NoError(t, q.UpsertGitHubSyncedIssue(ctx, db.UpsertGitHubSyncedIssueParams{SyncedRepoID: own.ID, Resource: "issues", Number: 43, GithubID: 903, State: "open", Payload: json.RawMessage(`{"id":903,"number":44}`)}))
 	_, err = s.RunManual(ctx, "gateway", "token", "review", "bad-cache-identity", request)
 	require.ErrorContains(t, err, "refreshed")
+}
+
+// Import provenance proves only that the importer could read the GitHub repo
+// once. The synced store keeps filling from other users' installations after
+// that, so a GitHub subject is served only to a caller whose own GitHub
+// credential still reads the repository (a repo flipped private, a revoked
+// collaborator, or a slug reused by a different repo must not leak).
+func TestRepositoryJobsIntegrationManualGitHubSubjectNeedsCallerReadProof(t *testing.T) {
+	pool, q, s, g, config := repositoryJobFixture(t)
+	ctx := context.Background()
+	config.Events = nil
+	config.Input = json.RawMessage(`{"steps":[{"id":"review","mode":"manual"}]}`)
+	_, err := s.Register(ctx, "gateway", "token", "review", config)
+	require.NoError(t, err)
+	synced, err := q.EnrollGitHubSyncedRepo(ctx, db.EnrollGitHubSyncedRepoParams{OwnerLogin: "victim", RepoName: uuid.NewString(), SyncMetadata: true, EnrolledVia: "installation"})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := pool.Exec(ctx, `DELETE FROM github_synced_repos WHERE id=$1`, synced.ID)
+		require.NoError(t, err)
+	})
+	_, err = pool.Exec(ctx, `INSERT INTO import_jobs(user_id,repository_id,github_owner,github_repo,status) VALUES($1,$2,$3,$4,'ready')`, g.target.UserID, g.target.RepositoryID, synced.OwnerLogin, synced.RepoName)
+	require.NoError(t, err)
+	require.NoError(t, q.UpsertGitHubSyncedIssue(ctx, db.UpsertGitHubSyncedIssueParams{SyncedRepoID: synced.ID, Resource: "issues", Number: 7, GithubID: 700, State: "open", Payload: json.RawMessage(`{"id":700,"number":7,"title":"Private after import"}`)}))
+	request := RepositoryJobManualInput{Repo: config.Repo, WorkspaceID: config.WorkspaceID, Revision: config.Revision, Digest: config.Digest,
+		StepID: "review", Subject: &RepositoryJobManualSubject{Source: "github", Kind: "issue", Number: 7}}
+	countDispatches := func() int {
+		t.Helper()
+		var n int
+		require.NoError(t, pool.QueryRow(ctx, `SELECT COUNT(*) FROM repository_job_dispatches d JOIN repository_job_registrations r ON r.id=d.registration_id WHERE r.repository_id=$1 AND d.event_type='manual'`, g.target.RepositoryID).Scan(&n))
+		return n
+	}
+
+	_, err = s.RunManual(ctx, "gateway", "token", "review", "no-proof", request)
+	require.ErrorContains(t, err, "GitHub", "no read-access checker wired must fail closed")
+	require.Zero(t, countDispatches(), "the cached subject must not reach a dispatch payload")
+
+	proofs := &repositoryJobGitHubReadStub{}
+	s.SetGitHubReadAccess(proofs)
+	_, err = s.RunManual(ctx, "gateway", "token", "review", "revoked", request)
+	require.ErrorContains(t, err, "GitHub")
+	require.Zero(t, countDispatches())
+	require.Equal(t, []string{repositoryJobGitHubReadKey(g.target.UserID, synced.OwnerLogin, synced.RepoName)}, proofs.asked)
+
+	proofs.allowed = map[string]bool{repositoryJobGitHubReadKey(g.target.UserID, synced.OwnerLogin, synced.RepoName): true}
+	s.SetGitHubReadAccess(proofs)
+	result, err := s.RunManual(ctx, "gateway", "token", "review", "proven", request)
+	require.NoError(t, err)
+	var title string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT payload->'issue'->>'title' FROM repository_job_dispatches WHERE id=$1`, result.DispatchID).Scan(&title))
+	require.Equal(t, "Private after import", title)
+}
+
+type repositoryJobGitHubReadStub struct {
+	allowed map[string]bool
+	asked   []string
+}
+
+func repositoryJobGitHubReadKey(userID int64, owner, repo string) string {
+	return fmt.Sprintf("%d/%s/%s", userID, strings.ToLower(owner), strings.ToLower(repo))
+}
+
+func (s *repositoryJobGitHubReadStub) GitHubRepoReadAuthorized(_ context.Context, userID int64, owner, repo string) bool {
+	key := repositoryJobGitHubReadKey(userID, owner, repo)
+	s.asked = append(s.asked, key)
+	return s.allowed[key]
 }

@@ -1184,6 +1184,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// RFD-004: agent runs execute in kind=agent workspaces.
 	agentService.SetWorkspaceBackend(workspaceService)
 	repositoryJobService := services.NewRepositoryJobService(queries, repoGatewayService, pool)
+	repositoryJobService.SetGitHubReadAccess(gitHubUserReposService)
 	flow, err := newFlowComposition(options, cfg, pool, webhookSecretCodec, agentService, repositoryJobService, billingPolicy)
 	if err != nil {
 		return err
