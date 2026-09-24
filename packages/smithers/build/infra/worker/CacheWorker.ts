@@ -21,6 +21,11 @@ interface CacheWorkerEnv {
   readonly CACHE_READ_TOKEN: string
   /** SHA-256 of the publish credential only post-merge jobs may hold. */
   readonly CACHE_WRITE_TOKEN: string
+  /**
+   * One datapoint per request and per retention run. The deployment always
+   * binds it; an environment without it records nothing.
+   */
+  readonly CACHE_REQUEST_METRICS?: AnalyticsEngineDataset
 }
 
 interface HealthRow {
@@ -37,6 +42,41 @@ const makeHealth = (database: D1Database, bucket: R2Bucket) => async (): Promise
   ])
   if (row?.ok !== 1) {
     throw new CacheFailure("D1_READINESS_INVALID", "health", "D1 readiness check did not return its sentinel")
+  }
+}
+
+/**
+ * The route class a request is counted under.
+ *
+ * A class, never the path: a key or digest in a datapoint would make every
+ * row unique and the dataset useless for aggregation.
+ */
+const routeOf = (request: Request): string => {
+  const path = new URL(request.url).pathname
+  if (path === "/healthz") return "healthz"
+  if (path === "/cas/findMissing") return "findMissing"
+  if (path.startsWith("/ac/")) return "ac"
+  if (path.startsWith("/cas/")) return "cas"
+  return "other"
+}
+
+/**
+ * Writes one datapoint without letting the metrics path fail the request.
+ *
+ * Blobs are the route class, the method, and the outcome; doubles start with
+ * the duration in milliseconds.
+ */
+const record = (
+  metrics: AnalyticsEngineDataset | undefined,
+  route: string,
+  method: string,
+  outcome: string,
+  doubles: ReadonlyArray<number>
+): void => {
+  try {
+    metrics?.writeDataPoint({ indexes: [route], blobs: [route, method, outcome], doubles: [...doubles] })
+  } catch {
+    // Analytics Engine is best effort; a lost datapoint must not cost a request.
   }
 }
 
@@ -65,22 +105,31 @@ const handlerFor = (env: CacheWorkerEnv): CacheHandler => {
  */
 const worker = {
   async fetch(request: Request, env: CacheWorkerEnv): Promise<Response> {
+    const started = Date.now()
+    let response: Response
     try {
-      return await handlerFor(env)(request)
+      response = await handlerFor(env)(request)
     } catch (cause) {
       console.error(describeFailure(cause))
-      return new Response(JSON.stringify({ error: "the cache tier failed to initialize" }), {
+      response = new Response(JSON.stringify({ error: "the cache tier failed to initialize" }), {
         status: 503,
         headers: { "content-type": "application/json", "Smithers-Cache-Contract": "result-only-v1" }
       })
     }
+    record(env.CACHE_REQUEST_METRICS, routeOf(request), request.method, String(response.status), [
+      Date.now() - started
+    ])
+    return response
   },
   async scheduled(_controller: ScheduledController, env: CacheWorkerEnv): Promise<void> {
-    const cutoff = new Date(Date.now() - retentionDays * millisecondsPerDay).toISOString()
+    const started = Date.now()
+    const cutoff = new Date(started - retentionDays * millisecondsPerDay).toISOString()
     try {
       const removed = await pruneStaleEntries(env.CACHE_DATABASE, cutoff)
-      console.log(`smithers build cache: pruned ${removed} action-cache entries last read before ${cutoff}`)
+      console.log(JSON.stringify({ event: "smithers.build.retention", removed, cutoff }))
+      record(env.CACHE_REQUEST_METRICS, "retention", "SCHEDULED", "ok", [Date.now() - started, removed])
     } catch (cause) {
+      record(env.CACHE_REQUEST_METRICS, "retention", "SCHEDULED", "failed", [Date.now() - started, 0])
       // The allowlisted diagnostic is the record; the rethrown failure is what
       // makes Cloudflare retry the invocation without repeating the cause.
       console.error(

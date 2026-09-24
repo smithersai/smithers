@@ -5,7 +5,8 @@
  * The local store answers reads first. A remote lookup runs only on a local
  * miss, and a remote hit hydrates the local file so the next read stays on
  * disk. A put writes both stores. Any remote failure prints one warning line
- * and degrades the store to local-only for the rest of the process.
+ * and degrades the store to local-only for the rest of the process. A `429`
+ * is not a failure: it costs only the request it answered.
  *
  * Every read on both sides is an untrusted read. A local entry file may have
  * been replaced by a symbolic link, a FIFO, or four gigabytes of noise; a
@@ -1167,6 +1168,7 @@ const normalizeOpenCacheOptions = (value: OpenCacheOptions): NormalizedOpenCache
 /** What one bounded remote GET settled on, inside its deadline. */
 type Fetched =
   | { readonly _tag: "miss" }
+  | { readonly _tag: "busy" }
   | { readonly _tag: "degrade"; readonly status?: number | undefined }
   | { readonly _tag: "entry"; readonly result: CachedResult }
 
@@ -1181,6 +1183,7 @@ class RemoteStore {
   private degraded = false
   private publishDenied = false
   private conflictWarned = false
+  private busyWarned = false
 
   constructor(options: {
     readonly endpoint: string
@@ -1237,6 +1240,20 @@ class RemoteStore {
     this.warn("smthrs: remote cache publication refused; this credential may only read")
   }
 
+  /**
+   * Records that the remote refused one request because it was busy.
+   *
+   * A `429` is the server's admission control or a credential budget doing
+   * its job, not a broken remote. Only the request it answered is lost: a GET
+   * becomes a miss and a PUT drops that one publication. Degrading the store
+   * instead would let one busy isolate switch the cache off for the whole run.
+   */
+  private skipBusy(): void {
+    if (this.busyWarned) return
+    this.busyWarned = true
+    this.warn("smthrs: remote cache busy (HTTP 429); skipped one request")
+  }
+
   private url(key: string): string {
     return `${this.endpoint}/ac/${encodeURIComponent(key)}`
   }
@@ -1278,6 +1295,10 @@ class RemoteStore {
             cancelBody(response.body)
             return { _tag: "miss" }
           }
+          if (response.status === 429) {
+            cancelBody(response.body)
+            return { _tag: "busy" }
+          }
           if (response.status !== 200) {
             cancelBody(response.body)
             return { _tag: "degrade", status: response.status }
@@ -1305,6 +1326,7 @@ class RemoteStore {
       return null
     }
     if (fetched._tag === "entry") return fetched.result
+    if (fetched._tag === "busy") this.skipBusy()
     if (fetched._tag === "degrade") this.degrade("GET", fetched.status)
     return null
   }
@@ -1320,9 +1342,7 @@ class RemoteStore {
         keyDigest: published,
         result,
         meta: { target: result.target, label: result.label, exitOk: result.exitOk },
-        createdAtMs: Date.parse(result.storedAt),
-        recordedRunId: `smthrs:${createHash("sha256").update(result.label, "utf8").digest("hex")}`,
-        recordedEventSeq: 0
+        createdAtMs: Date.parse(result.storedAt)
       })
       if (Buffer.byteLength(body, "utf8") > remoteEntryLimit) {
         throw new RangeError(`remote cache request exceeds its ${remoteEntryLimit}-byte limit`)
@@ -1342,6 +1362,7 @@ class RemoteStore {
       })
       if (status === 200 || status === 201) return
       if (status === 401 || status === 403) return this.denyPublication()
+      if (status === 429) return this.skipBusy()
       if (status === 409) {
         if (!this.conflictWarned) {
           this.conflictWarned = true

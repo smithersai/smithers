@@ -79,7 +79,14 @@ export const makeContentStore = (bucket: R2Bucket): ContentStore => ({
   async get(digest) {
     const object = await bucket.get(digest)
     if (object === null) return null
-    assertObjectShape(digest, object)
+    try {
+      assertObjectShape(digest, object)
+    } catch (failure) {
+      // The refused object's body would otherwise stay open until the
+      // runtime collects it.
+      void discardBody(object.body)
+      throw failure
+    }
     const fault = contentChecksumFault(digest, object)
     if (fault !== null) {
       reportAbsent(digest, fault)

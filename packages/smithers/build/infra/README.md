@@ -108,7 +108,7 @@ interactive Alchemy OAuth profile.
 
 Alchemy creates a stage-specific D1 database and R2 bucket, applies every SQL
 file in `worker/migrations/` in order, applies the bucket's artifact lifecycle
-rules, deploys the Worker with the four bindings and its retention cron
+rules, deploys the Worker with its seven bindings and its retention cron
 trigger, and attaches `build.smithers.sh` as its custom domain. Migration
 `0001_initial.sql` creates the table;
 `0002_bound_cache_rows.sql` bounds every insert and every update of the
@@ -170,7 +170,7 @@ keys are the CLI's sanitized, non-empty path segments.
 
 | Request                  | Success response       | Behavior                                                                                                            |
 | ------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `GET /ac/{keyDigest}`    | `200` JSON             | Returns the original JSON bytes and updates D1 access metadata in the same statement. Missing entries return `404`. |
+| `GET /ac/{keyDigest}`    | `200` JSON             | Returns the original JSON bytes; refreshes access metadata at most once per day per key. Missing entries return `404`. |
 | `PUT /ac/{keyDigest}`    | `201`, `200`, or `409` | First writer wins. A new entry returns `201`; an identical result returns `200`; a different result returns `409`.  |
 | `DELETE /ac/{keyDigest}` | `200`                  | Deletes an entry, or returns `404`. Supply `recordedRunId` and `recordedEventSeq` together for a fenced delete.     |
 | `GET /cas/{digest}`      | `200` bytes            | Streams an R2 object as `application/octet-stream`; missing objects return `404`.                                   |
@@ -254,11 +254,15 @@ While an uncancellable operation occupies every dependency permit, retries
 return `503`; they cannot accumulate more backend work.
 
 Malformed input returns `400`, unsupported content types return `415`, and
-oversized input returns `413`. Unsupported methods return `405`. An internal
-storage refusal returns `503`. The target-cache CLI treats `503` as a remote
-failure: it marks the remote degraded and falls back to local caching and
-execution for the rest of the process, without retrying the remote. Repair the
-connection or storage issue and retry in a fresh invocation. The engine's
+oversized input returns `413`. A publication whose key, body, and canonical
+result together exceed 1998976 bytes also returns `413`: D1 stores the body and
+the result in one row, and D1 refuses a row over 2000000 bytes. Unsupported
+methods return `405`. An internal storage refusal returns `503`. The
+target-cache CLI treats `503` as a remote failure: it marks the remote degraded
+and falls back to local caching and execution for the rest of the process,
+without retrying the remote. Repair the connection or storage issue and retry
+in a fresh invocation. The CLI treats a `429` as a miss for that GET or a
+dropped publication for that PUT and keeps the remote enabled. The engine's
 artifact and step-cache clients have separate error handling; any retries
 configured in their HTTP transport or callers do not change the target-cache
 CLI policy.
@@ -282,6 +286,18 @@ A stored R2 object whose provider checksum is absent or does not match its
 content address is reported absent rather than refused. This lets the CAS
 client identify the digest as missing so a publisher can republish and repair
 it; a `503` fails the CAS existence probe instead of identifying missing content.
+
+## Observability
+
+The Worker writes one Analytics Engine datapoint per request to the dataset
+`smithers_build_cache_requests_<stage>`: the route class (`ac`, `cas`,
+`findMissing`, `healthz`, or `other`) as the index, then the route class,
+method, and status as blobs and the duration in milliseconds as the first
+double. Each retention run writes one more under `retention`, with `ok` or
+`failed` as its outcome and the rows removed as the second double. The
+retention run also logs one JSON record, `{"event":"smithers.build.retention",
+"removed":...,"cutoff":...}`. Workers Logs keep every invocation log and
+Workers Traces sample one request in ten.
 
 ## Retention and capacity
 

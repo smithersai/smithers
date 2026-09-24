@@ -30,7 +30,12 @@ const sources = [
   Smithers.file("vitest.config.ts"),
   Smithers.file("tsconfig.worker.json"),
   Smithers.file("tsconfig.node.json"),
-  Smithers.file("tsconfig.test.json")
+  Smithers.file("tsconfig.test.json"),
+  Smithers.file("tsconfig.contract.json"),
+  // `worker/test/cli-contract.test.ts` drives the real CLI client against the
+  // handler, so a client change must re-run the suite.
+  Smithers.file("//packages/smithers/build/build-cli/src/Cache.ts"),
+  Smithers.file("//packages/smithers/build/build-cli/src/internal/Fs.ts")
 ]
 
 /**

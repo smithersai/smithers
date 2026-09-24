@@ -215,8 +215,9 @@ method authorized, and before any store is touched:
 | `POST /cas/findMissing` | `CACHE_FIND_MISSING_BUDGET` | 600 findMissing probes, on top of the request       |
 
 A request over budget is answered `429` with `Retry-After: 10` and its body is
-discarded unread; the CLI treats it like any other refusal, a miss for that
-target and no publication. A `401` or `403` charges nothing, so a caller
+discarded unread; the CLI treats it as a miss for that target or drops that
+one publication, and keeps the remote enabled for the rest of the run. A `401`
+or `403` charges nothing, so a caller
 without the credential cannot spend its budget. Both limits sit above a job's
 legitimate rate: the default pull policy never probes, and a publication
 probes at most twice per target.

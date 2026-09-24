@@ -110,6 +110,23 @@ describe("R2 content store", () => {
     expect(String(errors.mock.calls[0]?.[0])).toContain(digest)
   })
 
+  it.each([
+    { name: "a different key", key: "wrong", size: 8 },
+    { name: "an impossible size", key: null, size: -1 }
+  ])("cancels the body of an object with $name before refusing it", async ({ key, size }) => {
+    const digest = digestOf("artifact")
+    let cancelled = false
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true
+      }
+    })
+    const bucket = { get: async () => object(key ?? digest, { body, size }) } as unknown as R2Bucket
+
+    await expect(makeContentStore(bucket).get(digest)).rejects.toMatchObject({ code: "R2_OBJECT_INVALID" })
+    expect(cancelled).toBe(true)
+  })
+
   it("reports a checksum that does not match the content address as absent", async () => {
     const digest = digestOf("artifact")
     const corrupt = object(digest, { checksum: digestBytes("0".repeat(64)) })

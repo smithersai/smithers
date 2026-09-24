@@ -8,6 +8,8 @@ import {
   describeFailure,
   invalidKeyDigest,
   maxActionCacheBodyBytes,
+  maxActionCacheRowBytes,
+  maxD1RowBytes,
   maxFindMissingBodyBytes,
   maxBodyChunks,
   maxCanonicalJsonBytes,
@@ -1912,6 +1914,44 @@ describe("exact protocol boundaries", () => {
         }
       })
     })
+  })
+
+  /**
+   * A document without an envelope is its own discriminator, so D1 stores it
+   * twice in one row. A compact document near the body bound therefore makes
+   * a row past D1's row limit, which D1 refuses at insert time and the client
+   * would see as a `503`. The protocol has to refuse it first, as a `413`.
+   */
+  it.each([0, 1])("pins the stored row bytes of an unenveloped document at the largest fit plus %i", async (extra) => {
+    // The row holds the key, the body, and the canonical body, which for a
+    // compact document is the body again.
+    const largestFit = Math.floor((maxActionCacheRowBytes - keyDigest.length) / 2)
+    const document = `{"o":"${"x".repeat(largestFit + extra - 8)}"}`
+    expect(document.length).toBe(largestFit + extra)
+    expect(document.length).toBeLessThanOrEqual(maxActionCacheBodyBytes)
+    const actionCache = new MemoryActionCache()
+    const response = await makeHandler({ actionCache })(jsonRequest(`/ac/${keyDigest}`, document, { method: "PUT" }))
+    expect(response.status).toBe(extra === 0 ? 201 : 413)
+    expect(actionCache.entries.has(keyDigest)).toBe(extra === 0)
+  })
+
+  it("keeps every row the protocol admits under D1's row limit", () => {
+    // The reserve covers the fixed-width columns and the record header.
+    expect(maxActionCacheRowBytes).toBeLessThan(maxD1RowBytes)
+    expect(maxD1RowBytes - maxActionCacheRowBytes).toBeGreaterThanOrEqual(512)
+    // A body at its own bound can still make an oversized row, enveloped or
+    // not, because the discriminator is stored beside it.
+    expect(maxKeyDigestLength + 2 * maxActionCacheBodyBytes).toBeGreaterThan(maxActionCacheRowBytes)
+  })
+
+  it("refuses an enveloped publication whose result makes the row too large", async () => {
+    const actionCache = new MemoryActionCache()
+    const result = { output: "x".repeat(maxActionCacheBodyBytes - 128) }
+    const body = JSON.stringify({ keyDigest, result })
+    expect(body.length).toBeLessThanOrEqual(maxActionCacheBodyBytes)
+    const response = await makeHandler({ actionCache })(jsonRequest(`/ac/${keyDigest}`, body, { method: "PUT" }))
+    expect(response.status).toBe(413)
+    expect(actionCache.entries.size).toBe(0)
   })
 
   it.each(boundaryOffsets)("pins stored action-cache body bytes at limit offset %i", async (offset) => {

@@ -265,7 +265,6 @@ export const cacheCredentialBindings = {
  * @since 0.1.0
  */
 export const credentialRequestBudget = {
-  namespaceId: 1001,
   simple: { limit: 12_000, period: 60 }
 } as const
 
@@ -281,9 +280,75 @@ export const credentialRequestBudget = {
  * @since 0.1.0
  */
 export const findMissingBudget = {
-  namespaceId: 1002,
   simple: { limit: 600, period: 60 }
 } as const
+
+/**
+ * The two Rate Limiting namespaces one stage's budgets count in.
+ *
+ * A namespace is account-wide, so a stage that reused production's would
+ * spend production's per-credential budget from its own traffic, and the
+ * reverse. Production keeps the namespaces it was deployed with; every other
+ * stage derives a pair from its name, above production's and never equal to
+ * it.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const budgetNamespaces = (
+  stage: string
+): { readonly request: number; readonly findMissing: number } => {
+  if (stage === "prod") return { request: 1001, findMissing: 1002 }
+  // FNV-1a over the stage's UTF-8 bytes: stable across deploys and machines.
+  let hash = 0x811c9dc5
+  for (const byte of new TextEncoder().encode(stage)) {
+    hash = Math.imul(hash ^ byte, 0x01000193) >>> 0
+  }
+  const request = 1_000_000 + (hash % 100_000_000) * 2
+  return { request, findMissing: request + 1 }
+}
+
+/**
+ * The Analytics Engine dataset one stage's Worker writes its request metrics to.
+ *
+ * One datapoint per request (route class, method, status, duration) and one
+ * per retention run (outcome, duration, rows removed). A stage name may hold
+ * characters a dataset name may not, so they become underscores.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const metricsDataset = (stage: string): string =>
+  `smithers_build_cache_requests_${stage.replace(/[^A-Za-z0-9_]/g, "_")}`
+
+/**
+ * Workers Logs and Traces for the cache Worker.
+ *
+ * The Worker logs only failures and the retention record, so every
+ * invocation log is kept. Traces sample one request in ten: enough to see
+ * where a slow D1 or R2 call spends its time without paying for every hit.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const workerObservability = {
+  enabled: true,
+  headSamplingRate: 1,
+  logs: { enabled: true, invocationLogs: true, headSamplingRate: 1 },
+  traces: { enabled: true, headSamplingRate: 0.1 }
+} as const
+
+/**
+ * Declares one Rate Limiting binding. `alchemy.run.ts` passes
+ * `Cloudflare.RateLimit`; the suite passes a recorder.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type RateLimitDeclaration<Budget> = (
+  name: string,
+  props: { readonly namespaceId: number; readonly simple: { readonly limit: number; readonly period: 60 } }
+) => Budget
 
 /**
  * The stage-dependent half of the Worker's configuration.
@@ -337,25 +402,26 @@ export const workerEntry = "./worker/CacheWorker.ts"
 export const workerCompatibilityDate = "2026-08-14"
 
 /**
- * The D1 and R2 resources and the two Rate Limiting bindings the Worker binds.
+ * The D1 and R2 resources, and the declarations for the Rate Limiting and
+ * Analytics Engine bindings the Worker binds.
  *
  * @category models
  * @since 0.1.0
  */
-export interface CacheWorkerResources<Database, Bucket, Budget> {
+export interface CacheWorkerResources<Database, Bucket, Budget, Metrics> {
   readonly database: Database
   readonly bucket: Bucket
-  /** The binding declared from {@link credentialRequestBudget}. */
-  readonly requestBudget: Budget
-  /** The binding declared from {@link findMissingBudget}. */
-  readonly findMissingBudget: Budget
+  /** Declares the two budget bindings in the stage's own namespaces. */
+  readonly rateLimit: RateLimitDeclaration<Budget>
+  /** Declares the Analytics Engine binding; `alchemy.run.ts` passes `Cloudflare.AnalyticsEngine.Dataset`. */
+  readonly metrics: (name: string, props: { readonly dataset: string }) => Metrics
 }
 
 /**
  * Builds the Worker's configuration for the stage a stack is deploying.
  *
  * Every rule the resource graph used to encode inline lives here: the entry
- * module, the compatibility date, the retention trigger, the six bindings,
+ * module, the compatibility date, the retention trigger, the seven bindings,
  * and the stage's public address. `alchemy.run.ts` hands the result to
  * `Cloudflare.Worker` unchanged, so the suite executes what the deployment
  * applies.
@@ -364,22 +430,33 @@ export interface CacheWorkerResources<Database, Bucket, Budget> {
  * @since 0.1.0
  */
 export const cacheWorkerOptions =
-  <Database, Bucket, Budget>(resources: CacheWorkerResources<Database, Bucket, Budget>) =>
-  (stack: { readonly stage: string }) => ({
-    main: workerEntry,
-    compatibility: { date: workerCompatibilityDate },
-    // The Worker's `scheduled` handler prunes entries past the retention
-    // window; without this trigger the store grows until D1 refuses writes.
-    crons: [retentionCron],
-    env: {
-      CACHE_DATABASE: resources.database,
-      CACHE_BUCKET: resources.bucket,
-      CACHE_REQUEST_BUDGET: resources.requestBudget,
-      CACHE_FIND_MISSING_BUDGET: resources.findMissingBudget,
-      ...cacheCredentialBindings
-    },
-    ...workerStageOptions(stack.stage)
-  })
+  <Database, Bucket, Budget, Metrics>(resources: CacheWorkerResources<Database, Bucket, Budget, Metrics>) =>
+  (stack: { readonly stage: string }) => {
+    const namespaces = budgetNamespaces(stack.stage)
+    return {
+      main: workerEntry,
+      compatibility: { date: workerCompatibilityDate },
+      // The Worker's `scheduled` handler prunes entries past the retention
+      // window; without this trigger the store grows until D1 refuses writes.
+      crons: [retentionCron],
+      env: {
+        CACHE_DATABASE: resources.database,
+        CACHE_BUCKET: resources.bucket,
+        CACHE_REQUEST_BUDGET: resources.rateLimit("CACHE_REQUEST_BUDGET", {
+          namespaceId: namespaces.request,
+          ...credentialRequestBudget
+        }),
+        CACHE_FIND_MISSING_BUDGET: resources.rateLimit("CACHE_FIND_MISSING_BUDGET", {
+          namespaceId: namespaces.findMissing,
+          ...findMissingBudget
+        }),
+        CACHE_REQUEST_METRICS: resources.metrics("CacheRequestMetrics", { dataset: metricsDataset(stack.stage) }),
+        ...cacheCredentialBindings
+      },
+      observability: workerObservability,
+      ...workerStageOptions(stack.stage)
+    }
+  }
 
 /**
  * The resources one deployment's outputs come from.

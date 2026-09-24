@@ -47,6 +47,29 @@ const isWellFormedText = (value: string): boolean => {
 export const maxActionCacheBodyBytes = 1024 * 1024
 
 /**
+ * The largest row D1 stores: its documented 2,000,000-byte row and string
+ * limit.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maxD1RowBytes = 2_000_000
+
+/**
+ * The most bytes one action-cache row's key, body, and discriminator may hold.
+ *
+ * D1 stores the body and its canonical result discriminator in one row, so a
+ * body inside {@link maxActionCacheBodyBytes} can still make a row D1 refuses
+ * at insert time, which would surface as a `503` the client cannot fix. The
+ * protocol refuses that publication first with a `413`. The reserve below
+ * {@link maxD1RowBytes} covers the fixed-width columns and the record header.
+ *
+ * @category constants
+ * @since 0.1.0
+ */
+export const maxActionCacheRowBytes = maxD1RowBytes - 1024
+
+/**
  * The largest `findMissing` request the service accepts.
  *
  * @category constants
@@ -861,6 +884,13 @@ const readPublication = async (request: Request, keyDigest: string): Promise<Pub
     return {
       ok: false,
       response: json(400, { error: "body contains invalid or unsupported cache metadata" })
+    }
+  }
+
+  if (utf8Bytes(keyDigest) + utf8Bytes(parsed.text) + utf8Bytes(resultJson) > maxActionCacheRowBytes) {
+    return {
+      ok: false,
+      response: json(413, { error: "publication and its result exceed the stored row bound" })
     }
   }
 

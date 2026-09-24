@@ -86,6 +86,9 @@ Behavior:
 - Any remote failure prints one warning line to standard error and degrades the
   store to local-only for the rest of the process. A run never fails because the
   remote cache failed.
+- A `429` means the remote is busy or the credential spent its budget. The
+  client warns once, treats that GET as a miss or drops that one publication,
+  and keeps the remote enabled.
 - A `PUT` returning `201` inserted the entry, `200` found an identical entry,
   and `409` found a different result under the same key. A `409` warns without
   failing the run or disabling subsequent remote reads.

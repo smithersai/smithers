@@ -155,6 +155,60 @@ describe("worker entry point", () => {
     expect(probes.keys).toEqual([readTokenHash])
   })
 
+  it("writes one metrics datapoint per request, classified by route", async () => {
+    const worker = await load()
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const metrics = { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
+    const key = "a".repeat(64)
+
+    await worker.fetch(new Request("https://cache.test/healthz"), env({ CACHE_REQUEST_METRICS: metrics }))
+    await worker.fetch(new Request(`https://cache.test/ac/${key}`), env({ CACHE_REQUEST_METRICS: metrics }))
+    await worker.fetch(
+      new Request("https://cache.test/cas/findMissing", { method: "POST" }),
+      env({ CACHE_REQUEST_METRICS: metrics })
+    )
+    await worker.fetch(new Request(`https://cache.test/cas/${key}`), env({ CACHE_REQUEST_METRICS: metrics }))
+    await worker.fetch(new Request("https://cache.test/elsewhere"), env({ CACHE_REQUEST_METRICS: metrics }))
+
+    // Route classes only: a key or digest in a blob would make every row unique.
+    expect(points.map(({ indexes, blobs }) => ({ indexes, blobs }))).toEqual([
+      { indexes: ["healthz"], blobs: ["healthz", "GET", "200"] },
+      { indexes: ["ac"], blobs: ["ac", "GET", "401"] },
+      { indexes: ["findMissing"], blobs: ["findMissing", "POST", "401"] },
+      { indexes: ["cas"], blobs: ["cas", "GET", "401"] },
+      { indexes: ["other"], blobs: ["other", "GET", "401"] }
+    ])
+    for (const point of points) {
+      expect(point.doubles).toHaveLength(1)
+      expect(point.doubles?.[0]).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it("records the initialization failure and never fails a request on a metrics write", async () => {
+    const worker = await load()
+    const points: Array<AnalyticsEngineDataPoint> = []
+    const recording = { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
+    const refusing = {
+      writeDataPoint: () => {
+        throw new Error("analytics engine unavailable")
+      }
+    }
+
+    const broken = await worker.fetch(
+      new Request("https://cache.test/healthz"),
+      env({ CACHE_READ_TOKEN: "not-a-digest", CACHE_REQUEST_METRICS: recording })
+    )
+    expect(broken.status).toBe(503)
+    expect(points.map(({ blobs }) => blobs)).toEqual([["healthz", "GET", "503"]])
+
+    vi.resetModules()
+    const healthy = await (await load()).fetch(
+      new Request("https://cache.test/healthz"),
+      env({ CACHE_REQUEST_METRICS: refusing })
+    )
+    expect(healthy.status).toBe(200)
+  })
+
   it("keeps one handler per isolate so admission counters and the health cache mean something", async () => {
     const worker = await load()
     let firstHeads = 0

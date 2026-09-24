@@ -414,10 +414,23 @@ describe("action-cache retention", () => {
       seed("cold", new Date(now - (retentionDays + 1) * 86_400_000).toISOString())
       seed("warm", new Date(now - 1000).toISOString())
 
-      await worker.scheduled({} as ScheduledController, { CACHE_DATABASE: d1.database } as never)
+      const points: Array<AnalyticsEngineDataPoint> = []
+      const metrics = { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
+      await worker.scheduled(
+        {} as ScheduledController,
+        { CACHE_DATABASE: d1.database, CACHE_REQUEST_METRICS: metrics } as never
+      )
 
       expect(survivors()).toEqual(["warm"])
-      expect(String(logs.mock.calls[0]?.[0])).toContain("pruned 1 action-cache entries")
+      // One structured record a log query can filter and alert on.
+      expect(JSON.parse(String(logs.mock.calls[0]?.[0]))).toEqual({
+        event: "smithers.build.retention",
+        removed: 1,
+        cutoff: new Date(now - retentionDays * 86_400_000).toISOString()
+      })
+      expect(points).toEqual([
+        { indexes: ["retention"], blobs: ["retention", "SCHEDULED", "ok"], doubles: [expect.any(Number), 1] }
+      ])
     } finally {
       vi.useRealTimers()
       logs.mockRestore()
@@ -434,9 +447,17 @@ describe("action-cache retention", () => {
         }
       } as unknown as D1Database
 
+      const points: Array<AnalyticsEngineDataPoint> = []
+      const metrics = { writeDataPoint: (point: AnalyticsEngineDataPoint) => points.push(point) }
       await expect(
-        worker.scheduled({} as ScheduledController, { CACHE_DATABASE: failing } as never)
+        worker.scheduled(
+          {} as ScheduledController,
+          { CACHE_DATABASE: failing, CACHE_REQUEST_METRICS: metrics } as never
+        )
       ).rejects.toThrow("scheduled retention failed")
+      expect(points).toEqual([
+        { indexes: ["retention"], blobs: ["retention", "SCHEDULED", "failed"], doubles: [expect.any(Number), 0] }
+      ])
       expect(String(errors.mock.calls[0]?.[0])).toContain("code=ECONNRESET")
       expect(String(errors.mock.calls[0]?.[0])).not.toContain("password")
     } finally {

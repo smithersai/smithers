@@ -63,4 +63,23 @@ describe("operator documentation", () => {
     expect(guide).toContain("fresh invocation")
     expect(guide).toMatch(/CAS client[^.]*missing[^.]*republish/)
   })
+
+  it("describes the read path, the bindings, and the row bound the code implements", async () => {
+    const guide = (await readFile(new URL("../../README.md", import.meta.url), "utf8")).replace(/\s+/g, " ")
+    const { readTouchDays } = await import("../D1ActionCache.ts")
+    const { maxActionCacheRowBytes, maxD1RowBytes } = await import("../protocol.ts")
+    const { cacheWorkerOptions } = await import("../../deployment.ts")
+    const bindings = Object.keys(
+      cacheWorkerOptions({ database: 0, bucket: 0, rateLimit: () => 0, metrics: () => 0 })({ stage: "prod" }).env
+    )
+
+    expect(readTouchDays).toBe(1)
+    expect(guide).toContain("refreshes access metadata at most once per day per key")
+    expect(guide).not.toContain("updates D1 access metadata in the same statement")
+    expect(bindings).toHaveLength(7)
+    expect(guide).toContain("with its seven bindings")
+    expect(guide).toContain(`exceed ${maxActionCacheRowBytes} bytes`)
+    expect(guide).toContain(`over ${maxD1RowBytes} bytes`)
+    expect(guide).toMatch(/`429` as a miss for that GET or a dropped publication/)
+  })
 })

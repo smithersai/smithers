@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest"
 import cacheStack from "../../alchemy.run.ts"
 import {
   artifactLifecycleRules,
+  budgetNamespaces,
   cacheBucketOptions,
   cacheCredentialBindings,
   cacheCredentialVerifiers,
@@ -21,11 +22,13 @@ import {
   credentialRequestBudget,
   findMissingBudget,
   maxCacheTokenBytes,
+  metricsDataset,
   minCacheTokenBytes,
   retentionCron,
   stackName,
   workerCompatibilityDate,
   workerEntry,
+  workerObservability,
   workerStageOptions
 } from "../../deployment.ts"
 import { readTouchDays } from "../D1ActionCache.ts"
@@ -191,7 +194,36 @@ describe("cache credential verification", () => {
     // One findMissing fans out to up to a thousand metered probes, so its
     // budget is the tighter one, counted in its own namespace.
     expect(findMissingBudget.simple.limit).toBeLessThan(credentialRequestBudget.simple.limit)
-    expect(findMissingBudget.namespaceId).not.toBe(credentialRequestBudget.namespaceId)
+  })
+
+  /**
+   * A Rate Limiting namespace is account-wide. Had every stage bound the same
+   * two, a developer stage deployed with the production credentials would
+   * spend production's budget and the reverse.
+   */
+  it("keeps request metrics, invocation logs, and traces on for every stage", () => {
+    expect(metricsDataset("prod")).toBe("smithers_build_cache_requests_prod")
+    expect(metricsDataset("pr-1347.alice")).toBe("smithers_build_cache_requests_pr_1347_alice")
+    expect(workerObservability.enabled).toBe(true)
+    expect(workerObservability.logs).toMatchObject({ enabled: true, invocationLogs: true, headSamplingRate: 1 })
+    expect(workerObservability.traces.enabled).toBe(true)
+    expect(workerObservability.traces.headSamplingRate).toBeGreaterThan(0)
+  })
+
+  it("gives every stage its own pair of budget namespaces", () => {
+    const production = budgetNamespaces("prod")
+    expect(production).toEqual({ request: 1001, findMissing: 1002 })
+    const stages = ["dev_alice", "dev_bob", "production", "pr-1347", "staging", ""]
+    const seen = new Set([production.request, production.findMissing])
+    for (const stage of stages) {
+      const ids = budgetNamespaces(stage)
+      expect(budgetNamespaces(stage)).toEqual(ids)
+      expect(Number.isSafeInteger(ids.request) && ids.request > 0).toBe(true)
+      expect(ids.findMissing).toBe(ids.request + 1)
+      expect(seen.has(ids.request) || seen.has(ids.findMissing)).toBe(false)
+      seen.add(ids.request)
+      seen.add(ids.findMissing)
+    }
   })
 
   it("documents what a leaked read credential can cost with the deployed budgets", async () => {
@@ -239,11 +271,15 @@ describe("cache credential verification", () => {
     const resources = {
       database: "the-database",
       bucket: "the-bucket",
-      requestBudget: "the-request-budget",
-      findMissingBudget: "the-findMissing-budget"
+      rateLimit: (name: string, props: { readonly namespaceId: number; readonly simple: unknown }) => ({
+        name,
+        ...props
+      }),
+      metrics: (name: string, props: { readonly dataset: string }) => ({ name, ...props })
     }
     const production = cacheWorkerOptions(resources)({ stage: "prod" })
     const development = cacheWorkerOptions(resources)({ stage: "dev_alice" })
+    const developmentNamespaces = budgetNamespaces("dev_alice")
 
     expect(production).toEqual({
       main: workerEntry,
@@ -252,15 +288,35 @@ describe("cache credential verification", () => {
       env: {
         CACHE_DATABASE: "the-database",
         CACHE_BUCKET: "the-bucket",
-        CACHE_REQUEST_BUDGET: "the-request-budget",
-        CACHE_FIND_MISSING_BUDGET: "the-findMissing-budget",
+        CACHE_REQUEST_BUDGET: { name: "CACHE_REQUEST_BUDGET", namespaceId: 1001, ...credentialRequestBudget },
+        CACHE_FIND_MISSING_BUDGET: { name: "CACHE_FIND_MISSING_BUDGET", namespaceId: 1002, ...findMissingBudget },
+        CACHE_REQUEST_METRICS: { name: "CacheRequestMetrics", dataset: "smithers_build_cache_requests_prod" },
         CACHE_READ_TOKEN: cacheCredentialBindings.CACHE_READ_TOKEN,
         CACHE_WRITE_TOKEN: cacheCredentialBindings.CACHE_WRITE_TOKEN
       },
+      observability: workerObservability,
       domain: "build.smithers.sh",
       workersDev: false
     })
-    expect(development).toEqual({ ...production, domain: undefined, workersDev: true })
+    expect(development).toEqual({
+      ...production,
+      env: {
+        ...production.env,
+        CACHE_REQUEST_BUDGET: {
+          name: "CACHE_REQUEST_BUDGET",
+          namespaceId: developmentNamespaces.request,
+          ...credentialRequestBudget
+        },
+        CACHE_FIND_MISSING_BUDGET: {
+          name: "CACHE_FIND_MISSING_BUDGET",
+          namespaceId: developmentNamespaces.findMissing,
+          ...findMissingBudget
+        },
+        CACHE_REQUEST_METRICS: { name: "CacheRequestMetrics", dataset: "smithers_build_cache_requests_dev_alice" }
+      },
+      domain: undefined,
+      workersDev: true
+    })
     expect(development).not.toHaveProperty("domain")
     // The entry and the migrations the seams name exist where the graph
     // resolves them, relative to this directory.

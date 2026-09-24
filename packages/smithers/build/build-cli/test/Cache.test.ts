@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process"
-import { createHash } from "node:crypto"
 import { once } from "node:events"
 import * as Fs from "node:fs/promises"
 import * as Http from "node:http"
@@ -236,12 +235,54 @@ describe("openCache", () => {
     const cache = await openCache({ workspaceRoot: root, endpoint })
     await expect(cache.put(result.key, result)).resolves.toBeUndefined()
     expect(requests[0]).toMatchObject({ method: "PUT", path: "/ac/alpha" })
-    expect(JSON.parse(requests[0]!.body)).toMatchObject({
-      keyDigest: "alpha",
-      result,
-      recordedRunId: `smthrs:${createHash("sha256").update("//:test", "utf8").digest("hex")}`,
-      recordedEventSeq: 0
-    })
+    const published = JSON.parse(requests[0]!.body) as Record<string, unknown>
+    expect(published).toMatchObject({ keyDigest: "alpha", result })
+    // The hosted cache arbitrates on the result alone and answers 422 to any
+    // journal provenance, so the envelope must never carry one.
+    expect(published).not.toHaveProperty("recordedRunId")
+    expect(published).not.toHaveProperty("recordedEventSeq")
+    await cache.close()
+  })
+
+  it("skips one GET answered 429 as a miss and keeps the remote enabled", async () => {
+    const warnings: Array<string> = []
+    let busy = true
+    respond = (_request, response) => {
+      if (busy) {
+        busy = false
+        response.writeHead(429, { "retry-after": "1" }).end()
+        return
+      }
+      response.writeHead(200, { "content-type": "application/json" })
+        .end(JSON.stringify({ keyDigest: result.key, result }))
+    }
+    const cache = await openCache({ workspaceRoot: root, endpoint, warn: (line) => warnings.push(line) })
+    expect(await cache.get(result.key)).toBeNull()
+    expect(await cache.get(result.key)).toEqual(result)
+    expect(requests.map(({ method }) => method)).toEqual(["GET", "GET"])
+    expect(warnings).toEqual(["smthrs: remote cache busy (HTTP 429); skipped one request"])
+    await cache.close()
+  })
+
+  it("drops one PUT answered 429 and keeps publishing and reading", async () => {
+    const warnings: Array<string> = []
+    const statuses = [429, 429, 201]
+    respond = (_request, response) => {
+      response.writeHead(statuses.shift() ?? 404).end()
+    }
+    const cache = await openCache({ workspaceRoot: root, endpoint, warn: (line) => warnings.push(line) })
+    await cache.put("first", { ...result, key: "first" })
+    await cache.put("second", { ...result, key: "second" })
+    await cache.put("third", { ...result, key: "third" })
+    expect(await cache.get("fourth")).toBeNull()
+    expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+      "PUT /ac/first",
+      "PUT /ac/second",
+      "PUT /ac/third",
+      "GET /ac/fourth"
+    ])
+    // One line per run, not one per busy answer.
+    expect(warnings).toEqual(["smthrs: remote cache busy (HTTP 429); skipped one request"])
     await cache.close()
   })
 
