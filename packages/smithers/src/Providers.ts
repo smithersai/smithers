@@ -20,6 +20,7 @@
  *
  * @since 1.0.0-rc.0
  */
+import * as Endpoint from "@smthrs/model/Endpoint"
 import * as CodexAuth from "./CodexAuth.ts"
 import * as Environment from "./Environment.ts"
 
@@ -123,7 +124,7 @@ export const compatible: Readonly<Record<string, Compatible>> = {
     path: "/chat/completions",
     variables: ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
   },
-  cerebras: { baseUrl: "https://api.cerebras.ai", variables: ["CEREBRAS_API_KEY"] }
+  cerebras: { baseUrl: Endpoint.providerOrigins.cerebras, variables: ["CEREBRAS_API_KEY"] }
 }
 
 /**

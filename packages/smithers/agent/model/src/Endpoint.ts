@@ -133,3 +133,55 @@ export const render = (endpoint: Endpoint): string => {
   url.search = query.toString()
   return url.toString()
 }
+
+/**
+ * The origin of every provider a Smithers Cloud model proxy can front.
+ * OpenRouter's origin carries its `/api` prefix, so the proxy segment replaces
+ * `https://openrouter.ai/api` whole.
+ *
+ * @since 1.0.0-rc.1
+ * @category constants
+ */
+export const providerOrigins = {
+  anthropic: "https://api.anthropic.com",
+  openai: "https://api.openai.com",
+  cerebras: "https://api.cerebras.ai",
+  openrouter: "https://openrouter.ai/api",
+  vercel: "https://ai-gateway.vercel.sh"
+} as const
+
+/**
+ * A provider {@link providerOrigins} names.
+ *
+ * @since 1.0.0-rc.1
+ * @category models
+ */
+export type ProxiedProvider = keyof typeof providerOrigins
+
+/**
+ * The variable naming a metered model proxy, such as Smithers Cloud's
+ * `{base}/api/model`.
+ *
+ * @since 1.0.0-rc.1
+ * @category constants
+ */
+export const modelProxyVariable = "SMITHERS_MODEL_PROXY_URL"
+
+/**
+ * The origin a request to `provider` goes to. With
+ * `SMITHERS_MODEL_PROXY_URL` set and non-empty it is
+ * `${SMITHERS_MODEL_PROXY_URL}/${provider}`, a trailing slash stripped;
+ * otherwise it is the provider's own origin.
+ *
+ * @since 1.0.0-rc.1
+ * @category getters
+ */
+export const providerOrigin = (
+  provider: ProxiedProvider,
+  environment: Readonly<Record<string, string | undefined>>
+): string => {
+  const proxy = environment[modelProxyVariable]
+  return proxy === undefined || proxy === ""
+    ? providerOrigins[provider]
+    : `${proxy.replace(/\/+$/, "")}/${provider}`
+}

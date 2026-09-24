@@ -8,6 +8,7 @@ import * as StandardFlows from "@smthrs/agent/StandardFlows"
 import type * as FlowBinding from "@smthrs/harness/FlowBinding"
 import type * as Sandbox from "@smthrs/harness/Sandbox"
 import type * as KernelChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
+import * as Endpoint from "@smthrs/model/Endpoint"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as ModelError from "@smthrs/model/ModelError"
 import * as OpenAIChatGPT from "@smthrs/model/OpenAIChatGPT"
@@ -91,7 +92,10 @@ export const seatResolver = (
           return yield* seatOf(
             Route.openaiChatCompatible({
               id: provider,
-              baseUrl: entry.baseUrl,
+              // A provider the model proxy fronts honors SMITHERS_MODEL_PROXY_URL.
+              baseUrl: Object.hasOwn(Endpoint.providerOrigins, provider)
+                ? Endpoint.providerOrigin(provider as Endpoint.ProxiedProvider, environment)
+                : entry.baseUrl,
               path: entry.path,
               apiKey: Redacted.make(found.key)
             }),
@@ -149,12 +153,20 @@ export const seatResolver = (
         // its seats spell the model as `openrouter:vendor/model` and route
         // through the compatible constructor.
         return yield* provider === "anthropic"
-          ? seatOf(Route.anthropic({ apiKey: Redacted.make(key) }), executor, seat, modelId)
+          ? seatOf(
+            Route.anthropic({
+              apiKey: Redacted.make(key),
+              baseUrl: Endpoint.providerOrigin("anthropic", environment)
+            }),
+            executor,
+            seat,
+            modelId
+          )
           : provider === "openrouter"
           ? seatOf(
             Route.openaiResponsesCompatible({
               id: "openrouter",
-              baseUrl: "https://openrouter.ai/api",
+              baseUrl: Endpoint.providerOrigin("openrouter", environment),
               apiKey: Redacted.make(key)
             }),
             executor,
@@ -172,7 +184,12 @@ export const seatResolver = (
             seat,
             modelId
           )
-          : seatOf(Route.openai({ apiKey: Redacted.make(key) }), executor, seat, modelId)
+          : seatOf(
+            Route.openai({ apiKey: Redacted.make(key), baseUrl: Endpoint.providerOrigin("openai", environment) }),
+            executor,
+            seat,
+            modelId
+          )
       })
   })
 }

@@ -305,3 +305,46 @@ describe("NodeControl.seatResolver OpenAI-compatible providers", () => {
     expect(moonshot.message).toBe("Set MOONSHOT_API_KEY to run the moonshot:kimi-k3 seat")
   })
 })
+
+describe("NodeControl.seatResolver behind SMITHERS_MODEL_PROXY_URL", () => {
+  const proxy = "https://cloud.example.test/api/model/"
+
+  it.each(
+    [
+      [
+        "anthropic:claude-sonnet-4-5",
+        "ANTHROPIC_API_KEY",
+        "https://cloud.example.test/api/model/anthropic/v1/messages"
+      ],
+      ["claude-opus-4-1", "ANTHROPIC_API_KEY", "https://cloud.example.test/api/model/anthropic/v1/messages"],
+      ["openai:gpt-5.6-sol", "OPENAI_API_KEY", "https://cloud.example.test/api/model/openai/v1/responses"],
+      [
+        "openrouter:openai/gpt-5.6-sol",
+        "OPENROUTER_API_KEY",
+        "https://cloud.example.test/api/model/openrouter/v1/responses"
+      ],
+      [
+        "cerebras:qwen-3.8-27b",
+        "CEREBRAS_API_KEY",
+        "https://cloud.example.test/api/model/cerebras/v1/chat/completions"
+      ],
+      ["moonshot:kimi-k3", "MOONSHOT_API_KEY", "https://api.moonshot.ai/v1/chat/completions"]
+    ] as const
+  )("sends a %s seat to the proxied origin", async (seat, variable, url) => {
+    const resolved = await Effect.runPromise(
+      resolve({ SMITHERS_MODEL_PROXY_URL: proxy, [variable]: "cloud-token" }, seat)
+    )
+
+    const request = await prepared(resolved, resolved.modelId)
+    expect(request.url).toBe(url)
+    expect(JSON.stringify(request.publicHeaders)).not.toContain("cloud-token")
+  })
+
+  it("treats an empty proxy variable as unset", async () => {
+    const resolved = await Effect.runPromise(
+      resolve({ SMITHERS_MODEL_PROXY_URL: "", ANTHROPIC_API_KEY: "key" }, "anthropic:claude-sonnet-4-5")
+    )
+
+    expect((await prepared(resolved, resolved.modelId)).url).toBe("https://api.anthropic.com/v1/messages")
+  })
+})

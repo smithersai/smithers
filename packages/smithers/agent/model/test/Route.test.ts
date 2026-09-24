@@ -1404,3 +1404,32 @@ describe("Route.stream refresh", () => {
     expect(seen).toHaveLength(1)
   })
 })
+
+describe("Endpoint.providerOrigin", () => {
+  it.each(
+    [
+      ["anthropic", "https://api.anthropic.com"],
+      ["openai", "https://api.openai.com"],
+      ["cerebras", "https://api.cerebras.ai"],
+      ["openrouter", "https://openrouter.ai/api"],
+      ["vercel", "https://ai-gateway.vercel.sh"]
+    ] as const
+  )("maps %s to its own origin with no proxy, or under the proxy", (provider, origin) => {
+    expect(Endpoint.providerOrigin(provider, {})).toBe(origin)
+    expect(Endpoint.providerOrigin(provider, { SMITHERS_MODEL_PROXY_URL: "" })).toBe(origin)
+    expect(Endpoint.providerOrigin(provider, { SMITHERS_MODEL_PROXY_URL: "http://p.test/m/" })).toBe(
+      `http://p.test/m/${provider}`
+    )
+  })
+
+  it("routes Route.anthropic and Route.openai to a supplied origin", () => {
+    const key = Redacted.make("k")
+    expect(Result.getOrThrow(Route.anthropic({ apiKey: key, baseUrl: "http://p.test/m/anthropic" })).endpoint.url)
+      .toBe("http://p.test/m/anthropic/v1/messages")
+    expect(Result.getOrThrow(Route.openai({ apiKey: key, baseUrl: "http://p.test/m/openai" })).endpoint.url)
+      .toBe("http://p.test/m/openai/v1/responses")
+    expect(Result.getOrThrow(Route.anthropic({ apiKey: key })).endpoint.url).toBe(
+      "https://api.anthropic.com/v1/messages"
+    )
+  })
+})

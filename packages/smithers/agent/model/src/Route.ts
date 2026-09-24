@@ -339,7 +339,11 @@ export const layer = <Body, Frame, Event, State>(
  * @slop
  */
 export const anthropic = (
-  input: { readonly apiKey: Auth.Redacted<string> }
+  input: {
+    readonly apiKey: Auth.Redacted<string>
+    /** The origin, `Endpoint.providerOrigins` by default; see `Endpoint.providerOrigin`. */
+    readonly baseUrl?: string | undefined
+  }
 ): Result.Result<
   Route<
     AnthropicMessages.Body,
@@ -349,15 +353,18 @@ export const anthropic = (
   >,
   ModelError
 > =>
-  Result.map(Endpoint.make({ url: "https://api.anthropic.com", path: "/v1/messages" }), (endpoint) =>
-    make({
-      id: "anthropic",
-      protocol: AnthropicMessages.protocol,
-      endpoint,
-      auth: Auth.apiKeyHeader("x-api-key", input.apiKey),
-      framing: Framing.sse,
-      headers: { "anthropic-version": "2023-06-01" }
-    }))
+  Result.map(
+    Endpoint.make({ url: input.baseUrl ?? Endpoint.providerOrigins.anthropic, path: "/v1/messages" }),
+    (endpoint) =>
+      make({
+        id: "anthropic",
+        protocol: AnthropicMessages.protocol,
+        endpoint,
+        auth: Auth.apiKeyHeader("x-api-key", input.apiKey),
+        framing: Framing.sse,
+        headers: { "anthropic-version": "2023-06-01" }
+      })
+  )
 
 /**
  * Creates OpenAI's Responses deployment configuration.
@@ -367,7 +374,11 @@ export const anthropic = (
  * @slop
  */
 export const openai = (
-  input: { readonly apiKey: Auth.Redacted<string> }
+  input: {
+    readonly apiKey: Auth.Redacted<string>
+    /** The origin, `Endpoint.providerOrigins` by default; see `Endpoint.providerOrigin`. */
+    readonly baseUrl?: string | undefined
+  }
 ): Result.Result<
   Route<
     OpenAIResponses.Body,
@@ -377,14 +388,17 @@ export const openai = (
   >,
   ModelError
 > =>
-  Result.map(Endpoint.make({ url: "https://api.openai.com", path: "/v1/responses" }), (endpoint) =>
-    make({
-      id: "openai",
-      protocol: OpenAIResponses.protocol,
-      endpoint,
-      auth: Auth.bearer(input.apiKey),
-      framing: Framing.sse
-    }))
+  Result.map(
+    Endpoint.make({ url: input.baseUrl ?? Endpoint.providerOrigins.openai, path: "/v1/responses" }),
+    (endpoint) =>
+      make({
+        id: "openai",
+        protocol: OpenAIResponses.protocol,
+        endpoint,
+        auth: Auth.bearer(input.apiKey),
+        framing: Framing.sse
+      })
+  )
 
 /**
  * Creates a route for a provider that serves the OpenAI **Responses** API

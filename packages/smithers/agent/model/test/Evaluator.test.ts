@@ -715,6 +715,42 @@ describe("Evaluator.layerFromEnvironment", () => {
     expect((sent as [Sent])[0].request.url).toBe("https://gateway.example.test/custom-evaluate")
   })
 
+  it("reaches the gateway through SMITHERS_MODEL_PROXY_URL", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerFromEnvironment({
+      [Evaluator.environmentKey]: "cloud-token",
+      SMITHERS_MODEL_PROXY_URL: "https://cloud.example.test/api/model/"
+    }, "test host").pipe(Layer.provide(httpLayer(sent, () => json(recorded))))
+
+    expect(success(await evaluate(layer)).answers).toEqual(recorded.answers)
+    expect((sent as [Sent])[0].request.url).toBe(
+      "https://cloud.example.test/api/model/vercel/v4/ai/evaluation-model"
+    )
+  })
+
+  it("lets an explicit SMITHERS_EVALUATOR_BASE_URL win over the proxy", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerFromEnvironment({
+      [Evaluator.environmentKey]: "cloud-token",
+      SMITHERS_MODEL_PROXY_URL: "https://cloud.example.test/api/model",
+      SMITHERS_EVALUATOR_BASE_URL: "https://gateway.example.test/custom-evaluate"
+    }, "test host").pipe(Layer.provide(httpLayer(sent, () => json(recorded))))
+
+    expect(success(await evaluate(layer)).answers).toEqual(recorded.answers)
+    expect((sent as [Sent])[0].request.url).toBe("https://gateway.example.test/custom-evaluate")
+  })
+
+  it("reaches the default gateway when no override is set", async () => {
+    const sent: Array<Sent> = []
+    const layer = Evaluator.layerFromEnvironment({
+      [Evaluator.environmentKey]: "vck_env",
+      SMITHERS_MODEL_PROXY_URL: ""
+    }, "test host").pipe(Layer.provide(httpLayer(sent, () => json(recorded))))
+
+    expect(success(await evaluate(layer)).answers).toEqual(recorded.answers)
+    expect((sent as [Sent])[0].request.url).toBe(Evaluator.defaultBaseUrl)
+  })
+
   it.each([
     ["no key at all", {}],
     ["an empty key", { [Evaluator.environmentKey]: "" }],

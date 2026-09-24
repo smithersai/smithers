@@ -25,6 +25,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient"
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/unstable/http/HttpClientResponse"
 import * as CanonicalJson from "./CanonicalJson.ts"
+import * as Endpoint from "./Endpoint.ts"
 
 /**
  * The failure vocabulary shared by the transport and the classifier above it.
@@ -404,7 +405,7 @@ export const Evaluator: Context.Service<Evaluator, Evaluator> = Context.Service(
  * @category constants
  * @since 1.0.0-rc.0
  */
-export const defaultBaseUrl = "https://ai-gateway.vercel.sh/v4/ai/evaluation-model"
+export const defaultBaseUrl = `${Endpoint.providerOrigins.vercel}/v4/ai/evaluation-model`
 
 /**
  * The model asked when an option names none, as the gateway names it. It
@@ -811,9 +812,10 @@ export const layerFromEnvironment = (
   }
   return layerVercelGateway({
     apiKey: Redacted.make(apiKey),
-    ...(environment.SMITHERS_EVALUATOR_BASE_URL === undefined
-      ? {}
-      : { baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL })
+    // An explicit SMITHERS_EVALUATOR_BASE_URL wins; otherwise the gateway
+    // origin honors SMITHERS_MODEL_PROXY_URL through Endpoint.providerOrigin.
+    baseUrl: environment.SMITHERS_EVALUATOR_BASE_URL ??
+      `${Endpoint.providerOrigin("vercel", environment)}/v4/ai/evaluation-model`
   })
 }
 
