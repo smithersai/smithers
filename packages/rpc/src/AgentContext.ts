@@ -225,7 +225,7 @@ export const AgentRuntimeContextSchema = z.object({
   connectors: z.array(AgentRuntimeConnectorSchema),
   /*
    * Repositories open in the LOCAL app (apps/app/docs/LOCAL-APP.md), by name and
-   * path: what files.list / files.read / target.list act on. Optional so a
+   * path: what files.list / files.read act on. Optional so a
    * boundary built before this field, and the cloud client, still validate.
    */
   repositories: z
@@ -235,7 +235,7 @@ export const AgentRuntimeContextSchema = z.object({
         name: runtimeLineSchema,
         path: runtimeLineSchema,
         branch: runtimeLineSchema.nullable(),
-        /** A Smithers workspace was detected (target.list has something to list). */
+        /** A Smithers workspace was detected in the checkout. */
         smithers: z.boolean()
       })
     )
@@ -405,7 +405,7 @@ export const renderAgentRuntimeContext = (context: AgentRuntimeContext): string 
   const repositories = context.repositories ?? []
   if (repositories.length > 0) {
     lines.push(
-      "- Open repositories (local checkouts in this app; files.list / files.read / target.list act on them, a bare call on the active one):"
+      "- Open repositories (local checkouts in this app; files.list / files.read act on them, a bare call on the active one):"
     )
     for (const repo of repositories) {
       lines.push(

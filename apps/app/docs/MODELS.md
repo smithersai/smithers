@@ -76,8 +76,8 @@ failed feature and MINIMAL TEXT forbids a row whose value is "not wired". The si
 - `front-door` and `recommend`: the client sends the assigned decision model id; the
   Worker validates against `DECISION_MODEL_IDS`; an id off the list is `request_invalid`
   400, never a silent default; absent = today's default.
-- `/api/jev`, `/api/model/stream`, `keys.byok`: untouched. `keys.byok` stays the pinned
-  ORPHAN in `parity-hosts.test.ts:524`; e2e scenarios do NOT use it as a capability.
+- `/api/jev`, `/api/model/stream`: untouched. `keys.byok` is deleted; e2e scenarios do
+  NOT use it as a capability.
 
 ## R7. Test is instant-ack background work
 `model.test` returns `{ value: "Requested" }` before the fetch, runs under the shared

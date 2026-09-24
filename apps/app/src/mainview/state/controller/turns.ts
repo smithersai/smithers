@@ -404,7 +404,7 @@ export const createTurnController = (
         "Create, list, and run Smithers flows on the user's loaded repositories (flow.create, flow.list, flow.run). Runs report live as embedded cards in this chat.",
         ...(store.collections.repos.size > 0
           ? [
-            "Read the open repositories listed above: files.list <path> [repo] lists a directory and files.read <path> [repo] renders a file as a card in this chat (a bare call means the active repository); target.list shows a repository's Smithers targets."
+            "Read the open repositories listed above: files.list <path> [repo] lists a directory and files.read <path> [repo] renders a file as a card in this chat (a bare call means the active repository)."
           ]
           : []),
         ...(exploring === null

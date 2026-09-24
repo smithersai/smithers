@@ -1,13 +1,9 @@
 import { describe, expect, test } from "vitest"
 import {
-  LSP_DEFINITION_PATH,
   LSP_DIAGNOSTICS_CAP,
-  LSP_DIAGNOSTICS_PATH,
   LSP_HOVER_CAP_CHARS,
-  LSP_HOVER_PATH,
   LSP_LANGUAGE_SERVER_MISSING,
   LSP_LOCATIONS_CAP,
-  LSP_SERVERS_PATH,
   LSP_SEVERITIES,
   LspDefinitionResponseSchema,
   LspDiagnosticSchema,
@@ -21,8 +17,7 @@ import {
   LspPositionRequestSchema,
   LspRangeSchema,
   LspServersResponseSchema,
-  LspSeveritySchema,
-  lspTopic
+  LspSeveritySchema
 } from "../src/LocalLsp.ts"
 
 /*
@@ -36,12 +31,6 @@ describe("the code-intelligence wire model", () => {
   const range = { line: 12, character: 5, endLine: 12, endCharacter: 9 }
   const diagnostic = { ...range, severity: "error" as const, message: "boom", source: "ts", code: "2551" }
   const digest = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
-
-  test("the routes hang off /api/lsp and a repository's diagnostics ride lsp:<repoId>", () => {
-    expect([LSP_HOVER_PATH, LSP_DEFINITION_PATH, LSP_DIAGNOSTICS_PATH, LSP_SERVERS_PATH])
-      .toEqual(["/api/lsp/hover", "/api/lsp/definition", "/api/lsp/diagnostics", "/api/lsp/servers"])
-    expect(lspTopic("r1")).toBe("lsp:r1")
-  })
 
   test("a position request is 1-based and carries nothing the routes did not ask for", () => {
     expect(LspPositionRequestSchema.parse(position)).toEqual(position)

@@ -5,7 +5,6 @@
  */
 import { z } from "zod"
 import { StatusRollupSchema } from "./Health.ts"
-import { type TargetRunEvent, TargetRunEventSchema } from "./TargetGraph.ts"
 
 /*
  * The local-app wire model (apps/app/docs/LOCAL-APP.md "HTTP and WebSocket
@@ -67,48 +66,6 @@ export const HarnessSchema = z.object({
  * @category models
  */
 export type Harness = z.infer<typeof HarnessSchema>
-
-/** A target label: `//pkg:name` (`//:name` for the root package).
- * @since 1.0.0
- * @category constants
- */
-export const TARGET_LABEL = /^\/\/[^\s:]*:[^\s:]+$/
-
-/**
- * The verbs `smithers-build` executes over a pattern (`smithers-build
- * --help`). A pattern run is `<verb> <pattern>`: the CLI resolves the
- * pattern to its targets and runs every one, which is what "run everything"
- * is (`ci '//...'`); no single target does that.
- * @since 1.0.0
- * @category constants
- */
-export const TARGET_RUN_VERBS = ["build", "ci", "docs", "lint", "run", "test"] as const
-/**
- * Validates target run verb values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const TargetRunVerbSchema = z.enum(TARGET_RUN_VERBS)
-/**
- * The decoded value accepted by {@link TargetRunVerbSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type TargetRunVerb = z.infer<typeof TargetRunVerbSchema>
-
-/** A pattern the CLI accepts: an exact label or a `//dir/...` subtree (`//...` for the whole workspace).
- * @since 1.0.0
- * @category constants
- */
-export const TARGET_PATTERN = /^\/\/(?:(?:(?!\.\.\.\/)[^\s:/]+\/)*\.\.\.|(?!.*\.\.\.)[^\s:]*:[^\s:]+)$/
-
-/** The verb and pattern of one pattern run; `title` reads `ci //packages/...`.
- * @since 1.0.0
- * @category conversions
- */
-export const patternRunTitle = (verb: string, pattern: string): string => `${verb} ${pattern}`
 
 /**
  * Validates repo workspace values at the RPC boundary.
@@ -176,9 +133,8 @@ export type Repo = z.infer<typeof RepoSchema>
  * Files in an open repository (LOCAL-APP.md "HTTP and WebSocket surface"):
  * one route answers a directory or a file, the way the Cloud contents route
  * does, so the files seam renders the same file-list / file cards for both.
- * Reads are bounded: the server stops at REPO_FILE_READ_CAP_BYTES and says
- * so with `truncated`; a NUL byte or undecodable UTF-8 answers `binary` with
- * no content.
+ * Reads are bounded and say so with `truncated`; a NUL byte or undecodable
+ * UTF-8 answers `binary` with no content.
  */
 /**
  * The repo files route shared by server and client.
@@ -187,36 +143,6 @@ export type Repo = z.infer<typeof RepoSchema>
  * @category constants
  */
 export const REPO_FILES_PATH = "/api/repo/files"
-/**
- * Shared repo file read cap bytes used by the host and its clients.
- *
- * @since 1.0.0
- * @category constants
- */
-export const REPO_FILE_READ_CAP_BYTES = 256 * 1024
-/** A directory answers at most this many entries (sorted by name), and says so with `truncated`.
- * @since 1.0.0
- * @category constants
- */
-export const REPO_LISTING_CAP_ENTRIES = 2000
-/**
- * Validates repo files request values at the RPC boundary.
- *
- * @since 1.0.0
- * @category schemas
- */
-export const RepoFilesRequestSchema = z.object({
-  repoId: z.string().min(1),
-  /** Relative to the repository root; "" or absent is the root. */
-  path: z.string().max(4096).optional()
-}).strict()
-/**
- * The decoded value accepted by {@link RepoFilesRequestSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type RepoFilesRequest = z.infer<typeof RepoFilesRequestSchema>
 /**
  * Validates repo file entry values at the RPC boundary.
  *
@@ -242,7 +168,7 @@ export const RepoFilesResponseSchema = z.discriminatedUnion("kind", [
     kind: z.literal("dir"),
     path: z.string(),
     entries: z.array(RepoFileEntrySchema),
-    /** True when the directory holds more than REPO_LISTING_CAP_ENTRIES; the entries are the first page by name. */
+    /** True when the directory held more entries than the host lists; the entries are the first page by name. */
     truncated: z.boolean().optional()
   }),
   z.object({
@@ -341,71 +267,6 @@ export const TargetSchema = TargetDefinitionSchema.extend({ id: z.string().min(1
  * @category models
  */
 export type Target = z.infer<typeof TargetSchema>
-
-/** `POST /api/targets/query`
- * @since 1.0.0
- * @category schemas
- */
-export const TargetsQueryResponseSchema = z.object({
-  targets: z.array(TargetSchema),
-  warnings: z.array(z.string()),
-  durationMs: z.number()
-})
-/**
- * The decoded value accepted by {@link TargetsQueryResponseSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type TargetsQueryResponse = z.infer<typeof TargetsQueryResponseSchema>
-
-/** `POST /api/targets/run`
- * @since 1.0.0
- * @category schemas
- */
-export const TargetRunResponseSchema = z.object({ runId: z.string() })
-
-/*
- * One frame on the WS topic `target-run:<runId>` IS one recorded run event:
- * the client parses what the backend recorded, field for field. The union
- * lives once, on @smthrs/rpc/TargetGraph `TargetRunEventSchema`; this is the
- * client-side name for it.
- *
- * It must stay one schema, not a copy. A zod object strips what it does not
- * declare, so while the copy here was missing `seq` the ordering key was
- * silently deleted off every frame in flight. `seq` is the run-local, 0-based,
- * gap-free frame number and the ONLY total order replay has, because
- * stdout/stderr/exit/error frames carry no `at` of their own.
- */
-/** One frame on the WS topic `target-run:<runId>`.
- * @since 1.0.0
- * @category schemas
- */
-export const TargetRunFrameSchema = TargetRunEventSchema
-/**
- * The decoded value accepted by {@link TargetRunFrameSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type TargetRunFrame = TargetRunEvent
-
-/** The server -> client envelope carrying a run frame.
- * @since 1.0.0
- * @category schemas
- */
-export const TargetRunMessageSchema = z.object({
-  type: z.literal("target-run"),
-  runId: z.string(),
-  frame: TargetRunFrameSchema
-})
-/**
- * The decoded value accepted by {@link TargetRunMessageSchema}.
- *
- * @since 1.0.0
- * @category models
- */
-export type TargetRunMessage = z.infer<typeof TargetRunMessageSchema>
 
 /** Splits a `//pkg/path:name` label into its package and name.
  * @since 1.0.0

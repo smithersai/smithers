@@ -35,7 +35,6 @@ export const RuntimeCapabilitySchema = z.enum([
   "github", // GitHub OAuth and import are configured on this host
   "cloud",
   "billing.checkout",
-  "keys.byok",
   // Cloud doors a host serves itself, declared by the host that opens them
   // (packages/rpc/src/HostCapabilities.ts holds the per-host tables).
   "cloud.terminal", // this origin tunnels workspace terminals (/api/cloud-ws/*)

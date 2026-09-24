@@ -29,8 +29,9 @@ The client first loads `GET /api/bootstrap` and validates it with
 registry omits unavailable commands. Components render from that registry,
 so disabled hosts do not expose controls that can only fail.
 
-Supported capabilities are `agent`, `browser.read`, `identity`, `cloud`,
-`billing.checkout`, `keys.byok`, `cloud.terminal`, and `cloud.pat`. No
+Supported capabilities are `agent`, `model.turn`, `recommend`,
+`browser.read`, `identity`, `github`, `cloud`, `billing.checkout`,
+`cloud.terminal`, and `cloud.pat`. No
 capability is local-only: a door no host can open is a flow that should not
 exist.
 

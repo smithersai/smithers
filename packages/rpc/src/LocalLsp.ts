@@ -18,39 +18,6 @@ import { z } from "zod"
  * rendering. A missing language server is stated with its install line and
  * never installed.
  */
-/**
- * The lsp route shared by server and client.
- *
- * @since 1.0.0
- * @category constants
- */
-export const LSP_PATH = "/api/lsp"
-/** `POST`: the hover at a position.
- * @since 1.0.0
- * @category constants
- */
-export const LSP_HOVER_PATH = `${LSP_PATH}/hover`
-/** `POST`: the definitions of the symbol at a position.
- * @since 1.0.0
- * @category constants
- */
-export const LSP_DEFINITION_PATH = `${LSP_PATH}/definition`
-/** `POST`: the server's first publication for the file after it opens (bounded by LSP_REQUEST_TIMEOUT_MS).
- * @since 1.0.0
- * @category constants
- */
-export const LSP_DIAGNOSTICS_PATH = `${LSP_PATH}/diagnostics`
-/** `GET`: the language servers the host is running.
- * @since 1.0.0
- * @category constants
- */
-export const LSP_SERVERS_PATH = `${LSP_PATH}/servers`
-/** The `/ws` topic a repository's diagnostics stream rides; the renderer subscribes as it does to `pty:<sessionId>`.
- * @since 1.0.0
- * @category conversions
- */
-export const lspTopic = (repoId: string): string => `lsp:${repoId}`
-
 /** v1 is TypeScript (`typescript-language-server --stdio`); the host's server table gains a row here first.
  * @since 1.0.0
  * @category constants

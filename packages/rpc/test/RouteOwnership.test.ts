@@ -8,8 +8,8 @@ const sourceDir = join(packageRoot, "src")
 /*
  * README.md "Route ownership": each row maps route families to the one module
  * that declares their constants. A route belongs to the longest family it
- * falls under, so `/api/cloud-ws/…` is the tunnel's and `/api/targets/graph`
- * is TargetGraph's while `/api/targets/query` is LocalApp's.
+ * falls under, so `/api/cloud-ws/…` is the tunnel's while `/api/cloud-auth/…`
+ * is its own family.
  */
 const table = readFileSync(join(packageRoot, "README.md"), "utf8")
   .split("\n")
@@ -33,7 +33,7 @@ const modules = readdirSync(sourceDir)
     return { module: file, names: [...source.matchAll(/^export const (\w+)/gm)].map((match) => match[1] ?? "") }
   })
 
-/** A route constant is an `/api/` string, or a plain object of them such as TargetGraph's route table. */
+/** A route constant is an `/api/` string, or a plain object of them. */
 const routesOf = (value: unknown): ReadonlyArray<string> => {
   const isRoute = (candidate: unknown): candidate is string =>
     typeof candidate === "string" && candidate.startsWith("/api/")

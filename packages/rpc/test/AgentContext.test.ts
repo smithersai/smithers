@@ -342,7 +342,7 @@ describe("runtime context branch contracts", () => {
       ]
     })).split("\n")
     expect(lines).toContain(
-      "- Open repositories (local checkouts in this app; files.list / files.read / target.list act on them, a bare call on the active one):"
+      "- Open repositories (local checkouts in this app; files.list / files.read act on them, a bare call on the active one):"
     )
     expect(lines).toContain("  - \"smithers\" (id one) at /work/smithers, branch main, Smithers workspace detected")
     expect(lines).toContain("  - \"other\" (id two) at /work/other")

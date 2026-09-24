@@ -3,25 +3,14 @@ import * as LocalApp from "../src/LocalApp.ts"
 import {
   HarnessesResponseSchema,
   HarnessSchema,
-  patternRunTitle,
   PtyCreateResponseSchema,
   PtyOutputResponseSchema,
   PtySessionSchema,
-  RepoFilesRequestSchema,
   RepoFilesResponseSchema,
   RepoSchema,
   splitLabel,
-  TARGET_LABEL,
-  TARGET_PATTERN,
-  TARGET_RUN_VERBS,
-  TargetRunFrameSchema,
-  TargetRunMessageSchema,
-  TargetRunResponseSchema,
-  TargetRunVerbSchema,
-  TargetSchema,
-  TargetsQueryResponseSchema
+  TargetSchema
 } from "../src/LocalApp.ts"
-import { RunReplayResponseSchema, TargetRunEventSchema } from "../src/TargetGraph.ts"
 
 /*
  * The local-app wire model (apps/app/docs/LOCAL-APP.md "Targets: load and
@@ -71,65 +60,6 @@ describe("multi-workspace repo wire model", () => {
     expect(annotated.summary).toBe("ESLint over the sdk.")
     expect(annotated.featured).toBe(true)
     expect(TargetSchema.safeParse({ ...bare, summary: 7 }).success).toBe(false)
-  })
-})
-
-/*
- * A pattern run is a verb over a pattern (`ci //...`, how CI runs
- * everything): the pattern is a label or a `//dir/...` subtree.
- */
-test("the pattern grammar accepts labels and subtrees and refuses the rest", () => {
-  for (const pattern of ["//...", "//packages/...", "//:ci", "//packages/smithers/flows/canonical:check"]) {
-    expect(TARGET_PATTERN.test(pattern)).toBe(true)
-  }
-  for (const pattern of ["//packages", "//packages/...:lint", "//a b/...", "packages/..."]) {
-    expect(TARGET_PATTERN.test(pattern)).toBe(false)
-  }
-})
-
-/*
- * A WS frame and a recorded run event are the same value: the client parses
- * what the backend recorded. They were once two hand-written unions, and the
- * copy here silently stripped `seq` off every frame in flight.
- */
-describe("TargetRunFrameSchema", () => {
-  const frame = {
-    type: "summary" as const,
-    summary: {
-      total: 3,
-      hit: 1,
-      ran: 2,
-      failed: 0,
-      skipped: 0,
-      durationMs: 4900,
-      ok: true,
-      criticalPath: ["//src:srcs", "//src:typeCheck"]
-    },
-    at: 4,
-    seq: 7
-  }
-
-  test("is the run-event union itself, not a second copy of it", () => {
-    expect(TargetRunFrameSchema).toBe(TargetRunEventSchema)
-  })
-
-  test("a frame carrying every field survives the envelope and the replay envelope unchanged", () => {
-    const envelope = TargetRunMessageSchema.parse({ type: "target-run", runId: "r1", frame })
-    expect(envelope.frame).toEqual(frame)
-    const replay = RunReplayResponseSchema.parse({
-      run: {
-        runId: "r1",
-        repoId: "repo1",
-        label: "//src:typeCheck",
-        labels: ["//src:typeCheck"],
-        status: "done",
-        startedAt: 1,
-        endedAt: 5
-      },
-      events: [frame]
-    })
-    expect(replay.events[0]).toEqual(frame)
-    expect(replay.events[0]).toEqual(envelope.frame)
   })
 })
 
@@ -185,23 +115,7 @@ describe("the harness wire model", () => {
   })
 })
 
-/*
- * A label names one target (`//pkg:name`, `//:name` for the root package)
- * and splits back into the package and the name the loader listed. A run is
- * one of the verbs `smithers-build` executes, and a pattern run reads as the
- * command a person would type.
- */
-describe("target labels, run verbs and pattern-run titles", () => {
-  test("a label is `//`, a package that may be empty, and a name after the one colon", () => {
-    for (const label of ["//:ci", "//a/b:c", "//packages/rpc:check"]) {
-      expect(TARGET_LABEL.test(label)).toBe(true)
-    }
-    // No colon, an empty name, a second colon, whitespace or a missing `//` are all not labels.
-    for (const label of ["//a/b", "//a:", "//a:b:c", "//a b:c", "packages/rpc:check", "//..."]) {
-      expect(TARGET_LABEL.test(label)).toBe(false)
-    }
-  })
-
+describe("splitLabel", () => {
   test("splitting a label gives back the package and the name; a label with no colon keeps its last segment as the name", () => {
     expect(splitLabel("//:x")).toEqual({ package: "//", name: "x" })
     expect(splitLabel("//a/b:c")).toEqual({ package: "//a/b", name: "c" })
@@ -209,43 +123,16 @@ describe("target labels, run verbs and pattern-run titles", () => {
     expect(splitLabel("//a/b")).toEqual({ package: "//a/b", name: "b" })
     expect(splitLabel("//pkg")).toEqual({ package: "//pkg", name: "pkg" })
   })
-
-  test("the run verbs are the six the CLI executes, and a pattern run reads as the command", () => {
-    expect(TARGET_RUN_VERBS).toEqual(["build", "ci", "docs", "lint", "run", "test"])
-    for (const verb of TARGET_RUN_VERBS) expect(TargetRunVerbSchema.parse(verb)).toBe(verb)
-    expect(TargetRunVerbSchema.safeParse("publish").success).toBe(false)
-    expect(patternRunTitle("ci", "//...")).toBe("ci //...")
-    expect(patternRunTitle("test", "//packages/...")).toBe("test //packages/...")
-  })
 })
 
 /*
- * `POST /api/repo/files` fronts the filesystem, so its request is closed:
- * only a repository id and a repository-relative path, the path bounded at 4096
- * characters, and nothing else. The answer is a
- * discriminated union, because a directory and a file carry different facts:
+ * The `/api/repo/files` answer is a discriminated union, because a directory
+ * and a file carry different facts:
  * a directory says whether its listing was cut at the entry cap, a file says
  * whether its bytes were cut at the read cap, whether they are binary, and
  * the digest a language-server answer is compared against.
  */
 describe("the repo-files wire model", () => {
-  test("the request carries a repo id and an optional path and refuses anything else", () => {
-    expect(RepoFilesRequestSchema.parse({ repoId: "r1", path: "src/index.ts" }))
-      .toEqual({ repoId: "r1", path: "src/index.ts" })
-    // Absent path is the repository root, so the route needs no sentinel for it.
-    expect(RepoFilesRequestSchema.parse({ repoId: "r1" })).toEqual({ repoId: "r1" })
-    expect(RepoFilesRequestSchema.parse({ repoId: "r1", path: "" }).path).toBe("")
-    expect(RepoFilesRequestSchema.safeParse({ repoId: "", path: "src" }).success).toBe(false)
-    expect(RepoFilesRequestSchema.safeParse({ path: "src" }).success).toBe(false)
-    // The route is strict: a caller cannot smuggle a root past the repository id.
-    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "src", cwd: "/" }).success).toBe(false)
-  })
-
-  test("the path is bounded at 4096 characters", () => {
-    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4096) }).success).toBe(true)
-    expect(RepoFilesRequestSchema.safeParse({ repoId: "r1", path: "a".repeat(4097) }).success).toBe(false)
-  })
-
   test("a directory answer lists typed entries and says when the listing was cut at the entry cap", () => {
     const dir = {
       kind: "dir" as const,
@@ -326,55 +213,6 @@ describe("the pty wire model", () => {
     expect(PtyOutputResponseSchema.safeParse(withoutTruncated).success).toBe(false)
     const { output: _text, ...withoutOutput } = output
     expect(PtyOutputResponseSchema.safeParse(withoutOutput).success).toBe(false)
-  })
-})
-
-/*
- * `POST /api/targets/query` answers with what the loader listed plus what it
- * complained about and how long it took, so a partially loaded workspace
- * still renders with its warnings visible. Every listed target carries the
- * opaque id the local repository authority minted; the browser addresses a
- * run by that id, never by a path it composed.
- */
-describe("the targets query and run wire model", () => {
-  const target = {
-    id: "t1",
-    label: "//packages/rpc:check",
-    target: "check",
-    kinds: ["typecheck"],
-    package: "//packages/rpc",
-    name: "check",
-    workspace: ".",
-    summary: "Type-check the contract modules",
-    featured: true
-  }
-
-  test("a query answer carries the targets, the loader's warnings and the elapsed time", () => {
-    const response = { targets: [target], warnings: ["skipped //vendor/..."], durationMs: 812 }
-    expect(TargetsQueryResponseSchema.parse(response)).toEqual(response)
-    // An empty workspace is a successful query, not a failure to parse.
-    expect(TargetsQueryResponseSchema.parse({ targets: [], warnings: [], durationMs: 0 }).targets).toEqual([])
-  })
-
-  test("summary and featured are the declaration's optional presentation, but the minted id is not optional", () => {
-    const { summary: _summary, featured: _featured, ...plain } = target
-    expect(TargetsQueryResponseSchema.parse({ targets: [plain], warnings: [], durationMs: 1 }).targets[0])
-      .toEqual(plain)
-    const { id: _id, ...withoutId } = target
-    expect(TargetsQueryResponseSchema.safeParse({ targets: [withoutId], warnings: [], durationMs: 1 }).success)
-      .toBe(false)
-    expect(
-      TargetsQueryResponseSchema.safeParse({ targets: [{ ...target, id: "" }], warnings: [], durationMs: 1 }).success
-    )
-      .toBe(false)
-    expect(TargetsQueryResponseSchema.safeParse({ targets: [target], durationMs: 1 }).success).toBe(false)
-    expect(TargetsQueryResponseSchema.safeParse({ targets: [target], warnings: [] }).success).toBe(false)
-  })
-
-  test("starting a run answers with the run id the target-run topic is keyed by", () => {
-    expect(TargetRunResponseSchema.parse({ runId: "run-1" })).toEqual({ runId: "run-1" })
-    expect(TargetRunResponseSchema.safeParse({}).success).toBe(false)
-    expect(TargetRunResponseSchema.safeParse({ runId: 1 }).success).toBe(false)
   })
 })
 

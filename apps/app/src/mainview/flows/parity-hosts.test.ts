@@ -520,15 +520,9 @@ describe("host parity — the web and native catalogs against the servers' own c
       ...cloudCapabilities({ identity: true, cloud: true, agent: true, checkout: true, terminal: true, browser: true }),
       ...localCapabilities({ agent: true, identity: true, cloud: true, browser: true })
     ])
-    /*
-     * Pinned orphans: capabilities the schema names that NO host emits today.
-     * `keys.byok` gated the deleted keys.list / keys.remove; no flow names it
-     * now, and the Secrets lanes replace the literal with the secrets store
-     * capability. The row is exact so a second orphan fails here.
-     */
-    const ORPHANS: ReadonlyArray<RuntimeCapability> = ["keys.byok"]
+    /* Every capability the schema names is emitted by some host; an orphan fails here. */
     const orphans = RuntimeCapabilitySchema.options.filter((capability) => !everything.has(capability))
-    expect(orphans).toEqual([...ORPHANS])
+    expect(orphans).toEqual([])
   })
 
   test("the Worker never claims a native door", () => {
