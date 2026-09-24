@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,56 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
-
-type fakeGitHubProxyStore struct {
-	getWorkflowRunByRunIDFn     func(ctx context.Context, id int64) (db.WorkflowRun, error)
-	getRepoByIDFn               func(ctx context.Context, id int64) (db.Repository, error)
-	getUserByIDFn               func(ctx context.Context, id int64) (db.User, error)
-	getOrgByIDFn                func(ctx context.Context, id int64) (db.Organization, error)
-	insertGithubProxyAuditLogFn func(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
-	auditRows                   []clusterdb.InsertGithubProxyAuditLogParams
-}
-
-func (f *fakeGitHubProxyStore) GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error) {
-	if f.getWorkflowRunByRunIDFn != nil {
-		return f.getWorkflowRunByRunIDFn(ctx, id)
-	}
-	return db.WorkflowRun{}, nil
-}
-
-func (f *fakeGitHubProxyStore) GetRepoByID(ctx context.Context, id int64) (db.Repository, error) {
-	if f.getRepoByIDFn != nil {
-		return f.getRepoByIDFn(ctx, id)
-	}
-	return db.Repository{}, nil
-}
-
-func (f *fakeGitHubProxyStore) GetUserByID(ctx context.Context, id int64) (db.User, error) {
-	if f.getUserByIDFn != nil {
-		return f.getUserByIDFn(ctx, id)
-	}
-	return db.User{}, nil
-}
-
-func (f *fakeGitHubProxyStore) GetOrgByID(ctx context.Context, id int64) (db.Organization, error) {
-	if f.getOrgByIDFn != nil {
-		return f.getOrgByIDFn(ctx, id)
-	}
-	return db.Organization{}, nil
-}
-
-func (f *fakeGitHubProxyStore) InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error {
-	f.auditRows = append(f.auditRows, arg)
-	if f.insertGithubProxyAuditLogFn != nil {
-		return f.insertGithubProxyAuditLogFn(ctx, arg)
-	}
-	return nil
-}
 
 type fakeGitHubProxyTokenIssuer struct {
 	createFn func(ctx context.Context, userID int64, owner string, repo string) (GitHubInstallationToken, error)
@@ -72,7 +25,6 @@ type fakeGitHubProxyTokenIssuer struct {
 
 type fakeGitHubProxyTokenIssuerCall struct {
 	userID int64
-	orgID  int64
 	owner  string
 	repo   string
 }
@@ -115,22 +67,7 @@ func (f *fakeGitHubProxyTokenIssuer) CreateGitHubInstallationToken(ctx context.C
 	return GitHubInstallationToken{InstallationID: 123, Token: "install-token"}, nil
 }
 
-func (f *fakeGitHubProxyTokenIssuer) CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID int64, ownerOrgID int64, owner string, repo string) (GitHubInstallationToken, error) {
-	f.calls = append(f.calls, fakeGitHubProxyTokenIssuerCall{
-		userID: ownerUserID,
-		orgID:  ownerOrgID,
-		owner:  owner,
-		repo:   repo,
-	})
-	if f.createFn != nil {
-		return f.createFn(ctx, ownerUserID, owner, repo)
-	}
-	return GitHubInstallationToken{InstallationID: 123, Token: "install-token"}, nil
-}
-
-func TestGitHubProxyService_ProxyRequest_UserRepoRewritesHeadersAndAudits(t *testing.T) {
-	setSandboxSecret(t)
-
+func TestGitHubProxyService_ProxyRepoRequest_RewritesHeadersWithServerInstallationToken(t *testing.T) {
 	var upstreamCalled bool
 	var gotMethod string
 	var gotPath string
@@ -153,31 +90,14 @@ func TestGitHubProxyService_ProxyRequest_UserRepoRewritesHeadersAndAudits(t *tes
 	defer upstream.Close()
 	t.Setenv(envGitHubAppAPIBaseURL, upstream.URL)
 
-	store := &fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(ctx context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 901}, nil
-		},
-		getRepoByIDFn: func(ctx context.Context, id int64) (db.Repository, error) {
-			return db.Repository{
-				ID:     id,
-				Name:   "demo",
-				UserID: pgtype.Int8{Int64: 77, Valid: true},
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "acme"}, nil
-		},
-	}
 	tokenIssuer := &fakeGitHubProxyTokenIssuer{
 		createFn: func(ctx context.Context, userID int64, owner string, repo string) (GitHubInstallationToken, error) {
 			return GitHubInstallationToken{InstallationID: 88, Token: "server-install-token"}, nil
 		},
 	}
-	service := NewGitHubProxyService(store, tokenIssuer)
+	service := NewGitHubProxyService(tokenIssuer)
 
-	sandboxToken, err := IssueSandboxToken(42)
-	require.NoError(t, err)
-	resp, err := service.ProxyRequest(context.Background(), sandboxToken, GitHubProxyRequest{
+	resp, err := service.ProxyRepoRequest(context.Background(), &db.User{ID: 77}, "acme", "demo", GitHubProxyRequest{
 		Method: "POST",
 		Path:   "/repos/acme/demo/check-runs?per_page=1",
 		Headers: map[string]string{
@@ -223,30 +143,6 @@ func TestGitHubProxyService_ProxyRequest_UserRepoRewritesHeadersAndAudits(t *tes
 
 	require.Len(t, tokenIssuer.calls, 1)
 	assert.Equal(t, fakeGitHubProxyTokenIssuerCall{userID: 77, owner: "acme", repo: "demo"}, tokenIssuer.calls[0])
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, clusterdb.InsertGithubProxyAuditLogParams{
-		WorkflowRunID: 42,
-		Method:        http.MethodPost,
-		Path:          "/repos/acme/demo/check-runs?per_page=1",
-		StatusCode:    http.StatusAccepted,
-		Decision:      "allow",
-		Reason:        "check run creation allowed",
-	}, store.auditRows[0])
-}
-
-// proxyEvictionStore is the minimal store for a user-repo proxy request.
-func proxyEvictionStore() *fakeGitHubProxyStore {
-	return &fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(_ context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 901}, nil
-		},
-		getRepoByIDFn: func(_ context.Context, id int64) (db.Repository, error) {
-			return db.Repository{ID: id, Name: "demo", UserID: pgtype.Int8{Int64: 77, Valid: true}}, nil
-		},
-		getUserByIDFn: func(_ context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "acme"}, nil
-		},
-	}
 }
 
 func TestGitHubProxyService_Proxy_Evicts401ButNot403(t *testing.T) {
@@ -260,7 +156,6 @@ func TestGitHubProxyService_Proxy_Evicts401ButNot403(t *testing.T) {
 		{name: "403 survives", status: http.StatusForbidden, instID: 5502, evicted: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			setSandboxSecret(t)
 			storeCachedInstallationToken(tc.instID, "ghs_cached", time.Now().Add(time.Hour))
 			t.Cleanup(func() { invalidateCachedInstallationToken(tc.instID) })
 
@@ -276,11 +171,9 @@ func TestGitHubProxyService_Proxy_Evicts401ButNot403(t *testing.T) {
 					return GitHubInstallationToken{InstallationID: tc.instID, Token: "install-token"}, nil
 				},
 			}
-			service := NewGitHubProxyService(proxyEvictionStore(), tokenIssuer)
-			sandboxToken, err := IssueSandboxToken(42)
-			require.NoError(t, err)
+			service := NewGitHubProxyService(tokenIssuer)
 
-			resp, err := service.ProxyRequest(context.Background(), sandboxToken, GitHubProxyRequest{
+			resp, err := service.ProxyRepoRequest(context.Background(), &db.User{ID: 77}, "acme", "demo", GitHubProxyRequest{
 				Method:  "GET",
 				Path:    "/repos/acme/demo/contents/README.md",
 				Headers: map[string]string{"Accept": "application/vnd.github+json"},
@@ -293,134 +186,6 @@ func TestGitHubProxyService_Proxy_Evicts401ButNot403(t *testing.T) {
 			assert.Equal(t, !tc.evicted, ok, "cache eviction on %d mismatch", tc.status)
 		})
 	}
-}
-
-func TestGitHubProxyService_ProxyRequest_OrgRepoUsesOrgInstallationLookup(t *testing.T) {
-	setSandboxSecret(t)
-
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal(t, "Bearer org-install-token", r.Header.Get("Authorization"))
-		assert.Equal(t, "/repos/acme-org/demo/pulls/7", r.URL.Path)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"number":7}`))
-	}))
-	defer upstream.Close()
-	t.Setenv(envGitHubAppAPIBaseURL, upstream.URL)
-
-	store := &fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(ctx context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 902}, nil
-		},
-		getRepoByIDFn: func(ctx context.Context, id int64) (db.Repository, error) {
-			return db.Repository{
-				ID:    id,
-				Name:  "demo",
-				OrgID: pgtype.Int8{Int64: 12, Valid: true},
-			}, nil
-		},
-		getOrgByIDFn: func(ctx context.Context, id int64) (db.Organization, error) {
-			return db.Organization{ID: id, Name: "acme-org"}, nil
-		},
-	}
-	tokenIssuer := &fakeGitHubProxyTokenIssuer{
-		createFn: func(ctx context.Context, userID int64, owner string, repo string) (GitHubInstallationToken, error) {
-			return GitHubInstallationToken{InstallationID: 99, Token: "org-install-token"}, nil
-		},
-	}
-	service := NewGitHubProxyService(store, tokenIssuer)
-
-	sandboxToken, err := IssueSandboxToken(43)
-	require.NoError(t, err)
-	resp, err := service.ProxyRequest(context.Background(), sandboxToken, GitHubProxyRequest{
-		Method: "GET",
-		Path:   "/repos/acme-org/demo/pulls/7",
-	})
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Len(t, tokenIssuer.calls, 1)
-	assert.Equal(t, fakeGitHubProxyTokenIssuerCall{orgID: 12, owner: "acme-org", repo: "demo"}, tokenIssuer.calls[0])
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, "allow", store.auditRows[0].Decision)
-	assert.Equal(t, int32(http.StatusOK), store.auditRows[0].StatusCode)
-}
-
-func TestGitHubProxyService_ProxyRequest_BudgetTrackerDeniesBeforeUpstream(t *testing.T) {
-	setSandboxSecret(t)
-
-	var upstreamCalls int
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamCalls++
-		w.WriteHeader(http.StatusTeapot)
-	}))
-	defer upstream.Close()
-	t.Setenv(envGitHubAppAPIBaseURL, upstream.URL)
-
-	const installationID = int64(555)
-	tracker := NewBudgetTrackerWithLimits(1, time.Hour)
-	now := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
-	tracker.now = func() time.Time { return now }
-	allowed, retryAfter := tracker.Allow(installationID)
-	require.True(t, allowed)
-	require.Zero(t, retryAfter)
-
-	store := &fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(ctx context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 903}, nil
-		},
-		getRepoByIDFn: func(ctx context.Context, id int64) (db.Repository, error) {
-			return db.Repository{
-				ID:     id,
-				Name:   "demo",
-				UserID: pgtype.Int8{Int64: 77, Valid: true},
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "acme"}, nil
-		},
-	}
-	tokenIssuer := &fakeGitHubProxyTokenIssuer{
-		createFn: func(ctx context.Context, userID int64, owner string, repo string) (GitHubInstallationToken, error) {
-			return GitHubInstallationToken{InstallationID: installationID, Token: "unused-install-token"}, nil
-		},
-	}
-	service := NewGitHubProxyService(store, tokenIssuer, WithGitHubProxyBudgetTracker(tracker))
-
-	sandboxToken, err := IssueSandboxToken(44)
-	require.NoError(t, err)
-	resp, err := service.ProxyRequest(context.Background(), sandboxToken, GitHubProxyRequest{
-		Method: "GET",
-		Path:   "/repos/acme/demo/issues",
-	})
-	require.Nil(t, resp)
-	require.Error(t, err)
-
-	var apiErr *pkgerrors.APIError
-	require.True(t, errors.As(err, &apiErr))
-	assert.Equal(t, http.StatusTooManyRequests, apiErr.Status)
-	assert.Equal(t, pkgerrors.CodeGitHubRateLimited, apiErr.Code)
-	assert.Equal(t, "github installation rate limit exceeded", apiErr.Message)
-	require.NotNil(t, apiErr.Limit)
-	assert.Equal(t, 1, *apiErr.Limit)
-	require.NotNil(t, apiErr.Remaining)
-	assert.Equal(t, 0, *apiErr.Remaining)
-	require.NotNil(t, apiErr.ResetAt)
-	assert.Equal(t, now.Add(time.Hour), *apiErr.ResetAt)
-	assert.Equal(t, 3600, apiErr.RetryAfter)
-	assert.Zero(t, upstreamCalls)
-
-	require.Len(t, tokenIssuer.calls, 1)
-	assert.Equal(t, fakeGitHubProxyTokenIssuerCall{userID: 77, owner: "acme", repo: "demo"}, tokenIssuer.calls[0])
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, clusterdb.InsertGithubProxyAuditLogParams{
-		WorkflowRunID: 44,
-		Method:        http.MethodGet,
-		Path:          "/repos/acme/demo/issues",
-		StatusCode:    http.StatusTooManyRequests,
-		Decision:      "deny",
-		Reason:        "github installation rate limit exceeded",
-	}, store.auditRows[0])
 }
 
 func TestGitHubProxyService_ProxyRepoRequest_BudgetTrackerReturnsStructuredRateLimit(t *testing.T) {
@@ -444,7 +209,7 @@ func TestGitHubProxyService_ProxyRepoRequest_BudgetTrackerReturnsStructuredRateL
 			return GitHubInstallationToken{InstallationID: installationID, Token: "unused-install-token"}, nil
 		},
 	}
-	service := NewGitHubProxyService(&fakeGitHubProxyStore{}, tokenIssuer, WithGitHubProxyBudgetTracker(tracker))
+	service := NewGitHubProxyService(tokenIssuer, WithGitHubProxyBudgetTracker(tracker))
 
 	resp, err := service.ProxyRepoRequest(context.Background(), &db.User{ID: 77}, "acme", "demo", GitHubProxyRequest{
 		Method: http.MethodGet,
@@ -481,7 +246,7 @@ func TestGitHubProxyService_ProxyRepoRequest_UsesAuthenticatedActorForInstallati
 			return GitHubInstallationToken{InstallationID: 77, Token: "repo-install-token"}, nil
 		},
 	}
-	service := NewGitHubProxyService(&fakeGitHubProxyStore{}, tokenIssuer)
+	service := NewGitHubProxyService(tokenIssuer)
 
 	resp, err := service.ProxyRepoRequest(context.Background(), &db.User{ID: 42, Username: "alice"}, " acme ", " demo ", GitHubProxyRequest{
 		Method: "POST",
@@ -514,7 +279,7 @@ func TestGitHubProxyService_ProxyRepoRequest_ImportedPublicSourceUsesProvenanceS
 			},
 		},
 	}
-	service := NewGitHubProxyService(&fakeGitHubProxyStore{}, tokenIssuer)
+	service := NewGitHubProxyService(tokenIssuer)
 	ctx := middleware.ContextWithRepoContext(context.Background(), &middleware.RepoContext{
 		Owner: "roninjin10",
 		Repository: &db.Repository{
@@ -561,7 +326,7 @@ func TestGitHubProxyService_ProxyRepoRequest_ImportedPublicSourceUsesProvenanceW
 			},
 		},
 	}
-	service := NewGitHubProxyService(&fakeGitHubProxyStore{}, tokenIssuer)
+	service := NewGitHubProxyService(tokenIssuer)
 	ctx := middleware.ContextWithRepoContext(context.Background(), &middleware.RepoContext{
 		Owner: "roninjin10",
 		Repository: &db.Repository{
@@ -606,7 +371,7 @@ func TestGitHubProxyService_ProxyRepoRequest_LocalRepoFallsBackWhenImportedProve
 			return GitHubInstallationToken{}, errGitHubImportedSourceProvenanceNotFound
 		},
 	}
-	service := NewGitHubProxyService(&fakeGitHubProxyStore{}, tokenIssuer)
+	service := NewGitHubProxyService(tokenIssuer)
 	ctx := middleware.ContextWithRepoContext(context.Background(), &middleware.RepoContext{
 		Owner: "acme",
 		Repository: &db.Repository{

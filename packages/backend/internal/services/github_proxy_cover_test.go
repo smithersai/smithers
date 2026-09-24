@@ -9,8 +9,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,16 +18,12 @@ import (
 
 func TestGitHubProxy_Cov_OptionsAndValidationErrors(t *testing.T) {
 	client := &http.Client{}
-	svc := NewGitHubProxyService(&fakeGitHubProxyStore{}, &fakeGitHubProxyTokenIssuer{}, WithGitHubProxyHTTPClient(client), WithGitHubProxyHTTPClient(nil))
+	svc := NewGitHubProxyService(&fakeGitHubProxyTokenIssuer{}, WithGitHubProxyHTTPClient(client), WithGitHubProxyHTTPClient(nil))
 	assert.Same(t, client, svc.httpClient)
 
-	_, err := (*GitHubProxyService)(nil).ProxyRequest(context.Background(), "bad", GitHubProxyRequest{})
+	_, err := (*GitHubProxyService)(nil).ProxyRepoRequest(context.Background(), &db.User{ID: 1}, "owner", "repo", GitHubProxyRequest{})
 	require.Error(t, err)
 	assert.Equal(t, 500, apiStatus(t, err))
-
-	_, err = svc.ProxyRequest(context.Background(), "bad", GitHubProxyRequest{})
-	require.Error(t, err)
-	assert.Equal(t, 401, apiStatus(t, err))
 
 	_, err = svc.ProxyRepoRequest(context.Background(), nil, "owner", "repo", GitHubProxyRequest{})
 	require.Error(t, err)
@@ -38,45 +32,6 @@ func TestGitHubProxy_Cov_OptionsAndValidationErrors(t *testing.T) {
 	_, err = svc.ProxyRepoRequest(context.Background(), &db.User{ID: 1}, " ", "repo", GitHubProxyRequest{})
 	require.Error(t, err)
 	assert.Equal(t, 400, apiStatus(t, err))
-}
-
-func TestGitHubProxy_Cov_ProxyRequestResolutionErrors(t *testing.T) {
-	setSandboxSecret(t)
-	token, err := IssueSandboxToken(123)
-	require.NoError(t, err)
-
-	svc := NewGitHubProxyService(&fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(context.Context, int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{}, pgx.ErrNoRows
-		},
-	}, &fakeGitHubProxyTokenIssuer{})
-	_, err = svc.ProxyRequest(context.Background(), token, GitHubProxyRequest{Method: "GET", Path: "/repos/a/b/issues"})
-	require.Error(t, err)
-	assert.Equal(t, 401, apiStatus(t, err))
-
-	svc = NewGitHubProxyService(&fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(context.Context, int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: 123, RepositoryID: 7}, nil
-		},
-		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
-			return db.Repository{}, pgx.ErrNoRows
-		},
-	}, &fakeGitHubProxyTokenIssuer{})
-	_, err = svc.ProxyRequest(context.Background(), token, GitHubProxyRequest{Method: "GET", Path: "/repos/a/b/issues"})
-	require.Error(t, err)
-	assert.Equal(t, 404, apiStatus(t, err))
-
-	svc = NewGitHubProxyService(&fakeGitHubProxyStore{
-		getWorkflowRunByRunIDFn: func(context.Context, int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: 123, RepositoryID: 7}, nil
-		},
-		getRepoByIDFn: func(context.Context, int64) (db.Repository, error) {
-			return db.Repository{ID: 7, Name: "demo"}, nil
-		},
-	}, &fakeGitHubProxyTokenIssuer{})
-	_, err = svc.ProxyRequest(context.Background(), token, GitHubProxyRequest{Method: "GET", Path: "/repos/a/b/issues"})
-	require.Error(t, err)
-	assert.Equal(t, 500, apiStatus(t, err))
 }
 
 func TestGitHubProxy_Cov_NormalizeBodyPathAuditAndStatusCategories(t *testing.T) {
@@ -108,23 +63,18 @@ func TestGitHubProxy_Cov_NormalizeBodyPathAuditAndStatusCategories(t *testing.T)
 	require.Error(t, err)
 	assert.Equal(t, 400, statusCodeFromError(err))
 
-	store := &fakeGitHubProxyStore{}
-	svc := NewGitHubProxyService(store, &fakeGitHubProxyTokenIssuer{})
+	svc := NewGitHubProxyService(&fakeGitHubProxyTokenIssuer{})
 	_, err = svc.proxyRequest(context.Background(), gitHubProxyResolvedContext{
-		ActorUserID:             1,
-		Owner:                   "acme",
-		Repo:                    "demo",
-		AuditWorkflowRunID:      55,
-		AuditWorkflowRunIDValid: true,
+		ActorUserID: 1,
+		Owner:       "acme",
+		Repo:        "demo",
 	}, GitHubProxyRequest{Method: "TRACE", Path: "/repos/acme/demo"}, GitHubProxyPolicyInput{})
 	require.Error(t, err)
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, int32(http.StatusBadRequest), store.auditRows[0].StatusCode)
-	assert.Equal(t, "deny", store.auditRows[0].Decision)
+	assert.Equal(t, http.StatusBadRequest, statusCodeFromError(err))
 }
 
 func TestGitHubProxy_Cov_BuildUpstreamDefaultsAndIssuerFailure(t *testing.T) {
-	svc := NewGitHubProxyService(&fakeGitHubProxyStore{}, &fakeGitHubProxyTokenIssuer{})
+	svc := NewGitHubProxyService(&fakeGitHubProxyTokenIssuer{})
 	req, err := svc.buildUpstreamRequest(context.Background(), http.MethodPost, "/repos/acme/demo/issues", map[string]string{
 		"Accept":        " ",
 		"Authorization": "Bearer user",
@@ -141,8 +91,7 @@ func TestGitHubProxy_Cov_BuildUpstreamDefaultsAndIssuerFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"title":"x"}`, string(body))
 
-	store := &fakeGitHubProxyStore{}
-	svc = NewGitHubProxyService(store, &fakeGitHubProxyTokenIssuer{
+	svc = NewGitHubProxyService(&fakeGitHubProxyTokenIssuer{
 		createFn: func(context.Context, int64, string, string) (GitHubInstallationToken, error) {
 			return GitHubInstallationToken{}, &pkgerrors.APIError{Status: http.StatusForbidden, Message: "denied"}
 		},
@@ -165,7 +114,7 @@ func TestGitHubProxy_Cov_ProxyRepoRequestUsesCustomHTTPClient(t *testing.T) {
 	defer upstream.Close()
 	t.Setenv(envGitHubAppAPIBaseURL, upstream.URL)
 
-	svc := NewGitHubProxyService(&fakeGitHubProxyStore{}, &fakeGitHubProxyTokenIssuer{
+	svc := NewGitHubProxyService(&fakeGitHubProxyTokenIssuer{
 		createFn: func(context.Context, int64, string, string) (GitHubInstallationToken, error) {
 			return GitHubInstallationToken{InstallationID: 9, Token: "install"}, nil
 		},
@@ -175,24 +124,4 @@ func TestGitHubProxy_Cov_ProxyRepoRequestUsesCustomHTTPClient(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "yes", resp.Headers.Get("X-Cov"))
-}
-
-func TestGitHubProxy_Cov_ResolveRepositoryOwnerErrorBranches(t *testing.T) {
-	svc := NewGitHubProxyService(&fakeGitHubProxyStore{
-		getUserByIDFn: func(context.Context, int64) (db.User, error) {
-			return db.User{}, pgx.ErrNoRows
-		},
-	}, &fakeGitHubProxyTokenIssuer{})
-	_, err := svc.resolveRepositoryOwner(context.Background(), db.Repository{UserID: pgtype.Int8{Int64: 1, Valid: true}})
-	require.Error(t, err)
-	assert.Equal(t, 404, apiStatus(t, err))
-
-	svc = NewGitHubProxyService(&fakeGitHubProxyStore{
-		getOrgByIDFn: func(context.Context, int64) (db.Organization, error) {
-			return db.Organization{}, errors.New("db down")
-		},
-	}, &fakeGitHubProxyTokenIssuer{})
-	_, err = svc.resolveRepositoryOwner(context.Background(), db.Repository{OrgID: pgtype.Int8{Int64: 2, Valid: true}})
-	require.Error(t, err)
-	assert.Equal(t, 500, apiStatus(t, err))
 }

@@ -683,14 +683,10 @@ func buildRouter(
 		).Post("/api/billing/webhook", billingHandler.PostStripeWebhook)
 	}
 
-	r.Route("/api/internal", func(r chi.Router) {
-		r.Use(middleware.JSONTimeout(30 * time.Second))
-		r.Use(middleware.JSONAllowContentType("application/json"))
-		r.Use(middleware.MaxBodySize(middleware.MaxRequestBodySize))
-		if gitHubProxyHandler != nil {
-			r.Post("/github-proxy", gitHubProxyHandler.PostGitHubProxy)
-		}
-	})
+	// /api/internal is the machine-to-machine namespace. Mounting it keeps an
+	// unknown path under it a 404 instead of falling through to the
+	// user-authenticated /api group below.
+	r.Route("/api/internal", func(chi.Router) {})
 
 	// Build the rate-limit reject observer once so both the /api route group and
 	// the long-lived SSE/WebSocket groups (mounted outside /api to avoid the 30s

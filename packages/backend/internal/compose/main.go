@@ -1279,7 +1279,6 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	anonSandboxHandler := routes.NewAnonSandboxHandler(anonSandboxService)
 	gitHubProxyHandler := &routes.GitHubProxyHandler{
 		Service: services.NewGitHubProxyService(
-			hostedQueries,
 			repoConnectionService,
 			services.WithGitHubProxyBudgetTracker(gitHubBudgetTracker),
 		),

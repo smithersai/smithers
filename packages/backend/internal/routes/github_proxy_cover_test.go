@@ -19,48 +19,31 @@ import (
 )
 
 type githubProxyCovService struct {
-	proxyFn     func(context.Context, string, services.GitHubProxyRequest) (*services.GitHubProxyResponse, error)
 	proxyRepoFn func(context.Context, *db.User, string, string, services.GitHubProxyRequest) (*services.GitHubProxyResponse, error)
-}
-
-func (s githubProxyCovService) ProxyRequest(ctx context.Context, sandboxToken string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
-	return s.proxyFn(ctx, sandboxToken, input)
 }
 
 func (s githubProxyCovService) ProxyRepoRequest(ctx context.Context, actor *db.User, owner string, repo string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
 	return s.proxyRepoFn(ctx, actor, owner, repo, input)
 }
 
-func TestGithubProxy_Cov_PostInternalAuthAndResponseBranches(t *testing.T) {
+func TestGithubProxy_Cov_PostRepoBodyAndResponseBranches(t *testing.T) {
 	t.Parallel()
-
-	t.Run("missing bearer", func(t *testing.T) {
-		t.Parallel()
-
-		h := &GitHubProxyHandler{Service: githubProxyCovService{}}
-		req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", strings.NewReader(`{}`))
-		rec := httptest.NewRecorder()
-
-		h.PostGitHubProxy(rec, req)
-
-		require.Equal(t, http.StatusUnauthorized, rec.Code)
-		assert.Contains(t, rec.Body.String(), "missing Authorization header")
-	})
 
 	t.Run("invalid json", func(t *testing.T) {
 		t.Parallel()
 
 		h := &GitHubProxyHandler{Service: githubProxyCovService{
-			proxyFn: func(context.Context, string, services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
+			proxyRepoFn: func(context.Context, *db.User, string, string, services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
 				t.Fatal("service should not be called")
 				return nil, nil
 			},
 		}}
-		req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", strings.NewReader(`{`))
-		req.Header.Set("Authorization", "Bearer sandbox-token")
+		req := httptest.NewRequest(http.MethodPost, "/api/repos/alice/demo/github-proxy", strings.NewReader(`{`))
+		req = withRouteParams(req, map[string]string{"owner": "alice", "repo": "demo"})
+		req = withAuth(req, 7, "alice")
 		rec := httptest.NewRecorder()
 
-		h.PostGitHubProxy(rec, req)
+		h.PostRepoGitHubProxy(rec, req)
 
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	})
@@ -69,8 +52,7 @@ func TestGithubProxy_Cov_PostInternalAuthAndResponseBranches(t *testing.T) {
 		t.Parallel()
 
 		h := &GitHubProxyHandler{Service: githubProxyCovService{
-			proxyFn: func(_ context.Context, sandboxToken string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
-				assert.Equal(t, "sandbox-token", sandboxToken)
+			proxyRepoFn: func(_ context.Context, _ *db.User, _ string, _ string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
 				assert.Equal(t, "GET", input.Method)
 				assert.Equal(t, "/rate_limit", input.Path)
 				return &services.GitHubProxyResponse{
@@ -83,11 +65,12 @@ func TestGithubProxy_Cov_PostInternalAuthAndResponseBranches(t *testing.T) {
 				}, nil
 			},
 		}}
-		req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", strings.NewReader(`{"method":"GET","path":"/rate_limit"}`))
-		req.Header.Set("Authorization", "Bearer sandbox-token")
+		req := httptest.NewRequest(http.MethodPost, "/api/repos/alice/demo/github-proxy", strings.NewReader(`{"method":"GET","path":"/rate_limit"}`))
+		req = withRouteParams(req, map[string]string{"owner": "alice", "repo": "demo"})
+		req = withAuth(req, 7, "alice")
 		rec := httptest.NewRecorder()
 
-		h.PostGitHubProxy(rec, req)
+		h.PostRepoGitHubProxy(rec, req)
 
 		require.Equal(t, http.StatusOK, rec.Code)
 		assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -194,24 +177,4 @@ func TestGithubProxy_Cov_PostRepoBranches(t *testing.T) {
 
 		require.Equal(t, http.StatusForbidden, rec.Code)
 	})
-}
-
-func TestGithubProxy_Cov_ExtractBearerTokenEdges(t *testing.T) {
-	t.Parallel()
-
-	req := httptest.NewRequest(http.MethodPost, "/", nil)
-	req.Header.Set("Authorization", "Token abc")
-	token, apiErr := extractBearerToken(req)
-	assert.Empty(t, token)
-	require.NotNil(t, apiErr)
-	assert.Equal(t, http.StatusUnauthorized, apiErr.Status)
-
-	req.Header.Set("Authorization", "Bearer abc extra")
-	_, apiErr = extractBearerToken(req)
-	require.NotNil(t, apiErr)
-
-	req.Header.Set("Authorization", "Bearer abc")
-	token, apiErr = extractBearerToken(req)
-	require.Nil(t, apiErr)
-	assert.Equal(t, "abc", token)
 }

@@ -13,9 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/observability"
@@ -24,20 +21,8 @@ import (
 
 const GitHubProxyForbiddenActionCode = pkgerrors.CodeGitHubForbiddenAction
 
-type GitHubProxyStore interface {
-	GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error)
-	GetRepoByID(ctx context.Context, id int64) (db.Repository, error)
-	GetUserByID(ctx context.Context, id int64) (db.User, error)
-	GetOrgByID(ctx context.Context, id int64) (db.Organization, error)
-	InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
-}
-
 type GitHubProxyInstallationTokenIssuer interface {
 	CreateGitHubInstallationToken(ctx context.Context, userID int64, owner string, repo string) (GitHubInstallationToken, error)
-}
-
-type gitHubProxyInternalRepoTokenIssuer interface {
-	CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID int64, ownerOrgID int64, owner string, repo string) (GitHubInstallationToken, error)
 }
 
 type gitHubProxyImportedSourceTokenIssuer interface {
@@ -45,7 +30,6 @@ type gitHubProxyImportedSourceTokenIssuer interface {
 }
 
 type GitHubProxyService struct {
-	store               GitHubProxyStore
 	tokenIssuer         GitHubProxyInstallationTokenIssuer
 	httpClient          *http.Client
 	gitHubBudgetTracker *BudgetTracker
@@ -67,9 +51,8 @@ func WithGitHubProxyBudgetTracker(tracker *BudgetTracker) GitHubProxyServiceOpti
 	}
 }
 
-func NewGitHubProxyService(store GitHubProxyStore, tokenIssuer GitHubProxyInstallationTokenIssuer, opts ...GitHubProxyServiceOption) *GitHubProxyService {
+func NewGitHubProxyService(tokenIssuer GitHubProxyInstallationTokenIssuer, opts ...GitHubProxyServiceOption) *GitHubProxyService {
 	svc := &GitHubProxyService{
-		store:       store,
 		tokenIssuer: tokenIssuer,
 		httpClient:  observability.NewHTTPClient(30 * time.Second),
 	}
@@ -92,54 +75,6 @@ type GitHubProxyResponse struct {
 	StatusCode int
 	Headers    http.Header
 	Body       io.ReadCloser
-}
-
-func (s *GitHubProxyService) ProxyRequest(ctx context.Context, sandboxToken string, input GitHubProxyRequest) (*GitHubProxyResponse, error) {
-	if s == nil || s.store == nil || s.tokenIssuer == nil {
-		return nil, pkgerrors.Internal("github proxy service unavailable")
-	}
-
-	workflowRunID, err := ValidateSandboxToken(sandboxToken)
-	if err != nil {
-		return nil, pkgerrors.Unauthorized("invalid or expired sandbox token")
-	}
-
-	run, err := s.store.GetWorkflowRunByRunID(ctx, workflowRunID)
-	if err != nil {
-		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil, pkgerrors.Unauthorized("invalid or expired sandbox token")
-		}
-		return nil, pkgerrors.Internal("failed to resolve workflow run")
-	}
-
-	repository, err := s.store.GetRepoByID(ctx, run.RepositoryID)
-	if err != nil {
-		if stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil, pkgerrors.NotFound("repository not found")
-		}
-		return nil, pkgerrors.Internal("failed to resolve repository")
-	}
-
-	owner, err := s.resolveRepositoryOwner(ctx, repository)
-	if err != nil {
-		return nil, err
-	}
-
-	resolved := gitHubProxyResolvedContext{
-		Owner:                         owner,
-		Repo:                          repository.Name,
-		UseInternalRepoInstallationID: true,
-		AuditWorkflowRunID:            run.ID,
-		AuditWorkflowRunIDValid:       true,
-	}
-	if repository.UserID.Valid {
-		resolved.RepoOwnerUserID = repository.UserID.Int64
-	}
-	if repository.OrgID.Valid {
-		resolved.RepoOwnerOrgID = repository.OrgID.Int64
-	}
-
-	return s.proxyRequest(ctx, resolved, input, GitHubProxyPolicyInput{})
 }
 
 func (s *GitHubProxyService) ProxyRepoRequest(ctx context.Context, actor *db.User, owner string, repo string, input GitHubProxyRequest) (*GitHubProxyResponse, error) {
@@ -179,14 +114,9 @@ type gitHubProxyResolvedContext struct {
 	ActorUserID                     int64
 	Owner                           string
 	Repo                            string
-	UseInternalRepoInstallationID   bool
 	UseImportedSourceInstallationID bool
 	TryImportedSourceInstallationID bool
 	RepositoryID                    int64
-	RepoOwnerUserID                 int64
-	RepoOwnerOrgID                  int64
-	AuditWorkflowRunID              int64
-	AuditWorkflowRunIDValid         bool
 }
 
 func gitHubProxyRepoContextUsesImportedSource(repoCtx *middleware.RepoContext, owner string, repo string) bool {
@@ -206,13 +136,13 @@ func gitHubProxyRepoContextUsesImportedSource(repoCtx *middleware.RepoContext, o
 func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubProxyResolvedContext, input GitHubProxyRequest, policyOverrides GitHubProxyPolicyInput) (*GitHubProxyResponse, error) {
 	method, requestPath, err := normalizeGitHubProxyMethodAndPath(input.Method, input.Path)
 	if err != nil {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, strings.ToUpper(strings.TrimSpace(input.Method)), strings.TrimSpace(input.Path), statusCodeFromError(err), "deny", err.Error())
+		logGitHubProxyRequest(strings.ToUpper(strings.TrimSpace(input.Method)), strings.TrimSpace(input.Path), statusCodeFromError(err), "deny", err.Error())
 		return nil, err
 	}
 
 	bodyBytes, hasBody, err := normalizeGitHubProxyBody(input.Body)
 	if err != nil {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, statusCodeFromError(err), "deny", err.Error())
+		logGitHubProxyRequest(method, requestPath, statusCodeFromError(err), "deny", err.Error())
 		return nil, err
 	}
 
@@ -227,7 +157,7 @@ func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubPr
 		AllowBranchDeletes: policyOverrides.AllowBranchDeletes,
 	})
 	if !policyDecision.Allowed {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, http.StatusForbidden, "deny", policyDecision.Reason)
+		logGitHubProxyRequest(method, requestPath, http.StatusForbidden, "deny", policyDecision.Reason)
 		return nil, &pkgerrors.APIError{
 			Status:  http.StatusForbidden,
 			Code:    GitHubProxyForbiddenActionCode,
@@ -237,14 +167,14 @@ func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubPr
 
 	installationToken, err := s.createInstallationToken(ctx, resolved)
 	if err != nil {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, statusCodeFromError(err), "deny", "failed to create github installation token")
+		logGitHubProxyRequest(method, requestPath, statusCodeFromError(err), "deny", "failed to create github installation token")
 		return nil, err
 	}
 	if s.gitHubBudgetTracker != nil {
 		allowed, retryAfter, rateLimit := s.gitHubBudgetTracker.AllowWithStatus(installationToken.InstallationID)
 		if !allowed {
 			retryAfterSeconds := gitHubProxyRetryAfterSeconds(retryAfter)
-			s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, http.StatusTooManyRequests, "deny", "github installation rate limit exceeded")
+			logGitHubProxyRequest(method, requestPath, http.StatusTooManyRequests, "deny", "github installation rate limit exceeded")
 			return nil, &pkgerrors.APIError{
 				Status:     http.StatusTooManyRequests,
 				Code:       pkgerrors.CodeGitHubRateLimited,
@@ -259,14 +189,14 @@ func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubPr
 
 	upstreamReq, err := s.buildUpstreamRequest(ctx, method, requestPath, input.Headers, bodyBytes, hasBody, installationToken.Token)
 	if err != nil {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, statusCodeFromError(err), "deny", "failed to build github proxy request")
+		logGitHubProxyRequest(method, requestPath, statusCodeFromError(err), "deny", "failed to build github proxy request")
 		return nil, err
 	}
 
 	// The route owns the streamed body and closes it in writeGitHubProxyResponse.
 	upstreamResp, err := s.httpClient.Do(upstreamReq) //nolint:bodyclose // Body ownership transfers to GitHubProxyResponse and its caller.
 	if err != nil {
-		s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, http.StatusBadGateway, "deny", "github proxy request failed")
+		logGitHubProxyRequest(method, requestPath, http.StatusBadGateway, "deny", "github proxy request failed")
 		return nil, pkgerrors.Internal("failed to proxy github request")
 	}
 
@@ -279,39 +209,13 @@ func (s *GitHubProxyService) proxyRequest(ctx context.Context, resolved gitHubPr
 		invalidateCachedInstallationToken(installationToken.InstallationID)
 	}
 
-	s.insertAuditLog(ctx, resolved.AuditWorkflowRunID, resolved.AuditWorkflowRunIDValid, method, requestPath, upstreamResp.StatusCode, "allow", policyDecision.Reason)
+	logGitHubProxyRequest(method, requestPath, upstreamResp.StatusCode, "allow", policyDecision.Reason)
 
 	return &GitHubProxyResponse{
 		StatusCode: upstreamResp.StatusCode,
 		Headers:    upstreamResp.Header.Clone(),
 		Body:       upstreamResp.Body,
 	}, nil
-}
-
-func (s *GitHubProxyService) resolveRepositoryOwner(ctx context.Context, repository db.Repository) (string, error) {
-	if repository.UserID.Valid {
-		user, getUserErr := s.store.GetUserByID(ctx, repository.UserID.Int64)
-		if getUserErr != nil {
-			if stdErrors.Is(getUserErr, pgx.ErrNoRows) {
-				return "", pkgerrors.NotFound("repository owner not found")
-			}
-			return "", pkgerrors.Internal("failed to resolve repository owner")
-		}
-		return user.Username, nil
-	}
-
-	if repository.OrgID.Valid {
-		org, getOrgErr := s.store.GetOrgByID(ctx, repository.OrgID.Int64)
-		if getOrgErr != nil {
-			if stdErrors.Is(getOrgErr, pgx.ErrNoRows) {
-				return "", pkgerrors.NotFound("repository owner not found")
-			}
-			return "", pkgerrors.Internal("failed to resolve repository owner")
-		}
-		return org.Name, nil
-	}
-
-	return "", pkgerrors.Internal("repository owner is not set")
 }
 
 func (s *GitHubProxyService) createInstallationToken(ctx context.Context, resolved gitHubProxyResolvedContext) (GitHubInstallationToken, error) {
@@ -333,13 +237,6 @@ func (s *GitHubProxyService) createInstallationToken(ctx context.Context, resolv
 				return GitHubInstallationToken{}, err
 			}
 		}
-	}
-	if resolved.UseInternalRepoInstallationID {
-		internalIssuer, ok := s.tokenIssuer.(gitHubProxyInternalRepoTokenIssuer)
-		if !ok {
-			return GitHubInstallationToken{}, pkgerrors.Internal("github proxy service unavailable")
-		}
-		return internalIssuer.CreateGitHubInstallationTokenForRepositoryOwner(ctx, resolved.RepoOwnerUserID, resolved.RepoOwnerOrgID, resolved.Owner, resolved.Repo)
 	}
 	return s.tokenIssuer.CreateGitHubInstallationToken(ctx, resolved.ActorUserID, resolved.Owner, resolved.Repo)
 }
@@ -390,45 +287,23 @@ func (s *GitHubProxyService) buildUpstreamRequest(
 	return req, nil
 }
 
-func (s *GitHubProxyService) insertAuditLog(
-	ctx context.Context,
-	workflowRunID int64,
-	workflowRunIDValid bool,
+// logGitHubProxyRequest records one proxied request and its policy decision.
+func logGitHubProxyRequest(
 	method string,
 	requestPath string,
 	statusCode int,
 	decision string,
 	reason string,
 ) {
-	if !workflowRunIDValid {
-		slog.Info("github proxy repo request",
-			"auth_source", "server_github_app_installation",
-			"method", method,
-			"path", requestPath,
-			"status_code", statusCode,
-			"decision", decision,
-			"failure_category", gitHubProxyFailureCategory(statusCode, decision),
-			"reason", reason,
-		)
-		return
-	}
-	if err := s.store.InsertGithubProxyAuditLog(ctx, clusterdb.InsertGithubProxyAuditLogParams{
-		WorkflowRunID: workflowRunID,
-		Method:        method,
-		Path:          requestPath,
-		StatusCode:    int32(statusCode),
-		Decision:      decision,
-		Reason:        reason,
-	}); err != nil {
-		slog.Warn("failed to insert github proxy audit log",
-			"workflow_run_id", workflowRunID,
-			"method", method,
-			"path", requestPath,
-			"status_code", statusCode,
-			"decision", decision,
-			"error", err,
-		)
-	}
+	slog.Info("github proxy repo request",
+		"auth_source", "server_github_app_installation",
+		"method", method,
+		"path", requestPath,
+		"status_code", statusCode,
+		"decision", decision,
+		"failure_category", gitHubProxyFailureCategory(statusCode, decision),
+		"reason", reason,
+	)
 }
 
 func gitHubProxyFailureCategory(statusCode int, decision string) string {

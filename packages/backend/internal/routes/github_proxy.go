@@ -13,7 +13,6 @@ import (
 )
 
 type GitHubProxyRouteService interface {
-	ProxyRequest(ctx context.Context, sandboxToken string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error)
 	ProxyRepoRequest(ctx context.Context, actor *db.User, owner string, repo string, input services.GitHubProxyRequest) (*services.GitHubProxyResponse, error)
 }
 
@@ -26,36 +25,6 @@ type postGitHubProxyRequest struct {
 	Path    string            `json:"path"`
 	Headers map[string]string `json:"headers"`
 	Body    json.RawMessage   `json:"body"`
-}
-
-func (h *GitHubProxyHandler) PostGitHubProxy(w http.ResponseWriter, r *http.Request) {
-	if h.Service == nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("github proxy service unavailable"))
-		return
-	}
-
-	sandboxToken, tokenErr := extractBearerToken(r)
-	if tokenErr != nil {
-		pkgerrors.WriteError(w, tokenErr)
-		return
-	}
-
-	var req postGitHubProxyRequest
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-
-	proxyResp, err := h.Service.ProxyRequest(r.Context(), sandboxToken, services.GitHubProxyRequest{
-		Method:  req.Method,
-		Path:    req.Path,
-		Headers: req.Headers,
-		Body:    req.Body,
-	})
-	if err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	writeGitHubProxyResponse(w, proxyResp)
 }
 
 func (h *GitHubProxyHandler) PostRepoGitHubProxy(w http.ResponseWriter, r *http.Request) {
@@ -132,19 +101,6 @@ func writeGitHubProxyResponse(w http.ResponseWriter, proxyResp *services.GitHubP
 	}
 	w.WriteHeader(statusCode)
 	_, _ = io.Copy(w, body)
-}
-
-func extractBearerToken(r *http.Request) (string, *pkgerrors.APIError) {
-	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-	if authHeader == "" {
-		return "", pkgerrors.Unauthorized("missing Authorization header")
-	}
-
-	parts := strings.Fields(authHeader)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-		return "", pkgerrors.Unauthorized("Authorization header must use Bearer scheme")
-	}
-	return parts[1], nil
 }
 
 func isRestrictedGitHubProxyResponseHeader(headerName string) bool {

@@ -9,10 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/smithersai/smithers/packages/backend/internal/clusterdb"
-
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -20,51 +16,6 @@ import (
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 )
-
-type mockGitHubProxyRouteStore struct {
-	getWorkflowRunByRunIDFn     func(ctx context.Context, id int64) (db.WorkflowRun, error)
-	getRepoByIDFn               func(ctx context.Context, id int64) (db.Repository, error)
-	getUserByIDFn               func(ctx context.Context, id int64) (db.User, error)
-	getOrgByIDFn                func(ctx context.Context, id int64) (db.Organization, error)
-	insertGithubProxyAuditLogFn func(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error
-	auditRows                   []clusterdb.InsertGithubProxyAuditLogParams
-}
-
-func (m *mockGitHubProxyRouteStore) GetWorkflowRunByRunID(ctx context.Context, id int64) (db.WorkflowRun, error) {
-	if m.getWorkflowRunByRunIDFn != nil {
-		return m.getWorkflowRunByRunIDFn(ctx, id)
-	}
-	return db.WorkflowRun{}, nil
-}
-
-func (m *mockGitHubProxyRouteStore) GetRepoByID(ctx context.Context, id int64) (db.Repository, error) {
-	if m.getRepoByIDFn != nil {
-		return m.getRepoByIDFn(ctx, id)
-	}
-	return db.Repository{}, nil
-}
-
-func (m *mockGitHubProxyRouteStore) GetUserByID(ctx context.Context, id int64) (db.User, error) {
-	if m.getUserByIDFn != nil {
-		return m.getUserByIDFn(ctx, id)
-	}
-	return db.User{}, nil
-}
-
-func (m *mockGitHubProxyRouteStore) GetOrgByID(ctx context.Context, id int64) (db.Organization, error) {
-	if m.getOrgByIDFn != nil {
-		return m.getOrgByIDFn(ctx, id)
-	}
-	return db.Organization{}, nil
-}
-
-func (m *mockGitHubProxyRouteStore) InsertGithubProxyAuditLog(ctx context.Context, arg clusterdb.InsertGithubProxyAuditLogParams) error {
-	m.auditRows = append(m.auditRows, arg)
-	if m.insertGithubProxyAuditLogFn != nil {
-		return m.insertGithubProxyAuditLogFn(ctx, arg)
-	}
-	return nil
-}
 
 type mockGitHubProxyTokenIssuer struct {
 	createFn func(ctx context.Context, userID int64, owner string, repo string) (services.GitHubInstallationToken, error)
@@ -94,13 +45,7 @@ func (m *mockGitHubProxyTokenIssuer) CreateGitHubInstallationToken(ctx context.C
 	}, nil
 }
 
-func (m *mockGitHubProxyTokenIssuer) CreateGitHubInstallationTokenForRepositoryOwner(ctx context.Context, ownerUserID int64, ownerOrgID int64, owner string, repo string) (services.GitHubInstallationToken, error) {
-	return m.CreateGitHubInstallationToken(ctx, ownerUserID, owner, repo)
-}
-
-func TestGitHubProxyHandler_PostGitHubProxy_RoundTrip(t *testing.T) {
-	t.Setenv("SMITHERS_SANDBOX_TOKEN_SECRET", "sandbox-route-test-secret")
-
+func TestGitHubProxyHandler_PostRepoGitHubProxy_RoundTrip(t *testing.T) {
 	var gotGitHubAuth string
 	var gotGitHubMethod string
 	var gotGitHubPath string
@@ -124,22 +69,6 @@ func TestGitHubProxyHandler_PostGitHubProxy_RoundTrip(t *testing.T) {
 
 	t.Setenv("SMITHERS_GITHUB_APP_API_BASE_URL", gitHubServer.URL)
 
-	store := &mockGitHubProxyRouteStore{
-		getWorkflowRunByRunIDFn: func(ctx context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 901}, nil
-		},
-		getRepoByIDFn: func(ctx context.Context, id int64) (db.Repository, error) {
-			return db.Repository{
-				ID:     id,
-				Name:   "demo",
-				UserID: pgtype.Int8{Int64: 77, Valid: true},
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "acme"}, nil
-		},
-	}
-
 	tokenIssuer := &mockGitHubProxyTokenIssuer{
 		createFn: func(ctx context.Context, userID int64, owner string, repo string) (services.GitHubInstallationToken, error) {
 			return services.GitHubInstallationToken{
@@ -149,11 +78,8 @@ func TestGitHubProxyHandler_PostGitHubProxy_RoundTrip(t *testing.T) {
 		},
 	}
 
-	service := services.NewGitHubProxyService(store, tokenIssuer)
+	service := services.NewGitHubProxyService(tokenIssuer)
 	handler := &GitHubProxyHandler{Service: service}
-
-	sandboxToken, err := services.IssueSandboxToken(42)
-	require.NoError(t, err)
 
 	payload := map[string]any{
 		"method": "POST",
@@ -169,14 +95,12 @@ func TestGitHubProxyHandler_PostGitHubProxy_RoundTrip(t *testing.T) {
 	body, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	router := chi.NewRouter()
-	router.Post("/api/internal/github-proxy", handler.PostGitHubProxy)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+sandboxToken)
+	req := httptest.NewRequest(http.MethodPost, "/api/repos/acme/demo/github-proxy", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req = withRouteParams(req, map[string]string{"owner": "acme", "repo": "demo"})
+	req = withAuth(req, 77, "alice")
 	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, req)
+	handler.PostRepoGitHubProxy(rec, req)
 
 	require.Equal(t, http.StatusCreated, rec.Code)
 	assert.Equal(t, "application/json", rec.Header().Get("Content-Type"))
@@ -195,64 +119,6 @@ func TestGitHubProxyHandler_PostGitHubProxy_RoundTrip(t *testing.T) {
 	assert.Equal(t, int64(77), tokenIssuer.calls[0].userID)
 	assert.Equal(t, "acme", tokenIssuer.calls[0].owner)
 	assert.Equal(t, "demo", tokenIssuer.calls[0].repo)
-
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, int64(42), store.auditRows[0].WorkflowRunID)
-	assert.Equal(t, int32(http.StatusCreated), store.auditRows[0].StatusCode)
-	assert.Equal(t, "allow", store.auditRows[0].Decision)
-}
-
-func TestGitHubProxyHandler_PostGitHubProxy_DeniedPolicy(t *testing.T) {
-	t.Setenv("SMITHERS_SANDBOX_TOKEN_SECRET", "sandbox-route-test-secret")
-
-	store := &mockGitHubProxyRouteStore{
-		getWorkflowRunByRunIDFn: func(ctx context.Context, id int64) (db.WorkflowRun, error) {
-			return db.WorkflowRun{ID: id, RepositoryID: 901}, nil
-		},
-		getRepoByIDFn: func(ctx context.Context, id int64) (db.Repository, error) {
-			return db.Repository{
-				ID:     id,
-				Name:   "demo",
-				UserID: pgtype.Int8{Int64: 77, Valid: true},
-			}, nil
-		},
-		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
-			return db.User{ID: id, Username: "acme"}, nil
-		},
-	}
-
-	tokenIssuer := &mockGitHubProxyTokenIssuer{}
-	service := services.NewGitHubProxyService(store, tokenIssuer)
-	handler := &GitHubProxyHandler{Service: service}
-
-	sandboxToken, err := services.IssueSandboxToken(42)
-	require.NoError(t, err)
-
-	payload := map[string]any{
-		"method": "PUT",
-		"path":   "/repos/acme/demo/pulls/44/merge",
-	}
-	body, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+sandboxToken)
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-
-	handler.PostGitHubProxy(rec, req)
-
-	require.Equal(t, http.StatusForbidden, rec.Code)
-
-	var apiErr pkgerrors.APIError
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &apiErr))
-	assert.Equal(t, services.GitHubProxyForbiddenActionCode, apiErr.Code)
-	assert.Equal(t, "pull request merges are not allowed for workflows", apiErr.Message)
-
-	assert.Len(t, tokenIssuer.calls, 0)
-	require.Len(t, store.auditRows, 1)
-	assert.Equal(t, "deny", store.auditRows[0].Decision)
-	assert.Equal(t, int32(http.StatusForbidden), store.auditRows[0].StatusCode)
 }
 
 func TestGitHubProxyHandler_RateLimitRefusalsAreStructured(t *testing.T) {
@@ -286,22 +152,6 @@ func TestGitHubProxyHandler_RateLimitRefusalsAreStructured(t *testing.T) {
 			"reset_at":"2026-09-02T13:00:00Z"
 		}`, rec.Body.String())
 	}
-
-	t.Run("sandbox proxy", func(t *testing.T) {
-		t.Parallel()
-		handler := &GitHubProxyHandler{Service: githubProxyCovService{
-			proxyFn: func(context.Context, string, services.GitHubProxyRequest) (*services.GitHubProxyResponse, error) {
-				return nil, newRateLimitError()
-			},
-		}}
-		req := httptest.NewRequest(http.MethodPost, "/api/internal/github-proxy", bytes.NewBufferString(`{"method":"GET","path":"/rate_limit"}`))
-		req.Header.Set("Authorization", "Bearer sandbox-token")
-		rec := httptest.NewRecorder()
-
-		handler.PostGitHubProxy(rec, req)
-
-		assertResponse(t, rec)
-	})
 
 	t.Run("repository proxy", func(t *testing.T) {
 		t.Parallel()
@@ -351,7 +201,7 @@ func TestGitHubProxyHandler_PostRepoGitHubProxy_AllowsPullCreationWithServerToke
 		},
 	}
 
-	service := services.NewGitHubProxyService(&mockGitHubProxyRouteStore{}, tokenIssuer)
+	service := services.NewGitHubProxyService(tokenIssuer)
 	handler := &GitHubProxyHandler{Service: service}
 
 	payload := map[string]any{
@@ -423,7 +273,7 @@ func TestGitHubProxyHandler_PostRepoGitHubProxy_DeniesUnsafeStackActions(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tokenIssuer := &mockGitHubProxyTokenIssuer{}
-			service := services.NewGitHubProxyService(&mockGitHubProxyRouteStore{}, tokenIssuer)
+			service := services.NewGitHubProxyService(tokenIssuer)
 			handler := &GitHubProxyHandler{Service: service}
 
 			body, err := json.Marshal(tt.payload)
