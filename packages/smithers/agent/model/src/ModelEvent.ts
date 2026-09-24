@@ -466,6 +466,12 @@ export function settledMessage(
         break
       }
       case "retry":
+        parts.length = 0
+        indexes.clear()
+        stopReason = "aborted"
+        didSettle = false
+        responseId = undefined
+        itemIds = undefined
         break
       case "settle":
         if (!didSettle) {

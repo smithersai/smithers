@@ -213,7 +213,8 @@ export const recordModelStep = (
   policy: Schedule.Schedule<unknown, Model.ModelFailure>,
   budgetMillis?: number | undefined,
   correction?: number | undefined,
-  onUsage?: ((usage: ModelEvent.Usage) => void) | undefined
+  onUsage?: ((usage: ModelEvent.Usage) => void) | undefined,
+  onEvent?: ((event: ModelEvent.ModelEvent) => Effect.Effect<void>) | undefined
 ): Effect.Effect<RecordedModelStep, Model.ModelFailure> =>
   Effect.suspend(() => {
     const retries: Array<ModelEvent.ModelEvent> = []
@@ -231,21 +232,21 @@ export const recordModelStep = (
         (input.code !== "call_timeout" || overruns <= defaultModelOverruns)
       ),
       Schedule.tap(({ duration, input }) =>
-        Effect.sync(() => {
+        Effect.gen(function*() {
           attempt++
           // Only a retryable `ModelError` reaches the tap: the classification
           // above stops the schedule before it on anything else.
           const error = input as ModelError.ModelError
-          retries.push(
-            ModelEvent.ModelEvent.Retry({
-              type: "retry",
-              attempt,
-              code: error.code,
-              // Jitter produces a fractional millisecond. The whole millisecond
-              // is the honest resolution for a report to read.
-              delayMillis: Math.round(Duration.toMillis(duration))
-            })
-          )
+          const retry = ModelEvent.ModelEvent.Retry({
+            type: "retry",
+            attempt,
+            code: error.code,
+            // Jitter produces a fractional millisecond. The whole millisecond
+            // is the honest resolution for a report to read.
+            delayMillis: Math.round(Duration.toMillis(duration))
+          })
+          retries.push(retry)
+          if (onEvent !== undefined) yield* onEvent(retry)
         })
       )
     )
@@ -263,7 +264,7 @@ export const recordModelStep = (
                 ...Object.fromEntries(Object.entries(usage).filter(([, value]) => value !== undefined))
               }
               onUsage?.(combineUsage([...failedUsage, attemptUsage]))
-            })
+            }).pipe(Effect.andThen(onEvent?.(event) ?? Effect.void))
           ))
         )
       })

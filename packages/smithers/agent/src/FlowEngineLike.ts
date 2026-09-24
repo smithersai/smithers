@@ -76,6 +76,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
+import * as Queue from "effect/Queue"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
@@ -876,7 +877,8 @@ export const make = (
       )
 
     const sealStep = (
-      step: EngineLike.SealedModelStep
+      step: EngineLike.SealedModelStep,
+      onLive?: (event: ModelEvent.ModelEvent) => Effect.Effect<void>
     ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError.HarnessError> =>
       Stream.unwrap(
         Effect.gen(function*() {
@@ -936,7 +938,8 @@ export const make = (
                   correction,
                   (usage) => {
                     reported = usage
-                  }
+                  },
+                  onLive
                 ).pipe(
                   Effect.flatMap(unlessParked(quota)),
                   // The normal sealed result is accounted below, including on
@@ -968,6 +971,31 @@ export const make = (
             : Stream.concat(replay, Stream.fail(normalized.error))
         }).pipe(Effect.scoped, Effect.provide(context))
       )
+
+    const sealStepWithEvents: EngineLike.EngineLike["sealStepWithEvents"] = (step) =>
+      Stream.callback<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError.HarnessError>((queue) => {
+        let live = false
+        let settlement: ModelEvent.ModelEvent | undefined
+        return Effect.onExit(
+          Stream.runCollect(sealStep(step, (event) => {
+            live = true
+            if (event.type === "settle") {
+              settlement = event
+              return Effect.void
+            }
+            return Queue.offer(queue, event).pipe(Effect.asVoid)
+          })).pipe(Effect.flatMap((recorded) =>
+            live
+              ? Effect.gen(function*() {
+                const usage = [...recorded].filter((event) => event.type === "usage").at(-1)
+                if (usage !== undefined) yield* Queue.offer(queue, usage)
+                yield* Queue.offer(queue, settlement!)
+              })
+              : Effect.forEach(recorded, (event) => Queue.offer(queue, event), { discard: true })
+          )),
+          (exit) => Effect.asVoid(exit._tag === "Success" ? Queue.end(queue) : Queue.failCause(queue, exit.cause))
+        )
+      })
 
     const splice = (batch: Plan.Batch): Stream.Stream<Plan.SpliceEvent, HarnessError.HarnessError> =>
       Stream.fromIterable(batch.children).pipe(
@@ -1136,6 +1164,7 @@ export const make = (
 
     return EngineLike.make({
       sealStep,
+      sealStepWithEvents,
       splice,
       call,
       ...(admit === undefined ? {} : { admit }),

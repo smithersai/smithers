@@ -57,6 +57,7 @@ describe("ModelEvent", () => {
 
   it("folds accumulated stream content on settlement", () => {
     const settled = Events.settledMessage([
+      { type: "retry", attempt: 1, code: "provider_internal", delayMillis: 2_000 },
       { type: "text-start", id: "text" },
       { type: "text-delta", id: "text", text: "hello" },
       { type: "thinking-start", id: "thinking", signature: "sig" },
@@ -64,7 +65,6 @@ describe("ModelEvent", () => {
       { type: "tool-call-start", id: "call", name: "read" },
       { type: "tool-call-delta", id: "call", arguments: "{\"path\":\"a\"}" },
       { type: "usage", totalTokens: 9 },
-      { type: "retry", attempt: 1, code: "provider_internal", delayMillis: 2_000 },
       { type: "settle", stopReason: "tool-calls" }
     ])
     expect(settled.message).toMatchObject({
@@ -77,6 +77,16 @@ describe("ModelEvent", () => {
       ]
     })
     expect(settled.usage).toEqual({ totalTokens: 9 })
+  })
+
+  it("discards a failed attempt's partial text when the stream retries", () => {
+    const settled = Events.settledMessage([
+      { type: "text-delta", id: "first", text: "partial" },
+      { type: "retry", attempt: 1, code: "transport", delayMillis: 0 },
+      { type: "text-delta", id: "second", text: "complete" },
+      { type: "settle", stopReason: "stop" }
+    ])
+    expect(settled.message.content).toEqual([{ type: "text", text: "complete" }])
   })
 
   it("keeps two concurrently open text blocks separate and in order", () => {

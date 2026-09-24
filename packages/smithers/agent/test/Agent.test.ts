@@ -36,7 +36,21 @@ import type { PluginError } from "@smthrs/plugin/PluginError"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
-import { Cause, Deferred, Effect, Exit, Layer, Logger, Metric, Option, References, Schema, Scope, Stream } from "effect"
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Layer,
+  Logger,
+  Metric,
+  Option,
+  References,
+  Schedule,
+  Schema,
+  Scope,
+  Stream
+} from "effect"
 import type * as Crypto from "effect/Crypto"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it } from "vitest"
@@ -274,6 +288,7 @@ const collect = (options: {
   readonly seat?: Seat.Seat | undefined
   readonly fallbackSeats?: ReadonlyArray<Seat.Seat> | undefined
   readonly capacity?: Agent.Options["capacity"]
+  readonly modelRetryPolicy?: Agent.Options["modelRetryPolicy"]
   readonly registry: Registry.Registry
   readonly model: Model.Model
   readonly implementations?: ReadonlyMap<string, CellCalls.Implementation> | undefined
@@ -304,6 +319,7 @@ const collect = (options: {
       }),
       ...(options.fallbackSeats === undefined ? {} : { fallbackSeats: options.fallbackSeats }),
       ...(options.capacity === undefined ? {} : { capacity: options.capacity }),
+      ...(options.modelRetryPolicy === undefined ? {} : { modelRetryPolicy: options.modelRetryPolicy }),
       prompt: "write the first file",
       system: ["You are running inside a smoke test."],
       registry: options.registry,
@@ -335,6 +351,134 @@ const collect = (options: {
   }).pipe(Effect.provide(Agent.layer), Effect.provide(Safety.layer))
 
 describe("capacity seat chain", () => {
+  it("keeps the seat identity when a route cannot resolve", async () => {
+    let prepared = 0
+    let contacted = 0
+    const model = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          contacted++
+          return Stream.empty
+        })
+    })
+    const missing = {
+      prepare: () =>
+        Effect.sync(() => {
+          prepared++
+        }).pipe(Effect.andThen(Effect.fail(
+          new ModelError({ code: "no_route", message: "no route" })
+        )))
+    }
+    const outcome = await drive(collect({
+      model,
+      registry: registryOf([]),
+      seat: Seat.make({ id: "missing", modelId: "missing", model, route: missing, contextWindowTokens: 0 })
+    }))
+    expect(outcome._tag).toBe("failed")
+    expect(prepared).toBeGreaterThan(0)
+    expect(contacted).toBe(0)
+  })
+  it("streams a transport retry and keeps the settled reply free of the failed attempt", async () => {
+    let calls = 0
+    const completed = recordedCells([], ["ctx.done('complete')"])
+    const model = Model.make({
+      stream: (request) =>
+        calls++ === 0
+          ? Stream.concat(
+            Stream.make(ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "partial", text: "partial" })),
+            Stream.fail(new ModelError({ code: "transport", message: "socket closed" }))
+          )
+          : completed.stream(request)
+    })
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(collect({
+      model,
+      registry: registryOf([]),
+      sink: events,
+      modelRetryPolicy: Schedule.recurs(1)
+    }))
+    expect(outcome._tag).toBe("completed")
+    expect(calls).toBe(2)
+    expect(events.map((event) => event._tag)).toContain("model-retried")
+    const settled = events.find((event) => event._tag === "model-settled")
+    expect(JSON.stringify(settled)).not.toContain("partial")
+  })
+  it("delivers a model delta before the provider stream settles", async () => {
+    let release!: () => void
+    let sawDelta!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const delta = new Promise<void>((resolve) => {
+      sawDelta = resolve
+    })
+    const answer = recordedCells([], ["ctx.done('streamed')"])
+    const model = Model.make({
+      stream: (request) =>
+        Stream.concat(
+          Stream.make(ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "early", text: "early" })),
+          Stream.unwrap(Effect.promise(() => gate).pipe(Effect.as(answer.stream(request))))
+        )
+    })
+    const running = drive(collect({
+      model,
+      registry: registryOf([]),
+      observe: (event) =>
+        Effect.sync(() => {
+          if (
+            event._tag === "model-delta" && event.delta.type === "text-delta" && event.delta.text === "early"
+          ) sawDelta()
+        })
+    }))
+    try {
+      await Promise.race([
+        delta,
+        new Promise((_, reject) => setTimeout(() => reject(new Error("delta was buffered")), 2000))
+      ])
+    } finally {
+      release()
+    }
+    expect((await running)._tag).toBe("completed")
+  })
+
+  it("resets a partial reply before streaming the fallback seat", async () => {
+    const first = Model.make({
+      stream: () =>
+        Stream.concat(
+          Stream.make(ModelEvent.ModelEvent.TextDelta({ type: "text-delta", id: "partial", text: "partial" })),
+          Stream.fail(
+            new ModelError({ code: "rate_limited", message: "limited", retryAfterMillis: 60_000, httpStatus: 429 })
+          )
+        )
+    })
+    const second = recordedCells([], ["ctx.done('fallback')"])
+    const events: AgentEvent.AgentEvent[] = []
+    const outcome = await drive(collect({
+      model: first,
+      registry: registryOf([]),
+      sink: events,
+      seat: Seat.make({ id: "first", modelId: "first", model: first, route, contextWindowTokens: 0 }),
+      fallbackSeats: [Seat.make({
+        id: "second",
+        modelId: "second",
+        model: second,
+        route: { prepare: () => Effect.succeed({ ...prepared, routeId: "route-b" }) },
+        contextWindowTokens: 0
+      })]
+    }))
+    expect(outcome._tag).toBe("completed")
+    const tags = events.map((event) => event._tag)
+    const partial = events.findIndex((event) =>
+      event._tag === "model-delta" && event.delta.type === "text-delta" && event.delta.text === "partial"
+    )
+    const retried = tags.indexOf("model-retried", partial + 1)
+    const fallback = events.findIndex((event, index) =>
+      index > retried && event._tag === "model-delta" && event.delta.type === "text-delta"
+    )
+    expect(partial).toBeGreaterThanOrEqual(0)
+    expect(retried).toBeGreaterThan(partial)
+    expect(fallback).toBeGreaterThan(retried)
+  })
   it("cools every seat bound to the refused route", async () => {
     const contacted: Array<string> = []
     const refused = Model.make({
@@ -480,20 +624,146 @@ describe("capacity seat chain", () => {
       Effect.scoped,
       Effect.runPromise
     )
-    expect({
-      outcome: outcome._tag,
-      contacted,
-      transitions: events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked")
-    }).toEqual({
-      outcome: "completed",
-      contacted: ["first", "second", "first"],
-      transitions: [
-        "model-parked",
-        "model-unparked"
-      ]
-    })
+    expect(outcome._tag).toBe("completed")
+    expect(contacted).toEqual(["first", "second", "first"])
+    const transitions = events.map((event) => event._tag).filter((tag) =>
+      tag === "model-parked" || tag === "model-unparked"
+    )
+    expect(transitions.at(-2)).toBe("model-parked")
+    expect(transitions.at(-1)).toBe("model-unparked")
     expect(events.find((event) => event._tag === "model-parked")).toMatchObject({ wakeAt: 6_000, source: "reset" })
     expect(events.find((event) => event._tag === "model-unparked")).toMatchObject({ at: 6_000 })
+  })
+
+  it("starts retry-after at refusal time after a slow provider call", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    const completed = recordedCells([], ["ctx.done('done')"])
+    let calls = 0
+    const model = Model.make({
+      stream: (request) =>
+        Stream.unwrap(Effect.gen(function*() {
+          if (calls++ > 0) return completed.stream(request)
+          yield* TestClock.adjust("10 seconds")
+          return Stream.fail(
+            new ModelError({
+              code: "rate_limited",
+              message: "slow refusal",
+              retryAfterMillis: 5_000,
+              httpStatus: 429
+            })
+          )
+        }))
+    })
+    const outcome = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* TestClock.setTime(1_000)
+      let settled = Deferred.makeUnsafe<Outcome>()
+      yield* engine.register(driveFlow, () =>
+        Effect.onExit(
+          collect({ model, registry: registryOf([]), sink: events }),
+          (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+        ).pipe(Scope.provide(scope)))
+      yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
+      expect((yield* Deferred.await(settled))._tag).toBe("suspended")
+      expect(events.find((event) => event._tag === "model-parked")).toMatchObject({
+        wakeAt: 16_000,
+        source: "retry-after"
+      })
+      return yield* Deferred.await(settled)
+    }).pipe(
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+      Effect.provide(TestClock.layer()),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect(outcome._tag).toBe("suspended")
+    expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
+      .toEqual(["model-parked"])
+  })
+
+  it("pairs park and unpark when the provider's reset time is already past", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    const completed = recordedCells([], ["ctx.done('done')"])
+    let calls = 0
+    const model = Model.make({
+      stream: (request) =>
+        calls++ === 0
+          ? Stream.fail(
+            new ModelError({ code: "rate_limited", message: "window reopened", resetAtEpochMillis: 0, httpStatus: 429 })
+          )
+          : completed.stream(request)
+    })
+    const outcome = await drive(collect({ model, registry: registryOf([]), sink: events }))
+    expect(outcome._tag).toBe("completed")
+    expect(calls).toBe(2)
+    expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
+      .toEqual(["model-parked", "model-unparked"])
+  })
+
+  it("refuses a park beyond the caller's wait ceiling", async () => {
+    let calls = 0
+    const model = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          calls++
+          return Stream.fail(
+            new ModelError({
+              code: "rate_limited",
+              message: "long window",
+              resetAtEpochMillis: Date.now() + 60_000,
+              httpStatus: 429
+            })
+          )
+        })
+    })
+    const outcome = await drive(
+      collect({ model, registry: registryOf([]), capacity: { park: true, maxParkMillis: 1000 } })
+    )
+    expect(outcome._tag).toBe("failed")
+    expect(calls).toBe(1)
+  })
+
+  it("reports a text-derived reset as a default park", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    const model = Model.make({
+      stream: () =>
+        Stream.fail(
+          new ModelError({
+            code: "rate_limited",
+            message: "retry after 30 seconds",
+            httpStatus: 429
+          })
+        )
+    })
+    const outcome = await drive(collect({ model, registry: registryOf([]), sink: events }))
+    expect(outcome._tag).toBe("suspended")
+    expect(events.find((event) => event._tag === "model-parked")).toMatchObject({ source: "default" })
+  })
+
+  it("backs off when a seat refuses again immediately after an in-memory park", async () => {
+    const events: AgentEvent.AgentEvent[] = []
+    let calls = 0
+    const model = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          calls++
+          return Stream.fail(
+            new ModelError(
+              calls === 1
+                ? { code: "rate_limited", message: "short wait", retryAfterMillis: 1, httpStatus: 429 }
+                : { code: "rate_limited", message: "still limited", resetAtEpochMillis: 0, httpStatus: 429 }
+            )
+          )
+        })
+    })
+    const outcome = await drive(collect({ model, registry: registryOf([]), sink: events }))
+    expect(outcome._tag).toBe("suspended")
+    expect(calls).toBe(2)
+    const parks = events.filter((event) => event._tag === "model-parked")
+    expect(parks).toHaveLength(2)
+    expect(parks[1]!.wakeAt - parks[0]!.wakeAt).toBeGreaterThan(60_000)
   })
 })
 
@@ -923,6 +1193,7 @@ describe("Agent.run", () => {
         registry: registryOf([]),
         model: recorded(requests),
         maxFrames: 1,
+        capacity: { park: false },
         plugins: [makePlugin<FlowsHooks>({
           name: "request-addendum",
           hooks: {
@@ -961,6 +1232,7 @@ describe("Agent.run", () => {
         registry: registryOf([]),
         model: recorded(requests),
         maxFrames: 1,
+        capacity: { park: false },
         sink: events,
         plugins: [makePlugin<FlowsHooks>({
           name: "fails-once",

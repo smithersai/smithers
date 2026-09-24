@@ -76,7 +76,7 @@ import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
+import type * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
@@ -439,7 +439,11 @@ const withRequestPlugins = (
         )
     })
   return EngineLike.make({
-    sealStep: (step) =>
+    sealStep: engine.sealStep,
+    sealStepWithEvents: (
+      step: EngineLike.SealedModelStep,
+      emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
+    ) =>
       Stream.unwrap(
         rewrite(step.request).pipe(
           Effect.mapError((cause) =>
@@ -450,43 +454,14 @@ const withRequestPlugins = (
             })
           ),
           Effect.map((request) =>
-            engine.sealStep({
+            engine.sealStepWithEvents!({
               request,
-              keyMaterial: {
-                ...step.keyMaterial,
-                body: { _tag: "ModelCall", request }
-              },
-              // A plugin may rewrite what is asked; it does not get to change
-              // how long the run will wait for the answer.
+              keyMaterial: { ...step.keyMaterial, body: { _tag: "ModelCall", request } },
               modelCallMs: step.modelCallMs
-            })
+            }, emit)
           )
         )
       ),
-    ...(engine.sealStepWithEvents === undefined ? {} : {
-      sealStepWithEvents: (
-        step: EngineLike.SealedModelStep,
-        emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
-      ) =>
-        Stream.unwrap(
-          rewrite(step.request).pipe(
-            Effect.mapError((cause) =>
-              new HarnessError({
-                code: "engine_failed",
-                message: "A cell model-request plugin failed",
-                cause
-              })
-            ),
-            Effect.map((request) =>
-              engine.sealStepWithEvents!({
-                request,
-                keyMaterial: { ...step.keyMaterial, body: { _tag: "ModelCall", request } },
-                modelCallMs: step.modelCallMs
-              }, emit)
-            )
-          )
-        )
-    }),
     splice: engine.splice,
     call: engine.call,
     ...(engine.admit === undefined ? {} : { admit: engine.admit }),
@@ -496,7 +471,7 @@ const withRequestPlugins = (
     // The request the provider is sent is the one the waterfall hands on, so
     // that is the one the record of the call has to hold. A waterfall that
     // fails has no request to hand on, so it resolves to none and the call
-    // leaves no record: `sealStep` reads the failure held above and reports
+    // leaves no record: the event-aware seal reads the failure held above and reports
     // it, without asking the waterfall again.
     resolve: (request) =>
       rewrite(request).pipe(
@@ -516,17 +491,18 @@ const withCapacity = (
   const primary = seats[0]!.engine
   const cooling = new Map<string, QuotaPolicy.Park>()
   const policy = QuotaPolicy.makeDefault({ defaultWaitMillis: 15 * 60_000, maxWaitMillis: Infinity })
+  let parkCount = 0
   const sealStepWithEvents = (
     step: EngineLike.SealedModelStep,
     emit: (event: AgentEvent.AgentEvent) => Effect.Effect<void>
-  ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> =>
-    Stream.unwrap(
-      Effect.gen(function*() {
-        let lastError: Model.ModelFailure | HarnessError | undefined
-        let previous = -1
-        let cycle = 0
-        const tried = new Set<number>()
-        for (;;) {
+  ): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> => {
+    let lastError: Model.ModelFailure | HarnessError | undefined
+    let previous = -1
+    let cycle = 0
+    const tried = new Set<number>()
+    const attempt = (): Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure | HarnessError> =>
+      Stream.unwrap(
+        Effect.gen(function*() {
           const now = yield* Clock.currentTimeMillis
           const entries = yield* Effect.forEach(seats, ({ seat, engine }) => {
             const request = ModelRequest.ModelRequest.make({ ...step.request, modelId: seat.modelId })
@@ -549,26 +525,24 @@ const withCapacity = (
               capacity?.park === false ||
               (capacity?.maxParkMillis !== undefined && earliest.park.wakeAt - now > capacity.maxParkMillis)
             ) {
-              return Stream.fail(
-                lastError ?? new HarnessError({ code: "model_failed", message: "All model seats are cooling" })
-              )
+              return Stream.fail(lastError!)
             }
             const source = earliest.park.source === "text" ? "default" : earliest.park.source
-            const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))?.code ?? "rate_limited"
+            const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!.code
+            yield* emit(
+              new AgentEvent.ModelParked({
+                eventType: AgentEvent.eventType.modelParked,
+                seat: earliest.entry.seat.id,
+                wakeAt: earliest.park.wakeAt,
+                source,
+                code
+              })
+            )
             if (earliest.park.wakeAt > now) {
-              yield* emit(
-                new AgentEvent.ModelParked({
-                  eventType: AgentEvent.eventType.modelParked,
-                  seat: earliest.entry.seat.id,
-                  wakeAt: earliest.park.wakeAt,
-                  source,
-                  code
-                })
-              )
               yield* FlowRuntime.annotateWaiting({ reason: "quota", wakeAt: earliest.park.wakeAt })
             }
             yield* DurableClock.sleep({
-              name: `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}`,
+              name: `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}/${parkCount++}`,
               duration: Duration.millis(Math.max(0, earliest.park.wakeAt - now)),
               inMemoryThreshold: 1
             })
@@ -584,7 +558,7 @@ const withCapacity = (
             cooling.clear()
             lastError = undefined
             previous = -1
-            continue
+            return attempt()
           }
           const entry = entries[selected]!
           if (previous >= 0 && previous !== selected && lastError !== undefined) {
@@ -611,22 +585,45 @@ const withCapacity = (
               ]
             }
           }
-          const exit = yield* Effect.exit(Stream.runCollect(entry.engine.sealStep(changed)))
-          if (Exit.isSuccess(exit)) return Stream.fromIterable(exit.value)
-          const error = Cause.squash(exit.cause)
-          const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(error))
-          const park = model === undefined ? Option.none<QuotaPolicy.Park>() : policy.classify(model, now)
-          if (Option.isNone(park)) return Stream.failCause(exit.cause)
-          lastError = error as Model.ModelFailure | HarnessError
-          cooling.set(entry.key, {
-            ...park.value,
-            wakeAt: cycle > 0 && park.value.wakeAt <= now ? now + 15 * 60_000 : park.value.wakeAt
-          })
-          tried.add(selected)
-          previous = selected
-        }
-      }).pipe(Effect.provideContext(services))
-    )
+          let emitted = false
+          return entry.engine.sealStepWithEvents!(changed, emit).pipe(
+            Stream.tap(() =>
+              Effect.sync(() => {
+                emitted = true
+              })
+            ),
+            Stream.catchCause((cause) =>
+              Stream.unwrap(Effect.gen(function*() {
+                const error = Cause.squash(cause)
+                const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(error))
+                const afterCall = yield* Clock.currentTimeMillis
+                const park = model === undefined ? Option.none<QuotaPolicy.Park>() : policy.classify(model, afterCall)
+                if (Option.isNone(park)) return Stream.failCause(cause)
+                if (emitted) {
+                  yield* emit(
+                    new AgentEvent.ModelRetried({
+                      eventType: AgentEvent.eventType.modelRetried,
+                      attempt: tried.size + 1,
+                      code: model!.code,
+                      delayMillis: 0
+                    })
+                  )
+                }
+                lastError = error as Model.ModelFailure | HarnessError
+                cooling.set(entry.key, {
+                  ...park.value,
+                  wakeAt: cycle > 0 && park.value.wakeAt <= afterCall ? afterCall + 15 * 60_000 : park.value.wakeAt
+                })
+                tried.add(selected)
+                previous = selected
+                return attempt()
+              }))
+            )
+          )
+        }).pipe(Effect.provideContext(services))
+      )
+    return attempt()
+  }
   return EngineLike.make({
     ...primary,
     sealStepWithEvents
