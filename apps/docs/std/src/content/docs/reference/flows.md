@@ -214,20 +214,20 @@ Runs a shell command line, or a script delivered to an interpreter as data.
 `Input` is a union on `mode`. An omitted `mode` decodes as `"unhermetic"`, the
 envelope `bash` declares for every call.
 
-| Input         | Type                           | Meaning                                           |
-| ------------- | ------------------------------ | ------------------------------------------------- |
-| `mode`        | `"hermetic"` or `"unhermetic"` | Whether the call declares an envelope. Optional.  |
-| `command`     | string, optional               | Shell command line. Give this or `script`.        |
-| `script`      | string, optional               | Program text delivered on standard input.         |
-| `interpreter` | string, optional               | Program that reads `script`. Defaults to `bash`.  |
-| `args`        | array of string, optional      | Arguments passed to the script as data.           |
-| `stdin`       | string, optional               | Text written to the command's standard input.     |
-| `container`   | string, optional               | Run inside this container. Requires `unhermetic`. |
-| `reads`       | array of non-empty string      | Paths the command may read. Hermetic mode only.   |
-| `writes`      | array of non-empty string      | Paths the command may write. Hermetic mode only.  |
+| Input         | Type                           | Meaning                                                                                      |
+| ------------- | ------------------------------ | -------------------------------------------------------------------------------------------- |
+| `mode`        | `"hermetic"` or `"unhermetic"` | Whether the call declares an envelope. Optional.                                             |
+| `command`     | string, optional               | Shell command line. Give this or `script`.                                                   |
+| `script`      | string, optional               | Program text delivered on standard input.                                                    |
+| `interpreter` | string, optional               | Program that reads `script`. Defaults to `bash`.                                             |
+| `args`        | array of string, optional      | Arguments passed to the script as data.                                                      |
+| `stdin`       | string, optional               | Text written to the command's standard input.                                                |
+| `container`   | string, optional               | Run inside this container. Requires `unhermetic`.                                            |
+| `reads`       | array of non-empty string      | Paths the command may read. Hermetic mode only.                                              |
+| `writes`      | array of non-empty string      | Paths the command may write. Hermetic mode only.                                             |
 | `cwd`         | string, optional               | Working directory; use `{ at: ctx.base }` as the third `ctx.call` argument for a checkpoint. |
-| `env`         | record of string, optional     | Environment variables.                            |
-| `timeoutMs`   | number, optional               | Numeric wall-clock milliseconds. Defaults to 600,000. |
+| `env`         | record of string, optional     | Environment variables.                                                                       |
+| `timeoutMs`   | number, optional               | Numeric wall-clock milliseconds. Defaults to 600,000.                                        |
 
 | Output                                     | Type                           | Meaning                                                               |
 | ------------------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
