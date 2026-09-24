@@ -82,6 +82,25 @@ const exercise = (fs: EffectFileSystem.FileSystem) =>
   })
 
 describe("FileSystem.confined", () => {
+  it.effect("keeps the host's exact identity when public stat has no numeric inode", () =>
+    Effect.gen(function*() {
+      const { host, requests } = recordingHost(Option.none())
+      const observed: Array<string> = []
+      FileSystem.withAtomicFileSystem(host, {
+        ...host[FileSystem.AtomicFileSystemTypeId],
+        identifyRoot: (path) =>
+          Effect.sync(() => {
+            observed.push(path)
+            return "7:9007199254740993"
+          })
+      })
+      const view = yield* FileSystem.confined(host, "/alias")
+      yield* view.readFile("a")
+      yield* view.readFile("b")
+      expect(observed).toEqual(["/canonical"])
+      expect(requests.map((request) => request.rootIdentity)).toEqual(["7:9007199254740993", "7:9007199254740993"])
+    }).pipe(Effect.provide(EffectPath.layer)))
+
   it.effect("sends exactly the requests the guarded layer sends, without consulting grants", () =>
     Effect.gen(function*() {
       const viaLayer = recordingHost()

@@ -7,6 +7,7 @@
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem, Layer, PlatformError, Semaphore } from "effect"
+import { stat } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import { packageRoot, resolveDefaultExecutable, stagePackaged } from "./internal/AtomicFileSystemExecutable.ts"
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
@@ -319,6 +320,20 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
       (fileSystem) =>
         KernelFileSystem.withAtomicFileSystem(fileSystem, {
           execute: execute(options, settings),
+          identifyRoot: (path) =>
+            Effect.tryPromise({
+              try: async () => {
+                const info = await stat(path, { bigint: true })
+                return `${info.dev}:${info.ino}`
+              },
+              catch: (cause) =>
+                Protocol.failure({ operation: "stat", path }, cause, {
+                  ok: false,
+                  code: (cause as NodeJS.ErrnoException).code ?? null,
+                  message: (cause as NodeJS.ErrnoException).message,
+                  syscall: "stat"
+                })
+            }),
           batchLimits: {
             size: "invalid" in settings ? defaultLimits.batchSize : settings.limits.batchSize,
             response: "invalid" in settings ? defaultLimits.response : settings.limits.response

@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 import { expect } from "@effect/vitest"
-import { Effect, type FileSystem, Option, Result } from "effect"
+import { Effect, type FileSystem, Option, Path, Result } from "effect"
 import * as KernelFileSystem from "../FileSystem.ts"
 
 /**
@@ -21,20 +21,22 @@ export const check = (fs: FileSystem.FileSystem, root: string) =>
       expect(KernelFileSystem.batch(fs)).toBeUndefined()
       return
     }
+    const path = yield* Path.Path
     const boundaryRoot = yield* fs.realPath(root)
-    const info = yield* fs.stat(root)
-    const rootIdentity = `${info.dev}:${Option.getOrThrow(info.ino)}`
+    const rootIdentity = atomic.identifyRoot === undefined
+      ? yield* Effect.map(fs.stat(root), (info) => `${info.dev}:${Option.getOrThrow(info.ino)}`)
+      : yield* atomic.identifyRoot(boundaryRoot)
     const response = yield* atomic.execute({
       operation: "batch",
       boundaryRoot,
       logicalRoot: root,
       rootIdentity,
       requests: [
-        { operation: "digest", path: `${root}/source.txt`, content: true },
-        { operation: "stat", path: `${root}/source.txt` },
+        { operation: "digest", path: path.join(root, "source.txt"), content: true },
+        { operation: "stat", path: path.join(root, "source.txt") },
         { operation: "readDirectory", path: root },
-        { operation: "glob", path: `${root}/*.txt`, root },
-        { operation: "digest", path: `${root}/absent` }
+        { operation: "glob", path: path.join(root, "*.txt"), root },
+        { operation: "digest", path: path.join(root, "absent") }
       ]
     })
     expect(response.rootIdentity).toBe(rootIdentity)
@@ -51,6 +53,6 @@ export const check = (fs: FileSystem.FileSystem, root: string) =>
       info: { type: "File", size: 13n }
     })
     expect(Result.getOrThrow(entries[2]!.result)).toEqual({ operation: "readDirectory", paths: ["source.txt"] })
-    expect(Result.getOrThrow(entries[3]!.result)).toEqual({ operation: "glob", paths: [`${root}/source.txt`] })
+    expect(Result.getOrThrow(entries[3]!.result)).toEqual({ operation: "glob", paths: [path.join(root, "source.txt")] })
     expect(entries[4]!.result).toMatchObject({ _tag: "Failure", failure: { reason: { _tag: "NotFound" } } })
   })

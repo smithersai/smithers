@@ -1,11 +1,17 @@
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, FileSystem } from "effect"
+import * as NativeFs from "node:fs/promises"
 import { chmod, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as AtomicFileSystem from "../src/AtomicFileSystem.ts"
 import { usableExecutable } from "../src/internal/AtomicFileSystemTransport.ts"
+
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>()
+  return { ...actual, stat: vi.fn(actual.stat) }
+})
 
 const roots: Array<string> = []
 const temporary = async () => {
@@ -15,6 +21,7 @@ const temporary = async () => {
 }
 afterEach(async () => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 const request: KernelFileSystem.AtomicRequest = { operation: "exists", path: "/a" }
@@ -27,6 +34,30 @@ const refused = (options: AtomicFileSystem.Options, input = request) =>
   Effect.runPromise(Effect.flip(execute(options, input)))
 
 describe("atomic helper configuration admission", () => {
+  it("pins exact BigInt identities and preserves a failed root observation", async () => {
+    const root = await temporary()
+    const actual = await NativeFs.stat(root, { bigint: true })
+    const identify = (path: string) =>
+      Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        return yield* (fs as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
+          .identifyRoot!(path)
+      }).pipe(Effect.provide(AtomicFileSystem.layerWith({})))
+    expect(await Effect.runPromise(identify(root))).toBe(`${actual.dev}:${actual.ino}`)
+    const spy = vi.spyOn(NativeFs, "stat").mockResolvedValueOnce({ ...actual, dev: 7n, ino: 9007199254740993n })
+    expect(await Effect.runPromise(identify(root))).toBe("7:9007199254740993")
+    expect(spy).toHaveBeenLastCalledWith(root, { bigint: true })
+    spy.mockRejectedValueOnce(new Error("root stat unavailable"))
+    expect(await Effect.runPromise(Effect.flip(identify(root)))).toMatchObject({
+      reason: { _tag: "PermissionDenied", description: expect.stringContaining("root stat unavailable") }
+    })
+    spy.mockRestore()
+    const absent = join(root, "absent")
+    expect(await Effect.runPromise(Effect.flip(identify(absent)))).toMatchObject({
+      reason: { _tag: "NotFound", method: "stat", pathOrDescriptor: absent, syscall: "stat" }
+    })
+  })
+
   it.each([
     { limits: { content: 0 } },
     { limits: { request: 256 * 1024 * 1024 + 1 } },

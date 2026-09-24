@@ -58,7 +58,7 @@ describe("confined read batches", () => {
     await Effect.runPromise(
       Effect.gen(function*() {
         yield* checkFileSystemBatch(yield* FileSystem.FileSystem, root)
-      }).pipe(Effect.provide(AtomicFileSystem.layer))
+      }).pipe(Effect.provide(AtomicFileSystem.layer), Effect.provide(NodePath.layer))
     )
   })
   it.each([15, 150, 257])("starts one helper per 128-member batch over %i paths", async (count) => {

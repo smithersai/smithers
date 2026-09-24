@@ -62,6 +62,7 @@ const swappingHost = (swap: () => Promise<void>) =>
       const atomic = (fileSystem as KernelFileSystem.AtomicHostFileSystem)[KernelFileSystem.AtomicFileSystemTypeId]
       let swapped = false
       return KernelFileSystem.withAtomicFileSystem(fileSystem, {
+        ...atomic,
         execute: (request) =>
           Effect.promise(async () => {
             if (!swapped) {
@@ -96,7 +97,7 @@ describe("Node atomic filesystem", () => {
           yield* fs.chmod(temporary, 0o640)
           yield* fs.rename(temporary, canonical)
           expect(yield* fs.readFileString(join(alias, "original"))).toBe("after")
-          expect((yield* fs.stat(canonical)).mode & 0o777).toBe(0o640)
+          expect((yield* fs.stat(canonical)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
         })
       )
     }))
@@ -111,7 +112,7 @@ describe("Node atomic filesystem", () => {
         Effect.gen(function*() {
           const fs = yield* FileSystem.FileSystem
           yield* fs.chmod(file, 0o640)
-          expect((yield* fs.stat(file)).mode & 0o777).toBe(0o640)
+          expect((yield* fs.stat(file)).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
           yield* fs.chown(file, -1, -1)
           expect(yield* fs.readFileString(file)).toBe("keep")
           expect((yield* Effect.flip(fs.chmod(file, -1))).reason._tag).toBe("Unknown")
@@ -124,7 +125,7 @@ describe("Node atomic filesystem", () => {
           }
         })
       )
-      expect((yield* Effect.promise(() => lstat(file))).mode & 0o777).toBe(0o640)
+      expect((yield* Effect.promise(() => lstat(file))).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o640)
     }))
 
   it.live("executes every descriptor-relative operation without path re-resolution", () =>
@@ -162,11 +163,11 @@ describe("Node atomic filesystem", () => {
       expect(outcome).toMatchObject({
         absent: false,
         bytesValue: [1, 2, 3],
-        linkTarget: "nested/text.txt",
+        linkTarget: join("nested", "text.txt"),
         present: true,
         textValue: "hello"
       })
-      expect(outcome.real).toMatch(/nested\/text\.txt$/)
+      expect(outcome.real).toMatch(/nested[\\/]text\.txt$/)
       expect(outcome.info.type).toBe("File")
       expect(outcome.entries).toContain("nested/text.txt")
       expect(outcome.matches).toEqual([join(root, "nested/text.txt")])
@@ -766,7 +767,7 @@ describe("Node atomic filesystem", () => {
         // delimiters.
         ["[!(]*", undefined],
         ["**/[!(]*.txt", undefined],
-        ["[?(].txt", undefined],
+        ["[0?(].txt", undefined],
         // Node drops backslashes from an absolute selector and from excludes,
         // leaving the following wildcard active.
         ["\\*.txt", undefined],
@@ -830,7 +831,7 @@ describe("Node atomic filesystem", () => {
         await writeFile(join(root, "top.txt"), "")
         await writeFile(join(root, "a-b.txt"), "")
         await writeFile(join(root, "(.txt"), "")
-        await writeFile(join(root, "?.txt"), "")
+        await writeFile(join(root, "0.txt"), "")
         await writeFile(join(root, ".dot.txt"), "")
         await writeFile(join(root, ".hidden", "in.txt"), "")
         await writeFile(join(root, "nested", "mid.txt"), "")
@@ -860,7 +861,9 @@ describe("Node atomic filesystem", () => {
             // runs seed two different roots, and an absolute exclude would put
             // one of them into the label and make every row differ.
             rows.push(
-              `${index} ${pattern} -> ${found.map((v) => relative(root, v) || ".").sort().join(" ")}`
+              `${index} ${pattern} -> ${
+                found.map((v) => relative(root, v).replaceAll("\\", "/") || ".").sort().join(" ")
+              }`
             )
           }
           return rows
@@ -993,7 +996,7 @@ describe("Node atomic filesystem", () => {
       yield* Effect.promise(() => writeFile(join(root, "top.txt"), ""))
       yield* Effect.promise(() => writeFile(join(root, "a-b.txt"), ""))
       yield* Effect.promise(() => writeFile(join(root, "(.txt"), ""))
-      yield* Effect.promise(() => writeFile(join(root, "?.txt"), ""))
+      yield* Effect.promise(() => writeFile(join(root, "0.txt"), ""))
       yield* Effect.promise(() => writeFile(join(root, ".dot.txt"), ""))
       yield* Effect.promise(() => writeFile(join(root, ".hidden", "in.txt"), ""))
       yield* Effect.promise(() => writeFile(join(root, "nested", "mid.txt"), ""))
@@ -1008,7 +1011,7 @@ describe("Node atomic filesystem", () => {
           const glob = (pattern: string, exclude?: ReadonlyArray<string>) =>
             Effect.map(
               fs.glob(join(root, pattern), exclude === undefined ? { root } : { exclude, root }),
-              (rows) => rows.map((v) => relative(root, v) || ".").sort()
+              (rows) => rows.map((v) => relative(root, v).replaceAll("\\", "/") || ".").sort()
             )
           return {
             caseSelector: yield* glob("**/*.TXT"),
@@ -1027,7 +1030,7 @@ describe("Node atomic filesystem", () => {
       expect(found.caseSelector).toEqual([])
       expect(found.caseExclude).toEqual([
         "(.txt",
-        "?.txt",
+        "0.txt",
         "a-b.txt",
         "nested/deep/low.txt",
         "nested/mid.txt",
@@ -1035,7 +1038,7 @@ describe("Node atomic filesystem", () => {
       ])
       expect(found.trailingGlobstarWildcardSelector).toEqual([
         "(.txt",
-        "?.txt",
+        "0.txt",
         "a-b.txt",
         "nested",
         "top.txt"
@@ -1043,14 +1046,14 @@ describe("Node atomic filesystem", () => {
       expect(found.trailingGlobstarBareSelector).toEqual([
         "(.txt",
         ".",
-        "?.txt",
+        "0.txt",
         "a-b.txt",
         "nested",
         "top.txt"
       ])
       expect(found.trailingGlobstarRoot).toEqual(["."])
-      expect(found.directoryOnlyExclusion).toEqual(["(.txt", ".", "?.txt", "a-b.txt", "top.txt"])
-      expect(found.directoryOnlyTextExclusion).toEqual(["(.txt", "?.txt", "a-b.txt", "top.txt"])
+      expect(found.directoryOnlyExclusion).toEqual(["(.txt", ".", "0.txt", "a-b.txt", "top.txt"])
+      expect(found.directoryOnlyTextExclusion).toEqual(["(.txt", "0.txt", "a-b.txt", "top.txt"])
       expect(found.dottedAfterGlobstar).toEqual([".dot.txt", ".hidden", "nested/.deep.txt"])
       expect(found.dottedLeafAfterGlobstar).toEqual(["nested/.deep.txt"])
     }))
@@ -1096,7 +1099,7 @@ describe("Node atomic filesystem", () => {
   it.live("preserves the native empty answer for a relative selector containing a backslash", () =>
     Effect.gen(function*() {
       const root = yield* Effect.promise(async () => realpath(await temporaryDirectory()))
-      const info = yield* Effect.promise(() => lstat(root))
+      const info = yield* Effect.promise(() => lstat(root, { bigint: true }))
       yield* Effect.promise(() => writeFile(join(root, "a.txt"), ""))
       const native = yield* Effect.promise(async () => {
         const rows: Array<string> = []
@@ -1129,7 +1132,7 @@ describe("Node atomic filesystem", () => {
   it.live("refuses brace expansion before pending work reaches Python's recursion limit", () =>
     Effect.gen(function*() {
       const root = yield* Effect.promise(async () => realpath(await temporaryDirectory()))
-      const info = yield* Effect.promise(() => lstat(root))
+      const info = yield* Effect.promise(() => lstat(root, { bigint: true }))
       const pattern = "{,a}".repeat(1024)
       // Drive the atomic extension directly because the kernel turns a
       // relative pattern into an absolute capability resource first, which
@@ -1341,7 +1344,7 @@ describe("Node atomic filesystem", () => {
       // The file-type bits survive, which is what the mask used to discard.
       expect((atomic[0] as FileSystem.File.Info).mode & 0o170000).toBe(0o100000)
       expect((atomic[2] as FileSystem.File.Info).mode & 0o170000).toBe(0o040000)
-      expect((atomic[1] as FileSystem.File.Info).mode & 0o777).toBe(0o755)
+      expect((atomic[1] as FileSystem.File.Info).mode & 0o777).toBe(process.platform === "win32" ? 0o666 : 0o755)
     }))
 
   /**

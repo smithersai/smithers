@@ -200,6 +200,8 @@ export type AtomicHandlers = {
  * @category security
  */
 export interface AtomicFileSystem {
+  /** Exact composition-time identity when native file IDs exceed numeric precision. */
+  readonly identifyRoot?: ((path: string) => Effect.Effect<string, PlatformError.PlatformError>) | undefined
   readonly execute: <R extends AtomicRequest>(
     request: R
   ) => Effect.Effect<AtomicResult<R>, PlatformError.PlatformError>
@@ -327,6 +329,16 @@ const dispatch = (handlers: AtomicHandlers): AtomicFileSystem["execute"] => {
   }
 }
 
+/** Prefer the host's exact file ID over the public adapter's optional numeric inode. */
+const identifyRoot = (
+  atomic: AtomicFileSystem,
+  fileSystem: EffectFileSystem.FileSystem,
+  path: string
+): Effect.Effect<Option.Option<string>, PlatformError.PlatformError> =>
+  atomic.identifyRoot === undefined
+    ? Effect.map(fileSystem.stat(path), (info) => Option.map(info.ino, (ino) => `${info.dev}:${ino}`))
+    : Effect.map(atomic.identifyRoot(path), Option.some)
+
 /** The root a descriptor-relative request is resolved against, captured once. */
 interface PinnedRoot {
   readonly boundaryRoot: string
@@ -439,9 +451,9 @@ export const confined = (
     if (atomic === undefined) return yield* Effect.fail(unconfined("confined", logicalRoot))
     if (atomic.isolated !== undefined) return fileSystem
     const boundaryRoot = yield* fileSystem.realPath(logicalRoot)
-    const info = yield* fileSystem.stat(boundaryRoot)
-    if (Option.isNone(info.ino)) return yield* Effect.fail(unconfined("confined", logicalRoot))
-    const run = pinned(atomic, { boundaryRoot, logicalRoot, rootIdentity: `${info.dev}:${info.ino.value}` })
+    const rootIdentity = yield* identifyRoot(atomic, fileSystem, boundaryRoot)
+    if (Option.isNone(rootIdentity)) return yield* Effect.fail(unconfined("confined", logicalRoot))
+    const run = pinned(atomic, { boundaryRoot, logicalRoot, rootIdentity: rootIdentity.value })
     const normalize = (value: string): string => path.resolve(logicalRoot, value)
     const refuse = (method: string, value: string): Effect.Effect<never, PlatformError.PlatformError> =>
       Effect.fail(unconfined(method, normalize(value)))
@@ -666,12 +678,9 @@ export const layer: Layer.Layer<
     const boundaryRoot = yield* fileSystem.realPath(logicalRoot)
     // Descriptor-relative hosts need the composition-time identity even when
     // they expose no batching. Already-isolated volumes need no native inode.
-    const boundaryInfo = atomic === undefined || (atomic.isolated !== undefined && atomic.batchLimits === undefined)
-      ? undefined
-      : yield* fileSystem.stat(boundaryRoot)
-    const rootIdentity = boundaryInfo === undefined
+    const rootIdentity = atomic === undefined || (atomic.isolated !== undefined && atomic.batchLimits === undefined)
       ? Option.none<string>()
-      : Option.map(boundaryInfo.ino, (ino) => `${boundaryInfo.dev}:${ino}`)
+      : yield* identifyRoot(atomic, fileSystem, boundaryRoot)
     const root: PinnedRoot = { boundaryRoot, logicalRoot, rootIdentity: Option.getOrUndefined(rootIdentity) }
     const refuse = (method: string, resource: string) => (error: PermissionError): PlatformError.PlatformError =>
       toPlatformError({ module: "FileSystem", method, pathOrDescriptor: resource, error })
@@ -1217,10 +1226,10 @@ export const layer: Layer.Layer<
         // handles, binding both names to the same captured descriptor.
         const expectedRoot = rootIdentity.value
         const verifyRoot = () =>
-          fileSystem.stat(logicalRoot).pipe(
+          identifyRoot(atomic, fileSystem, logicalRoot).pipe(
             Effect.mapError(rootChanged),
             Effect.flatMap((current) =>
-              Option.isSome(current.ino) && `${current.dev}:${current.ino.value}` === expectedRoot
+              Option.isSome(current) && current.value === expectedRoot
                 ? Effect.void
                 : Effect.fail(rootChanged(new Error("workspace descriptor identity changed")))
             )

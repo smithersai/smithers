@@ -28,7 +28,13 @@ const batchExecutor = (
     execute(request) as unknown as Effect.Effect<Batch.AtomicResult<R>, PlatformError.PlatformError>
 }
 
-const fixture = (options: { readonly missingIdentity?: boolean; readonly size?: number } = {}) => {
+const fixture = (
+  options: {
+    readonly missingIdentity?: boolean
+    readonly size?: number
+    readonly identifyRoot?: Batch.AtomicFileSystem["identifyRoot"]
+  } = {}
+) => {
   const requests: Array<BatchOperation> = []
   const fs = Batch.withAtomicFileSystem(
     FileSystem.makeNoop({
@@ -36,12 +42,13 @@ const fixture = (options: { readonly missingIdentity?: boolean; readonly size?: 
       stat: () => Effect.succeed(options.missingIdentity ? { ...info, ino: Option.none() } : info)
     }),
     {
+      identifyRoot: options.identifyRoot,
       batchLimits: { size: options.size ?? 128, response: 24 * 1024 * 1024 },
       execute: batchExecutor((request) =>
         Effect.sync(() => {
           requests.push(request)
           return {
-            rootIdentity: "7:9",
+            rootIdentity: request.rootIdentity!,
             entries: request.requests.map((member, index) => ({
               index,
               path: member.path,
@@ -69,6 +76,40 @@ const provide = <A, E>(
   )
 
 describe("guarded filesystem batches", () => {
+  it.effect("pins and rechecks an exact identity when the numeric inode cannot represent it", () =>
+    Effect.gen(function*() {
+      const exact = "7:9007199254740993"
+      const observed: Array<string> = []
+      const host = fixture({
+        missingIdentity: true,
+        identifyRoot: (path) =>
+          Effect.sync(() => {
+            observed.push(path)
+            return exact
+          })
+      })
+      yield* provide(
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          for (let i = 0; i < 2; i++) {
+            const answer = yield* Batch.batch(fs)!.execute([{ operation: "stat", path: "a" }])
+            expect(answer.rootIdentity).toBe(exact)
+          }
+        }),
+        host.fs
+      )
+      expect(observed).toEqual(Array(5).fill("/workspace"))
+      expect(host.requests.map((request) => request.rootIdentity)).toEqual([exact, exact])
+    }))
+
+  it.effect("refuses composition when the exact identity cannot be observed", () =>
+    Effect.gen(function*() {
+      const failure = PlatformError.systemError({ _tag: "NotFound", module: "test", method: "stat" })
+      const host = fixture({ identifyRoot: () => Effect.fail(failure) })
+      expect(yield* Effect.flip(provide(Effect.void, host.fs))).toBe(failure)
+      expect(host.requests).toEqual([])
+    }))
+
   it.effect("rechecks granted resources and preserves canonical-resolution failures per path", () =>
     Effect.gen(function*() {
       for (const phase of ["before", "after"]) {
@@ -317,9 +358,9 @@ describe("guarded filesystem batches", () => {
   it.effect("runs the shared contract against optional hosts and checks the full advertised protocol", () =>
     Effect.gen(function*() {
       const fs = FileSystem.makeNoop({ realPath: (path) => Effect.succeed(path), stat: () => Effect.succeed(info) })
-      yield* BatchContract.check(fs, "/workspace")
+      yield* BatchContract.check(fs, "/workspace").pipe(Effect.provide(Path.layer))
       Batch.withAtomicFileSystem(fs, { execute: () => Effect.die("no batch") })
-      yield* BatchContract.check(fs, "/workspace")
+      yield* BatchContract.check(fs, "/workspace").pipe(Effect.provide(Path.layer))
       Batch.withAtomicFileSystem(fs, {
         batchLimits: { size: 128, response: 1024 },
         execute: batchExecutor((request) => {
@@ -372,6 +413,9 @@ describe("guarded filesystem batches", () => {
           return Effect.succeed({ rootIdentity: "7:9", entries: results })
         })
       })
-      yield* BatchContract.check(fs, "/workspace")
+      yield* BatchContract.check(fs, "/workspace").pipe(Effect.provide(Path.layer))
+      const original = (fs as Batch.AtomicHostFileSystem)[Batch.AtomicFileSystemTypeId]
+      Batch.withAtomicFileSystem(fs, { ...original, identifyRoot: () => Effect.succeed("7:9") })
+      yield* BatchContract.check(fs, "/workspace").pipe(Effect.provide(Path.layer))
     }))
 })
