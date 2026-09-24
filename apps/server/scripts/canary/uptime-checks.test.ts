@@ -11,10 +11,14 @@ import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import {
+  ALERT_ASSIGNEES,
   ALERT_TITLE,
   alertAction,
+  BROWSER_CHECK_ID,
+  browserVerdict,
   type Check,
   coerceReport,
+  drillCheck,
   endpointPlan,
   ERROR_RATE_SCOPE_NOTE,
   ERROR_RATE_THRESHOLD,
@@ -38,7 +42,8 @@ import {
   tallyChecks,
   TURN_FIRST_FRAME_NOTE,
   TURN_FIRST_FRAME_SAMPLES,
-  uptimeVerdict
+  uptimeVerdict,
+  withChecks
 } from "./uptime-checks.ts"
 
 const sample = (over: Partial<Sample> = {}): Sample => ({
@@ -403,22 +408,60 @@ describe("alertAction", () => {
   const runUrl = "https://github.com/smithersai/smithers/actions/runs/1"
 
   test("a first failure opens the one issue, under the fixed title", () => {
-    const action = alertAction({ report: report(true), openIssue: undefined, runUrl })
+    const action = alertAction({ report: report(true), openIssue: undefined, runUrl, browserPending: false })
     expect(action.kind).toBe("create")
     if (action.kind !== "create") throw new Error("unreachable")
     expect(action.title).toBe(ALERT_TITLE)
     expect(action.body).toContain("https://canary.smithers.sh")
   })
 
+  /*
+   * Delivery must not depend on anyone's watch settings: the repository's only
+   * watcher is not the operator. Assignment notifies the assignee regardless.
+   */
+  test("a first failure assigns the operator, so the alert notifies someone who operates", () => {
+    const action = alertAction({ report: report(true), openIssue: undefined, runUrl, browserPending: false })
+    if (action.kind !== "create") throw new Error(`expected create, got ${action.kind}`)
+    expect(action.assignees).toEqual(ALERT_ASSIGNEES)
+    expect(ALERT_ASSIGNEES.length).toBeGreaterThan(0)
+  })
+
+  /*
+   * The quarter-hour tick never runs the browser. Its pass cannot clear a
+   * browser failure it never retested, but a failure it did measure still
+   * reaches the open issue, and a full run still closes it.
+   */
+  test("a pending browser recheck leaves a healthy open issue alone", () => {
+    const action = alertAction({ report: report(false), openIssue: 42, runUrl, browserPending: true })
+    expect(action.kind).toBe("none")
+    if (action.kind !== "none") throw new Error("unreachable")
+    expect(action.reason).toContain("browser recheck is pending")
+  })
+
+  test("a pending browser recheck still comments a failure on the open issue", () => {
+    const action = alertAction({ report: report(true), openIssue: 42, runUrl, browserPending: true })
+    expect(action.kind).toBe("comment")
+  })
+
+  test("a pending browser recheck with nothing open and a failure still opens the issue", () => {
+    const action = alertAction({ report: report(true), openIssue: undefined, runUrl, browserPending: true })
+    expect(action.kind).toBe("create")
+  })
+
+  test("a full healthy run closes the open issue", () => {
+    const action = alertAction({ report: report(false), openIssue: 42, runUrl, browserPending: false })
+    expect(action.kind).toBe("close")
+  })
+
   test("a repeat failure comments on the open issue instead of opening a second", () => {
-    const action = alertAction({ report: report(true), openIssue: 42, runUrl })
+    const action = alertAction({ report: report(true), openIssue: 42, runUrl, browserPending: false })
     expect(action.kind).toBe("comment")
     if (action.kind !== "comment") throw new Error("unreachable")
     expect(action.issue).toBe(42)
   })
 
   test("recovery closes the open issue, so the alert cannot become a stale banner", () => {
-    const action = alertAction({ report: report(false), openIssue: 42, runUrl })
+    const action = alertAction({ report: report(false), openIssue: 42, runUrl, browserPending: false })
     expect(action.kind).toBe("close")
     if (action.kind !== "close") throw new Error("unreachable")
     expect(action.issue).toBe(42)
@@ -426,7 +469,7 @@ describe("alertAction", () => {
   })
 
   test("a passing run with nothing open does nothing at all", () => {
-    const action = alertAction({ report: report(false), openIssue: undefined, runUrl })
+    const action = alertAction({ report: report(false), openIssue: undefined, runUrl, browserPending: false })
     expect(action.kind).toBe("none")
   })
 
@@ -435,6 +478,80 @@ describe("alertAction", () => {
     expect(body).toContain(`Run: ${runUrl}`)
     expect(body).toContain("Metered turns spent by this run: 0")
     expect(body).toContain("| FAIL | every probed endpoint answered | d |")
+  })
+})
+
+/*
+ * The browser probe speaks the same Check vocabulary as every other probe. An
+ * unconfigured browser canary is a configuration state said out loud, never an
+ * outage: a missing secret must not file "smithers.sh is failing".
+ */
+describe("browserVerdict", () => {
+  const source = "/tmp/canary-browser/result.json"
+
+  test("a passing browser run is one passing row", () => {
+    const check = browserVerdict({ status: "pass", checks: ["signed-in browser session"] }, source)
+    expect(check.id).toBe(BROWSER_CHECK_ID)
+    expect(check.status).toBe("pass")
+    expect(check.detail).toContain("signed-in browser session")
+  })
+
+  test("an unconfigured browser canary skips and names every missing variable", () => {
+    const check = browserVerdict({ status: "skip", missing: ["CANARY_SESSION_COOKIE", "CANARY_BROWSER_FLOW"] }, source)
+    expect(check.status).toBe("skip")
+    expect(check.detail).toContain("CANARY_SESSION_COOKIE")
+    expect(check.detail).toContain("CANARY_BROWSER_FLOW")
+  })
+
+  test("a failing browser run fails and points at the evidence", () => {
+    const check = browserVerdict({ status: "fail", error: "Error: Chat input is not editable" }, source)
+    expect(check.status).toBe("fail")
+    expect(check.detail).toContain("Chat input is not editable")
+    expect(check.detail).toContain("canary-browser artifact")
+  })
+
+  test("a browser probe that wrote no verdict fails rather than passing silently", () => {
+    for (const parsed of [undefined, null, "pass", {}, { status: "green" }, { status: "skip" }, { status: "skip", missing: [] }]) {
+      const check = browserVerdict(parsed, source)
+      expect(check.status).toBe("fail")
+      expect(check.detail).toContain(source)
+    }
+  })
+})
+
+describe("drillCheck", () => {
+  test("the alert drill is a failing row that says it was deliberate", () => {
+    const check = drillCheck("workflow_dispatch drill")
+    expect(check.status).toBe("fail")
+    expect(check.detail).toContain("deliberate")
+    expect(check.detail).toContain("workflow_dispatch drill")
+  })
+})
+
+describe("withChecks", () => {
+  const healthy: ProbeReport = {
+    origin: "https://smithers.sh",
+    generatedAt: "2026-09-23T00:00:00.000Z",
+    samples: [],
+    checks: [{ id: "uptime", label: "u", status: "pass", detail: "d" }],
+    errorRate: 0,
+    meteredTurns: 0,
+    failed: false
+  }
+
+  test("a skipped extra row leaves a healthy report healthy and still shows the row", () => {
+    const merged = withChecks(healthy, [browserVerdict({ status: "skip", missing: ["CANARY_SESSION_COOKIE"] }, "r")])
+    expect(merged.failed).toBe(false)
+    expect(merged.checks.map((check) => check.id)).toEqual(["uptime", BROWSER_CHECK_ID])
+  })
+
+  test("a failing extra row fails the merged report", () => {
+    expect(withChecks(healthy, [drillCheck("drill")]).failed).toBe(true)
+  })
+
+  test("a failing report stays failed under passing extras", () => {
+    const failing = { ...healthy, failed: true }
+    expect(withChecks(failing, [browserVerdict({ status: "pass", checks: [] }, "r")]).failed).toBe(true)
   })
 })
 

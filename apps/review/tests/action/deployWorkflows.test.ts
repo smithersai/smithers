@@ -18,12 +18,26 @@ const appsDir = fileURLToPath(new URL("../../../", import.meta.url));
 const readWorkflow = <T>(name: string): T => parse(readFileSync(`${workflowsDir}${name}`, "utf8")) as T;
 
 describe("canary.yml probes the owning repository", () => {
-  test("the owning repository enables the schedule only after manual qualification", () => {
-    const canary = readWorkflow<{ jobs: Record<string, { if?: string }> }>("canary.yml");
-    expect(canary.jobs.probe.if).toBe("github.repository == 'smithersai/smithers' && (github.event_name == 'workflow_dispatch' || vars.CANARY_ENABLED == 'true')");
+  /*
+   * The fork guard is the whole condition. A repository variable that silently
+   * disables monitoring is a feature flag: CANARY_ENABLED left the canary
+   * skipped for every one of its first 258 scheduled runs.
+   */
+  test("the owning repository runs every schedule; only a fork is skipped", () => {
+    const canary = readWorkflow<{ on: Record<string, unknown>; jobs: Record<string, { if?: string }> }>("canary.yml");
+    expect(canary.jobs.probe.if).toBe("github.repository == 'smithersai/smithers'");
+    expect(Object.keys(canary.on).sort()).toEqual(["schedule", "workflow_dispatch"]);
+    const source = readFileSync(`${workflowsDir}canary.yml`, "utf8");
+    expect(source).not.toContain("vars.CANARY_ENABLED");
+    expect(source).not.toContain("CANARY_BROWSER_FAILED");
+  });
+
+  test("the browser verdict, the drill and the operator assignment reach the alert", () => {
     const source = readFileSync(`${workflowsDir}canary.yml`, "utf8");
     expect(source).toContain("bun scripts/canary-browser.ts");
-    expect(source).toContain("CANARY_BROWSER_FAILED:");
+    expect(source).toContain("--browser \"$BROWSER_RESULT\"");
+    expect(source).toContain("--force-fail \"$FORCE_FAILURE\"");
+    expect(source).toContain("--assignee \"$ASSIGNEES\"");
     expect(source).toContain("name: canary-browser");
   });
 });

@@ -497,28 +497,36 @@ network error or a 5xx shortens the cache to 30 s.
 ### The canary and e2e suites sign in as a scoped-down user
 
 The probes that authenticate must hold a plain visitor's session, not an
-operator's. Will's ruling (Factory spec 2026-09-08, `review/RULINGS.md` 35):
+operator's. Will's ruling (Factory spec 2026-09-08):
 open sign-in is on and the permission tiers behind it stay deliberately narrow,
 so the canary and e2e suites run as a scoped-down signed-in user and prove the
 product works under the permissions a real visitor has. A probe holding an
 admin's cookie is green while the deployment refuses everyone else, which is
 the permission bug the probe exists to surface.
 
-**The account.** `codeplanesmithers` is the shared test account, and it is a
-scoped-down one: a plain GitHub login that must NOT appear in the identity
-Worker's `ADMIN_LOGINS`, must NOT hold a maintainer claim on any repository,
-and must NOT appear on the hand-seeded closed-alpha roster
-`CANARY_ALLOWLIST_LOGINS`. It signs the browser sign-in probe in
-(`apps/app/e2e/probes/signin-roundtrip.mjs`, `$SMITHERS_E2E_USER`), it is the
+**The account.** The canary account must be a plain GitHub login that does
+NOT appear in the identity Worker's `ADMIN_LOGINS`, does NOT hold a maintainer
+claim on any repository, and does NOT appear on the hand-seeded closed-alpha
+roster `CANARY_ALLOWLIST_LOGINS`. No such account is configured today:
+`codeplanesmithers`, the shared test account, is in `ADMIN_LOGINS`, so its
+cookie fails the canary's identity check. Satisfy the ruling one of two ways:
+remove `codeplanesmithers` from the identity Worker's `ADMIN_LOGINS`, or create
+a second account for the canary. `apps/HUMAN-TASKS.md` tracks the setup.
+`codeplanesmithers` is the login the browser sign-in probe signs in as
+(`apps/app/e2e/probes/signin-roundtrip.mjs`, `$SMITHERS_E2E_USER`) and the
 login the T1 Playwright doubles answer with
-(`apps/app/e2e/playwright/identity.ts`), and its session is what
-`$CANARY_SESSION_COOKIE` carries.
+(`apps/app/e2e/playwright/identity.ts`).
+
+Until `$CANARY_SESSION_COOKIE` is set, the scheduled canary still runs: the
+browser check and the metered turn report `skip`, the run prints a `::warning`
+naming the unset variables, and only the unmetered checks can open the alert
+issue.
 
 | Variable | Kind | What it names |
 | --- | --- | --- |
-| `SMITHERS_E2E_USER` | repository variable, and an env var for the browser probe | the scoped-down account's GitHub login; default `codeplanesmithers` |
+| `SMITHERS_E2E_USER` | env var for the browser sign-in probe and a local `uptime-probe.ts` run | the e2e account's GitHub login; `uptime-probe.ts` reads it when `CANARY_SESSION_LOGIN` is unset |
 | `CANARY_SESSION_COOKIE` | secret, `Canary` workflow | that account's signed-in cookie header, sent on the hourly tick only |
-| `CANARY_SESSION_LOGIN` | repository variable, optional | the login `$CANARY_SESSION_COOKIE` must belong to; falls back to `SMITHERS_E2E_USER` |
+| `CANARY_SESSION_LOGIN` | repository variable | the login `$CANARY_SESSION_COOKIE` must belong to; the `Canary` workflow reads only this variable, and a cookie with no declared login fails |
 | `CANARY_ALLOWLIST_LOGINS` | repository variable | the hand-seeded closed-alpha roster; `invite-probe.ts` reads it back, and `uptime-probe.ts` refuses a cookie belonging to one of those logins |
 
 **The assertion.** `uptime-probe.ts` reads its own session back through

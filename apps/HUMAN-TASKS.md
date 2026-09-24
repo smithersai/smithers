@@ -1,6 +1,6 @@
 # HUMAN-TASKS.md — Smithers UI alpha launch
 
-Four tasks remain before the closed alpha opens. Every one of them needs a
+Five tasks remain before the closed alpha opens. Every one of them needs a
 credential, a live target, or a product decision that no agent in this track
 was allowed to make. Everything else in the UI track is landed on `main`.
 
@@ -296,3 +296,29 @@ whole first-run surface now.
   until plue lands it, independent of everything in this track.
 
 Raise the result on the run's `smithers ask-human` gate.
+
+---
+
+## H5 — Configure the signed-in canary
+
+The `Canary` workflow runs on schedule without this, but its browser check and
+metered turn report `skip` until these exist. Runbook:
+**`apps/app/docs/BROWSER-CANARY.md`**; account rules:
+**`apps/server/DEPLOY.md`** (the canary and e2e suites sign in as a
+scoped-down user).
+
+1. A scoped-down account: remove `codeplanesmithers` from the identity Worker's
+   `ADMIN_LOGINS`, or create a second GitHub account for the canary. It must
+   not be on `CANARY_ALLOWLIST_LOGINS` or hold a maintainer claim.
+2. A private fixture repository owned by that account, a workspace UUID in it,
+   and a safe, input-free flow that runs at least 20 seconds and completes
+   without approval or repository mutation.
+3. Repository secret `CANARY_SESSION_COOKIE`: that account's session cookie
+   header.
+4. Repository variables `CANARY_SESSION_LOGIN`, `CANARY_ALLOWLIST_LOGINS`,
+   `CANARY_BROWSER_REPO`, `CANARY_BROWSER_WORKSPACE`, `CANARY_BROWSER_FLOW`.
+5. Rotate the cookie before the session expires; an expired cookie fails the
+   canary and opens the alert issue.
+
+Done when a `Canary` run's browser and `turn-seam first-frame latency` rows
+read `ok`, not `skip`.

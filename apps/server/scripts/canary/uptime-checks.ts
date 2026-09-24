@@ -521,6 +521,53 @@ export const coerceReport = (parsed: unknown, source: string): ProbeReport => {
   }
 }
 
+/**
+ * Extra rows merged into a probe report: the browser verdict and the drill. A
+ * skipped row never fails the merged report; a failed row always does.
+ */
+export const withChecks = (report: ProbeReport, extra: ReadonlyArray<Check>): ProbeReport => ({
+  ...report,
+  checks: [...report.checks, ...extra],
+  failed: report.failed || probeFailed(extra)
+})
+
+/*
+ * The browser probe (apps/app/scripts/canary-browser.ts) writes result.json
+ * with a `status` in this same vocabulary. Unconfigured is `skip` with the
+ * unset variable names, because a missing canary secret is a configuration
+ * state, not an outage. Anything that is not a verdict fails, mirroring
+ * coerceReport: a browser probe that crashed before writing one must alert.
+ */
+export const BROWSER_CHECK_ID = "browser"
+const BROWSER_LABEL = "smithers.sh browser"
+
+const stringList = (value: unknown): ReadonlyArray<string> =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item !== "") : []
+
+export const browserVerdict = (parsed: unknown, source: string): Check => {
+  const result = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {}
+  if (result.status === "pass") {
+    return pass(BROWSER_CHECK_ID, BROWSER_LABEL, `Browser canary passed: ${stringList(result.checks).join("; ")}`)
+  }
+  const missing = stringList(result.missing)
+  if (result.status === "skip" && missing.length > 0) {
+    return skip(BROWSER_CHECK_ID, BROWSER_LABEL, `Browser canary not configured: set ${missing.join(", ")}`)
+  }
+  if (result.status === "fail") {
+    const error = typeof result.error === "string" ? result.error : "no error recorded"
+    return fail(
+      BROWSER_CHECK_ID,
+      BROWSER_LABEL,
+      `Browser canary failed: ${error}. Download the canary-browser artifact from the linked Actions run.`
+    )
+  }
+  return fail(BROWSER_CHECK_ID, BROWSER_LABEL, `the browser probe produced no verdict: ${source} is missing or unreadable`)
+}
+
+/** The alert drill: one failing row that says it was deliberate. */
+export const drillCheck = (reason: string): Check =>
+  fail("drill", "alert delivery drill", `deliberate failure to verify alert delivery (${reason})`)
+
 /*
  * Alerting.
  *
@@ -531,11 +578,9 @@ export const coerceReport = (parsed: unknown, source: string): ProbeReport => {
  * notification path the maintainer already reads, and — because of the close —
  * no stale banner.
  *
- * The failure mode this design accepts: notification depends on the maintainer
- * watching the repository's issues. A repository with issue notifications
- * muted learns nothing. That is stated rather than hidden, and it is strictly
- * better than a red tab in the Actions list, which notifies no one on a
- * schedule-triggered run.
+ * Delivery does not depend on anyone's watch settings: the issue is created
+ * assigned to ALERT_ASSIGNEES, and GitHub notifies an assignee whether or not
+ * they watch the repository. Comments and the close then notify participants.
  *
  * The second accepted failure mode: a single transient blip opens an issue
  * that the next run closes fifteen minutes later. The three unmetered latency
@@ -548,9 +593,11 @@ export const coerceReport = (parsed: unknown, source: string): ProbeReport => {
  * the cost of not suppressing real outages.
  */
 export const ALERT_TITLE = "Canary: smithers.sh is failing"
+/** The operator. The repository's watchers do not include them. */
+export const ALERT_ASSIGNEES: ReadonlyArray<string> = ["roninjin10"]
 
 export type AlertAction =
-  | { readonly kind: "create"; readonly title: string; readonly body: string }
+  | { readonly kind: "create"; readonly title: string; readonly body: string; readonly assignees: ReadonlyArray<string> }
   | { readonly kind: "comment"; readonly issue: number; readonly body: string }
   | { readonly kind: "close"; readonly issue: number; readonly body: string }
   | { readonly kind: "none"; readonly reason: string }
@@ -561,6 +608,11 @@ export interface AlertInputs {
   readonly openIssue: number | undefined
   readonly runUrl: string
   readonly title?: string
+  /**
+   * The browser step did not run this tick (the quarter-hour schedule). Such a
+   * pass cannot clear a browser failure it never retested.
+   */
+  readonly browserPending: boolean
 }
 
 const checkLine = (check: Check): string => {
@@ -589,11 +641,14 @@ export const alertAction = (inputs: AlertInputs): AlertAction => {
   const body = renderAlertBody(inputs.report, inputs.runUrl)
   if (inputs.report.failed) {
     return inputs.openIssue === undefined
-      ? { kind: "create", title, body }
+      ? { kind: "create", title, body, assignees: ALERT_ASSIGNEES }
       : { kind: "comment", issue: inputs.openIssue, body }
   }
   if (inputs.openIssue === undefined) {
     return { kind: "none", reason: "the canary passed and no alert issue is open" }
+  }
+  if (inputs.browserPending) {
+    return { kind: "none", reason: "browser recheck is pending on the next full run" }
   }
   return { kind: "close", issue: inputs.openIssue, body: `The canary recovered.\n\n${body}` }
 }

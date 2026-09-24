@@ -3,24 +3,34 @@
 # This workflow never runs on a push or a pull request. It cannot fail a
 # contributor's build, and it cannot run in a fork: the job is guarded on the
 # repository name so a fork's scheduled runs are skipped rather than probing
-# someone else's deployment with someone else's issue tracker.
+# someone else's deployment with someone else's issue tracker. That fork guard
+# is the only condition: no repository variable switches monitoring off.
 #
 # THE ALERT. There is no paging infrastructure in this project. The alert is
 # one GitHub issue under a fixed title: a failing
 # run opens it, later failing runs comment on it, and the first passing run
 # comments and closes it. The decision is made by
 # apps/server/scripts/canary/uptime-report.ts, which is unit-tested; this file
-# only runs `gh`. The accepted failure mode is that notification depends on the
-# maintainer watching this repository's issues — a repository with issue
-# notifications muted learns nothing. That is still strictly better than a red
-# tab in the Actions list, which notifies nobody on a scheduled run.
+# only runs `gh`. The issue is created assigned to the operator
+# (ALERT_ASSIGNEES in uptime-checks.ts), so delivery does not depend on anyone
+# watching this repository.
+#
+# NOT CONFIGURED IS NOT DOWN. Without $CANARY_SESSION_COOKIE and the
+# CANARY_BROWSER_* variables the browser and metered checks report `skip`, and
+# the run prints a ::warning naming them. Only a configured check that fails
+# opens the issue.
+#
+# CADENCE. GitHub drops most of this repository's scheduled ticks: 10 to 15 of
+# the 96 quarter-hour ticks a day are delivered (measured 2026-09-12..23), so
+# expect detection within one to three hours, not fifteen minutes.
 #
 # COST. The quarter-hour unmetered probes are free: a static asset read, an unauthenticated
 # scopes read, and a signed-out turn refusal that never reaches an upstream.
 # The metered CN-19 sample — one short model turn — runs only on the hourly
 # tick, and only when $CANARY_SESSION_COOKIE is configured. That is 24 short
-# turns a day, and zero if the secret is absent. The hourly browser probe requires
-# the ordinary session and launches one configured fixture workflow run.
+# turns a day at most, and zero if the secret is absent. The hourly browser
+# probe requires the ordinary session and launches one configured fixture flow
+# run.
 #
 # LINTING. ci.yml names this file in its actionlint step, and
 # apps/server/scripts/canary/workflow-wiring.test.ts fails when a workflow is
@@ -31,20 +41,17 @@ on:
   schedule:
     # Hourly: the full probe, including the one metered turn-seam sample.
     - cron: '0 * * * *'
-    # The other three quarters: the free probes only. GitHub queues scheduled
-    # runs under load, so treat 15 minutes as a floor, not a guarantee.
+    # The other three quarters: the free probes only. GitHub delivers only a
+    # fraction of these ticks (see CADENCE above).
     - cron: '15,30,45 * * * *'
-  workflow_run:
-    workflows: ["Deploy apps"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       metered:
         description: Also take the metered turn-seam sample (spends model credit)
         type: boolean
         default: false
-      force_browser_failure:
-        description: Deliberately fail browser probe to verify the operator alert path
+      force_failure:
+        description: Add a deliberate failing check to verify the operator alert path
         type: boolean
         default: false
 
@@ -59,8 +66,7 @@ concurrency:
 jobs:
   probe:
     name: probe the live deployment
-    # Enable automation only after a successful manual run and alert drill.
-    if: github.repository == 'smithersai/smithers' && (github.event_name == 'workflow_dispatch' || vars.CANARY_ENABLED == 'true')
+    if: github.repository == 'smithersai/smithers'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -76,22 +82,24 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Install browser
         id: install_browser
-        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
         continue-on-error: true
         run: pnpm --filter smithers-app exec playwright install --with-deps chromium
+      # Writes result.json with status pass, skip (not configured) or fail;
+      # the Decide step reads it. continue-on-error, because a failure is
+      # carried by that file, not by this step's outcome.
       - name: Browser canary
-        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_run'
+        if: github.event.schedule == '0 * * * *' || github.event_name == 'workflow_dispatch'
         id: browser
         continue-on-error: true
         working-directory: apps/app
         env:
           CANARY_URL: https://smithers.sh
           CANARY_SESSION_COOKIE: ${{ secrets.CANARY_SESSION_COOKIE }}
-          CANARY_SESSION_LOGIN: ${{ vars.CANARY_SESSION_LOGIN || vars.SMITHERS_E2E_USER || 'codeplanesmithers' }}
+          CANARY_SESSION_LOGIN: ${{ vars.CANARY_SESSION_LOGIN }}
           CANARY_BROWSER_REPO: ${{ vars.CANARY_BROWSER_REPO || 'codeplanesmithers/canary-sandbox' }}
           CANARY_BROWSER_WORKSPACE: ${{ vars.CANARY_BROWSER_WORKSPACE }}
           CANARY_BROWSER_FLOW: ${{ vars.CANARY_BROWSER_FLOW }}
-          CANARY_BROWSER_FORCE_FAILURE: ${{ inputs.force_browser_failure && '1' || '' }}
           CANARY_BROWSER_EVIDENCE: ${{ runner.temp }}/canary-browser
         run: bun scripts/canary-browser.ts
       # A broken probe must never grade a deployment, so its own decision logic
@@ -115,13 +123,13 @@ jobs:
           # those runs spend nothing and say out loud that they measured the
           # signed-out refusal gate only.
           CANARY_SESSION_COOKIE: ${{ (github.event.schedule == '0 * * * *' || github.event.inputs.metered == 'true') && secrets.CANARY_SESSION_COOKIE || '' }}
-          # Whose cookie that is. RULINGS 35: the canary runs as a scoped-down
+          # Whose cookie that is. Will's ruling (Factory spec 2026-09-08): the canary runs as a scoped-down
           # signed-in user, never an admin and never a hand-seeded allowlist
           # entry, so a permission bug that refuses ordinary visitors cannot
           # hide behind the operator's own privileges. The probe reads its own
           # session back and fails the run — spending nothing — when the cookie
           # turns out to be privileged. The accounts are in apps/server/DEPLOY.md.
-          CANARY_SESSION_LOGIN: ${{ vars.CANARY_SESSION_LOGIN || vars.SMITHERS_E2E_USER }}
+          CANARY_SESSION_LOGIN: ${{ vars.CANARY_SESSION_LOGIN }}
           CANARY_ALLOWLIST_LOGINS: ${{ vars.CANARY_ALLOWLIST_LOGINS }}
         # The origin is passed POSITIONALLY and first. The probe reads argv[0]
         # only, so this is belt and braces with $CANARY_URL rather than the
@@ -143,22 +151,30 @@ jobs:
       # capture is `|| verdict=$?`, not a bare command under the default
       # `bash -e`: a failing canary exits 1 here, and `-e` would abort the
       # step before the verdict was written, skipping the alert entirely.
+      #
+      # --browser is passed whenever the browser step ran, so a missing
+      # result.json on a full run is a failing check. Absent on the
+      # quarter-hour ticks, it marks the browser recheck as pending.
       - name: Decide the alert
         id: decide
         working-directory: apps/server
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           OPEN_ISSUE: ${{ steps.existing.outputs.number }}
-          CANARY_BROWSER_FAILED: ${{ (steps.browser.outcome == 'failure' || steps.install_browser.outcome == 'failure') && '1' || '' }}
-          CANARY_BROWSER_SKIPPED: ${{ steps.browser.outcome == 'skipped' && '1' || '' }}
+          BROWSER_RESULT: ${{ steps.browser.outcome != 'skipped' && format('{0}/canary-browser/result.json', runner.temp) || '' }}
+          FORCE_FAILURE: ${{ inputs.force_failure && 'workflow_dispatch drill' || '' }}
         run: |
           set -euo pipefail
+          flags=()
+          if [ -n "$BROWSER_RESULT" ]; then flags+=(--browser "$BROWSER_RESULT"); fi
+          if [ -n "$FORCE_FAILURE" ]; then flags+=(--force-fail "$FORCE_FAILURE"); fi
           verdict=0
           bun scripts/canary/uptime-report.ts \
             --report "$RUNNER_TEMP/canary-uptime.json" \
             --run-url "$RUN_URL" \
             --open-issue "$OPEN_ISSUE" \
-            --body-out "$RUNNER_TEMP/canary-alert.md" || verdict=$?
+            --body-out "$RUNNER_TEMP/canary-alert.md" \
+            ${flags[@]+"${flags[@]}"} || verdict=$?
           echo "verdict=$verdict" >> "$GITHUB_OUTPUT"
       - name: Upload browser evidence
         if: always()
@@ -174,11 +190,12 @@ jobs:
           ALERT_ACTION: ${{ steps.decide.outputs.action }}
           ISSUE: ${{ steps.decide.outputs.issue }}
           TITLE: ${{ steps.decide.outputs.title }}
+          ASSIGNEES: ${{ steps.decide.outputs.assignees }}
         run: |
           set -euo pipefail
           case "$ALERT_ACTION" in
             create)
-              gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/canary-alert.md"
+              gh issue create --title "$TITLE" --body-file "$RUNNER_TEMP/canary-alert.md" --assignee "$ASSIGNEES"
               ;;
             comment)
               gh issue comment "$ISSUE" --body-file "$RUNNER_TEMP/canary-alert.md"

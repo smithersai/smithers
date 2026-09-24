@@ -6,7 +6,11 @@
  *     --open-issue <n>      the number of the alert issue that is already open
  *     --run-url <url>       the Actions run to link from the issue
  *     --body-out <path>     write the issue body here (gh --body-file reads it)
- *     --github-output <path>  write action/issue/title (defaults to $GITHUB_OUTPUT)
+ *     --browser <path>      the browser probe's result.json. Given on every run
+ *                           whose browser step ran; absent means the browser
+ *                           recheck is pending (the quarter-hour ticks)
+ *     --force-fail <reason> add a deliberate failing row: the alert drill
+ *     --github-output <path>  write action/issue/title/assignees (defaults to $GITHUB_OUTPUT)
  *
  * There is no paging infrastructure in this project and this file invents
  * none. The alert is one GitHub issue under a fixed title: a failing run opens
@@ -16,11 +20,24 @@
  *
  * A missing or unreadable report is itself an alert. `coerceReport` turns it
  * into a failing report, so a probe that crashed before writing anything still
- * opens an issue rather than passing silently.
+ * opens an issue rather than passing silently. `browserVerdict` does the same
+ * for a browser result.json that a full run should have written.
+ *
+ * Checks that were not measured are printed as one ::warning line, so a green
+ * run says what it did not measure.
  */
-import { readFileSync, writeFileSync } from "node:fs"
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs"
 import { argReader } from "./CanaryArgs.ts"
-import { ALERT_TITLE, alertAction, coerceReport, fail, renderAlertBody } from "./uptime-checks.ts"
+import {
+  ALERT_TITLE,
+  alertAction,
+  browserVerdict,
+  type Check,
+  coerceReport,
+  drillCheck,
+  renderAlertBody,
+  withChecks
+} from "./uptime-checks.ts"
 
 const args = process.argv.slice(2)
 /* A flag left empty is refused before the report is read or any file written. */
@@ -35,21 +52,20 @@ if (reportPath === undefined) {
   process.exit(2)
 }
 
-const parsed = ((): unknown => {
+const readJson = (path: string): unknown => {
   try {
-    return JSON.parse(readFileSync(reportPath, "utf8"))
+    return JSON.parse(readFileSync(path, "utf8"))
   } catch {
     return undefined
   }
-})()
-const report = coerceReport(parsed, reportPath)
-const combinedReport = process.env.CANARY_BROWSER_FAILED === "1"
-  ? {
-    ...report,
-    failed: true,
-    checks: [...report.checks, fail("browser", "smithers.sh browser", "Browser canary failed. Download the canary-browser artifact from the linked Actions run.")]
-  }
-  : report
+}
+const browserPath = flagValue("--browser")
+const forceFail = flagValue("--force-fail")
+const extra: ReadonlyArray<Check> = [
+  ...(browserPath === undefined ? [] : [browserVerdict(readJson(browserPath), browserPath)]),
+  ...(forceFail === undefined ? [] : [drillCheck(forceFail)])
+]
+const report = withChecks(coerceReport(readJson(reportPath), reportPath), extra)
 
 const rawIssue = flagValue("--open-issue")
 const openIssue = rawIssue === undefined || rawIssue.trim() === "" ? undefined : Number(rawIssue)
@@ -59,20 +75,30 @@ if (openIssue !== undefined && !Number.isInteger(openIssue)) {
 }
 
 const runUrl = flagValue("--run-url") ?? "(no run url given)"
-// A cheap quarter-hour sample cannot clear a browser failure it never retested.
-const action = process.env.CANARY_BROWSER_SKIPPED === "1" && openIssue !== undefined && !combinedReport.failed
-  ? { kind: "none" as const, reason: "browser recheck is pending on the next full run" }
-  : alertAction({ report: combinedReport, openIssue, runUrl })
+const action = alertAction({ report, openIssue, runUrl, browserPending: browserPath === undefined })
 
 const bodyOut = flagValue("--body-out")
 if (bodyOut !== undefined) {
-  writeFileSync(bodyOut, `${action.kind === "none" ? renderAlertBody(combinedReport, runUrl) : action.body}\n`)
+  writeFileSync(bodyOut, `${action.kind === "none" ? renderAlertBody(report, runUrl) : action.body}\n`)
 }
 
 const outputPath = flagValue("--github-output") ?? process.env.GITHUB_OUTPUT
 if (outputPath !== undefined && outputPath !== "") {
   const issue = action.kind === "comment" || action.kind === "close" ? String(action.issue) : ""
-  writeFileSync(outputPath, `action=${action.kind}\nissue=${issue}\ntitle=${ALERT_TITLE}\n`, { flag: "a" })
+  const assignees = action.kind === "create" ? action.assignees.join(",") : ""
+  writeFileSync(outputPath, `action=${action.kind}\nissue=${issue}\ntitle=${ALERT_TITLE}\nassignees=${assignees}\n`, {
+    flag: "a"
+  })
+}
+
+const unmeasured = report.checks.filter((check) => check.status === "skip")
+if (unmeasured.length > 0) {
+  const lines = unmeasured.map((check) => `${check.label}: ${check.detail}`)
+  console.log(`::warning title=Canary did not measure::${lines.join(" | ")}`)
+  const summary = process.env.GITHUB_STEP_SUMMARY
+  if (summary !== undefined && summary !== "") {
+    appendFileSync(summary, `### Not measured\n\n${lines.map((line) => `- ${line}`).join("\n")}\n`)
+  }
 }
 
 console.log(
@@ -87,4 +113,4 @@ console.log(
  * goes red, which is the whole point of deciding the alert here rather than
  * letting the probe's own exit code fail the job first.
  */
-process.exit(combinedReport.failed ? 1 : 0)
+process.exit(report.failed ? 1 : 0)

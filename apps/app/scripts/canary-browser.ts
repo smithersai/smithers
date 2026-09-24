@@ -1,4 +1,12 @@
-/** Scheduled, external Chromium check of the deployed product. No saved profile is used. */
+/**
+ * Scheduled, external Chromium check of the deployed product. No saved profile is used.
+ *
+ * `${dir}/result.json` always carries `status` (pass, skip or fail), which
+ * apps/server/scripts/canary/uptime-checks.ts `browserVerdict` reads. An unset
+ * cookie, flow or workspace is `skip` naming the variables and exits 0: a
+ * missing canary secret is a configuration state, not an outage. A configured
+ * cookie that is signed out, unnamed, someone else's or an admin's fails.
+ */
 import { mkdir, writeFile } from "node:fs/promises"
 import { chromium, type Browser, type Page } from "playwright"
 
@@ -6,7 +14,7 @@ const origin = process.env.CANARY_URL ?? "https://smithers.sh"
 const repo = process.env.CANARY_BROWSER_REPO ?? "codeplanesmithers/canary-sandbox"
 const flow = process.env.CANARY_BROWSER_FLOW
 const workspaceId = process.env.CANARY_BROWSER_WORKSPACE
-const login = process.env.CANARY_SESSION_LOGIN ?? "codeplanesmithers"
+const login = process.env.CANARY_SESSION_LOGIN
 const cookie = process.env.CANARY_SESSION_COOKIE
 const dir = process.env.CANARY_BROWSER_EVIDENCE ?? "/tmp/smithers-browser-canary"
 const results: Record<string, unknown> = { origin, repo, at: new Date().toISOString(), checks: [] as string[] }
@@ -34,14 +42,24 @@ const slash = async (page: Page, text: string): Promise<void> => {
 }
 
 await mkdir(dir, { recursive: true })
+const missing = Object.entries({
+  CANARY_SESSION_COOKIE: cookie,
+  CANARY_BROWSER_FLOW: flow,
+  CANARY_BROWSER_WORKSPACE: workspaceId
+}).filter(([, value]) => !value).map(([name]) => name)
+if (missing.length > 0) {
+  await writeFile(`${dir}/result.json`, JSON.stringify({ ...results, status: "skip", missing }, null, 2))
+  console.log(`skip: browser canary not configured - set ${missing.join(", ")}`)
+  process.exit(0)
+}
 let browser: Browser | undefined
 let active: Page | undefined
 let failure: unknown
 try {
   requireValue(origin === "https://smithers.sh", "Browser canary target must be https://smithers.sh")
-  requireValue(cookie, "CANARY_SESSION_COOKIE is required for signed-in browser coverage")
-  requireValue(flow, "CANARY_BROWSER_FLOW must name a safe, configured input-free fixture flow")
-  requireValue(workspaceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(workspaceId), "CANARY_BROWSER_WORKSPACE must name the fixture workspace UUID")
+  requireValue(cookie && flow && workspaceId, "unreachable: the configuration gate above skips an unset cookie, flow or workspace")
+  requireValue(login, "CANARY_SESSION_LOGIN must name the account CANARY_SESSION_COOKIE belongs to")
+  requireValue(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(workspaceId), "CANARY_BROWSER_WORKSPACE must name the fixture workspace UUID")
   requireValue(/^[\w.-]+\/[\w.-]+$/.test(repo), "CANARY_BROWSER_REPO must be owner/name")
   const pair = cookie.split(";")[0]!.trim().split(/=(.*)/s)
   requireValue(pair[0] && pair[1], "CANARY_SESSION_COOKIE must begin with name=value")
@@ -153,14 +171,13 @@ try {
   // RuntimeProjection maps a completed run to the card shell's acted status.
   await active.locator(`.smithers-card[data-kind="run-trace"][data-run-id="${runId}"][data-status="acted"]`).waitFor({ timeout: 30_000 })
   record("Chat usable through real remote completion")
-  if (process.env.CANARY_BROWSER_FORCE_FAILURE === "1") throw new Error("Deliberate browser failure for alert delivery drill")
 } catch (error) {
   failure = error
   results.error = String(error)
 } finally {
   if (active && !active.isClosed()) await active.screenshot({ path: `${dir}/last.png`, fullPage: true }).catch(() => undefined)
   await browser?.close()
-  await writeFile(`${dir}/result.json`, JSON.stringify(results, null, 2))
+  await writeFile(`${dir}/result.json`, JSON.stringify({ ...results, status: failure ? "fail" : "pass" }, null, 2))
 }
 if (failure) { console.error(`Browser canary failed: ${String(failure)}`); process.exit(1) }
 console.log(`Browser canary passed: ${JSON.stringify(results)}`)

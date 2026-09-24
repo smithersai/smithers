@@ -160,3 +160,12 @@ test("wrangler.jsonc names a rollback that still exists", () => {
   expect(comments).toContain("bun x wrangler rollback")
   expect(comments).not.toContain("smithersai/ui")
 })
+
+/*
+ * Workers Logs. The live script had `observability: null` and no logpush or
+ * tail consumer, so an outage left nothing to read afterwards. wrangler applies
+ * this block on every deploy.
+ */
+test("wrangler.jsonc turns on Workers Logs, so an outage leaves logs to read", () => {
+  expect(bridge.observability).toEqual({ enabled: true })
+})

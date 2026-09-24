@@ -11,7 +11,7 @@
  */
 import type { Server } from "bun"
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { ALERT_TITLE, type ProbeReport } from "./uptime-checks.ts"
@@ -116,7 +116,7 @@ const runReport = async (
     cwd: serverDir,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, GITHUB_OUTPUT: "", CANARY_BROWSER_FAILED: "", CANARY_BROWSER_SKIPPED: "", ...env }
+    env: { ...process.env, GITHUB_OUTPUT: "", GITHUB_STEP_SUMMARY: "", ...env }
   })
   const [stdout, stderr] = await Promise.all([
     new Response(child.stdout).text(),
@@ -239,30 +239,96 @@ describe("uptime-probe.ts against a live HTTP origin", () => {
 describe("uptime-report.ts", () => {
   const runUrl = "https://github.com/smithersai/smithers/actions/runs/7"
 
-  test("a healthy uptime report still alerts when the browser fails", async () => {
+  /** A healthy uptime report on disk, as the quarter-hour and hourly probes write it. */
+  const healthyReport = async (name: string): Promise<string> => {
     mode = "healthy"
-    const report = join(workDir, "browser-uptime.json")
+    const report = join(workDir, `${name}-uptime.json`)
     await runProbe(["--samples", "5", "--json", report])
+    return report
+  }
+  const browserResult = (name: string, result: unknown): string => {
+    const path = join(workDir, `${name}-browser.json`)
+    writeFileSync(path, JSON.stringify(result))
+    return path
+  }
+
+  test("a healthy uptime report still alerts when the browser fails, and assigns the operator", async () => {
+    const report = await healthyReport("browser-fail")
+    const browser = browserResult("browser-fail", { status: "fail", error: "Error: Chat input is not editable" })
     const output = join(workDir, "browser-output.txt")
     const body = join(workDir, "browser-body.md")
     const result = await runReport([
-      "--report", report, "--run-url", runUrl, "--body-out", body, "--github-output", output
-    ], { CANARY_BROWSER_FAILED: "1" })
+      "--report", report, "--browser", browser, "--run-url", runUrl, "--body-out", body, "--github-output", output
+    ])
+    expect(result.exitCode).toBe(1)
+    const lines = readFileSync(output, "utf8")
+    expect(lines).toContain("action=create")
+    expect(lines).toMatch(/^assignees=\S+$/m)
+    expect(readFileSync(body, "utf8")).toContain("canary-browser artifact")
+    expect(readFileSync(body, "utf8")).toContain("Chat input is not editable")
+  })
+
+  /*
+   * The regression that kept the canary switched off: removing the enable gate
+   * before the browser fixture existed would have filed "smithers.sh is
+   * failing" on the first hourly run. An unconfigured browser canary skips.
+   */
+  test("an unconfigured browser canary is a skip row, never an outage issue", async () => {
+    const report = await healthyReport("browser-skip")
+    const browser = browserResult("browser-skip", { status: "skip", missing: ["CANARY_SESSION_COOKIE", "CANARY_BROWSER_FLOW", "CANARY_BROWSER_WORKSPACE"] })
+    const output = join(workDir, "skip-output.txt")
+    const body = join(workDir, "skip-body.md")
+    const result = await runReport(["--report", report, "--browser", browser, "--body-out", body, "--github-output", output])
+    expect(result.exitCode).toBe(0)
+    expect(readFileSync(output, "utf8")).toContain("action=none")
+    expect(readFileSync(body, "utf8")).toContain("| skip |")
+    expect(readFileSync(body, "utf8")).toContain("CANARY_SESSION_COOKIE")
+    expect(result.stdout).toContain("::warning title=Canary did not measure::")
+    expect(result.stdout).toContain("CANARY_BROWSER_FLOW")
+  })
+
+  test("an unconfigured browser canary on a full run closes an open issue once uptime recovers", async () => {
+    const report = await healthyReport("browser-skip-close")
+    const browser = browserResult("browser-skip-close", { status: "skip", missing: ["CANARY_SESSION_COOKIE"] })
+    const output = join(workDir, "skip-close-output.txt")
+    const result = await runReport(["--report", report, "--browser", browser, "--open-issue", "42", "--github-output", output])
+    expect(result.exitCode).toBe(0)
+    expect(readFileSync(output, "utf8")).toContain("action=close\nissue=42\n")
+  })
+
+  test("a full run whose browser step wrote no verdict alerts", async () => {
+    const report = await healthyReport("browser-missing")
+    const output = join(workDir, "browser-missing-output.txt")
+    const body = join(workDir, "browser-missing-body.md")
+    const result = await runReport([
+      "--report", report, "--browser", join(workDir, "no-browser-result.json"), "--body-out", body, "--github-output", output
+    ])
     expect(result.exitCode).toBe(1)
     expect(readFileSync(output, "utf8")).toContain("action=create")
-    expect(readFileSync(body, "utf8")).toContain("canary-browser artifact")
+    expect(readFileSync(body, "utf8")).toContain("the browser probe produced no verdict")
   })
 
   test("a quarter-hour uptime pass leaves an open browser alert for the next full run", async () => {
-    mode = "healthy"
-    const report = join(workDir, "quarter-uptime.json")
-    await runProbe(["--samples", "5", "--json", report])
+    const report = await healthyReport("quarter")
     const output = join(workDir, "quarter-output.txt")
-    const result = await runReport([
-      "--report", report, "--open-issue", "42", "--github-output", output
-    ], { CANARY_BROWSER_SKIPPED: "1" })
+    const result = await runReport(["--report", report, "--open-issue", "42", "--github-output", output])
     expect(result.exitCode).toBe(0)
     expect(readFileSync(output, "utf8")).toContain("action=none")
+    expect(result.stdout).toContain("browser recheck is pending")
+  })
+
+  test("--force-fail drills the alert path on a healthy deployment", async () => {
+    const report = await healthyReport("drill")
+    const output = join(workDir, "drill-output.txt")
+    const body = join(workDir, "drill-body.md")
+    const result = await runReport([
+      "--report", report, "--force-fail", "workflow_dispatch drill", "--body-out", body, "--github-output", output
+    ])
+    expect(result.exitCode).toBe(1)
+    expect(readFileSync(output, "utf8")).toContain("action=create")
+    expect(readFileSync(output, "utf8")).toMatch(/^assignees=\S+$/m)
+    expect(readFileSync(body, "utf8")).toContain("deliberate failure to verify alert delivery")
+    expect(readFileSync(body, "utf8")).toContain("workflow_dispatch drill")
   })
 
   test("a --report flag with no value is refused before any file is written", async () => {
@@ -282,7 +348,7 @@ describe("uptime-report.ts", () => {
     // workflow body using Actions' errexit semantics, without contacting GitHub.
     const child = Bun.spawn(["bash", "-e", "-o", "pipefail", "-c", script], {
       cwd: serverDir, stdout: "pipe", stderr: "pipe",
-      env: { ...process.env, RUNNER_TEMP: temp, GITHUB_OUTPUT: output, RUN_URL: runUrl, OPEN_ISSUE: "" }
+      env: { ...process.env, RUNNER_TEMP: temp, GITHUB_OUTPUT: output, RUN_URL: runUrl, OPEN_ISSUE: "", BROWSER_RESULT: "", FORCE_FAILURE: "" }
     })
     const diagnostics = await new Response(child.stderr).text()
     expect(await child.exited, diagnostics).toBe(0)
@@ -290,6 +356,32 @@ describe("uptime-report.ts", () => {
     expect(readFileSync(output, "utf8")).toContain("action=create\n")
     expect(readFileSync(join(temp, "canary-alert.md"), "utf8")).toContain(runUrl)
     expect(workflow).toContain("      - name: Raise or clear the alert\n        if: always()")
+  })
+
+  test("the workflow's Decide step passes the browser result and the drill through to the report", async () => {
+    const workflow = readFileSync(join(serverDir, "../../.github/workflows/canary.yml"), "utf8")
+    const decision = workflow.split("      - name: Decide the alert\n")[1]!.split("      - name:")[0]!
+    const script = decision.split("        run: |\n")[1]!.split("\n").map((line) => line.replace(/^          /, "")).join("\n")
+    const temp = mkdtempSync(join(workDir, "workflow-drill-"))
+    mode = "healthy"
+    await runProbe(["--samples", "5", "--json", join(temp, "canary-uptime.json")])
+    const browser = join(temp, "result.json")
+    writeFileSync(browser, JSON.stringify({ status: "skip", missing: ["CANARY_SESSION_COOKIE"] }))
+    const output = join(temp, "output.txt")
+    const child = Bun.spawn(["bash", "-e", "-o", "pipefail", "-c", script], {
+      cwd: serverDir, stdout: "pipe", stderr: "pipe",
+      env: {
+        ...process.env, RUNNER_TEMP: temp, GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: "", RUN_URL: runUrl, OPEN_ISSUE: "",
+        BROWSER_RESULT: browser, FORCE_FAILURE: "workflow_dispatch drill"
+      }
+    })
+    const diagnostics = await new Response(child.stderr).text()
+    expect(await child.exited, diagnostics).toBe(0)
+    expect(readFileSync(output, "utf8")).toContain("verdict=1\n")
+    expect(readFileSync(output, "utf8")).toContain("action=create\n")
+    const body = readFileSync(join(temp, "canary-alert.md"), "utf8")
+    expect(body).toContain("| skip | smithers.sh browser |")
+    expect(body).toContain("| FAIL | alert delivery drill |")
   })
 
   test("a failing report with nothing open asks for the issue to be created", async () => {
@@ -341,7 +433,7 @@ describe("uptime-report.ts", () => {
     expect(readFileSync(outputPath, "utf8")).toContain("action=comment\nissue=31\n")
   })
 
-  test("a passing report closes the open issue and exits 0", async () => {
+  test("a passing full run closes the open issue and exits 0", async () => {
     mode = "healthy"
     const jsonPath = join(workDir, "alert-pass.json")
     await runProbe(["--samples", "5", "--json", jsonPath])
@@ -351,6 +443,8 @@ describe("uptime-report.ts", () => {
     const { exitCode, stdout } = await runReport([
       "--report",
       jsonPath,
+      "--browser",
+      browserResult("close", { status: "pass", checks: ["signed-in browser session"] }),
       "--open-issue",
       "31",
       "--body-out",

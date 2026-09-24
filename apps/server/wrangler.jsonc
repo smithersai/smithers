@@ -10,6 +10,9 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-08-01",
 	"compatibility_flags": ["nodejs_compat"],
+	// Workers Logs: without this the live script records nothing, so an outage
+	// leaves no request or exception log to read afterwards.
+	"observability": { "enabled": true },
 	// Wave 7: this Worker IS the canary. The custom domain was repointed from
 	// the POC worker `smithers-ui-canary`, which cannot take it back: the
 	// repository it deploys from dropped this route from its own config and

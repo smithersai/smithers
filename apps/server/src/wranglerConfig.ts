@@ -29,6 +29,7 @@ export interface WranglerConfig {
   }
   readonly migrations: ReadonlyArray<{ readonly tag: string; readonly new_sqlite_classes: ReadonlyArray<string> }>
   readonly vars: Readonly<Record<string, string>>
+  readonly observability?: { readonly enabled: boolean }
 }
 
 export const WRANGLER_CONFIG_PATH = fileURLToPath(new URL("../wrangler.jsonc", import.meta.url))
