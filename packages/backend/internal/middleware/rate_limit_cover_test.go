@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strconv"
 	"sync"
 	"testing"
@@ -104,52 +103,6 @@ func TestRateLimit_Cov_MiddlewareClampsRemainingAndNegativeReset(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	assert.Equal(t, "0", rec.Header().Get("X-RateLimit-Remaining"))
 	assert.Equal(t, strconv.FormatInt(now.Unix(), 10), rec.Header().Get("X-RateLimit-Reset"))
-}
-
-func TestRateLimit_Cov_MaybeCleanupCompareAndSwapLoser(t *testing.T) {
-	oldProcs := runtime.GOMAXPROCS(16)
-	t.Cleanup(func() { runtime.GOMAXPROCS(oldProcs) })
-
-	store := &rateLimitCovStaticStore{}
-	limiter := &rateLimiter{store: store}
-	now := time.Date(2026, 2, 3, 4, 5, 6, 0, time.UTC)
-	pastA := now.Add(-time.Second).Unix()
-	pastB := now.Add(-2 * time.Second).Unix()
-
-	stop := make(chan struct{})
-	var toggler sync.WaitGroup
-	toggler.Add(1)
-	go func() {
-		defer toggler.Done()
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-				limiter.nextCleanupUnix.Store(pastA)
-				runtime.Gosched()
-				limiter.nextCleanupUnix.Store(pastB)
-			}
-		}
-	}()
-
-	const workers = 32
-	const iterations = 2000
-	var wg sync.WaitGroup
-	wg.Add(workers)
-	for i := 0; i < workers; i++ {
-		go func() {
-			defer wg.Done()
-			for j := 0; j < iterations; j++ {
-				limiter.maybeCleanup(context.Background(), now)
-			}
-		}()
-	}
-	wg.Wait()
-	close(stop)
-	toggler.Wait()
-
-	assert.Greater(t, store.rateLimitCovCleanupCalls(), 0)
 }
 
 func TestRateLimit_Cov_RetryAfterNonFutureReset(t *testing.T) {

@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -1058,7 +1060,8 @@ func TestAuthLoader_InvalidTokenDoesNotFallBackToSession(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Equal(t, "invalid or expired token", apiErrorMessage(t, rec))
 	assert.Nil(t, capturedAuth)
 	assert.Equal(t, 1, q.getAuthInfoByTokenHashHit)
 	assert.Equal(t, 1, q.getOAuth2AccessTokenByHashHit)
@@ -1081,7 +1084,7 @@ func TestExtractToken_ThreePartAuthHeader(t *testing.T) {
 	assert.Equal(t, "", ExtractToken(r))
 }
 
-func TestAuthLoader_SessionDBLookupFailureFallsThrough(t *testing.T) {
+func TestAuthLoader_SessionDBLookupFailureIsServiceUnavailable(t *testing.T) {
 	t.Parallel()
 
 	q := &mockAuthLoaderQuerier{
@@ -1090,10 +1093,8 @@ func TestAuthLoader_SessionDBLookupFailureFallsThrough(t *testing.T) {
 		},
 	}
 
-	var capturedUser *db.User
 	handler := AuthLoader(q, config.AuthConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedUser = UserFromContext(r.Context())
-		w.WriteHeader(http.StatusNoContent)
+		t.Fatal("a store outage must not be served as an anonymous request")
 	}))
 
 	rec := httptest.NewRecorder()
@@ -1101,38 +1102,71 @@ func TestAuthLoader_SessionDBLookupFailureFallsThrough(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "some-session-key"})
 	handler.ServeHTTP(rec, req)
 
-	// Should continue as anonymous when session lookup fails
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Nil(t, capturedUser, "user should be nil when session DB lookup fails")
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+	assert.Equal(t, "service_unavailable", apiErrorCode(t, rec))
 	assert.Equal(t, 1, q.getAuthSessionBySessionKeyHit)
 }
 
-func TestAuthLoader_TokenDBLookupFailureContinuesAnonymous(t *testing.T) {
+func TestAuthLoader_SessionUserStoreFailureIsServiceUnavailable(t *testing.T) {
 	t.Parallel()
 
-	token := "smithers_cccccccccccccccccccccccccccccccccccccccc"
-
 	q := &mockAuthLoaderQuerier{
-		getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
-			return db.GetAuthInfoByTokenHashRow{}, assert.AnError // DB error (not pgx.ErrNoRows)
+		getAuthSessionBySessionKeyFn: func(ctx context.Context, key string) (db.AuthSession, error) {
+			return db.AuthSession{SessionKey: key, UserID: 5, ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+		},
+		getUserByIDFn: func(ctx context.Context, id int64) (db.User, error) {
+			return db.User{}, assert.AnError
 		},
 	}
 
-	var capturedUser *db.User
 	handler := AuthLoader(q, config.AuthConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedUser = UserFromContext(r.Context())
-		w.WriteHeader(http.StatusNoContent)
+		t.Fatal("a store outage must not be served as an anonymous request")
 	}))
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.AddCookie(&http.Cookie{Name: "smithers_session", Value: "some-session-key"})
 	handler.ServeHTTP(rec, req)
 
-	// Should continue as anonymous when token DB lookup fails
-	require.Equal(t, http.StatusNoContent, rec.Code)
-	assert.Nil(t, capturedUser, "user should be nil when token DB lookup fails")
-	assert.Equal(t, 1, q.getAuthInfoByTokenHashHit)
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+}
+
+func TestAuthLoader_TokenDBLookupFailureIsServiceUnavailable(t *testing.T) {
+	t.Parallel()
+
+	token := "smithers_cccccccccccccccccccccccccccccccccccccccc"
+
+	for name, q := range map[string]*mockAuthLoaderQuerier{
+		"pat": {
+			getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
+				return db.GetAuthInfoByTokenHashRow{}, assert.AnError // DB error (not pgx.ErrNoRows)
+			},
+		},
+		"oauth2": {
+			getAuthInfoByTokenHashFn: func(ctx context.Context, tokenHash string) (db.GetAuthInfoByTokenHashRow, error) {
+				return db.GetAuthInfoByTokenHashRow{}, pgx.ErrNoRows
+			},
+			getOAuth2AccessTokenByHashFn: func(ctx context.Context, tokenHash string) (db.Oauth2AccessToken, error) {
+				return db.Oauth2AccessToken{}, assert.AnError
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			before := testutilCounterValue(AuthLoaderFailures.WithLabelValues("token_lookup"))
+			handler := AuthLoader(q, config.AuthConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Fatal("a store outage must not be served as an anonymous request")
+			}))
+
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/private", nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			handler.ServeHTTP(rec, req)
+
+			require.Equal(t, http.StatusServiceUnavailable, rec.Code)
+			assert.Equal(t, "service_unavailable", apiErrorCode(t, rec))
+			assert.Greater(t, testutilCounterValue(AuthLoaderFailures.WithLabelValues("token_lookup")), before)
+		})
+	}
 }
 
 func TestAuthLoader_SessionRefreshFailureSilentlyIgnored(t *testing.T) {
@@ -1332,7 +1366,7 @@ func TestAuthLoader_TokenAuth_RejectsProhibitedLoginUser(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	handler.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Equal(t, http.StatusForbidden, rec.Code)
 	assert.Nil(t, capturedUser, "prohibited-login user should not be set in context via token auth")
 }
 
@@ -1477,7 +1511,7 @@ func TestAuthLoader_BearerTokenRequestNeverGetsCSRFCookie(t *testing.T) {
 
 // Same contract through AuthLoader's token path: an expired PAT must not
 // produce an authenticated context (and must not fall back to session auth).
-func TestAuthLoader_ExpiredTokenYieldsAnonymous(t *testing.T) {
+func TestAuthLoader_ExpiredTokenIsUnauthorized(t *testing.T) {
 	t.Parallel()
 
 	q := &mockAuthLoaderQuerier{
@@ -1489,10 +1523,8 @@ func TestAuthLoader_ExpiredTokenYieldsAnonymous(t *testing.T) {
 		},
 	}
 
-	var capturedUser *db.User
 	handler := AuthLoader(q, config.AuthConfig{})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		capturedUser = UserFromContext(r.Context())
-		w.WriteHeader(http.StatusOK)
+		t.Fatal("an expired token must not continue as an anonymous request")
 	}))
 
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -1501,6 +1533,19 @@ func TestAuthLoader_ExpiredTokenYieldsAnonymous(t *testing.T) {
 
 	handler.ServeHTTP(w, r)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Nil(t, capturedUser, "expired token must not authenticate")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, "invalid or expired token", apiErrorMessage(t, w))
+}
+
+func apiErrorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	var payload struct {
+		Code string `json:"code"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	return payload.Code
+}
+
+func testutilCounterValue(c prometheus.Collector) float64 {
+	return promtestutil.ToFloat64(c)
 }

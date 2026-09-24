@@ -7,11 +7,11 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -32,15 +32,14 @@ const (
 	// routes (GitHub / Auth0 start + callback). One connect attempt burns
 	// two tokens (start + callback), so these get a looser limit than the
 	// strict "auth" scope used for credential-bearing endpoints.
-	authInteractiveRateLimitScope   = "auth_interactive"
-	searchRateLimitRetentionPeriod  = 24 * time.Hour
-	searchRateLimitCleanupFrequency = 5 * time.Minute
-	searchRateLimitCleanupTimeout   = 5 * time.Second
+	authInteractiveRateLimitScope = "auth_interactive"
 )
 
+// SearchRateLimitStore consumes tokens from Postgres-backed buckets. Expired
+// bucket rows are pruned by the periodic auth cleaner (cleanup.AuthCleaner),
+// never on the request path.
 type SearchRateLimitStore interface {
 	ConsumeSearchRateLimitToken(ctx context.Context, arg db.ConsumeSearchRateLimitTokenParams) (db.ConsumeSearchRateLimitTokenRow, error)
-	DeleteExpiredSearchRateLimits(ctx context.Context, cutoffAt time.Time) error
 }
 
 // RateLimitRejectObserver is called whenever a request is rejected with 429
@@ -58,8 +57,7 @@ type rateLimiter struct {
 	// failClosed rejects requests with 503 when the token store errors,
 	// instead of letting them through. Set for brute-force-sensitive auth
 	// scopes; throughput scopes deliberately fail open for availability.
-	failClosed      bool
-	nextCleanupUnix atomic.Int64
+	failClosed bool
 	// keyFn overrides the principal key; nil means searchRateLimitKey.
 	keyFn func(*http.Request) string
 }
@@ -227,7 +225,6 @@ func (l *rateLimiter) middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		l.maybeCleanup(r.Context(), now)
 		principalKey := searchRateLimitKey(r)
 		if l.keyFn != nil {
 			principalKey = l.keyFn(r)
@@ -310,24 +307,6 @@ func (l *rateLimiter) middleware(next http.Handler) http.Handler {
 	})
 }
 
-func (l *rateLimiter) maybeCleanup(ctx context.Context, now time.Time) {
-	currentNext := l.nextCleanupUnix.Load()
-	if currentNext != 0 && now.Unix() < currentNext {
-		return
-	}
-
-	nextRun := now.Add(searchRateLimitCleanupFrequency).Unix()
-	if !l.nextCleanupUnix.CompareAndSwap(currentNext, nextRun) {
-		return
-	}
-
-	// Cleanup is best effort on the request path. It must not retain a canceled
-	// request or wait indefinitely for a database lock.
-	cleanupCtx, cancel := context.WithTimeout(ctx, searchRateLimitCleanupTimeout)
-	defer cancel()
-	_ = l.store.DeleteExpiredSearchRateLimits(cleanupCtx, now.Add(-searchRateLimitRetentionPeriod))
-}
-
 func (l *rateLimiter) writeHeaders(w http.ResponseWriter, limit, remaining int, resetAt time.Time) {
 	w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
 	w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
@@ -352,10 +331,29 @@ func searchRateLimitKey(r *http.Request) string {
 	}
 
 	host, _, err := net.SplitHostPort(remoteAddr)
-	if err == nil && host != "" {
-		return "ip:" + host
+	if err != nil || host == "" {
+		host = remoteAddr
 	}
-	return "ip:" + remoteAddr
+	return "ip:" + canonicalRateLimitIP(host)
+}
+
+// canonicalRateLimitIP keys an IPv6 client by its /64. One subscriber controls
+// at least a /64, so a per-address key lets it take a fresh bucket for every
+// request. IPv4 (including IPv4-mapped IPv6) stays per address.
+func canonicalRateLimitIP(host string) string {
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return host
+	}
+	addr = addr.Unmap()
+	if addr.Is4() {
+		return addr.String()
+	}
+	prefix, err := addr.WithZone("").Prefix(64)
+	if err != nil {
+		return addr.String()
+	}
+	return prefix.String()
 }
 
 func isNilSearchRateLimitStore(store SearchRateLimitStore) bool {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -79,6 +80,10 @@ func (c *GitHubClient) ExchangeCode(ctx context.Context, code string) (services.
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, githubOAuthResponseLimit))
+	if err != nil {
+		return services.GitHubTokenResult{}, fmt.Errorf("read github oauth exchange response: %w", err)
+	}
 	var payload struct {
 		AccessToken           string `json:"access_token"`
 		RefreshToken          string `json:"refresh_token"`
@@ -87,18 +92,21 @@ func (c *GitHubClient) ExchangeCode(ctx context.Context, code string) (services.
 		Error                 string `json:"error"`
 		ErrorDescription      string `json:"error_description"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return services.GitHubTokenResult{}, fmt.Errorf("decode github oauth exchange response: %w", err)
+	decodeErr := json.Unmarshal(body, &payload)
+	ok := resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices
+	// GitHub reports a failed exchange (bad_verification_code,
+	// redirect_uri_mismatch, incorrect_client_credentials) with HTTP 200 and an
+	// error body, so the error fields are checked whatever the status.
+	if strings.TrimSpace(payload.Error) != "" || !ok {
+		return services.GitHubTokenResult{}, &GitHubOAuthError{
+			Action:      "exchange",
+			Status:      resp.StatusCode,
+			Code:        strings.TrimSpace(payload.Error),
+			Description: strings.TrimSpace(payload.ErrorDescription),
+		}
 	}
-
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		if payload.ErrorDescription != "" {
-			return services.GitHubTokenResult{}, fmt.Errorf("github oauth exchange failed: %s", payload.ErrorDescription)
-		}
-		if payload.Error != "" {
-			return services.GitHubTokenResult{}, fmt.Errorf("github oauth exchange failed: %s", payload.Error)
-		}
-		return services.GitHubTokenResult{}, fmt.Errorf("github oauth exchange failed with status %d", resp.StatusCode)
+	if decodeErr != nil {
+		return services.GitHubTokenResult{}, fmt.Errorf("decode github oauth exchange response: %w", decodeErr)
 	}
 
 	if strings.TrimSpace(payload.AccessToken) == "" {

@@ -40,9 +40,9 @@ func TestReviewQuotaStoreReclaimsIdleRouteKeysWithoutResettingDebt(t *testing.T)
 
 	// Removing a full bucket changes no quota: revisiting its key starts with
 	// exactly the budget it would have had without reclamation.
-	allowed, _ = store.TakeN(context.Background(), "repo_api_requests|repo:alice/missing-0", 1000, 1000, time.Hour)
+	allowed, _ = store.TakeN(context.Background(), "repo_api_requests|repo:alice/missing-0|ip:192.0.2.1", 1000, 1000, time.Hour)
 	require.True(t, allowed)
-	allowed, _ = store.Take(context.Background(), "repo_api_requests|repo:alice/missing-0", 1000, time.Hour)
+	allowed, _ = store.Take(context.Background(), "repo_api_requests|repo:alice/missing-0|ip:192.0.2.1", 1000, time.Hour)
 	assert.False(t, allowed)
 }
 

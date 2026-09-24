@@ -33,6 +33,16 @@ type AuthCleaner struct {
 	revocations revocation.Publisher
 }
 
+// rateLimitBucketRetention is how long an idle rate-limit bucket row is kept.
+// It matches the longest window any Postgres-backed limiter uses.
+const rateLimitBucketRetention = 24 * time.Hour
+
+// expiredRateLimitStore prunes idle Postgres rate-limit buckets. The sweep
+// runs here, once per process, so no user request waits on the DELETE.
+type expiredRateLimitStore interface {
+	DeleteExpiredSearchRateLimits(ctx context.Context, cutoffAt time.Time) error
+}
+
 type expiredOAuth2AccessTokenStore interface {
 	DeleteExpiredOAuth2AccessTokens(context.Context) ([]db.Oauth2AccessToken, error)
 }
@@ -89,6 +99,11 @@ func (c *AuthCleaner) sweep(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("delete expired access tokens: %w", err))
 	} else if deleted > 0 {
 		slog.Info("pruned expired access tokens", "count", deleted)
+	}
+	if store, ok := c.store.(expiredRateLimitStore); ok {
+		if err := store.DeleteExpiredSearchRateLimits(ctx, time.Now().Add(-rateLimitBucketRetention)); err != nil {
+			errs = append(errs, fmt.Errorf("delete expired rate limit buckets: %w", err))
+		}
 	}
 	if store, ok := c.store.(expiredOAuth2AccessTokenStore); ok {
 		expired, err := store.DeleteExpiredOAuth2AccessTokens(ctx)

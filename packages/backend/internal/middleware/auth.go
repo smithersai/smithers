@@ -151,7 +151,11 @@ func RequireAuth(next http.Handler) http.Handler {
 }
 
 // AuthLoader loads session/cookie or token auth information if available.
-// This middleware is a soft gate: anonymous requests continue to next handler.
+// This middleware is a soft gate: a request with no credential, or with a
+// session cookie that names no live session, continues as anonymous. A
+// presented bearer token that resolves to nothing is refused with 401, a
+// suspended owner with 403, and a credential store that cannot answer with
+// 503, so an outage is never mistaken for a logged-out user.
 func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...identity.OwnerAuthorizer) func(http.Handler) http.Handler {
 	sessionCookieName := strings.TrimSpace(cfg.SessionCookieName)
 	if sessionCookieName == "" {
@@ -187,30 +191,50 @@ func AuthLoader(queries AuthLoaderQuerier, cfg config.AuthConfig, boundaries ...
 
 			token := ExtractToken(r)
 			if token != "" {
-				if authInfo := loadTokenAuth(ctx, queries, token); authInfo != nil {
-					if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
-						return
-					}
-					if !allowWorkspaceRestrictedToken(w, r, authInfo) {
-						return
-					}
-					if authInfo.TokenSource == TokenSourcePersonalAccessToken {
-						_ = queries.UpdateAccessTokenLastUsed(ctx, authInfo.TokenID)
-					}
-					next.ServeHTTP(w, r.WithContext(ContextWithAuthInfo(ctx, authInfo)))
+				authInfo, err := loadTokenAuth(ctx, queries, token)
+				switch {
+				case stdErrors.Is(err, errAccountSuspended):
+					errors.WriteError(w, errors.Forbidden("account is suspended"))
+					return
+				case err != nil:
+					writeAuthStoreUnavailable(w, r, "token_lookup", err)
+					return
+				case authInfo == nil:
+					// A presented credential that resolves to nothing is a bad
+					// credential, not an anonymous request: answering as anonymous
+					// turns an expired token into 404s on private repositories.
+					errors.WriteError(w, errors.Unauthorized("invalid or expired token"))
 					return
 				}
-				next.ServeHTTP(w, r)
+				if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
+					return
+				}
+				if !allowWorkspaceRestrictedToken(w, r, authInfo) {
+					return
+				}
+				if authInfo.TokenSource == TokenSourcePersonalAccessToken {
+					if err := queries.UpdateAccessTokenLastUsed(ctx, authInfo.TokenID); err != nil {
+						recordAuthLoaderFailure(r, "token_last_used", err)
+					}
+				}
+				next.ServeHTTP(w, r.WithContext(ContextWithAuthInfo(ctx, authInfo)))
 				return
 			}
 
 			if cookie, err := r.Cookie(sessionCookieName); err == nil && cookie.Value != "" {
-				authInfo, session := loadSessionAuth(ctx, queries, cookie.Value, now)
+				authInfo, session, err := loadSessionAuth(ctx, queries, cookie.Value, now)
+				if err != nil {
+					writeAuthStoreUnavailable(w, r, "session_lookup", err)
+					return
+				}
 				if authInfo != nil {
 					if !authorizeInstallationOwner(w, r, authInfo, ownerBoundary) {
 						return
 					}
-					refreshedSession, sessionExpiresAt := refreshLoadedSession(ctx, queries, session, now, sessionDuration, sessionRefreshWindow)
+					refreshedSession, sessionExpiresAt, refreshErr := refreshLoadedSession(ctx, queries, session, now, sessionDuration, sessionRefreshWindow)
+					if refreshErr != nil {
+						recordAuthLoaderFailure(r, "session_refresh", refreshErr)
+					}
 					if refreshedSession != nil {
 						http.SetCookie(w, &http.Cookie{
 							Name: sessionCookieName,
@@ -267,12 +291,15 @@ func authorizeInstallationOwner(w http.ResponseWriter, r *http.Request, authInfo
 	return true
 }
 
+// loadSessionAuth resolves a session cookie. It returns (nil, nil, nil) when
+// the cookie names no live session, and a non-nil error only when the store
+// could not answer, so the caller can tell a logged-out user from an outage.
 func loadSessionAuth(
 	ctx context.Context,
 	queries AuthLoaderQuerier,
 	sessionKey string,
 	now time.Time,
-) (*AuthInfo, *db.AuthSession) {
+) (*AuthInfo, *db.AuthSession, error) {
 	// Sessions minted after keys were hashed at rest are filed under the
 	// key's SHA-256 digest (see services.sessionStorageKey); rows minted
 	// before stay raw-keyed until they expire. Try the digest first so the
@@ -281,38 +308,44 @@ func loadSessionAuth(
 	session, err := queries.GetAuthSessionBySessionKey(ctx, sessionStorageKey(sessionKey))
 	if err != nil {
 		if !stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, nil, err
 		}
 		// Never interpret a stored SHA-256 digest as a legacy bearer key.
 		// Legacy keys are UUIDs; allowing the digest here makes hashing at
 		// rest ineffective because a database dump can be used as cookies.
 		if len(sessionKey) == sha256.Size*2 {
 			if _, err := hex.DecodeString(sessionKey); err == nil {
-				return nil, nil
+				return nil, nil, nil
 			}
 		}
 		session, err = queries.GetAuthSessionBySessionKey(ctx, sessionKey)
 		if err != nil {
-			return nil, nil
+			if stdErrors.Is(err, pgx.ErrNoRows) {
+				return nil, nil, nil
+			}
+			return nil, nil, err
 		}
 	}
 	if !session.ExpiresAt.After(now) {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	user, err := queries.GetUserByID(ctx, session.UserID)
 	if err != nil {
-		return nil, nil
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil, nil
+		}
+		return nil, nil, err
 	}
 	if user.ProhibitLogin {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	return &AuthInfo{
 		User:        &user,
 		IsTokenAuth: false,
 		Scopes:      ScopeSet{},
-	}, &session
+	}, &session, nil
 }
 
 func refreshLoadedSession(
@@ -322,25 +355,25 @@ func refreshLoadedSession(
 	now time.Time,
 	sessionDuration time.Duration,
 	sessionRefreshWindow time.Duration,
-) (*db.AuthSession, time.Time) {
+) (*db.AuthSession, time.Time, error) {
 	if session == nil {
-		return nil, time.Time{}
+		return nil, time.Time{}, nil
 	}
 	effectiveExpiresAt := session.ExpiresAt
 	if session.ExpiresAt.Sub(now) > sessionRefreshWindow {
-		return nil, effectiveExpiresAt
+		return nil, effectiveExpiresAt, nil
 	}
 	updated, err := queries.RefreshAuthSession(ctx, db.RefreshAuthSessionParams{
 		SessionKey: session.SessionKey,
 		ExpiresAt:  now.Add(sessionDuration),
 	})
 	if err != nil {
-		return nil, effectiveExpiresAt
+		return nil, effectiveExpiresAt, err
 	}
-	return &updated, updated.ExpiresAt
+	return &updated, updated.ExpiresAt, nil
 }
 
-func loadTokenAuth(ctx context.Context, queries AuthLoaderQuerier, token string) *AuthInfo {
+func loadTokenAuth(ctx context.Context, queries AuthLoaderQuerier, token string) (*AuthInfo, error) {
 	hash := sha256.Sum256([]byte(token))
 	tokenHash := hex.EncodeToString(hash[:])
 	return loadTokenAuthByHash(ctx, queries, tokenHash)
@@ -354,18 +387,25 @@ func sessionStorageKey(rawSessionKey string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func loadTokenAuthByHash(ctx context.Context, queries AuthLoaderQuerier, tokenHash string) *AuthInfo {
+// errAccountSuspended marks a credential that resolves to a user whose login
+// is prohibited.
+var errAccountSuspended = stdErrors.New("account is suspended")
+
+// loadTokenAuthByHash resolves a token hash. It returns (nil, nil) when no
+// live token matches, errAccountSuspended for a suspended owner, and any
+// other error only when the store could not answer.
+func loadTokenAuthByHash(ctx context.Context, queries AuthLoaderQuerier, tokenHash string) (*AuthInfo, error) {
 	authRow, err := queries.GetAuthInfoByTokenHash(ctx, tokenHash)
 	if err != nil {
 		if !stdErrors.Is(err, pgx.ErrNoRows) {
-			return nil
+			return nil, err
 		}
 		return loadOAuth2TokenAuth(ctx, queries, tokenHash)
 	}
 
 	user := authRowToUser(authRow)
 	if user.ProhibitLogin {
-		return nil
+		return nil, errAccountSuspended
 	}
 
 	return &AuthInfo{
@@ -376,15 +416,18 @@ func loadTokenAuthByHash(ctx context.Context, queries AuthLoaderQuerier, tokenHa
 		Scopes:      ParseTokenScopes(authRow.TokenScopes),
 		IsTokenAuth: true,
 		TokenSource: TokenSourcePersonalAccessToken,
-	}
+	}, nil
 }
 
-func loadOAuth2TokenAuth(ctx context.Context, queries AuthLoaderQuerier, tokenHash string) *AuthInfo {
+func loadOAuth2TokenAuth(ctx context.Context, queries AuthLoaderQuerier, tokenHash string) (*AuthInfo, error) {
 	info, err := loadOAuth2AccessToken(ctx, queries, tokenHash)
 	if err != nil {
-		return nil
+		if stdErrors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
 	}
-	return info
+	return info, nil
 }
 
 func loadOAuth2AccessToken(ctx context.Context, queries interface {

@@ -323,6 +323,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 	// per-request check in the auth chain, and termination of every live SSE
 	// stream, terminal, relay, and sandbox proxy the revocation covers.
 	revocationBus := newRevocationBus(pool, queries)
+	smithersMetrics.MustRegister(revocationBus.MetricsCollectors()...)
 	// Own the listener lifetime even when production supplies Background().
 	// Register the stop immediately after Start so it runs before pool.Close
 	// on startup errors as well as normal shutdown.
@@ -943,6 +944,7 @@ func runWithOptions(ctx context.Context, args []string, stdout, stderr io.Writer
 		slog.Error("invalid cleanup.auth_interval", "interval", cfg.Cleanup.AuthInterval, "error", err)
 		return err
 	}
+	smithersMetrics.MustRegister(cleanup.SweepFailures, middleware.AuthLoaderFailures, lfsauth.Rejections)
 	authCleaner := cleanup.NewAuthCleaner(queries, authCleanupInterval)
 	authCleaner.SetRevocationPublisher(revocationPublisher)
 	workflowCacheCleanupInterval, err := time.ParseDuration(cfg.Cleanup.WorkflowCacheInterval)

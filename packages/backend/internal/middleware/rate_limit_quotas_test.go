@@ -142,6 +142,7 @@ func TestPerRepoRateLimits_TableDriven(t *testing.T) {
 
 			// Next request should 429 with the canonical body.
 			req := httptest.NewRequest(tc.method, tc.url, nil)
+			req.RemoteAddr = "10.0.0.1:1"
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			require.Equal(t, http.StatusTooManyRequests, rec.Code)

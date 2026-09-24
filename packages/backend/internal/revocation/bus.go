@@ -82,7 +82,10 @@ type Bus struct {
 	nextSub       int
 	started       bool
 	positioned    bool
+	connected     bool
 	done          chan struct{}
+
+	metrics busMetrics
 }
 
 // NewBus builds a bus over the pool for LISTEN and the lister for catch-up.
@@ -109,6 +112,7 @@ func newBus(lister Lister) *Bus {
 		userEvents:    make(map[int64]int64),
 		subs:          make(map[int]func(Event)),
 		done:          make(chan struct{}),
+		metrics:       newBusMetrics(),
 	}
 }
 
@@ -153,6 +157,7 @@ func (b *Bus) positionCursor(ctx context.Context) bool {
 		if ctx.Err() != nil {
 			return false
 		}
+		b.metrics.catchUpErrors.Inc()
 		slog.Warn("revocation bus: cannot read the event log yet; retrying", "error", err)
 		if !sleepCtx(ctx, reconnectBackoff) {
 			return false
@@ -211,6 +216,10 @@ func (b *Bus) run(ctx context.Context) {
 		}
 		conn, err := b.acquire(ctx)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			b.metrics.reconnects.Inc()
 			slog.Warn("revocation bus: acquire connection failed", "error", err)
 			if !sleepCtx(ctx, reconnectBackoff) {
 				return
@@ -218,7 +227,11 @@ func (b *Bus) run(ctx context.Context) {
 			continue
 		}
 		b.serve(ctx, conn)
+		b.setConnected(false)
 		conn.Release()
+		if ctx.Err() == nil {
+			b.metrics.reconnects.Inc()
+		}
 		if !sleepCtx(ctx, reconnectBackoff) {
 			return
 		}
@@ -230,6 +243,7 @@ func (b *Bus) serve(ctx context.Context, conn notifier) {
 		slog.Warn("revocation bus: LISTEN failed", "error", err)
 		return
 	}
+	b.setConnected(true)
 	// Anything published between the cursor read and LISTEN is picked up here.
 	b.catchUp(ctx)
 	for {
@@ -275,6 +289,7 @@ func (b *Bus) catchUp(ctx context.Context) {
 		rows, err := b.lister.ListRevocationEventsAfter(ctx, db.ListRevocationEventsAfterParams{AfterID: after, LimitCount: catchUpBatch})
 		if err != nil {
 			if ctx.Err() == nil {
+				b.metrics.catchUpErrors.Inc()
 				slog.Warn("revocation bus: catch-up read failed", "after", after, "error", err)
 			}
 			return
@@ -304,6 +319,7 @@ func (b *Bus) apply(event Event) {
 		}
 		b.seen[event.ID] = now
 	}
+	b.metrics.eventsApplied.WithLabelValues(string(event.Kind)).Inc()
 	switch event.Kind {
 	case KindTokenRevoked, KindTokenScopesNarrowed:
 		if event.TokenHash != "" {

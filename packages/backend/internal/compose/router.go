@@ -236,11 +236,18 @@ func buildRouter(
 		if ticketsValidated != nil {
 			sseTicketMetrics = &middleware.SSETicketMetrics{TicketsValidated: ticketsValidated}
 		}
-		sseTicketAuth = middleware.SSETicketAuth(
+		ticketAuth := middleware.SSETicketAuth(
 			middleware.NewSSETicketValidatorChain(sseTicketValidators...),
 			sseTicketMetrics,
 			ownerBoundary,
 		)
+		// Ticket auth installs its principal after authLoader's guard has
+		// already run, so the guard must run again behind it or a ticket's
+		// revoked token or disabled user is never checked.
+		ticketGuard := middleware.RevocationGuard(revocationChecker)
+		sseTicketAuth = func(next http.Handler) http.Handler {
+			return ticketAuth(ticketGuard(next))
+		}
 	}
 
 	// Middleware stack prefix (spec order)

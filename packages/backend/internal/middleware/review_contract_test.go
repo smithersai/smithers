@@ -115,63 +115,6 @@ func assertReviewRetryAfter(t *testing.T, rec *httptest.ResponseRecorder, want i
 	assert.Equal(t, want, body.RetryAfter)
 }
 
-type reviewBlockingCleanupStore struct {
-	entered chan context.Context
-	release chan struct{}
-}
-
-func (s *reviewBlockingCleanupStore) DeleteExpiredSearchRateLimits(ctx context.Context, _ time.Time) error {
-	s.entered <- ctx
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-s.release:
-		return nil
-	}
-}
-
-func (*reviewBlockingCleanupStore) ConsumeSearchRateLimitToken(ctx context.Context, _ db.ConsumeSearchRateLimitTokenParams) (db.ConsumeSearchRateLimitTokenRow, error) {
-	return db.ConsumeSearchRateLimitTokenRow{Allowed: true, RemainingTokens: 1}, ctx.Err()
-}
-
-func TestReviewRateLimitCleanupHasRequestLifetime(t *testing.T) {
-	store := &reviewBlockingCleanupStore{entered: make(chan context.Context, 1), release: make(chan struct{})}
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	handler := SearchRateLimit(store)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	go func() {
-		defer close(done)
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/search", nil).WithContext(ctx))
-	}()
-	t.Cleanup(func() {
-		close(store.release)
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("request did not finish after cleanup was released")
-		}
-	})
-	var cleanupContext context.Context
-	select {
-	case cleanupContext = <-store.entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("request did not start cleanup")
-	}
-	deadline, bounded := cleanupContext.Deadline()
-	assert.True(t, bounded, "best-effort cleanup needs a finite database deadline")
-	if bounded {
-		assert.WithinDuration(t, time.Now(), deadline, 10*time.Second)
-	}
-	cancel()
-	select {
-	case <-done:
-		assert.ErrorIs(t, cleanupContext.Err(), context.Canceled)
-	case <-time.After(time.Second):
-		t.Error("database cleanup kept the request alive after cancellation")
-	}
-}
-
 func TestReviewStructuredLoggerRecordsWireStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

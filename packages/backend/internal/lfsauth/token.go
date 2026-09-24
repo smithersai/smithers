@@ -265,33 +265,36 @@ func (m *Manager) issueClaims(claims Claims, ttl time.Duration) (string, Claims,
 
 func (m *Manager) Verify(token string) (Claims, error) {
 	if m == nil {
-		return Claims{}, errors.New("lfs auth manager is not configured")
+		return Claims{}, ErrNotConfigured
 	}
 	if len(token) == 0 || len(token) > maxTokenLength || !strings.HasPrefix(token, tokenPrefix) {
-		return Claims{}, errors.New("invalid lfs auth token")
+		return Claims{}, ErrMalformed
 	}
 	parts := strings.Split(strings.TrimPrefix(token, tokenPrefix), ".")
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return Claims{}, errors.New("invalid lfs auth token")
+		return Claims{}, ErrMalformed
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[0])
 	if err != nil {
-		return Claims{}, errors.New("invalid lfs auth token")
+		return Claims{}, ErrMalformed
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil || len(sig) != sha256.Size || !hmac.Equal(sig, m.sign(payload)) {
-		return Claims{}, errors.New("invalid lfs auth token")
+	if err != nil || len(sig) != sha256.Size {
+		return Claims{}, ErrMalformed
+	}
+	if !hmac.Equal(sig, m.sign(payload)) {
+		return Claims{}, ErrSignature
 	}
 
 	var claims Claims
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&claims); err != nil {
-		return Claims{}, errors.New("invalid lfs auth token")
+		return Claims{}, ErrMalformed
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return Claims{}, errors.New("invalid lfs auth token")
+		return Claims{}, ErrMalformed
 	}
 	if err := validateClaims(claims, m.now().UTC()); err != nil {
 		return Claims{}, err
@@ -340,13 +343,13 @@ func validateClaims(claims Claims, now time.Time) error {
 		Principal:    claims.Principal,
 	}
 	if claims.Version != 1 || claims.Owner != strings.ToLower(strings.TrimSpace(claims.Owner)) || claims.Repository != strings.ToLower(strings.TrimSpace(claims.Repository)) || validateGrant(grant) != nil {
-		return errors.New("invalid lfs auth claims")
+		return ErrInvalidClaims
 	}
 	maxTTL := MaximumTokenTTL
 	switch claims.Purpose {
 	case PurposeBridge:
 		if claims.OID != "" || claims.Size != 0 {
-			return errors.New("invalid lfs auth claims")
+			return ErrInvalidClaims
 		}
 	case PurposeVerify:
 		maxTTL = MaximumVerifyTTL
@@ -358,21 +361,21 @@ func validateClaims(claims Claims, now time.Time) error {
 			Size:         claims.Size,
 			Principal:    claims.Principal,
 		}) != nil {
-			return errors.New("invalid lfs auth claims")
+			return ErrInvalidClaims
 		}
 	default:
-		return errors.New("invalid lfs auth claims")
+		return ErrInvalidClaims
 	}
 	issuedAt := time.Unix(claims.IssuedAt, 0)
 	expiresAt := time.Unix(claims.ExpiresAt, 0)
 	if claims.Nonce == "" || !expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > maxTTL {
-		return errors.New("invalid lfs auth claims")
+		return ErrInvalidClaims
 	}
 	if issuedAt.After(now.Add(clockSkewAllowance)) {
-		return errors.New("lfs auth token is not yet valid")
+		return ErrNotYetValid
 	}
 	if !expiresAt.After(now) {
-		return errors.New("lfs auth token has expired")
+		return ErrExpired
 	}
 	return nil
 }
@@ -440,20 +443,20 @@ func HTTPMiddleware(manager *Manager) func(http.Handler) http.Handler {
 				return
 			}
 			if len(fields) != 2 {
-				writeUnauthorized(w)
+				reject(w, r, reasonMalformed)
 				return
 			}
 			if manager == nil {
-				writeUnauthorized(w)
+				reject(w, r, reasonNotConfigured)
 				return
 			}
 			claims, err := manager.Verify(fields[1])
 			if err != nil {
-				writeUnauthorized(w)
+				reject(w, r, rejectionReason(err))
 				return
 			}
 			if claims.Purpose == PurposeVerify && (r.Method != http.MethodPost || !strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "/lfs/verify")) {
-				writeUnauthorized(w)
+				reject(w, r, reasonPurpose)
 				return
 			}
 			next.ServeHTTP(w, r.WithContext(ContextWithGrant(r.Context(), claims, fields[1])))

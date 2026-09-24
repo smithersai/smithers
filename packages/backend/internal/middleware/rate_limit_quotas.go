@@ -1,8 +1,8 @@
 // Package middleware — per-repo and per-user quota rate limiters (ticket 17).
 //
 // These middlewares enforce the Smithers product quotas:
-//   - Per-repo: stack submits 30/hr, workflow runs 60/hr, sandbox hours 10/day,
-//     API requests 1000/hr.
+//   - Per-repo: stack submits 30/hr, workflow runs 60/hr, sandbox hours 10/day.
+//   - Per-caller per-repo: API requests 1000/hr.
 //   - Per-user: connected repos 10 (count), concurrent workflow runs 5 (count),
 //     concurrent sandboxes 3 (count).
 //
@@ -227,15 +227,22 @@ func PerRepoWorkflowRuns(store *TokenBucketStore) func(http.Handler) http.Handle
 	return perRepoBucketMiddleware(store, scope, capacity, window)
 }
 
-// PerRepoAPIRequests enforces 1000 generic API requests per hour per repo.
-// Apply at the /api/repos/{owner}/{repo}/* group level.
+// PerRepoAPIRequests enforces 1000 generic API requests per hour per caller
+// per repo. Apply at the /api/repos/{owner}/{repo}/* group level.
+//
+// The bucket is keyed by caller (user id, or the client address for anonymous
+// callers) as well as by repo. A repo-only key let any reader of a public repo
+// spend its whole budget and lock the repository's API for every other user,
+// the owner included.
 func PerRepoAPIRequests(store *TokenBucketStore) func(http.Handler) http.Handler {
 	const (
 		capacity = 1000
 		window   = time.Hour
 		scope    = "repo_api_requests"
 	)
-	return perRepoBucketMiddleware(store, scope, capacity, window)
+	return perRepoBucketMiddlewareKeyed(store, capacity, window, func(r *http.Request) string {
+		return repoBucketKey(r, scope) + "|" + searchRateLimitKey(r)
+	})
 }
 
 // PerRepoSandboxHours enforces 10 sandbox-hours per day per repo. The bucket
@@ -289,14 +296,19 @@ func PerWorkspaceDesktopControl(store *TokenBucketStore) func(http.Handler) http
 }
 
 func perRepoBucketMiddleware(store *TokenBucketStore, scope string, capacity int, window time.Duration) func(http.Handler) http.Handler {
+	return perRepoBucketMiddlewareKeyed(store, capacity, window, func(r *http.Request) string {
+		return repoBucketKey(r, scope)
+	})
+}
+
+func perRepoBucketMiddlewareKeyed(store *TokenBucketStore, capacity int, window time.Duration, bucketKey func(*http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if store == nil {
 				next.ServeHTTP(w, r)
 				return
 			}
-			key := repoBucketKey(r, scope)
-			allowed, retryAfter := store.Take(r.Context(), key, capacity, window)
+			allowed, retryAfter := store.Take(r.Context(), bucketKey(r), capacity, window)
 			if !allowed {
 				rateLimitExceededResponse(w, retryAfter)
 				return

@@ -537,7 +537,9 @@ func TestSearchRateLimit_WhitespaceOnlyRemoteAddrUsesUnknown(t *testing.T) {
 	assert.Contains(t, store.keysSeen, "search|ip:unknown")
 }
 
-func TestSearchRateLimit_CleanupTriggeredAfterInterval(t *testing.T) {
+// Expired-bucket cleanup belongs to the periodic auth cleaner. A user request
+// must never wait on a DELETE over the shared bucket table.
+func TestSearchRateLimit_RequestPathNeverRunsCleanup(t *testing.T) {
 	t.Parallel()
 
 	store := &errorStore{}
@@ -546,21 +548,13 @@ func TestSearchRateLimit_CleanupTriggeredAfterInterval(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
-	// First request triggers initial cleanup (nextCleanupUnix is 0)
-	req := httptest.NewRequest(http.MethodGet, "/api/search/users?q=alice", nil)
-	req.RemoteAddr = "192.0.2.80:9000"
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/api/search/users?q=alice", nil)
+		req.RemoteAddr = "192.0.2.80:9000"
+		handler.ServeHTTP(httptest.NewRecorder(), req)
+	}
 
-	assert.Equal(t, 1, store.cleanupCalls, "first request should trigger cleanup (nextCleanupUnix starts at 0)")
-
-	// Second request within cleanup interval — should NOT trigger cleanup
-	req2 := httptest.NewRequest(http.MethodGet, "/api/search/users?q=alice", nil)
-	req2.RemoteAddr = "192.0.2.80:9000"
-	rec2 := httptest.NewRecorder()
-	handler.ServeHTTP(rec2, req2)
-
-	assert.Equal(t, 1, store.cleanupCalls, "second request should skip cleanup (within interval)")
+	assert.Equal(t, 0, store.cleanupCalls)
 }
 
 func TestSearchRateLimit_TypedNilStoreHandledLikeNilStore(t *testing.T) {

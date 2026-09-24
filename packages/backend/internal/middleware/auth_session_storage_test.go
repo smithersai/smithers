@@ -35,7 +35,7 @@ func TestAuthLoader_StoredDigestIsNotABearerCredential(t *testing.T) {
 			return db.User{ID: 44, IsActive: true}, nil
 		},
 	}
-	info, _ := loadSessionAuth(context.Background(), q, storedKey, time.Now())
+	info, _, _ := loadSessionAuth(context.Background(), q, storedKey, time.Now())
 	require.Nil(t, info, "a database dump must not authenticate through the legacy fallback")
 }
 
