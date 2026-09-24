@@ -283,10 +283,6 @@ func TestCommandsRepo_Cov_ConnectStatusDisconnectWorkflow(t *testing.T) {
 	if err != nil || current == nil || current.Repo != "alice/demo" || current.LicenseSPDXID != "MIT" {
 		t.Fatalf("local connection after connect = %#v, %v", current, err)
 	}
-	hookConfig := readJJConfig(filepath.Join(cwd, ".jj", "config.toml"))
-	if !strings.Contains(hookConfig, jjPostOperationHook) {
-		t.Fatalf("jj config missing hook:\n%s", hookConfig)
-	}
 
 	statusOut := commandsRepoCovServe(t, repoCommand(), []string{"status", "--json"})
 	if !strings.Contains(statusOut, `"connected": true`) ||
@@ -301,9 +297,6 @@ func TestCommandsRepo_Cov_ConnectStatusDisconnectWorkflow(t *testing.T) {
 	current, err = localRepoConnectionFor(cwd)
 	if err != nil || current != nil {
 		t.Fatalf("local connection after disconnect = %#v, %v", current, err)
-	}
-	if hookConfig = readJJConfig(filepath.Join(cwd, ".jj", "config.toml")); strings.Contains(hookConfig, jjPostOperationHook) {
-		t.Fatalf("jj config still contains hook:\n%s", hookConfig)
 	}
 	commandsRepoCovRequireSeen(t, apiSeen, "POST /api/repo-connection")
 	commandsRepoCovRequireSeen(t, apiSeen, "DELETE /api/repo-connection")
@@ -556,15 +549,9 @@ func TestCommandsRepo_Cov_HTTPPollingMetadataRollbackAndProgramHelpers(t *testin
 	if err := saveLocalRepoConnection(rollbackDir, localRepoConnection{ConnectedAt: "now", LicenseSPDXID: "MIT", Repo: "alice/demo"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := writeJJConfig(filepath.Join(rollbackDir, ".jj", "config.toml"), "[hooks]\npost-operation = [\""+jjPostOperationHook+"\"]\n"); err != nil {
-		t.Fatal(err)
-	}
 	rollbackRepoConnection(rollbackDir, "alice", "demo")
 	if current, err := localRepoConnectionFor(rollbackDir); err != nil || current != nil {
 		t.Fatalf("rollback local connection = %#v, %v", current, err)
-	}
-	if cfg := readJJConfig(filepath.Join(rollbackDir, ".jj", "config.toml")); strings.Contains(cfg, jjPostOperationHook) {
-		t.Fatalf("rollback jj config still has hook:\n%s", cfg)
 	}
 	commandsRepoCovRequireSeen(t, seen, "DELETE /api/repo-connection")
 

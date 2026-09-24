@@ -36,14 +36,6 @@ func TestRootHelpHidesInternalCommand(t *testing.T) {
 	if strings.Contains(stdout.String(), "_internal") {
 		t.Fatalf("root help exposed _internal command:\n%s", stdout.String())
 	}
-
-	stdout.Reset()
-	if err := internalCommand().ServeWithOptions([]string{"--help"}, incur.ServeOptions{Stdout: &stdout}); err != nil {
-		t.Fatalf("internal help returned error: %v", err)
-	}
-	if !strings.Contains(stdout.String(), "push-to-smithers") {
-		t.Fatalf("internal help did not include push-to-smithers:\n%s", stdout.String())
-	}
 }
 
 func TestRootHelpFeatureFlagFiltering(t *testing.T) {

@@ -179,10 +179,6 @@ func repoCommand() *incur.Cli {
 				rollbackRepoConnection(cwd, owner, repoName)
 				return nil, err
 			}
-			if err := installPushHook(cwd); err != nil {
-				rollbackRepoConnection(cwd, owner, repoName)
-				return nil, err
-			}
 			result := map[string]any{
 				"connected":            true,
 				"github_app_installed": appStatus["github_app_installed"] == true,
@@ -200,9 +196,6 @@ func repoCommand() *incur.Cli {
 		Handler: func(ctx *incur.CommandContext) (any, error) {
 			cwd, _ := os.Getwd()
 			if err := requireJjRepoDirectory(cwd); err != nil {
-				return nil, err
-			}
-			if err := removePushHook(cwd); err != nil {
 				return nil, err
 			}
 			current, err := localRepoConnectionFor(cwd)
@@ -788,7 +781,6 @@ func localRepoConnectionFor(cwd string) (*localRepoConnection, error) {
 
 func rollbackRepoConnection(cwd, owner, repo string) {
 	_ = clearLocalRepoConnection(cwd)
-	_ = removePushHook(cwd)
 	_, _ = APIRequest("DELETE", "/api/repo-connection", map[string]any{"owner": owner, "repo": repo}, nil)
 }
 

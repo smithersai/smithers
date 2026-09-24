@@ -224,13 +224,6 @@ func TestCommandsRepo_Z_ConnectDisconnectStatusErrorBranches(t *testing.T) {
 	commandsRepoZChdir(t, saveErrDir)
 	commandsRepoZServeErr(t, "EISDIR", "connect", "alice/demo")
 
-	hookErrDir := commandsRepoZJjRepo(t)
-	if err := os.MkdirAll(filepath.Join(hookErrDir, ".jj", "config.toml"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	commandsRepoZChdir(t, hookErrDir)
-	commandsRepoZServeErr(t, "is a directory", "connect", "alice/demo")
-
 	commandsRepoZChdir(t, t.TempDir())
 	commandsRepoZServeErr(t, "NOT_JJ_REPO", "disconnect")
 	commandsRepoZServeErr(t, "NOT_JJ_REPO", "status")
@@ -265,15 +258,6 @@ func TestCommandsRepo_Z_ConnectDisconnectStatusErrorBranches(t *testing.T) {
 	}
 	commandsRepoZServeErr(t, "clear failed", "disconnect")
 	clearLocalRepoConnectionForCommand = oldClear
-
-	readonlyHookDir := commandsRepoZJjRepo(t)
-	hookPath := filepath.Join(readonlyHookDir, ".jj", "config.toml")
-	if err := os.WriteFile(hookPath, []byte("[hooks]\npost-operation = [\""+jjPostOperationHook+"\"]\n"), 0o400); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(hookPath, 0o600) })
-	commandsRepoZChdir(t, readonlyHookDir)
-	commandsRepoZServeErr(t, "permission", "disconnect")
 }
 
 func TestCommandsRepo_Z_HelperErrorBranches(t *testing.T) {

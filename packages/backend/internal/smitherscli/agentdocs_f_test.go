@@ -3,80 +3,9 @@ package smitherscli
 import (
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"testing"
 )
-
-func TestJjHook_F_ResolveRepoConfigPathEmpty(t *testing.T) {
-	binDir := t.TempDir()
-	// fake jj that succeeds but prints nothing
-	if err := os.WriteFile(filepath.Join(binDir, "jj"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDir)
-	if got := resolveRepoConfigPath(t.TempDir()); got != "" {
-		t.Fatalf("resolveRepoConfigPath empty stdout = %q", got)
-	}
-}
-
-func TestJjHook_F_InstallWrapperError(t *testing.T) {
-	t.Setenv("PATH", t.TempDir()) // no jj -> resolveRepoConfigPath returns ""
-	cwd := t.TempDir()
-	// Make .jj a regular file so writeJJConfig's MkdirAll fails.
-	if err := os.WriteFile(filepath.Join(cwd, ".jj"), []byte("x"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := installPushHook(cwd); err == nil {
-		t.Fatal("installPushHook should fail when .jj is a file")
-	}
-}
-
-func TestJjHook_F_RemoveWrapperError(t *testing.T) {
-	if os.Geteuid() == 0 {
-		t.Skip("cannot exercise write-permission failure as root")
-	}
-	t.Setenv("PATH", t.TempDir()) // no jj
-	cwd := t.TempDir()
-	jjDir := filepath.Join(cwd, ".jj")
-	if err := os.MkdirAll(jjDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	cfg := filepath.Join(jjDir, "config.toml")
-	if err := os.WriteFile(cfg, []byte("[hooks]\npost-operation = [\""+jjPostOperationHook+"\"]\n"), 0o444); err != nil {
-		t.Fatal(err)
-	}
-	if err := removePushHook(cwd); err == nil {
-		t.Fatal("removePushHook should fail when config file is read-only")
-	}
-}
-
-func TestJjHook_F_RemoveAtPathNoopBranches(t *testing.T) {
-	dir := t.TempDir()
-
-	// non-empty config with no [hooks] section -> section == nil, return nil
-	noSection := filepath.Join(dir, "no-section.toml")
-	if err := os.WriteFile(noSection, []byte("[ui]\ncolor = \"auto\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := removePushHookAtPath(noSection); err != nil {
-		t.Fatalf("removePushHookAtPath no section = %v", err)
-	}
-
-	// [hooks] with post-operation that lacks our hook -> nothing removed, return nil
-	noMatch := filepath.Join(dir, "no-match.toml")
-	before := "[hooks]\npost-operation = [\"other-hook\"]\n"
-	if err := os.WriteFile(noMatch, []byte(before), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := removePushHookAtPath(noMatch); err != nil {
-		t.Fatalf("removePushHookAtPath no match = %v", err)
-	}
-	after, _ := os.ReadFile(noMatch)
-	if string(after) != before {
-		t.Fatalf("removePushHookAtPath no match mutated file: %q", string(after))
-	}
-}
 
 func TestAgentDocs_F_URLDefault(t *testing.T) {
 	t.Setenv("SMITHERS_AGENT_DOCS_URL", "")

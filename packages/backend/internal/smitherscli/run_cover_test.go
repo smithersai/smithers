@@ -26,8 +26,8 @@ func runCovSetConfig(t *testing.T, apiURL string) {
 }
 
 func TestRun_Cov_RunAndServeCLIExitCodes(t *testing.T) {
-	if code := Run([]string{"_internal", "--help"}); code != 0 {
-		t.Fatalf("Run(_internal --help) exit = %d", code)
+	if code := Run([]string{"--help"}); code != 0 {
+		t.Fatalf("Run(--help) exit = %d", code)
 	}
 
 	okCLI := incur.New("ok", incur.WithRootCommand(&incur.CommandDef{

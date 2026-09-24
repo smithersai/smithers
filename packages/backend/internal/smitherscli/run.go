@@ -18,9 +18,6 @@ var cliVersion = "0.1.0"
 
 func Run(argv []string) int {
 	rewritten := rewriteCLIArgv(argv)
-	if firstCommandIndex := findFirstCommandIndex(rewritten); firstCommandIndex != nil && rewritten[*firstCommandIndex] == "_internal" {
-		return serveCLI(internalCommand(), rewritten[*firstCommandIndex+1:])
-	}
 	return serveCLI(newCLIWithFeatureFlags(loadFeatureFlagsForRootHelp(rewritten)), rewritten)
 }
 
