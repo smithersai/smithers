@@ -1051,6 +1051,32 @@ export const layerPnpm = (
 > => Layer.effect(PackageManager)(makePnpm(options))
 
 /**
+ * Why no install runs under the Bun package manager.
+ *
+ * Bun exposes neither a fetch-only command with a documented store result nor
+ * an offline install command, so it cannot meet the fetch-then-link contract
+ * pnpm meets. Every install entry point (the `Install` target, the planner,
+ * `runInstall`, the install Flow payload, and workspace generation) refuses a
+ * Bun manager with this text when it is configured, instead of accepting it
+ * and failing when the manager is first called.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const bunInstallUnsupportedMessage =
+  "Install cannot use the Bun package manager: Bun has no fetch-only or offline install command, " +
+  "so it cannot meet the fetch-then-link contract; declare pnpm, or install node_modules with Bun outside Smithers"
+
+/**
+ * The typed refusal every install entry point returns for a Bun manager.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const bunInstallUnsupported = (): PackageManagerError =>
+  new PackageManagerError({ code: "unsupported", message: bunInstallUnsupportedMessage })
+
+/**
  * Builds the explicit unsupported Bun implementation.
  *
  * Bun currently exposes neither a fetch-only command with a documented store
@@ -1058,6 +1084,10 @@ export const layerPnpm = (
  * successful hard-boundary fetch would publish a cache entry without proof
  * that its declared store contains everything link needs. Refusing the three
  * operations is safer than presenting that best-effort behavior as sealed.
+ * The layer still exists because Bun remains a valid tool runner: a target
+ * that runs tools under Bun composes it and never asks it to install. Every
+ * install entry point refuses Bun earlier with
+ * {@link bunInstallUnsupportedMessage}.
  *
  * @category constructors
  * @since 0.1.0

@@ -86,6 +86,38 @@ describe("PACKAGE.ts CLI", () => {
     expect(output).toContain("ok: true")
   })
 
+  it("refuses an Install under a Bun workspace as unsupported before anything spawns", async () => {
+    const root = await temporaryWorkspace()
+    await write(
+      root,
+      "WORKSPACE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+const packageJson = S.file("//package.json")
+const runtime = S.Runtime.Bun({ version: ">=1.4.0" })
+export const Workspace = S.Workspace("fixture", {
+  repository: "git+https://example.invalid/fixture.git",
+  cache: S.Cache({ directory: ".flows" }),
+  runtime,
+  packageManager: S.PackageManager.BunPackages({ runtime }),
+  nodeModules: S.Npm.NodeModules({ packageJson }),
+})
+`
+    )
+    await write(
+      root,
+      "PACKAGE.ts",
+      `import { Smithers as S } from "@smthrs/targets"
+export const Package = S.Package({ targets: { install: S.Install({ lockfilePath: "bun.lock" }) } })
+`
+    )
+    await write(root, "package.json", `${JSON.stringify({ name: "fixture", private: true }, undefined, 2)}\n`)
+    await write(root, "bun.lock", "{}\n")
+    const { exitCode, output, logs } = await serve(root, ["install"])
+    expect(exitCode).toBe(1)
+    expect(`${output}${logs}`).toContain("unsupported: Install cannot use the Bun package manager")
+    expect(await Fs.access(NodePath.join(root, ".flows/store")).then(() => true, () => false)).toBe(false)
+  })
+
   it("prunes the WORKSPACE-declared cache directory from discovery", async () => {
     const root = await temporaryWorkspace()
     await write(root, "WORKSPACE.ts", workspaceModule(".mycache"))

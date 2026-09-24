@@ -4,9 +4,9 @@ description: "The install flow: the measure round, the fetch and link split, and
 ---
 
 `smithers-build` expresses dependency installation as one flow with one round and
-three actions: measure, fetch, and link. A workspace declares pnpm or Bun.
-Only pnpm performs work today; the Bun layer resolves the service and refuses
-every operation with a typed `unsupported` error.
+three actions: measure, fetch, and link. Only pnpm installs. A Bun manager is
+refused when it is configured, with a typed `unsupported` error, rather than
+accepted and failed when the manager is first called.
 
 `node_modules` is a target. A PACKAGE.ts file declares the toolchain once and
 asks the `Install` target for the tree:
@@ -195,14 +195,29 @@ restored from another machine.
 
 ## Manager support
 
-A declaration selects pnpm or Bun. Those two are the whole of
-`PackageManager.Name`, so npm and Yarn are not unsupported selections: they
-cannot be written down at all, and a PACKAGE.ts naming one fails to decode.
+`PackageManager.Name` is pnpm or Bun, so npm and Yarn cannot be written down
+as an install manager at all, and a PACKAGE.ts naming one fails to decode.
 
 | Manager | Status      | Behavior                                                                             |
 | ------- | ----------- | ------------------------------------------------------------------------------------ |
 | pnpm    | Implemented | Frozen fetch into `.flows/store/pnpm`, then frozen offline link with scripts ignored |
 | Bun     | Unsupported | No documented fetch-only and offline-link pair satisfying the contract               |
+
+Bun has no fetch-only or offline install command, so it cannot meet the
+fetch-then-link contract. Every install entry point refuses it at configuration
+time with `PackageManager.bunInstallUnsupportedMessage`:
+
+| Entry point                           | Refusal                                                        |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `S.Install({ packageManager: bun })`  | The constructor throws `unsupported: ...`.                     |
+| `S.Install` with a Bun `WORKSPACE.ts` | The planner refuses the node before anything spawns.           |
+| `runInstall` with a Bun toolchain     | `PackageManagerError { code: "unsupported" }` before any read. |
+| The install Flow payload              | `manager` admits only `"pnpm"`; there is no Bun fetch action.  |
+| `smthrs init` on a `bun@` manifest    | Refuses before writing `WORKSPACE.ts`.                         |
+
+Bun remains a valid runtime and tool runner: a hand-written `WORKSPACE.ts` may
+declare `PackageManager.BunPackages`, and targets run their tools through it,
+but `node_modules` must then be installed with Bun outside Smithers.
 
 The pnpm commands are:
 
@@ -218,9 +233,9 @@ pnpm install --offline --frozen-lockfile --ignore-scripts \
 `storeDirectory`.
 
 `layerBun` and `layerNoop("bun", options, platform)` still provide the service
-shape. Version, fetch, link, and manifest operations fail with
-`PackageManagerError { code: "unsupported" }`, making unsupported selection
-deterministic rather than a missing-layer defect.
+shape for targets that run tools under Bun and never install. Version, fetch,
+link, and manifest operations fail with `PackageManagerError { code:
+"unsupported" }`.
 
 ## Environment and credentials
 

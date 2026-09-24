@@ -262,7 +262,7 @@ barriers.
 1. **No general sandbox.** Effects declarations do not confine arbitrary tools.
 2. **No shared install replay.** All install boundaries remain `expected`.
 3. **Only pnpm installation.** Bun, the one other manager a declaration can
-   name, refuses explicitly.
+   name, is refused when an install is configured with it.
 4. **Whole-lockfile granularity.** There is no rules_js-style per-package fetch
    graph yet.
 5. **Lifecycle scripts disabled.** Arbitrary dependency code needs a separate,

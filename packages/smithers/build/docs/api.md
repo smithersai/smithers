@@ -36,7 +36,6 @@ body select exactly one fetch action statically.
 | ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Measure`   | `smithers-build/install/measure`    | Records the lockfile digest and the credential-free `.npmrc` digest.                                                                                                |
 | `FetchPnpm` | `smithers-build/install/fetch/pnpm` | Populates `.flows/store/pnpm` from `pnpm-lock.yaml`. Also writes pnpm's virtual store, `node_modules/.pnpm/**` and `node_modules/.modules.yaml`, and declares both. |
-| `FetchBun`  | `smithers-build/install/fetch/bun`  | The same declaration for `bun.lock`. Its layer refuses every operation.                                                                                             |
 | `Link`      | `smithers-build/install/link`       | Reconciles `node_modules` from the populated store.                                                                                                                 |
 
 Every action uses an `expected` filesystem boundary, and none is admitted to a
@@ -47,14 +46,14 @@ tree pointing at nothing. `link` therefore always runs.
 
 ### Values and layers
 
-| Export                                                     | What it is                                                                            |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `Content`                                                  | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest. |
-| `LinkManifest`                                             | The schema of the flow's success value.                                               |
-| `payloadFields`                                            | The payload fields, `{ manager }`.                                                    |
-| `executeMeasure`, `executeFetch`, `executeLink`            | The Effect implementations behind the three actions.                                  |
-| `MeasureLive`, `FetchPnpmLive`, `FetchBunLive`, `LinkLive` | One layer per action.                                                                 |
-| `layer`                                                    | All four merged, which is what an executor provides.                                  |
+| Export                                          | What it is                                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `Content`                                       | The schema of what an install is keyed on: manager, lockfile digest, `.npmrc` digest. |
+| `LinkManifest`                                  | The schema of the flow's success value.                                               |
+| `payloadFields`                                 | The payload fields, `{ manager }`; `manager` admits only `"pnpm"`.                    |
+| `executeMeasure`, `executeFetch`, `executeLink` | The Effect implementations behind the three actions.                                  |
+| `MeasureLive`, `FetchPnpmLive`, `LinkLive`      | One layer per action.                                                                 |
+| `layer`                                         | All three merged, which is what an executor provides.                                 |
 
 ## PackageManager
 
@@ -89,16 +88,19 @@ const layer = PackageManager.layerPnpm({
 | `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`. |
 | `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                              |
 | `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                    |
-| `makeBun`, `layerBun`                                                                                                        | The Bun seam. It resolves, then refuses with `code: "unsupported"`.                                                                                              |
+| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                     |
+| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                        |
 | `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                             |
 | `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                             |
 | `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                          |
 | `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                        |
 | `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                        |
 
-The Bun refusal is deliberate. Keeping the layer in the schema means an
-unsupported selection fails with a typed error instead of silently
-approximating a verified fetch.
+The Bun refusal is deliberate. Bun has no fetch-only or offline install
+command, so no install accepts it: the `Install` target, the planner,
+`runInstall`, and the install Flow payload each refuse a Bun manager at
+configuration time with `bunInstallUnsupportedMessage`. The layer stays so a
+target that runs tools under Bun can compose it.
 
 ## Runtime
 

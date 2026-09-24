@@ -99,12 +99,46 @@ export const inputsFor = (attrs: Attrs): ReadonlyArray<Input.Declared> => [
 ]
 
 /**
+ * The refusal text for an install under the Bun package manager.
+ *
+ * Re-exported from `@smthrs/build` so declaration-side tooling, such as
+ * workspace generation, can refuse with the same words without depending on
+ * the install implementation package.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const bunInstallUnsupportedMessage: string = PackageManagerService.bunInstallUnsupportedMessage
+
+const definition = Target.make("Install", {
+  attrs: Attrs,
+  workspaceAttrs: ["packageManager"],
+  kinds: ["run"],
+  success: InstallFlow.LinkManifest,
+  error: PackageManagerService.PackageManagerError,
+  cache: false,
+  inputs: inputsFor,
+  implementation: (attrs) => {
+    const manager = PackageManager.required(attrs.packageManager).name
+    // The planner refuses a workspace-filled Bun manager before this runs;
+    // this is the second lock.
+    if (manager !== "pnpm") throw PackageManagerService.bunInstallUnsupported()
+    return InstallFlow.Install.call({ manager })
+  }
+})
+
+/**
  * Plans an install for the declared package manager.
  *
  * The wrapper target is not cacheable: a cache hit would report a link manifest
  * without restoring either the manager store or the `node_modules` tree it
  * describes. The nested flow's own steps are keyed for local freshness, which is
  * where skipping unchanged work belongs.
+ *
+ * Only pnpm installs. A declaration that names the Bun package manager is
+ * refused here, when the target is constructed, with
+ * `PackageManager.bunInstallUnsupportedMessage`; a Bun manager filled in from
+ * `WORKSPACE.ts` is refused by the planner before anything spawns.
  *
  * @example
  * ```ts
@@ -118,13 +152,13 @@ export const inputsFor = (attrs: Attrs): ReadonlyArray<Input.Declared> => [
  * @category targets
  * @since 0.1.0
  */
-export const Install = Target.make("Install", {
-  attrs: Attrs,
-  workspaceAttrs: ["packageManager"],
-  kinds: ["run"],
-  success: InstallFlow.LinkManifest,
-  error: PackageManagerService.PackageManagerError,
-  cache: false,
-  inputs: inputsFor,
-  implementation: (attrs) => InstallFlow.Install.call({ manager: PackageManager.required(attrs.packageManager).name })
-})
+export const Install = Object.assign(
+  (attrs: Parameters<typeof definition>[0]) => {
+    const manager = (attrs as { readonly packageManager?: unknown }).packageManager
+    if (PackageManager.isPackageManager(manager) && manager.name === "bun") {
+      throw new Error(`unsupported: ${bunInstallUnsupportedMessage}`)
+    }
+    return definition(attrs)
+  },
+  definition
+)

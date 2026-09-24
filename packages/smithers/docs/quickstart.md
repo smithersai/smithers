@@ -38,7 +38,7 @@ smthrs init hello
 to `.gitignore` in a repository; execution databases are acquired by runtime
 commands, not by generating a flow.
 
-For an existing npm workspace, use the supported flow-only path:
+For an existing npm or Bun workspace, use the supported flow-only path:
 
 ```bash
 smthrs generate flow hello
@@ -46,7 +46,9 @@ smthrs generate flow hello
 
 This preserves `packageManager` and adds the flow without inventing an npm
 workspace executor. `init` refuses an unsupported package manager before
-writing project files and points to this command.
+writing project files and points to this command. A `bun@` manager is refused
+the same way, because Smithers cannot install `node_modules` with Bun; write
+`WORKSPACE.ts` by hand to run tools under Bun.
 
 The scaffold declares a model seat chosen from the provider credentials this
 environment sets, in the order `doctor` reports them:

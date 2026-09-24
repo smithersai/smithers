@@ -58,7 +58,8 @@ Embedding the install flow requires:
 - one `PackageManager` layer.
 
 Only `PackageManager.layerPnpm` performs work today. `layerBun` resolves the
-service but fails every operation with a typed `unsupported` error.
+service but fails every operation with a typed `unsupported` error; no install
+reaches it, because every install entry point refuses a Bun manager first.
 
 The pnpm layer is constructed with an absolute project root and the version the
 workspace declared, over a runtime layer carrying the host facts:

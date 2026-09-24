@@ -45,7 +45,6 @@ a non-sealed tier or an `expected` boundary prevents shared-cache admission.
 | ----------------------------------- | -------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------- |
 | `smithers-build/install/measure`    | `sealed`       | `expected` | `.npmrc`; `bun.lock`; `pnpm-lock.yaml`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`                                                                                        | none                                                                                                       | No               |
 | `smithers-build/install/fetch/pnpm` | `sealed`       | `expected` | `pnpm-lock.yaml`; `.npmrc`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`                                                                                                    | `TreeArtifact` at `.flows/store/pnpm`; `Glob`: `**/node_modules/.pnpm/**`, `**/node_modules/.modules.yaml` | No               |
-| `smithers-build/install/fetch/bun`  | `sealed`       | `expected` | `bun.lock`; `.npmrc`                                                                                                                                                  | `TreeArtifact` at `.flows/store/bun`                                                                       | No               |
 | `smithers-build/install/link`       | `irreversible` | `expected` | `.npmrc`; `bun.lock`; `pnpm-lock.yaml`; `.pnpmfile.cjs`; `pnpm-workspace.yaml`; `package.json`; `Glob`: `**/package.json` (exclude `**/node_modules/**`, `.flows/**`) | `Glob`: `**/node_modules`, `**/node_modules/**`                                                            | No               |
 
 Measure reports content: the lockfile digest, the credential-free project
@@ -58,7 +57,7 @@ Fetch is shaped as the potentially shareable half, but it is not shared today.
 The absolute-root package-manager process can open the lockfile and configuration
 after the parent verifies them, and the current observer cannot freeze those
 paths or prove there were no undeclared effects. Its `expected` boundary prevents
-shared-cache admission. Only pnpm has a live implementation; Bun refuses execution.
+shared-cache admission. Only pnpm installs; a Bun manager is refused when it is configured.
 
 Link declares writes to root and nested `node_modules` trees for conflict
 ordering. Its `irreversible` tier prevents shared-cache admission regardless of

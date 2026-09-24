@@ -134,7 +134,7 @@ describe("packages/smithers/build prose", () => {
     }
   })
 
-  for (const action of [Install.Measure, Install.FetchPnpm, Install.FetchBun, Install.Link]) {
+  for (const action of [Install.Measure, Install.FetchPnpm, Install.Link]) {
     it(`documents the declared boundary of ${action.name}`, () => {
       const declaration = Context.getUnsafe(action.annotations, Flow.EffectsDeclaration)
       const code = (value: string): string => "`" + value + "`"

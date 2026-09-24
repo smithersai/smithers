@@ -136,8 +136,7 @@ describe("workspace initialization behavior", () => {
 
   it.each([
     ["pnpm@10.20.0", "https://example.test/pnpm", "S.PackageManager.Pnpm", "pnpm-lock.yaml", "S.Runtime.Node"],
-    ["yarn@4.9.0", { url: "https://example.test/yarn" }, "S.PackageManager.Yarn", "yarn.lock", "S.Runtime.Node"],
-    ["bun@1.4.2", undefined, "S.PackageManager.BunPackages", undefined, "S.Runtime.Bun"]
+    ["yarn@4.9.0", { url: "https://example.test/yarn" }, "S.PackageManager.Yarn", "yarn.lock", "S.Runtime.Node"]
   ])(
     "keeps %s and repository identity from the existing package manifest",
     async (manager, repository, constructor, lockfile, runtime) => {
@@ -159,9 +158,21 @@ describe("workspace initialization behavior", () => {
         JSON.stringify(typeof repository === "string" ? repository : repository?.url ?? pathToFileURL(root).href)
       )
       if (lockfile !== undefined) expect(workspace).toContain(`S.file("//${lockfile}")`)
-      if (manager !== "bun@1.4.2") expect(workspace).toContain(`version: ${JSON.stringify(manager.slice(5))}`)
+      expect(workspace).toContain(`version: ${JSON.stringify(manager.slice(5))}`)
     }
   )
+
+  it("refuses to generate a Bun workspace, whose install is unsupported", async () => {
+    const root = await directory()
+    const original = JSON.stringify({ name: "authored", packageManager: "bun@1.4.2" })
+    await writeFile(join(root, "package.json"), original)
+    await expect(initialize(root, "example", {})).rejects.toThrow(
+      /unsupported: Install cannot use the Bun package manager/
+    )
+    expect(existsSync(join(root, "WORKSPACE.ts"))).toBe(false)
+    expect(existsSync(join(root, "PACKAGE.ts"))).toBe(false)
+    expect(await readFile(join(root, "package.json"), "utf8")).toBe(original)
+  })
 
   it.each(["WORKSPACE.ts", ".smithers/WORKSPACE.ts"])(
     "preserves authored %s, PACKAGE.ts and flow even with an unsupported inferred toolchain",

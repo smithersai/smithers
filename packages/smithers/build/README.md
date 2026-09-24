@@ -70,9 +70,10 @@ pnpm install --offline --frozen-lockfile --ignore-scripts \
   --reporter=append-only --store-dir <workspace>/.flows/store/pnpm
 ```
 
-The Bun layer is an explicit typed refusal. It remains in the service schema
-so unsupported selection fails with `code: "unsupported"` instead of silently
-approximating a verified fetch.
+Bun installs are unsupported. The `Install` target, the planner, `runInstall`,
+and the install Flow payload refuse a Bun manager at configuration time with
+`code: "unsupported"`, and `smthrs init` no longer writes a Bun workspace.
+The Bun layer remains for targets that run tools under Bun.
 
 Run the supported flow with:
 

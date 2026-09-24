@@ -632,6 +632,9 @@ const normalizeRunInstallOptions = (value: unknown): {
  * operation never mutates the process-wide current directory and independent
  * callers can safely run against different workspaces at the same time.
  *
+ * Only pnpm installs. A Bun toolchain is refused with a `PackageManagerError`
+ * whose code is `unsupported` before the workspace is read.
+ *
  * @category execution
  * @since 0.1.0
  * @slop
@@ -655,6 +658,13 @@ export const runInstall = async (
   }
   const normalized = normalizeRunInstallOptions(options)
   normalized.signal?.throwIfAborted()
+  // The normalized copy, never the caller's object: the awaits below give a
+  // caller time to mutate what it passed, and the manager this pins is what
+  // actually spawns.
+  const toolchain = normalized.toolchain ?? defaultToolchain
+  // Bun cannot meet the fetch-then-link contract; refuse it as configured
+  // rather than planning an install whose manager refuses every operation.
+  if (toolchain.manager !== "pnpm") throw PackageManager.bunInstallUnsupported()
   if (normalized.cacheDirectory !== Config.defaultCacheDirectory) {
     throw new Error(
       `install requires cacheDirectory ${JSON.stringify(Config.defaultCacheDirectory)} because its declared ` +
@@ -664,17 +674,13 @@ export const runInstall = async (
     )
   }
   const workspace = await Fs.realpath(NodePath.resolve(workspaceRoot))
-  // The normalized copy, never the caller's object: the awaits above give a
-  // caller time to mutate what it passed, and the manager this pins is what
-  // actually spawns.
-  const toolchain = normalized.toolchain ?? defaultToolchain
   const runtime = layerInstall.pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provideMerge(layerPackageManager(workspace, toolchain, normalized.sensitiveEnvironment)),
     Layer.provideMerge(layerNonInteractiveNodeServices)
   )
-  const payload = { manager: toolchain.manager }
+  const payload = { manager: "pnpm" as const }
   const graph = Graph.build(Install.Install, payload)
   const executionId = `smithers-build-install-${createHash("sha256").update(workspace).digest("hex").slice(0, 16)}`
   const result = await Effect.runPromise(

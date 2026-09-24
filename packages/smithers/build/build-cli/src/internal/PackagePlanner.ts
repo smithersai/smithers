@@ -3,6 +3,7 @@
  *
  * @since 1.0.0
  */
+import * as PackageManager from "@smthrs/build/PackageManager"
 import * as RuntimeService from "@smthrs/build/Runtime"
 import * as AgentTarget from "@smthrs/targets/AgentTarget"
 import type * as Anvil from "@smthrs/targets/Anvil"
@@ -2578,6 +2579,12 @@ const visit = async (
       `approval required: ${label} declares approval: "required" and no approval was granted; ` +
         "the build system has no durable approval store, so the invocation refuses before any effect"
     )
+  }
+  if (rule === "Install") {
+    // The workspace fills the manager in after the target was constructed, so
+    // the constructor's Bun refusal cannot see it; refuse here, before any spawn.
+    const manager = attrMember(attrs, "packageManager") as { readonly name?: unknown } | undefined
+    if (manager?.name === "bun") noteRefusal(`unsupported: ${PackageManager.bunInstallUnsupportedMessage}`)
   }
   for (const gate of attrTargets(attrs, "gates")) {
     const gateRule = Target.metadata(gate).target

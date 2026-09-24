@@ -26,10 +26,11 @@ describe("Install declared inputs", () => {
     expect(metadata.cacheable).toBe(false)
   })
 
-  it("derives the lockfile name from the declared manager", () => {
+  it("refuses the Bun package manager as unsupported when the target is declared", () => {
     const bun = PackageManager.BunPackages({ runtime: Runtime.Bun({ version: ">=1.4.0" }) })
-    const metadata = Target.metadata(Install.Install({ packageManager: bun }))
-    expect(metadata.inputs[0]).toEqual({ _tag: "File", path: "bun.lock" })
+    expect(() => Install.Install({ packageManager: bun })).toThrow(
+      /unsupported: Install cannot use the Bun package manager/
+    )
   })
 
   it("rejects a bare string where the manager declaration belongs", () => {

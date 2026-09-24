@@ -255,15 +255,6 @@ const makeFetch = <Tag extends string>(
 export const FetchPnpm = makeFetch("smithers-build/install/fetch/pnpm", "pnpm-lock.yaml", "pnpm")
 
 /**
- * Fetches Bun packages from `bun.lock`.
- *
- * @category actions
- * @since 0.1.0
- * @slop
- */
-export const FetchBun = makeFetch("smithers-build/install/fetch/bun", "bun.lock", "bun")
-
-/**
  * Materializes `node_modules` from the already-populated store.
  *
  * Its `irreversible` tier keeps it out of the cross-run cache. Here the
@@ -307,12 +298,17 @@ export const Link = Action.make("smithers-build/install/link", {
  * a second round to do the same job. The project root is the engine's working
  * directory, so it does not enter a content key.
  *
+ * Only pnpm is admitted. A Bun payload used to plan a `FetchBun` action whose
+ * manager refused every operation, so the install always failed at run time;
+ * the payload now refuses it when the flow is called (see
+ * {@link PackageManager.bunInstallUnsupportedMessage}).
+ *
  * @category models
  * @since 0.1.0
  * @slop
  */
 export const payloadFields = {
-  manager: PackageManager.Name
+  manager: Schema.Literal("pnpm")
 }
 
 /**
@@ -325,7 +321,6 @@ export const payloadFields = {
 export type Requires =
   | Action.Requirement<"smithers-build/install/measure">
   | Action.Requirement<"smithers-build/install/fetch/pnpm">
-  | Action.Requirement<"smithers-build/install/fetch/bun">
   | Action.Requirement<"smithers-build/install/link">
 
 /**
@@ -399,10 +394,7 @@ export const Install: InstallFlow = Flow.make("smithers-build/install", {
     Flow.BodySuccess<typeof LinkManifest.Type>,
     PackageManager.PackageManagerError,
     Requires
-  > =>
-    manager === "pnpm"
-      ? measureFetchLink(manager, (content) => FetchPnpm.call({ content }))
-      : measureFetchLink(manager, (content) => FetchBun.call({ content }))
+  > => measureFetchLink(manager, (content) => FetchPnpm.call({ content }))
 }).annotate(Flow.Capabilities, ["fs:read", "fs:write", "net:get", "net:post", "proc:spawn"])
 
 /** @private */
@@ -604,15 +596,6 @@ export const executeFetch = ({ content }: { readonly content: Content }) =>
 export const FetchPnpmLive = FetchPnpm.toLayer(executeFetch)
 
 /**
- * Implements {@link FetchBun}.
- *
- * @category layers
- * @since 0.1.0
- * @slop
- */
-export const FetchBunLive = FetchBun.toLayer(executeFetch)
-
-/**
  * Refuses to link a store that was fetched for different content.
  *
  * `content` is in {@link Link}'s payload because it is key material the
@@ -716,6 +699,5 @@ export const LinkLive = Link.toLayer(executeLink)
 export const layer = Layer.mergeAll(
   MeasureLive,
   FetchPnpmLive,
-  FetchBunLive,
   LinkLive
 )

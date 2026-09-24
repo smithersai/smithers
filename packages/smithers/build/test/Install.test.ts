@@ -226,7 +226,7 @@ describe("Install", () => {
 
   it("plans the non-restorable link honestly instead of declaring it cacheable or compensable", async () => {
     expect(Install.Link.tier).toBe("irreversible")
-    for (const manager of ["pnpm", "bun"] as const) {
+    for (const manager of ["pnpm"] as const) {
       const nodes = Graph.drafts(Graph.build(Install.Install, { manager }))
       const plan = await Effect.runPromise(
         Plan.compile({ planId: `install-${manager}`, flow: Install.Install._tag, nodes })
@@ -248,9 +248,16 @@ describe("Install", () => {
   })
 
   it("keeps every absolute-root package-manager action out of the shared cache", () => {
-    for (const action of [Install.FetchPnpm, Install.FetchBun]) {
+    for (const action of [Install.FetchPnpm]) {
       expect(Context.getUnsafe(action.annotations, Flow.EffectsDeclaration).boundaryMode).toBe("expected")
     }
+  })
+
+  it("refuses a Bun install in the payload, before any action is planned", () => {
+    const payload = Schema.Struct(Install.payloadFields)
+    expect(Schema.decodeUnknownSync(payload)({ manager: "pnpm" })).toEqual({ manager: "pnpm" })
+    expect(() => Schema.decodeUnknownSync(payload)({ manager: "bun" })).toThrow()
+    expect("FetchBun" in Install).toBe(false)
   })
 
   it("runs one round: the declared manager selects the fetch without a handoff", () => {
@@ -617,7 +624,7 @@ describe("Install", () => {
    */
   it("records measure, one manager-specific fetch, and link in one round", () => {
     for (
-      const [manager, lockfile] of [["pnpm", "pnpm-lock.yaml"], ["bun", "bun.lock"]] as const
+      const [manager, lockfile] of [["pnpm", "pnpm-lock.yaml"]] as const
     ) {
       const graph = Graph.build(Install.Install, { manager })
       const actions = graph.nodes.filter((node) => node.kind === "ActionCall")
@@ -664,8 +671,10 @@ describe("Install", () => {
    * would turn it into a hit on the other manager's measurement.
    */
   it("keys measure on the declared manager so two managers cannot share one measurement", () => {
+    // The flow admits only pnpm now; the measure action still takes any
+    // manager name, so it is built directly to keep the key distinction pinned.
     const measureOf = (manager: PackageManager.Name) => {
-      const graph = Graph.build(Install.Install, { manager })
+      const graph = Graph.build(Install.Measure.call({ manager }))
       const node = graph.nodes.filter((node) => node.kind === "ActionCall")[0]!
       expect(node.draft.material.body).toMatchObject({ action: "smithers-build/install/measure" })
       return node.draft.material.inputs
