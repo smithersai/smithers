@@ -234,6 +234,7 @@ test("only the re-run guard, candidate preparation and publication select a path
 
   assert.deepEqual(conditional, [
     "Refuse a re-run attempt",
+    "Upload distribution acceptance evidence",
     "Upload product deployment mode matrix receipt",
     "Build all workspaces from clean artifacts",
     "Review declaration API drift",
@@ -250,6 +251,7 @@ test("only the re-run guard, candidate preparation and publication select a path
     "Report the skipped publication"
   ])
   assert.equal(step("Collect ci-test-tier-evidence").if, "always()")
+  assert.equal(step("Upload distribution acceptance evidence").if, "always()")
   assert.equal(step("Upload product deployment mode matrix receipt").if, "always()")
   assert.equal(step("Upload the publish receipt").if, "always()")
   assert.equal(step("Upload ci-test-tier-evidence").if, "always()")
@@ -531,7 +533,7 @@ test("release checks out the requested candidate, serializes its tag, and archiv
   const pushed = { github: { ref: "refs/tags/v1.0.0-rc.0", ref_name: "v1.0.0-rc.0" }, inputs: {} }
   assert.equal(interpolate(release.concurrency.group, pushed), "release-v1.0.0-rc.0")
   assert.equal(release.concurrency["cancel-in-progress"], false)
-  const archive = steps.findIndex((item) => item.uses?.startsWith("actions/upload-artifact@"))
+  const archive = steps.findIndex((item) => item.name === "Archive tested release artifacts")
   const publish = steps.findIndex((item) => item.run?.includes("node scripts/publish-release.mjs"))
   assert.ok(archive >= 0 && publish > archive)
   assert.equal(steps[archive].with["if-no-files-found"], "error")

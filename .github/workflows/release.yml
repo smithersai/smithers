@@ -500,7 +500,10 @@ jobs:
       - name: Install PostgreSQL 18 for the owned local mode
         run: bash .github/scripts/install-postgres-18.sh
       - name: Real PostgreSQL backup and restore
-        run: go test -p 1 ./distribution -run TestRealBackupRestorePostgreSQL -count=1 -v
+        run: |
+          mkdir -p "$RUNNER_TEMP/smithers-distribution-evidence"
+          go test -json -p 1 ./distribution -run TestRealBackupRestorePostgreSQL -count=1 | tee "$RUNNER_TEMP/smithers-distribution-evidence/postgres-backup-restore.jsonl"
+        shell: bash
         env:
           SMITHERS_POSTGRES_TEST_BIN: /usr/lib/postgresql/18/bin
           SMITHERS_POSTGRES_TEST_MAJOR: "18"
@@ -508,6 +511,15 @@ jobs:
         run: docker build --build-arg "BUILD_SHA=$(git rev-parse HEAD)" -f distribution/Dockerfile -t smithers-distribution:release .
       - name: Test distribution image
         run: SMITHERS_BUILD_SHA="$(git rev-parse HEAD)" SMITHERS_DOCKER_SKIP_BUILD=1 bash distribution/test-image.sh smithers-distribution:release
+        env:
+          SMITHERS_DISTRIBUTION_EVIDENCE_DIR: ${{ runner.temp }}/smithers-distribution-evidence
+      - name: Upload distribution acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: distribution-acceptance
+          path: ${{ runner.temp }}/smithers-distribution-evidence
+          if-no-files-found: warn
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 26.4.0
