@@ -1,4 +1,5 @@
 import type { ElectrobunConfig } from "electrobun"
+import appPackage from "./package.json" with { type: "json" }
 
 const cefSetting = process.env.SMITHERS_NATIVE_E2E_CEF?.trim()
 if (cefSetting !== undefined && cefSetting !== "" && cefSetting !== "0" && cefSetting !== "1") {
@@ -18,7 +19,7 @@ export default {
   app: {
     name: "Smithers",
     identifier: "sh.smithers.app",
-    version: "0.0.1"
+    version: appPackage.version
   },
   build: {
     /*

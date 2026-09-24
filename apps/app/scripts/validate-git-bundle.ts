@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readlinkSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { foreignLibraries } from "./system-linkage"
 
 const output = (argv: ReadonlyArray<string>): string => {
   const result = Bun.spawnSync([...argv], { stdout: "pipe", stderr: "pipe" })
@@ -33,13 +34,7 @@ export const validateGitBundle = (bundleRoot: string, payloadRoots: ReadonlyArra
     }
     if (!info.isFile() || (info.mode & 0o111) === 0) return
     if (!output(["/usr/bin/file", "-b", entry]).includes("Mach-O")) return
-    for (const line of output(["/usr/bin/otool", "-L", entry]).split("\n").slice(1)) {
-      // Universal binaries repeat the file header for each architecture.
-      if (line === `${entry}:` || (line.startsWith(`${entry} (architecture `) && line.endsWith("):"))) continue
-      if (line.trim() === "") continue
-      const dependency = line.trim().split(" (compatibility version", 1)[0]
-      if (dependency.startsWith("/System/Library/") || dependency.startsWith("/usr/lib/")) continue
-      throw new Error(`Pinned Git is not relocatable: ${entry} depends on ${dependency}`)
-    }
+    const [dependency] = foreignLibraries(entry)
+    if (dependency !== undefined) throw new Error(`Pinned Git is not relocatable: ${entry} depends on ${dependency}`)
   })
 }

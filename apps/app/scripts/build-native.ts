@@ -12,6 +12,7 @@ import {
 } from "node:fs"
 import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path"
 import { bundlePostgres } from "./bundle-postgres"
+import { foreignLibraries } from "./system-linkage"
 import { validateGitBundle } from "./validate-git-bundle"
 
 const appDir = resolve(import.meta.dir, "..")
@@ -51,6 +52,14 @@ const nodeVersion = Bun.spawnSync([nodeBinary, "--version"], { stdout: "pipe", s
 const nodeRelease = /^v26\.(\d+)\./.exec(new TextDecoder().decode(nodeVersion.stdout).trim())
 if (nodeVersion.exitCode !== 0 || nodeRelease === null || Number(nodeRelease[1]) < 4) {
   throw new Error("SMITHERS_NODE_BINARY must name Node 26.4 or a later Node 26.")
+}
+// The app ships this binary, so it must run on a Mac without the build
+// machine's package manager. The nodejs.org build links only macOS.
+const foreignNodeLibraries = foreignLibraries(nodeBinary)
+if (foreignNodeLibraries.length > 0) {
+  throw new Error(
+    `SMITHERS_NODE_BINARY must link only macOS system libraries: ${nodeBinary} loads ${foreignNodeLibraries.join(", ")}`
+  )
 }
 // Node 26 ships no corepack, so the pinned pnpm comes from PATH and must be
 // exactly the release the root package.json declares.
