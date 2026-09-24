@@ -1,6 +1,6 @@
 import type { Page } from "@playwright/test"
 import { expect, test } from "@playwright/test"
-import { readFileSync, writeFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import {
   GRAPH_CACHED,
@@ -19,6 +19,7 @@ import {
   GRAPH_SCHEDULE,
   GRAPH_STEADY
 } from "./workspace.ts"
+import { overTrackedFile } from "../../scripts/flow-graph-fixture-source.ts"
 
 /*
  * The plan door, end to end, over the real stack.
@@ -30,10 +31,6 @@ import {
  * `/api/workflow/rpc` itself would prove its own fixture and nothing else, and
  * the node ids asserted here are the ones the engine also schedules and
  * settles (`packages/smithers/test/FlowGraphRun.test.ts`).
- *
- * The flow builder is a build-time flag, so its two halves are two builds:
- * `playwright.graph.config.ts` runs this file twice and each tag selects the
- * half its build can answer.
  */
 
 /** The canvas a run card draws its graph on; the plan card draws on the same one. */
@@ -163,46 +160,12 @@ const sourceLine = (line: number): string => readFileSync(SOURCE_PATH, "utf8").s
 
 /**
  * Runs a case that moves the fixture's source under the running host, and puts
- * the file back whatever happens.
- *
- * Two cases need the WORKING TREE to move while a host serves a revision it
- * already read, so a copy under `TMPDIR` cannot stand in: the file has to be
- * the tracked one, because the revision that answers the Code tab is a jj or
- * git object and neither can serve a path no revision holds.
- *
- * What is avoidable is leaving it edited. A run killed between the write and
- * the restore leaves uncommitted work in the checkout, and
- * `SourceRevision.read` then answers NOTHING for a git tree — so the next host
- * records no revision and every Code tab disappears, which reads as a product
- * defect rather than as this suite's litter. The restore therefore also runs
- * on the signals a killed run sends and on process exit, and it is idempotent.
+ * the file back whatever happens, a SIGKILL included
+ * (`scripts/flow-graph-fixture-source.ts`).
  */
-const overTheFixtureSource = async (
+const overTheFixtureSource = (
   body: (original: string, edit: (bytes: string) => void) => Promise<void>
-): Promise<void> => {
-  const original = readFileSync(SOURCE_PATH, "utf8")
-  let restored = false
-  const restore = () => {
-    if (restored) return
-    restored = true
-    writeFileSync(SOURCE_PATH, original)
-  }
-  const onSignal = () => {
-    restore()
-    process.exit(1)
-  }
-  process.once("exit", restore)
-  process.once("SIGINT", onSignal)
-  process.once("SIGTERM", onSignal)
-  try {
-    await body(original, (bytes) => writeFileSync(SOURCE_PATH, bytes))
-  } finally {
-    restore()
-    process.off("exit", restore)
-    process.off("SIGINT", onSignal)
-    process.off("SIGTERM", onSignal)
-  }
-}
+): Promise<void> => overTrackedFile(SOURCE_PATH, body)
 
 test.describe("the flow builder's plan door", () => {
   /*

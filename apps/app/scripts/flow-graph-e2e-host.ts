@@ -31,7 +31,9 @@ import { fileURLToPath } from "node:url"
 import { join } from "node:path"
 import { createLocalCommandChat } from "../e2e/graph/LocalCommandChat"
 import { startLocalServer } from "../src/bun/server"
+import { GRAPH_FLOW_SOURCE } from "../e2e/graph/workspace"
 import { relayFetch } from "../e2e/graph/RelayFetch"
+import { recoverTrackedFile } from "./flow-graph-fixture-source"
 
 const APP_DIR = fileURLToPath(new URL("../", import.meta.url))
 const PORT = Number(process.env.SMITHERS_FLOW_GRAPH_PORT ?? "47331")
@@ -134,6 +136,12 @@ const buildSpa = async (): Promise<void> => {
 
 let gateway: Awaited<ReturnType<typeof startGateway>>
 try {
+  // The gateway loads the fixture from disk: undo a killed run's edit first,
+  // and refuse to load one another live run is making.
+  const fixture = join(APP_DIR, "../..", GRAPH_FLOW_SOURCE)
+  if (recoverTrackedFile(fixture) === "held") {
+    throw new Error(`[flow-graph] ${fixture} is being edited by another flow-graph run`)
+  }
   gateway = await startGateway()
   // Every request still reaches the real relay and engine, on an owned connection.
   globalThis.fetch = relayFetch(gateway.address.relayUrl, globalThis.fetch)
