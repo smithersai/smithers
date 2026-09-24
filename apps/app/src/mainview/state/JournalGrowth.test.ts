@@ -151,7 +151,11 @@ describe("normalized run polling has no idle SQLite growth", () => {
     if (scenario.fail) pause.fail(new Error("held observation failed"))
     else pause.release()
     expect(await owner).toBe(!scenario.fail)
-    expect(await watching).toBe(!scenario.fail)
+    // A refused receipt is the pump's to retry, never a rejection into its unawaited caller.
+    expect(await watching).toBe(true)
+    if (scenario.fail) expect(fixture.store.collections.runtimeRuns.get(runtimeRunKey(scope))?.observer).toEqual({
+      state: "reconnecting", error: "This browser did not save the run's latest evidence. Retrying."
+    })
     if (!scenario.fail) {
       expect(fixture.store.committedRuntimeRun(runtimeRunKey(scope))?.events).toEqual([...response.events])
       expect((await fixture.store.eventHistory()).head.sequence).toBe(before.head.sequence + 2)

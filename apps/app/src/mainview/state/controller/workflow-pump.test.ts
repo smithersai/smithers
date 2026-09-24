@@ -6,6 +6,7 @@ import type { Card } from "../AppState"
 import type { ControllerContext } from "./context"
 import { createGatewaySeam } from "./gateway"
 import { createWorkflowPumpController } from "./workflow-pump"
+import { AppEventIntegrityError } from "../AppEventStream"
 import type { StatusRollup } from "@smthrs/rpc/Health"
 import { readFileSync } from "node:fs"
 import { runGraphOfCard } from "../../cards/FlowRunGraph"
@@ -20,7 +21,7 @@ const summary = {
 const cursor = (projection: string, value: number, offset = 0) => ({
   selector: { _tag: projection, runId: "run-1" }, projection, runId: "run-1", value, offset
 })
-type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string; verdict?: string; statusRollup?: StatusRollup }
+type Cycle = { events: ReturnType<typeof event>[]; revision?: number; journalFailure?: boolean; summaryFailure?: boolean; status?: string; verdict?: string; statusRollup?: StatusRollup; approvals?: unknown[] }
 const poll = async (cycles: Cycle[], options: {
   initialEvents?: ReturnType<typeof event>[]
   inspectAt?: number
@@ -31,6 +32,10 @@ const poll = async (cycles: Cycle[], options: {
   initialRun?: RuntimeRun
   resumeOnBoot?: boolean
   flowId?: string
+  /** Receipts this browser fails to save, in dispatch order, before saving the rest. */
+  saveFailures?: Array<{ type: string; error: Error }>
+  /** Transitions the store refuses synchronously, once each, as `AppStore.dispatch` throws. */
+  refusals?: Array<{ type: string; error: Error }>
 } = {}) => {
   const flowId = options.flowId ?? summary.flowId
   let card: Extract<Card, { kind: "run-trace" }> = {
@@ -53,6 +58,7 @@ const poll = async (cycles: Cycle[], options: {
   const journalRequests: unknown[] = []
   const updates: typeof card[] = []
   const messages: string[] = []
+  const dispatched: string[] = []
   const gateway = createGatewaySeam({
     baseUrl: "https://test", errorMessageOf: async (_, fallback) => fallback,
     fetch: async (_, init) => {
@@ -65,6 +71,7 @@ const poll = async (cycles: Cycle[], options: {
         if (projection === "run-events") journalRequests.push(payload.after)
         return Response.json({ ok: false, error: { message: "offline" } })
       }
+      if (projection === "approvals") return Response.json({ ok: true, payload: { rows: cycle.approvals ?? [] } })
       let rows: unknown[] = [{ ...summary, flowId, updatedAt: cycle.status === undefined ? summary.updatedAt : summary.updatedAt + iteration + 1, status: cycle.status ?? "running", verdict: cycle.verdict ?? summary.verdict, statusRollup: cycle.statusRollup }]
       if (projection === "run-events") {
         journalRequests.push(payload.after)
@@ -94,7 +101,12 @@ const poll = async (cycles: Cycle[], options: {
   const ctx = {
     finishTutorialChange: async () => {},
     resumeFlowAuthoring: () => {},
-    store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, collections: { cards, runtimeRuns, runtimeApprovals: new Map() }, dispatch: (action: any) => {
+    store: { committedRuntimeRun: (id: string) => runtimeRuns.get(id), committedRuntimeApproval: () => undefined, approvalRequest: () => undefined, collections: { cards, runtimeRuns, runtimeApprovals: new Map() }, dispatch: (action: any) => {
+      const refused = options.saveFailures?.[0]?.type === action.type ? options.saveFailures!.shift()!.error : undefined
+      if (refused !== undefined) return { isPersisted: { promise: Promise.reject(refused) } }
+      const thrown = options.refusals?.findIndex((refusal) => refusal.type === action.type) ?? -1
+      if (thrown >= 0) throw options.refusals!.splice(thrown, 1)[0]!.error
+      dispatched.push(action.type)
       if (action.type === "message.appended") messages.push(action.text)
       const previous = runtimeRuns.get(key)
       let next = previous
@@ -125,8 +137,61 @@ const poll = async (cycles: Cycle[], options: {
     pump.resumeWorkflowRuns()
     for (let tick = 0; tick < 100 && (iteration < 0 || ctx.runPumps.size > 0); tick++) await Bun.sleep(1)
   } else await pump.pumpWorkflowRun(card.id)
-  return { card, run: runtimeRuns.get(key), updates, rowsRequested, journalRequests, messages }
+  return { card, run: runtimeRuns.get(key), updates, rowsRequested, journalRequests, messages, dispatched, runPumps: ctx.runPumps }
 }
+
+const notSaved = "This browser did not save the run's latest evidence. Retrying."
+test.each([
+  ["a storage failure", new Error("disk I/O error")],
+  ["a conflict behind another failed write", new AppEventIntegrityError("conflict")]
+])("%s saving the run's evidence reconnects and retries from the same cursor", async (_, error) => {
+  const events = [event(1)]
+  const result = await poll([{ events, revision: 1 }, { events, revision: 1 }, { events, revision: 1 }],
+    { saveFailures: [{ type: "gateway.run.observed", error }] })
+  expect(result.updates.map((card) => [card.payload.phase, card.payload.observationError])).toEqual([
+    ["reconnecting", notSaved], ["running", undefined]
+  ])
+  expect(result.journalRequests).toEqual([undefined, undefined])
+  expect(result.card.payload.events).toEqual(events)
+})
+
+test.each([
+  ["the reconnecting receipt", "gateway.run.observer.changed", "stopped", [{ events: [], summaryFailure: true }, { events: [], summaryFailure: true }, { events: [] }]],
+  ["the settled run's transcript line", "message.appended", "completed", [{ events: [event(1)], revision: 1, status: "completed", verdict: "done" }]]
+] as const)("a store refusing %s stops watching with the reason instead of rejecting into its caller", async (_, type, phase, cycles) => {
+  const result = await poll(cycles.map((cycle) => ({ ...cycle, events: [...cycle.events] })),
+    { refusals: [{ type, error: new Error("The app state owner is closed.") }] })
+  expect([result.card.payload.phase, result.card.payload.observationError]).toEqual([phase, "This browser did not save the run's latest evidence."])
+  expect(result.runPumps.size).toBe(0)
+})
+
+test("an approval receipt this browser fails to save is retried until the gate is in hand", async () => {
+  const gate = { runId: "run-1", requestId: "gate", requestedAt: 1, title: "Deploy?", request: {}, status: "pending",
+    payload: { target: { _tag: "Node", runId: "run-1", requestId: "gate", digest: "reviewed",
+      envelope: { capabilities: [], flows: [], budget: {} } }, scope: "once", idempotencyKey: "gate" } }
+  const waiting = { events: [], revision: 1, status: "waiting-approval", approvals: [gate] }
+  const result = await poll([waiting, waiting, waiting],
+    { saveFailures: [{ type: "gateway.approvals.observed", error: new Error("disk I/O error") }] })
+  // Each waiting summary carries a later `updatedAt`, so every saved cycle is a new receipt.
+  expect(result.updates.map((card) => [card.payload.phase, card.payload.observationError])).toEqual([
+    ["reconnecting", notSaved], ["waiting-approval", undefined], ["waiting-approval", undefined]
+  ])
+  // The refused receipt is never counted; the retry saves it and raises the gate's card.
+  expect(result.dispatched.slice(0, 4)).toEqual([
+    "gateway.run.observer.changed", "gateway.approvals.observed", "card.upsert", "gateway.run.observed"
+  ])
+})
+
+test("an approval row naming another gate stops watching and keeps the verified evidence", async () => {
+  const forged = { runId: "run-1", requestId: "gate", requestedAt: 1, title: "Deploy?", request: {}, status: "pending",
+    payload: { target: { _tag: "Node", runId: "run-1", requestId: "other", digest: "reviewed",
+      envelope: { capabilities: [], flows: [], budget: {} } }, scope: "once", idempotencyKey: "gate" } }
+  const result = await poll([{ events: [], revision: 1, status: "waiting-approval", approvals: [forged] }, { events: [], revision: 1 }])
+  expect(result.updates.map((card) => [card.payload.phase, card.payload.observationError])).toEqual([
+    ["stopped", "The workspace returned conflicting recorded history. The last verified evidence was preserved."]
+  ])
+  expect(result.dispatched).not.toContain("card.upsert")
+})
 
 test("a failed run keeps raw evidence on its card and announces only typed human copy", async () => {
   const raw = "failed — Error: Error: git exited 1"

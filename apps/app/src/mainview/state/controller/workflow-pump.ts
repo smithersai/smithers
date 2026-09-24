@@ -237,8 +237,9 @@ export const createWorkflowPumpController = (
 
   /*
    * The run pump: re-read the run's summary until it settles. Consecutive
-   * failures flip the card to the honest reconnecting state; the pump never
-   * stops silently.
+   * failures flip the card to the honest reconnecting state, and a store that
+   * refuses a write stops it on the card; the pump never stops silently. Its
+   * callers do not await it, so it never rejects either.
    */
   const pumpWorkflowRun = async (cardId: string, observeOnce = false): Promise<void> => {
     if (ctx.disposed || ctx.runPumps.has(cardId)) return
@@ -259,6 +260,22 @@ export const createWorkflowPumpController = (
     // A capped page can leave a verified prefix before a later page refuses.
     // Keep retrying that cursor; a first-page refusal has no prefix to protect.
     let incompleteJournalRetry = false
+    /*
+     * Evidence read this cycle could not be applied. Conflicting recorded
+     * history stops watching and keeps the last verified evidence. A receipt
+     * this browser failed to save is retried like an unreadable summary, and
+     * counts toward the quiet bound. `true` means this pump is done.
+     */
+    const applyFailed = (error: unknown): boolean => {
+      if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return true
+      if (error instanceof RuntimeProjectionIntegrityError || (error instanceof AppEventIntegrityError && error.reason === "event")) {
+        patchRunCard(cardId, { observationError: "The workspace returned conflicting recorded history. The last verified evidence was preserved.", phase: "stopped" })
+        return true
+      }
+      failures += 1
+      patchRunCard(cardId, { observationError: "This browser did not save the run's latest evidence. Retrying.", phase: "reconnecting" })
+      return false
+    }
     try {
       for (;;) {
         if (pump.stopped) return
@@ -345,8 +362,16 @@ export const createWorkflowPumpController = (
           if (pump.stopped || ctx.runPumps.get(cardId) !== pump) return
           // Keep asking until the gate is actually in hand: a parked run can
           // be readable a beat before its approval row is.
-          if (approvals.status === "ok" && await upsertRunApprovals(runId, repo, card.payload.workspaceId, approvals.value) > 0) {
-            approvalPending = false
+          if (approvals.status === "ok") {
+            let found: number
+            try {
+              found = await upsertRunApprovals(runId, repo, card.payload.workspaceId, approvals.value)
+            } catch (error) {
+              if (applyFailed(error)) return
+              await pokeableWait(cardId, RUN_POLL_MS)
+              continue
+            }
+            if (found > 0) approvalPending = false
           }
         }
 
@@ -439,9 +464,9 @@ export const createWorkflowPumpController = (
             } }).isPersisted.promise
           }
         } catch (error) {
-          if (!(error instanceof RuntimeProjectionIntegrityError) && !(error instanceof AppEventIntegrityError && error.reason === "event")) throw error
-          patchRunCard(cardId, { observationError: "The workspace returned a conflicting recorded prefix. The last verified evidence was preserved.", phase: "stopped" })
-          return
+          if (applyFailed(error)) return
+          await pokeableWait(cardId, RUN_POLL_MS)
+          continue
         }
         if (pump.stopped || ctx.disposed || ctx.runPumps.get(cardId) !== pump) return
         // A transport response is not an applied cursor. Advance acknowledgments
@@ -493,6 +518,16 @@ export const createWorkflowPumpController = (
         if (newSteps.length > 0 || journalAdvanced || previous === undefined || row.status !== previous.status) lastProgressAt = Date.now()
         previous = row
         await pokeableWait(cardId, RUN_POLL_MS)
+      }
+    } catch {
+      /*
+       * The store refused a transition outright (a lost owner, a privacy
+       * retirement, a projection it would not apply). Nothing this pump does
+       * next can land, so it stops and the card says why; "Check again" is the
+       * next act. A store refusing even that has its own failure surface.
+       */
+      if (ctx.runPumps.get(cardId) === pump && !pump.stopped) {
+        try { patchRunCard(cardId, { observationError: "This browser did not save the run's latest evidence.", phase: "stopped" }) } catch {}
       }
     } finally {
       /*
