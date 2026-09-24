@@ -34,7 +34,7 @@ import { createTurnJournalClient } from "./TurnJournalClient"
 import type { TurnJournalClient } from "./TurnJournalClient"
 import { accessDurableTurn, eraseDurableTurn, withDurableAgentTurn } from "./DurableTurn"
 import type { BodyUnreadable } from "./Failures"
-import { fetchWithDeadline, readJsonOrUndefined, readText, Transport } from "./Http"
+import { fetchWithDeadline, readJsonOrUndefined, readRefusalDetail, readText, Transport } from "./Http"
 import type { ValidatedIdentity } from "./identity"
 import {
   causeMessage,
@@ -284,7 +284,7 @@ const namespacedTurnCancels = (namespace: NativeNamespace): TurnCancelsShape => 
         Effect.flatMap((response) =>
           response.ok
             ? readJsonOrUndefined(response)
-            : Effect.flatMap(readText(response).pipe(Effect.catch(() => Effect.succeed(""))), (detail) =>
+            : Effect.flatMap(readRefusalDetail(response), (detail) =>
               Effect.fail(invalidAnswer("turnCancellation/register", `Registry register returned ${response.status}${detail === "" ? "" : `: ${detail}`}`)))
         ),
         Effect.map((body): Registration => {
@@ -799,7 +799,7 @@ const handleTransientTurn = (
       const response = fetched.success
       if (!response.ok || response.body === null) {
         yield* settle
-        const detail = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
+        const detail = yield* readRefusalDetail(response)
         return response.ok
           ? refuse("model_no_answer", "The model service accepted the turn and then sent no answer at all. Nothing was charged.")
           : refuseWithStatus(
@@ -949,7 +949,7 @@ export const handleModelStream = (
     }
     const response = fetched.success
     if (!response.ok || response.body === null) {
-      const detail = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
+      const detail = yield* readRefusalDetail(response)
       return response.ok
         ? refuse("model_no_answer", "The model service accepted the request and then sent no answer at all.")
         : refuseWithStatus(

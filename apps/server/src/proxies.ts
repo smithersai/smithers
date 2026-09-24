@@ -16,7 +16,7 @@ import { ServerConfig } from "./Config"
 import { BrowserEgress } from "./Environment"
 import type { DeploymentBindings, ExecutionContext } from "./Environment"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
-import { discardBody, fetchWithDeadline, readBoundedBytes, readText } from "./Http"
+import { discardBody, fetchWithDeadline, readBoundedBytes, readRefusalDetail } from "./Http"
 import type { Transport } from "./Http"
 import { isVisitorRefusal, requireTurnSession } from "./identity"
 import { cloudReadPath, isPublicRepositoryRead, readPublicRepository } from "./publicRepositoryReads"
@@ -136,7 +136,7 @@ const publicAnswer = (url: URL): Effect.Effect<Response, never, Transport | Serv
     const config = yield* ServerConfig
     const response = yield* readPublicRepository(url, config.cloudApiBaseUrl)
     if (response.ok) return response
-    const detail = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
+    const detail = yield* readRefusalDetail(response)
     const failure = json(response.status, {
       status: "error",
       message: platformFailureMessage(response.status, detail)
@@ -221,7 +221,7 @@ export const handlePlatformProxy = (
      * full fleet from its own quota.
      */
     if (upstream.status >= 400) {
-      const detail = yield* readText(upstream).pipe(Effect.catch(() => Effect.succeed("")))
+      const detail = yield* readRefusalDetail(upstream)
       // A provider setup token crossed this proxy only in the request body.
       // Never reflect upstream prose or fields for its write endpoints.
       if (url.pathname.startsWith("/api/user/provider-connections") && request.method !== "GET") {

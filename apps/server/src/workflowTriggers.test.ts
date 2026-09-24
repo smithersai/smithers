@@ -1,10 +1,12 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { WORKFLOW_TRIGGERS_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { floodStream, FLOOD_CHUNK_BYTES } from "./floodStream"
 import { memoryDurableObjects } from "./memoryDurableObjects"
 import { noLiveTriggers, workflowTriggersFromFrame } from "./workflowTriggers"
 import type { WorkflowTriggersBody } from "./workflowTriggers"
+import { GATEWAY_ANSWER_MAX_BYTES } from "./workflows"
 
 /*
  * The live-dispatchers route: what the triggers.list card reads beside the
@@ -242,6 +244,30 @@ describe("GET /api/workflow/triggers", () => {
       },
       () => frame({ _tag: "Failure", cause: { _tag: "InvalidInput", message: "this host serves no trigger store" } })
     )
+  })
+
+  test("a box answer past the relay ceiling is live:false and cancelled, not buffered", async () => {
+    await seedBox()
+    const { stream, seen } = floodStream()
+    const logged = spyOn(console, "error").mockImplementation(() => undefined)
+    try {
+      await withUpstreams(
+        validated,
+        async () => {
+          const response = await worker.fetch(request(`?repo=${REPO}`), env)
+          expect(response.status).toBe(200)
+          expect(await response.json()).toEqual(noLiveTriggers(REPO))
+        },
+        () => new Response(stream, { status: 200 })
+      )
+      expect(logged.mock.calls.map(([line]) => String(line))).toContain(
+        JSON.stringify({ event: "worker_seam_failure", seam: "workspace triggers", cause: "BodyTooLarge" })
+      )
+    } finally {
+      logged.mockRestore()
+    }
+    expect(seen.cancelled).toBe(true)
+    expect(seen.pulled).toBeLessThanOrEqual(GATEWAY_ANSWER_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
   })
 
   test("the repository is required and must be owner/repo, for every caller", async () => {

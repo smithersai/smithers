@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { StorageFailure } from "./Failures"
 import type { BodyNotJson, BodyUnreadable } from "./Failures"
-import { readJson, readText } from "./Http"
+import { readJson, readRefusalDetail } from "./Http"
 
 /*
  * Durable Object state as this Worker's Effects see it.
@@ -95,7 +95,7 @@ export interface NativeNamespace {
 export const answeredJson = (operation: string, seam: string, response: Response): Effect.Effect<unknown, StorageFailure | BodyUnreadable | BodyNotJson> =>
   response.ok
     ? readJson(response)
-    : Effect.flatMap(readText(response).pipe(Effect.catch(() => Effect.succeed(""))), (body) =>
+    : Effect.flatMap(readRefusalDetail(response), (body) =>
       Effect.fail(new StorageFailure({
         operation,
         cause: new Error(`${seam} answered HTTP ${response.status}${body === "" ? "." : `: ${body}`}`)

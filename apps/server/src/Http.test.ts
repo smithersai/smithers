@@ -3,7 +3,17 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import { BodyNotJson, BodyTooLarge, UpstreamTimeout, UpstreamUnreachable } from "./Failures"
-import { fetchWithDeadline, readBoundedBytes, readBoundedJson, readText, transportLayer, TransportLive } from "./Http"
+import { floodStream, FLOOD_CHUNK_BYTES } from "./floodStream"
+import {
+  fetchWithDeadline,
+  readBoundedBytes,
+  readBoundedJson,
+  readRefusalDetail,
+  readText,
+  REFUSAL_DETAIL_MAX_BYTES,
+  transportLayer,
+  TransportLive
+} from "./Http"
 import type { FetchInput } from "./Http"
 
 const encoder = new TextEncoder()
@@ -77,6 +87,30 @@ describe("readBoundedBytes owns the body for the read's lifetime", () => {
     expect(Exit.isFailure(notJson) && String(notJson.cause)).toContain(BodyNotJson.name)
     const tooLarge = await Effect.runPromiseExit(readBoundedJson(new Response("x".repeat(101)), 100))
     expect(Exit.isFailure(tooLarge) && String(tooLarge.cause)).toContain(BodyTooLarge.name)
+  })
+})
+
+describe("readRefusalDetail reads an upstream refusal under a ceiling", () => {
+  test("a refusal body within the ceiling is its detail", async () => {
+    expect(await Effect.runPromise(readRefusalDetail(new Response("{\"message\":\"no\"}", { status: 500 })))).toBe("{\"message\":\"no\"}")
+  })
+
+  test("a refusal body past the ceiling is no detail: the read stops at the ceiling and cancels the stream", async () => {
+    const { stream, seen } = floodStream()
+    const detail = await Effect.runPromise(readRefusalDetail(new Response(stream, { status: 500 })))
+    expect(detail).toBe("")
+    expect(seen.cancelled).toBe(true)
+    expect(seen.pulled).toBeLessThanOrEqual(REFUSAL_DETAIL_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
+    expect(stream.locked).toBe(false)
+  })
+
+  test("a refusal body that breaks off is no detail", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("connection reset"))
+      }
+    })
+    expect(await Effect.runPromise(readRefusalDetail(new Response(stream, { status: 502 })))).toBe("")
   })
 })
 

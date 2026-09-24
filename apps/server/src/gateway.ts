@@ -15,7 +15,7 @@ import { DurableStorage, namespaceCall, storageLayer } from "./DurableStorage"
 import type { NativeNamespace, NativeStorage } from "./DurableStorage"
 import { BodyUnreadable } from "./Failures"
 import type { UpstreamFailure } from "./Failures"
-import { discardBody, fetchWithDeadline, readJsonOrUndefined, readText, TransportLive } from "./Http"
+import { discardBody, fetchWithDeadline, readJsonOrUndefined, readRefusalDetail, TransportLive } from "./Http"
 import type { Transport } from "./Http"
 import { logSeamFailure } from "./RefusalLog"
 import { upstreamProse } from "./Responses"
@@ -599,7 +599,7 @@ export const fetchCloudToken = (login: string): Effect.Effect<CloudTokenOutcome,
     }
     const response = answered.success
     if (!response.ok) {
-      const detail = (yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))).trim().slice(0, 200)
+      const detail = (yield* readRefusalDetail(response)).trim().slice(0, 200)
       return {
         status: "unavailable",
         detail: `The Cloud token door answered HTTP ${response.status}${detail === "" ? "." : `: ${detail}`}`

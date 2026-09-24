@@ -4,7 +4,7 @@ import * as Result from "effect/Result"
 import { AUTH_RETURN_TO_PARAM, AUTH_SIGNED_IN_PARAM } from "@smthrs/rpc/AgentApiRoutes"
 import { ServerConfig } from "./Config"
 import type { UpstreamFailure } from "./Failures"
-import { discardBody, fetchWithDeadline, readJsonOrUndefined, readText } from "./Http"
+import { discardBody, fetchWithDeadline, readJsonOrUndefined, readRefusalDetail } from "./Http"
 import type { Transport } from "./Http"
 import {
   ISOLATION_HEADERS,
@@ -563,7 +563,7 @@ export const handleAuthNavigation = (
     if (prefersJson(request)) return response
     // What remains is an upstream error (or a non-redirect oddity): read the
     // machine answer for its code, then replace it with the human page.
-    const body = (yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))).trim()
+    const body = (yield* readRefusalDetail(response)).trim()
     let code: string | undefined
     try {
       const parsed: unknown = JSON.parse(body)

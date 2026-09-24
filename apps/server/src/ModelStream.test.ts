@@ -3,6 +3,8 @@ import { MODEL_STREAM_PATH, TURN_PATH } from "@smthrs/rpc/AgentApiRoutes"
 import { asAdmitted } from "./admittedSession"
 import worker from "./index"
 import type { WorkerEnv } from "./index"
+import { floodStream, FLOOD_CHUNK_BYTES } from "./floodStream"
+import { REFUSAL_DETAIL_MAX_BYTES } from "./Http"
 import { memoryDurableObjects } from "./memoryDurableObjects"
 
 /*
@@ -184,6 +186,18 @@ describe("the model relay route", () => {
     withFetch(() => new Response(JSON.stringify({ error: "overloaded" }), { status: 529 }))
     const response = await admitted(relayRequest(), env())
     expect(response.status).toBe(529)
+  })
+
+  test("an upstream refusal body past the detail ceiling is cancelled, not buffered", async () => {
+    const { stream, seen } = floodStream()
+    withFetch(() => new Response(stream, { status: 503 }))
+    const response = await admitted(relayRequest(), env())
+    expect(response.status).toBe(503)
+    expect(((await response.json()) as { message: string }).message).toBe(
+      "The model service is having trouble right now (HTTP 503), so the turn did not run. Nothing was charged."
+    )
+    expect(seen.cancelled).toBe(true)
+    expect(seen.pulled).toBeLessThanOrEqual(REFUSAL_DETAIL_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
   })
 
   test("only POST is allowed", async () => {

@@ -47,6 +47,15 @@ Client disconnects on model routes remain HTTP 499 (`src/Boundary.ts`).
 Gateway deadlines retain the states and retry policy in
 [gateway-retries.md](gateway-retries.md).
 
+An upstream refusal body is read up to 16 KiB (`REFUSAL_DETAIL_MAX_BYTES`
+in `src/Http.ts`). Past that, or when the body breaks off, the read is
+cancelled and the route states the refusal without the upstream's detail.
+A workspace answer on `/api/workflow/rpc` and `/api/workflow/triggers` is
+read up to 4 MiB (`GATEWAY_ANSWER_MAX_BYTES` in `src/workflows.ts`). Past
+that, the rpc route answers `upstream_malformed`; a body that breaks off
+answers `upstream_unreachable`. The triggers route answers `live: false`
+and logs a `worker_seam_failure` line for the `workspace triggers` seam.
+
 Admin health retains its HTTP 200 partial report: timed-out health checks
 have `status: "failed"` and a detail naming the effective deadline. An
 unavailable balance or request queue remains `null`.

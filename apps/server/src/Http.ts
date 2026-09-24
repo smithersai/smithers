@@ -156,6 +156,23 @@ export const readBytes = (body: Request | Response): Effect.Effect<Uint8Array<Ar
     Effect.catchTag("BodyTooLarge", (failure) => Effect.die(failure))
   )
 
+/**
+ * The most of a refusal body this Worker reads. A refusal is read only to
+ * find a code, a retry hint, or a sentence to restate; every one the product
+ * relies on fits in a few hundred bytes, so anything past this is not a
+ * refusal worth quoting and is not buffered.
+ */
+export const REFUSAL_DETAIL_MAX_BYTES = 16 * 1024
+
+/**
+ * The detail of an upstream refusal: its body as text, or "" when the body is
+ * past `REFUSAL_DETAIL_MAX_BYTES` or cannot be read. The read stops at the
+ * ceiling and cancels the rest, and every caller already states the refusal
+ * in its own generic words when the detail is empty.
+ */
+export const readRefusalDetail = (body: Request | Response): Effect.Effect<string> =>
+  readBoundedText(body, REFUSAL_DETAIL_MAX_BYTES).pipe(Effect.catch(() => Effect.succeed("")))
+
 /** Read an unbounded text body (an upstream answer this Worker chose to call). */
 export const readText = (body: Request | Response): Effect.Effect<string, BodyUnreadable> =>
   Effect.map(readBytes(body), (bytes) => new TextDecoder().decode(bytes))

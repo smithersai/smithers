@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
 import { cloudTokenRefusal, fetchCloudToken } from "./gateway"
-import { discardBody, fetchWithDeadline, readText } from "./Http"
+import { discardBody, fetchWithDeadline, readRefusalDetail } from "./Http"
 import { validateSession } from "./identity"
 import { json, refuse } from "./Responses"
 
@@ -74,7 +74,7 @@ export const probeCloudSession = (request: Request) => Effect.gen(function* () {
   let degraded = false
   if (response.status === 403) {
     // An unreadable body carries no verdict, so it degrades nothing.
-    const body = yield* readText(response).pipe(Effect.catch(() => Effect.succeed("")))
+    const body = yield* readRefusalDetail(response)
     degraded = isCloudScopeRefusal(body)
   } else {
     yield* discardBody(response)

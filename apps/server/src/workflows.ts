@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect"
+import * as Result from "effect/Result"
 import { ServerConfig } from "./Config"
 import { callGateway, ensureGatewayReady, isGatewayWorkspaceId, isRelayRepoName } from "./gateway"
 import type { GatewayCallOutcome, GatewaySessions } from "./gateway"
@@ -8,10 +9,12 @@ import {
   GATEWAY_PROCEDURE_MOUNTS,
   NON_REPLAYABLE_GATEWAY_PROCEDURES
 } from "./gatewayRpc"
-import { discardBody, readText } from "./Http"
+import type { BodyTooLarge, BodyUnreadable } from "./Failures"
+import { discardBody, readBoundedText } from "./Http"
 import type { Transport } from "./Http"
 import { validateSession } from "./identity"
 import type { ValidatedIdentity } from "./identity"
+import { logSeamFailure } from "./RefusalLog"
 import { json, notConfigured, readBody, refuse } from "./Responses"
 import { LIST_TRIGGERS_PAYLOAD, noLiveTriggers, workflowTriggersFromFrame } from "./workflowTriggers"
 
@@ -27,6 +30,22 @@ import { LIST_TRIGGERS_PAYLOAD, noLiveTriggers, workflowTriggersFromFrame } from
  */
 
 type WorkflowServices = Transport | ServerConfig | GatewaySessions
+
+/**
+ * The most of one workspace answer the relay reads. The body comes from the
+ * user's own VM, where a buggy flow or a prompt-injected agent can write
+ * without end, and it is buffered, parsed and re-serialized in an isolate
+ * that serves other requests. The setup path reads the same gateway under
+ * 240 KB (repositorySetupExecution.ts); this general relay allows 4 MiB for
+ * listings and snapshots. Past it the read stops and the rest is cancelled.
+ */
+export const GATEWAY_ANSWER_MAX_BYTES = 4 * 1024 * 1024
+
+/** The typed refusal for a workspace answer the relay would not read whole. */
+const gatewayAnswerRefusal = (failure: BodyTooLarge | BodyUnreadable): Response =>
+  failure._tag === "BodyTooLarge"
+    ? refuse("upstream_malformed", `The workspace answer is larger than ${GATEWAY_ANSWER_MAX_BYTES / (1024 * 1024)} MiB.`)
+    : refuse("upstream_unreachable", "The workspace answer broke off before it ended.")
 
 /**
  * The workflow seam spends the user's own workspace resources, so on any
@@ -216,13 +235,15 @@ export const handleWorkflowRpc = (request: Request): Effect.Effect<Response, nev
       replayable: !NON_REPLAYABLE_GATEWAY_PROCEDURES.includes(procedure)
     })
     if (call.status !== "ok") return gatewayCallResponse(call)
-    const text = yield* readText(call.response).pipe(Effect.catch(() => Effect.succeed("")))
     // A gateway that answered at the HTTP level but not with a frame is still a
     // refusal the client can render, never a 500 from this Worker.
-    const frame = call.response.status === 200
-      ? decodeGatewayResponse(text)
-      : { ok: false as const, error: { message: `The workspace answered HTTP ${call.response.status}.` } }
-    return json(200, frame)
+    if (call.response.status !== 200) {
+      yield* discardBody(call.response)
+      return json(200, { ok: false, error: { message: `The workspace answered HTTP ${call.response.status}.` } })
+    }
+    const read = yield* Effect.result(readBoundedText(call.response, GATEWAY_ANSWER_MAX_BYTES))
+    if (Result.isFailure(read)) return gatewayAnswerRefusal(read.failure)
+    return json(200, decodeGatewayResponse(read.success))
   })
 
 /**
@@ -254,6 +275,11 @@ export const handleWorkflowTriggers = (request: Request, url: URL): Effect.Effec
       if (call.status === "ok") yield* discardBody(call.response)
       return json(200, noLiveTriggers(repo))
     }
-    const text = yield* readText(call.response).pipe(Effect.catch(() => Effect.succeed("")))
-    return json(200, workflowTriggersFromFrame(repo, decodeGatewayResponse(text)))
+    const read = yield* Effect.result(readBoundedText(call.response, GATEWAY_ANSWER_MAX_BYTES))
+    if (Result.isFailure(read)) {
+      // The route's answer is live:false either way; the log keeps why.
+      yield* Effect.sync(() => logSeamFailure("workspace triggers", read.failure))
+      return json(200, noLiveTriggers(repo))
+    }
+    return json(200, workflowTriggersFromFrame(repo, decodeGatewayResponse(read.success)))
   })

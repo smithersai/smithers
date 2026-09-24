@@ -20,10 +20,12 @@ import {
 } from "./clientErrorLog"
 import type { ClientErrorRecord } from "./clientErrorLog"
 import { memoryStorage as memoryObjectStorage, storageLayer } from "./DurableStorage"
+import { floodStream, FLOOD_CHUNK_BYTES } from "./floodStream"
 import type { NativeNamespace } from "./DurableStorage"
 import { WORKSPACE_GONE_REFUSAL } from "./gateway"
 import type { ProvisionOutcome } from "./gateway"
 import { ALLOWED_GATEWAY_PROCEDURES } from "./gatewayRpc"
+import { REFUSAL_DETAIL_MAX_BYTES } from "./Http"
 import worker, { PLATFORM_PROXY_RULES, TurnCancelRegistry } from "./index"
 import { asAdmitted } from "./admittedSession"
 import { memoryDurableObjects } from "./memoryDurableObjects"
@@ -31,6 +33,7 @@ import type { TurnCancelNamespace, TurnCancelStorage, WorkerEnv } from "./index"
 import { AVAILABLE_REPOS, COMING_SOON_REPOS } from "./publicRepoCatalog"
 import { memoryRecommendStorage, RecommendLog } from "./recommend"
 import { TURN_WINDOW_MAX, TurnRateLimiter } from "./turnLimit"
+import { GATEWAY_ANSWER_MAX_BYTES } from "./workflows"
 
 /** The Worker's fetch as one admitted login: every model-spending route fails closed without identity. */
 const admitted = asAdmitted(worker.fetch)
@@ -429,6 +432,24 @@ describe("smithers mvp worker", () => {
       const body = (await response.json()) as { message: string }
       expect(body.message).not.toContain("<")
       expect(body.message).toContain("having trouble")
+    } finally {
+      globalThis.fetch = original
+    }
+  })
+
+  test("an upstream refusal body past the detail ceiling is cancelled, not buffered", async () => {
+    const env: WorkerEnv = { ...assetsEnv(), SMITHERS_CHAT_URL: "https://upstream.test/chat" }
+    const { stream, seen } = floodStream()
+    const original = globalThis.fetch
+    globalThis.fetch = (async () => new Response(stream, { status: 500 })) as unknown as typeof fetch
+    try {
+      const response = await admitted(post("/api/agent/turn", { ...turnBody, runId: "run-flood" }), env)
+      expect(response.status).toBe(500)
+      expect(((await response.json()) as { message: string }).message).toBe(
+        "The model service is having trouble right now (HTTP 500), so the turn did not run. Nothing was charged."
+      )
+      expect(seen.cancelled).toBe(true)
+      expect(seen.pulled).toBeLessThanOrEqual(REFUSAL_DETAIL_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
     } finally {
       globalThis.fetch = original
     }
@@ -3309,6 +3330,24 @@ describe("the /api/cloud bridge", () => {
     }
   })
 
+  test("a Cloud refusal body past the detail ceiling is cancelled, not buffered, on account and anonymous reads", async () => {
+    const reads: ReadonlyArray<readonly [string, HeadersInit]> = [
+      ["/api/user/workspaces", { cookie: "smithers_session=sealed" }],
+      ["/api/repos/smithersai/smithers/contents", {}]
+    ]
+    for (const [path, headers] of reads) {
+      const { stream, seen } = floodStream()
+      await withUpstreams(() => new Response(stream, { status: 500 }), async (calls) => {
+        const response = await worker.fetch(new Request(`https://mvp.test${path}`, { headers }), signedInEnv)
+        expect(response.status).toBe(500)
+        expect(await response.json()).toEqual({ status: "error", message: "Smithers Cloud is having trouble right now (HTTP 500)." })
+        expect(cloudCalls(calls)).toHaveLength(1)
+      })
+      expect(seen.cancelled).toBe(true)
+      expect(seen.pulled).toBeLessThanOrEqual(REFUSAL_DETAIL_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
+    }
+  })
+
   test("SSE reconnects preserve the upstream cursor and streamed bytes through both platform routes", async () => {
     const frames = 'id: 1007\nevent: issue.fact\ndata: {"sequence":1007}\n\nevent: stream.error\ndata: {"retryable":true}\n\n'
     for (const prefix of ["", "/api/cloud"]) {
@@ -4423,6 +4462,49 @@ describe("wave 11 — the /api/workflow/* routes", () => {
         expect(WORKER_FAILURES.workspace_starting.fault).toBe("wait")
       }
     )
+  })
+
+  test("a workspace answer past the relay ceiling is refused as malformed and cancelled, not buffered", async () => {
+    const { stream, seen } = floodStream()
+    await withRelay({ gateway: () => new Response(stream, { status: 200 }) }, async () => {
+      const response = await worker.fetch(
+        signedIn("/api/workflow/rpc", {
+          method: "POST",
+          body: JSON.stringify({ repo: "codeplanesmithers/smithers-demo", procedure: "List", payload: { _tag: "runs" } })
+        }),
+        env()
+      )
+      expect(response.status).toBe(WORKER_FAILURES.upstream_malformed.status)
+      expect(await response.json()).toMatchObject({
+        code: "upstream_malformed",
+        message: "The workspace answer is larger than 4 MiB."
+      })
+    })
+    expect(seen.cancelled).toBe(true)
+    expect(seen.pulled).toBeLessThanOrEqual(GATEWAY_ANSWER_MAX_BYTES + 2 * FLOOD_CHUNK_BYTES)
+  })
+
+  test("a workspace answer that breaks off mid-body is refused as unreachable, not relayed as an empty answer", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{\"_tag\":\"Exit\""))
+        controller.error(new Error("connection reset"))
+      }
+    })
+    await withRelay({ gateway: () => new Response(stream, { status: 200 }) }, async () => {
+      const response = await worker.fetch(
+        signedIn("/api/workflow/rpc", {
+          method: "POST",
+          body: JSON.stringify({ repo: "codeplanesmithers/smithers-demo", procedure: "List", payload: { _tag: "runs" } })
+        }),
+        env()
+      )
+      expect(response.status).toBe(WORKER_FAILURES.upstream_unreachable.status)
+      expect(await response.json()).toMatchObject({
+        code: "upstream_unreachable",
+        message: "The workspace answer broke off before it ended."
+      })
+    })
   })
 
   test("a signed-out caller gets 401 and nothing is provisioned", async () => {
