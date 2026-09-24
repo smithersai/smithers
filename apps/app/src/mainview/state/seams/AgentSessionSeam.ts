@@ -1,4 +1,4 @@
-import { refuseCloudSignIn } from "./CloudSignIn"
+import { refuseCloudSignIn, SIGN_OUT_REFUSAL } from "./CloudSignIn"
 /*
  * The cloud agent sessions seam (UI-COVERAGE-GAPS.md "agents · Cloud agent
  * sessions"): a signed-in user runs a Codex/Claude/Smithers agent on a
@@ -210,15 +210,15 @@ const splitFrames = (buffer: string): { readonly frames: Array<SseFrame>; readon
 
 export interface AgentSessionSeam {
   /** `agent.session.new <owner/repo> <provider> <task…>`: create the session, post the task (dispatches the run), render the card, stream it. */
-  readonly newSession: (repo: string, provider: AgentProvider, task: string) => Promise<string | void | { readonly value: string }>
+  readonly newSession: (repo: string, provider: AgentProvider, task: string) => Promise<string | { readonly value: string }>
   /** `agent.session.list [owner/repo]`: the repository's sessions as a transcript listing, each row naming its doors. */
-  readonly listSessions: (repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly listSessions: (repo?: string) => Promise<string | { readonly value: string }>
   /** `agent.session.view <id> [owner/repo]`: re-read one session and its transcript into the card; attach the stream while it is active. */
-  readonly viewSession: (sessionId: string, repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly viewSession: (sessionId: string, repo?: string) => Promise<string | { readonly value: string }>
   /** `agent.session.say <id> <text…>`: post the follow-up message (dispatches the session's next run). */
-  readonly sayToSession: (sessionId: string, text: string) => Promise<string | void | { readonly value: string }>
+  readonly sayToSession: (sessionId: string, text: string) => Promise<string | { readonly value: string }>
   /** `agent.session.stop <id> [owner/repo]`: DELETE the session — an active run is cancelled and finalized. */
-  readonly stopSession: (sessionId: string, repo?: string) => Promise<string | void | { readonly value: string }>
+  readonly stopSession: (sessionId: string, repo?: string) => Promise<string | { readonly value: string }>
   /** Abort every open stream; the controller dies. */
   readonly dispose: () => void
 }
@@ -378,7 +378,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   // The route clamps to 100 even though its service allows 200. Read up to
   // three aligned pages around the session's observed count to retain the last
   // 200 rows, including for terminal sessions that will never open SSE.
-  const readWindow = async (repo: string, session: AgentSessionRow, current: () => boolean, signal?: AbortSignal): Promise<TranscriptRow[] | string | undefined> => {
+  const readWindow = async (repo: string, session: AgentSessionRow, current: () => boolean, signal?: AbortSignal): Promise<TranscriptRow[] | string> => {
     const size = 100
     const start = Math.floor(Math.max(0, session.messageCount - AGENT_TRANSCRIPT_ROW_CAP) / size) * size
     const end = Math.max(start + size, Math.ceil(session.messageCount / size) * size)
@@ -386,7 +386,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     for (let offset = start; offset < end && current(); offset += size) {
       const path = sessionsPath(repo, `/${encodeURIComponent(session.id)}/messages?limit=${size}${offset === 0 ? "" : `&cursor=${offset}`}`)
       const read = await get(path, undefined, signal)
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
       if ("error" in read) return featureRefusal(read, repo, session.id)
       if (!Array.isArray(read.body)) return `Smithers Cloud answered the messages of agent session ${session.id} with an unreadable payload`
       for (const value of read.body) {
@@ -425,7 +425,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
       const session = parseSession(answer.body)
       if (session === null || session.id !== sessionId) return
       const rows = await readWindow(repo, session, current, controller.signal)
-      if (!current() || rows === undefined || typeof rows === "string") return
+      if (!current() || typeof rows === "string") return
       const card = ctx.store.collections.cards.get(cardIdOf(sessionId))
       if (card?.kind !== "agent" || !("cloud" in card.payload)) return
       const transcript = rows.reduce<ReadonlyArray<TranscriptRow>>((prior, row) => appendRow(prior, row), card.payload.transcript)
@@ -512,7 +512,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   /* ---- the acts ---- */
 
   const newSession: AgentSessionSeam["newSession"] = async (repoArg, provider, task) => {
-    if (shared.disposed) return
+    if (shared.disposed) return SIGN_OUT_REFUSAL
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const current = currentOperation()
@@ -521,23 +521,23 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const repo = target.repo
     const title = task.trim()
     const created = await sendJson("POST", sessionsPath(repo), { title })
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in created) return featureRefusal(created, repo)
     const session = parseSession(created.body)
     if (session === null) return "Smithers Cloud answered the new agent session with an unreadable payload"
     // Keep the accepted session identity before the second POST launches a run.
     await renderSession(session, { repo, provider }, { task: title, clearError: true })
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     /* The first message is what dispatches the run (routes/agent_sessions.go PostMessage). */
     const posted = await postMessage(repo, session.id, title, provider)
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof posted === "string") {
       await renderSession(session, { repo, provider }, { error: posted })
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
       return `The agent session was created on ${repo}, but the first message did not return a confirmed result: ${posted}`
     }
     await renderSession(session, { repo, provider }, { transcript: [rowOf(posted)], task: title, clearError: true })
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     attachStream(repo, session.id)
     return {
       value: `Agent session ${session.id} started on ${repo} with ${provider} — the card streams its transcript. Follow up with agent.session.say ${session.id} <text>; stop it with agent.session.stop ${session.id}.`
@@ -562,7 +562,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   }
 
   const listSessions: AgentSessionSeam["listSessions"] = async (repoArg) => {
-    if (shared.disposed) return
+    if (shared.disposed) return SIGN_OUT_REFUSAL
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const current = currentOperation()
@@ -570,7 +570,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     if ("error" in target) return target.error
     const repo = target.repo
     const answer = await get(`${sessionsPath(repo)}?limit=100`, sessionsPath(repo))
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return featureRefusal(answer, repo)
     if (!Array.isArray(answer.body)) return `Smithers Cloud answered agent sessions for ${repo} with an unreadable payload`
     const sessions = answer.body.flatMap((entry) => {
@@ -594,12 +594,12 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
         `Open one with /agent.session.view <id> ${repo}; stop one with /agent.session.stop <id> ${repo}.`
       ].join("\n")
     await ctx.dispatch({ type: "message.appended", actor: "system", text: listing }).isPersisted.promise
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     return readResult(listing)
   }
 
   const viewSession: AgentSessionSeam["viewSession"] = async (sessionId, repoArg) => {
-    if (shared.disposed) return
+    if (shared.disposed) return SIGN_OUT_REFUSAL
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const current = currentOperation()
@@ -608,12 +608,12 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const repo = target.repo
     detachStream(sessionId)
     const answer = await get(sessionsPath(repo, `/${encodeURIComponent(sessionId)}`))
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) return featureRefusal(answer, repo, sessionId)
     const session = parseSession(answer.body)
     if (session === null || session.id !== sessionId) return `Smithers Cloud answered agent session ${sessionId} with an unreadable payload`
     const transcript = await readWindow(repo, session, current)
-    if (!current() || transcript === undefined) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof transcript === "string") return transcript
     /*
      * The provider is per-message on the wire, never on the session DTO: what
@@ -623,7 +623,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const provider = prior?.kind === "agent" && "cloud" in prior.payload ? prior.payload.provider : null
     await renderSession(session, { repo, provider }, { transcript, clearError: true })
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if (!AGENT_SESSION_TERMINAL.has(session.status)) attachStream(repo, session.id)
     return {
       value: `Agent session ${session.id} on ${repo}: ${session.title === "" ? "(untitled)" : session.title} — ${session.status}, ${transcript.length} message${transcript.length === 1 ? "" : "s"} shown. The card ${AGENT_SESSION_TERMINAL.has(session.status) ? "holds the transcript" : "streams the transcript live"}.`
@@ -631,7 +631,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   }
 
   const sayToSession: AgentSessionSeam["sayToSession"] = async (sessionId, text) => {
-    if (shared.disposed) return
+    if (shared.disposed) return SIGN_OUT_REFUSAL
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const current = currentOperation()
@@ -653,10 +653,10 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const provider = prior?.kind === "agent" && "cloud" in prior.payload ? (prior.payload.provider ?? undefined) : undefined
     const posted = await postMessage(repo, sessionId, message, provider)
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if (typeof posted === "string") {
       await failOnCard(sessionId, posted)
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
       attachStream(repo, sessionId)
       return posted
     }
@@ -668,7 +668,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
         actor: ctx.actor(),
         card: { ...existing, payload: { ...payload, transcript: [...appendRow(payload.transcript, rowOf(posted))] } }
       }).isPersisted.promise
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
     }
     /* The message dispatches the session's next run: the card streams again from here. */
     attachStream(repo, sessionId)
@@ -678,7 +678,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
   }
 
   const stopSession: AgentSessionSeam["stopSession"] = async (sessionId, repoArg) => {
-    if (shared.disposed) return
+    if (shared.disposed) return SIGN_OUT_REFUSAL
     const refusal = gate()
     if (refusal !== undefined) return refusal
     const current = currentOperation()
@@ -689,10 +689,10 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
     const prior = ctx.store.collections.cards.get(cardIdOf(sessionId))
     const priorState = prior?.kind === "agent" && "cloud" in prior.payload ? prior.payload.state : undefined
     const answer = await sendJson("DELETE", sessionsPath(repo, `/${encodeURIComponent(sessionId)}`))
-    if (!current()) return
+    if (!current()) return SIGN_OUT_REFUSAL
     if ("error" in answer) {
       await failOnCard(sessionId, answer.error)
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
       if (priorState !== undefined && !AGENT_SESSION_TERMINAL.has(priorState)) attachStream(repo, sessionId)
       return answer.error
     }
@@ -718,7 +718,7 @@ export const createAgentSessionSeam = (ctx: SeamContext, options: { readonly rep
           }
         }
       }).isPersisted.promise
-      if (!current()) return
+      if (!current()) return SIGN_OUT_REFUSAL
     }
     return {
       value: priorState !== undefined && AGENT_SESSION_TERMINAL.has(priorState)

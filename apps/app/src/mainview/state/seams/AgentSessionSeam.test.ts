@@ -4,6 +4,7 @@ import { CardSchema } from "@smthrs/rpc/Cards"
 import { createAppStore } from "../AppStore"
 import type { AppStore } from "../AppStore"
 import { createAgentSessionSeam, DEGRADED_AGENT_SESSION_REFUSAL } from "./AgentSessionSeam"
+import { SIGN_OUT_REFUSAL } from "./CloudSignIn"
 import type { SeamContext } from "./SeamContext"
 import { AGENT_SESSION_WIRE, sseFrame } from "./fixtures/AgentSessionWire"
 
@@ -553,7 +554,7 @@ describe("agent session observation ownership", () => {
       if (retire === "dispose") seam.dispose()
       else await store.dispatch({ type: "cloud.session.loaded", actor: "system", state: "signed-out", username: null, expiresAt: null, scopes: null }).isPersisted.promise
       response.resolve(json(201, AGENT_SESSION_WIRE.session()))
-      expect(await pending).toBeUndefined()
+      expect(await pending).toBe(SIGN_OUT_REFUSAL)
       expect(requests).toHaveLength(1)
       expect(cardOf(store)).toBeUndefined()
       expect(streamCalls).toHaveLength(0)
@@ -736,4 +737,16 @@ test("failed stream persistence stops delivery and reopening retains the last co
     expect(streamCalls).toHaveLength(1)
     expect(requests.filter(request => request.startsWith("POST "))).toEqual([])
   } finally { await reopened.dispose?.() }
+})
+
+
+test("a disposed session seam refuses every act", async () => {
+  const { seam, requests } = await harness({})
+  seam.dispose()
+  expect(await seam.newSession(REPO, "codex", "task")).toBe(SIGN_OUT_REFUSAL)
+  expect(await seam.listSessions(REPO)).toBe(SIGN_OUT_REFUSAL)
+  expect(await seam.viewSession(SESSION_ID, REPO)).toBe(SIGN_OUT_REFUSAL)
+  expect(await seam.sayToSession(SESSION_ID, "follow-up")).toBe(SIGN_OUT_REFUSAL)
+  expect(await seam.stopSession(SESSION_ID, REPO)).toBe(SIGN_OUT_REFUSAL)
+  expect(requests).toEqual([])
 })
