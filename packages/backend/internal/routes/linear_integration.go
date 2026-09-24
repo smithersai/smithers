@@ -77,14 +77,6 @@ type linearRepositoryOption struct {
 	Description string `json:"description"`
 }
 
-func normalizeLinearRepoPermission(permission string) string {
-	return strings.ToLower(strings.TrimSpace(permission))
-}
-
-func isLinearRepoAdminPermission(permission string) bool {
-	return normalizeLinearRepoPermission(permission) == "admin"
-}
-
 func (h *LinearIntegrationHandler) userCanAdminRepo(ctx context.Context, user *db.User, repo db.Repository) (bool, error) {
 	if user == nil {
 		return false, nil
@@ -92,43 +84,14 @@ func (h *LinearIntegrationHandler) userCanAdminRepo(ctx context.Context, user *d
 	if repo.UserID.Valid && repo.UserID.Int64 == user.ID {
 		return true, nil
 	}
-
 	if h.Repos == nil {
 		return false, errors.Internal("repository access checker is not configured")
 	}
-
-	if repo.OrgID.Valid {
-		isOrgOwner, err := h.Repos.IsOrgOwnerForRepoUser(ctx, db.IsOrgOwnerForRepoUserParams{
-			RepositoryID: repo.ID,
-			UserID:       user.ID,
-		})
-		if err != nil {
-			return false, errors.Internal("failed to resolve repository permissions")
-		}
-		if isOrgOwner {
-			return true, nil
-		}
-
-		teamPermission, err := h.Repos.GetHighestTeamPermissionForRepoUser(ctx, db.GetHighestTeamPermissionForRepoUserParams{
-			RepositoryID: repo.ID,
-			UserID:       user.ID,
-		})
-		if err != nil {
-			return false, errors.Internal("failed to resolve repository permissions")
-		}
-		if isLinearRepoAdminPermission(teamPermission) {
-			return true, nil
-		}
+	permission, apiErr := middleware.ResolveRepoPermission(ctx, h.Repos, repo, user)
+	if apiErr != nil {
+		return false, apiErr
 	}
-
-	collaboratorPermission, err := h.Repos.GetCollaboratorPermissionForRepoUser(ctx, db.GetCollaboratorPermissionForRepoUserParams{
-		RepositoryID: repo.ID,
-		UserID:       pgtype.Int8{Int64: user.ID, Valid: true},
-	})
-	if err != nil {
-		return false, errors.Internal("failed to resolve repository permissions")
-	}
-	return isLinearRepoAdminPermission(collaboratorPermission), nil
+	return permission.Satisfies(middleware.PermissionAdmin), nil
 }
 
 func (h *LinearIntegrationHandler) listAllUserRepos(ctx context.Context, userID int64) ([]db.Repository, error) {

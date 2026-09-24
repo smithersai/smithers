@@ -1755,22 +1755,6 @@ func (s *RepoService) ListGitRefs(ctx context.Context, viewer *db.User, owner, r
 	return refs, nil
 }
 
-func (s *RepoService) GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	_, err := s.resolveReadableRepo(ctx, viewer, owner, repo)
-	if err != nil {
-		return err
-	}
-	return errors.New(errors.CodeNotImplemented, "git trees endpoint not implemented")
-}
-
-func (s *RepoService) GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	_, err := s.resolveReadableRepo(ctx, viewer, owner, repo)
-	if err != nil {
-		return err
-	}
-	return errors.New(errors.CodeNotImplemented, "git commits endpoint not implemented")
-}
-
 func (s *RepoService) UpdateRepo(ctx context.Context, actor *db.User, owner, repo string, req UpdateRepoRequest) (db.Repository, error) {
 	if actor == nil {
 		return db.Repository{}, errors.Unauthorized("authentication required")

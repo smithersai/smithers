@@ -1,7 +1,7 @@
 /*
  * The commits seam: a repository's commit history (commits.list → the
  * "commit-list" card) and one commit (commits.read → the "commit" card).
- * plue has no git log route (`/git/commits/{sha}` answers 501), so both read
+ * plue has no git log route (no `/git/commits/{sha}`), so both read
  * its jj change routes, the same ones ChangeSeam and LandingsSeam use:
  *
  *   GET /api/repos/{o}/{r}/bookmarks            — the branch's head change (BookmarksSeam.fetchAllBookmarks)

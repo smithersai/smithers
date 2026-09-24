@@ -120,7 +120,7 @@ func (h *AlertWebhookHandler) Receive(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Receiver.HandleAlertIncident(r.Context(), incident); err != nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("failed to process alert incident"))
+		writeInternalError(w, r, "failed to process alert incident", err)
 		return
 	}
 

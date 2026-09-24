@@ -306,6 +306,12 @@ type WikiUpdateEvent struct {
 	Slug     string `json:"slug"`
 }
 
+// WikiUpdatePageSize is the most updates one ListWikiUpdates call returns. A
+// shorter page means the caller has reached the end of the stream.
+const WikiUpdatePageSize = 100
+
+// ListWikiUpdates returns up to WikiUpdatePageSize committed updates after
+// afterID, oldest first.
 func (s *WikiService) ListWikiUpdates(ctx context.Context, viewer *db.User, owner, repo, slug string, pageID, afterID int64) ([]WikiUpdateEvent, error) {
 	repository, err := s.resolveRepoByOwnerAndName(ctx, owner, repo)
 	if err != nil {
@@ -334,7 +340,7 @@ func (s *WikiService) ListWikiUpdates(ctx context.Context, viewer *db.User, owne
 
 	// An established stream can replay the tombstone after the page is gone.
 	// Repository scoping in the query prevents another repo's IDs leaking.
-	rows, err := s.documents.ListWikiUpdatesAfter(ctx, db.ListWikiUpdatesAfterParams{RepositoryID: repository.ID, PageID: pageID, Revision: afterID, Limit: 100})
+	rows, err := s.documents.ListWikiUpdatesAfter(ctx, db.ListWikiUpdatesAfterParams{RepositoryID: repository.ID, PageID: pageID, Revision: afterID, Limit: WikiUpdatePageSize})
 	if err != nil {
 		return nil, pkgerrors.Internal("failed to read wiki updates")
 	}

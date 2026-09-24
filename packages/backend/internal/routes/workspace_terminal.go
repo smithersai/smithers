@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +20,6 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/workspace"
@@ -174,123 +172,22 @@ func (h *WorkspaceTerminalHandler) hasSessionCookie(r *http.Request) bool {
 //
 //	{"type": "resize", "cols": 120, "rows": 40}
 func (h *WorkspaceTerminalHandler) TerminalWebSocket(w http.ResponseWriter, r *http.Request) {
-	authInfo := middleware.AuthInfoFromContext(r.Context())
-	// Tickets are minted by browsers, including tickets minted from a token,
-	// so they must retain the Origin allowlist check. A session cookie also
-	// means the browser can authenticate the request without the bearer token.
-	isTicketAuth := strings.TrimSpace(r.URL.Query().Get("ticket")) != ""
-	if authInfo == nil || !authInfo.IsTokenAuth || h.hasSessionCookie(r) || isTicketAuth {
-		origin := r.Header.Get("Origin")
-		if !h.checkOrigin(origin, r) {
-			slog.Warn("websocket origin rejected",
-				"origin", origin,
-				"remote_addr", r.RemoteAddr,
-				"path", r.URL.Path,
-			)
+	pre, ok := h.preflightWorkspaceSocket(w, r, workspaceSocketGate{
+		kind: "terminal",
+		observe: func(result string) {
 			if h.Metrics != nil {
-				h.Metrics.IncWebSocketOriginRejection()
+				h.Metrics.ObserveWorkspaceTerminalAttach(result)
 			}
-			pkgerrors.WriteError(w, pkgerrors.Forbidden("origin not allowed"))
-			return
-		}
-	} else {
-		slog.Debug("websocket origin check skipped for bearer-authenticated request",
-			"remote_addr", r.RemoteAddr,
-			"path", r.URL.Path,
-		)
-	}
-
-	user, err := requireRouteUser(r)
-	if err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
-		return
-	}
-
-	repoCtx := middleware.RepoContextFromContext(r.Context())
-	if repoCtx == nil || repoCtx.Repository == nil {
-		pkgerrors.WriteError(w, pkgerrors.BadRequest("repository context required"))
-		return
-	}
-
-	sessionID, err := routeParam(r, "id", "session id is required")
-	if err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
-		return
-	}
-
-	// Verify the session exists and belongs to this repository.
-	session, svcErr := h.Service.GetSession(r.Context(), sessionID, repoCtx.Repository.ID, user.ID)
-	if svcErr != nil {
-		if h.Metrics != nil {
-			h.Metrics.ObserveWorkspaceTerminalAttach("session_error")
-		}
-		writeRouteError(w, r, svcErr)
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(session.Status)) {
-	case "running":
-	case "failed":
-		if h.Metrics != nil {
-			h.Metrics.ObserveWorkspaceTerminalAttach("session_failed")
-		}
-		pkgerrors.WriteError(w, pkgerrors.Conflict("workspace session provisioning failed; create a new session and retry"))
-		return
-	case "stopped":
-		if h.Metrics != nil {
-			h.Metrics.ObserveWorkspaceTerminalAttach("session_stopped")
-		}
-		pkgerrors.WriteError(w, pkgerrors.Conflict("workspace session is stopped; create a new session and retry"))
-		return
-	default:
-		if h.Metrics != nil {
-			h.Metrics.ObserveWorkspaceTerminalAttach("session_pending")
-		}
-		w.Header().Set("Retry-After", "2")
-		pkgerrors.WriteError(w, &pkgerrors.APIError{
-			Status:  http.StatusTooEarly,
-			Code:    pkgerrors.CodeWorkspaceSessionPending,
-			Message: "workspace session is still provisioning",
-		})
-		return
-	}
-
-	// Ticket 0132: active-connection cap. This MUST fire before
-	// GetSSHConnectionInfo / dialSSH so that rejected clients do not
-	// consume sandbox SSH capacity. Returns 429 with a structured error
-	// so the client-side observability taxonomy can map it.
-	//
-	// The open-rate limiter is a separate middleware composed at route
-	// registration time (see cmd/server/main.go).
-	if h.ActiveConnections != nil && !h.ActiveConnections.Acquire(user.ID) {
-		slog.Warn("workspace terminal active-connection cap exceeded",
-			"scope", "workspace_terminal_active",
-			"user_id", user.ID,
-			"session_id", sessionID,
-			"hit_type", "active_cap",
-			"max", h.ActiveConnections.Max(),
-		)
-		resetAt := time.Now().UTC().Add(time.Second)
-		limit := h.ActiveConnections.Max()
-		remaining := 0
-		w.Header().Set("Retry-After", "1")
-		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
-		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt.Unix(), 10))
-		pkgerrors.WriteError(w, &pkgerrors.APIError{
-			Status:    http.StatusTooManyRequests,
-			Code:      pkgerrors.CodeRateLimitExceeded,
-			Message:   "too many active terminal connections",
-			Limit:     &limit,
-			Remaining: &remaining,
-		})
+		},
+		capMessage: "too many active terminal connections",
+	})
+	if !ok {
 		return
 	}
 	// Release on every exit path from here on.
-	defer func() {
-		if h.ActiveConnections != nil {
-			h.ActiveConnections.Release(user.ID)
-		}
-	}()
+	defer pre.release()
+	user, repoCtx, sessionID, session := pre.user, pre.repoCtx, pre.sessionID, pre.session
+	var svcErr error
 
 	// Runtime-backed terminals and hosted SSH terminals share the same durable
 	// terminal manager, WebSocket protocol, limits, activity tracking, and

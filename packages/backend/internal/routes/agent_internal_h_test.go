@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestAgentInternal_H_ValidateAndPostBranches(t *testing.T) {
-	t.Run("session lookup error rejects token", func(t *testing.T) {
+	t.Run("unknown session rejects token", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/agent/sessions/s/events", nil)
 		req.Header.Set("Authorization", "Bearer token")
 		q := &agentInternalCovTokenQuerier{
@@ -25,7 +26,7 @@ func TestAgentInternal_H_ValidateAndPostBranches(t *testing.T) {
 				ID:                  77,
 				AgentTokenExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true},
 			},
-			sessionErr: errors.New("session lookup failed"),
+			sessionErr: pgx.ErrNoRows,
 		}
 
 		err := (&AgentInternalHandler{TokenQuerier: q}).validateAgentToken(req.Context(), req, "s")

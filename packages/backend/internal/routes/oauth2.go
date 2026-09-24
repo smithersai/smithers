@@ -666,6 +666,7 @@ func (h *OAuth2Handler) checkFirstPartyAccess(ctx context.Context, user *db.User
 	}
 	allowed, err := h.AlphaAccess.IsUserWhitelisted(ctx, user)
 	if err != nil {
+		middleware.LoggerFromContext(ctx).Error("alpha whitelist lookup failed", "user_id", user.ID, "error", err)
 		return errors.Internal("failed to check alpha whitelist")
 	}
 	if !allowed {
@@ -703,9 +704,9 @@ func (h *OAuth2Handler) upstreamAuthorizePath() string {
 	return "/" + path
 }
 
-// isFirstPartyClient reports whether the client may skip the interactive
-// consent screen. All other user-registered clients must go through explicit
-// consent before an authorization code is issued.
+// isFirstPartyClient reports whether clientID is the first-party client, the
+// only client that may be authorized at all. validateAuthorizeRequest refuses
+// every other client.
 func isFirstPartyClient(clientID string) bool {
 	return clientID == services.FirstPartyClientID
 }

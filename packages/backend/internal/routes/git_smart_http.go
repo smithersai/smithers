@@ -63,28 +63,28 @@ func (h *GitSmartHandler) InfoRefs(w http.ResponseWriter, r *http.Request) {
 	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
 	if owner == "" {
 		result = "error"
-		writeGitHTTPError(w, errors.BadRequest("owner is required"))
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
 		return
 	}
 
 	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
 	service := strings.TrimSpace(r.URL.Query().Get("service"))
 	if service != "git-upload-pack" && service != "git-receive-pack" {
 		result = "error"
-		writeGitHTTPError(w, errors.BadRequest("unsupported git service"))
+		writeGitHTTPError(w, r, errors.BadRequest("unsupported git service"))
 		return
 	}
 
 	token := extractGitToken(r)
 	if h.Service == nil {
 		result = "error"
-		writeGitHTTPError(w, errors.Internal("git smart HTTP service is not configured"))
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
 		return
 	}
 
@@ -98,7 +98,7 @@ func (h *GitSmartHandler) InfoRefs(w http.ResponseWriter, r *http.Request) {
 	contentType, err := h.Service.ProxyInfoRefs(r.Context(), owner, repo, service, token, out)
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
@@ -203,28 +203,28 @@ func (h *GitSmartHandler) UploadPack(w http.ResponseWriter, r *http.Request) {
 	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
 	if owner == "" {
 		result = "error"
-		writeGitHTTPError(w, errors.BadRequest("owner is required"))
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
 		return
 	}
 
 	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
 	token := extractGitToken(r)
 	if h.Service == nil {
 		result = "error"
-		writeGitHTTPError(w, errors.Internal("git smart HTTP service is not configured"))
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
 		return
 	}
 
 	requestBody, limiter, err := gitSmartRequestBody(r)
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
@@ -243,10 +243,10 @@ func (h *GitSmartHandler) UploadPack(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if limiter.exceeded {
-			writeGitHTTPError(w, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
+			writeGitHTTPError(w, r, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
 			return
 		}
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 	}
 }
 
@@ -260,28 +260,28 @@ func (h *GitSmartHandler) ReceivePack(w http.ResponseWriter, r *http.Request) {
 	owner := strings.TrimSpace(chi.URLParam(r, "owner"))
 	if owner == "" {
 		result = "error"
-		writeGitHTTPError(w, errors.BadRequest("owner is required"))
+		writeGitHTTPError(w, r, errors.BadRequest("owner is required"))
 		return
 	}
 
 	repo, err := parseGitRepoParam(chi.URLParam(r, "repo"))
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
 	token := extractGitToken(r)
 	if h.Service == nil {
 		result = "error"
-		writeGitHTTPError(w, errors.Internal("git smart HTTP service is not configured"))
+		writeGitHTTPError(w, r, errors.Internal("git smart HTTP service is not configured"))
 		return
 	}
 
 	requestBody, limiter, err := gitSmartRequestBody(r)
 	if err != nil {
 		result = "error"
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 		return
 	}
 
@@ -300,10 +300,10 @@ func (h *GitSmartHandler) ReceivePack(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if limiter.exceeded {
-			writeGitHTTPError(w, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
+			writeGitHTTPError(w, r, errors.RequestEntityTooLarge("git request body exceeds maximum allowed size"))
 			return
 		}
-		writeGitHTTPError(w, err)
+		writeGitHTTPError(w, r, err)
 	}
 }
 
@@ -323,13 +323,22 @@ func parseGitRepoParam(repoParam string) (string, error) {
 	return repo, nil
 }
 
-func writeGitHTTPError(w http.ResponseWriter, err error) {
+// writeGitHTTPError answers a smart-HTTP request with a plain-text error git
+// can show the user. A 5xx is logged with the request path (owner, repo and
+// operation) and the original error, because git only prints the sanitized
+// message.
+func writeGitHTTPError(w http.ResponseWriter, r *http.Request, err error) {
 	status := http.StatusInternalServerError
 	message := "internal server error"
 
-	if apiErr, ok := err.(*errors.APIError); ok {
+	var apiErr *errors.APIError
+	if stdErrors.As(err, &apiErr) {
 		status = apiErr.Status
 		message = apiErr.Message
+	}
+	if status >= http.StatusInternalServerError {
+		middleware.LoggerFromContext(r.Context()).Error("git smart HTTP request failed",
+			"method", r.Method, "path", r.URL.Path, "status", status, "error", err)
 	}
 
 	if status == http.StatusUnauthorized {

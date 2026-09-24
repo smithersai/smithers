@@ -27,7 +27,7 @@ type AnonSandboxRouteService interface {
 }
 
 // AnonSandboxHandler serves the ANONYMOUS sandbox surface
-// (/api/public/sandboxes*, ../multi SPEC.md §3): the only functional /api
+// (/api/public/sandboxes*): the only functional /api
 // routes that do not require authentication. The security envelope lives in
 // the service (server-side allowlist, caps, TTL) and the router (per-IP
 // creation rate limit + the global anonymous API bucket); the handler's own
@@ -90,7 +90,7 @@ func anonSandboxToJSON(row db.AnonSandbox, token string) anonSandboxJSON {
 // anonSandboxErr mirrors appTimelineErr: typed APIErrors pass through; a
 // missing anon_sandboxes table (migration 20260719163427 is applied manually)
 // degrades honestly as 503; everything else is an opaque 500.
-func anonSandboxErr(w http.ResponseWriter, err error) {
+func anonSandboxErr(w http.ResponseWriter, r *http.Request, err error) {
 	var apiErr *pkgerrors.APIError
 	if errors.As(err, &apiErr) {
 		pkgerrors.WriteError(w, apiErr)
@@ -102,7 +102,7 @@ func anonSandboxErr(w http.ResponseWriter, err error) {
 			"anonymous sandboxes are not enabled on this deployment"))
 		return
 	}
-	pkgerrors.WriteError(w, pkgerrors.Internal("sandbox operation failed"))
+	writeInternalError(w, r, "sandbox operation failed", err)
 }
 
 func anonSandboxIDParam(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -124,7 +124,7 @@ func clientIPFromRequest(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// createAnonSandboxRequest is the creation body multi's Worker sends.
+// createAnonSandboxRequest is the body of POST /api/public/sandboxes.
 type createAnonSandboxRequest struct {
 	RepoFullName string `json:"repo_full_name"`
 	Branch       string `json:"branch,omitempty"`
@@ -141,7 +141,7 @@ func (h *AnonSandboxHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.Service.Create(r.Context(), body.RepoFullName, body.Branch, clientIPFromRequest(r))
 	if err != nil {
-		anonSandboxErr(w, err)
+		anonSandboxErr(w, r, err)
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusAccepted, anonSandboxToJSON(created.Sandbox, created.Token))
@@ -155,7 +155,7 @@ func (h *AnonSandboxHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.Service.Get(r.Context(), id, r.Header.Get(AnonSandboxTokenHeader))
 	if err != nil {
-		anonSandboxErr(w, err)
+		anonSandboxErr(w, r, err)
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusOK, anonSandboxToJSON(row, ""))
@@ -168,7 +168,7 @@ func (h *AnonSandboxHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Service.Delete(r.Context(), id, r.Header.Get(AnonSandboxTokenHeader)); err != nil {
-		anonSandboxErr(w, err)
+		anonSandboxErr(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -46,14 +46,6 @@ func (m mockRepoRouteService) ListGitRefs(ctx context.Context, viewer *db.User, 
 	return nil, nil
 }
 
-func (m mockRepoRouteService) GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	return nil
-}
-
-func (m mockRepoRouteService) GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	return nil
-}
-
 func (m mockRepoRouteService) ArchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error) {
 	return db.Repository{}, nil
 }

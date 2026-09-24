@@ -1719,8 +1719,6 @@ func buildRouter(
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/contents/*", repoHandler.GetRepoContents)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/refs", repoHandler.ListGitRefs)
-			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/trees/{sha}", repoHandler.GetGitTree)
-			r.With(readRepo...).Get("/repos/{owner}/{repo}/git/commits/{sha}", repoHandler.GetGitCommit)
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/commits/{ref}/statuses", commitStatusHandler.GetCommitStatuses)
 			// jj VCS read routes: bookmarks, changes, operations.
 			r.With(readRepo...).Get("/repos/{owner}/{repo}/bookmarks", jjVCSHandler.ListBookmarks)

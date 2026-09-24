@@ -627,3 +627,47 @@ func TestLinearIntegration_F_PostWebhook(t *testing.T) {
 		assert.Equal(t, []byte(`{"a":1}`), sync.gotBody)
 	})
 }
+
+// The Linear picker must grant exactly what repository middleware grants:
+// team and collaborator permissions rank through ParsePermissionLevel, so an
+// "owner" grant is admin-able, and an unknown grant is an error, never silence.
+func TestLinearIntegration_F_UserCanAdminRepoMatchesRepoPermission(t *testing.T) {
+	user := linearFUser()
+	orgRepo := db.Repository{ID: 20, OrgID: pgtype.Int8{Int64: 99, Valid: true}}
+
+	for _, tc := range []struct {
+		name, team, collab string
+		want               bool
+	}{
+		{"team owner", "owner", "", true},
+		{"team admin with padding", " Admin ", "", true},
+		{"collaborator owner", "", "owner", true},
+		{"team write", "write", "", false},
+		{"collaborator read", "", "read", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &LinearIntegrationHandler{Repos: &mockRouteLinearQuerier{
+				isOrgOwnerForRepoUserFn: func(context.Context, db.IsOrgOwnerForRepoUserParams) (bool, error) { return false, nil },
+				getHighestTeamPermissionFn: func(context.Context, db.GetHighestTeamPermissionForRepoUserParams) (string, error) {
+					return tc.team, nil
+				},
+				getCollaboratorPermissionFn: func(context.Context, db.GetCollaboratorPermissionForRepoUserParams) (string, error) {
+					return tc.collab, nil
+				},
+			}}
+			got, err := h.userCanAdminRepo(context.Background(), user, orgRepo)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+
+	t.Run("unknown grant is an error", func(t *testing.T) {
+		h := &LinearIntegrationHandler{Repos: &mockRouteLinearQuerier{
+			getCollaboratorPermissionFn: func(context.Context, db.GetCollaboratorPermissionForRepoUserParams) (string, error) {
+				return "superuser", nil
+			},
+		}}
+		_, err := h.userCanAdminRepo(context.Background(), user, db.Repository{ID: 21})
+		require.Error(t, err)
+	})
+}

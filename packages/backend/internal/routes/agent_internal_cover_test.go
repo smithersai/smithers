@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	stdErrors "errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -77,6 +79,42 @@ func TestAgentInternal_Cov_ValidateTokenFailures(t *testing.T) {
 		err := (&AgentInternalHandler{TokenQuerier: &agentInternalCovTokenQuerier{}}).validateAgentToken(req.Context(), req, "s")
 		requireAPIErrorWithMessage(t, err, http.StatusUnauthorized, "empty agent token")
 	})
+
+	liveRun := db.WorkflowRun{ID: 77, AgentTokenExpiresAt: pgtype.Timestamptz{Time: time.Now().Add(time.Hour), Valid: true}}
+	for _, tc := range []struct {
+		name string
+		q    *agentInternalCovTokenQuerier
+	}{
+		{"run lookup", &agentInternalCovTokenQuerier{runErr: stdErrors.New("conn refused")}},
+		{"session lookup", &agentInternalCovTokenQuerier{run: liveRun, sessionErr: stdErrors.New("conn refused")}},
+		{"task lookup", &agentInternalCovTokenQuerier{run: liveRun, sessionRunID: pgtype.Int8{Int64: 77, Valid: true}, taskErr: stdErrors.New("conn refused")}},
+	} {
+		t.Run(tc.name+" db error is a retryable 503, not a revoked token", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/internal/agent/sessions/s/events", nil)
+			req.Header.Set("Authorization", "Bearer plaintext-token")
+			err := (&AgentInternalHandler{TokenQuerier: tc.q}).validateAgentToken(req.Context(), req, "s")
+			var apiErr *pkgerrors.APIError
+			require.True(t, stdErrors.As(err, &apiErr), "want APIError, got %v", err)
+			assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status)
+			assert.Equal(t, pkgerrors.CodeServiceUnavailable, apiErr.Code)
+			assert.NotContains(t, apiErr.Message, "conn refused")
+		})
+	}
+	for _, tc := range []struct {
+		name, msg string
+		q         *agentInternalCovTokenQuerier
+	}{
+		{"unknown token", "invalid or expired agent token", &agentInternalCovTokenQuerier{runErr: pgx.ErrNoRows}},
+		{"unknown session", "session not found", &agentInternalCovTokenQuerier{run: liveRun, sessionErr: pgx.ErrNoRows}},
+		{"unknown task", "agent task not found for run", &agentInternalCovTokenQuerier{run: liveRun, sessionRunID: pgtype.Int8{Int64: 77, Valid: true}, taskErr: pgx.ErrNoRows}},
+	} {
+		t.Run(tc.name+" is 401", func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/internal/agent/sessions/s/events", nil)
+			req.Header.Set("Authorization", "Bearer plaintext-token")
+			err := (&AgentInternalHandler{TokenQuerier: tc.q}).validateAgentToken(req.Context(), req, "s")
+			requireAPIErrorWithMessage(t, err, http.StatusUnauthorized, tc.msg)
+		})
+	}
 
 	t.Run("terminated task invalidates token", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/internal/agent/sessions/s/events", nil)

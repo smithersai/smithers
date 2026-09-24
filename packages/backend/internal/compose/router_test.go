@@ -299,14 +299,6 @@ func (m *mockRouterRepoService) ListGitRefs(ctx context.Context, viewer *db.User
 	return nil, nil
 }
 
-func (m *mockRouterRepoService) GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	return nil
-}
-
-func (m *mockRouterRepoService) GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	return nil
-}
-
 func (m *mockRouterRepoService) ArchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error) {
 	return db.Repository{}, nil
 }

@@ -2505,27 +2505,6 @@ func TestRepoService_DeleteRepo_PassesContextToRepoHost(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestRepoService_GitTreeAndCommitNotImplemented(t *testing.T) {
-	t.Parallel()
-
-	repository := testRepo(func(r *db.Repository) {
-		r.IsPublic = true
-	})
-	q := &mockRepoQuerier{
-		getRepoByOwnerAndLowerNameFn: func(ctx context.Context, arg db.GetRepoByOwnerAndLowerNameParams) (db.Repository, error) {
-			return repository, nil
-		},
-	}
-	svc := NewRepoService(q, &mockRepoHostClient{}, "smithers-repo-host-0")
-	err := svc.GetGitTree(context.Background(), nil, "alice", "demo", "abc")
-	require.Error(t, err)
-	assert.Equal(t, http.StatusNotImplemented, apiStatus(t, err))
-
-	err = svc.GetGitCommit(context.Background(), nil, "alice", "demo", "abc")
-	require.Error(t, err)
-	assert.Equal(t, http.StatusNotImplemented, apiStatus(t, err))
-}
-
 // stubBillingPolicy is a test double for services.BillingPolicy that records
 // AuthorizePrivateRepo calls and delegates the decision to an injectable func.
 type stubBillingPolicy struct {

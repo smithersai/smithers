@@ -88,8 +88,6 @@ type RepoRouteService interface {
 	GetRepoContents(ctx context.Context, viewer *db.User, owner, repo, ref, path string) (services.RepoContent, error)
 	ListRepoContents(ctx context.Context, viewer *db.User, owner, repo, ref, dirPath string) ([]services.RepoContent, error)
 	ListGitRefs(ctx context.Context, viewer *db.User, owner, repo string) ([]services.GitRef, error)
-	GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error
-	GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error
 	ArchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error)
 	UnarchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error)
 	TransferRepo(ctx context.Context, actor *db.User, owner, repo, newOwner string) (db.Repository, error)
@@ -498,46 +496,6 @@ func (h *RepoHandler) ListGitRefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	errors.WriteJSON(w, http.StatusOK, refs)
-}
-
-// GetGitTree handles GET /api/repos/{owner}/{repo}/git/trees/{sha}.
-func (h *RepoHandler) GetGitTree(w http.ResponseWriter, r *http.Request) {
-	owner, repoName, err := repoOwnerAndName(r)
-	if err != nil {
-		errors.WriteError(w, err.(*errors.APIError))
-		return
-	}
-	sha, err := routeParam(r, "sha", "sha is required")
-	if err != nil {
-		errors.WriteError(w, err.(*errors.APIError))
-		return
-	}
-
-	if err := h.Service.GetGitTree(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName, sha); err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	writeRouteError(w, r, errors.New(errors.CodeNotImplemented, "git trees endpoint not implemented"))
-}
-
-// GetGitCommit handles GET /api/repos/{owner}/{repo}/git/commits/{sha}.
-func (h *RepoHandler) GetGitCommit(w http.ResponseWriter, r *http.Request) {
-	owner, repoName, err := repoOwnerAndName(r)
-	if err != nil {
-		errors.WriteError(w, err.(*errors.APIError))
-		return
-	}
-	sha, err := routeParam(r, "sha", "sha is required")
-	if err != nil {
-		errors.WriteError(w, err.(*errors.APIError))
-		return
-	}
-
-	if err := h.Service.GetGitCommit(r.Context(), middleware.UserFromContext(r.Context()), owner, repoName, sha); err != nil {
-		writeRouteError(w, r, err)
-		return
-	}
-	writeRouteError(w, r, errors.New(errors.CodeNotImplemented, "git commits endpoint not implemented"))
 }
 
 // ArchiveRepo handles POST /api/repos/{owner}/{repo}/archive.

@@ -38,7 +38,7 @@ func (h *WorkflowRunCountHandler) GetActiveWorkflowRunCount(w http.ResponseWrite
 
 	count, err := h.Counter.CountActiveWorkflowRunsForUser(r.Context(), user.ID)
 	if err != nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("failed to count active workflow runs"))
+		writeInternalError(w, r, "failed to count active workflow runs", err)
 		return
 	}
 

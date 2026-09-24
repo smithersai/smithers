@@ -106,7 +106,7 @@ func TestWriteGitHTTPError_Matrix(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			rec := httptest.NewRecorder()
-			writeGitHTTPError(rec, tc.err)
+			writeGitHTTPError(rec, httptest.NewRequest(http.MethodGet, "/o/r.git/info/refs", nil), tc.err)
 			assert.Equal(t, tc.wantStatus, rec.Code)
 			assert.Equal(t, "text/plain; charset=utf-8", rec.Header().Get("Content-Type"))
 			assert.Equal(t, tc.wantBody, rec.Body.String())

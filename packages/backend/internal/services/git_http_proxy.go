@@ -95,7 +95,7 @@ func (s *GitHTTPProxyService) ProxyInfoRefs(
 		if taskToken {
 			contentType, err := s.repoHost.InfoRefs(ctx, owner, repo, service, stdout)
 			if err != nil {
-				return "", errors.Internal("failed to proxy git info refs")
+				return "", gitProxyFailure(ctx, "info refs", owner, repo, err)
 			}
 			return contentType, nil
 		}
@@ -120,7 +120,7 @@ func (s *GitHTTPProxyService) ProxyInfoRefs(
 
 	contentType, err := s.repoHost.InfoRefs(ctx, owner, repo, service, stdout)
 	if err != nil {
-		return "", errors.Internal("failed to proxy git info refs")
+		return "", gitProxyFailure(ctx, "info refs", owner, repo, err)
 	}
 	return contentType, nil
 }
@@ -137,7 +137,7 @@ func (s *GitHTTPProxyService) ProxyUploadPack(
 	}
 	if taskToken {
 		if err := s.repoHost.ProxyUploadPack(ctx, owner, repo, stdin, stdout); err != nil {
-			return errors.Internal("failed to proxy git upload-pack")
+			return gitProxyFailure(ctx, "upload-pack", owner, repo, err)
 		}
 		return nil
 	}
@@ -157,7 +157,7 @@ func (s *GitHTTPProxyService) ProxyUploadPack(
 	}
 
 	if err := s.repoHost.ProxyUploadPack(ctx, owner, repo, stdin, stdout); err != nil {
-		return errors.Internal("failed to proxy git upload-pack")
+		return gitProxyFailure(ctx, "upload-pack", owner, repo, err)
 	}
 	return nil
 }
@@ -211,7 +211,7 @@ func (s *GitHTTPProxyService) ProxyReceivePack(
 		WorkspaceID:  workspaceID,
 	}
 	if err := s.repoHost.ProxyReceivePack(ctx, owner, repo, stdin, stdout, meta); err != nil {
-		return errors.Internal("failed to proxy git receive-pack")
+		return gitProxyFailure(ctx, "receive-pack", owner, repo, err)
 	}
 	return nil
 }
@@ -479,4 +479,13 @@ func gitHTTPRunIsTerminal(status string) bool {
 	default:
 		return false
 	}
+}
+
+// gitProxyFailure logs the repo-host error behind a failed git proxy call and
+// returns the sanitized 500 the client sees. Without the log the only trace of
+// a failed clone, fetch or push is a result=error metric with no cause.
+func gitProxyFailure(ctx context.Context, operation, owner, repo string, err error) error {
+	middleware.LoggerFromContext(ctx).Error("git proxy to repo-host failed",
+		"operation", operation, "owner", owner, "repo", repo, "error", err)
+	return errors.Internal("failed to proxy git " + operation)
 }

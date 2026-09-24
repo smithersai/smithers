@@ -305,7 +305,22 @@ func RequireMatchingRepositoryRestriction(next http.Handler) http.Handler {
 	})
 }
 
-func resolveRepoPermission(ctx context.Context, queries RepoContextQuerier, repository db.Repository, user *db.User) (PermissionLevel, *apierrors.APIError) {
+// RepoPermissionQuerier is the query surface ResolveRepoPermission needs.
+type RepoPermissionQuerier interface {
+	IsOrgOwnerForRepoUser(ctx context.Context, arg db.IsOrgOwnerForRepoUserParams) (bool, error)
+	GetHighestTeamPermissionForRepoUser(ctx context.Context, arg db.GetHighestTeamPermissionForRepoUserParams) (string, error)
+	GetCollaboratorPermissionForRepoUser(ctx context.Context, arg db.GetCollaboratorPermissionForRepoUserParams) (string, error)
+}
+
+// ResolveRepoPermission returns a user's effective permission on a
+// repository: owner, org owner, highest team grant, or collaborator grant,
+// whichever ranks highest, and read for a public repository. It is the one
+// resolver every route that asks "may this user do X to this repo" uses.
+func ResolveRepoPermission(ctx context.Context, queries RepoPermissionQuerier, repository db.Repository, user *db.User) (PermissionLevel, *apierrors.APIError) {
+	return resolveRepoPermission(ctx, queries, repository, user)
+}
+
+func resolveRepoPermission(ctx context.Context, queries RepoPermissionQuerier, repository db.Repository, user *db.User) (PermissionLevel, *apierrors.APIError) {
 	if user == nil {
 		if repository.IsPublic {
 			return PermissionRead, nil

@@ -74,14 +74,6 @@ func (m *benchRepoRouteService) ListGitRefs(_ context.Context, _ *db.User, _, _ 
 	return nil, nil
 }
 
-func (m *benchRepoRouteService) GetGitTree(_ context.Context, _ *db.User, _, _, _ string) error {
-	return nil
-}
-
-func (m *benchRepoRouteService) GetGitCommit(_ context.Context, _ *db.User, _, _, _ string) error {
-	return nil
-}
-
 func (m *benchRepoRouteService) ArchiveRepo(_ context.Context, _ *db.User, _, _ string) (db.Repository, error) {
 	return m.repo, nil
 }

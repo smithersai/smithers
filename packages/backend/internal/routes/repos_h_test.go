@@ -142,10 +142,6 @@ func TestRepos_H_ErrorBranches(t *testing.T) {
 	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, noOwner, false), http.StatusBadRequest)
 	reposHStatus(t, h, h.ListGitRefs, reposHReq(http.MethodGet, "/refs", ``, params, false), http.StatusForbidden)
 
-	reposHStatus(t, h, h.GetGitTree, reposHReq(http.MethodGet, "/tree", ``, noOwner, false), http.StatusBadRequest)
-	reposHStatus(t, h, h.GetGitTree, reposHReq(http.MethodGet, "/tree", ``, params, false), http.StatusBadRequest)
-	reposHStatus(t, h, h.GetGitCommit, reposHReq(http.MethodGet, "/commit", ``, noOwner, false), http.StatusBadRequest)
-	reposHStatus(t, h, h.GetGitCommit, reposHReq(http.MethodGet, "/commit", ``, params, false), http.StatusBadRequest)
 
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":true}`, params, true), http.StatusForbidden)
 	reposHStatus(t, h, h.PatchRepo, reposHReq(http.MethodPatch, "/repo", `{"archived":false}`, params, true), http.StatusForbidden)

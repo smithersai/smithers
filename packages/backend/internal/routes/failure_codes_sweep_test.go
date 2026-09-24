@@ -40,7 +40,9 @@ func TestMissingTableDegradesToFeatureNotEnabled(t *testing.T) {
 
 	for name, write := range map[string]func(http.ResponseWriter, error){
 		"share listings":    shareListingErr,
-		"anonymous sandbox": anonSandboxErr,
+		"anonymous sandbox": func(w http.ResponseWriter, err error) {
+			anonSandboxErr(w, httptest.NewRequest(http.MethodPost, "/api/public/sandboxes", nil), err)
+		},
 		"app timeline sync": appTimelineErr,
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -272,16 +272,18 @@ func TestInternalPushHookHandler_PostPushEvent_RepoNotFound_Returns404(t *testin
 	assert.Empty(t, dispatcher.dispatchedType, "should not dispatch if repo not found")
 }
 
-func TestInternalPushHookHandler_PostPushEvent_DispatchFailure_Returns500(t *testing.T) {
+func TestInternalPushHookHandler_PostPushEvent_WebhookEnqueueFailureStillRunsPushWork(t *testing.T) {
 	t.Parallel()
 
 	resolver := &mockPushHookRepoResolver{}
 	dispatcher := &mockPushHookDispatcher{
 		dispatchErr: errors.New("queue error"),
 	}
+	recorder := &mockPushHookChangeRecorder{done: make(chan struct{})}
 	handler := &InternalPushHookHandler{
-		RepoResolver: resolver,
-		Dispatcher:   dispatcher,
+		RepoResolver:   resolver,
+		Dispatcher:     dispatcher,
+		ChangeRecorder: recorder,
 	}
 
 	payload := PushHookEventRequest{
@@ -297,7 +299,13 @@ func TestInternalPushHookHandler_PostPushEvent_DispatchFailure_Returns500(t *tes
 
 	handler.PostPushEvent(rec, req)
 
-	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	select {
+	case <-recorder.done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("change sync never ran after a webhook enqueue failure")
+	}
+	assert.Equal(t, int64(101), recorder.repositoryID)
 }
 
 func TestInternalPushHookHandler_PostPushEvent_InvalidBody_Returns400(t *testing.T) {

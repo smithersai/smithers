@@ -33,8 +33,6 @@ type reposCovService struct {
 	getContentsFn   func(context.Context, *db.User, string, string, string, string) (services.RepoContent, error)
 	listContentsFn  func(context.Context, *db.User, string, string, string, string) ([]services.RepoContent, error)
 	listGitRefsFn   func(context.Context, *db.User, string, string) ([]services.GitRef, error)
-	getGitTreeFn    func(context.Context, *db.User, string, string, string) error
-	getGitCommitFn  func(context.Context, *db.User, string, string, string) error
 	archiveFn       func(context.Context, *db.User, string, string) (db.Repository, error)
 	unarchiveFn     func(context.Context, *db.User, string, string) (db.Repository, error)
 	transferFn      func(context.Context, *db.User, string, string, string) (db.Repository, error)
@@ -139,20 +137,6 @@ func (s reposCovService) ListGitRefs(ctx context.Context, viewer *db.User, owner
 	return nil, nil
 }
 
-func (s reposCovService) GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	if s.getGitTreeFn != nil {
-		return s.getGitTreeFn(ctx, viewer, owner, repo, sha)
-	}
-	return nil
-}
-
-func (s reposCovService) GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	if s.getGitCommitFn != nil {
-		return s.getGitCommitFn(ctx, viewer, owner, repo, sha)
-	}
-	return nil
-}
-
 func (s reposCovService) ArchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error) {
 	if s.archiveFn != nil {
 		return s.archiveFn(ctx, actor, owner, repo)
@@ -229,14 +213,6 @@ func TestRepos_Cov_ArchiveUnarchiveForkAndGitRoutes(t *testing.T) {
 			require.Nil(t, viewer)
 			return []services.GitRef{{Ref: "refs/heads/main", Object: services.GitRefObject{SHA: "abc123", Type: "commit"}}}, nil
 		},
-		getGitTreeFn: func(_ context.Context, viewer *db.User, owner, repo, sha string) error {
-			assert.Equal(t, "abc123", sha)
-			return nil
-		},
-		getGitCommitFn: func(_ context.Context, viewer *db.User, owner, repo, sha string) error {
-			assert.Equal(t, "abc123", sha)
-			return nil
-		},
 	}}
 
 	patchArchiveReq := httptest.NewRequest(http.MethodPatch, "/api/repos/alice/demo", strings.NewReader(`{"archived":true}`))
@@ -296,17 +272,7 @@ func TestRepos_Cov_ArchiveUnarchiveForkAndGitRoutes(t *testing.T) {
 	require.Len(t, refs, 1)
 	assert.Equal(t, "refs/heads/main", refs[0].Ref)
 
-	treeReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/trees/abc123", nil)
-	treeReq = withRouteParams(treeReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "abc123"})
-	treeRec := httptest.NewRecorder()
-	h.GetGitTree(treeRec, treeReq)
-	require.Equal(t, http.StatusNotImplemented, treeRec.Code)
 
-	commitReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/commits/abc123", nil)
-	commitReq = withRouteParams(commitReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "abc123"})
-	commitRec := httptest.NewRecorder()
-	h.GetGitCommit(commitRec, commitReq)
-	require.Equal(t, http.StatusNotImplemented, commitRec.Code)
 }
 
 func TestRepos_Cov_ContentsFallbackAndServiceErrors(t *testing.T) {
@@ -321,12 +287,6 @@ func TestRepos_Cov_ContentsFallbackAndServiceErrors(t *testing.T) {
 		getContentsFn: func(_ context.Context, viewer *db.User, owner, repo, ref, path string) (services.RepoContent, error) {
 			assert.Equal(t, "README.md", path)
 			return services.RepoContent{Name: "README.md", Path: path, Type: "file", Encoding: "utf-8", Content: "hello", Size: 5}, nil
-		},
-		getGitTreeFn: func(_ context.Context, viewer *db.User, owner, repo, sha string) error {
-			return pkgerrors.NotFound("tree not found")
-		},
-		getGitCommitFn: func(_ context.Context, viewer *db.User, owner, repo, sha string) error {
-			return pkgerrors.NotFound("commit not found")
 		},
 		starFn: func(_ context.Context, actor *db.User, owner, repo string) error {
 			return pkgerrors.Forbidden("cannot star")
@@ -348,16 +308,6 @@ func TestRepos_Cov_ContentsFallbackAndServiceErrors(t *testing.T) {
 	h.GetRepoContents(rootRec, rootReq)
 	require.Equal(t, http.StatusForbidden, rootRec.Code)
 
-	treeReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/trees/missing", nil)
-	treeReq = withRouteParams(treeReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "missing"})
-	treeRec := httptest.NewRecorder()
-	h.GetGitTree(treeRec, treeReq)
-	require.Equal(t, http.StatusNotFound, treeRec.Code)
 
-	commitReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/commits/missing", nil)
-	commitReq = withRouteParams(commitReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "missing"})
-	commitRec := httptest.NewRecorder()
-	h.GetGitCommit(commitRec, commitReq)
-	require.Equal(t, http.StatusNotFound, commitRec.Code)
 
 }

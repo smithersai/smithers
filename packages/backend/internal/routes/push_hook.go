@@ -2,6 +2,8 @@ package routes
 
 import (
 	"context"
+	stdErrors "errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,9 +13,10 @@ import (
 
 	"github.com/smithersai/smithers/packages/backend/internal/configsync"
 	"github.com/smithersai/smithers/packages/backend/internal/db"
+	"github.com/smithersai/smithers/packages/backend/internal/middleware"
+	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	"github.com/smithersai/smithers/packages/backend/internal/webhooks"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 // pushWorkflowSyncSlots bounds concurrent post-push workflow sync/dispatch
@@ -106,11 +109,11 @@ func (h *InternalPushHookHandler) PostPushEvent(w http.ResponseWriter, r *http.R
 		Name:  req.Repo,
 	})
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if stdErrors.Is(err, pgx.ErrNoRows) {
 			pkgerrors.WriteError(w, pkgerrors.NotFound("Repository not found"))
 			return
 		}
-		pkgerrors.WriteError(w, pkgerrors.Internal("Failed to resolve repository"))
+		writeRouteError(w, r, fmt.Errorf("resolve push hook repository %s/%s: %w", req.Owner, req.Repo, err))
 		return
 	}
 	payload := webhooks.PushEventPayload{
@@ -126,9 +129,12 @@ func (h *InternalPushHookHandler) PostPushEvent(w http.ResponseWriter, r *http.R
 		},
 	}
 
+	// User webhooks are one independent side effect of a push. repo-host never
+	// retries this callback, so an enqueue failure must not skip change sync,
+	// workflow dispatch or search indexing.
 	if err := h.Dispatcher.DispatchEvent(ctx, repo.ID, webhooks.EventTypePush, payload); err != nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("Failed to dispatch push event"))
-		return
+		middleware.LoggerFromContext(ctx).Error("push webhook enqueue failed",
+			"repo_id", repo.ID, "ref", req.Ref, "error", err)
 	}
 	if h.ChangeRecorder != nil {
 		repoID, repoName := repo.ID, repo.Name

@@ -5,14 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 
-	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/revocation"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -22,12 +20,11 @@ import (
 // (#505, RFD-005): it relays one language server's stdio inside the workspace
 // as JSON-RPC 2.0 over a WebSocket with subprotocol `lsp`.
 //
-// It mirrors TerminalWebSocket step for step. Before the upgrade: Origin
-// (cookie and ticket principals), auth, repository, session lookup, kind and
-// language checks, session status (409 failed/stopped, 425 pending), the
-// per-user active cap (429), SSH connection info, then the language server
-// is launched over SSH and its ready line read, so a missing binary answers
-// 409 language_server_missing with the install line and never a 101.
+// It shares TerminalWebSocket's preflight (preflightWorkspaceSocket) and adds
+// the kind and language checks. After the preflight: SSH connection info, then
+// the language server is launched over SSH and its ready line read, so a
+// missing binary answers 409 language_server_missing with the install line
+// and never a 101.
 //
 // Wire: one JSON-RPC message per text frame, 1 MiB per frame, larger
 // messages as {seq,last,data} fragments; server pings every 30 s.
@@ -36,120 +33,38 @@ import (
 // retry once (`language_server_exited: <code>`), 1002/1003/1009 client
 // protocol faults (final).
 func (h *WorkspaceTerminalHandler) LSPWebSocket(w http.ResponseWriter, r *http.Request) {
-	authInfo := middleware.AuthInfoFromContext(r.Context())
-	isTicketAuth := strings.TrimSpace(r.URL.Query().Get("ticket")) != ""
-	if authInfo == nil || !authInfo.IsTokenAuth || h.hasSessionCookie(r) || isTicketAuth {
-		origin := r.Header.Get("Origin")
-		if !h.checkOrigin(origin, r) {
-			slog.Warn("websocket origin rejected",
-				"origin", origin,
-				"remote_addr", r.RemoteAddr,
-				"path", r.URL.Path,
-			)
-			if h.Metrics != nil {
-				h.Metrics.IncWebSocketOriginRejection()
-			}
-			pkgerrors.WriteError(w, pkgerrors.Forbidden("origin not allowed"))
-			return
-		}
-	}
-
-	user, err := requireRouteUser(r)
-	if err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
-		return
-	}
-
-	repoCtx := middleware.RepoContextFromContext(r.Context())
-	if repoCtx == nil || repoCtx.Repository == nil {
-		pkgerrors.WriteError(w, pkgerrors.BadRequest("repository context required"))
-		return
-	}
-
-	sessionID, err := routeParam(r, "id", "session id is required")
-	if err != nil {
-		pkgerrors.WriteError(w, err.(*pkgerrors.APIError))
-		return
-	}
-
 	observe := func(result string) {
 		if h.Metrics != nil {
 			h.Metrics.ObserveWorkspaceLSPAttach(result)
 		}
 	}
-
-	session, svcErr := h.Service.GetSession(r.Context(), sessionID, repoCtx.Repository.ID, user.ID)
-	if svcErr != nil {
-		observe("session_error")
-		writeRouteError(w, r, svcErr)
+	pre, ok := h.preflightWorkspaceSocket(w, r, workspaceSocketGate{
+		kind:    "lsp",
+		observe: observe,
+		checkSession: func(w http.ResponseWriter, session services.WorkspaceSessionResponse) bool {
+			if session.Kind != services.WorkspaceSessionKindLSP {
+				observe("kind_mismatch")
+				pkgerrors.WriteError(w, &pkgerrors.APIError{
+					Status:  http.StatusConflict,
+					Code:    services.CodeWorkspaceSessionKindMismatch,
+					Message: "workspace session is a " + session.Kind + " session; create one with kind lsp",
+				})
+				return false
+			}
+			if want := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("language"))); want != "" && want != session.Language {
+				observe("language_mismatch")
+				pkgerrors.WriteError(w, pkgerrors.BadRequest("language "+want+" does not match the session's language "+session.Language))
+				return false
+			}
+			return true
+		},
+		capMessage: "too many active terminal and language-server connections",
+	})
+	if !ok {
 		return
 	}
-	if session.Kind != services.WorkspaceSessionKindLSP {
-		observe("kind_mismatch")
-		pkgerrors.WriteError(w, &pkgerrors.APIError{
-			Status:  http.StatusConflict,
-			Code:    services.CodeWorkspaceSessionKindMismatch,
-			Message: "workspace session is a " + session.Kind + " session; create one with kind lsp",
-		})
-		return
-	}
-	if want := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("language"))); want != "" && want != session.Language {
-		observe("language_mismatch")
-		pkgerrors.WriteError(w, pkgerrors.BadRequest("language "+want+" does not match the session's language "+session.Language))
-		return
-	}
-	switch strings.ToLower(strings.TrimSpace(session.Status)) {
-	case "running":
-	case "failed":
-		observe("session_failed")
-		pkgerrors.WriteError(w, pkgerrors.Conflict("workspace session provisioning failed; create a new session and retry"))
-		return
-	case "stopped":
-		observe("session_stopped")
-		pkgerrors.WriteError(w, pkgerrors.Conflict("workspace session is stopped; create a new session and retry"))
-		return
-	default:
-		observe("session_pending")
-		w.Header().Set("Retry-After", "2")
-		pkgerrors.WriteError(w, &pkgerrors.APIError{
-			Status:  http.StatusTooEarly,
-			Code:    pkgerrors.CodeWorkspaceSessionPending,
-			Message: "workspace session is still provisioning",
-		})
-		return
-	}
-
-	// Same per-user active cap as terminals, reserved before any SSH work.
-	if h.ActiveConnections != nil && !h.ActiveConnections.Acquire(user.ID) {
-		slog.Warn("workspace lsp active-connection cap exceeded",
-			"scope", "workspace_terminal_active",
-			"user_id", user.ID,
-			"session_id", sessionID,
-			"hit_type", "active_cap",
-			"max", h.ActiveConnections.Max(),
-		)
-		observe("active_cap")
-		resetAt := time.Now().UTC().Add(time.Second)
-		limit := h.ActiveConnections.Max()
-		remaining := 0
-		w.Header().Set("Retry-After", "1")
-		w.Header().Set("X-RateLimit-Limit", strconv.Itoa(limit))
-		w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-		w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt.Unix(), 10))
-		pkgerrors.WriteError(w, &pkgerrors.APIError{
-			Status:    http.StatusTooManyRequests,
-			Code:      pkgerrors.CodeRateLimitExceeded,
-			Message:   "too many active terminal and language-server connections",
-			Limit:     &limit,
-			Remaining: &remaining,
-		})
-		return
-	}
-	defer func() {
-		if h.ActiveConnections != nil {
-			h.ActiveConnections.Release(user.ID)
-		}
-	}()
+	defer pre.release()
+	user, repoCtx, sessionID := pre.user, pre.repoCtx, pre.sessionID
 
 	sshInfo, svcErr := h.Service.GetSSHConnectionInfo(r.Context(), sessionID, repoCtx.Repository.ID, user.ID)
 	if svcErr != nil {

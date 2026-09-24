@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	stdErrors "errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/smithersai/smithers/packages/backend/internal/db"
@@ -78,7 +80,7 @@ func (h *AgentInternalHandler) validateAgentToken(ctx context.Context, r *http.R
 	// Look up the workflow run by token hash
 	run, err := h.TokenQuerier.GetWorkflowRunByAgentToken(ctx, pgtype.Text{String: tokenHash, Valid: true})
 	if err != nil {
-		return pkgerrors.Unauthorized("invalid or expired agent token")
+		return agentTokenLookupError(ctx, "workflow run", sessionID, err, "invalid or expired agent token")
 	}
 
 	// Verify token hasn't expired
@@ -89,7 +91,7 @@ func (h *AgentInternalHandler) validateAgentToken(ctx context.Context, r *http.R
 	// Verify the session's workflow_run_id matches the token's workflow_run_id
 	sessionRunID, err := h.TokenQuerier.GetAgentSessionWorkflowRunID(ctx, sessionID)
 	if err != nil {
-		return pkgerrors.Unauthorized("session not found")
+		return agentTokenLookupError(ctx, "agent session", sessionID, err, "session not found")
 	}
 	if !sessionRunID.Valid || sessionRunID.Int64 != run.ID {
 		return pkgerrors.Unauthorized("agent token not authorized for this session")
@@ -100,7 +102,7 @@ func (h *AgentInternalHandler) validateAgentToken(ctx context.Context, r *http.R
 	// has been terminated (completed, failed, or cancelled).
 	task, err := h.TokenQuerier.GetWorkflowTaskByRunID(ctx, run.ID)
 	if err != nil {
-		return pkgerrors.Unauthorized("agent task not found for run")
+		return agentTokenLookupError(ctx, "workflow task", sessionID, err, "agent task not found for run")
 	}
 	switch task.Status {
 	case "pending", "running":
@@ -110,6 +112,24 @@ func (h *AgentInternalHandler) validateAgentToken(ctx context.Context, r *http.R
 	}
 
 	return nil
+}
+
+// agentTokenLookupRetryAfterSeconds paces the runner after a database fault
+// during token validation.
+const agentTokenLookupRetryAfterSeconds = 5
+
+// agentTokenLookupError maps a missing row to 401 and any other lookup failure
+// to a retryable 503. The runner treats 401 as a revoked credential and stops
+// posting events, so a database fault must never read as one.
+func agentTokenLookupError(ctx context.Context, lookup, sessionID string, err error, notFound string) error {
+	if stdErrors.Is(err, pgx.ErrNoRows) {
+		return pkgerrors.Unauthorized(notFound)
+	}
+	middleware.LoggerFromContext(ctx).Error("agent token validation lookup failed",
+		"lookup", lookup, "session_id", sessionID, "error", err)
+	apiErr := pkgerrors.New(pkgerrors.CodeServiceUnavailable, "agent token validation temporarily unavailable")
+	apiErr.RetryAfter = agentTokenLookupRetryAfterSeconds
+	return apiErr
 }
 
 // PostSessionEvent handles POST /internal/agent/sessions/{session_id}/events.

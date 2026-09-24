@@ -84,7 +84,7 @@ func (h *AlertRemediationOutcomeHandler) Record(w http.ResponseWriter, r *http.R
 		if errors.As(err, &apiErr) {
 			pkgerrors.WriteError(w, apiErr)
 		} else {
-			pkgerrors.WriteError(w, pkgerrors.Internal("failed to record remediation outcome"))
+			writeInternalError(w, r, "failed to record remediation outcome", err)
 		}
 		return
 	}

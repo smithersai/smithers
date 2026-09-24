@@ -9,8 +9,8 @@ import { preparedView, type ViewAction } from "../PreparedView"
  *   GET /api/repos/{o}/{r}/changes?limit=100  200, newest first, 100 per page,
  *                                             parent_change_ids in git parent order
  *   GET /api/repos/{o}/{r}/contents/{p}?ref=  200 for a bookmark name or a commit sha
- *   GET /api/repos/{o}/{r}/git/commits/{sha}  501 "not implemented"
- *   GET /api/repos/{o}/{r}/git/trees/{sha}    501 "not implemented"
+ *   GET /api/repos/{o}/{r}/git/commits/{sha}  no such route (the 501 stub was removed 2026-09-24)
+ *   GET /api/repos/{o}/{r}/git/trees/{sha}    no such route (the 501 stub was removed 2026-09-24)
  *   GET /api/repos/{o}/{r}/git/blobs/{sha}    no such route on the mirror
  *
  * So the commit graph comes from the change feed (the walk the activity route
@@ -226,7 +226,7 @@ export const loadChanges = async (
   return graph
 }
 
-/** The commit's tree sha off GET /git/commits/{sha}, or null when the mirror does not answer it (501 today). */
+/** The commit's tree sha off GET /git/commits/{sha}, or null when the mirror does not answer it (no such route today). */
 const readTreeSha = async (ctx: SeamContext, base: string, sha: string): Promise<string | null> => {
   const answer = await readJson(ctx, `${base}/git/commits/${encodeURIComponent(sha)}`)
   if (answer.status !== 200 || !isRecord(answer.body)) return null

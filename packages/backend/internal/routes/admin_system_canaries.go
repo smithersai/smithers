@@ -64,7 +64,7 @@ func (h *AdminSystemCanariesHandler) SystemCanaries(w http.ResponseWriter, r *ht
 
 	rows, err := h.Store.ListCanaryResults(ctx)
 	if err != nil {
-		pkgerrors.WriteError(w, pkgerrors.Internal("failed to list canary results"))
+		writeInternalError(w, r, "failed to list canary results", err)
 		return
 	}
 

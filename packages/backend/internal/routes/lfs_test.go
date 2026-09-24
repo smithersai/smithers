@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -48,29 +47,6 @@ func (m *mockLFSRouteService) ListObjects(ctx context.Context, viewer *db.User, 
 		return m.listObjectsFn(ctx, viewer, owner, repo, page, perPage)
 	}
 	return []db.LfsObject{}, 0, nil
-}
-
-func lfsWithRouteParams(req *http.Request, params map[string]string) *http.Request {
-	rctx := chi.NewRouteContext()
-	for k, v := range params {
-		rctx.URLParams.Add(k, v)
-	}
-	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-}
-
-func lfsWithAuth(req *http.Request, userID int64, username string) *http.Request {
-	return req.WithContext(middleware.ContextWithAuthInfo(req.Context(), &middleware.AuthInfo{
-		User: &db.User{ID: userID, Username: username, LowerUsername: username},
-	}))
-}
-
-func lfsWithRepoContext(req *http.Request, owner, repo string) *http.Request {
-	repository := &db.Repository{ID: 101, Name: repo, LowerName: repo}
-	ctx := middleware.ContextWithRepoContext(req.Context(), &middleware.RepoContext{
-		Owner:      owner,
-		Repository: repository,
-	}, middleware.PermissionRead)
-	return req.WithContext(ctx)
 }
 
 func TestLFSHandler_BatchAndConfirm(t *testing.T) {

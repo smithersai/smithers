@@ -3,6 +3,7 @@ package routes
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -151,7 +152,7 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code)
 	})
 
-	t.Run("dispatch error", func(t *testing.T) {
+	t.Run("webhook enqueue error does not fail the push", func(t *testing.T) {
 		t.Parallel()
 
 		h := &InternalPushHookHandler{
@@ -163,7 +164,38 @@ func TestPushHook_Cov_PostPushEventBranches(t *testing.T) {
 
 		h.PostPushEvent(rec, req)
 
+		require.Equal(t, http.StatusNoContent, rec.Code)
+	})
+
+	t.Run("wrapped repo not found is 404", func(t *testing.T) {
+		t.Parallel()
+
+		h := &InternalPushHookHandler{
+			RepoResolver: &pushHookCovRepoResolver{ownerErr: fmt.Errorf("lookup: %w", pgx.ErrNoRows)},
+			Dispatcher:   &pushHookCovDispatcher{},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
+		rec := httptest.NewRecorder()
+
+		h.PostPushEvent(rec, req)
+
+		require.Equal(t, http.StatusNotFound, rec.Code)
+	})
+
+	t.Run("repo resolve error is 500", func(t *testing.T) {
+		t.Parallel()
+
+		h := &InternalPushHookHandler{
+			RepoResolver: &pushHookCovRepoResolver{ownerErr: errors.New("pool exhausted")},
+			Dispatcher:   &pushHookCovDispatcher{},
+		}
+		req := httptest.NewRequest(http.MethodPost, "/internal/push", strings.NewReader(`{"owner":"alice","repo":"demo"}`))
+		rec := httptest.NewRecorder()
+
+		h.PostPushEvent(rec, req)
+
 		require.Equal(t, http.StatusInternalServerError, rec.Code)
+		assert.NotContains(t, rec.Body.String(), "pool exhausted")
 	})
 
 	t.Run("success dispatches push payload", func(t *testing.T) {

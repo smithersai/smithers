@@ -275,30 +275,33 @@ var workspacePreviewCredentialHeaders = []string{
 	"X-Goog-Authenticated-User-Id",
 }
 
+// workspacePreviewSandboxPolicy runs proxied preview content in an opaque
+// origin. The preview is served from the product origin, so without it the
+// repository's own script could read the non-HttpOnly CSRF cookie and call
+// any /api endpoint as whoever opened the preview.
+const workspacePreviewSandboxPolicy = "sandbox allow-scripts allow-forms allow-popups"
+
 func newWorkspacePreviewProxy(target *url.URL, externalPrefix string) *httputil.ReverseProxy {
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	direct := proxy.Director
-	proxy.Director = func(request *http.Request) {
-		direct(request)
-		for _, header := range workspacePreviewCredentialHeaders {
-			request.Header.Del(header)
-		}
-		request.Header.Del("Forwarded")
-		request.Header.Del("X-Forwarded-For")
-		request.Header.Del("X-Forwarded-Host")
-		request.Header.Del("X-Forwarded-Proto")
-		request.Host = target.Host
-		if externalPrefix != "" {
-			request.Header.Set("X-Forwarded-Prefix", externalPrefix)
-		}
+	return &httputil.ReverseProxy{
+		// Rewrite (unlike Director) starts from a request that already lacks
+		// client-supplied Forwarded and X-Forwarded-* headers.
+		Rewrite: func(request *httputil.ProxyRequest) {
+			request.SetURL(target)
+			for _, header := range workspacePreviewCredentialHeaders {
+				request.Out.Header.Del(header)
+			}
+			if externalPrefix != "" {
+				request.Out.Header.Set("X-Forwarded-Prefix", externalPrefix)
+			}
+		},
+		ModifyResponse: func(response *http.Response) error {
+			// A preview shares the product origin and must not mint or
+			// overwrite the product session cookie.
+			response.Header.Del("Set-Cookie")
+			response.Header.Add("Content-Security-Policy", workspacePreviewSandboxPolicy)
+			return nil
+		},
 	}
-	proxy.ModifyResponse = func(response *http.Response) error {
-		// A preview shares the product origin and must not mint or overwrite the
-		// product session cookie.
-		response.Header.Del("Set-Cookie")
-		return nil
-	}
-	return proxy
 }
 
 func previewLoopbackHost(host string) bool {

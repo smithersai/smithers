@@ -125,9 +125,6 @@ func (h *WikiCollaborationHandler) Updates(w http.ResponseWriter, r *http.Reques
 	pkgerrors.WriteJSON(w, http.StatusOK, events)
 }
 
-// Subscribe before replay; notifications are only wakeups. Every emitted event
-// is read from the committed per-page revision stream, so reconnect/replay cannot
-// skip an in-flight transaction or regress its cursor with a buffered duplicate.
 // wikiSubscribeError names the failure behind a refused wiki subscription.
 // The per-user live-stream cap is a budget the caller blew, not a component
 // that is down, so it carries the budget code rather than inheriting one from
@@ -140,6 +137,10 @@ func wikiSubscribeError(err error) *pkgerrors.APIError {
 	return pkgerrors.Internal("wiki subscription unavailable")
 }
 
+// Stream serves a wiki page's committed updates as SSE. It subscribes before
+// replay; notifications are only wakeups. Every emitted event is read from the
+// committed per-page revision stream, so reconnect/replay cannot skip an
+// in-flight transaction or regress its cursor with a buffered duplicate.
 func (h *WikiCollaborationHandler) Stream(w http.ResponseWriter, r *http.Request) {
 	actor, err := requireRouteUser(r)
 	if err != nil {
@@ -194,6 +195,8 @@ func (h *WikiCollaborationHandler) Stream(w http.ResponseWriter, r *http.Request
 		for {
 			rows, err := h.Service.ListWikiUpdates(r.Context(), actor, owner, repo, slug, page, after)
 			if err != nil {
+				middleware.LoggerFromContext(r.Context()).Error("wiki update replay failed",
+					"page_id", page, "after", after, "error", err)
 				emit(sse.Event{Type: "error", Data: `{"message":"wiki replay unavailable; reconnect"}`})
 				return false
 			}
@@ -214,7 +217,7 @@ func (h *WikiCollaborationHandler) Stream(w http.ResponseWriter, r *http.Request
 					return false
 				}
 			}
-			if len(rows) < 100 {
+			if len(rows) < services.WikiUpdatePageSize {
 				return true
 			}
 		}

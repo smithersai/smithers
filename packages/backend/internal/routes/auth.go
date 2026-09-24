@@ -222,13 +222,13 @@ func (h *AuthHandler) PostSSETicket(w http.ResponseWriter, r *http.Request) {
 // resume URL. Returns "" if the cookie is absent or contains a
 // non-same-origin URL (defense against open-redirect).
 func consumeOAuth2PendingAuthorizeCookie(w http.ResponseWriter, r *http.Request, secure bool) string {
-	cookie, err := r.Cookie("smithers_oauth2_pending_authorize")
+	cookie, err := r.Cookie(oauth2PendingAuthorizeCookie)
 	if err != nil || cookie.Value == "" {
 		return ""
 	}
 	// Clear the cookie whether or not we honor it.
 	http.SetCookie(w, &http.Cookie{
-		Name:     "smithers_oauth2_pending_authorize",
+		Name:     oauth2PendingAuthorizeCookie,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,

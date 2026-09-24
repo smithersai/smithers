@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	stdErrors "errors"
 	"net/http"
 
 	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
@@ -28,11 +29,12 @@ func (h *AdminGitHubAppHandler) Reconcile(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.Service.ReconcileGitHubAppInstallations(r.Context()); err != nil {
-		if apiErr, ok := err.(*pkgerrors.APIError); ok {
+		var apiErr *pkgerrors.APIError
+		if stdErrors.As(err, &apiErr) {
 			pkgerrors.WriteError(w, apiErr)
 			return
 		}
-		pkgerrors.WriteError(w, pkgerrors.Internal("github app reconcile failed"))
+		writeInternalError(w, r, "github app reconcile failed", err)
 		return
 	}
 	pkgerrors.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})

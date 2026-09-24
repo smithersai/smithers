@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 
@@ -84,13 +85,13 @@ func newValidTokenQuerier(plaintext string, sessionID string, runID int64) *mock
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			if id == sessionID {
 				return pgtype.Int8{Int64: runID, Valid: true}, nil
 			}
-			return pgtype.Int8{Valid: false}, errors.New("session not found")
+			return pgtype.Int8{Valid: false}, pgx.ErrNoRows
 		},
 	}
 }
@@ -422,7 +423,7 @@ func TestAgentInternalHandler_PostSessionEvent_ExpiredToken_Returns401(t *testin
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			return pgtype.Int8{Int64: runID, Valid: true}, nil
@@ -464,7 +465,7 @@ func TestAgentInternalHandler_PostSessionEvent_TokenNotScopedToSession_Returns40
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			// Returns a DIFFERENT run ID — token is for a different session
@@ -556,7 +557,7 @@ func TestAgentInternalHandler_PostSessionEvent_TaskFailed_Returns401(t *testing.
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			return pgtype.Int8{Int64: runID, Valid: true}, nil
@@ -604,7 +605,7 @@ func TestAgentInternalHandler_PostSessionEvent_TaskDone_Returns401(t *testing.T)
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			return pgtype.Int8{Int64: runID, Valid: true}, nil
@@ -652,7 +653,7 @@ func TestAgentInternalHandler_PostSessionEvent_TaskCancelled_Returns401(t *testi
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			return pgtype.Int8{Int64: runID, Valid: true}, nil
@@ -760,14 +761,14 @@ func TestAgentInternalHandler_PostSessionEvent_TaskNotFound_Returns401(t *testin
 					},
 				}, nil
 			}
-			return db.WorkflowRun{}, errors.New("not found")
+			return db.WorkflowRun{}, pgx.ErrNoRows
 		},
 		getAgentSessionWorkflowRunIDFn: func(ctx context.Context, id string) (pgtype.Int8, error) {
 			return pgtype.Int8{Int64: runID, Valid: true}, nil
 		},
 		getWorkflowTaskByRunIDFn: func(ctx context.Context, workflowRunID int64) (db.WorkflowTask, error) {
 			// No task exists for this run — deny access.
-			return db.WorkflowTask{}, errors.New("task not found")
+			return db.WorkflowTask{}, pgx.ErrNoRows
 		},
 	}
 	handler := &AgentInternalHandler{Service: svc, TokenQuerier: tq}

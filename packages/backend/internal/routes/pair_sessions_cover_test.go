@@ -488,11 +488,6 @@ func pairSessionsCovDirectRequest(method, target, body string, params map[string
 	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
 }
 
-func pairSessionsCovDecode(t *testing.T, rec *httptest.ResponseRecorder, v any) {
-	t.Helper()
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), v), rec.Body.String())
-}
-
 func TestPairSessions_Cov_InviteJSONRedactsAndSelectsPublicKey(t *testing.T) {
 	now := time.Unix(1700002000, 0).UTC()
 	invites := []db.PairSessionInvite{

@@ -15,7 +15,6 @@ import (
 	"github.com/smithersai/smithers/packages/backend/internal/db"
 	"github.com/smithersai/smithers/packages/backend/internal/middleware"
 	"github.com/smithersai/smithers/packages/backend/internal/services"
-	pkgerrors "github.com/smithersai/smithers/packages/backend/internal/pkg/errors"
 )
 
 type repoMissingEndpointMockService struct {
@@ -27,8 +26,6 @@ type repoMissingEndpointMockService struct {
 	unstarRepoFn       func(ctx context.Context, actor *db.User, owner, repo string) error
 	getRepoContentsFn  func(ctx context.Context, viewer *db.User, owner, repo, ref, path string) (services.RepoContent, error)
 	listGitRefsFn      func(ctx context.Context, viewer *db.User, owner, repo string) ([]services.GitRef, error)
-	getGitTreeFn       func(ctx context.Context, viewer *db.User, owner, repo, sha string) error
-	getGitCommitFn     func(ctx context.Context, viewer *db.User, owner, repo, sha string) error
 }
 
 func (m repoMissingEndpointMockService) CreateRepo(ctx context.Context, user *db.User, name, description string, isPublic bool, defaultBookmark string, autoInit bool) (db.Repository, error) {
@@ -96,18 +93,6 @@ func (m repoMissingEndpointMockService) ListGitRefs(ctx context.Context, viewer 
 		return m.listGitRefsFn(ctx, viewer, owner, repo)
 	}
 	return nil, nil
-}
-func (m repoMissingEndpointMockService) GetGitTree(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	if m.getGitTreeFn != nil {
-		return m.getGitTreeFn(ctx, viewer, owner, repo, sha)
-	}
-	return nil
-}
-func (m repoMissingEndpointMockService) GetGitCommit(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-	if m.getGitCommitFn != nil {
-		return m.getGitCommitFn(ctx, viewer, owner, repo, sha)
-	}
-	return nil
 }
 func (m repoMissingEndpointMockService) ArchiveRepo(ctx context.Context, actor *db.User, owner, repo string) (db.Repository, error) {
 	return db.Repository{}, nil
@@ -234,12 +219,6 @@ func TestRepoHandlerMissingEndpoints_ContentsAndGitRefs(t *testing.T) {
 					},
 				}}, nil
 			},
-			getGitTreeFn: func(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-				return &pkgerrors.APIError{Status: http.StatusNotImplemented, Message: "git trees endpoint not implemented"}
-			},
-			getGitCommitFn: func(ctx context.Context, viewer *db.User, owner, repo, sha string) error {
-				return &pkgerrors.APIError{Status: http.StatusNotImplemented, Message: "git commits endpoint not implemented"}
-			},
 		},
 	}
 
@@ -258,15 +237,5 @@ func TestRepoHandlerMissingEndpoints_ContentsAndGitRefs(t *testing.T) {
 	h.ListGitRefs(refsRec, refsReq)
 	require.Equal(t, http.StatusOK, refsRec.Code)
 
-	treeReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/trees/abc", nil)
-	treeReq = withRepoRouteParams(treeReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "abc"})
-	treeRec := httptest.NewRecorder()
-	h.GetGitTree(treeRec, treeReq)
-	require.Equal(t, http.StatusNotImplemented, treeRec.Code)
 
-	commitReq := httptest.NewRequest(http.MethodGet, "/api/repos/alice/demo/git/commits/abc", nil)
-	commitReq = withRepoRouteParams(commitReq, map[string]string{"owner": "alice", "repo": "demo", "sha": "abc"})
-	commitRec := httptest.NewRecorder()
-	h.GetGitCommit(commitRec, commitReq)
-	require.Equal(t, http.StatusNotImplemented, commitRec.Code)
 }
