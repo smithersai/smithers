@@ -89,10 +89,10 @@ Ctrl+O read it.
 
 ## Commands
 
-`/model [query]`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`, `/compact`,
+`/model [query]`, `/theme`, `/thinking [level]`, `/new`, `/resume`, `/fork`, `/session`, `/compact`,
 `/name <name>`, `/copy`, `/summary`, `/tabs`, `/chat`, `/filter`,
 `/grep [text]`, `/ui [id]`, `/smithers`, `/flows`, `/flow <name> [json|key=value]`, `/agent [name] [prompt]`,
-`/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`. After `/model `, `/thinking `, `/flow ` and `/agent `
+`/retry <id>`, `/stop <id>`, `/hotkeys`, `/quit`, `/exit`. After `/model `, `/thinking `, `/flow ` and `/agent `
 the menu completes the argument, and the `/` menu lists the directory's flows.
 
 ## Look
