@@ -347,3 +347,59 @@ test("the next admission retries a failed settlement before reserving more budge
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_events").first<{ n: number }>())?.n).toBe(2);
   expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(0);
 });
+
+test("holds older than the upstream deadline settle at their reserved cost and free the in-flight slots", async () => {
+  const env = await buildTestEnv();
+  const token = "srs_expiringholds";
+  const hash = await sha256Hex(token);
+  const start = Date.UTC(2026, 8, 30, 23, 50);
+  await env.DB.prepare(
+    "INSERT INTO sessions (hash, repo, pr, expires_at, spend_cap_usd, spent_usd, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  )
+    .bind(hash, REPO, 7, start + 24 * 60 * 60_000, 100, 0, start)
+    .run();
+  let clock = start;
+  let settle = false;
+  const pending: Promise<unknown>[] = [];
+  const worker = createReviewWorker({
+    jwksUrl: "unused",
+    anthropicBaseUrl: "https://anthropic.test",
+    now: () => clock,
+    waitUntil: (p) => pending.push(p),
+    fetchUpstream: (async () =>
+      Response.json(
+        settle
+          ? { model: "claude-sonnet-4-6", usage: { input_tokens: 10, output_tokens: 10 } }
+          : { model: "claude-sonnet-4-6" },
+      )) as unknown as typeof fetch,
+  });
+  const request = async () => {
+    const res = await worker.fetch(
+      new Request("https://review.test/anthropic/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": token },
+        body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 10, messages: [] }),
+      }),
+      env,
+    );
+    await res.text();
+    await Promise.all(pending);
+    return res.status;
+  };
+  for (let i = 0; i < 4; i++) expect(await request()).toBe(200);
+  expect(await request()).toBe(402);
+  const reserved = (await env.DB.prepare("SELECT SUM(cost_usd) AS usd FROM usage_reservations").first<{ usd: number }>())!
+    .usd;
+
+  clock = start + 15 * 60_000;
+  settle = true;
+  expect(await request()).toBe(200);
+
+  expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM usage_reservations").first<{ n: number }>())?.n).toBe(0);
+  const expired = await env.DB.prepare(
+    "SELECT COUNT(*) AS n, SUM(cost_usd) AS usd, MIN(created_at) AS at FROM usage_events WHERE kind = 'expired_hold' AND model = 'claude-sonnet-4-6' AND pr = 7",
+  ).first<{ n: number; usd: number; at: number }>();
+  expect(expired).toEqual({ n: 4, usd: reserved, at: start });
+  const spent = (await env.DB.prepare("SELECT spent_usd FROM sessions").first<{ spent_usd: number }>())!.spent_usd;
+  expect(spent).toBeGreaterThan(reserved);
+});

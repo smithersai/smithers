@@ -16,11 +16,12 @@ The metered Anthropic proxy (`POST /anthropic/v1/messages` only).
 - `recordUsage.ts`: atomically debit, insert an idempotent usage event and
   release the reservation using a D1 batch.
 - `retryUsage.ts`: retry persisted settlements before further admission.
+- `expireHolds.ts`: settle holds older than 15 minutes at their reserved cost.
 - `parseUsage.ts`: shared `UsageSummary` type.
 
 See [proxy budget admission](../../../docs/proxy-budget.md) for limits and
-recovery. Ambiguous upstream failures retain their budget holds for operator
-reconciliation. API keys require a registered, authorized repository and enforce
+recovery. Ambiguous upstream failures retain their budget holds until they
+expire at their reserved cost. API keys require a registered, authorized repository and enforce
 its monthly cap plus the optional key cap on cumulative repository monthly
 spend, including outstanding reservations. Sessions minted with an API key
 retain its hash, inherit its live cap and lose access when it is revoked or

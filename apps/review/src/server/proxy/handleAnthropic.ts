@@ -10,6 +10,7 @@ import { modelPrices } from "./modelPrices.ts";
 import { priceRequest } from "./priceRequest.ts";
 import { reserveUsage } from "./reserveUsage.ts";
 import { retryUsage } from "./retryUsage.ts";
+import { expireHolds } from "./expireHolds.ts";
 import { recordUsage } from "./recordUsage.ts";
 
 export interface HandleAnthropicDeps {
@@ -204,7 +205,18 @@ export async function handleAnthropic(
   const requestId = randomTokenHex(16);
   try {
     await retryUsage(env.DB, repo);
-    if (!(await reserveUsage(env.DB, { requestId, repo, sessionHash, repoCapUsd, costUsd: priced.costUsd, now }))) {
+    await expireHolds(env.DB, repo, now);
+    if (
+      !(await reserveUsage(env.DB, {
+        requestId,
+        repo,
+        sessionHash,
+        model: priced.model,
+        repoCapUsd,
+        costUsd: priced.costUsd,
+        now,
+      }))
+    ) {
       return jsonError(402, "spend cap or in-flight limit prevents reservation", {
         repo,
         reservedCostUsd: priced.costUsd,

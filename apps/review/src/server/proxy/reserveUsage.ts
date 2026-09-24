@@ -7,6 +7,7 @@ export async function reserveUsage(
     requestId: string;
     repo: string;
     sessionHash: string | null;
+    model: string;
     repoCapUsd: number | null;
     costUsd: number;
     now: number;
@@ -16,8 +17,8 @@ export async function reserveUsage(
   const monthStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
   const result = await db
     .prepare(
-      `INSERT INTO usage_reservations (id, repo, session_hash, cost_usd, created_at)
-    SELECT ?1, ?2, ?3, ?4, ?5
+      `INSERT INTO usage_reservations (id, repo, session_hash, cost_usd, created_at, model)
+    SELECT ?1, ?2, ?3, ?4, ?5, ?8
     WHERE NOT EXISTS (SELECT 1 FROM usage_events WHERE id = ?1)
       AND (SELECT COUNT(*) FROM usage_reservations WHERE repo = ?2) < 4
       AND (?3 IS NULL OR EXISTS (
@@ -38,6 +39,7 @@ export async function reserveUsage(
       options.now,
       options.repoCapUsd,
       monthStart,
+      options.model,
     )
     .run();
   return result.meta.changes === 1;

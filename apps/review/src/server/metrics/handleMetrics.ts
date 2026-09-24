@@ -17,7 +17,7 @@ interface TotalsRow {
   cost_usd: number;
 }
 
-interface PrCountRow {
+interface RepoCountRow {
   repo: string;
   c: number;
 }
@@ -47,11 +47,14 @@ export async function handleMetrics(request: Request, env: ReviewWorkerEnv): Pro
   const totalsRes = await env.DB.prepare(
     "SELECT repo, model, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd FROM usage_totals ORDER BY repo, model",
   ).all<TotalsRow>();
-  const prsRes = await env.DB.prepare("SELECT repo, COUNT(*) AS c FROM reviewed_prs GROUP BY repo").all<PrCountRow>();
+  const prsRes = await env.DB.prepare("SELECT repo, COUNT(*) AS c FROM reviewed_prs GROUP BY repo").all<RepoCountRow>();
   const monthPrsRes = await env.DB.prepare("SELECT repo, COUNT(*) AS c FROM reviewed_prs WHERE month = ? GROUP BY repo")
     .bind(monthKey)
-    .all<PrCountRow>();
+    .all<RepoCountRow>();
   const quotaRes = await env.DB.prepare("SELECT repo, prs_per_month FROM repos").all<QuotaRow>();
+  const holdsRes = await env.DB.prepare(
+    "SELECT repo, COUNT(*) AS c FROM usage_reservations GROUP BY repo ORDER BY repo",
+  ).all<RepoCountRow>();
 
   const lines: string[] = [];
   lines.push("# HELP review_tokens_total Anthropic token usage by repo, model, kind");
@@ -85,6 +88,12 @@ export async function handleMetrics(request: Request, env: ReviewWorkerEnv): Pro
     const used = usedByRepo.get(row.repo) ?? 0;
     const remaining = Math.max(0, row.prs_per_month - used);
     lines.push(`review_quota_remaining{repo="${escapeLabel(row.repo)}"} ${remaining}`);
+  }
+
+  lines.push("# HELP review_reservations_held Proxy budget holds awaiting settlement or expiry");
+  lines.push("# TYPE review_reservations_held gauge");
+  for (const row of holdsRes.results) {
+    lines.push(`review_reservations_held{repo="${escapeLabel(row.repo)}"} ${row.c}`);
   }
 
   return new Response(`${lines.join("\n")}\n`, {

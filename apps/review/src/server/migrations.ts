@@ -56,7 +56,8 @@ const SCHEMA_STATEMENTS = [
     session_hash TEXT,
     cost_usd REAL NOT NULL CHECK (cost_usd > 0),
     created_at INTEGER NOT NULL,
-    settlement_json TEXT
+    settlement_json TEXT,
+    model TEXT
   )`,
   `CREATE INDEX IF NOT EXISTS usage_reservations_repo_idx ON usage_reservations(repo)`,
   `CREATE INDEX IF NOT EXISTS usage_reservations_session_idx ON usage_reservations(session_hash)`,
@@ -104,6 +105,7 @@ export async function ensureSchema(db: D1Database): Promise<void> {
   await addColumnIfMissing(db, `ALTER TABLE sessions ADD COLUMN api_key_hash TEXT`);
   await addColumnIfMissing(db, `ALTER TABLE usage_events ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0`);
   await addColumnIfMissing(db, `ALTER TABLE usage_events ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0`);
+  await addColumnIfMissing(db, `ALTER TABLE usage_reservations ADD COLUMN model TEXT`);
   await addColumnIfMissing(db, `ALTER TABLE walkthroughs ADD COLUMN status TEXT NOT NULL DEFAULT 'complete' CHECK (status IN ('pending', 'complete'))`);
   // Backfill the per-(repo, model) rollup from the event log exactly once: a
   // database that already has totals (from a previous backfill or from

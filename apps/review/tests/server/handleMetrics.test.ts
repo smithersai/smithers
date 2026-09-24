@@ -49,12 +49,20 @@ describe("GET /metrics", () => {
       kind: "messages",
       now: Date.now(),
     });
+    for (const id of ["h1", "h2"]) {
+      await env.DB.prepare(
+        "INSERT INTO usage_reservations (id, repo, session_hash, cost_usd, created_at) VALUES (?, ?, NULL, ?, ?)",
+      )
+        .bind(id, REPO, 0.1, Date.now())
+        .run();
+    }
     const res = await worker.fetch(
       new Request("https://review.test/metrics", { headers: { authorization: "Bearer test-metrics" } }),
       env,
     );
     expect(res.status).toBe(200);
     const body = await res.text();
+    expect(body).toContain('review_reservations_held{repo="octo/widgets"} 2');
     expect(body).toContain('review_tokens_total{repo="octo/widgets",model="claude-sonnet-4-6",kind="input"} 100');
     expect(body).toContain('review_tokens_total{repo="octo/widgets",model="claude-sonnet-4-6",kind="output"} 50');
     // Cache tokens dominate cache-heavy agent workloads; they must be visible too.

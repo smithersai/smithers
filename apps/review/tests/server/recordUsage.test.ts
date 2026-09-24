@@ -82,6 +82,7 @@ test("outstanding reservations still constrain repository budget after UTC month
     requestId: "before",
     repo: "octo/widgets",
     sessionHash: null,
+    model: "claude-sonnet-4-6",
     repoCapUsd: 1,
     costUsd: 0.6,
     now: Date.UTC(2026, 7, 31, 23, 59),
