@@ -72,9 +72,7 @@ test("a signed-out visitor walks the signup in the transcript and a reload resum
   await page.getByTestId("signup-continue").click()
   await expect(question).toHaveAttribute("data-question", "repo")
 
-  // A reload resumes the same question. The session row reaches OPFS on the
-  // store's own flush cadence, so the return is a later visit, not the next frame.
-  await page.waitForTimeout(1500)
+  // A reload immediately after answering must resume the same question.
   await page.reload()
   await expect(page.getByTestId("signup-question")).toHaveAttribute("data-question", "repo")
   await page.getByTestId("signup-new-repo").click()
