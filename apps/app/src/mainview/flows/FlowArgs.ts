@@ -52,6 +52,8 @@ export interface FlowInput {
   readonly "issue.poc": { readonly number: number; readonly repo?: string }
   readonly "issue.implement": { readonly number: number; readonly repo?: string }
   readonly "issue.add-flow": { readonly number: number; readonly repo?: string; readonly description?: string }
+  /** Carried as JSON: a Markdown comment holds newlines, indentation and fences, and its repository need not be loaded. */
+  readonly "issues.comment": { readonly number: number; readonly text: string; readonly repo?: string }
 
   /** Source-qualified launch uses the existing plan/approval/run path. */
   readonly "flow.run": {
@@ -162,6 +164,7 @@ const ENCODERS: { readonly [N in FlowWithInput]: (payload: Payload) => string } 
   "issue.poc": (payload) => line(token(payload, "number"), token(payload, "repo")),
   "issue.implement": (payload) => line(token(payload, "number"), token(payload, "repo")),
   "issue.add-flow": (payload) => JSON.stringify(payload),
+  "issues.comment": (payload) => JSON.stringify(payload),
   "flow.run": (payload) => line(keyed(payload, "sourceCard"), token(payload, "name"), token(payload, "repo"),
     payload.input === undefined ? undefined : JSON.stringify(payload.input)),
   "flow.plan": (payload) => line(keyed(payload, "sourceCard"), keyed(payload, "against"), token(payload, "name"), token(payload, "repo"),

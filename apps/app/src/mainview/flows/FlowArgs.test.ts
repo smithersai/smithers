@@ -188,6 +188,21 @@ test("issue detail preserves the tracker even when native and GitHub numbers col
   expect(payloadFor("issues.view", "will/flows --source github")).toHaveProperty("error")
 })
 
+test("issues.comment keeps a Markdown comment's newlines, indentation and fences", () => {
+  const text = "First paragraph.\n\n```ts\nconst  x = 1\n  return x\n```\n\n- one\n- two"
+  const unloaded = new Set<string>()
+  expect(payloadFor("issues.comment", flowArgs("issues.comment", { number: 3, text, repo: "will/flows" }), undefined, unloaded))
+    .toEqual({ payload: { number: 3, text, repo: "will/flows" } })
+  expect(payloadFor("issues.comment", flowArgs("issues.comment", { number: 3, text }))).toEqual({ payload: { number: 3, text } })
+  // The typed slash line keeps everything between the number and a trailing repository.
+  expect(payloadFor("issues.comment", `3 ${text} will/flows`, undefined, new Set(["will/flows"])))
+    .toEqual({ payload: { number: 3, text, repo: "will/flows" } })
+  expect(payloadFor("issues.comment", `3\n${text}`)).toEqual({ payload: { number: 3, text } })
+  for (const bad of ['{"number":0,"text":"x"}', '{"number":3,"text":"  "}', '{"number":3,"text":"x","repo":7}', "{not json", "3", "x hello"]) {
+    expect(payloadFor("issues.comment", bad)).toHaveProperty("error")
+  }
+})
+
  test("Wiki heading buttons retain their card scope", () => {
   roundTrip("wiki.heading", { line: "5", cardId: "wiki-open-plans" }, "5 wiki-open-plans", { line: "5", cardId: "wiki-open-plans" })
   roundTrip("wiki.heading", { line: "5" }, "5", { line: "5" })

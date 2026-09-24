@@ -162,7 +162,7 @@ const IssueCommentForm = ({ repo, number, onRunCommand }: { readonly repo: strin
       onSubmit={(event) => {
         event.preventDefault()
         if (trimmed === "") return
-        onRunCommand("issues.comment", `${number} ${trimmed} ${repo}`)
+        onRunCommand("issues.comment", flowArgs("issues.comment", { number, text: trimmed, repo }))
         setText("")
       }}
     >

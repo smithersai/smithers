@@ -57,9 +57,8 @@ export const splitTrailingRepo = (
   const parts = text.split(/\s+/)
   const last = parts[parts.length - 1] ?? ""
   if (parts.length > 0 && REPO_TOKEN.test(last)) {
-    const rest = parts.slice(0, -1).join(" ")
     if (known !== undefined && !known.has(last)) return { rest: text }
-    return { rest, repo: last }
+    return { rest: text.slice(0, -last.length).trimEnd(), repo: last }
   }
   return { rest: text }
 }

@@ -272,6 +272,31 @@ const triggerRun = (args: string | undefined, known?: KnownRepositories): Parsed
 /** The three sandbox kinds `workspace.open --kind` accepts (ADR 0002). */
 const KINDS: ReadonlyArray<string> = ["container", "vm", "desktop"]
 
+/**
+ * `<number> <text> [owner/repo]` as typed, or the button's JSON object
+ * (FlowArgs.ts). Either way the text is kept as written: a Markdown comment's
+ * newlines, indentation and code fences are the comment.
+ */
+const issueComment = (args: string | undefined, known?: KnownRepositories): Parsed => {
+  const line = trimmed(args)
+  let fields: Record<string, unknown>
+  if (line.startsWith("{")) {
+    const parsed = jsonObject("issues.comment")(line)
+    if ("error" in parsed) return parsed
+    fields = parsed.payload
+    if (Object.keys(fields).some(key => key !== "number" && key !== "text" && key !== "repo")) return no("issues.comment takes number, text and repo")
+    if (fields.repo !== undefined && typeof fields.repo !== "string") return no("issues.comment's repository must be owner/repo")
+  } else {
+    const { rest, repo } = splitTrailingRepo(line, known)
+    const [, head = "", text = ""] = /^(\S*)\s*([\s\S]*)$/.exec(rest) ?? []
+    fields = { number: Number(head), text, ...(repo === undefined ? {} : { repo }) }
+  }
+  const { number, text, repo } = fields
+  if (typeof number !== "number" || !Number.isInteger(number) || number <= 0) return no("issues.comment needs an issue number")
+  if (typeof text !== "string" || text.trim() === "") return no("issues.comment needs the comment text")
+  return ok({ number, text: text.trim(), ...(repo === undefined ? {} : { repo }) })
+}
+
 /** `[bookmark] [owner/repo]`: the one-command desktop open and its bare `desktop` door. */
 const desktopOpen = (args: string | undefined, known?: KnownRepositories): Parsed => {
   const { rest, repo } = splitTrailingRepo(args, known)
@@ -659,15 +684,7 @@ const GRAMMAR: Readonly<Record<string, Grammar>> = {
   },
   "issues.close": (args, known) => numbered(args, "issues.close needs an issue number", known),
   "issues.reopen": (args, known) => numbered(args, "issues.reopen needs an issue number", known),
-  "issues.comment": (args, known) => {
-    const { rest, repo } = splitTrailingRepo(args, known)
-    const [head, ...tail] = rest.split(/\s+/)
-    const number = Number(head)
-    const text = tail.join(" ").trim()
-    if (!Number.isInteger(number) || number <= 0) return no("issues.comment needs an issue number")
-    if (text === "") return no("issues.comment needs the comment text")
-    return ok(repo === undefined ? { number, text } : { number, text, repo })
-  },
+  "issues.comment": (args, known) => issueComment(args, known),
   "prs.list": (args) => repoOnly("prs.list", args),
   "prs.view": (args, known) => numbered(args, "prs.view needs a pull request number", known),
   "prs.tab": args => {
