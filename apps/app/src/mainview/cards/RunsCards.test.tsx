@@ -252,7 +252,7 @@ describe("the run card, per phase and waiting reason", () => {
 
   test("accepted reads 'nothing is driving it' and offers Resume", () => {
     const { host, dispatched } = renderRun({ phase: "running", waiting: "executor" })
-    expect(host.textContent).toContain("Accepted — nothing is driving it yet")
+    expect(host.textContent).toContain("Accepted — waiting for an executor.")
     const resume = host.querySelector("[data-testid='flow-run-resume-run-1']")
     expect(resume).not.toBeNull()
     click(resume!)

@@ -256,9 +256,7 @@ function AppContent() {
           : `You're signed in as ${
             identity.login ?? "a GitHub user"
           }, but Smithers is open to design partners only right now.`
-      }${identity.accessError !== null ? `\n\n${identity.accessError}` : ""}${
-        identity.accessRequested ? "" : "\n\nType /auth.sign-out to use a different GitHub account."
-      }`,
+      }${identity.accessError !== null ? `\n\n${identity.accessError}` : ""}`,
       status: "complete",
       ...(identity.accessRequested
         ? {}
@@ -271,7 +269,7 @@ function AppContent() {
       id: "auth-state",
       role: "smithers",
       text:
-        "This host doesn't provide Smithers identity, so GitHub sign-in and Smithers Cloud account features are unavailable. Commands supported by this host remain available below. Use a Smithers Cloud deployment with identity configured for the signed-in experience.",
+        "Sign-in is unavailable on this host.",
       status: "complete",
       createdAt: 0,
       ordinal: 0

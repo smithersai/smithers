@@ -5,10 +5,7 @@ import { createRoot } from "react-dom/client"
 import type { Card } from "../state/AppState"
 import { NotificationsCardBody } from "./NotificationsCard"
 
-/*
- * §28.2: an empty state names the next step. "Nothing new." told the user a
- * fact and gave them no move.
- */
+/* The empty state stays quiet; populated rows retain their read action. */
 
 GlobalRegistrator.register()
 
@@ -49,7 +46,7 @@ describe("the notifications empty state", () => {
   test("reads calm and invents no next step", () => {
     const host = render(card([]))
     expect(host.innerText ?? host.textContent ?? "").toContain("Nothing new.")
-    expect(host.textContent).toContain("repositories you have loaded")
+    expect(host.textContent).toBe("Nothing new.")
     expect(host.querySelector("[data-flow]")).toBeNull()
   })
 

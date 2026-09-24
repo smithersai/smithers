@@ -956,7 +956,7 @@ describe("createChangeSeam", () => {
       [`PUT ${REPO}/landings/42/land`]: json(202, { status: "queued" })
     })
     expect(textOf(await seam.landChange("qupxosqw"))).toBe(
-      "Landing request #42 lands its whole stack together (1 → 2: qupxosqw, ronvznsk) — qupxosqw is 1 of 2 by request order, and landing a prefix alone isn't possible yet (plue#452). /change.land ronvznsk lands all 2."
+      "Land all 2 changes from ronvznsk."
     )
     expect(requests.some((request) => request.startsWith("PUT "))).toBe(false)
   })
@@ -968,7 +968,7 @@ describe("createChangeSeam", () => {
       [`PUT ${REPO}/landings/42/land`]: json(202, { status: "queued" })
     })
     expect(textOf(await seam.landChange("qupxosqw"))).toBe(
-      "Landing request #42 is queued — plue lands a request only while it is open or failed; the card tracks it."
+      "Landing request #42 is queued. Only open or failed requests can land."
     )
     expect(requests.some((request) => request.startsWith("PUT "))).toBe(false)
   })
@@ -993,7 +993,7 @@ describe("createChangeSeam", () => {
       [`${REPO}/landings?limit=100`]: json(200, { items: [] })
     })
     expect(textOf(await seam.landChange("qupxosqw"))).toBe(
-      "No landing request carries qupxosqw on will/smithers — /prs.create opens one."
+      "No landing request carries qupxosqw on will/smithers."
     )
   })
 
@@ -1010,7 +1010,7 @@ describe("createChangeSeam", () => {
 
     const absent = await harness({ [`${REPO}/landings?limit=100`]: json(200, { items: [] }) })
     await absent.seam.landChange("qupxosqw")
-    expect(said(absent.store)).toEqual(["No landing request carries qupxosqw on will/smithers — /prs.create opens one."])
+    expect(said(absent.store)).toEqual(["No landing request carries qupxosqw on will/smithers."])
 
     const unread = await harness({ [`${REPO}/landings?limit=100`]: json(500, { message: "landings down" }) })
     await unread.seam.landChange("qupxosqw")

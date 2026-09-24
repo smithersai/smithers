@@ -1434,7 +1434,7 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
       return `The landing requests of ${repoId} weren't read (${landingRead.unread}) — nothing was landed.`
     }
     if (landingRead.value === null) {
-      return `No landing request carries ${changeId} on ${repoId} — /prs.create opens one.`
+      return `No landing request carries ${changeId} on ${repoId}.`
     }
     const { landing, position } = landingRead.value
     const size = landing.changeIds.length
@@ -1448,13 +1448,11 @@ export const createChangeSeam = (ctx: SeamContext, deps: ChangeSeamDeps = {}): C
      * over-land.
      */
     if (position < size) {
-      return `Landing request #${landing.number} lands its whole stack together (1 → ${size}: ${
-        landing.changeIds.join(", ")
-      }) — ${changeId} is ${position} of ${size} by request order, and landing a prefix alone isn't possible yet (plue#452). /change.land ${top} lands all ${size}.`
+      return `Land all ${size} changes from ${top}.`
     }
     /* plue lands a request only while it is open or failed (landing.go LandLandingRequest). */
     if (landing.state !== "open" && landing.state !== "failed") {
-      return `Landing request #${landing.number} is ${landing.state} — plue lands a request only while it is open or failed; the card tracks it.`
+      return `Landing request #${landing.number} is ${landing.state}. Only open or failed requests can land.`
     }
     /*
      * The land names the commit it lands (ADR 0003: the server refuses a land

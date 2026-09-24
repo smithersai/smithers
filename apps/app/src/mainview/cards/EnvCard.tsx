@@ -1,23 +1,21 @@
-/*
- * The agent-environment card: vars and the setup script. Secrets are not this
- * card's: their metadata renders in the secrets card (/secrets.list), which the
- * footer names. Mutation goes through the typed /env.set command, not in-card
- * buttons.
- */
+/* Environment variables and their registered edit and secrets actions. */
+import { Button } from "@smthrs/ui"
+import { flowAction } from "../flows/FlowAction"
 import { Terminal } from "lucide-react"
 import type { Card } from "../state/AppState"
-import type { CardFamily } from "./CardFamily"
+import type { CardFamily, RunCommand } from "./CardFamily"
 import { settledPill } from "./CardFamily"
 
 export const EnvCardBody = ({
-  card
+  card, onRunCommand
 }: {
   readonly card: Extract<Card, { kind: "env" }>
+  readonly onRunCommand: RunCommand
 }) => (
   <div className="world-card-list">
     <p className="world-card-path">{card.payload.repo}</p>
     {card.payload.vars.length === 0 ?
-      <p className="world-card-empty">No environment variables yet — /env.set NAME=value adds one.</p> :
+      <Button size="sm" {...flowAction(onRunCommand, "env.set")}>Add variable</Button> :
       (
         <ul className="world-card-list">
           {card.payload.vars.map((entry) => (
@@ -41,12 +39,10 @@ export const EnvCardBody = ({
       ) :
       null}
     {card.payload.setupScript !== null ? <pre className="world-card-path">{card.payload.setupScript}</pre> : null}
-    <p className="world-card-path" data-testid="env-secrets-hint">
-      Secrets have their own card: /secrets.list shows them.
-    </p>
+    <Button size="sm" {...flowAction(onRunCommand, "secrets.list", card.payload.repo)}>Secrets</Button>
   </div>
 )
 
 export const envCardFamily: CardFamily<"env"> = {
-  env: { render: (card) => <EnvCardBody card={card} />, pill: settledPill }
+  env: { render: (card, actions) => <EnvCardBody card={card} onRunCommand={actions.onRunCommand} />, pill: settledPill }
 }

@@ -852,7 +852,7 @@ describe("the change card", () => {
     )
     expect(landButton(mid.host).disabled).toBe(true)
     expect(landReason(mid.host)).toBe(
-      "landing request #42 lands 1 → 2 together from ronvznsk (2 of 2); landing a prefix alone isn't possible yet (plue#452)"
+      "Land all 2 changes from ronvznsk."
     )
     mid.host.remove()
 
@@ -868,7 +868,7 @@ describe("the change card", () => {
       ["queued", "queued…"],
       ["landing", "landing…"],
       ["merged", "landed"],
-      ["closed", "closed — plue lands a request only while it is open or failed"]
+      ["closed", "closed — only open or failed requests can land"]
     ]
     for (const [state, reason] of blocked) {
       const { host } = renderChange(changeCard({ stack: { ...stackOf(), state } }))

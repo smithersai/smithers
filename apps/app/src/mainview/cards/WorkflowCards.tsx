@@ -72,7 +72,7 @@ export const WorkflowRunCardBody = ({
         (
           <p className="smithers-card-note" data-testid={`flow-run-waiting-${runId}`}>
             {card.payload.waiting === "executor"
-              ? "Accepted — nothing is driving it yet. /runs.resume starts it."
+              ? "Accepted — waiting for an executor."
               : `Waiting on ${card.payload.waiting}.`}
           </p>
         ) :

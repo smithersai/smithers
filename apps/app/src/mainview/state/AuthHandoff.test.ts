@@ -199,6 +199,9 @@ describe("the native sign-in handoff", () => {
     await h.signIn()
     await settled()
     expect(h.requests.filter((line) => line === "POST /api/auth/native/start")).toHaveLength(1)
+    const already = [...h.store.collections.toasts.values()].find(entry => entry.id === "toast-auth.sign-in.already")
+    expect(already?.action).toEqual({ flow: "auth.sign-out", label: "Sign out" })
+    expect(already?.detail).not.toContain("/auth.sign-out")
   })
 
   test("a ready claim whose session never lands says so instead of 'Signed in'", async () => {

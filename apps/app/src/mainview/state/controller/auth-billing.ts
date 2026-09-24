@@ -556,11 +556,10 @@ export const createAuthBillingController = (
       store.dispatch({ type: "toast.resolved", actor: "system", key, status: "failed", detail })
     }
     if (identity?.state === "signed-in") {
-      toast(
-        "auth.sign-in.already",
-        `Already connected as ${identity.login ?? "you"}`,
-        "GitHub is connected — /auth.sign-out switches accounts."
-      )
+      const key = "auth.sign-in.already"
+      store.dispatch({ type: "toast.shown", actor: "system", key, title: `Connected as ${identity.login ?? "you"}` })
+      store.dispatch({ type: "toast.resolved", actor: "system", key, status: "ok", detail: "GitHub is connected.",
+        action: { flow: "auth.sign-out", label: "Sign out" } })
       return
     }
     if (openLocalAuth?.() === true) return

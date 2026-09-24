@@ -384,6 +384,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/ModelCards.tsx": 17,
       /* Mark-all-read. */
       "../cards/NotificationsCard.tsx": 1,
+      "../cards/EnvCard.tsx": 2,
       /* The account card's Sign out door (auth.sign-out through onRunCommand). */
       "../cards/AccountCard.tsx": 1,
       /* 2 = Try again + the done state's Open the workspace (lane sync). */
@@ -487,7 +488,7 @@ describe("launch-law parity: every affordance is a command", () => {
       "../cards/CommitPickCard.tsx": 1, // change.open (the checkboxes are change.pick inputs, counted as fields)
       /* The commits cards: a row's and a parent's commits.read, and the sha chip's chat.copy-message — all through onRunCommand. */
       "../cards/CommitCards.tsx": 3,
-      "../cards/BranchesCard.tsx": 1, // a row opens that branch's commits (commits.list)
+      "../cards/BranchesCard.tsx": 2, // a row opens that branch's commits (commits.list)
       /*
        * Connection, world and browser card interactions, plus the embedded
        * wiki collaboration cards (ad438463a6): page Previous/Next and the

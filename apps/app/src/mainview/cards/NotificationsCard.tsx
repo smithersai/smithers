@@ -18,7 +18,7 @@ export const NotificationsCardBody = ({
       {card.payload.items.length === 0 ?
         (
           <li className="world-card-empty">
-            Nothing new. Notifications follow the repositories you have loaded.
+            Nothing new.
           </li>
         ) :
         (

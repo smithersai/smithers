@@ -148,13 +148,13 @@ const landAct = (payload: ChangePayload): LandAct => {
       label: "Land",
       ariaLabel,
       blocked:
-        `landing request #${stack.landingNumber} lands 1 → ${stack.size} together from ${top} (${stack.size} of ${stack.size}); landing a prefix alone isn't possible yet (plue#452)`
+        `Land all ${stack.size} changes from ${top}.`
     }
   }
   if (stack.state === "queued" || stack.state === "landing") return { label: "Land", ariaLabel, blocked: `${stack.state}…` }
   if (stack.state === "merged") return { label: "Land", ariaLabel, blocked: "landed" }
   if (stack.state !== "open" && stack.state !== "failed") {
-    return { label: "Land", ariaLabel, blocked: `${stack.state} — plue lands a request only while it is open or failed` }
+    return { label: "Land", ariaLabel, blocked: `${stack.state} — only open or failed requests can land` }
   }
   const verb = stack.state === "failed" ? "Retry land" : "Land"
   const label = stack.size <= 1 ? verb : `${verb} 1 → ${stack.size}`
