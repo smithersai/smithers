@@ -479,6 +479,11 @@ describe("capacity seat chain", () => {
     expect(partial).toBeGreaterThanOrEqual(0)
     expect(retried).toBeGreaterThan(partial)
     expect(fallback).toBeGreaterThan(retried)
+    expect(tags.filter((tag) => tag === "model-retried")).toHaveLength(1)
+    const settled = events.find((event) => event._tag === "model-settled")
+    expect(settled?._tag === "model-settled" ? settled.message.content : []).toEqual([
+      { type: "text", text: "```cell\nctx.done('fallback')\n```" }
+    ])
   })
   it("cools every seat bound to the refused route", async () => {
     const contacted: Array<string> = []
@@ -630,10 +635,52 @@ describe("capacity seat chain", () => {
     const transitions = events.map((event) => event._tag).filter((tag) =>
       tag === "model-parked" || tag === "model-unparked"
     )
-    expect(transitions.at(-2)).toBe("model-parked")
-    expect(transitions.at(-1)).toBe("model-unparked")
+    expect(transitions).toEqual(["model-parked", "model-unparked"])
     expect(events.find((event) => event._tag === "model-parked")).toMatchObject({ wakeAt: 6_000, source: "reset" })
     expect(events.find((event) => event._tag === "model-unparked")).toMatchObject({ at: 6_000 })
+  })
+
+  it("records one park across a durable resume with retry-after", async () => {
+    const events: Array<AgentEvent.AgentEvent> = []
+    let calls = 0
+    const completed = recordedCells([], ["ctx.done('done')"])
+    const model = Model.make({
+      stream: (request) =>
+        Stream.suspend(() =>
+          ++calls === 1
+            ? Stream.fail(
+              new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis: 5_000, httpStatus: 429 })
+            )
+            : completed.stream(request)
+        )
+    })
+    const outcome = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* TestClock.setTime(1_000)
+      let settled = Deferred.makeUnsafe<Outcome>()
+      yield* engine.register(driveFlow, () =>
+        Effect.onExit(
+          collect({ model, registry: registryOf([]), sink: events }),
+          (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+        ).pipe(Scope.provide(scope)))
+      yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
+      expect((yield* Deferred.await(settled))._tag).toBe("suspended")
+      expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
+      yield* awaitParked(engine, driveFlow)
+      settled = Deferred.makeUnsafe<Outcome>()
+      yield* TestClock.adjust("5 seconds")
+      return yield* Deferred.await(settled)
+    }).pipe(
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+      Effect.provide(TestClock.layer()),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect(outcome._tag).toBe("completed")
+    expect(events.map((event) => event._tag).filter((tag) => tag === "model-parked" || tag === "model-unparked"))
+      .toEqual(["model-parked", "model-unparked"])
   })
 
   it("starts retry-after at refusal time after a slow provider call", async () => {

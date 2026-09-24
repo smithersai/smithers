@@ -40,7 +40,7 @@
  */
 import * as Capability from "@smthrs/capability/Capability"
 import * as Digest from "@smthrs/core/Digest"
-import { DurableClock, FlowRuntime } from "@smthrs/flow"
+import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Cell from "@smthrs/harness/Cell"
 import * as CellCalls from "@smthrs/harness/CellCalls"
@@ -60,7 +60,7 @@ import * as Recall from "@smthrs/memory/Recall"
 import type * as MemorySource from "@smthrs/memory/Source"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import type * as Model from "@smthrs/model/Model"
-import type * as ModelEvent from "@smthrs/model/ModelEvent"
+import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as ObservabilityMetric from "@smthrs/observability/Metric"
 import type { FlowsHooks, PluginInput } from "@smthrs/plugin"
@@ -529,20 +529,25 @@ const withCapacity = (
             }
             const source = earliest.park.source === "text" ? "default" : earliest.park.source
             const code = Option.getOrUndefined(QuotaPolicy.modelErrorOf(lastError))!.code
-            yield* emit(
-              new AgentEvent.ModelParked({
-                eventType: AgentEvent.eventType.modelParked,
-                seat: earliest.entry.seat.id,
-                wakeAt: earliest.park.wakeAt,
-                source,
-                code
-              })
-            )
+            const parkName = `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}/${parkCount++}`
+            yield* Action.make({
+              name: `${parkName}/parked`,
+              tier: "sealed",
+              execute: emit(
+                new AgentEvent.ModelParked({
+                  eventType: AgentEvent.eventType.modelParked,
+                  seat: earliest.entry.seat.id,
+                  wakeAt: earliest.park.wakeAt,
+                  source,
+                  code
+                })
+              )
+            })
             if (earliest.park.wakeAt > now) {
               yield* FlowRuntime.annotateWaiting({ reason: "quota", wakeAt: earliest.park.wakeAt })
             }
             yield* DurableClock.sleep({
-              name: `agent/capacity/${seats[0]!.seat.id}/${earliest.park.wakeAt}/${parkCount++}`,
+              name: parkName,
               duration: Duration.millis(Math.max(0, earliest.park.wakeAt - now)),
               inMemoryThreshold: 1
             })
@@ -585,40 +590,45 @@ const withCapacity = (
               ]
             }
           }
-          let emitted = false
           return entry.engine.sealStepWithEvents!(changed, emit).pipe(
-            Stream.tap(() =>
-              Effect.sync(() => {
-                emitted = true
-              })
-            ),
             Stream.catchCause((cause) =>
               Stream.unwrap(Effect.gen(function*() {
                 const error = Cause.squash(cause)
                 const model = Option.getOrUndefined(QuotaPolicy.modelErrorOf(error))
                 const afterCall = yield* Clock.currentTimeMillis
-                const park = model === undefined ? Option.none<QuotaPolicy.Park>() : policy.classify(model, afterCall)
-                if (Option.isNone(park)) return Stream.failCause(cause)
-                if (emitted) {
-                  yield* emit(
-                    new AgentEvent.ModelRetried({
-                      eventType: AgentEvent.eventType.modelRetried,
-                      attempt: tried.size + 1,
+                const classified = model === undefined
+                  ? Option.none<QuotaPolicy.Park>()
+                  : policy.classify(model, afterCall)
+                if (Option.isNone(classified)) return Stream.failCause(cause)
+                const park = yield* Action.make({
+                  name: `agent/capacity/${seats[0]!.seat.id}/cool/${cycle}/${selected}/${tried.size}`,
+                  tier: "sealed",
+                  success: QuotaPolicy.Park,
+                  execute: Effect.succeed({
+                    ...classified.value,
+                    wakeAt: cycle > 0 && classified.value.wakeAt <= afterCall
+                      ? afterCall + 15 * 60_000
+                      : classified.value.wakeAt
+                  })
+                })
+                lastError = error as Model.ModelFailure | HarnessError
+                cooling.set(entry.key, park)
+                tried.add(selected)
+                previous = selected
+                return Stream.concat(
+                  Stream.make(
+                    ModelEvent.ModelEvent.Retry({
+                      type: "retry",
+                      attempt: tried.size,
                       code: model!.code,
                       delayMillis: 0
                     })
-                  )
-                }
-                lastError = error as Model.ModelFailure | HarnessError
-                cooling.set(entry.key, {
-                  ...park.value,
-                  wakeAt: cycle > 0 && park.value.wakeAt <= afterCall ? afterCall + 15 * 60_000 : park.value.wakeAt
-                })
-                tried.add(selected)
-                previous = selected
-                return attempt()
+                  ),
+                  attempt()
+                )
               }))
-            )
+            ),
+            Stream.provideContext(services)
           )
         }).pipe(Effect.provideContext(services))
       )
