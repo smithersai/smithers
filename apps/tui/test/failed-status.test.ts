@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import * as AgentEvent from "@smthrs/harness/AgentEvent"
 import type * as Host from "../src/host.ts"
 import * as Runtime from "../src/runtime.ts"
 import * as Session from "../src/session.ts"
@@ -60,6 +61,28 @@ const expectFailed = async (workspace: Workspace, message: string) => {
 }
 
 describe("failed worker status", () => {
+  it("tab.read reports a parked worker's wait, then running once it resumes", async () => {
+    let input: Host.TurnInput | undefined
+    const f = setup((value) => {
+      input = value
+      return { done: new Promise(() => {}), cancel: () => {} }
+    })
+    f.workspace.request(request)
+    await tick()
+    const wakeAt = Date.UTC(2026, 8, 24, 14, 20)
+    input!.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1", seat: "openai:gpt-6-sol",
+      wakeAt, source: "retry-after", code: "rate_limited" }))
+    expect(await tabRead(f.workspace, request.id)).toMatchObject({
+      outcome: "success",
+      value: { id: request.id, status: "parked", wakeAt: "2026-09-24T14:20:00.000Z", summary: "waits for ChatGPT reset · 14:20" }
+    })
+    expect(JSON.parse(f.workspace.context())[0]).toMatchObject({ status: "parked", wakeAt: "2026-09-24T14:20:00.000Z" })
+    input!.onEvent(new AgentEvent.ModelUnparked({ eventType: "flows.harness.model-unparked.v1", seat: "openai:gpt-6-sol", at: wakeAt }))
+    const resumed = await tabRead(f.workspace, request.id) as unknown as { value: { status: string; wakeAt?: string } }
+    expect(resumed.value.status).toBe("running")
+    expect(resumed.value.wakeAt).toBeUndefined()
+  })
+
   it("settles a failed run outcome", async () => {
     const f = setup(() => ({
       done: Promise.resolve({ _tag: "failed", message: "Provider refused", detail: "" }),

@@ -71,6 +71,8 @@ export interface TurnInput {
   readonly onPatch?: (receipt: Changes.Receipt) => void
   readonly seat: string
   readonly fallbackSeats?: ReadonlyArray<string>
+  /** A worker's remaining capacity parks; `QuotaPolicy.defaultMaxParks` when absent. Zero fails on the next refusal. */
+  readonly maxParks?: number
   /** Who waits on an approval: `chat` (the default) or a worker tab id. */
   readonly source?: string
   readonly history: ReadonlyArray<Context.Entry>
@@ -293,7 +295,7 @@ export const make = (options: {
       const body = agent.run({
         session: `tui-${process.pid}-${index}`,
         seat,
-        ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true } } : { capacity: { park: false } }),
+        ...(input.role === "worker" ? { fallbackSeats, capacity: { park: true, ...(input.maxParks === undefined ? {} : { maxParks: input.maxParks }) } } : { capacity: { park: false } }),
         prompt: input.prompt,
         system: turn.system,
         ...(turn.reasoningEffort === undefined

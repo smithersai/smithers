@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test"
+import { describe, expect, it, jest } from "bun:test"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import { mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,9 +8,11 @@ import * as Session from "../src/session.ts"
 import { workerFallbackSeats } from "../src/models.ts"
 import { ModelError } from "@smthrs/model/ModelError"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
-import { Workspace } from "../src/workspace.ts"
+import { tabToast, Workspace } from "../src/workspace.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+/** Drains microtasks without timers, so it also runs under fake timers. */
+const flush = async () => { for (let index = 0; index < 20; index++) await Promise.resolve() }
 const request = { id: "review", title: "Review", prompt: "Review the files.", model: "sol" as const }
 
 const fixture = (run: Host.Host["run"], restored?: ConstructorParameters<typeof Workspace>[0]["restored"],
@@ -31,6 +34,92 @@ describe("worker durability", () => {
     expect(workerFallbackSeats("openai:gpt-6-sol", available, {})).toEqual(["anthropic:claude"])
     expect(workerFallbackSeats("openai:gpt-6-sol", available, { SMITHERS_TUI_WORKER_SEATS: "other:a,anthropic:claude" }))
       .toEqual(["other:a", "anthropic:claude"])
+  })
+
+  it("parks on retry-after, shows the wait, then runs again at wake", async () => {
+    jest.useFakeTimers({ now: Date.UTC(2026, 8, 24, 14, 10) })
+    try {
+      const inputs: Host.TurnInput[] = []
+      const stops: Array<(outcome: Host.Outcome) => void> = []
+      const f = fixture((input) => {
+        inputs.push(input)
+        return { done: new Promise((resolve) => stops.push(resolve)), cancel: () => {} }
+      })
+      f.workspace.request(request)
+      await flush()
+      const wakeAt = Date.now() + 600_000
+      inputs[0]!.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1", seat: "openai:gpt-6-sol",
+        wakeAt, source: "retry-after", code: "rate_limited" }))
+      stops[0]!({ _tag: "cancelled" })
+      await flush()
+      const parked = f.workspace.snapshot().tabs[0]!
+      expect(parked).toMatchObject({ status: "parked", wakeAt, parks: 1 })
+      expect(tabToast(parked)).toBe("Review · waits for ChatGPT reset · 14:20")
+      expect(f.workspace.read("review")).toMatchObject({ status: "parked", wakeAt: new Date(wakeAt).toISOString() })
+      jest.advanceTimersByTime(599_999)
+      await flush()
+      expect(inputs).toHaveLength(1)
+      jest.advanceTimersByTime(1)
+      await flush()
+      expect(inputs).toHaveLength(2)
+      expect(inputs[1]!.maxParks).toBe(QuotaPolicy.defaultMaxParks - 1)
+      expect(f.workspace.snapshot().tabs[0]).toMatchObject({ status: "running", parks: 1 })
+      expect(f.workspace.read("review").wakeAt).toBeUndefined()
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("fails with the provider's limit once every park is spent", async () => {
+    jest.useFakeTimers({ now: Date.UTC(2026, 8, 24, 14, 10) })
+    try {
+      const inputs: Host.TurnInput[] = []
+      const f = fixture((input) => {
+        inputs.push(input)
+        if (input.maxParks === 0) {
+          return { done: Promise.resolve({ _tag: "failed" as const, message: "limit", detail: "stack",
+            error: new ModelError({ code: "rate_limited", message: "limit", retryAfterMillis: 60_000 }) }), cancel: () => {} }
+        }
+        return { done: new Promise<Host.Outcome>((resolve) => queueMicrotask(() => {
+          input.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1", seat: "openai:gpt-6-sol",
+            wakeAt: Date.now() + 60_000, source: "retry-after", code: "rate_limited" }))
+          resolve({ _tag: "cancelled" })
+        })), cancel: () => {} }
+      })
+      f.workspace.request(request)
+      for (let park = 0; park <= QuotaPolicy.defaultMaxParks; park++) {
+        await flush()
+        jest.advanceTimersByTime(60_000)
+      }
+      await flush()
+      expect(inputs.map((input) => input.maxParks)).toEqual(
+        Array.from({ length: QuotaPolicy.defaultMaxParks + 1 }, (_, index) => QuotaPolicy.defaultMaxParks - index)
+      )
+      const tab = f.workspace.snapshot().tabs[0]!
+      expect(tab.status).toBe("failed")
+      expect(tab.failure).toMatchObject({ headline: "ChatGPT usage limit reached", fault: "wait",
+        line: `Still limited after ${QuotaPolicy.defaultMaxParks} waits.` })
+      expect(f.workspace.read("review")).toMatchObject({ status: "failed" })
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("a settled model answer restores the park budget", async () => {
+    let input: Host.TurnInput | undefined
+    const f = fixture((value) => {
+      input = value
+      return { done: new Promise(() => {}), cancel: () => {} }
+    })
+    f.workspace.request(request)
+    await tick()
+    input!.onEvent(new AgentEvent.ModelParked({ eventType: "flows.harness.model-parked.v1", seat: "openai:gpt-6-sol",
+      wakeAt: Date.now() + 1, source: "reset", code: "rate_limited" }))
+    input!.onEvent(new AgentEvent.ModelUnparked({ eventType: "flows.harness.model-unparked.v1", seat: "openai:gpt-6-sol", at: Date.now() }))
+    expect(f.workspace.snapshot().tabs[0]?.parks).toBe(1)
+    input!.onEvent({ _tag: "model-settled", message: { stopReason: "stop", content: [] },
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, durationMillis: 1 } as never)
+    expect(f.workspace.snapshot().tabs[0]?.parks).toBe(0)
   })
 
   it("parks a limited worker, then unparked work stays on the same tab", async () => {

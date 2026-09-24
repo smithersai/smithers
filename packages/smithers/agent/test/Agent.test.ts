@@ -59,7 +59,7 @@ import * as Agent from "../src/Agent.ts"
 import type * as Budget from "../src/Budget.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import type * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.ts"
 import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
 import * as Seat from "../src/Seat.ts"
 import * as SeatResolver from "../src/SeatResolver.ts"
@@ -638,6 +638,85 @@ describe("capacity seat chain", () => {
     expect(transitions).toEqual(["model-parked", "model-unparked"])
     expect(events.find((event) => event._tag === "model-parked")).toMatchObject({ wakeAt: 6_000, source: "reset" })
     expect(events.find((event) => event._tag === "model-unparked")).toMatchObject({ at: 6_000 })
+  })
+
+  it("fails with the provider's typed refusal once its parks run out", async () => {
+    const events: Array<AgentEvent.AgentEvent> = []
+    let calls = 0
+    const model = Model.make({
+      stream: () =>
+        Stream.suspend(() => {
+          calls++
+          return Stream.fail(
+            new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis: 5_000, httpStatus: 429 })
+          )
+        })
+    })
+    const outcome = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* TestClock.setTime(1_000)
+      let settled = Deferred.makeUnsafe<Outcome>()
+      yield* engine.register(driveFlow, () =>
+        Effect.onExit(
+          collect({ model, registry: registryOf([]), sink: events, capacity: { park: true, maxParks: 1 } }),
+          (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+        ).pipe(Scope.provide(scope)))
+      yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
+      expect((yield* Deferred.await(settled))._tag).toBe("suspended")
+      yield* awaitParked(engine, driveFlow)
+      settled = Deferred.makeUnsafe<Outcome>()
+      yield* TestClock.adjust("5 seconds")
+      return yield* Deferred.await(settled)
+    }).pipe(
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+      Effect.provide(TestClock.layer()),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect(outcome._tag).toBe("failed")
+    expect(Option.getOrUndefined(QuotaPolicy.modelErrorOf(outcome._tag === "failed" ? outcome.error : undefined)))
+      .toMatchObject({ code: "rate_limited" })
+    expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(1)
+    expect(events.filter((event) => event._tag === "model-unparked")).toHaveLength(1)
+    expect(calls).toBeGreaterThanOrEqual(2)
+  })
+
+  it("parks at most QuotaPolicy.defaultMaxParks times by default", async () => {
+    const events: Array<AgentEvent.AgentEvent> = []
+    const model = Model.make({
+      stream: () =>
+        Stream.fail(new ModelError({ code: "rate_limited", message: "wait", retryAfterMillis: 1_000, httpStatus: 429 }))
+    })
+    const outcome = await Effect.gen(function*() {
+      const engine = yield* FlowRuntime.FlowRuntime
+      const scope = yield* Effect.scope
+      yield* TestClock.setTime(1_000)
+      let settled = Deferred.makeUnsafe<Outcome>()
+      yield* engine.register(driveFlow, () =>
+        Effect.onExit(
+          collect({ model, registry: registryOf([]), sink: events }),
+          (exit) => Effect.asVoid(Deferred.succeed(settled, classify(exit)))
+        ).pipe(Scope.provide(scope)))
+      yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
+      let result = yield* Deferred.await(settled)
+      while (result._tag === "suspended") {
+        yield* awaitParked(engine, driveFlow)
+        settled = Deferred.makeUnsafe<Outcome>()
+        yield* TestClock.adjust("1 second")
+        result = yield* Deferred.await(settled)
+      }
+      return result
+    }).pipe(
+      Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, Safety.layer)),
+      Effect.provide(TestClock.layer()),
+      Effect.provideService(Metric.MetricRegistry, new Map()),
+      Effect.scoped,
+      Effect.runPromise
+    )
+    expect(outcome._tag).toBe("failed")
+    expect(events.filter((event) => event._tag === "model-parked")).toHaveLength(QuotaPolicy.defaultMaxParks)
   })
 
   it("records one park across a durable resume with retry-after", async () => {

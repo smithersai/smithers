@@ -4,6 +4,7 @@ import * as Agents from "./agents.ts"
 import type * as Context from "./context.ts"
 import type * as Extension from "./extension.ts"
 import type * as Host from "./host.ts"
+import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import { delegateModels, type DelegateModel } from "./models.ts"
 import * as Panels from "./panels.ts"
@@ -25,6 +26,8 @@ export interface Tab {
   readonly file: string
   readonly status: "queued" | "requested" | "running" | "waiting" | "parked" | "done" | "failed" | "cancelled"
   readonly wakeAt?: number
+  /** Capacity parks since the last settled model answer; at `QuotaPolicy.defaultMaxParks` the next refusal fails the tab. */
+  readonly parks?: number
   readonly failure?: FailureCopy.Description
   readonly detail?: string
   /** When the request was made; a queued tab waits before it launches. */
@@ -284,7 +287,7 @@ export class Workspace {
    * tab's own seat; otherwise the seat is the request's model, then the agent's
    * declared `model:`, then the worker seat.
    */
-  private open(request: Request, kept?: string, parent?: string, depth = 0, prior?: Tab): { id: string; status: Tab["status"] } {
+  private open(request: Request, kept?: string, parent?: string, depth = 0, prior?: Tab, parks?: number): { id: string; status: Tab["status"] } {
     if (this.closed) throw new Error("Session closed")
     const existing = this.tabs.get(request.id)
     if (existing !== undefined) {
@@ -319,6 +322,7 @@ export class Workspace {
       file: writer.file,
       status: [...this.tabs.values()].filter(active).length >= seats ? "queued" : "requested",
       startedAt: prior?.startedAt ?? Date.now(),
+      ...(parks === undefined || parks === 0 ? {} : { parks }),
       ...(request.model === undefined ? {} : { model: request.model }),
       ...(request.agent === undefined ? {} : { agent: { name: request.agent } })
     }
@@ -365,7 +369,7 @@ export class Workspace {
   private relaunch(tab: Tab): void {
     if (this.closed) return
     this.tabs.delete(tab.id)
-    this.open({ id: tab.id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" }, tab.seat, tab.parent, tab.depth, tab)
+    this.open({ id: tab.id, title: tab.title, prompt: tab.prompt, model: tab.model, agent: tab.agent?.name, by: "user" }, tab.seat, tab.parent, tab.depth, tab, tab.parks)
   }
   private scheduleResume(tab: Tab): void {
     const resume = () => {
@@ -439,6 +443,7 @@ export class Workspace {
         source: tab.id,
         history,
         role: "worker",
+        maxParks: Math.max(0, QuotaPolicy.defaultMaxParks - (tab.parks ?? 0)),
         ...(agent === undefined ? {} : { agent }),
         runtime: {
           publish: (contribution) =>
@@ -471,7 +476,11 @@ export class Workspace {
           if (event._tag !== "aborted") transcript = Transcript.apply(transcript, event, at)
           this.transcripts.set(tab.id, transcript)
           if (event._tag === "seat-failed-over") this.save({ ...(this.tabs.get(tab.id) ?? tab), activeSeat: event.to })
-          if (event._tag === "model-parked") this.save({ ...(this.tabs.get(tab.id) ?? tab), status: "parked", wakeAt: event.wakeAt, activeSeat: event.seat })
+          if (event._tag === "model-parked") {
+            const current = this.tabs.get(tab.id) ?? tab
+            this.save({ ...current, status: "parked", wakeAt: event.wakeAt, activeSeat: event.seat, parks: (current.parks ?? 0) + 1 })
+          }
+          if (event._tag === "model-settled" && (this.tabs.get(tab.id)?.parks ?? 0) > 0) this.save({ ...this.tabs.get(tab.id)!, parks: 0 })
           if (event._tag === "model-unparked") {
             const current = this.tabs.get(tab.id) ?? tab
             if ([...this.tabs.values()].filter(active).length >= seats) {
@@ -498,7 +507,11 @@ export class Workspace {
           return
         }
         const at = Date.now()
-        const failure = outcome._tag === "failed" ? FailureCopy.describe(outcome.error ?? outcome.message, this.tabs.get(tab.id)?.activeSeat ?? tab.seat) : undefined
+        const described = outcome._tag === "failed" ? FailureCopy.describe(outcome.error ?? outcome.message, this.tabs.get(tab.id)?.activeSeat ?? tab.seat) : undefined
+        const parks = current?.parks ?? 0
+        const failure = described?.fault === "wait" && parks >= QuotaPolicy.defaultMaxParks
+          ? { ...described, line: `Still limited after ${parks} waits.` }
+          : described
         writer.append({ type: "outcome", at, prompt: tab.prompt,
           outcome: outcome._tag === "done"
             ? { _tag: "done", answer: outcome.answer }
@@ -554,6 +567,7 @@ export class Workspace {
       id: tab.id,
       title: tab.title,
       status: tab.status,
+      ...(tab.status === "parked" && tab.wakeAt !== undefined ? { wakeAt: new Date(tab.wakeAt).toISOString() } : {}),
       answer: tab.answer?.slice(0, 8000),
       message: tab.message,
       summary: panel.summary,
@@ -607,6 +621,7 @@ export class Workspace {
           title: tab.title,
           ...(tab.agent === undefined ? {} : { agent: tab.agent.name }),
           status: tab.status,
+          ...(tab.status === "parked" && tab.wakeAt !== undefined ? { wakeAt: new Date(tab.wakeAt).toISOString() } : {}),
           ...(full && tab.answer !== undefined ? { answer: tab.answer.slice(0, contextAnswerChars) } : {}),
           ...(full && tab.message !== undefined ? { message: tab.message.slice(0, 500) } : {})
         }
@@ -657,9 +672,11 @@ export class Workspace {
     const tab = this.tabs.get(id)
     if (tab?.status !== "failed") throw new Error("Only a failed tab can wait")
     const wakeAt = Math.max(Date.now(), tab.wakeAt ?? Date.now() + 15 * 60_000)
-    this.save({ ...tab, status: "parked", wakeAt, endedAt: undefined })
+    // The user chose this wait, so the resumed run gets a fresh park budget.
+    const waiting: Tab = { ...tab, status: "parked", wakeAt, endedAt: undefined, parks: undefined }
+    this.save(waiting)
     setTimeout(() => {
-      if (this.tabs.get(id)?.status === "parked" && this.tabs.get(id)?.file === tab.file) this.relaunch(tab)
+      if (this.tabs.get(id)?.status === "parked" && this.tabs.get(id)?.file === tab.file) this.relaunch(waiting)
     }, wakeAt - Date.now())
   }
   dispose = (): void => {

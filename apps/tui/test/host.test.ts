@@ -531,6 +531,41 @@ describe("Host.run under a provider quota refusal", () => {
       provider.stop(true)
     }
   }, 90_000)
+
+  test("a worker with no parks left fails with the provider's typed limit", async () => {
+    let asked = 0
+    const provider = Bun.serve({
+      port: 0,
+      fetch: () => {
+        asked += 1
+        return Response.json(
+          { error: { message: "Rate limit reached. Try again in 10m.", type: "rate_limit_exceeded", code: "rate_limit_exceeded" } },
+          { status: 429, headers: { "retry-after": "600" } }
+        )
+      }
+    })
+    const cwd = mkdtempSync(join(tmpdir(), "smithers-tui-quota-"))
+    roots.push(cwd)
+    const host = Host.make({
+      cwd,
+      environment: { OPENAI_API_KEY: "sk-test", SMITHERS_OPENAI_COMPATIBLE_BASE_URL: `http://127.0.0.1:${provider.port}` },
+      approvals: "all"
+    })
+    try {
+      const events: AgentEvent.AgentEvent[] = []
+      const turn = host.run({ prompt: "answer", role: "worker", seat: "openai:gpt-test", fallbackSeats: [], maxParks: 0,
+        history: [], onEvent: (event) => events.push(event) })
+      const outcome = await turn.done
+      expect(events.some((event) => event._tag === "model-parked")).toBe(false)
+      expect(outcome._tag).toBe("failed")
+      expect(FailureCopy.describe(outcome._tag === "failed" ? outcome.error : undefined, "openai:gpt-test"))
+        .toMatchObject({ headline: "ChatGPT usage limit reached", fault: "wait" })
+      expect(asked).toBe(1)
+    } finally {
+      await host.dispose()
+      provider.stop(true)
+    }
+  }, 90_000)
 })
 
 describe("turnOptions", () => {

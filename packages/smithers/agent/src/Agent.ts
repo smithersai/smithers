@@ -115,8 +115,16 @@ export interface Options {
   readonly seat: Seat.Seat
   /** Resolved seats attempted in order after `seat` on a capacity refusal. */
   readonly fallbackSeats?: ReadonlyArray<Seat.Seat>
-  /** Capacity policy for this run; parking is enabled by default. */
-  readonly capacity?: { readonly park: boolean; readonly maxParkMillis?: number } | undefined
+  /**
+   * Capacity policy for this run; parking is enabled by default.
+   *
+   * `maxParks` bounds the parks one run takes, `QuotaPolicy.defaultMaxParks`
+   * when absent, as for a flow `Agent.action`. The refusal that finds the
+   * budget spent fails the run with the provider's typed `ModelError`.
+   */
+  readonly capacity?:
+    | { readonly park: boolean; readonly maxParkMillis?: number; readonly maxParks?: number }
+    | undefined
   /** Resolves context budgets after a steer, using the host seat vocabulary. */
   readonly contextWindowTokensFor?: CellTurn.Input["contextWindowTokensFor"]
   /** The task the run was admitted with. */
@@ -491,6 +499,7 @@ const withCapacity = (
   const primary = seats[0]!.engine
   const cooling = new Map<string, QuotaPolicy.Park>()
   const policy = QuotaPolicy.makeDefault({ defaultWaitMillis: 15 * 60_000, maxWaitMillis: Infinity })
+  const maxParks = capacity?.maxParks ?? QuotaPolicy.defaultMaxParks
   let parkCount = 0
   const sealStepWithEvents = (
     step: EngineLike.SealedModelStep,
@@ -523,6 +532,7 @@ const withCapacity = (
               .sort((a, b) => a.park.wakeAt - b.park.wakeAt)[0]!
             if (
               capacity?.park === false ||
+              parkCount >= maxParks ||
               (capacity?.maxParkMillis !== undefined && earliest.park.wakeAt - now > capacity.maxParkMillis)
             ) {
               return Stream.fail(lastError!)

@@ -112,8 +112,11 @@ Worker tabs show `queued` (waiting for a pool seat), `requested`, `running`,
 `waiting` for children, `parked` (⏸ with a reset time), `done`, `failed`, or
 `cancelled`. Running, waiting, and parked workers auto-relaunch from their
 recorded steps when the TUI restarts. Queued workers keep the chat context
-captured with their request. A failed worker shows a short failure card; Ctrl+O
-reveals the raw error and stack.
+captured with their request. A worker refused by a rate limit or quota parks
+until the provider's reset or retry-after, then runs again; after 8 parks in a
+row with no model answer it fails as "usage limit reached · still limited after
+8 waits". A failed worker shows a short failure card; Ctrl+O reveals the raw
+error and stack.
 
 ## Context and sessions
 
